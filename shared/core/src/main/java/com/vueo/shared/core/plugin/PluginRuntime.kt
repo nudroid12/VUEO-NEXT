@@ -54,6 +54,11 @@ data class PluginDiscoveryResult(
     val timeoutProviders: Int,
     val failedProviders: Int,
     val diagnostics: List<ProviderDiagnostic>,
+    val fromCache: Boolean = false,
+    val coalesced: Boolean = false,
+    val readyProviders: Int = 0,
+    val repairedProviders: Int = 0,
+    val preflightErrors: List<String> = emptyList(),
 )
 
 class PluginSourceEngine(
@@ -69,6 +74,11 @@ class PluginSourceEngine(
 
     private val codeStore =
         ProviderCodeStore(
+            context.applicationContext
+        )
+
+    private val preflight =
+        PluginRuntimePreflight(
             context.applicationContext
         )
 
@@ -109,7 +119,7 @@ suspend fun discoverProgressive(
 
         val targets =
             store.repositories()
-.filter(store::isRepositoryEnabled)
+                .filter(store::isRepositoryEnabled)
                 .flatMap { repository ->
                     repository.providers
                         .filter { provider ->
@@ -121,7 +131,7 @@ suspend fun discoverProgressive(
                         .filter { provider ->
                             provider.supportedTypes
                                 .isEmpty() ||
-                                mediaType in
+                                mediaType.lowercase() in
                                 provider.supportedTypes
                         }
                         .filter { provider ->
@@ -161,60 +171,146 @@ suspend fun discoverProgressive(
             return@coroutineScope emptyDiscoveryResult()
         }
 
-        val runs =
-            mutableListOf<ProviderRun>()
-
-        val mutex = Mutex()
-
-        targets.map {
-            (repository, provider) ->
-
-            async {
-                val run =
-                    concurrency.withPermit {
-                        runProvider(
-                            repository =
-                                repository,
-                            provider =
-                                provider,
-                            tmdbId =
-                                tmdbId,
-                            mediaType =
-                                mediaType,
-                            season =
-                                season,
-                            episode =
-                                episode,
-                        )
-                    }
-
-                saveHealth(run)
-
-                val snapshot =
-                    mutex.withLock {
-                        runs += run
-
-                        PluginDiscoveryProgress(
-                            result =
-                                buildDiscoveryResult(
-                                    runs
-                                ),
-                            completedProviders =
-                                runs.size,
-                            totalProviders =
-                                targets.size,
-                        )
-                    }
-
-                onProgress(snapshot)
-            }
-        }.awaitAll()
-
-        mutex.withLock {
-            buildDiscoveryResult(
-                runs
+        val cacheKey =
+            PluginRuntimeCache.key(
+                store = store,
+                tmdbId = tmdbId,
+                mediaType = mediaType,
+                season = season,
+                episode = episode,
             )
+
+        PluginRuntimeCache.get(cacheKey)
+            ?.let { cached ->
+                onProgress(
+                    PluginDiscoveryProgress(
+                        result = cached,
+                        completedProviders = targets.size,
+                        totalProviders = targets.size,
+                    )
+                )
+                return@coroutineScope cached
+            }
+
+        val flight =
+            PluginRuntimeCache.acquireFlight(
+                cacheKey
+            )
+
+        if (!flight.owner) {
+            val joined =
+                flight.deferred
+                    .await()
+                    .copy(
+                        coalesced = true
+                    )
+
+            onProgress(
+                PluginDiscoveryProgress(
+                    result = joined,
+                    completedProviders = targets.size,
+                    totalProviders = targets.size,
+                )
+            )
+
+            return@coroutineScope joined
         }
+
+        try {
+            val preparation =
+                preflight.prepare(targets)
+
+            val runs =
+                mutableListOf<ProviderRun>()
+
+            val mutex = Mutex()
+
+            targets.map {
+                (repository, provider) ->
+
+                async {
+                    val run =
+                        concurrency.withPermit {
+                            runProvider(
+                                repository =
+                                    repository,
+                                provider =
+                                    provider,
+                                tmdbId =
+                                    tmdbId,
+                                mediaType =
+                                    mediaType,
+                                season =
+                                    season,
+                                episode =
+                                    episode,
+                            )
+                        }
+
+                    saveHealth(run)
+
+                    val snapshot =
+                        mutex.withLock {
+                            runs += run
+
+                            PluginDiscoveryProgress(
+                                result =
+                                    buildDiscoveryResult(
+                                        runs
+                                    ).copy(
+                                        readyProviders =
+                                            preparation.alreadyReadyProviders +
+                                                preparation.repairedProviders,
+                                        repairedProviders =
+                                            preparation.repairedProviders,
+                                        preflightErrors =
+                                            preparation.errors,
+                                    ),
+                                completedProviders =
+                                    runs.size,
+                                totalProviders =
+                                    targets.size,
+                            )
+                        }
+
+                    onProgress(snapshot)
+                }
+            }.awaitAll()
+
+            val result =
+                mutex.withLock {
+                    buildDiscoveryResult(
+                        runs
+                    ).copy(
+                        readyProviders =
+                            preparation.alreadyReadyProviders +
+                                preparation.repairedProviders,
+                        repairedProviders =
+                            preparation.repairedProviders,
+                        preflightErrors =
+                            preparation.errors,
+                    )
+                }
+
+            PluginRuntimeCache.put(
+                key = cacheKey,
+                result = result,
+            )
+
+            PluginRuntimeCache.completeFlight(
+                key = cacheKey,
+                result = result,
+            )
+
+            result
+        } catch (error: Throwable) {
+            PluginRuntimeCache.failFlight(
+                key = cacheKey,
+                error = error,
+            )
+            throw error
+        }
+
     }
 
 private fun saveHealth(
@@ -3010,13 +3106,18 @@ class PluginSourceResolver(
         )
         return SourceResolveResult(
             sources = result.streams,
-            warnings = result.diagnostics
-                .mapNotNull { diagnostic ->
-                    diagnostic.error?.let { error ->
-                        "${diagnostic.providerName}: $error"
-                    }
-                }
-                .take(8),
+            warnings =
+                (
+                    result.preflightErrors +
+                        result.diagnostics
+                            .mapNotNull { diagnostic ->
+                                diagnostic.error?.let { error ->
+                                    "${diagnostic.providerName}: $error"
+                                }
+                            }
+                )
+                    .distinct()
+                    .take(8),
         )
     }
 }

@@ -40,7 +40,10 @@ class TvContentManagerStore(
             if (pluginsPrepared) return@withLock
             pluginStore.seedDevelopmentDefaultsIfNeeded()
             migrateLegacyPluginStateIfNeeded()
-            providerCodeSyncManager.syncMissing(pluginStore.repositories())
+            providerCodeSyncManager.syncEnabled(
+                repositories = pluginStore.repositories(),
+                pluginStore = pluginStore,
+            )
             pluginsPrepared = true
         }
     }

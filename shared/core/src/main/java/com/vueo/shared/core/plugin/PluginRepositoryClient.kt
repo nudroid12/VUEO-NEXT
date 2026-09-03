@@ -2,7 +2,6 @@ package com.vueo.shared.core.plugin
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URI
 
 object PluginRepositoryClient {
     suspend fun fetch(inputUrl: String): PluginRepositoryDescriptor {
@@ -12,30 +11,36 @@ object PluginRepositoryClient {
         }
 
         val json = JSONObject(PluginHttp.getText(manifestUrl))
-        val providersArray = json.optJSONArray("scrapers")
-            ?: json.optJSONArray("providers")
-            ?: JSONArray()
+        val providersArray =
+            json.optJSONArray("scrapers")
+                ?: json.optJSONArray("providers")
+                ?: json.optJSONArray("plugins")
+                ?: JSONArray()
 
-        val providers = (0 until providersArray.length())
-            .mapNotNull { index ->
-                providersArray.optJSONObject(index)?.toProvider()
-            }
+        val providers =
+            (0 until providersArray.length())
+                .mapNotNull { index ->
+                    providersArray.optJSONObject(index)?.toProvider()
+                }
+                .distinctBy { it.id }
 
         require(providers.isNotEmpty()) {
             "Repository manifest contains no scrapers/providers."
         }
 
-        val repoName = json.optString("name")
-            .takeIf { it.isNotBlank() }
-            ?: "Plugin Repository"
+        val repoName =
+            json.optString("name")
+                .takeIf { it.isNotBlank() }
+                ?: "Plugin Repository"
 
         return PluginRepositoryDescriptor(
             manifestUrl = manifestUrl,
             baseUrl = manifestUrl.substringBeforeLast("/"),
             name = repoName,
             version = json.optString("version", "0.0.0"),
-            description = json.optString("description")
-                .takeIf { it.isNotBlank() },
+            description =
+                json.optString("description")
+                    .takeIf { it.isNotBlank() },
             providers = providers,
         )
     }
@@ -64,42 +69,133 @@ object PluginRepositoryClient {
     }
 
     private fun JSONObject.toProvider(): PluginProviderDescriptor? {
-        val id = optString("id").takeIf { it.isNotBlank() }
-            ?: return null
-        val name = optString("name").takeIf { it.isNotBlank() }
-            ?: return null
-        val filename = optString("filename").takeIf { it.isNotBlank() }
-            ?: return null
+        val id =
+            optString("id")
+                .takeIf { it.isNotBlank() }
+                ?: return null
+
+        val name =
+            optString("name")
+                .takeIf { it.isNotBlank() }
+                ?: return null
+
+        val filename =
+            firstString(
+                "filename",
+                "file",
+                "script",
+            ) ?: return null
+
+        val supportedTypes =
+            firstStringList(
+                "supportedTypes",
+                "types",
+                "mediaTypes",
+            )
+                .map { it.lowercase() }
+                .toSet()
+
+        val disabledPlatforms =
+            firstStringList(
+                "disabledPlatforms",
+                "disabledPlatform",
+            )
+                .map { it.lowercase() }
+                .toSet()
 
         return PluginProviderDescriptor(
             id = id,
             name = name,
-            description = optString("description")
-                .takeIf { it.isNotBlank() },
+            description =
+                optString("description")
+                    .takeIf { it.isNotBlank() },
             version = optString("version", "0.0.0"),
-            author = optString("author").takeIf { it.isNotBlank() },
-            supportedTypes = optJSONArray("supportedTypes").toStringSet(),
+            author =
+                optString("author")
+                    .takeIf { it.isNotBlank() },
+            supportedTypes = supportedTypes,
             filename = filename,
-            defaultEnabled = optBoolean("enabled", true),
-            logo = optString("logo")
-                .takeIf { it.startsWith("https://") },
-            contentLanguages = optJSONArray("contentLanguage").toStringList(),
-            formats = optJSONArray("formats").toStringList(),
+            defaultEnabled =
+                when {
+                    has("defaultEnabled") ->
+                        optBoolean("defaultEnabled", true)
+                    else ->
+                        optBoolean("enabled", true)
+                },
+            logo =
+                firstString("logo", "icon")
+                    ?.takeIf { it.startsWith("https://") },
+            contentLanguages =
+                firstStringList(
+                    "contentLanguage",
+                    "contentLanguages",
+                    "languages",
+                ),
+            formats =
+                firstStringList(
+                    "formats",
+                    "format",
+                ),
             limited = optBoolean("limited", false),
-            disabledPlatforms = optJSONArray("disabledPlatforms").toStringSet(),
-            supportsExternalPlayer = optBoolean(
-                "supportsExternalPlayer",
-                true,
-            ),
+            disabledPlatforms = disabledPlatforms,
+            supportsExternalPlayer =
+                optBoolean(
+                    "supportsExternalPlayer",
+                    true,
+                ),
         )
+    }
+
+    private fun JSONObject.firstString(
+        vararg keys: String,
+    ): String? =
+        keys.asSequence()
+            .map { key -> optString(key).trim() }
+            .firstOrNull { it.isNotBlank() }
+
+    private fun JSONObject.firstStringList(
+        vararg keys: String,
+    ): List<String> {
+        keys.forEach { key ->
+            val value = opt(key)
+
+            when (value) {
+                is JSONArray -> {
+                    val parsed = value.toStringList()
+                    if (parsed.isNotEmpty()) return parsed
+                }
+
+                is String -> {
+                    val parsed = value.toFlexibleStringList()
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            }
+        }
+
+        return emptyList()
     }
 }
 
-private fun JSONArray?.toStringList(): List<String> {
-    if (this == null) return emptyList()
-    return (0 until length())
-        .mapNotNull { optString(it).takeIf(String::isNotBlank) }
+private fun String.toFlexibleStringList(): List<String> {
+    val trimmed = trim()
+    if (trimmed.isBlank()) return emptyList()
+
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        return runCatching {
+            JSONArray(trimmed).toStringList()
+        }.getOrDefault(emptyList())
+    }
+
+    return trimmed
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotBlank)
 }
 
-private fun JSONArray?.toStringSet(): Set<String> =
-    toStringList().toSet()
+private fun JSONArray.toStringList(): List<String> =
+    (0 until length())
+        .mapNotNull { index ->
+            optString(index)
+                .trim()
+                .takeIf(String::isNotBlank)
+        }

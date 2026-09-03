@@ -44,10 +44,35 @@ class ProviderCodeStore(context: Context) {
         provider: PluginProviderDescriptor,
         source: String,
     ) {
+        require(source.isNotBlank()) {
+            "Provider script is empty."
+        }
+
         val file = fileFor(repository, provider)
         file.parentFile?.mkdirs()
-        file.writeText(source, Charsets.UTF_8)
+
+        val temp = File(
+            file.parentFile,
+            file.name + ".tmp",
+        )
+
+        temp.writeText(source, Charsets.UTF_8)
+
+        if (!temp.renameTo(file)) {
+            file.writeText(
+                temp.readText(Charsets.UTF_8),
+                Charsets.UTF_8,
+            )
+            temp.delete()
+        }
     }
+
+    fun isReady(
+        repository: PluginRepositoryDescriptor,
+        provider: PluginProviderDescriptor,
+    ): Boolean =
+        read(repository, provider)
+            ?.isNotBlank() == true
 
     fun has(
         repository: PluginRepositoryDescriptor,
@@ -59,7 +84,7 @@ class ProviderCodeStore(context: Context) {
         repository: PluginRepositoryDescriptor,
     ): Int =
         repository.providers.count {
-            has(repository, it)
+            isReady(repository, it)
         }
 
     fun removeRepository(manifestUrl: String) {
@@ -111,15 +136,27 @@ class ProviderCodeSyncManager(
     suspend fun syncRepository(
         repository: PluginRepositoryDescriptor,
         force: Boolean,
+    ): ProviderCodeSyncResult =
+        syncProviders(
+            repository = repository,
+            providers = repository.providers,
+            force = force,
+        )
+
+    suspend fun syncProviders(
+        repository: PluginRepositoryDescriptor,
+        providers: List<PluginProviderDescriptor>,
+        force: Boolean,
     ): ProviderCodeSyncResult = coroutineScope {
         val errors = mutableListOf<String>()
+        val uniqueProviders = providers.distinctBy { it.id }
 
-        val outcomes = repository.providers.map { provider ->
+        val outcomes = uniqueProviders.map { provider ->
             async {
                 concurrency.withPermit {
                     if (
                         !force &&
-                        store.has(repository, provider)
+                        store.isReady(repository, provider)
                     ) {
                         return@withPermit true
                     }
@@ -134,10 +171,6 @@ class ProviderCodeSyncManager(
 
                         val source =
                             PluginHttp.getText(url)
-
-                        require(source.isNotBlank()) {
-                            "Empty provider script."
-                        }
 
                         store.write(
                             repository,
@@ -161,12 +194,42 @@ class ProviderCodeSyncManager(
             }
         }.awaitAll()
 
+        PluginRuntimeCache.clear()
+
         ProviderCodeSyncResult(
             repository = repository,
             readyProviders = outcomes.count { it },
             failedProviders = outcomes.count { !it },
             errors = errors.take(8),
         )
+    }
+
+    suspend fun syncEnabled(
+        repositories: List<PluginRepositoryDescriptor>,
+        pluginStore: PluginStore,
+    ) = coroutineScope {
+        repositories
+            .filter(pluginStore::isRepositoryEnabled)
+            .map { repository ->
+                async {
+                    val providers =
+                        repository.providers
+                            .filter { provider ->
+                                pluginStore.isProviderEnabled(
+                                    repository,
+                                    provider,
+                                )
+                            }
+
+                    syncProviders(
+                        repository = repository,
+                        providers = providers,
+                        force = false,
+                    )
+                }
+            }
+            .awaitAll()
+        Unit
     }
 
     suspend fun syncMissing(

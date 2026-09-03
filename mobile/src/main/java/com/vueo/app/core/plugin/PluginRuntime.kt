@@ -43,6 +43,11 @@ data class PluginDiscoveryResult(
     val timeoutProviders: Int,
     val failedProviders: Int,
     val diagnostics: List<ProviderDiagnostic>,
+    val fromCache: Boolean = false,
+    val coalesced: Boolean = false,
+    val readyProviders: Int = 0,
+    val repairedProviders: Int = 0,
+    val preflightErrors: List<String> = emptyList(),
 )
 
 class PluginSourceEngine(
@@ -103,6 +108,11 @@ private fun SharedPluginDiscoveryResult.toMobile(): PluginDiscoveryResult =
         timeoutProviders = timeoutProviders,
         failedProviders = failedProviders,
         diagnostics = diagnostics.map { it.toMobile() },
+        fromCache = fromCache,
+        coalesced = coalesced,
+        readyProviders = readyProviders,
+        repairedProviders = repairedProviders,
+        preflightErrors = preflightErrors,
     )
 
 private fun SharedProviderDiagnostic.toMobile(): ProviderDiagnostic =

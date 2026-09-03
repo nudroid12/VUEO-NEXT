@@ -20,6 +20,7 @@ class PluginStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_PLUGINS_ENABLED, enabled)
             .apply()
+        PluginRuntimeCache.clear()
     }
 
     fun isRepositoryEnabled(
@@ -44,6 +45,7 @@ class PluginStore(context: Context) {
                 enabled,
             )
             .apply()
+        PluginRuntimeCache.clear()
     }
 
     fun tmdbApiKey(): String =
@@ -110,6 +112,7 @@ class PluginStore(context: Context) {
 
         next += repository
         saveRepositories(next)
+        PluginRuntimeCache.clear()
     }
 
     fun remove(manifestUrl: String) {
@@ -126,6 +129,7 @@ class PluginStore(context: Context) {
             )
             .apply()
         codeStore.removeRepository(manifestUrl)
+        PluginRuntimeCache.clear()
     }
 
     fun isProviderEnabled(
@@ -155,6 +159,7 @@ class PluginStore(context: Context) {
                 enabled,
             )
             .apply()
+        PluginRuntimeCache.clear()
     }
 
     fun totalProviderCount(): Int =
@@ -329,7 +334,9 @@ private fun JSONObject.toStoredProvider():
             .takeIf { it.isNotBlank() },
         supportedTypes =
             optJSONArray("supportedTypes")
-                .toStringSet(),
+                .toStringList()
+                .map { it.lowercase() }
+                .toSet(),
         filename = filename,
         defaultEnabled =
             optBoolean("defaultEnabled", true),
@@ -347,7 +354,9 @@ private fun JSONObject.toStoredProvider():
         ),
         disabledPlatforms =
             optJSONArray("disabledPlatforms")
-                .toStringSet(),
+                .toStringList()
+                .map { it.lowercase() }
+                .toSet(),
         supportsExternalPlayer =
             optBoolean(
                 "supportsExternalPlayer",
