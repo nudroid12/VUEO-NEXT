@@ -1764,17 +1764,18 @@ object SourceCleaner {
 
     private fun identityKey(
         source: StreamSource,
-    ): String =
-        when {
-            !source.url.isNullOrBlank() ->
-                "url:" +
-                    source.url
-                        .trim()
+    ): String {
+        val url = source.url
+        val infoHash = source.infoHash
 
-            !source.infoHash.isNullOrBlank() ->
+        return when {
+            !url.isNullOrBlank() ->
+                "url:" +
+                    url.trim()
+
+            !infoHash.isNullOrBlank() ->
                 "torrent:" +
-                    source.infoHash
-                        .lowercase() +
+                    infoHash.lowercase() +
                     ":" +
                     (
                         source.fileIndex
@@ -1789,4 +1790,5 @@ object SourceCleaner {
                     source.quality,
                 ).joinToString("|")
         }
+    }
 }
