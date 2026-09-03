@@ -45,7 +45,15 @@ data class MediaItem(
     val cast: List<MediaPerson> = emptyList(),
     val productionCompanies: List<MediaCompany> = emptyList(),
     val networks: List<MediaCompany> = emptyList(),
-)
+) {
+    val displayType: String
+        get() =
+            when (type.lowercase()) {
+                "series", "tv" -> "Series"
+                "movie" -> "Movie"
+                else -> type.replaceFirstChar { it.uppercase() }
+            }
+}
 
 data class CatalogRow(
     val id: String,
