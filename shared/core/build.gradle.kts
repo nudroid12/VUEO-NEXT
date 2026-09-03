@@ -17,7 +17,7 @@ android {
 }
 
 dependencies {
-    // One pooled HTTP stack for shared content runtimes. Keep the version aligned
-    // with the proven VUEO Mobile baseline while migration is in progress.
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.4.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }
