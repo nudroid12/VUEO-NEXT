@@ -1,6 +1,8 @@
 package com.vueo.app.core.extensions
 
 import com.vueo.app.core.model.StreamSource
+import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.SourceDiscoveryCache as SharedSourceDiscoveryCache
 
 data class CachedSourceSession(
     val streams: List<StreamSource>,
@@ -9,89 +11,38 @@ data class CachedSourceSession(
     val cachedAtEpochMs: Long,
 )
 
+/** Mobile compatibility facade. Cache ownership now lives in shared/core. */
 object SourceDiscoveryCache {
-    private const val TTL_MS = 120_000L
-    private const val MAX_ENTRIES = 24
-
-    private val sessions =
-        object : LinkedHashMap<String, CachedSourceSession>(
-            32,
-            0.75f,
-            true,
-        ) {
-            override fun removeEldestEntry(
-                eldest: MutableMap.MutableEntry<String, CachedSourceSession>?,
-            ): Boolean =
-                size > MAX_ENTRIES
+    fun get(key: String): CachedSourceSession? =
+        SharedSourceDiscoveryCache.get(key)?.let { cached ->
+            CachedSourceSession(
+                streams = cached.sources.map(SourceCandidate::toMobile),
+                rawCount = cached.rawCount,
+                notice = cached.notice,
+                cachedAtEpochMs = cached.cachedAtEpochMs,
+            )
         }
 
-    @Synchronized
-    fun get(key: String): CachedSourceSession? {
-        val cached = sessions[key]
-            ?: return null
-
-        if (
-            System.currentTimeMillis() -
-            cached.cachedAtEpochMs >
-            TTL_MS
-        ) {
-            sessions.remove(key)
-            return null
-        }
-
-        return cached
-    }
-
-    @Synchronized
     fun clearExpired() {
-        val now =
-            System.currentTimeMillis()
-
-        val iterator =
-            sessions.entries
-                .iterator()
-
-        while (
-            iterator.hasNext()
-        ) {
-            val entry =
-                iterator.next()
-
-            if (
-                now -
-                    entry.value
-                        .cachedAtEpochMs >
-                    TTL_MS
-            ) {
-                iterator.remove()
-            }
-        }
+        SharedSourceDiscoveryCache.clearExpired()
     }
 
-    @Synchronized
     fun clearAll() {
-        sessions.clear()
+        SharedSourceDiscoveryCache.clearAll()
     }
 
-    @Synchronized
     fun put(
         key: String,
         streams: List<StreamSource>,
         rawCount: Int,
         notice: String?,
     ) {
-        if (streams.isEmpty()) {
-            return
-        }
-
-        sessions[key] =
-            CachedSourceSession(
-                streams = streams,
-                rawCount = rawCount,
-                notice = notice,
-                cachedAtEpochMs =
-                    System.currentTimeMillis(),
-            )
+        SharedSourceDiscoveryCache.put(
+            key = key,
+            sources = streams.map(StreamSource::toShared),
+            rawCount = rawCount,
+            notice = notice,
+        )
     }
 
     fun key(
@@ -99,5 +50,54 @@ object SourceDiscoveryCache {
         mediaId: String,
         videoId: String,
     ): String =
-        "$mediaType|$mediaId|$videoId"
+        SharedSourceDiscoveryCache.key(
+            mediaType = mediaType,
+            mediaId = mediaId,
+            videoId = videoId,
+        )
 }
+
+private fun StreamSource.toShared(): SourceCandidate =
+    SourceCandidate(
+        id = buildString {
+            append(providerId ?: providerName ?: name)
+            append(':')
+            append(url ?: infoHash ?: name)
+            fileIndex?.let {
+                append(':')
+                append(it)
+            }
+        },
+        name = name,
+        url = url,
+        infoHash = infoHash,
+        fileIndex = fileIndex,
+        quality = quality,
+        codec = codec,
+        hdr = hdr,
+        audio = audio,
+        language = language,
+        sizeBytes = sizeBytes,
+        headers = headers,
+        rankBoost = rankBoost,
+        providerId = providerId ?: providerName ?: "unknown",
+        providerName = providerName ?: providerId ?: name,
+    )
+
+private fun SourceCandidate.toMobile(): StreamSource =
+    StreamSource(
+        name = name,
+        url = url,
+        infoHash = infoHash,
+        fileIndex = fileIndex,
+        quality = quality,
+        codec = codec,
+        hdr = hdr,
+        audio = audio,
+        language = language,
+        sizeBytes = sizeBytes,
+        headers = headers,
+        rankBoost = rankBoost,
+        providerId = providerId,
+        providerName = providerName,
+    )
