@@ -213,8 +213,9 @@ class TvSearchRepository(
             if (matchedTokens == queryTokens.size) score += 240
         }
 
-        media.releaseInfo
-            ?.substring(0, minOf(media.releaseInfo.length, 4))
+        val releaseInfo = media.releaseInfo
+        releaseInfo
+            ?.substring(0, minOf(releaseInfo.length, 4))
             ?.toIntOrNull()
             ?.let { year ->
                 if (normalizedQuery.contains(year.toString())) score += 100
