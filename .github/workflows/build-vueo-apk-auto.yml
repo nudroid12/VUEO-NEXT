@@ -38,7 +38,7 @@ on:
       - ".github/workflows/build-vueo-apk-auto.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: vueo-next-ci-${{ github.ref }}
@@ -54,7 +54,7 @@ jobs:
   build:
     name: Shared Core + Mobile + TV
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -89,6 +89,7 @@ jobs:
           gradle --version
           test -d "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_API}"
           test -x "$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/aapt"
+          test -x "$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/apksigner"
           echo "Android SDK: $ANDROID_SDK_ROOT"
           echo "Android API: $ANDROID_API"
           echo "Build Tools: $ANDROID_BUILD_TOOLS"
@@ -122,8 +123,8 @@ jobs:
             exit 1
           }
 
-          MOBILE_PACKAGE="$($AAPT dump badging "$MOBILE_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
-          TV_PACKAGE="$($AAPT dump badging "$TV_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+          MOBILE_PACKAGE="$($AAPT dump badging "$MOBILE_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          TV_PACKAGE="$($AAPT dump badging "$TV_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
 
           echo "Mobile APK: $MOBILE_APK"
           echo "Mobile package: $MOBILE_PACKAGE"
@@ -158,6 +159,222 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Detect updater readiness
+        id: updater
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.VUEO_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.VUEO_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          READY=true
+
+          if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::warning::Updater publish skipped: VUEO signing secrets are missing."
+            READY=false
+          fi
+
+          MOBILE_UPDATER="mobile/src/main/java/com/vueo/app/core/update/VueoUpdateManager.kt"
+          TV_UPDATER="tv/src/main/java/com/vueo/tv/update/VueoTvUpdateManager.kt"
+          TV_APP="tv/src/main/java/com/vueo/tv/VueoTvApp.kt"
+
+          if ! grep -Fq "VUEO-NEXT/releases/download/vueo-dev/update.json" "$MOBILE_UPDATER"; then
+            echo "::warning::Updater publish skipped: Mobile updater patch is not installed yet."
+            READY=false
+          fi
+
+          if ! grep -Fq "VUEO-NEXT/releases/download/vueo-dev/tv-update.json" "$TV_UPDATER"; then
+            echo "::warning::Updater publish skipped: TV updater feed is not configured."
+            READY=false
+          fi
+
+          if ! grep -Fq "TV_UPDATER_ENABLED = true" "$TV_APP"; then
+            echo "::warning::Updater publish skipped: TV updater is not enabled yet."
+            READY=false
+          fi
+
+          if ! grep -Fq 'System.getenv("VUEO_VERSION_CODE")' tv/build.gradle.kts; then
+            echo "::warning::Updater publish skipped: TV release/version wiring patch is not installed yet."
+            READY=false
+          fi
+
+          if ! grep -Fq 'System.getenv("VUEO_KEYSTORE_PATH")' tv/build.gradle.kts; then
+            echo "::warning::Updater publish skipped: TV signing wiring patch is not installed yet."
+            READY=false
+          fi
+
+          echo "ready=$READY" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare signed updater build
+        if: steps.updater.outputs.ready == 'true'
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.VUEO_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.VUEO_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          VERSION_CODE="$(date -u +%s)"
+          if [ "$VERSION_CODE" -ge 2100000000 ]; then
+            echo "::error::Generated Android versionCode is too large."
+            exit 1
+          fi
+
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          MOBILE_VERSION_NAME="0.9.6-dev.${GITHUB_RUN_NUMBER}"
+          TV_VERSION_NAME="0.1.0-dev.${GITHUB_RUN_NUMBER}"
+
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/vueo-release.jks"
+          test -s "$RUNNER_TEMP/vueo-release.jks"
+
+          {
+            echo "VUEO_VERSION_CODE=$VERSION_CODE"
+            echo "VUEO_VERSION_NAME=$MOBILE_VERSION_NAME"
+            echo "VUEO_TV_VERSION_NAME=$TV_VERSION_NAME"
+            echo "VUEO_KEYSTORE_PATH=$RUNNER_TEMP/vueo-release.jks"
+            echo "VUEO_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "VUEO_SHORT_SHA=$SHORT_SHA"
+          } >> "$GITHUB_ENV"
+
+          echo "Mobile updater version: $MOBILE_VERSION_NAME ($VERSION_CODE)"
+          echo "TV updater version: $TV_VERSION_NAME ($VERSION_CODE)"
+
+      - name: Build signed updater APKs
+        if: steps.updater.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle \
+            :mobile:assembleRelease \
+            :tv:assembleRelease \
+            --stacktrace \
+            --no-daemon
+
+      - name: Verify signed updater APKs
+        if: steps.updater.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MOBILE_APK="mobile/build/outputs/apk/release/mobile-release.apk"
+          TV_APK="tv/build/outputs/apk/release/tv-release.apk"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/apksigner"
+
+          test -s "$MOBILE_APK"
+          test -s "$TV_APK"
+
+          "$APKSIGNER" verify --verbose --print-certs "$MOBILE_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$TV_APK"
+
+          MOBILE_PACKAGE="$($AAPT dump badging "$MOBILE_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          TV_PACKAGE="$($AAPT dump badging "$TV_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+
+          test "$MOBILE_PACKAGE" = "com.vueo.app"
+          test "$TV_PACKAGE" = "com.vueo.tv"
+
+          echo "Signed Mobile package: $MOBILE_PACKAGE"
+          echo "Signed TV package: $TV_PACKAGE"
+
+      - name: Prepare rolling updater release
+        if: steps.updater.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          cp mobile/build/outputs/apk/release/mobile-release.apk dist/VUEO-Mobile-dev.apk
+          cp tv/build/outputs/apk/release/tv-release.apk dist/VUEO-TV-dev.apk
+
+          MOBILE_SHA256="$(sha256sum dist/VUEO-Mobile-dev.apk | awk '{print $1}')"
+          TV_SHA256="$(sha256sum dist/VUEO-TV-dev.apk | awk '{print $1}')"
+          PUBLISHED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          export MOBILE_SHA256 TV_SHA256 PUBLISHED_AT
+
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+          import os
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base = f"https://github.com/{repo}/releases/download/vueo-dev"
+
+          mobile = {
+              "schemaVersion": 1,
+              "versionCode": int(os.environ["VUEO_VERSION_CODE"]),
+              "versionName": os.environ["VUEO_VERSION_NAME"],
+              "title": f"VUEO {os.environ['VUEO_VERSION_NAME']}",
+              "changelog": [
+                  "Latest successful VUEO NEXT development build",
+                  f"Commit {os.environ['VUEO_SHORT_SHA']}",
+              ],
+              "downloadUrl": f"{base}/VUEO-Mobile-dev.apk",
+              "sha256": os.environ["MOBILE_SHA256"],
+              "publishedAt": os.environ["PUBLISHED_AT"],
+          }
+
+          tv = {
+              "schemaVersion": 1,
+              "versionCode": int(os.environ["VUEO_VERSION_CODE"]),
+              "versionName": os.environ["VUEO_TV_VERSION_NAME"],
+              "title": f"VUEO TV {os.environ['VUEO_TV_VERSION_NAME']}",
+              "changelog": [
+                  "Latest successful VUEO NEXT TV development build",
+                  f"Commit {os.environ['VUEO_SHORT_SHA']}",
+              ],
+              "downloadUrl": f"{base}/VUEO-TV-dev.apk",
+              "sha256": os.environ["TV_SHA256"],
+              "publishedAt": os.environ["PUBLISHED_AT"],
+          }
+
+          Path("dist/update.json").write_text(
+              json.dumps(mobile, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          Path("dist/tv-update.json").write_text(
+              json.dumps(tv, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          sha256sum dist/VUEO-Mobile-dev.apk > dist/VUEO-Mobile-dev.apk.sha256
+          sha256sum dist/VUEO-TV-dev.apk > dist/VUEO-TV-dev.apk.sha256
+
+      - name: Publish rolling updater release
+        if: steps.updater.outputs.ready == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view vueo-dev >/dev/null 2>&1; then
+            gh release upload vueo-dev \
+              dist/VUEO-Mobile-dev.apk \
+              dist/VUEO-Mobile-dev.apk.sha256 \
+              dist/VUEO-TV-dev.apk \
+              dist/VUEO-TV-dev.apk.sha256 \
+              dist/update.json \
+              dist/tv-update.json \
+              --clobber
+          else
+            gh release create vueo-dev \
+              dist/VUEO-Mobile-dev.apk \
+              dist/VUEO-Mobile-dev.apk.sha256 \
+              dist/VUEO-TV-dev.apk \
+              dist/VUEO-TV-dev.apk.sha256 \
+              dist/update.json \
+              dist/tv-update.json \
+              --target "$GITHUB_SHA" \
+              --title "VUEO NEXT Dev" \
+              --prerelease \
+              --notes "Rolling signed development release for VUEO Mobile and VUEO TV."
+          fi
+
       - name: Write build summary
         if: always()
         shell: bash
@@ -174,4 +391,6 @@ jobs:
             echo "| Java | ${JAVA_VERSION} |"
             echo "| Gradle | ${GRADLE_VERSION} |"
             echo "| Commit | ${GITHUB_SHA} |"
+            echo "| Updater ready | ${{ steps.updater.outputs.ready || 'not-applicable' }} |"
+            echo "| Updater release | vueo-dev |"
           } >> "$GITHUB_STEP_SUMMARY"
