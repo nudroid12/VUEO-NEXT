@@ -213,7 +213,7 @@ class VueoUpdateStore(
 object VueoUpdateManager {
     // VUEO_DEV_RELEASE_MANIFEST
     const val DEFAULT_MANIFEST_URL =
-        "https://github.com/nudroid12/VUEO/releases/download/vueo-dev/update.json"
+        "https://github.com/nudroid12/VUEO-NEXT/releases/download/vueo-dev/update.json"
 
     private const val MANIFEST_SCHEMA_VERSION =
         1
@@ -415,6 +415,11 @@ object VueoUpdateManager {
                         release.sha256,
                 )
 
+                verifyDownloadedPackage(
+                    context = appContext,
+                    file = apkFile,
+                )
+
                 withContext(
                     Dispatchers.Main
                 ) {
@@ -610,6 +615,28 @@ object VueoUpdateManager {
             )
         ) {
             "Downloaded APK failed integrity verification."
+        }
+    }
+
+    private fun verifyDownloadedPackage(
+        context: Context,
+        file: File,
+    ) {
+        val info =
+            context.packageManager
+                .getPackageArchiveInfo(
+                    file.absolutePath,
+                    0,
+                )
+                ?: error(
+                    "Downloaded file is not a valid Android APK."
+                )
+
+        require(
+            info.packageName ==
+                context.packageName
+        ) {
+            "Downloaded APK is for ${info.packageName}, not ${context.packageName}."
         }
     }
 

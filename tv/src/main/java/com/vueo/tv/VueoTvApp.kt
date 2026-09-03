@@ -84,7 +84,7 @@ private val VueoPanel = Color(0xFF101412)
 private val VueoGreen = Color(0xFF84E100)
 private val VueoYellow = Color(0xFFD6FF00)
 private val VueoMuted = Color(0xFFAAB2AD)
-private const val TV_UPDATER_ENABLED = false
+private const val TV_UPDATER_ENABLED = true
 
 private enum class TvRootScreen {
     HOME,
