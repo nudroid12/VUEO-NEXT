@@ -1,3 +1,4 @@
+\
 name: VUEO Repo Layout Guard
 
 on:
@@ -41,49 +42,75 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
+          import hashlib
 
           root = Path("src/main")
           if not root.exists():
               print("No stray root src/main tree found.")
               raise SystemExit(0)
 
-          missing = []
-          unknown = []
+          def digest(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open("rb") as fh:
+                  for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          unsafe = []
 
           for path in sorted(p for p in root.rglob("*") if p.is_file()):
               rel = path.relative_to(root)
               parts = rel.parts
+              candidates = []
 
-              target = None
-              if rel.as_posix() == "AndroidManifest.xml":
-                  target = Path("tv/src/main/AndroidManifest.xml")
-              elif len(parts) >= 4 and parts[:4] == ("java", "com", "vueo", "app"):
-                  target = Path("mobile/src/main") / rel
+              if len(parts) >= 4 and parts[:4] == ("java", "com", "vueo", "app"):
+                  candidates = [Path("mobile/src/main") / rel]
               elif len(parts) >= 4 and parts[:4] == ("java", "com", "vueo", "tv"):
-                  target = Path("tv/src/main") / rel
+                  candidates = [Path("tv/src/main") / rel]
+              elif rel.as_posix() == "AndroidManifest.xml":
+                  candidates = [
+                      Path("mobile/src/main/AndroidManifest.xml"),
+                      Path("tv/src/main/AndroidManifest.xml"),
+                  ]
               elif parts and parts[0] == "res":
-                  target = Path("tv/src/main") / rel
+                  # Root res/ came from an earlier flattened module patch.
+                  # Accept deletion only when the exact file already exists
+                  # in Mobile or TV.
+                  candidates = [
+                      Path("mobile/src/main") / rel,
+                      Path("tv/src/main") / rel,
+                  ]
               else:
-                  unknown.append(rel.as_posix())
+                  unsafe.append(f"{rel.as_posix()} (unmapped)")
                   continue
 
-              if not target.is_file():
-                  missing.append(f"{rel.as_posix()} -> {target.as_posix()}")
+              root_hash = digest(path)
+              identical = [
+                  candidate for candidate in candidates
+                  if candidate.is_file() and digest(candidate) == root_hash
+              ]
 
-          if unknown or missing:
-              if unknown:
-                  print("Unknown root files:")
-                  for item in unknown:
-                      print("  ", item)
-              if missing:
-                  print("Root files without canonical module counterpart:")
-                  for item in missing:
-                      print("  ", item)
+              if not identical:
+                  existing = [str(c) for c in candidates if c.is_file()]
+                  if existing:
+                      unsafe.append(
+                          f"{rel.as_posix()} differs from canonical copy/copies: "
+                          + ", ".join(existing)
+                      )
+                  else:
+                      unsafe.append(
+                          f"{rel.as_posix()} has no canonical Mobile/TV counterpart"
+                      )
+
+          if unsafe:
+              print("Stray root files that are NOT safe to delete:")
+              for item in unsafe:
+                  print("  ", item)
               raise SystemExit(
-                  "Refusing to delete src/main because unique/unmapped files may still exist."
+                  "Refusing cleanup because unique or modified root files still exist."
               )
 
-          print("Audit passed: every stray root file has a canonical Mobile/TV counterpart.")
+          print("Audit passed: every root src/main file is an exact duplicate of a canonical module file.")
           PY
 
       - name: Remove stray root source tree
@@ -92,7 +119,7 @@ jobs:
           set -euo pipefail
           if [ -d src ]; then
             rm -rf src
-            echo "Removed stray root src/ tree."
+            echo "Removed duplicate root src/ tree."
           else
             echo "Root src/ already absent."
           fi
@@ -133,7 +160,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle             :shared:core:assembleDebug             :mobile:assembleDebug             :tv:assembleDebug             --stacktrace             --no-daemon
+          gradle \
+            :shared:core:assembleDebug \
+            :mobile:assembleDebug \
+            :tv:assembleDebug \
+            --stacktrace \
+            --no-daemon
 
       - name: Verify final package IDs
         shell: bash
@@ -170,6 +202,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          git commit -m "chore: remove stray root source tree"
+          git commit -m "chore: remove duplicate root source tree"
           git push origin HEAD:main
-            
+          
