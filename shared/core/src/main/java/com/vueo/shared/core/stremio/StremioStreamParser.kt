@@ -46,6 +46,18 @@ object StremioStreamParser {
                 quality = inferQuality(title),
                 codec = inferCodec(title),
                 hdr = inferHdr(title),
+                audio = item.optString("audio")
+                    .takeIf { it.isNotBlank() },
+                language = listOf(
+                    "language",
+                    "lang",
+                    "audioLanguage",
+                    "audio_language",
+                ).firstNotNullOfOrNull { field ->
+                    item.optString(field)
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                },
                 sizeBytes = videoSize,
                 headers = requestHeaders,
                 providerId = manifest.id,
@@ -65,22 +77,31 @@ object StremioStreamParser {
                 .trim()
                 .takeIf(String::isNotBlank)
                 ?: return@mapNotNull null
-            val language = item.optString("lang", "und")
-                .trim()
-                .ifBlank { "und" }
+            val language = listOf(
+                "lang",
+                "language",
+                "languageCode",
+                "locale",
+                "label",
+            ).firstNotNullOfOrNull { field ->
+                item.optString(field)
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+            } ?: "und"
             val sourceId = item.optString("id", language)
                 .trim()
                 .ifBlank { language }
 
             SubtitleCandidate(
-                id = "${manifest.id}:subtitle:$index:$sourceId",
+                id = "${manifest.id}:$index:$sourceId",
                 language = language,
                 url = url,
                 providerId = manifest.id,
                 providerName = manifest.name,
-                name = item.optString("name")
-                    .trim()
-                    .takeIf(String::isNotBlank),
+                name = item.optString(
+                    "title",
+                    item.optString("name"),
+                ).takeIf { it.isNotBlank() },
             )
         }
     }
@@ -99,10 +120,9 @@ object StremioStreamParser {
     private fun inferQuality(text: String): String? {
         val value = text.lowercase()
         return when {
-            "2160" in value || "4k" in value || "uhd" in value -> "4K"
+            "2160" in value || "4k" in value -> "4K"
             "1080" in value -> "1080p"
             "720" in value -> "720p"
-            "576" in value -> "576p"
             "480" in value -> "480p"
             else -> null
         }
@@ -113,7 +133,7 @@ object StremioStreamParser {
         return when {
             "av1" in value -> "AV1"
             "hevc" in value || "h265" in value || "x265" in value -> "HEVC"
-            "h264" in value || "x264" in value || "avc" in value -> "H.264"
+            "h264" in value || "x264" in value -> "H.264"
             else -> null
         }
     }

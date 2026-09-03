@@ -12,6 +12,9 @@ import com.vueo.app.core.model.MediaItem
 import com.vueo.app.core.model.MediaPerson
 import com.vueo.app.core.model.StreamSource
 import com.vueo.app.core.model.SubtitleTrack
+import com.vueo.shared.core.stremio.StremioAddonClient
+import com.vueo.shared.core.stremio.StremioHttpClient
+import com.vueo.shared.core.stremio.StremioManifest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -22,6 +25,20 @@ class StremioAddonProvider private constructor(
     private val base = descriptor.baseUrl
         .removeSuffix("/manifest.json")
         .removeSuffix("/")
+
+    private val sharedClient = StremioAddonClient(
+        manifest = StremioManifest(
+            id = descriptor.id,
+            name = descriptor.name,
+            version = descriptor.version,
+            manifestUrl = descriptor.baseUrl,
+            baseUrl = base,
+            description = descriptor.description,
+            resources = descriptor.resources,
+            types = descriptor.types,
+        ),
+        httpClient = MobileStremioHttpClient,
+    )
 
     override suspend fun catalog(
         type: String,
@@ -45,105 +62,45 @@ class StremioAddonProvider private constructor(
         return json.optJSONObject("meta")?.toMediaItem(descriptor.id)
     }
 
-    override suspend fun streams(type: String, videoId: String): List<StreamSource> {
-        val url = "$base/stream/${Uri.encode(type)}/${Uri.encode(videoId)}.json"
-        val json = JSONObject(SimpleHttp.get(url))
-        val streams = json.optJSONArray("streams") ?: JSONArray()
-
-        return (0 until streams.length()).mapNotNull { index ->
-            val item = streams.optJSONObject(index) ?: return@mapNotNull null
-            val streamUrl = item.optString("url").takeIf { it.isNotBlank() }
-            val infoHash = item.optString("infoHash").takeIf { it.isNotBlank() }
-
-            if (streamUrl == null && infoHash == null) {
-                return@mapNotNull null
-            }
-
-            val title = item.optString(
-                "title",
-                item.optString("name", descriptor.name),
-            )
-
+    override suspend fun streams(type: String, videoId: String): List<StreamSource> =
+        sharedClient.streams(
+            type = type,
+            videoId = videoId,
+        ).map { source ->
             StreamSource(
-                name = title,
-                url = streamUrl,
-                infoHash = infoHash,
-                fileIndex = item.optInt("fileIdx", -1).takeIf { it >= 0 },
-                quality = inferQuality(title),
-                codec = inferCodec(title),
-                hdr = inferHdr(title),
-                audio = item.optString("audio")
-                    .takeIf { it.isNotBlank() },
-                language = listOf(
-                    "language",
-                    "lang",
-                    "audioLanguage",
-                    "audio_language",
-                ).firstNotNullOfOrNull { field ->
-                    item.optString(field)
-                        .trim()
-                        .takeIf { it.isNotBlank() }
-                },
-                providerId = descriptor.id,
-                providerName = descriptor.name,
+                name = source.name,
+                url = source.url,
+                infoHash = source.infoHash,
+                fileIndex = source.fileIndex,
+                quality = source.quality,
+                codec = source.codec,
+                hdr = source.hdr,
+                audio = source.audio,
+                language = source.language,
+                providerId = source.providerId,
+                providerName = source.providerName,
             )
         }
-    }
 
     override suspend fun subtitles(
         type: String,
         id: String,
         extras: Map<String, String>,
-    ): List<SubtitleTrack> {
-        val suffix = encodeExtras(extras)
-        val url = "$base/subtitles/${Uri.encode(type)}/${Uri.encode(id)}$suffix.json"
-        val json = JSONObject(SimpleHttp.get(url))
-        val subtitles = json.optJSONArray("subtitles") ?: JSONArray()
-
-        return (0 until subtitles.length()).mapNotNull { index ->
-            val item = subtitles.optJSONObject(index) ?: return@mapNotNull null
-            val subtitleUrl = item.optString("url")
-                .takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            val subtitleLanguage =
-                listOf(
-                    "lang",
-                    "language",
-                    "languageCode",
-                    "locale",
-                    "label",
-                )
-                    .firstNotNullOfOrNull { field ->
-                        item.optString(field)
-                            .trim()
-                            .takeIf { it.isNotBlank() }
-                    }
-                    ?: "und"
-
+    ): List<SubtitleTrack> =
+        sharedClient.subtitles(
+            type = type,
+            videoId = id,
+            extras = extras,
+        ).map { subtitle ->
             SubtitleTrack(
-                id = buildString {
-                    append(descriptor.id)
-                    append(":")
-                    append(index)
-                    append(":")
-                    append(
-                        item.optString(
-                            "id",
-                            subtitleLanguage,
-                        )
-                    )
-                },
-                language = subtitleLanguage,
-                url = subtitleUrl,
-                providerId = descriptor.id,
-                providerName = descriptor.name,
-                name = item.optString(
-                    "title",
-                    item.optString("name"),
-                ).takeIf { it.isNotBlank() },
+                id = subtitle.id,
+                language = subtitle.language,
+                url = subtitle.url,
+                providerId = subtitle.providerId,
+                providerName = subtitle.providerName,
+                name = subtitle.name,
             )
         }
-    }
 
     companion object {
         suspend fun fromManifestUrl(manifestUrl: String): StremioAddonProvider {
@@ -230,6 +187,10 @@ class StremioAddonProvider private constructor(
             }
         }
     }
+}
+
+private object MobileStremioHttpClient : StremioHttpClient {
+    override suspend fun get(url: String): String = SimpleHttp.get(url)
 }
 
 private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
