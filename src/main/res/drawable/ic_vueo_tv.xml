@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp" />
+            <solid android:color="#050706" />
+        </shape>
+    </item>
+    <item
+        android:drawable="@drawable/vueo_tv_logo"
+        android:gravity="center"
+        android:width="108dp"
+        android:height="108dp" />
+</layer-list>

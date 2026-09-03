@@ -1,8 +1,9 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <style
-        name="Theme.VUEOBase"
+        name="Theme.VUEOTVBase"
         parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#050706</item>
         <item name="android:navigationBarColor">#050706</item>
@@ -10,8 +11,8 @@
     </style>
 
     <style
-        name="Theme.VUEO"
-        parent="@style/Theme.VUEOBase">
-        <item name="android:windowBackground">@drawable/vueo_launch_background</item>
+        name="Theme.VUEOTV"
+        parent="@style/Theme.VUEOTVBase">
+        <item name="android:windowBackground">#050706</item>
     </style>
 </resources>

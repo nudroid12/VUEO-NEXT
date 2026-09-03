@@ -3,33 +3,41 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_vueo"
-        android:roundIcon="@drawable/ic_vueo"
-        android:logo="@drawable/vueo_logo_mark"
-        android:label="VUEO"
+        android:banner="@drawable/vueo_tv_banner"
+        android:icon="@drawable/ic_vueo_tv"
+        android:label="VUEO TV"
+        android:logo="@drawable/vueo_tv_logo"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VUEO"
-        android:usesCleartextTraffic="false">
+        android:theme="@style/Theme.VUEOTV">
         <activity
             android:name=".MainActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="true"
-            android:configChanges="keyboardHidden|orientation|screenSize">
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.vueo.updates"
+            android:authorities="${applicationId}.vueo.tv.updates"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/vueo_update_paths" />
+                android:resource="@xml/vueo_tv_update_paths" />
         </provider>
     </application>
 </manifest>
