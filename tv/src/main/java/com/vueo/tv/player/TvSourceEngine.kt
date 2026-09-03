@@ -5,7 +5,7 @@ import android.net.Uri
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.TmdbResolver
 import com.vueo.shared.core.source.SourceCandidate
-import com.vueo.shared.core.source.SourceRanker
+import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SubtitleCandidate
 import com.vueo.shared.core.stremio.StremioSourceResolver
@@ -89,7 +89,7 @@ class TvSourceEngine(
                 val playable = rankAndDedup(combined, effectiveRequest.originalLanguage)
                 TvSourceProgress(
                     sources = playable,
-                    allSources = orderAllSources(combined, playable),
+                    allSources = orderAllSources(combined),
                     completedResolvers = completedResolvers,
                     totalResolvers = totalResolvers,
                 )
@@ -152,7 +152,7 @@ class TvSourceEngine(
 
         val finalCombined = mutex.withLock { addonCollected + pluginCollected }
         val playable = rankAndDedup(finalCombined, effectiveRequest.originalLanguage)
-        val all = orderAllSources(finalCombined, playable)
+        val all = orderAllSources(finalCombined)
         val discovery =
             TvSourceDiscovery(
                 sources = playable,
@@ -295,32 +295,15 @@ class TvSourceEngine(
         input: List<SourceCandidate>,
         originalLanguage: String?,
     ): List<SourceCandidate> =
-        SourceRanker.rank(
-            sources =
-                input
-                    .filter { it.isDirectPlayable }
-                    .distinctBy { it.url.orEmpty().substringBefore('#') },
+        SourceSelector.playable(
+            sources = input,
             originalLanguage = originalLanguage,
         )
 
     private fun orderAllSources(
         input: List<SourceCandidate>,
-        playable: List<SourceCandidate>,
-    ): List<SourceCandidate> {
-        val playableIds = playable.mapTo(mutableSetOf()) { it.id }
-        val other = input
-            .filter { it.id !in playableIds }
-            .distinctBy { source ->
-                source.infoHash?.let { "torrent:$it:${source.fileIndex ?: -1}" }
-                    ?: "url:${source.url.orEmpty().substringBefore('#')}"
-            }
-            .sortedWith(
-                compareByDescending<SourceCandidate> { it.isTorrent }
-                    .thenBy { it.providerName.lowercase() }
-                    .thenBy { it.name.lowercase() },
-            )
-        return playable + other
-    }
+    ): List<SourceCandidate> =
+        SourceSelector.orderAll(input)
 
     private fun httpGet(url: String): String {
         require(url.startsWith("https://")) {

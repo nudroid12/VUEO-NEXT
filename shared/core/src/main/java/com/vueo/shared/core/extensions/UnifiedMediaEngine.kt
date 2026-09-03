@@ -6,6 +6,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRanker as CoreSourceRanker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -1753,21 +1754,15 @@ object SourceCleaner {
         preferredQuality: String? = null,
         originalLanguage: String? = null,
     ): List<StreamSource> {
-        val sorted =
-            sources.sortedWith(
-                SourceRanker.comparator(
-                    preferredQuality = preferredQuality,
-                    originalLanguage = originalLanguage,
-                )
-            )
-
-        val seen =
-            hashSetOf<String>()
-
-        return sorted.filter { source ->
-            seen.add(
-                identityKey(source)
-            )
+        val indexed = sources.associateBy { source ->
+            SourceSelector.identityKey(source.toSourceCandidate())
+        }
+        return SourceSelector.orderAll(
+            sources = sources.map { it.toSourceCandidate() },
+            preferredQuality = preferredQuality,
+            originalLanguage = originalLanguage,
+        ).mapNotNull { candidate ->
+            indexed[SourceSelector.identityKey(candidate)]
         }
     }
 

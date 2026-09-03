@@ -63,8 +63,19 @@ object SourceRanker : SourceRankingPolicy {
             SourceAudioMatch.FOREIGN_DUB -> -600
         }
         val providerBoost = source.rankBoost.coerceIn(-30, 30)
+        val transportBoost = when {
+            source.url?.startsWith("https://", ignoreCase = true) == true -> 30
+            source.url?.startsWith("http://", ignoreCase = true) == true -> 10
+            else -> 0
+        }
+        val suspiciousPayloadPenalty = when {
+            ".html" in searchable || ".htm" in searchable -> -700
+            ".json" in searchable || ".xml" in searchable -> -500
+            else -> 0
+        }
         val score = directBoost + qualityScore + preferenceBoost +
-            audioBoost + deliveryBoost + codecBoost + providerBoost
+            audioBoost + deliveryBoost + codecBoost + providerBoost +
+            transportBoost + suspiciousPayloadPenalty
 
         return SourceAssessment(
             quality = quality,
