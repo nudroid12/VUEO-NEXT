@@ -18,17 +18,25 @@ data class ProviderCodeSyncResult(
 
 class ProviderCodeStore(context: Context) {
     private val root = File(
-        context.applicationContext.filesDir,
+        context.filesDir,
         "nuvio_plugin_scrapers",
-    ).apply { mkdirs() }
+    ).apply {
+        mkdirs()
+    }
 
     fun read(
         repository: PluginRepositoryDescriptor,
         provider: PluginProviderDescriptor,
     ): String? {
         val file = fileFor(repository, provider)
-        if (!file.isFile) return null
-        return runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
+
+        if (!file.isFile) {
+            return null
+        }
+
+        return runCatching {
+            file.readText(Charsets.UTF_8)
+        }.getOrNull()
     }
 
     fun write(
@@ -44,32 +52,60 @@ class ProviderCodeStore(context: Context) {
     fun has(
         repository: PluginRepositoryDescriptor,
         provider: PluginProviderDescriptor,
-    ): Boolean = fileFor(repository, provider).isFile
+    ): Boolean =
+        fileFor(repository, provider).isFile
 
-    fun readyCount(repository: PluginRepositoryDescriptor): Int =
-        repository.providers.count { has(repository, it) }
+    fun readyCount(
+        repository: PluginRepositoryDescriptor,
+    ): Int =
+        repository.providers.count {
+            has(repository, it)
+        }
 
     fun removeRepository(manifestUrl: String) {
-        runCatching { File(root, hash(manifestUrl)).deleteRecursively() }
+        runCatching {
+            File(root, hash(manifestUrl))
+                .deleteRecursively()
+        }
     }
 
     private fun fileFor(
         repository: PluginRepositoryDescriptor,
         provider: PluginProviderDescriptor,
     ): File {
-        val repoDir = File(root, hash(repository.manifestUrl))
-        val key = listOf(provider.id, provider.version, provider.filename).joinToString("|")
-        return File(repoDir, "${hash(key)}.js")
+        val repoDir = File(
+            root,
+            hash(repository.manifestUrl),
+        )
+
+        val key = listOf(
+            provider.id,
+            provider.version,
+            provider.filename,
+        ).joinToString("|")
+
+        return File(
+            repoDir,
+            "${hash(key)}.js",
+        )
     }
 
     private fun hash(value: String): String =
-        MessageDigest.getInstance("SHA-256")
+        MessageDigest
+            .getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") {
+                "%02x".format(it)
+            }
 }
 
-class ProviderCodeSyncManager(context: Context) {
-    private val store = ProviderCodeStore(context.applicationContext)
+class ProviderCodeSyncManager(
+    context: Context,
+) {
+    private val store = ProviderCodeStore(
+        context.applicationContext
+    )
+
     private val concurrency = Semaphore(4)
 
     suspend fun syncRepository(
@@ -77,21 +113,47 @@ class ProviderCodeSyncManager(context: Context) {
         force: Boolean,
     ): ProviderCodeSyncResult = coroutineScope {
         val errors = mutableListOf<String>()
+
         val outcomes = repository.providers.map { provider ->
             async {
                 concurrency.withPermit {
-                    if (!force && store.has(repository, provider)) {
+                    if (
+                        !force &&
+                        store.has(repository, provider)
+                    ) {
                         return@withPermit true
                     }
+
                     runCatching {
-                        val url = PluginRepositoryClient.providerScriptUrl(repository, provider)
-                        val source = PluginHttp.getText(url)
-                        require(source.isNotBlank()) { "Empty provider script." }
-                        store.write(repository, provider, source)
+                        val url =
+                            PluginRepositoryClient
+                                .providerScriptUrl(
+                                    repository,
+                                    provider,
+                                )
+
+                        val source =
+                            PluginHttp.getText(url)
+
+                        require(source.isNotBlank()) {
+                            "Empty provider script."
+                        }
+
+                        store.write(
+                            repository,
+                            provider,
+                            source,
+                        )
+
                         true
                     }.getOrElse { error ->
                         synchronized(errors) {
-                            errors += "${provider.name}: ${error.message ?: error::class.java.simpleName}"
+                            errors +=
+                                "${provider.name}: " +
+                                (
+                                    error.message
+                                        ?: error::class.java.simpleName
+                                )
                         }
                         false
                     }
@@ -107,7 +169,14 @@ class ProviderCodeSyncManager(context: Context) {
         )
     }
 
-    suspend fun syncMissing(repositories: List<PluginRepositoryDescriptor>) {
-        repositories.forEach { syncRepository(it, force = false) }
+    suspend fun syncMissing(
+        repositories: List<PluginRepositoryDescriptor>,
+    ) {
+        repositories.forEach { repository ->
+            syncRepository(
+                repository = repository,
+                force = false,
+            )
+        }
     }
 }
