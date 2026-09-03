@@ -409,7 +409,7 @@ private fun classifyProviderFailure(message: String): ProviderHealthStatus {
     }
 }
 
-private fun logLine(level: String, args: List<Any?>): String =
+private fun logLine(level: String, args: Array<Any?>): String =
     "$level: ${args.joinToString(" ") { it?.toString().orEmpty() }}".take(700)
 
 private fun parseProviderSources(
