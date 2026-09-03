@@ -1,4 +1,4 @@
-name: VUEO NEXT Foundation Build
+name: VUEO NEXT CI
 
 on:
   workflow_dispatch:
@@ -11,9 +11,24 @@ on:
       - "tv/**"
       - "shared/**"
       - "gradle/**"
-      - "*.gradle.kts"
-      - "gradle.properties"
+      - "build.gradle.kts"
       - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/build-vueo-apk-auto.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - "tv/**"
+      - "shared/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/build-vueo-apk-auto.yml"
@@ -22,126 +37,139 @@ permissions:
   contents: read
 
 concurrency:
-  group: vueo-next-foundation-build
+  group: vueo-next-ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "17"
+  GRADLE_VERSION: "9.3.1"
+  ANDROID_API: "36"
+  ANDROID_BUILD_TOOLS: "36.0.0"
 
 jobs:
   build:
-    name: Build Shared Core, Mobile and TV
+    name: Shared Core + Mobile + TV
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Verify Gradle wrapper
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f ./gradlew
-          test -f ./gradle/wrapper/gradle-wrapper.properties
-          chmod +x ./gradlew
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-${{ env.ANDROID_API }}
+            build-tools;${{ env.ANDROID_BUILD_TOOLS }}
+          log-accepted-android-sdk-licenses: "false"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Install Android SDK 36
+      - name: Verify toolchain
         shell: bash
         run: |
           set -euo pipefail
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager was not found."
-            exit 1
-          fi
-          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          "$SDKMANAGER" --channel=0 \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
+          java -version
+          gradle --version
+          test -d "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_API}"
+          test -x "$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/aapt"
+          echo "Android SDK: $ANDROID_SDK_ROOT"
+          echo "Android API: $ANDROID_API"
+          echo "Build Tools: $ANDROID_BUILD_TOOLS"
 
-      - name: Build foundation
+      - name: Build VUEO NEXT foundation
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew \
+          gradle \
             :shared:core:assembleDebug \
             :mobile:assembleDebug \
             :tv:assembleDebug \
             --stacktrace \
             --no-daemon
 
-      - name: Verify APK package IDs
+      - name: Verify APKs and package IDs
         shell: bash
         run: |
           set -euo pipefail
 
           MOBILE_APK="mobile/build/outputs/apk/debug/mobile-debug.apk"
           TV_APK="tv/build/outputs/apk/debug/tv-debug.apk"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}/aapt"
 
           test -s "$MOBILE_APK" || {
             echo "::error::Mobile debug APK was not generated."
             exit 1
           }
+
           test -s "$TV_APK" || {
             echo "::error::TV debug APK was not generated."
             exit 1
           }
 
-          AAPT="$(find "${ANDROID_HOME}" -path "*/build-tools/36.0.0/aapt" -print -quit)"
-          test -x "$AAPT" || {
-            echo "::error::aapt 36.0.0 was not found."
-            exit 1
-          }
+          MOBILE_PACKAGE="$($AAPT dump badging "$MOBILE_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+          TV_PACKAGE="$($AAPT dump badging "$TV_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
 
-          MOBILE_PACKAGE="$("$AAPT" dump badging "$MOBILE_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
-          TV_PACKAGE="$("$AAPT" dump badging "$TV_APK" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
-
-          echo "Mobile APK package: $MOBILE_PACKAGE"
-          echo "TV APK package: $TV_PACKAGE"
+          echo "Mobile APK: $MOBILE_APK"
+          echo "Mobile package: $MOBILE_PACKAGE"
+          echo "TV APK: $TV_APK"
+          echo "TV package: $TV_PACKAGE"
 
           test "$MOBILE_PACKAGE" = "com.vueo.app" || {
-            echo "::error::Wrong Mobile package ID: $MOBILE_PACKAGE"
-            exit 1
-          }
-          test "$TV_PACKAGE" = "com.vueo.tv" || {
-            echo "::error::Wrong TV package ID: $TV_PACKAGE"
+            echo "::error::Expected Mobile package com.vueo.app, got $MOBILE_PACKAGE"
             exit 1
           }
 
-      - name: Upload Mobile APK
+          test "$TV_PACKAGE" = "com.vueo.tv" || {
+            echo "::error::Expected TV package com.vueo.tv, got $TV_PACKAGE"
+            exit 1
+          }
+
+      - name: Upload Mobile debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VUEO-NEXT-Mobile-Debug
+          name: VUEO-NEXT-Mobile-Debug-${{ github.run_number }}
           path: mobile/build/outputs/apk/debug/mobile-debug.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
-      - name: Upload TV APK
+      - name: Upload TV debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: VUEO-NEXT-TV-Debug
+          name: VUEO-NEXT-TV-Debug-${{ github.run_number }}
           path: tv/build/outputs/apk/debug/tv-debug.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
-      - name: Build summary
+      - name: Write build summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## VUEO NEXT Foundation"
+            echo "## VUEO NEXT CI"
             echo
-            echo "- Shared Core: :shared:core"
-            echo "- Mobile: com.vueo.app"
-            echo "- TV: com.vueo.tv"
-            echo "- Build type: Debug"
+            echo "| Target | Value |"
+            echo "| --- | --- |"
+            echo "| Shared module | :shared:core |"
+            echo "| Mobile | com.vueo.app |"
+            echo "| TV | com.vueo.tv |"
+            echo "| Android API | ${ANDROID_API} |"
+            echo "| Java | ${JAVA_VERSION} |"
+            echo "| Gradle | ${GRADLE_VERSION} |"
+            echo "| Commit | ${GITHUB_SHA} |"
           } >> "$GITHUB_STEP_SUMMARY"
           
