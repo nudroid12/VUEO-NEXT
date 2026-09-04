@@ -18,15 +18,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -47,57 +42,117 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleLanguage
+import com.vueo.shared.core.storage.SubtitleSize
 import com.vueo.shared.core.storage.VueoBackupManager
-import com.vueo.shared.core.storage.VueoProfile
+import com.vueo.tv.BuildConfig
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val HubBlack = Color(0xFF050706)
-private val HubPanel = Color(0xFF101412)
-private val HubGreen = Color(0xFF84E100)
-private val HubMuted = Color(0xFFAAB2AD)
+private val SettingsBlack = Color(0xFF050706)
+private val SettingsPanel = Color(0xFF101612)
+private val SettingsMuted = Color(0xFFAAB2AD)
+private val SettingsGreen = Color(0xFF84E100)
+private val SettingsDanger = Color(0xFFFF8A80)
 
-private sealed interface HubPinFlow {
-    data class UnlockProfile(
-        val profile: VueoProfile,
-    ) : HubPinFlow
+private enum class SettingsCategory(
+    val title: String,
+    val subtitle: String,
+    val badge: String,
+) {
+    PERSONALIZATION(
+        title = "Personalization",
+        subtitle = "User DNA, DNA Match & recommendations.",
+        badge = "DNA",
+    ),
+    CONTENT_MANAGER(
+        title = "Content Manager",
+        subtitle = "Addons, repos & providers.",
+        badge = "CM",
+    ),
+    ENHANCEMENTS(
+        title = "Enhancements",
+        subtitle = "Metadata, ratings & external services.",
+        badge = "+",
+    ),
+    PLAYBACK(
+        title = "Playback",
+        subtitle = "Player & streaming preferences.",
+        badge = "PLAY",
+    ),
+    SUBTITLES(
+        title = "Subtitles",
+        subtitle = "Language & display preferences.",
+        badge = "CC",
+    ),
+    SOURCES(
+        title = "Sources",
+        subtitle = "Source ranking & information.",
+        badge = "SRC",
+    ),
+    APPEARANCE(
+        title = "Appearance",
+        subtitle = "Interface preferences.",
+        badge = "UI",
+    ),
+    DATA_STORAGE(
+        title = "Data & Storage",
+        subtitle = "Backup, history, cache & app data.",
+        badge = "DATA",
+    ),
+    UPDATES(
+        title = "Updates",
+        subtitle = "Version & update preferences.",
+        badge = "UP",
+    ),
+    ABOUT(
+        title = "About VUEO",
+        subtitle = "Privacy, architecture & build information.",
+        badge = "i",
+    ),
+}
 
+private sealed interface SettingsPinFlow {
     data class SetFirst(
         val profileId: String,
         val profileName: String,
-    ) : HubPinFlow
+    ) : SettingsPinFlow
 
     data class SetConfirm(
         val profileId: String,
         val profileName: String,
         val firstPin: String,
-    ) : HubPinFlow
+    ) : SettingsPinFlow
 
     data class ChangeVerify(
         val profileId: String,
         val profileName: String,
-    ) : HubPinFlow
+    ) : SettingsPinFlow
 
     data class RemoveVerify(
         val profileId: String,
         val profileName: String,
-    ) : HubPinFlow
+    ) : SettingsPinFlow
 }
 
 @Composable
@@ -108,19 +163,18 @@ fun TvUserHubScreen(
     onNavigate: (String) -> Unit,
     onProfileChanged: (String) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
+    onCheckForUpdates: ((String) -> Unit) -> Unit,
 ) {
     val navRequesters =
         remember {
             listOf("Home", "Search", "Library", "Settings")
                 .associateWith { FocusRequester() }
         }
-
+    val hubRequesters = remember { List(SettingsCategory.entries.size) { FocusRequester() } }
+    val subPageFirstRequester = remember { FocusRequester() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val pluginStore =
-        remember(context) {
-            PluginStore(context.applicationContext)
-        }
+    val pluginStore = remember(context) { PluginStore(context.applicationContext) }
     val dnaPreferences =
         remember(context) {
             UserDnaPreferences(
@@ -129,99 +183,20 @@ fun TvUserHubScreen(
             )
         }
 
-    val firstProfileRequester = remember { FocusRequester() }
-    var profiles by remember { mutableStateOf(profileStore.profiles()) }
-    var activeProfileId by remember { mutableStateOf(profileStore.activeProfileId()) }
-    var history by remember(activeProfileId) { mutableStateOf(libraryStore.history()) }
-    var resumeEnabled by remember(activeProfileId) {
-        mutableStateOf(settingsStore.resumePlaybackEnabled())
+    var category by remember { mutableStateOf<SettingsCategory?>(null) }
+    var hubFocusIndex by remember { mutableIntStateOf(0) }
+    var profileRevision by remember { mutableIntStateOf(0) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+
+    var includeCredentials by remember {
+        mutableStateOf(settingsStore.includeCredentialsInBackup())
     }
-    var recoveryEnabled by remember(activeProfileId) {
-        mutableStateOf(settingsStore.autoSourceRecoveryEnabled())
-    }
-    var autoNextEnabled by remember(activeProfileId) {
-        mutableStateOf(settingsStore.autoPlayNextEpisodeEnabled())
-    }
-    var quality by remember(activeProfileId) {
-        mutableStateOf(settingsStore.preferredQuality())
-    }
-    var skipSegmentsEnabled by remember(activeProfileId) {
-        mutableStateOf(settingsStore.skipSegmentsEnabled())
-    }
-    var preferredSubtitle by remember(activeProfileId) {
-        mutableStateOf(settingsStore.preferredSubtitleLanguage())
-    }
-    var subtitlesByDefault by remember(activeProfileId) {
-        mutableStateOf(settingsStore.subtitlesOnByDefault())
-    }
-    var autoSelectSubtitle by remember(activeProfileId) {
-        mutableStateOf(settingsStore.autoSelectPreferredSubtitle())
-    }
-    var userDnaEnabled by remember(activeProfileId) {
-        mutableStateOf(dnaPreferences.userDnaEnabled(activeProfileId))
-    }
-    var personalizedRecommendations by remember(activeProfileId) {
-        mutableStateOf(dnaPreferences.personalizedRecommendationsEnabled(activeProfileId))
-    }
-    var showDnaMatch by remember(activeProfileId) {
-        mutableStateOf(dnaPreferences.showDnaMatchEnabled(activeProfileId))
-    }
-    var askOnStartup by remember {
-        mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
-    }
-    var autoUpdates by remember {
-        mutableStateOf(settingsStore.automaticUpdateChecksEnabled())
-    }
-    var tmdbApiKey by remember { mutableStateOf(pluginStore.tmdbApiKey()) }
-    var mdblistApiKey by remember { mutableStateOf(settingsStore.mdblistApiKey()) }
-    var geminiApiKey by remember { mutableStateOf(settingsStore.geminiApiKey()) }
-    var tmdbMetadataEnabled by remember {
-        mutableStateOf(settingsStore.tmdbMetadataEnrichmentEnabled())
-    }
-    var tmdbArtworkEnabled by remember {
-        mutableStateOf(settingsStore.tmdbArtworkEnrichmentEnabled())
-    }
-    var ratingsEnabled by remember {
-        mutableStateOf(settingsStore.mdblistRatingsEnabled())
-    }
-    var geminiEnabled by remember {
-        mutableStateOf(settingsStore.geminiInsightsEnabled())
-    }
-    var metadataStatus by remember { mutableStateOf<String?>(null) }
-    var includeCredentialsInBackup by remember { mutableStateOf(false) }
     var backupStatus by remember { mutableStateOf<String?>(null) }
-    var pinFlow by remember { mutableStateOf<HubPinFlow?>(null) }
+    var historyCount by remember { mutableIntStateOf(libraryStore.history().size) }
+
+    var pinFlow by remember { mutableStateOf<SettingsPinFlow?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
-
-    fun refreshActiveProfileState(
-        profileId: String,
-    ) {
-        activeProfileId = profileId
-        profiles = profileStore.profiles()
-        history = libraryStore.history()
-        resumeEnabled = settingsStore.resumePlaybackEnabled()
-        recoveryEnabled = settingsStore.autoSourceRecoveryEnabled()
-        autoNextEnabled = settingsStore.autoPlayNextEpisodeEnabled()
-        quality = settingsStore.preferredQuality()
-        skipSegmentsEnabled = settingsStore.skipSegmentsEnabled()
-        preferredSubtitle = settingsStore.preferredSubtitleLanguage()
-        subtitlesByDefault = settingsStore.subtitlesOnByDefault()
-        autoSelectSubtitle = settingsStore.autoSelectPreferredSubtitle()
-        userDnaEnabled = dnaPreferences.userDnaEnabled(profileId)
-        personalizedRecommendations = dnaPreferences.personalizedRecommendationsEnabled(profileId)
-        showDnaMatch = dnaPreferences.showDnaMatchEnabled(profileId)
-        askOnStartup = profileStore.askWhoIsWatchingOnStartup()
-        onProfileChanged(profileId)
-    }
-
-    fun activateProfile(
-        profileId: String,
-    ) {
-        if (profileStore.setActiveProfile(profileId)) {
-            refreshActiveProfileState(profileId)
-        }
-    }
 
     val createBackupLauncher =
         rememberLauncherForActivityResult(
@@ -229,16 +204,15 @@ fun TvUserHubScreen(
         ) { uri ->
             if (uri != null) {
                 scope.launch {
-                    backupStatus = "Saving backup…"
+                    backupStatus = "Saving backup..."
                     runCatching {
                         VueoBackupManager.exportToUri(
                             context = context.applicationContext,
                             uri = uri,
-                            includeCredentials = includeCredentialsInBackup,
+                            includeCredentials = includeCredentials,
                         )
                     }.onSuccess { summary ->
-                        backupStatus =
-                            "Backup saved • ${summary.valueCount} values"
+                        backupStatus = "Backup saved • ${summary.valueCount} values"
                     }.onFailure { failure ->
                         backupStatus = failure.message ?: "Unable to save backup"
                     }
@@ -252,22 +226,16 @@ fun TvUserHubScreen(
         ) { uri ->
             if (uri != null) {
                 scope.launch {
-                    backupStatus = "Restoring backup…"
+                    backupStatus = "Restoring backup..."
                     runCatching {
                         VueoBackupManager.restoreFromUri(
                             context = context.applicationContext,
                             uri = uri,
                         )
                     }.onSuccess { summary ->
-                        val restoredProfileId = profileStore.activeProfileId()
-                        refreshActiveProfileState(restoredProfileId)
-                        tmdbApiKey = pluginStore.tmdbApiKey()
-                        mdblistApiKey = settingsStore.mdblistApiKey()
-                        geminiApiKey = settingsStore.geminiApiKey()
-                        tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled()
-                        tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled()
-                        ratingsEnabled = settingsStore.mdblistRatingsEnabled()
-                        geminiEnabled = settingsStore.geminiInsightsEnabled()
+                        historyCount = libraryStore.history().size
+                        profileRevision += 1
+                        onProfileChanged(profileStore.activeProfileId())
                         backupStatus =
                             "Restored ${summary.valueCount} values" +
                                 (summary.sourceVersion?.let { " • VUEO $it" } ?: "")
@@ -278,19 +246,20 @@ fun TvUserHubScreen(
             }
         }
 
-    BackHandler {
-        if (pinFlow != null) {
-            pinFlow = null
-            pinError = null
+    BackHandler(enabled = pinFlow == null) {
+        if (category != null) {
+            category = null
         } else {
             onNavigate("Home")
         }
     }
 
-    LaunchedEffect(activeProfileId) {
+    LaunchedEffect(category, hubFocusIndex) {
         delay(90)
-        runCatching {
-            firstProfileRequester.requestFocus()
+        if (category == null) {
+            runCatching { hubRequesters[hubFocusIndex].requestFocus() }
+        } else {
+            runCatching { subPageFirstRequester.requestFocus() }
         }
     }
 
@@ -302,552 +271,137 @@ fun TvUserHubScreen(
                     Brush.verticalGradient(
                         listOf(
                             Color(0xFF0A100C),
-                            HubBlack,
-                            HubBlack,
+                            SettingsBlack,
+                            SettingsBlack,
                         )
                     )
                 ),
     ) {
-        LazyColumn(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(top = 92.dp),
-            contentPadding =
-                PaddingValues(
-                    start = 58.dp,
-                    end = 58.dp,
-                    bottom = 48.dp,
-                ),
-            verticalArrangement = Arrangement.spacedBy(30.dp),
-        ) {
-            item {
-                Column {
-                    Text(
-                        text = "Settings",
-                        color = Color.White,
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Active profile • ${profileStore.activeProfile().name}",
-                        color = HubMuted,
-                        fontSize = 14.sp,
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Content & Sources",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "Content Manager",
-                        value = "Open",
-                        onClick = { onNavigate("Content Manager") },
-                    )
-                }
-            }
-
-            item {
-                Column {
-                    Text(
-                        text = "Who's Watching",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
-                    ) {
-                        itemsIndexed(
-                            profiles,
-                            key = { _, profile -> profile.id },
-                        ) { index, profile ->
-                            ProfileCard(
-                                profile = profile,
-                                selected = profile.id == activeProfileId,
-                                locked = profileStore.hasProfilePin(profile.id),
-                                modifier =
-                                    if (index == 0) {
-                                        Modifier.focusRequester(firstProfileRequester)
-                                    } else {
-                                        Modifier
-                                    },
-                                onClick = {
-                                    when {
-                                        profile.id == activeProfileId -> Unit
-                                        profileStore.hasProfilePin(profile.id) -> {
-                                            pinError = null
-                                            pinFlow = HubPinFlow.UnlockProfile(profile)
-                                        }
-                                        else -> activateProfile(profile.id)
-                                    }
-                                },
-                            )
-                        }
-
-                        item(key = "add-profile") {
-                            AddProfileCard(
-                                onClick = {
-                                    if (profiles.size < ProfileStore.MAX_PROFILES) {
-                                        val created =
-                                            profileStore.createProfile(
-                                                name = "Profile ${profiles.size + 1}",
-                                                avatar = "avatar_man_1",
-                                                isKids = false,
-                                            )
-                                        profileStore.setActiveProfile(created.id)
-                                        refreshActiveProfileState(created.id)
-                                    }
-                                },
-                            )
-                        }
+        if (category == null) {
+            SettingsHub(
+                profileStore = profileStore,
+                settingsStore = settingsStore,
+                dnaPreferences = dnaPreferences,
+                pluginStore = pluginStore,
+                requesters = hubRequesters,
+                focusedIndex = hubFocusIndex,
+                onSelect = { index, selected ->
+                    hubFocusIndex = index
+                    if (selected == SettingsCategory.CONTENT_MANAGER) {
+                        onNavigate("Content Manager")
+                    } else {
+                        category = selected
                     }
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Playback",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "Resume playback",
-                        value = if (resumeEnabled) "On" else "Off",
-                        onClick = {
-                            resumeEnabled = !resumeEnabled
-                            settingsStore.setResumePlaybackEnabled(resumeEnabled)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Automatic source recovery",
-                        value = if (recoveryEnabled) "On" else "Off",
-                        onClick = {
-                            recoveryEnabled = !recoveryEnabled
-                            settingsStore.setAutoSourceRecoveryEnabled(recoveryEnabled)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Auto play next episode",
-                        value = if (autoNextEnabled) "On" else "Off",
-                        onClick = {
-                            autoNextEnabled = !autoNextEnabled
-                            settingsStore.setAutoPlayNextEpisodeEnabled(autoNextEnabled)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Skip Intro / Recap / Ending",
-                        value = if (skipSegmentsEnabled) "On" else "Off",
-                        onClick = {
-                            skipSegmentsEnabled = !skipSegmentsEnabled
-                            settingsStore.setSkipSegmentsEnabled(skipSegmentsEnabled)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Subtitles by default",
-                        value = if (subtitlesByDefault) "On" else "Off",
-                        onClick = {
-                            subtitlesByDefault = !subtitlesByDefault
-                            settingsStore.setSubtitlesOnByDefault(subtitlesByDefault)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Preferred subtitle",
-                        value = preferredSubtitle.label,
-                        onClick = {
-                            val values = SubtitleLanguage.entries
-                            val next = values[(values.indexOf(preferredSubtitle) + 1) % values.size]
-                            preferredSubtitle = next
-                            settingsStore.setPreferredSubtitleLanguage(next)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Auto select preferred subtitle",
-                        value = if (autoSelectSubtitle) "On" else "Off",
-                        onClick = {
-                            autoSelectSubtitle = !autoSelectSubtitle
-                            settingsStore.setAutoSelectPreferredSubtitle(autoSelectSubtitle)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Preferred quality",
-                        value = quality.label,
-                        onClick = {
-                            val values = PreferredQuality.entries
-                            val next =
-                                values[
-                                    (values.indexOf(quality) + 1) %
-                                        values.size
-                                ]
-                            quality = next
-                            settingsStore.setPreferredQuality(next)
-                        },
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "VUEO DNA",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "User DNA",
-                        value = if (userDnaEnabled) "On" else "Off",
-                        onClick = {
-                            userDnaEnabled = !userDnaEnabled
-                            dnaPreferences.setUserDnaEnabled(activeProfileId, userDnaEnabled)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Personalized recommendations",
-                        value = if (personalizedRecommendations) "On" else "Off",
-                        onClick = {
-                            personalizedRecommendations = !personalizedRecommendations
-                            dnaPreferences.setPersonalizedRecommendationsEnabled(
-                                activeProfileId,
-                                personalizedRecommendations,
-                            )
-                        },
-                    )
-
-                    SettingButton(
-                        title = "DNA Match on details",
-                        value = if (showDnaMatch) "On" else "Off",
-                        onClick = {
-                            showDnaMatch = !showDnaMatch
-                            dnaPreferences.setShowDnaMatchEnabled(activeProfileId, showDnaMatch)
-                        },
-                    )
-
-                    Text(
-                        text = "DNA is calculated locally from this profile's History and My List.",
-                        color = HubMuted,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "App",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "Who's Watching on startup",
-                        value = if (askOnStartup) "On" else "Off",
-                        onClick = {
-                            askOnStartup = !askOnStartup
-                            profileStore.setAskWhoIsWatchingOnStartup(askOnStartup)
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Automatic update checks",
-                        value = if (autoUpdates) "On" else "Off",
-                        onClick = {
-                            autoUpdates = !autoUpdates
-                            settingsStore.setAutomaticUpdateChecksEnabled(autoUpdates)
-                        },
-                    )
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Metadata & Enhancements",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    ApiKeyField(
-                        label = "TMDB API key",
-                        value = tmdbApiKey,
-                        onValueChange = { tmdbApiKey = it },
-                    )
-                    ApiKeyField(
-                        label = "MDBList API key",
-                        value = mdblistApiKey,
-                        onValueChange = { mdblistApiKey = it },
-                    )
-                    ApiKeyField(
-                        label = "Gemini API key",
-                        value = geminiApiKey,
-                        onValueChange = { geminiApiKey = it },
-                    )
-
-                    SettingButton(
-                        title = "Save API keys",
-                        value = "Save",
-                        onClick = {
-                            pluginStore.setTmdbApiKey(tmdbApiKey)
-                            settingsStore.setMdblistApiKey(mdblistApiKey)
-                            settingsStore.setGeminiApiKey(geminiApiKey)
-                            metadataStatus = "API keys saved"
-                        },
-                    )
-
-                    SettingButton(
-                        title = "TMDB metadata",
-                        value = if (tmdbMetadataEnabled) "On" else "Off",
-                        onClick = {
-                            tmdbMetadataEnabled = !tmdbMetadataEnabled
-                            settingsStore.setTmdbMetadataEnrichmentEnabled(tmdbMetadataEnabled)
-                        },
-                    )
-                    SettingButton(
-                        title = "TMDB artwork",
-                        value = if (tmdbArtworkEnabled) "On" else "Off",
-                        onClick = {
-                            tmdbArtworkEnabled = !tmdbArtworkEnabled
-                            settingsStore.setTmdbArtworkEnrichmentEnabled(tmdbArtworkEnabled)
-                        },
-                    )
-                    SettingButton(
-                        title = "MDBList ratings",
-                        value = if (ratingsEnabled) "On" else "Off",
-                        onClick = {
-                            ratingsEnabled = !ratingsEnabled
-                            settingsStore.setMdblistRatingsEnabled(ratingsEnabled)
-                        },
-                    )
-                    SettingButton(
-                        title = "Gemini insights",
-                        value = if (geminiEnabled) "On" else "Off",
-                        onClick = {
-                            geminiEnabled = !geminiEnabled
-                            settingsStore.setGeminiInsightsEnabled(geminiEnabled)
-                        },
-                    )
-
-                    metadataStatus?.let { status ->
-                        Text(
-                            text = status,
-                            color = HubMuted,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-            }
-
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Backup & Migration",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "Include API keys in backup",
-                        value = if (includeCredentialsInBackup) "Yes" else "No",
-                        onClick = {
-                            includeCredentialsInBackup = !includeCredentialsInBackup
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Create VUEO backup",
-                        value = "Export",
-                        onClick = {
-                            createBackupLauncher.launch(
-                                "vueo-backup-${System.currentTimeMillis()}.json"
-                            )
-                        },
-                    )
-
-                    SettingButton(
-                        title = "Restore VUEO backup",
-                        value = "Import",
-                        onClick = {
-                            restoreBackupLauncher.launch(
-                                arrayOf(
-                                    "application/json",
-                                    "text/plain",
-                                    "application/octet-stream",
-                                )
-                            )
-                        },
-                    )
-
-                    Text(
-                        text =
-                            "Backups can migrate profiles, library, playback, settings and content configuration between VUEO Mobile and TV.",
-                        color = HubMuted,
-                        fontSize = 12.sp,
-                    )
-
-                    backupStatus?.let { status ->
-                        Text(
-                            text = status,
-                            color = HubMuted,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-            }
-
-            item {
-                val activeProfile =
-                    profiles.firstOrNull { it.id == activeProfileId }
-                        ?: profileStore.activeProfile()
-                val hasPin = profileStore.hasProfilePin(activeProfile.id)
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Profile Security",
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    SettingButton(
-                        title = "Profile PIN",
-                        value = if (hasPin) "Change PIN" else "Set PIN",
-                        onClick = {
-                            pinError = null
-                            pinFlow =
-                                if (hasPin) {
-                                    HubPinFlow.ChangeVerify(
-                                        profileId = activeProfile.id,
-                                        profileName = activeProfile.name,
-                                    )
-                                } else {
-                                    HubPinFlow.SetFirst(
-                                        profileId = activeProfile.id,
-                                        profileName = activeProfile.name,
-                                    )
-                                }
-                        },
-                    )
-
-                    if (hasPin) {
-                        SettingButton(
-                            title = "Remove profile PIN",
-                            value = "Verify PIN",
-                            onClick = {
+                },
+            )
+        } else {
+            SettingsSubPageShell(
+                title = category!!.title,
+                subtitle = category!!.subtitle,
+            ) {
+                when (category) {
+                    SettingsCategory.PERSONALIZATION ->
+                        PersonalizationPage(
+                            profileStore = profileStore,
+                            dnaPreferences = dnaPreferences,
+                            firstRequester = subPageFirstRequester,
+                            revision = profileRevision,
+                            onOpenDna = { onNavigate("Profile") },
+                            onSetPin = { flow ->
                                 pinError = null
-                                pinFlow =
-                                    HubPinFlow.RemoveVerify(
-                                        profileId = activeProfile.id,
-                                        profileName = activeProfile.name,
+                                pinFlow = flow
+                            },
+                        )
+
+                    SettingsCategory.ENHANCEMENTS ->
+                        EnhancementsPage(
+                            pluginStore = pluginStore,
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                        )
+
+                    SettingsCategory.PLAYBACK ->
+                        PlaybackPage(
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                        )
+
+                    SettingsCategory.SUBTITLES ->
+                        SubtitlesPage(
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                        )
+
+                    SettingsCategory.SOURCES ->
+                        SourcesPage(
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                        )
+
+                    SettingsCategory.APPEARANCE ->
+                        AppearancePage(
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                        )
+
+                    SettingsCategory.DATA_STORAGE ->
+                        DataStoragePage(
+                            firstRequester = subPageFirstRequester,
+                            includeCredentials = includeCredentials,
+                            onIncludeCredentialsChange = {
+                                includeCredentials = it
+                                settingsStore.setIncludeCredentialsInBackup(it)
+                            },
+                            historyCount = historyCount,
+                            backupStatus = backupStatus,
+                            onCreateBackup = {
+                                createBackupLauncher.launch(
+                                    "vueo-backup-${System.currentTimeMillis()}.json"
+                                )
+                            },
+                            onRestoreBackup = {
+                                restoreBackupLauncher.launch(
+                                    arrayOf(
+                                        "application/json",
+                                        "text/plain",
+                                        "application/octet-stream",
                                     )
+                                )
                             },
-                        )
-                    }
-
-                    SettingButton(
-                        title = "Kids profile",
-                        value = if (activeProfile.isKids) "On" else "Off",
-                        onClick = {
-                            profileStore.updateProfile(
-                                profileId = activeProfile.id,
-                                name = activeProfile.name,
-                                avatar = activeProfile.avatar,
-                                isKids = !activeProfile.isKids,
-                            )
-                            profiles = profileStore.profiles()
-                        },
-                    )
-                }
-            }
-
-            if (history.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Recent History",
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Button(
-                            onClick = {
+                            onClearHistory = {
                                 libraryStore.clearHistory()
-                                history = emptyList()
+                                historyCount = 0
                             },
-                            colors =
-                                ButtonDefaults.buttonColors(
-                                    containerColor = Color.White.copy(alpha = 0.10f),
-                                    contentColor = Color.White,
-                                ),
-                            shape = RoundedCornerShape(9.dp),
-                        ) {
-                            Text("Clear")
-                        }
-                    }
-                }
+                        )
 
-                item {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        itemsIndexed(
-                            history.take(12),
-                            key = { _, entry -> entry.mediaKey },
-                        ) { _, entry ->
-                            HistoryCard(
-                                entry = entry,
-                                onClick = { onResume(entry) },
-                            )
-                        }
-                    }
+                    SettingsCategory.UPDATES ->
+                        UpdatesPage(
+                            settingsStore = settingsStore,
+                            firstRequester = subPageFirstRequester,
+                            updateStatus = updateStatus,
+                            onCheck = {
+                                updateStatus = "Checking for updates..."
+                                onCheckForUpdates { result -> updateStatus = result }
+                            },
+                        )
+
+                    SettingsCategory.ABOUT ->
+                        AboutPage(firstRequester = subPageFirstRequester)
+
+                    SettingsCategory.CONTENT_MANAGER,
+                    null -> Unit
                 }
             }
         }
 
         TvTopNav(
             navRequesters = navRequesters,
-            contentDownRequester = firstProfileRequester,
+            contentDownRequester =
+                if (category == null) {
+                    hubRequesters[hubFocusIndex]
+                } else {
+                    subPageFirstRequester
+                },
             selectedLabel = "Settings",
             onSelected = onNavigate,
         )
@@ -857,20 +411,17 @@ fun TvUserHubScreen(
             key(flow, pinResetToken) {
                 val title =
                     when (flow) {
-                        is HubPinFlow.UnlockProfile -> "Unlock ${flow.profile.name}"
-                        is HubPinFlow.SetFirst -> "Set PIN for ${flow.profileName}"
-                        is HubPinFlow.SetConfirm -> "Confirm PIN"
-                        is HubPinFlow.ChangeVerify -> "Verify ${flow.profileName}"
-                        is HubPinFlow.RemoveVerify -> "Remove PIN from ${flow.profileName}"
+                        is SettingsPinFlow.SetFirst -> "Set PIN for ${flow.profileName}"
+                        is SettingsPinFlow.SetConfirm -> "Confirm PIN"
+                        is SettingsPinFlow.ChangeVerify -> "Verify ${flow.profileName}"
+                        is SettingsPinFlow.RemoveVerify -> "Remove PIN from ${flow.profileName}"
                     }
-
                 val subtitle =
                     when (flow) {
-                        is HubPinFlow.UnlockProfile -> "Enter the 4-digit profile PIN"
-                        is HubPinFlow.SetFirst -> "Choose a new 4-digit PIN"
-                        is HubPinFlow.SetConfirm -> "Enter the same PIN again"
-                        is HubPinFlow.ChangeVerify -> "Enter the current PIN before changing it"
-                        is HubPinFlow.RemoveVerify -> "Enter the current PIN to remove the lock"
+                        is SettingsPinFlow.SetFirst -> "Choose a new 4-digit PIN"
+                        is SettingsPinFlow.SetConfirm -> "Enter the same PIN again"
+                        is SettingsPinFlow.ChangeVerify -> "Enter the current PIN before changing it"
+                        is SettingsPinFlow.RemoveVerify -> "Enter the current PIN to remove the lock"
                     }
 
                 TvPinEntryOverlay(
@@ -879,48 +430,32 @@ fun TvUserHubScreen(
                     errorText = pinError,
                     onComplete = { pin ->
                         when (flow) {
-                            is HubPinFlow.UnlockProfile -> {
-                                if (profileStore.verifyProfilePin(flow.profile.id, pin)) {
-                                    pinFlow = null
-                                    pinError = null
-                                    activateProfile(flow.profile.id)
-                                } else {
-                                    pinError = "Incorrect PIN"
-                                    pinResetToken += 1
-                                }
-                            }
-
-                            is HubPinFlow.SetFirst -> {
+                            is SettingsPinFlow.SetFirst -> {
                                 pinError = null
                                 pinFlow =
-                                    HubPinFlow.SetConfirm(
+                                    SettingsPinFlow.SetConfirm(
                                         profileId = flow.profileId,
                                         profileName = flow.profileName,
                                         firstPin = pin,
                                     )
                             }
 
-                            is HubPinFlow.SetConfirm -> {
-                                if (pin == flow.firstPin) {
-                                    if (profileStore.setProfilePin(flow.profileId, pin)) {
-                                        profiles = profileStore.profiles()
-                                        pinFlow = null
-                                        pinError = null
-                                    } else {
-                                        pinError = "Unable to save PIN"
-                                        pinResetToken += 1
-                                    }
+                            is SettingsPinFlow.SetConfirm -> {
+                                if (pin == flow.firstPin && profileStore.setProfilePin(flow.profileId, pin)) {
+                                    pinFlow = null
+                                    pinError = null
+                                    profileRevision += 1
                                 } else {
-                                    pinError = "PINs did not match"
+                                    pinError = if (pin != flow.firstPin) "PINs do not match" else "Unable to save PIN"
                                     pinResetToken += 1
                                 }
                             }
 
-                            is HubPinFlow.ChangeVerify -> {
+                            is SettingsPinFlow.ChangeVerify -> {
                                 if (profileStore.verifyProfilePin(flow.profileId, pin)) {
                                     pinError = null
                                     pinFlow =
-                                        HubPinFlow.SetFirst(
+                                        SettingsPinFlow.SetFirst(
                                             profileId = flow.profileId,
                                             profileName = flow.profileName,
                                         )
@@ -930,12 +465,12 @@ fun TvUserHubScreen(
                                 }
                             }
 
-                            is HubPinFlow.RemoveVerify -> {
+                            is SettingsPinFlow.RemoveVerify -> {
                                 if (profileStore.verifyProfilePin(flow.profileId, pin)) {
                                     profileStore.clearProfilePin(flow.profileId)
-                                    profiles = profileStore.profiles()
                                     pinFlow = null
                                     pinError = null
+                                    profileRevision += 1
                                 } else {
                                     pinError = "Incorrect PIN"
                                     pinResetToken += 1
@@ -954,290 +489,1005 @@ fun TvUserHubScreen(
 }
 
 @Composable
-private fun ApiKeyField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
+private fun SettingsHub(
+    profileStore: ProfileStore,
+    settingsStore: SettingsStore,
+    dnaPreferences: UserDnaPreferences,
+    pluginStore: PluginStore,
+    requesters: List<FocusRequester>,
+    focusedIndex: Int,
+    onSelect: (Int, SettingsCategory) -> Unit,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        colors =
-            OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Color.White,
-                unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
-                focusedLabelColor = Color.White,
-                unfocusedLabelColor = HubMuted,
-                cursorColor = Color.White,
-            ),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    val activeProfile = profileStore.activeProfile()
+    val dnaOn = dnaPreferences.userDnaEnabled(activeProfile.id)
+    val enhancementCount =
+        listOf(
+            pluginStore.tmdbApiKey().isNotBlank(),
+            settingsStore.mdblistApiKey().isNotBlank(),
+            settingsStore.geminiApiKey().isNotBlank(),
+        ).count { it }
+
+    val statuses =
+        mapOf(
+            SettingsCategory.PERSONALIZATION to if (dnaOn) "User DNA on" else "User DNA off",
+            SettingsCategory.CONTENT_MANAGER to "Addons • repos • providers",
+            SettingsCategory.ENHANCEMENTS to if (enhancementCount > 0) "$enhancementCount configured" else "Optional services",
+            SettingsCategory.PLAYBACK to "${settingsStore.preferredQuality().label} • ${if (settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"}",
+            SettingsCategory.SUBTITLES to "${settingsStore.preferredSubtitleLanguage().label} • ${if (settingsStore.subtitlesOnByDefault()) "Default on" else "Default off"}",
+            SettingsCategory.SOURCES to if (settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Smart ranking active",
+            SettingsCategory.APPEARANCE to "VUEO Dark • ${settingsStore.appAccent().label}",
+            SettingsCategory.DATA_STORAGE to "Local device data",
+            SettingsCategory.UPDATES to if (settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Manual checks",
+            SettingsCategory.ABOUT to "VUEO TV ${BuildConfig.VERSION_NAME}",
+        )
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(start = 56.dp, end = 56.dp, top = 112.dp, bottom = 42.dp),
+    ) {
+        Text(
+            text = "Settings",
+            color = Color.White,
+            fontSize = 38.sp,
+            fontWeight = FontWeight.Black,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Configure your VUEO experience",
+            color = SettingsMuted,
+            fontSize = 14.sp,
+        )
+        Spacer(Modifier.height(28.dp))
+
+        SettingsCategory.entries.chunked(5).forEachIndexed { rowIndex, row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                row.forEachIndexed { columnIndex, category ->
+                    val index = rowIndex * 5 + columnIndex
+                    SettingsHubCard(
+                        category = category,
+                        status = statuses.getValue(category),
+                        requester = requesters[index],
+                        onMove = { key ->
+                            val next =
+                                when (key) {
+                                    Key.DirectionLeft -> if (columnIndex > 0) index - 1 else index
+                                    Key.DirectionRight -> if (columnIndex < row.lastIndex) index + 1 else index
+                                    Key.DirectionUp -> if (rowIndex > 0) index - 5 else index
+                                    Key.DirectionDown -> if (rowIndex == 0 && index + 5 < requesters.size) index + 5 else index
+                                    else -> index
+                                }
+                            if (next != index) {
+                                runCatching { requesters[next].requestFocus() }
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                        onClick = { onSelect(index, category) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            if (rowIndex == 0) Spacer(Modifier.height(14.dp))
+        }
+
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "Active profile • ${activeProfile.name}",
+            color = SettingsMuted,
+            fontSize = 12.sp,
+        )
+    }
 }
 
 @Composable
-private fun ProfileCard(
-    profile: VueoProfile,
-    selected: Boolean,
-    locked: Boolean,
-    modifier: Modifier = Modifier,
+private fun SettingsHubCard(
+    category: SettingsCategory,
+    status: String,
+    requester: FocusRequester,
+    onMove: (Key) -> Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        if (focused) 1.07f else 1f,
-        label = "profileScale",
+        targetValue = if (focused) 1.035f else 1f,
+        label = "settingsHubCardScale",
     )
 
     Column(
         modifier =
             modifier
-                .width(168.dp)
+                .height(132.dp)
+                .focusRequester(requester)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) onMove(event.key) else false
+                }
                 .clickable(onClick = onClick)
-                .focusable(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+                .focusable()
+                .background(
+                    if (focused) Color.White.copy(alpha = 0.16f) else SettingsPanel,
+                    RoundedCornerShape(16.dp),
+                )
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) Color.White else Color.White.copy(alpha = 0.09f),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                .padding(horizontal = 18.dp, vertical = 15.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .width(120.dp)
-                    .height(120.dp)
-                    .background(
-                        if (selected) HubGreen.copy(alpha = 0.18f) else HubPanel,
-                        CircleShape,
-                    )
-                    .border(
-                        width = if (focused || selected) 2.dp else 1.dp,
-                        color =
-                            if (focused) Color.White
-                            else if (selected) HubGreen
-                            else Color.White.copy(alpha = 0.12f),
-                        shape = CircleShape,
-                    ),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text =
-                    profile.name
-                        .trim()
-                        .firstOrNull()
-                        ?.uppercase()
-                        ?: "V",
+                text = category.title,
                 color = Color.White,
-                fontSize = 38.sp,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                text = category.badge,
+                color = if (focused) Color.White else SettingsGreen,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Black,
             )
         }
-        Spacer(Modifier.height(8.dp))
         Text(
-            text = profile.name,
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            text = category.subtitle,
+            color = SettingsMuted,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (selected) {
-                Text(
-                    text = "ACTIVE",
-                    color = HubGreen,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                )
-            }
-            if (locked) {
-                Text(
-                    text = "PIN",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                )
-            }
-            if (profile.isKids) {
-                Text(
-                    text = "KIDS",
-                    color = HubGreen,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                )
-            }
-        }
+        Text(
+            text = status,
+            color = if (focused) Color.White else SettingsMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
 @Composable
-private fun AddProfileCard(
-    onClick: () -> Unit,
+private fun SettingsSubPageShell(
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        if (focused) 1.07f else 1f,
-        label = "addProfileScale",
-    )
-
     Column(
         modifier =
             Modifier
-                .width(168.dp)
-                .scale(scale)
-                .onFocusChanged { focused = it.isFocused }
-                .clickable(onClick = onClick)
-                .focusable(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+                .fillMaxSize()
+                .padding(start = 56.dp, end = 56.dp, top = 108.dp, bottom = 34.dp),
     ) {
-        Box(
-            modifier =
-                Modifier
-                    .width(120.dp)
-                    .height(120.dp)
-                    .background(HubPanel, CircleShape)
-                    .border(
-                        width = if (focused) 2.dp else 1.dp,
-                        color = if (focused) Color.White else Color.White.copy(alpha = 0.12f),
-                        shape = CircleShape,
-                    ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "+",
-                color = Color.White,
-                fontSize = 40.sp,
-                fontWeight = FontWeight.Light,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
         Text(
-            text = "Add Profile",
+            text = title,
             color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 34.sp,
+            fontWeight = FontWeight.Black,
         )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = subtitle,
+            color = SettingsMuted,
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(20.dp))
+        content()
     }
 }
 
 @Composable
-private fun SettingButton(
+private fun PersonalizationPage(
+    profileStore: ProfileStore,
+    dnaPreferences: UserDnaPreferences,
+    firstRequester: FocusRequester,
+    revision: Int,
+    onOpenDna: () -> Unit,
+    onSetPin: (SettingsPinFlow) -> Unit,
+) {
+    val activeProfile = remember(revision) { profileStore.activeProfile() }
+    var userDnaEnabled by remember(activeProfile.id, revision) {
+        mutableStateOf(dnaPreferences.userDnaEnabled(activeProfile.id))
+    }
+    var showDnaMatch by remember(activeProfile.id, revision) {
+        mutableStateOf(dnaPreferences.showDnaMatchEnabled(activeProfile.id))
+    }
+    var recommendations by remember(activeProfile.id, revision) {
+        mutableStateOf(dnaPreferences.personalizedRecommendationsEnabled(activeProfile.id))
+    }
+    var askOnStartup by remember(revision) {
+        mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
+    }
+    val hasPin = profileStore.hasProfilePin(activeProfile.id)
+
+    SettingsList {
+        item {
+            SettingRow(
+                title = "Your DNA",
+                subtitle = "View genres, taste signals and DNA strength for ${activeProfile.name}.",
+                value = if (userDnaEnabled) "Open" else "DNA off",
+                requester = firstRequester,
+                enabled = userDnaEnabled,
+                onClick = onOpenDna,
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "User DNA",
+                subtitle = "Use this profile's History, playback progress and My List to build a local taste profile.",
+                checked = userDnaEnabled,
+                onToggle = {
+                    userDnaEnabled = it
+                    dnaPreferences.setUserDnaEnabled(activeProfile.id, it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Show DNA Match",
+                subtitle = "Show a local taste-match score on supported movie and series details.",
+                checked = showDnaMatch,
+                enabled = userDnaEnabled,
+                onToggle = {
+                    showDnaMatch = it
+                    dnaPreferences.setShowDnaMatchEnabled(activeProfile.id, it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Personalized Recommendations",
+                subtitle = "Use User DNA for For You and Because You Watched recommendations.",
+                checked = recommendations,
+                enabled = userDnaEnabled,
+                onToggle = {
+                    recommendations = it
+                    dnaPreferences.setPersonalizedRecommendationsEnabled(activeProfile.id, it)
+                },
+            )
+        }
+        item { SettingsSectionLabel("PROFILE") }
+        item {
+            SettingToggleRow(
+                title = "Ask Who's Watching on startup",
+                subtitle = "Show profile picker at launch when more than one profile exists.",
+                checked = askOnStartup,
+                onToggle = {
+                    askOnStartup = it
+                    profileStore.setAskWhoIsWatchingOnStartup(it)
+                },
+            )
+        }
+        item {
+            SettingRow(
+                title = "Profile PIN",
+                subtitle = "Protect ${activeProfile.name} with a 4-digit TV PIN.",
+                value = if (hasPin) "Change PIN" else "Set PIN",
+                onClick = {
+                    onSetPin(
+                        if (hasPin) {
+                            SettingsPinFlow.ChangeVerify(activeProfile.id, activeProfile.name)
+                        } else {
+                            SettingsPinFlow.SetFirst(activeProfile.id, activeProfile.name)
+                        }
+                    )
+                },
+            )
+        }
+        if (hasPin) {
+            item {
+                SettingRow(
+                    title = "Remove Profile PIN",
+                    subtitle = "Verify the current PIN before removing the profile lock.",
+                    value = "Verify",
+                    danger = true,
+                    onClick = {
+                        onSetPin(SettingsPinFlow.RemoveVerify(activeProfile.id, activeProfile.name))
+                    },
+                )
+            }
+        }
+        item {
+            SettingsInfoCard(
+                title = "Local by design",
+                text = "Turning User DNA off does not delete History, My List or playback progress. It only stops VUEO from using those signals for DNA Match and personalized recommendations.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun EnhancementsPage(
+    pluginStore: PluginStore,
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+) {
+    var tmdbKey by remember { mutableStateOf(pluginStore.tmdbApiKey()) }
+    var mdblistKey by remember { mutableStateOf(settingsStore.mdblistApiKey()) }
+    var geminiKey by remember { mutableStateOf(settingsStore.geminiApiKey()) }
+    var tmdbMetadata by remember { mutableStateOf(settingsStore.tmdbMetadataEnrichmentEnabled()) }
+    var tmdbArtwork by remember { mutableStateOf(settingsStore.tmdbArtworkEnrichmentEnabled()) }
+    var ratings by remember { mutableStateOf(settingsStore.mdblistRatingsEnabled()) }
+    var gemini by remember { mutableStateOf(settingsStore.geminiInsightsEnabled()) }
+
+    SettingsList {
+        item {
+            ApiKeyField(
+                title = "TMDB API Key",
+                value = tmdbKey,
+                requester = firstRequester,
+                onValueChange = {
+                    tmdbKey = it
+                    pluginStore.setTmdbApiKey(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "TMDB Metadata",
+                subtitle = "Use TMDB to enrich metadata when configured.",
+                checked = tmdbMetadata,
+                enabled = tmdbKey.isNotBlank(),
+                onToggle = {
+                    tmdbMetadata = it
+                    settingsStore.setTmdbMetadataEnrichmentEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "TMDB Artwork",
+                subtitle = "Use TMDB artwork enrichment when configured.",
+                checked = tmdbArtwork,
+                enabled = tmdbKey.isNotBlank(),
+                onToggle = {
+                    tmdbArtwork = it
+                    settingsStore.setTmdbArtworkEnrichmentEnabled(it)
+                },
+            )
+        }
+        item { SettingsSectionLabel("MDBLIST") }
+        item {
+            ApiKeyField(
+                title = "MDBList API Key",
+                value = mdblistKey,
+                onValueChange = {
+                    mdblistKey = it
+                    settingsStore.setMdblistApiKey(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Ratings",
+                subtitle = "Show supported external ratings on details.",
+                checked = ratings,
+                enabled = mdblistKey.isNotBlank(),
+                onToggle = {
+                    ratings = it
+                    settingsStore.setMdblistRatingsEnabled(it)
+                },
+            )
+        }
+        item { SettingsSectionLabel("GEMINI") }
+        item {
+            ApiKeyField(
+                title = "Gemini API Key",
+                value = geminiKey,
+                onValueChange = {
+                    geminiKey = it
+                    settingsStore.setGeminiApiKey(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Gemini Insights",
+                subtitle = "Enable optional AI insights when a Gemini key is configured.",
+                checked = gemini,
+                enabled = geminiKey.isNotBlank(),
+                onToggle = {
+                    gemini = it
+                    settingsStore.setGeminiInsightsEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Optional enhancements",
+                text = "VUEO core playback, Content Manager and local Personalization continue to work without external enhancement services.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaybackPage(
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+) {
+    var resume by remember { mutableStateOf(settingsStore.resumePlaybackEnabled()) }
+    var quality by remember { mutableStateOf(settingsStore.preferredQuality()) }
+    var autoRecovery by remember { mutableStateOf(settingsStore.autoSourceRecoveryEnabled()) }
+    var autoNext by remember { mutableStateOf(settingsStore.autoPlayNextEpisodeEnabled()) }
+    var skipSegments by remember { mutableStateOf(settingsStore.skipSegmentsEnabled()) }
+
+    SettingsList {
+        item {
+            SettingToggleRow(
+                title = "Resume Playback",
+                subtitle = "Continue supported titles from the last saved position.",
+                checked = resume,
+                requester = firstRequester,
+                onToggle = {
+                    resume = it
+                    settingsStore.setResumePlaybackEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingRow(
+                title = "Preferred Quality",
+                subtitle = "Preferred resolution used by Smart Source ranking.",
+                value = quality.label,
+                onClick = {
+                    val values = PreferredQuality.entries
+                    quality = values[(values.indexOf(quality) + 1) % values.size]
+                    settingsStore.setPreferredQuality(quality)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Skip Intro / Recap / Ending",
+                subtitle = "Show skip controls when verified segment timestamps are available.",
+                checked = skipSegments,
+                onToggle = {
+                    skipSegments = it
+                    settingsStore.setSkipSegmentsEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Auto-play Next Episode",
+                subtitle = "Start the next episode after the player countdown.",
+                checked = autoNext,
+                onToggle = {
+                    autoNext = it
+                    settingsStore.setAutoPlayNextEpisodeEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Auto Source Recovery",
+                subtitle = "Try ranked alternatives after a playback error while keeping the timestamp.",
+                checked = autoRecovery,
+                onToggle = {
+                    autoRecovery = it
+                    settingsStore.setAutoSourceRecoveryEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Deterministic source selection",
+                text = "VUEO prioritises direct playable sources using resolution, provider health and your preferred quality while keeping manual source selection available.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SubtitlesPage(
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+) {
+    var preferred by remember { mutableStateOf(settingsStore.preferredSubtitleLanguage()) }
+    var secondary by remember { mutableStateOf(settingsStore.secondarySubtitleLanguage()) }
+    var defaultOn by remember { mutableStateOf(settingsStore.subtitlesOnByDefault()) }
+    var autoSelect by remember { mutableStateOf(settingsStore.autoSelectPreferredSubtitle()) }
+    var embeddedPriority by remember { mutableStateOf(settingsStore.embeddedSubtitlePriority()) }
+    var size by remember { mutableStateOf(settingsStore.subtitleSize()) }
+
+    SettingsList {
+        item {
+            SettingRow(
+                title = "Preferred Language",
+                subtitle = "First subtitle language VUEO should prefer when tracks are available.",
+                value = preferred.label,
+                requester = firstRequester,
+                onClick = {
+                    val values = SubtitleLanguage.entries
+                    preferred = values[(values.indexOf(preferred) + 1) % values.size]
+                    settingsStore.setPreferredSubtitleLanguage(preferred)
+                },
+            )
+        }
+        item {
+            SettingRow(
+                title = "Secondary Language",
+                subtitle = "Fallback language when the preferred language is unavailable.",
+                value = secondary.label,
+                onClick = {
+                    val values = SubtitleLanguage.entries
+                    secondary = values[(values.indexOf(secondary) + 1) % values.size]
+                    settingsStore.setSecondarySubtitleLanguage(secondary)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Subtitles On by Default",
+                subtitle = "Prefer showing subtitles automatically when a suitable track exists.",
+                checked = defaultOn,
+                onToggle = {
+                    defaultOn = it
+                    settingsStore.setSubtitlesOnByDefault(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Auto Select Preferred Language",
+                subtitle = "Prioritise your preferred language automatically.",
+                checked = autoSelect,
+                onToggle = {
+                    autoSelect = it
+                    settingsStore.setAutoSelectPreferredSubtitle(it)
+                },
+            )
+        }
+        item {
+            SettingToggleRow(
+                title = "Embedded Subtitle Priority",
+                subtitle = "Prefer tracks already included in the stream before external tracks when possible.",
+                checked = embeddedPriority,
+                onToggle = {
+                    embeddedPriority = it
+                    settingsStore.setEmbeddedSubtitlePriority(it)
+                },
+            )
+        }
+        item {
+            SettingRow(
+                title = "Subtitle Size",
+                subtitle = "Saved display size for the VUEO player.",
+                value = size.label,
+                onClick = {
+                    val values = SubtitleSize.entries
+                    size = values[(values.indexOf(size) + 1) % values.size]
+                    settingsStore.setSubtitleSize(size)
+                },
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Subtitle sources",
+                text = "OpenSubtitles and other subtitle addons remain in Content Manager. This page only controls how VUEO chooses and displays discovered tracks.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourcesPage(
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+) {
+    var technicalDetails by remember { mutableStateOf(settingsStore.showSourceTechnicalDetails()) }
+
+    SettingsList {
+        item {
+            SettingToggleRow(
+                title = "Technical Source Details",
+                subtitle = "Show codec, HDR and audio information on Source Picker cards.",
+                checked = technicalDetails,
+                requester = firstRequester,
+                onToggle = {
+                    technicalDetails = it
+                    settingsStore.setShowSourceTechnicalDetails(it)
+                },
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Smart Source Ranking • Active",
+                text = "VUEO ranks direct playability, resolution, HDR, codec information, provider health, response latency and your preferred quality.",
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Provider Health Influence • Active",
+                text = "Healthy and responsive providers receive a ranking advantage without blocking other available sources.",
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Progressive discovery",
+                text = "The Source Picker opens immediately and updates while providers continue searching, so slow providers do not block fast ones.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppearancePage(
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+) {
+    var accent by remember { mutableStateOf(settingsStore.appAccent()) }
+
+    SettingsList {
+        item {
+            SettingRow(
+                title = "Brand Accent",
+                subtitle = "White focus remains fixed for TV readability. Accent affects supported VUEO branding surfaces.",
+                value = accent.label,
+                requester = firstRequester,
+                onClick = {
+                    val values = AppAccent.entries
+                    accent = values[(values.indexOf(accent) + 1) % values.size]
+                    settingsStore.setAppAccent(accent)
+                },
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Theme • VUEO Dark",
+                text = "Dark charcoal surfaces stay fixed for comfortable movie browsing and playback in a living-room environment.",
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "TV Focus • White + Scale",
+                text = "Focused controls use a bright white outline and subtle scale so D-pad position stays obvious from a sofa.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun DataStoragePage(
+    firstRequester: FocusRequester,
+    includeCredentials: Boolean,
+    onIncludeCredentialsChange: (Boolean) -> Unit,
+    historyCount: Int,
+    backupStatus: String?,
+    onCreateBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
+    onClearHistory: () -> Unit,
+) {
+    SettingsList {
+        item {
+            SettingToggleRow(
+                title = "Include API Keys in Backup",
+                subtitle = "Credentials are excluded by default. Enable only for a personal migration file you control.",
+                checked = includeCredentials,
+                requester = firstRequester,
+                onToggle = onIncludeCredentialsChange,
+            )
+        }
+        item {
+            SettingRow(
+                title = "Create VUEO Backup",
+                subtitle = "Export profiles, Content Manager configuration, Settings, library and playback data.",
+                value = "Export",
+                onClick = onCreateBackup,
+            )
+        }
+        item {
+            SettingRow(
+                title = "Restore VUEO Backup",
+                subtitle = "Import a VUEO backup created on Mobile or TV.",
+                value = "Import",
+                onClick = onRestoreBackup,
+            )
+        }
+        item {
+            SettingRow(
+                title = "Watch History",
+                subtitle = "$historyCount saved history ${if (historyCount == 1) "entry" else "entries"} on this active profile.",
+                value = if (historyCount > 0) "Clear" else "Empty",
+                enabled = historyCount > 0,
+                danger = historyCount > 0,
+                onClick = onClearHistory,
+            )
+        }
+        if (!backupStatus.isNullOrBlank()) {
+            item {
+                SettingsInfoCard(
+                    title = "Backup Status",
+                    text = backupStatus,
+                )
+            }
+        }
+        item {
+            SettingsInfoCard(
+                title = "Local device data",
+                text = "Cache, downloaded provider scripts and health diagnostics are rebuilt instead of copied into backups.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpdatesPage(
+    settingsStore: SettingsStore,
+    firstRequester: FocusRequester,
+    updateStatus: String?,
+    onCheck: () -> Unit,
+) {
+    var automatic by remember { mutableStateOf(settingsStore.automaticUpdateChecksEnabled()) }
+
+    SettingsList {
+        item {
+            SettingToggleRow(
+                title = "Automatic Update Checks",
+                subtitle = "Check the VUEO TV release feed automatically when the app starts.",
+                checked = automatic,
+                requester = firstRequester,
+                onToggle = {
+                    automatic = it
+                    settingsStore.setAutomaticUpdateChecksEnabled(it)
+                },
+            )
+        }
+        item {
+            SettingRow(
+                title = "Check for Updates",
+                subtitle = "Current version ${BuildConfig.VERSION_NAME} • build ${BuildConfig.VERSION_CODE}",
+                value = "Check Now",
+                onClick = onCheck,
+            )
+        }
+        if (!updateStatus.isNullOrBlank()) {
+            item {
+                SettingsInfoCard(
+                    title = "Update Status",
+                    text = updateStatus,
+                )
+            }
+        }
+        item {
+            SettingsInfoCard(
+                title = "In-place updates",
+                text = "VUEO TV updates install over the existing app and keep local profiles, settings and library data.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun AboutPage(
+    firstRequester: FocusRequester,
+) {
+    SettingsList {
+        item {
+            SettingsInfoCard(
+                title = "VUEO TV ${BuildConfig.VERSION_NAME}",
+                text = "Build ${BuildConfig.VERSION_CODE} • package com.vueo.tv",
+                requester = firstRequester,
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Local-first",
+                text = "Profiles, User DNA, My List, history, playback progress and preferences are stored locally on the device unless you explicitly export a backup.",
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "Content architecture",
+                text = "Content Manager handles addons, repositories and provider plugins. Smart Source ranks discovered playback candidates independently of the interface.",
+            )
+        }
+        item {
+            SettingsInfoCard(
+                title = "10-foot TV interface",
+                text = "VUEO TV is designed for D-pad navigation with readable typography, obvious focus and no cursor requirement.",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsList(
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun SettingRow(
     title: String,
+    subtitle: String,
     value: String,
+    requester: FocusRequester? = null,
+    enabled: Boolean = true,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        if (focused) 1.02f else 1f,
-        label = "settingScale",
+        targetValue = if (focused && enabled) 1.012f else 1f,
+        label = "settingsRowScale",
     )
+    val requesterModifier = if (requester != null) Modifier.focusRequester(requester) else Modifier
 
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .then(requesterModifier)
                 .scale(scale)
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(enabled = enabled, onClick = onClick)
+                .focusable(enabled)
                 .background(
-                    if (focused) Color.White.copy(alpha = 0.10f) else HubPanel,
-                    RoundedCornerShape(11.dp),
+                    when {
+                        focused && enabled -> Color.White.copy(alpha = 0.16f)
+                        else -> SettingsPanel
+                    },
+                    RoundedCornerShape(13.dp),
                 )
                 .border(
-                    1.dp,
-                    if (focused) Color.White.copy(alpha = 0.72f)
-                    else Color.White.copy(alpha = 0.08f),
-                    RoundedCornerShape(11.dp),
+                    width = if (focused && enabled) 2.dp else 1.dp,
+                    color =
+                        when {
+                            focused && enabled -> Color.White
+                            else -> Color.White.copy(alpha = 0.08f)
+                        },
+                    shape = RoundedCornerShape(13.dp),
                 )
-                .onFocusChanged { focused = it.isFocused }
-                .clickable(onClick = onClick)
-                .focusable()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(horizontal = 20.dp, vertical = 15.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = if (enabled) Color.White else SettingsMuted.copy(alpha = 0.55f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = SettingsMuted.copy(alpha = if (enabled) 1f else 0.50f),
+                fontSize = 11.sp,
+            )
+        }
+        Spacer(Modifier.width(22.dp))
         Text(
             text = value,
-            color = if (focused) Color.White else HubMuted,
-            fontSize = 14.sp,
+            color =
+                when {
+                    danger && enabled -> SettingsDanger
+                    focused && enabled -> Color.White
+                    enabled -> SettingsMuted
+                    else -> SettingsMuted.copy(alpha = 0.45f)
+                },
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
         )
     }
 }
 
 @Composable
-private fun HistoryCard(
-    entry: LibraryPlaybackEntry,
-    onClick: () -> Unit,
+private fun SettingToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    requester: FocusRequester? = null,
+    enabled: Boolean = true,
+    onToggle: (Boolean) -> Unit,
+) {
+    SettingRow(
+        title = title,
+        subtitle = subtitle,
+        value = if (checked) "On" else "Off",
+        requester = requester,
+        enabled = enabled,
+        onClick = { onToggle(!checked) },
+    )
+}
+
+@Composable
+private fun ApiKeyField(
+    title: String,
+    value: String,
+    requester: FocusRequester? = null,
+    onValueChange: (String) -> Unit,
+) {
+    val requesterModifier = if (requester != null) Modifier.focusRequester(requester) else Modifier
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(title) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(requesterModifier),
+        colors =
+            OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color.White,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+                focusedLabelColor = Color.White,
+                unfocusedLabelColor = SettingsMuted,
+                cursorColor = Color.White,
+            ),
+    )
+}
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(
+        text = text,
+        color = SettingsMuted,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Black,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun SettingsInfoCard(
+    title: String,
+    text: String,
+    requester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        if (focused) 1.05f else 1f,
-        label = "historyScale",
-    )
+    val requesterModifier = if (requester != null) Modifier.focusRequester(requester) else Modifier
 
     Column(
         modifier =
             Modifier
-                .width(240.dp)
-                .scale(scale)
-                .background(HubPanel, RoundedCornerShape(11.dp))
-                .border(
-                    1.dp,
-                    if (focused) Color.White else Color.White.copy(alpha = 0.10f),
-                    RoundedCornerShape(11.dp),
-                )
+                .fillMaxWidth()
+                .then(requesterModifier)
                 .onFocusChanged { focused = it.isFocused }
-                .clickable(onClick = onClick)
-                .focusable()
-                .padding(16.dp),
+                .focusable(requester != null)
+                .background(SettingsPanel, RoundedCornerShape(13.dp))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) Color.White else Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(13.dp),
+                )
+                .padding(horizontal = 20.dp, vertical = 15.dp),
     ) {
         Text(
-            text = entry.media.name,
+            text = title,
             color = Color.White,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
-            text =
-                entry.episodeTitle
-                    ?: entry.media.displayType,
-            color = HubMuted,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(10.dp))
-        LinearProgressIndicator(
-            progress = { entry.progressFraction.coerceIn(0f, 1f) },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(4.dp),
-        )
-        Spacer(Modifier.height(7.dp))
-        Text(
-            text =
-                if (entry.isCompleted) {
-                    "Watched"
-                } else {
-                    "${(entry.progressFraction * 100).toInt()}% watched"
-                },
-            color = if (entry.isCompleted) HubGreen else HubMuted,
+            text = text,
+            color = SettingsMuted,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            lineHeight = 15.sp,
         )
     }
 }

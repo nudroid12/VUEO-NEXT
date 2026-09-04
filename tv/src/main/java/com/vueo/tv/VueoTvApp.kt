@@ -316,6 +316,29 @@ fun VueoTvApp() {
                                 selectedSubtitles = emptyList()
                                 currentScreen = TvRootScreen.SOURCE_PICKER
                             },
+                            onCheckForUpdates = { report ->
+                                VueoTvUpdateManager.check(
+                                    context = context.applicationContext,
+                                    force = true,
+                                ) { result ->
+                                    val release = result.release
+                                    when {
+                                        !result.error.isNullOrBlank() -> {
+                                            report(result.error)
+                                        }
+                                        release != null &&
+                                            VueoTvUpdateManager.isNewerThanCurrent(context, release) -> {
+                                            updateRelease = release
+                                            updateVisible = true
+                                            updateError = null
+                                            report("Update ${release.versionName} available")
+                                        }
+                                        else -> {
+                                            report("VUEO TV is up to date.")
+                                        }
+                                    }
+                                }
+                            },
                         )
 
                     TvRootScreen.DETAIL -> {
