@@ -8,6 +8,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +60,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -94,7 +99,9 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.player.PlayerSkipRepository
+import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
@@ -153,6 +160,10 @@ fun TvPlayerScreen(
                 context = context.applicationContext,
                 prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
             )
+        }
+    val pluginStore =
+        remember(context) {
+            PluginStore(context.applicationContext)
         }
     val subtitleDelayUs = remember(request.cacheKey) {
         java.util.concurrent.atomic.AtomicLong(
@@ -568,31 +579,52 @@ fun TvPlayerScreen(
     }
 
 
-    LaunchedEffect(request.cacheKey, contentWarningsEnabled) {
+    LaunchedEffect(
+        request.media.id,
+        request.videoId,
+        contentWarningsEnabled,
+    ) {
         contentWarnings = emptyList()
         showContentWarnings = false
         contentWarningsShown = false
-        if (!contentWarningsEnabled) return@LaunchedEffect
-        val imdbId = ContentWarningRepository.extractImdbId(request.media.id)
-            ?: ContentWarningRepository.extractImdbId(request.videoId)
-            ?: return@LaunchedEffect
-        contentWarnings = withContext(Dispatchers.IO) {
-            ContentWarningRepository.get(imdbId)
+
+        if (!contentWarningsEnabled) {
+            return@LaunchedEffect
+        }
+
+        val directImdbId =
+            ContentWarningRepository.extractImdbId(request.media.id)
+                ?: ContentWarningRepository.extractImdbId(request.videoId)
+        val imdbId = directImdbId ?: runCatching {
+            TmdbEnhancementClient.prepareForCore(
+                item = request.media,
+                apiKey = pluginStore.tmdbApiKey(),
+            ).id
+        }.getOrNull()?.let(ContentWarningRepository::extractImdbId)
+
+        if (imdbId != null) {
+            contentWarnings = withContext(Dispatchers.IO) {
+                ContentWarningRepository.get(imdbId)
+            }
         }
     }
 
-    LaunchedEffect(isPlaying, contentWarnings, contentWarningsEnabled, resumePromptVisible) {
+    LaunchedEffect(
+        isPlaying,
+        contentWarnings,
+        contentWarningsEnabled,
+    ) {
+        if (!isPlaying || !contentWarningsEnabled) {
+            showContentWarnings = false
+            return@LaunchedEffect
+        }
+
         if (
-            isPlaying &&
-            !resumePromptVisible &&
-            contentWarningsEnabled &&
             contentWarnings.isNotEmpty() &&
             !contentWarningsShown
         ) {
             contentWarningsShown = true
             showContentWarnings = true
-            delay(CONTENT_WARNING_VISIBLE_MS)
-            showContentWarnings = false
         }
     }
 
@@ -916,11 +948,25 @@ fun TvPlayerScreen(
             }
         }
 
-        if (showContentWarnings && sidePanel == null && !resumePromptVisible) {
-            ContentWarningsOverlay(
-                warnings = contentWarnings,
-                modifier = Modifier.align(Alignment.TopStart),
-            )
+        if (
+            showContentWarnings &&
+            contentWarnings.isNotEmpty()
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(
+                        start = 32.dp,
+                        top = 20.dp,
+                    ),
+            ) {
+                ContentWarningsOverlay(
+                    warnings = contentWarnings,
+                    onAnimationComplete = {
+                        showContentWarnings = false
+                    },
+                )
+            }
         }
 
         sessionNotice?.let { notice ->
@@ -1058,8 +1104,9 @@ fun TvPlayerScreen(
                     onContentWarningsChange = { enabled ->
                         contentWarningsEnabled = enabled
                         settingsStore.setContentWarningsEnabled(enabled)
-                        if (!enabled) showContentWarnings = false
-                        if (enabled) contentWarningsShown = false
+                        if (!enabled) {
+                            showContentWarnings = false
+                        }
                     },
                     onClose = {
                         sidePanel = null
@@ -2663,42 +2710,101 @@ private fun ResumePromptOverlay(
 @Composable
 private fun ContentWarningsOverlay(
     warnings: List<ContentWarning>,
-    modifier: Modifier = Modifier,
+    onAnimationComplete: () -> Unit,
 ) {
-    if (warnings.isEmpty()) return
-    Column(
-        modifier =
-            modifier
-                .padding(start = 56.dp, top = 132.dp)
-                .width(285.dp)
-                .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(14.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-    ) {
-        Text(
-            "Content warning",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
+    val count = warnings.size
+    val totalLineHeight = (count * 14) + ((count - 1) * 2)
+    val containerAlpha = remember { Animatable(0f) }
+    val lineHeightFraction = remember { Animatable(0f) }
+    val itemAlphas = remember(count) {
+        List(count) { Animatable(0f) }
+    }
+
+    LaunchedEffect(warnings) {
+        containerAlpha.animateTo(1f, tween(300))
+        lineHeightFraction.animateTo(
+            1f,
+            tween(400, easing = FastOutSlowInEasing),
         )
-        Spacer(Modifier.height(7.dp))
-        warnings.forEach { warning ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(warning.label, color = PlayerMuted, fontSize = 12.sp)
-                Text(
-                    warning.severity,
-                    color = if (warning.severityRank == 0) PlayerDanger else Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+
+        for (index in 0 until count) {
+            delay(80L)
+            itemAlphas[index].animateTo(1f, tween(200))
+        }
+
+        delay(5_000L)
+
+        for (index in (count - 1) downTo 0) {
+            delay(60L)
+            itemAlphas[index].animateTo(0f, tween(150))
+        }
+
+        delay(100L)
+        lineHeightFraction.animateTo(
+            0f,
+            tween(300, easing = FastOutSlowInEasing),
+        )
+        delay(200L)
+        containerAlpha.animateTo(0f, tween(200))
+        onAnimationComplete()
+    }
+
+    if (containerAlpha.value <= 0f) {
+        return
+    }
+
+    Row(
+        modifier = Modifier.alpha(containerAlpha.value),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(
+                    (
+                        totalLineHeight *
+                            lineHeightFraction.value
+                    ).dp
                 )
+                .clip(RoundedCornerShape(50))
+                .background(VueoPlayerWarningAccent),
+        )
+        Column(
+            modifier = Modifier.padding(start = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            warnings.forEachIndexed { index, warning ->
+                Row(
+                    modifier = Modifier
+                        .alpha(
+                            itemAlphas
+                                .getOrNull(index)
+                                ?.value
+                                ?: 0f
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        warning.label,
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        " · ${warning.severity}",
+                        color = Color.White.copy(alpha = .56f),
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                    )
+                }
             }
-            Spacer(Modifier.height(3.dp))
         }
     }
 }
+
+private val VueoPlayerWarningAccent =
+    Color(0xFFB9FF3A)
 
 @Composable
 private fun SessionNoticeOverlay(
@@ -3240,7 +3346,6 @@ private fun formatTime(ms: Long): String {
 
 private const val AUTO_NEXT_COUNTDOWN_SECONDS = 5
 private const val RESUME_PROMPT_THRESHOLD_MS = 5_000L
-private const val CONTENT_WARNING_VISIBLE_MS = 6_000L
 private const val BUFFER_RECOVERY_TIMEOUT_MS = 18_000L
 private const val SEEK_STEP_MS = 10_000L
 private const val TRACK_SELECTION_OFF = "__off__"
