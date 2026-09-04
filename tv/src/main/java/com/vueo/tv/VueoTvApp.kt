@@ -100,7 +100,7 @@ private val VueoMuted = Color(0xFFAAB2AD)
 private const val TV_UPDATER_ENABLED = true
 
 internal val TV_TOP_NAV_LABELS =
-    listOf("Search", "Home", "Library", "Movie", "Series", "Anime")
+    listOf("Search", "Library", "Home", "Movie", "Series", "Anime")
 
 private enum class TvRootScreen {
     HOME,
@@ -892,19 +892,18 @@ internal fun TvTopNav(
                     downRequester = contentDownRequester,
                     onClick = { onSelected("Search") },
                 )
+                TvLibraryNavItem(
+                    selected = selectedLabel == "Library",
+                    requester = navRequesters.getValue("Library"),
+                    downRequester = contentDownRequester,
+                    onClick = { onSelected("Library") },
+                )
                 TvNavItem(
                     label = "Home",
                     selected = selectedLabel == "Home",
                     requester = navRequesters.getValue("Home"),
                     downRequester = contentDownRequester,
                     onClick = { onSelected("Home") },
-                )
-                TvNavItem(
-                    label = "Library",
-                    selected = selectedLabel == "Library",
-                    requester = navRequesters.getValue("Library"),
-                    downRequester = contentDownRequester,
-                    onClick = { onSelected("Library") },
                 )
                 TvNavItem(
                     label = "Movie",
@@ -1027,6 +1026,77 @@ private fun TvSearchNavItem(
                 color = Color.White,
                 start = androidx.compose.ui.geometry.Offset(size.width * 0.64f, size.height * 0.64f),
                 end = androidx.compose.ui.geometry.Offset(size.width * 0.88f, size.height * 0.88f),
+                strokeWidth = stroke,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvLibraryNavItem(
+    selected: Boolean,
+    requester: FocusRequester,
+    downRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.09f else 1f,
+        label = "libraryNavScale",
+    )
+
+    Box(
+        modifier =
+            Modifier
+                .width(42.dp)
+                .height(42.dp)
+                .focusRequester(requester)
+                .tvVerticalFocus(down = downRequester)
+                .scale(scale)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) TvFocusMemory.rememberNav("Library")
+                }
+                .clickable(onClick = onClick)
+                .focusable()
+                .background(
+                    color =
+                        when {
+                            selected -> Color.White.copy(alpha = 0.16f)
+                            focused -> Color.White.copy(alpha = 0.12f)
+                            else -> Color.Transparent
+                        },
+                    shape = CircleShape,
+                )
+                .border(
+                    width = if (focused) 2.dp else 0.dp,
+                    color = if (focused) Color.White else Color.Transparent,
+                    shape = CircleShape,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.width(21.dp).height(21.dp)) {
+            val stroke = 1.9.dp.toPx()
+            val spineWidth = size.width * 0.20f
+            val gap = size.width * 0.08f
+            val top = size.height * 0.16f
+            val bookHeight = size.height * 0.68f
+            val startX = size.width * 0.12f
+
+            repeat(3) { index ->
+                val left = startX + index * (spineWidth + gap)
+                drawRoundRect(
+                    color = Color.White,
+                    topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(spineWidth, bookHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.8.dp.toPx()),
+                    style = Stroke(width = stroke),
+                )
+            }
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.88f),
+                end = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.88f),
                 strokeWidth = stroke,
             )
         }
