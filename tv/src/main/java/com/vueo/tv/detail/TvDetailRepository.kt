@@ -1,6 +1,13 @@
 package com.vueo.tv.detail
 
+import android.content.Context
+import com.vueo.shared.core.enrichment.MediaRating
+import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
+import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
+import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.data.TvMediaItem
+import com.vueo.tv.player.TvPlaybackStore
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -8,14 +15,24 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-class TvDetailRepository {
+class TvDetailRepository(
+    context: Context,
+) {
+    private val appContext = context.applicationContext
+    private val pluginStore = PluginStore(appContext)
+    private val settingsStore =
+        SettingsStore(
+            context = appContext,
+            prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+        )
+
     suspend fun load(seed: TvMediaItem): TvDetailData =
         withContext(Dispatchers.IO) {
             val url = "$CINEMETA_BASE/meta/${seed.type}/${seed.id}.json"
             val root = JSONObject(httpGet(url))
             val meta = root.optJSONObject("meta") ?: root
 
-            val media =
+            val cinemetaMedia =
                 TvMediaItem(
                     id = meta.optString("id").trim().ifBlank { seed.id },
                     type = meta.optString("type").trim().ifBlank { seed.type },
@@ -28,16 +45,67 @@ class TvDetailRepository {
                     imdbRating = meta.flexibleDouble("imdbRating", "imdb_rating") ?: seed.imdbRating,
                 )
 
+            val enhanced =
+                MetadataEnhancementEngine.enrich(
+                    media = cinemetaMedia,
+                    options =
+                        MetadataEnhancementOptions(
+                            tmdbApiKey = pluginStore.tmdbApiKey(),
+                            mdblistApiKey = settingsStore.mdblistApiKey(),
+                            tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
+                            tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
+                            richDetailsEnabled = true,
+                            ratingsEnabled = settingsStore.mdblistRatingsEnabled(),
+                        ),
+                )
+
+            val media = enhanced.media
+            val ratings =
+                enhanced.ratings.filter { rating ->
+                    when (rating.source) {
+                        "imdb" -> settingsStore.mdblistImdbEnabled()
+                        "tomatoes" -> settingsStore.mdblistRottenTomatoesEnabled()
+                        "metacritic" -> settingsStore.mdblistMetacriticEnabled()
+                        "tmdb" -> settingsStore.mdblistTmdbRatingEnabled()
+                        "trakt" -> settingsStore.mdblistTraktEnabled()
+                        else -> true
+                    }
+                }
+
+            val runtime =
+                meta.optString("runtime").trim().takeIf { it.isNotBlank() }
+                    ?: media.runtimeMinutes?.let { "$it min" }
+
+            val directors =
+                media.directors.ifEmpty {
+                    meta.stringList("director")
+                }
+
+            val cast =
+                media.cast
+                    .map { it.name }
+                    .filter { it.isNotBlank() }
+                    .ifEmpty { meta.stringList("cast") }
+
+            val network =
+                media.networks.firstOrNull()?.name
+                    ?: meta.optString("network").trim().takeIf { it.isNotBlank() }
+                    ?: meta.optString("country").trim().takeIf { it.isNotBlank() }
+
             TvDetailData(
                 media = media,
-                runtime = meta.optString("runtime").trim().takeIf { it.isNotBlank() },
-                director = meta.stringList("director"),
-                cast = meta.stringList("cast"),
-                network =
-                    meta.optString("network").trim().takeIf { it.isNotBlank() }
-                        ?: meta.optString("country").trim().takeIf { it.isNotBlank() },
+                runtime = runtime,
+                director = directors,
+                cast = cast,
+                network = network,
                 episodes = meta.optJSONArray("videos").toEpisodes(),
-                providerName = "Cinemeta",
+                ratings = ratings,
+                providerName =
+                    if (media != cinemetaMedia || ratings.isNotEmpty()) {
+                        "Cinemeta + VUEO Enhancements"
+                    } else {
+                        "Cinemeta"
+                    },
             )
         }
 
@@ -81,6 +149,7 @@ data class TvDetailData(
     val cast: List<String>,
     val network: String?,
     val episodes: List<TvEpisode>,
+    val ratings: List<MediaRating> = emptyList(),
     val providerName: String,
 ) {
     val seasons: List<Int>

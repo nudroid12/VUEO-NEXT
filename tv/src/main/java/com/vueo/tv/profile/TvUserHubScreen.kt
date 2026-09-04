@@ -1,6 +1,8 @@
 package com.vueo.tv.profile
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +37,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,18 +47,23 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
+import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val HubBlack = Color(0xFF050706)
 private val HubPanel = Color(0xFF101412)
@@ -103,6 +113,13 @@ fun TvUserHubScreen(
                 .associateWith { FocusRequester() }
         }
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pluginStore =
+        remember(context) {
+            PluginStore(context.applicationContext)
+        }
+
     val firstProfileRequester = remember { FocusRequester() }
     var profiles by remember { mutableStateOf(profileStore.profiles()) }
     var activeProfileId by remember { mutableStateOf(profileStore.activeProfileId()) }
@@ -125,6 +142,24 @@ fun TvUserHubScreen(
     var autoUpdates by remember {
         mutableStateOf(settingsStore.automaticUpdateChecksEnabled())
     }
+    var tmdbApiKey by remember { mutableStateOf(pluginStore.tmdbApiKey()) }
+    var mdblistApiKey by remember { mutableStateOf(settingsStore.mdblistApiKey()) }
+    var geminiApiKey by remember { mutableStateOf(settingsStore.geminiApiKey()) }
+    var tmdbMetadataEnabled by remember {
+        mutableStateOf(settingsStore.tmdbMetadataEnrichmentEnabled())
+    }
+    var tmdbArtworkEnabled by remember {
+        mutableStateOf(settingsStore.tmdbArtworkEnrichmentEnabled())
+    }
+    var ratingsEnabled by remember {
+        mutableStateOf(settingsStore.mdblistRatingsEnabled())
+    }
+    var geminiEnabled by remember {
+        mutableStateOf(settingsStore.geminiInsightsEnabled())
+    }
+    var metadataStatus by remember { mutableStateOf<String?>(null) }
+    var includeCredentialsInBackup by remember { mutableStateOf(false) }
+    var backupStatus by remember { mutableStateOf<String?>(null) }
     var pinFlow by remember { mutableStateOf<HubPinFlow?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
@@ -150,6 +185,61 @@ fun TvUserHubScreen(
             refreshActiveProfileState(profileId)
         }
     }
+
+    val createBackupLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    backupStatus = "Saving backup…"
+                    runCatching {
+                        VueoBackupManager.exportToUri(
+                            context = context.applicationContext,
+                            uri = uri,
+                            includeCredentials = includeCredentialsInBackup,
+                        )
+                    }.onSuccess { summary ->
+                        backupStatus =
+                            "Backup saved • ${summary.valueCount} values"
+                    }.onFailure { failure ->
+                        backupStatus = failure.message ?: "Unable to save backup"
+                    }
+                }
+            }
+        }
+
+    val restoreBackupLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    backupStatus = "Restoring backup…"
+                    runCatching {
+                        VueoBackupManager.restoreFromUri(
+                            context = context.applicationContext,
+                            uri = uri,
+                        )
+                    }.onSuccess { summary ->
+                        val restoredProfileId = profileStore.activeProfileId()
+                        refreshActiveProfileState(restoredProfileId)
+                        tmdbApiKey = pluginStore.tmdbApiKey()
+                        mdblistApiKey = settingsStore.mdblistApiKey()
+                        geminiApiKey = settingsStore.geminiApiKey()
+                        tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled()
+                        tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled()
+                        ratingsEnabled = settingsStore.mdblistRatingsEnabled()
+                        geminiEnabled = settingsStore.geminiInsightsEnabled()
+                        backupStatus =
+                            "Restored ${summary.valueCount} values" +
+                                (summary.sourceVersion?.let { " • VUEO $it" } ?: "")
+                    }.onFailure { failure ->
+                        backupStatus = failure.message ?: "Unable to restore backup"
+                    }
+                }
+            }
+        }
 
     BackHandler {
         if (pinFlow != null) {
@@ -353,6 +443,147 @@ fun TvUserHubScreen(
                             settingsStore.setAutomaticUpdateChecksEnabled(autoUpdates)
                         },
                     )
+                }
+            }
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Metadata & Enhancements",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    ApiKeyField(
+                        label = "TMDB API key",
+                        value = tmdbApiKey,
+                        onValueChange = { tmdbApiKey = it },
+                    )
+                    ApiKeyField(
+                        label = "MDBList API key",
+                        value = mdblistApiKey,
+                        onValueChange = { mdblistApiKey = it },
+                    )
+                    ApiKeyField(
+                        label = "Gemini API key",
+                        value = geminiApiKey,
+                        onValueChange = { geminiApiKey = it },
+                    )
+
+                    SettingButton(
+                        title = "Save API keys",
+                        value = "Save",
+                        onClick = {
+                            pluginStore.setTmdbApiKey(tmdbApiKey)
+                            settingsStore.setMdblistApiKey(mdblistApiKey)
+                            settingsStore.setGeminiApiKey(geminiApiKey)
+                            metadataStatus = "API keys saved"
+                        },
+                    )
+
+                    SettingButton(
+                        title = "TMDB metadata",
+                        value = if (tmdbMetadataEnabled) "On" else "Off",
+                        onClick = {
+                            tmdbMetadataEnabled = !tmdbMetadataEnabled
+                            settingsStore.setTmdbMetadataEnrichmentEnabled(tmdbMetadataEnabled)
+                        },
+                    )
+                    SettingButton(
+                        title = "TMDB artwork",
+                        value = if (tmdbArtworkEnabled) "On" else "Off",
+                        onClick = {
+                            tmdbArtworkEnabled = !tmdbArtworkEnabled
+                            settingsStore.setTmdbArtworkEnrichmentEnabled(tmdbArtworkEnabled)
+                        },
+                    )
+                    SettingButton(
+                        title = "MDBList ratings",
+                        value = if (ratingsEnabled) "On" else "Off",
+                        onClick = {
+                            ratingsEnabled = !ratingsEnabled
+                            settingsStore.setMdblistRatingsEnabled(ratingsEnabled)
+                        },
+                    )
+                    SettingButton(
+                        title = "Gemini insights",
+                        value = if (geminiEnabled) "On" else "Off",
+                        onClick = {
+                            geminiEnabled = !geminiEnabled
+                            settingsStore.setGeminiInsightsEnabled(geminiEnabled)
+                        },
+                    )
+
+                    metadataStatus?.let { status ->
+                        Text(
+                            text = status,
+                            color = HubMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+            }
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Backup & Migration",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    SettingButton(
+                        title = "Include API keys in backup",
+                        value = if (includeCredentialsInBackup) "Yes" else "No",
+                        onClick = {
+                            includeCredentialsInBackup = !includeCredentialsInBackup
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Create VUEO backup",
+                        value = "Export",
+                        onClick = {
+                            createBackupLauncher.launch(
+                                "vueo-backup-${System.currentTimeMillis()}.json"
+                            )
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Restore VUEO backup",
+                        value = "Import",
+                        onClick = {
+                            restoreBackupLauncher.launch(
+                                arrayOf(
+                                    "application/json",
+                                    "text/plain",
+                                    "application/octet-stream",
+                                )
+                            )
+                        },
+                    )
+
+                    Text(
+                        text =
+                            "Backups can migrate profiles, library, playback, settings and content configuration between VUEO Mobile and TV.",
+                        color = HubMuted,
+                        fontSize = 12.sp,
+                    )
+
+                    backupStatus?.let { status ->
+                        Text(
+                            text = status,
+                            color = HubMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
 
@@ -577,6 +808,32 @@ fun TvUserHubScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ApiKeyField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        colors =
+            OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = HubYellow,
+                unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
+                focusedLabelColor = HubYellow,
+                unfocusedLabelColor = HubMuted,
+                cursorColor = HubYellow,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

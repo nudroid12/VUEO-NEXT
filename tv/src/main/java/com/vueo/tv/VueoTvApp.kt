@@ -152,7 +152,10 @@ fun VueoTvApp() {
         remember(context) {
             TvSearchRepository(context.applicationContext)
         }
-    val detailRepository = remember { TvDetailRepository() }
+    val detailRepository =
+        remember(context) {
+            TvDetailRepository(context.applicationContext)
+        }
 
     val navigate: (String) -> Unit = { label ->
         val nextScreen =

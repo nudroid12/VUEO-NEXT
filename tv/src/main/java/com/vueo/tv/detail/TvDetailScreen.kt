@@ -218,6 +218,24 @@ fun TvDetailScreen(
                 )
             }
 
+            if (details?.ratings?.isNotEmpty() == true) {
+                item {
+                    Column(modifier = Modifier.padding(top = 4.dp)) {
+                        SectionTitle("Ratings")
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 58.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            items(details?.ratings.orEmpty()) { rating ->
+                                InfoChip(
+                                    "${rating.compactLabel} ${rating.displayValue()}"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             loadError?.let { message ->
                 item {
                     Text(
@@ -392,8 +410,12 @@ private fun detailMeta(media: TvMediaItem, runtime: String?): String =
     buildList {
         add(media.displayType)
         media.releaseInfo?.takeIf { it.isNotBlank() }?.let(::add)
+        media.certification?.takeIf { it.isNotBlank() }?.let(::add)
         runtime?.takeIf { it.isNotBlank() }?.let(::add)
         media.imdbRating?.let { add("IMDb ★ ${String.format("%.1f", it)}") }
+        if (media.imdbRating == null) {
+            media.tmdbRating?.let { add("TMDB ★ ${String.format("%.1f", it)}") }
+        }
     }.joinToString("  •  ")
 
 @Composable
