@@ -2,20 +2,26 @@ package com.vueo.shared.core.storage
 
 import android.content.Context
 
+/**
+ * Compatibility facade retained for TV and older call sites.
+ * The canonical implementation is now [PlaybackStore].
+ */
 class PlaybackProgressStore(
     context: Context,
     prefsName: String,
     private val minResumeMs: Long = 30_000L,
     private val completionWindowMs: Long = 60_000L,
 ) {
-    private val prefs =
-        context.applicationContext.getSharedPreferences(
-            prefsName,
-            Context.MODE_PRIVATE,
+    private val delegate =
+        PlaybackStore(
+            context = context.applicationContext,
+            prefsName = prefsName,
+            minResumeMs = minResumeMs,
+            completionWindowMs = completionWindowMs,
         )
 
     fun resumePositionMs(key: String): Long =
-        prefs.getLong(positionKey(key), 0L)
+        delegate.positionMs(key)
             .takeIf { it >= minResumeMs }
             ?: 0L
 
@@ -24,26 +30,14 @@ class PlaybackProgressStore(
         positionMs: Long,
         durationMs: Long,
     ) {
-        val safePosition = positionMs.coerceAtLeast(0L)
-        val safeDuration = durationMs.coerceAtLeast(0L)
-        val completed = safeDuration > 0L && safePosition >= safeDuration - completionWindowMs
-        if (completed || safePosition < minResumeMs) {
-            clear(key)
-            return
-        }
-        prefs.edit()
-            .putLong(positionKey(key), safePosition)
-            .putLong(durationKey(key), safeDuration)
-            .apply()
+        delegate.savePositionMs(
+            mediaKey = key,
+            positionMs = positionMs,
+            durationMs = durationMs,
+        )
     }
 
     fun clear(key: String) {
-        prefs.edit()
-            .remove(positionKey(key))
-            .remove(durationKey(key))
-            .apply()
+        delegate.clearPosition(key)
     }
-
-    private fun positionKey(key: String) = "position:$key"
-    private fun durationKey(key: String) = "duration:$key"
 }
