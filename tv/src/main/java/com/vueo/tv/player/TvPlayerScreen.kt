@@ -91,6 +91,7 @@ private enum class PlayerSidePanel {
     SOURCES,
     AUDIO,
     SUBTITLES,
+    EPISODES,
 }
 
 @Composable
@@ -153,12 +154,12 @@ fun TvPlayerScreen(
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
     val seekRequester = remember { FocusRequester() }
-    val rewindRequester = remember { FocusRequester() }
+    val restartRequester = remember { FocusRequester() }
     val playRequester = remember { FocusRequester() }
-    val forwardRequester = remember { FocusRequester() }
-    val audioRequester = remember { FocusRequester() }
     val subtitleRequester = remember { FocusRequester() }
+    val audioRequester = remember { FocusRequester() }
     val sourcesRequester = remember { FocusRequester() }
+    val episodesRequester = remember { FocusRequester() }
     val nextRequester = remember { FocusRequester() }
     val firstPanelRequester = remember { FocusRequester() }
     val problemRequester = remember { FocusRequester() }
@@ -426,6 +427,7 @@ fun TvPlayerScreen(
                         PlayerSidePanel.AUDIO -> audioRequester
                         PlayerSidePanel.SUBTITLES -> subtitleRequester
                         PlayerSidePanel.SOURCES -> sourcesRequester
+                        PlayerSidePanel.EPISODES -> episodesRequester
                         null -> playRequester
                     }
                 runCatching { target.requestFocus() }
@@ -548,42 +550,43 @@ fun TvPlayerScreen(
             visible = controlsVisible && sidePanel == null && sources.isNotEmpty(),
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.fillMaxSize(),
         ) {
             PlayerControls(
                 request = request,
-                currentSource = currentSource,
-                sourceProgress = sourceProgress,
                 isPlaying = isPlaying,
                 isBuffering = isBuffering,
                 waitingForRecovery = waitingForRecovery,
                 positionMs = positionMs,
                 durationMs = durationMs,
                 seekRequester = seekRequester,
-                rewindRequester = rewindRequester,
+                restartRequester = restartRequester,
                 playRequester = playRequester,
-                forwardRequester = forwardRequester,
-                audioRequester = audioRequester,
                 subtitleRequester = subtitleRequester,
+                audioRequester = audioRequester,
                 sourcesRequester = sourcesRequester,
+                episodesRequester = episodesRequester,
                 nextRequester = nextRequester,
-                audioLabel = audioLabel,
-                subtitleLabel = subtitleLabel,
-                onRewind = {
+                onSeekBackward = {
                     player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0L))
                     touchControls()
                 },
-                onPlayPause = {
-                    if (player.isPlaying) player.pause() else player.play()
-                    touchControls()
-                },
-                onForward = {
+                onSeekForward = {
                     val target = if (durationMs > 0L) {
                         (player.currentPosition + SEEK_STEP_MS).coerceAtMost(durationMs)
                     } else {
                         player.currentPosition + SEEK_STEP_MS
                     }
                     player.seekTo(target)
+                    touchControls()
+                },
+                onRestart = {
+                    player.seekTo(0L)
+                    player.play()
+                    touchControls()
+                },
+                onPlayPause = {
+                    if (player.isPlaying) player.pause() else player.play()
                     touchControls()
                 },
                 onAudio = {
@@ -599,6 +602,11 @@ fun TvPlayerScreen(
                 onSources = {
                     panelReturnFocus = PlayerSidePanel.SOURCES
                     sidePanel = PlayerSidePanel.SOURCES
+                    interactionToken += 1
+                },
+                onEpisodes = {
+                    panelReturnFocus = PlayerSidePanel.EPISODES
+                    sidePanel = PlayerSidePanel.EPISODES
                     interactionToken += 1
                 },
                 onNext = request.nextRequest()?.let { next ->
@@ -619,7 +627,7 @@ fun TvPlayerScreen(
                     activeSkipSegment = null
                     touchControls()
                 },
-                modifier = Modifier.align(Alignment.BottomEnd),
+                modifier = Modifier.align(Alignment.BottomStart),
             )
         }
 
@@ -682,6 +690,29 @@ fun TvPlayerScreen(
                         subtitleLabel = selectedTrackLabel(player.currentTracks, C.TRACK_TYPE_TEXT, "Subtitles")
                         sidePanel = null
                         touchControls()
+                    },
+                    onClose = {
+                        sidePanel = null
+                        touchControls()
+                    },
+                )
+
+            PlayerSidePanel.EPISODES ->
+                EpisodePickerPanel(
+                    episodes = request.episodeQueue,
+                    currentVideoId = request.videoId,
+                    firstRequester = firstPanelRequester,
+                    onSelect = { episode ->
+                        saveProgress()
+                        sidePanel = null
+                        onPlayRequest(
+                            request.copy(
+                                videoId = episode.videoId,
+                                episodeTitle = episode.title,
+                                season = episode.season,
+                                episode = episode.episode,
+                            ),
+                        )
                     },
                     onClose = {
                         sidePanel = null
@@ -759,8 +790,8 @@ private fun SkipSegmentButton(
         modifier =
             modifier
                 .padding(
-                    end = 56.dp,
-                    bottom = if (controlsVisible) 356.dp else 48.dp,
+                    start = 56.dp,
+                    bottom = if (controlsVisible) 186.dp else 48.dp,
                 )
                 .scale(if (focused) 1.06f else 1f)
                 .border(
@@ -786,97 +817,67 @@ private fun SkipSegmentButton(
 @Composable
 private fun PlayerControls(
     request: TvPlaybackRequest,
-    currentSource: SourceCandidate?,
-    sourceProgress: String,
     isPlaying: Boolean,
     isBuffering: Boolean,
     waitingForRecovery: Boolean,
     positionMs: Long,
     durationMs: Long,
     seekRequester: FocusRequester,
-    rewindRequester: FocusRequester,
+    restartRequester: FocusRequester,
     playRequester: FocusRequester,
-    forwardRequester: FocusRequester,
-    audioRequester: FocusRequester,
     subtitleRequester: FocusRequester,
+    audioRequester: FocusRequester,
     sourcesRequester: FocusRequester,
+    episodesRequester: FocusRequester,
     nextRequester: FocusRequester,
-    audioLabel: String,
-    subtitleLabel: String,
-    onRewind: () -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
+    onRestart: () -> Unit,
     onPlayPause: () -> Unit,
-    onForward: () -> Unit,
     onAudio: () -> Unit,
     onSubtitles: () -> Unit,
     onSources: () -> Unit,
+    onEpisodes: () -> Unit,
     onNext: (() -> Unit)?,
 ) {
-    val assessment = currentSource?.let { SourceRanker.assess(it, originalLanguage = request.originalLanguage) }
     val episodeLine =
         buildList {
             if (request.season != null && request.episode != null) {
-                add("S${request.season.toString().padStart(2, '0')} E${request.episode.toString().padStart(2, '0')}")
+                add("S${request.season.toString().padStart(2, '0')}E${request.episode.toString().padStart(2, '0')}")
             }
             request.episodeTitle?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
         }.joinToString("  •  ")
-    val audioValue =
-        audioLabel
-            .removePrefix("Audio • ")
-            .removePrefix("Audio")
-            .trim()
-            .ifBlank { "Default" }
-    val subtitleValue =
-        subtitleLabel
-            .removePrefix("Subs • ")
-            .removePrefix("Subtitles ")
-            .removePrefix("Subtitles")
-            .trim()
-            .ifBlank { "Off" }
-    val sourceValue =
-        when {
-            waitingForRecovery -> "Switching source"
-            assessment != null -> assessment.summary
-            currentSource != null -> "Current source"
-            else -> sourceProgress
-        }
-    val nextValue =
-        request.nextEpisodeRef?.let { next ->
-            buildList {
-                if (next.season != null && next.episode != null) {
-                    add("S${next.season.toString().padStart(2, '0')} E${next.episode.toString().padStart(2, '0')}")
-                }
-                next.title.trim().takeIf { it.isNotBlank() }?.let(::add)
-            }.joinToString(" • ")
-        }
+    val hasEpisodes = request.episodeQueue.isNotEmpty()
 
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(356.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors =
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(188.dp)
+                    .background(
+                        Brush.verticalGradient(
                             listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.38f),
                                 Color.Black.copy(alpha = 0.84f),
-                                Color.Black.copy(alpha = 0.98f),
+                                Color.Black.copy(alpha = 0.46f),
+                                Color.Transparent,
                             ),
+                        ),
                     ),
-                ),
-    ) {
+        )
+
         Column(
             modifier =
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 56.dp, vertical = 28.dp),
+                    .align(Alignment.TopStart)
+                    .padding(start = 56.dp, top = 42.dp)
+                    .width(760.dp),
         ) {
             Text(
                 text = request.media.name,
                 color = Color.White,
-                fontSize = 31.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -885,8 +886,8 @@ private fun PlayerControls(
                 Spacer(Modifier.height(5.dp))
                 Text(
                     text = episodeLine,
-                    color = Color.White.copy(alpha = 0.76f),
-                    fontSize = 17.sp,
+                    color = Color.White.copy(alpha = 0.78f),
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -895,21 +896,77 @@ private fun PlayerControls(
             if (waitingForRecovery) {
                 Spacer(Modifier.height(5.dp))
                 Text(
-                    text = "VUEO is switching to another source",
+                    text = "Switching source…",
                     color = PlayerGreen,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+        }
 
-            Spacer(Modifier.height(16.dp))
+        Row(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 56.dp, top = 38.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PlayerIconButton(
+                text = "↻",
+                requester = restartRequester,
+                onClick = onRestart,
+                onLeft = { restartRequester.requestFocus() },
+                onRight = {
+                    if (onNext != null) nextRequester.requestFocus() else restartRequester.requestFocus()
+                },
+                onDown = { seekRequester.requestFocus() },
+            )
+            if (onNext != null) {
+                PlayerIconButton(
+                    text = "⏭",
+                    requester = nextRequester,
+                    onClick = onNext,
+                    onLeft = { restartRequester.requestFocus() },
+                    onRight = { nextRequester.requestFocus() },
+                    onDown = { seekRequester.requestFocus() },
+                )
+            }
+        }
+
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(214.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.42f),
+                                Color.Black.copy(alpha = 0.92f),
+                                Color.Black.copy(alpha = 0.98f),
+                            ),
+                        ),
+                    ),
+        )
+
+        Column(
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 56.dp, end = 56.dp, bottom = 30.dp),
+        ) {
             PlayerSeekBar(
                 positionMs = positionMs,
                 durationMs = durationMs,
                 requester = seekRequester,
-                onSeekBackward = onRewind,
-                onSeekForward = onForward,
+                onSeekBackward = onSeekBackward,
+                onSeekForward = onSeekForward,
                 onPlayPause = onPlayPause,
+                onUp = { restartRequester.requestFocus() },
                 onDown = { playRequester.requestFocus() },
             )
             Row(
@@ -920,34 +977,23 @@ private fun PlayerControls(
                 Text(
                     text = formatTime(positionMs),
                     color = Color.White.copy(alpha = 0.82f),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
-                    text = formatTime(durationMs),
+                    text = formatRemainingTime(positionMs, durationMs),
                     color = Color.White.copy(alpha = 0.82f),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 )
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                TransportButton(
-                    text = "↶ 10",
-                    requester = rewindRequester,
-                    onClick = onRewind,
-                    onLeft = { rewindRequester.requestFocus() },
-                    onRight = { playRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = { audioRequester.requestFocus() },
-                )
-                Spacer(Modifier.width(18.dp))
-                TransportButton(
+                PlayerIconButton(
                     text =
                         when {
                             isBuffering -> "…"
@@ -957,74 +1003,44 @@ private fun PlayerControls(
                     requester = playRequester,
                     onClick = onPlayPause,
                     primary = true,
-                    onLeft = { rewindRequester.requestFocus() },
-                    onRight = { forwardRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = { subtitleRequester.requestFocus() },
-                )
-                Spacer(Modifier.width(18.dp))
-                TransportButton(
-                    text = "10 ↷",
-                    requester = forwardRequester,
-                    onClick = onForward,
                     onLeft = { playRequester.requestFocus() },
-                    onRight = { forwardRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = { sourcesRequester.requestFocus() },
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                UtilityButton(
-                    title = "Audio",
-                    value = audioValue,
-                    requester = audioRequester,
-                    onClick = onAudio,
-                    onLeft = { audioRequester.requestFocus() },
                     onRight = { subtitleRequester.requestFocus() },
-                    onUp = { rewindRequester.requestFocus() },
-                    onDown = { audioRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                 )
-                Spacer(Modifier.width(12.dp))
-                UtilityButton(
-                    title = "Subtitles",
-                    value = subtitleValue,
+                PlayerTextButton(
+                    text = "Subtitles",
                     requester = subtitleRequester,
                     onClick = onSubtitles,
-                    onLeft = { audioRequester.requestFocus() },
-                    onRight = { sourcesRequester.requestFocus() },
-                    onUp = { playRequester.requestFocus() },
-                    onDown = { subtitleRequester.requestFocus() },
+                    onLeft = { playRequester.requestFocus() },
+                    onRight = { audioRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                 )
-                Spacer(Modifier.width(12.dp))
-                UtilityButton(
-                    title = "Sources",
-                    value = sourceValue,
+                PlayerTextButton(
+                    text = "Audio",
+                    requester = audioRequester,
+                    onClick = onAudio,
+                    onLeft = { subtitleRequester.requestFocus() },
+                    onRight = { sourcesRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
+                )
+                PlayerTextButton(
+                    text = "Sources",
                     requester = sourcesRequester,
                     onClick = onSources,
-                    onLeft = { subtitleRequester.requestFocus() },
+                    onLeft = { audioRequester.requestFocus() },
                     onRight = {
-                        if (onNext != null) nextRequester.requestFocus() else sourcesRequester.requestFocus()
+                        if (hasEpisodes) episodesRequester.requestFocus() else sourcesRequester.requestFocus()
                     },
-                    onUp = { forwardRequester.requestFocus() },
-                    onDown = { sourcesRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                 )
-                if (onNext != null && nextValue != null) {
-                    Spacer(Modifier.width(12.dp))
-                    UtilityButton(
-                        title = "Next Episode",
-                        value = nextValue,
-                        requester = nextRequester,
-                        onClick = onNext,
+                if (hasEpisodes) {
+                    PlayerTextButton(
+                        text = "Episodes",
+                        requester = episodesRequester,
+                        onClick = onEpisodes,
                         onLeft = { sourcesRequester.requestFocus() },
-                        onRight = { nextRequester.requestFocus() },
-                        onUp = { forwardRequester.requestFocus() },
-                        onDown = { nextRequester.requestFocus() },
+                        onRight = { episodesRequester.requestFocus() },
+                        onUp = { seekRequester.requestFocus() },
                     )
                 }
             }
@@ -1040,6 +1056,7 @@ private fun PlayerSeekBar(
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
     onPlayPause: () -> Unit,
+    onUp: () -> Unit,
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1054,17 +1071,17 @@ private fun PlayerSeekBar(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(34.dp)
+                .height(32.dp)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(
                     onClick = onPlayPause,
                     onLeft = onSeekBackward,
                     onRight = onSeekForward,
-                    onUp = { requester.requestFocus() },
+                    onUp = onUp,
                     onDown = onDown,
                 )
-                .scale(if (focused) 1.006f else 1f)
+                .scale(if (focused) 1.004f else 1f)
                 .focusable(),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -1072,9 +1089,9 @@ private fun PlayerSeekBar(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(if (focused) 10.dp else 7.dp)
+                    .height(if (focused) 8.dp else 5.dp)
                     .background(
-                        if (focused) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.24f),
+                        if (focused) Color.White.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.30f),
                         RoundedCornerShape(999.dp),
                     ),
         )
@@ -1082,7 +1099,7 @@ private fun PlayerSeekBar(
             modifier =
                 Modifier
                     .fillMaxWidth(fraction)
-                    .height(if (focused) 11.dp else 8.dp)
+                    .height(if (focused) 9.dp else 6.dp)
                     .background(PlayerGreen, RoundedCornerShape(999.dp)),
         )
         if (durationMs > 0L) {
@@ -1090,19 +1107,14 @@ private fun PlayerSeekBar(
                 modifier =
                     Modifier
                         .fillMaxWidth(fraction)
-                        .height(34.dp),
+                        .height(32.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Box(
                     modifier =
                         Modifier
-                            .size(if (focused) 22.dp else 18.dp)
-                            .background(Color.White, CircleShape)
-                            .border(
-                                width = if (focused) 2.dp else 1.dp,
-                                color = if (focused) Color.Black.copy(alpha = 0.28f) else Color.Transparent,
-                                shape = CircleShape,
-                            ),
+                            .size(if (focused) 18.dp else 14.dp)
+                            .background(Color.White, CircleShape),
                 )
             }
         }
@@ -1137,7 +1149,7 @@ private fun Modifier.playerRemoteKeys(
     }
 
 @Composable
-private fun TransportButton(
+private fun PlayerIconButton(
     text: String,
     requester: FocusRequester,
     onClick: () -> Unit,
@@ -1148,14 +1160,12 @@ private fun TransportButton(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val width = if (primary) 78.dp else 92.dp
-    val height = if (primary) 72.dp else 60.dp
+    val buttonSize = if (primary) 58.dp else 54.dp
 
     Box(
         modifier =
             Modifier
-                .width(width)
-                .height(height)
+                .size(buttonSize)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
@@ -1164,15 +1174,15 @@ private fun TransportButton(
                     color =
                         when {
                             focused -> PlayerFocus
-                            primary -> Color.White.copy(alpha = 0.18f)
-                            else -> Color.Black.copy(alpha = 0.34f)
+                            primary -> Color.White.copy(alpha = 0.16f)
+                            else -> Color.Black.copy(alpha = 0.42f)
                         },
-                    shape = RoundedCornerShape(999.dp),
+                    shape = CircleShape,
                 )
                 .border(
                     width = 1.dp,
-                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(999.dp),
+                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.14f),
+                    shape = CircleShape,
                 )
                 .clickable(onClick = onClick)
                 .focusable(),
@@ -1181,7 +1191,7 @@ private fun TransportButton(
         Text(
             text = text,
             color = if (focused) Color.Black else Color.White,
-            fontSize = if (primary) 28.sp else 16.sp,
+            fontSize = if (primary) 23.sp else 22.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
@@ -1189,9 +1199,8 @@ private fun TransportButton(
 }
 
 @Composable
-private fun UtilityButton(
-    title: String,
-    value: String,
+private fun PlayerTextButton(
+    text: String,
     requester: FocusRequester,
     onClick: () -> Unit,
     onLeft: (() -> Unit)? = null,
@@ -1201,44 +1210,34 @@ private fun UtilityButton(
 ) {
     var focused by remember { mutableStateOf(false) }
 
-    Column(
+    Box(
         modifier =
             Modifier
-                .width(196.dp)
-                .height(62.dp)
+                .height(52.dp)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
                 .scale(if (focused) 1.045f else 1f)
                 .background(
-                    color = if (focused) PlayerFocus else Color.Black.copy(alpha = 0.42f),
-                    shape = RoundedCornerShape(14.dp),
+                    color = if (focused) PlayerFocus else Color.Black.copy(alpha = 0.38f),
+                    shape = RoundedCornerShape(999.dp),
                 )
                 .border(
                     width = 1.dp,
-                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.10f),
-                    shape = RoundedCornerShape(14.dp),
+                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(999.dp),
                 )
                 .clickable(onClick = onClick)
                 .focusable()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.Center,
+                .padding(horizontal = 22.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = title,
+            text = text,
             color = if (focused) Color.Black else Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = value,
-            color = if (focused) Color.Black.copy(alpha = 0.66f) else PlayerMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1378,6 +1377,86 @@ private fun SourcePickerPanel(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpisodePickerPanel(
+    episodes: List<TvEpisodeRef>,
+    currentVideoId: String,
+    firstRequester: FocusRequester,
+    onSelect: (TvEpisodeRef) -> Unit,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    val restoreIndex = episodes.indexOfFirst { it.videoId == currentVideoId }.coerceAtLeast(0)
+
+    RightPanel(title = "Episodes", subtitle = "Choose an episode") {
+        if (episodes.isEmpty()) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text("No episode list is available for this title.", color = PlayerMuted, fontSize = 14.sp)
+                Spacer(Modifier.height(18.dp))
+                PlayerButton("Close", firstRequester, onClose, primary = true)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(episodes, key = { _, episode -> episode.videoId }) { index, episode ->
+                    var focused by remember(episode.videoId) { mutableStateOf(false) }
+                    val active = episode.videoId == currentVideoId
+                    val number = if (episode.season != null && episode.episode != null) {
+                        "S${episode.season.toString().padStart(2, '0')}E${episode.episode.toString().padStart(2, '0')}"
+                    } else {
+                        "Episode ${index + 1}"
+                    }
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .then(if (index == restoreIndex) Modifier.focusRequester(firstRequester) else Modifier)
+                                .onFocusChanged { focused = it.isFocused }
+                                .background(
+                                    when {
+                                        focused -> Color.White.copy(alpha = 0.16f)
+                                        active -> PlayerGreen.copy(alpha = 0.10f)
+                                        else -> Color.White.copy(alpha = 0.055f)
+                                    },
+                                    RoundedCornerShape(11.dp),
+                                )
+                                .border(
+                                    width = if (focused) 2.dp else 1.dp,
+                                    color = when {
+                                        focused -> PlayerFocus
+                                        active -> PlayerGreen.copy(alpha = 0.75f)
+                                        else -> Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(11.dp),
+                                )
+                                .clickable { onSelect(episode) }
+                                .focusable()
+                                .padding(horizontal = 15.dp, vertical = 13.dp),
+                    ) {
+                        Text(
+                            text = number,
+                            color = if (active) PlayerGreen else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = episode.title.ifBlank { number },
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -1860,6 +1939,14 @@ private fun subtitleMimeType(url: String): String =
         "ttml", "xml" -> MimeTypes.APPLICATION_TTML
         else -> MimeTypes.APPLICATION_SUBRIP
     }
+
+private fun formatRemainingTime(
+    positionMs: Long,
+    durationMs: Long,
+): String {
+    if (durationMs <= 0L) return "--:--"
+    return "-${formatTime((durationMs - positionMs).coerceAtLeast(0L))}"
+}
 
 private fun formatTime(ms: Long): String {
     if (ms <= 0L) return "00:00"
