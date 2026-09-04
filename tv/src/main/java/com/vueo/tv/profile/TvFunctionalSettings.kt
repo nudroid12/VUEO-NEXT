@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -1402,8 +1403,8 @@ private suspend fun resetTvUserData(context: Context) {
 private fun FunctionalList(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
+        contentPadding = PaddingValues(bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         content = content,
     )
 }
@@ -1419,7 +1420,7 @@ private fun FunctionalRow(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused && enabled) 1.012f else 1f, label = "functionalRowScale")
+    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f, label = "functionalRowScale")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1428,28 +1429,40 @@ private fun FunctionalRow(
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick)
             .focusable(enabled)
-            .background(if (focused && enabled) Color.White.copy(alpha = 0.16f) else FunctionalPanel, RoundedCornerShape(12.dp))
-            .border(if (focused && enabled) 2.dp else 1.dp, if (focused && enabled) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 18.dp, vertical = 13.dp),
+            .background(if (focused && enabled) Color.White.copy(alpha = 0.15f) else FunctionalRaised, RoundedCornerShape(18.dp))
+            .border(if (focused && enabled) 2.dp else 1.dp, if (focused && enabled) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 22.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = if (enabled) Color.White else FunctionalMuted.copy(alpha = 0.5f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text(subtitle, color = FunctionalMuted.copy(alpha = if (enabled) 1f else 0.45f), fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, color = if (enabled) Color.White else FunctionalMuted.copy(alpha = 0.5f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = FunctionalMuted.copy(alpha = if (enabled) 1f else 0.45f), fontSize = 13.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Spacer(Modifier.width(16.dp))
-        Text(
-            value,
-            color = when {
-                danger && enabled -> FunctionalDanger
-                focused && enabled -> Color.White
-                enabled -> FunctionalMuted
-                else -> FunctionalMuted.copy(alpha = 0.45f)
-            },
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Spacer(Modifier.width(18.dp))
+        Box(
+            modifier = Modifier
+                .background(
+                    when {
+                        danger && enabled -> FunctionalDanger.copy(alpha = 0.10f)
+                        focused && enabled -> Color.White.copy(alpha = 0.12f)
+                        else -> Color.White.copy(alpha = 0.06f)
+                    },
+                    RoundedCornerShape(50),
+                )
+                .padding(horizontal = 13.dp, vertical = 8.dp),
+        ) {
+            Text(
+                value,
+                color = when {
+                    danger && enabled -> FunctionalDanger
+                    focused && enabled -> Color.White
+                    enabled -> Color.White
+                    else -> FunctionalMuted.copy(alpha = 0.45f)
+                },
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
@@ -1462,7 +1475,28 @@ private fun FunctionalToggleRow(
     enabled: Boolean = true,
     onToggle: (Boolean) -> Unit,
 ) {
-    FunctionalRow(title, subtitle, if (checked) "On" else "Off", requester, enabled, onClick = { onToggle(!checked) })
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f, label = "functionalToggleScale")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .scale(scale)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(enabled = enabled) { onToggle(!checked) }
+            .focusable(enabled)
+            .background(if (focused && enabled) Color.White.copy(alpha = 0.15f) else FunctionalRaised, RoundedCornerShape(18.dp))
+            .border(if (focused && enabled) 2.dp else 1.dp, if (focused && enabled) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 22.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, color = if (enabled) Color.White else FunctionalMuted.copy(alpha = 0.5f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = FunctionalMuted.copy(alpha = if (enabled) 1f else 0.45f), fontSize = 13.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(18.dp))
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
 }
 
 @Composable
@@ -1478,13 +1512,13 @@ private fun FunctionalInfoCard(
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .focusable(requester != null)
-            .background(FunctionalRaised, RoundedCornerShape(12.dp))
-            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 18.dp, vertical = 13.dp),
+            .background(if (focused) Color.White.copy(alpha = 0.12f) else FunctionalRaised, RoundedCornerShape(18.dp))
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 22.dp, vertical = 18.dp),
     ) {
-        Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(3.dp))
-        Text(text, color = FunctionalMuted, fontSize = 10.sp, lineHeight = 14.sp)
+        Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text(text, color = FunctionalMuted, fontSize = 13.sp, lineHeight = 18.sp)
     }
 }
 
@@ -1493,9 +1527,9 @@ private fun FunctionalSectionLabel(text: String) {
     Text(
         text = text,
         color = FunctionalMuted,
-        fontSize = 9.sp,
+        fontSize = 11.sp,
         fontWeight = FontWeight.Black,
-        modifier = Modifier.padding(start = 3.dp, top = 6.dp, bottom = 1.dp),
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
     )
 }
 

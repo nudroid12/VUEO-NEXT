@@ -541,6 +541,7 @@ fun VueoTvApp() {
                 TvProfileDnaPanel(
                         visible = profileDnaVisible,
                         profileStore = profileStore,
+                        settingsStore = settingsStore,
                         onDismiss = {
                             profileDnaVisible = false
                             profileFocusReturnToken += 1

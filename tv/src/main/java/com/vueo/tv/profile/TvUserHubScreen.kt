@@ -357,18 +357,6 @@ fun TvUserHubScreen(
             }
         }
 
-        TvTopNav(
-            navRequesters = navRequesters,
-            contentDownRequester =
-                if (category == null) {
-                    hubRequesters[hubFocusIndex]
-                } else {
-                    subPageFirstRequester
-                },
-            selectedLabel = "",
-            onSelected = onNavigate,
-        )
-
         val flow = pinFlow
         if (flow != null) {
             key(flow, pinResetToken) {
@@ -631,21 +619,29 @@ private fun SettingsSubPageShell(
         modifier =
             Modifier
                 .fillMaxSize()
-                .padding(start = 56.dp, end = 56.dp, top = 108.dp, bottom = 34.dp),
+                .padding(start = 108.dp, end = 108.dp, top = 52.dp, bottom = 34.dp),
     ) {
+        Text(
+            text = "VUEO",
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 2.sp,
+        )
+        Spacer(Modifier.height(6.dp))
         Text(
             text = title,
             color = Color.White,
-            fontSize = 34.sp,
+            fontSize = 42.sp,
             fontWeight = FontWeight.Black,
         )
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(5.dp))
         Text(
             text = subtitle,
             color = SettingsMuted,
-            fontSize = 13.sp,
+            fontSize = 16.sp,
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         content()
     }
 }
