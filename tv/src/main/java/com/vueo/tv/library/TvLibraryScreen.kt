@@ -54,8 +54,6 @@ import kotlinx.coroutines.launch
 
 private val LibraryBlack = Color(0xFF050706)
 private val LibraryPanel = Color(0xFF101412)
-private val LibraryYellow = Color(0xFFD6FF00)
-private val LibraryGreen = Color(0xFF84E100)
 private val LibraryMuted = Color(0xFFAAB2AD)
 
 private object TvLibraryFocusMemory {
@@ -90,7 +88,7 @@ fun TvLibraryScreen(
             runCatching { browseRequester.requestFocus() }
         } else {
             focusedIndex = TvLibraryFocusMemory.resultIndex.coerceIn(0, items.lastIndex)
-            gridState.scrollToItem((focusedIndex - 6).coerceAtLeast(0))
+            gridState.scrollToItem((focusedIndex - 5).coerceAtLeast(0))
             runCatching { firstCardRequester.requestFocus() }
         }
     }
@@ -102,7 +100,7 @@ fun TvLibraryScreen(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFF0A100C),
+                            Color(0xFF0A0D0B),
                             LibraryBlack,
                             LibraryBlack,
                         )
@@ -113,7 +111,7 @@ fun TvLibraryScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(top = 96.dp),
+                    .padding(top = 98.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp),
@@ -124,19 +122,18 @@ fun TvLibraryScreen(
                     Text(
                         text = "Library",
                         color = Color.White,
-                        fontSize = 34.sp,
+                        fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(5.dp))
                     Text(
-                        text = "My List • ${items.size} title${if (items.size == 1) "" else "s"}",
+                        text = "My List  •  ${items.size} title${if (items.size == 1) "" else "s"}",
                         color = LibraryMuted,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                     )
                 }
             }
-
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
 
             if (items.isEmpty()) {
                 LibraryEmpty(
@@ -146,12 +143,12 @@ fun TvLibraryScreen(
                 )
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
+                    columns = GridCells.Fixed(5),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 58.dp, end = 58.dp, bottom = 46.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    contentPadding = PaddingValues(start = 58.dp, end = 58.dp, bottom = 50.dp),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
                     itemsIndexed(
                         items = items,
@@ -165,13 +162,13 @@ fun TvLibraryScreen(
                                 } else {
                                     Modifier
                                 },
-                            upRequester = if (index < 6) navRequesters.getValue("Library") else null,
+                            upRequester = if (index < 5) navRequesters.getValue("Library") else null,
                             onFocused = {
                                 focusedIndex = index
                                 TvLibraryFocusMemory.resultIndex = index
-                                if (index >= 6) {
+                                if (index >= 5) {
                                     scope.launch {
-                                        gridState.animateScrollToItem((index - 6).coerceAtLeast(0))
+                                        gridState.animateScrollToItem((index - 5).coerceAtLeast(0))
                                     }
                                 }
                             },
@@ -197,29 +194,42 @@ private fun LibraryEmpty(
     upRequester: FocusRequester,
     onBrowse: () -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "libraryEmptyButtonScale")
+
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp, vertical = 42.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp, vertical = 48.dp),
     ) {
         Text(
             text = "Your Library is empty",
             color = Color.White,
-            fontSize = 24.sp,
+            fontSize = 27.sp,
             fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(9.dp))
         Text(
             text = "Add movies and series to My List from Home or Detail.",
             color = LibraryMuted,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         Button(
             onClick = onBrowse,
-            modifier = Modifier.focusRequester(requester).tvVerticalFocus(up = upRequester),
-            colors = ButtonDefaults.buttonColors(containerColor = LibraryGreen, contentColor = Color.Black),
-            shape = RoundedCornerShape(9.dp),
+            modifier =
+                Modifier
+                    .focusRequester(requester)
+                    .tvVerticalFocus(up = upRequester)
+                    .onFocusChanged { focused = it.isFocused }
+                    .scale(scale),
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                ),
+            shape = RoundedCornerShape(11.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
         ) {
-            Text("Browse Home", fontWeight = FontWeight.Bold)
+            Text("Browse Home", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
     }
 }
@@ -233,12 +243,12 @@ private fun LibraryPoster(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "libraryPosterScale")
+    val scale by animateFloatAsState(if (focused) 1.075f else 1f, label = "libraryPosterScale")
 
     Column(
         modifier =
             modifier
-                .width(154.dp)
+                .width(176.dp)
                 .scale(scale)
                 .then(if (upRequester != null) Modifier.tvVerticalFocus(up = upRequester) else Modifier)
                 .onFocusChanged {
@@ -252,12 +262,12 @@ private fun LibraryPoster(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
-                    .background(LibraryPanel, RoundedCornerShape(10.dp))
+                    .height(254.dp)
+                    .background(LibraryPanel, RoundedCornerShape(12.dp))
                     .border(
                         width = if (focused) 2.dp else 1.dp,
-                        color = if (focused) LibraryYellow else Color.White.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(10.dp),
+                        color = if (focused) Color.White else Color.White.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(12.dp),
                     ),
         ) {
             TvNetworkImage(
@@ -271,23 +281,28 @@ private fun LibraryPoster(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .background(LibraryGreen.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.38f),
+                                shape = RoundedCornerShape(12.dp),
+                            ),
                 )
             }
         }
-        Spacer(Modifier.height(9.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text = media.name,
             color = Color.White,
-            fontSize = 13.sp,
-            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
+            fontSize = 15.sp,
+            fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(2.dp))
         Text(
             text = media.displayType,
-            color = LibraryMuted,
-            fontSize = 11.sp,
+            color = if (focused) Color.White.copy(alpha = 0.72f) else LibraryMuted,
+            fontSize = 12.sp,
         )
     }
 }

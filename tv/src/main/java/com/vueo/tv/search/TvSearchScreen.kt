@@ -58,8 +58,6 @@ import kotlinx.coroutines.launch
 
 private val SearchBlack = Color(0xFF050706)
 private val SearchPanel = Color(0xFF101412)
-private val SearchGreen = Color(0xFF84E100)
-private val SearchYellow = Color(0xFFD6FF00)
 private val SearchMuted = Color(0xFFAAB2AD)
 
 private object TvSearchFocusMemory {
@@ -90,7 +88,6 @@ fun TvSearchScreen(
     val resultEntryRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
-
     var query by remember { mutableStateOf(TvSearchFocusMemory.query) }
     var mode by remember { mutableStateOf(TvSearchFocusMemory.mode) }
     var type by remember { mutableStateOf(TvSearchFocusMemory.type) }
@@ -115,7 +112,7 @@ fun TvSearchScreen(
         if (focusRestoreToken > 0 && results.isNotEmpty()) {
             delay(100)
             focusedIndex = TvSearchFocusMemory.resultIndex.coerceIn(0, results.lastIndex)
-            gridState.scrollToItem((focusedIndex - 6).coerceAtLeast(0))
+            gridState.scrollToItem((focusedIndex - 5).coerceAtLeast(0))
             runCatching { resultEntryRequester.requestFocus() }
         }
     }
@@ -133,7 +130,6 @@ fun TvSearchScreen(
             searching = false
             return@LaunchedEffect
         }
-
         if (mode == TvSearchMode.ACTOR) {
             results = emptyList()
             searching = false
@@ -146,7 +142,6 @@ fun TvSearchScreen(
         val local = repository.searchLocal(query, type)
         results = local
         searching = true
-
         runCatching {
             repository.searchRemote(query, type)
         }
@@ -166,7 +161,6 @@ fun TvSearchScreen(
                         }
                 }
             }
-
         if (generation == requestGeneration) {
             searching = false
         }
@@ -179,7 +173,7 @@ fun TvSearchScreen(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFF09100B),
+                            Color(0xFF090D0A),
                             SearchBlack,
                             SearchBlack,
                         )
@@ -190,7 +184,7 @@ fun TvSearchScreen(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 58.dp, end = 58.dp, top = 92.dp),
+                    .padding(start = 58.dp, end = 58.dp, top = 94.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -201,19 +195,18 @@ fun TvSearchScreen(
                     Text(
                         text = "Search",
                         color = Color.White,
-                        fontSize = 34.sp,
+                        fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(5.dp))
                     Text(
                         text = "Find movies and series across VUEO metadata catalogs.",
                         color = SearchMuted,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                     )
                 }
-
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TvSearchChip(
@@ -234,15 +227,13 @@ fun TvSearchScreen(
                     )
                 }
             }
-
-            Spacer(Modifier.height(18.dp))
-
+            Spacer(Modifier.height(20.dp))
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 modifier =
                     Modifier
-                        .width(760.dp)
+                        .width(820.dp)
                         .focusRequester(inputRequester)
                         .tvVerticalFocus(
                             up = navRequesters.getValue("Search"),
@@ -263,30 +254,28 @@ fun TvSearchScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.width(22.dp).height(22.dp),
                             strokeWidth = 2.dp,
-                            color = SearchYellow,
+                            color = Color.White,
                         )
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors =
                     OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        cursorColor = SearchYellow,
-                        focusedBorderColor = SearchYellow,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.26f),
-                        focusedContainerColor = SearchPanel.copy(alpha = 0.96f),
-                        unfocusedContainerColor = SearchPanel.copy(alpha = 0.86f),
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
+                        focusedContainerColor = SearchPanel.copy(alpha = 0.98f),
+                        unfocusedContainerColor = SearchPanel.copy(alpha = 0.84f),
                         focusedPlaceholderColor = SearchMuted,
-                        unfocusedPlaceholderColor = SearchMuted.copy(alpha = 0.74f),
+                        unfocusedPlaceholderColor = SearchMuted.copy(alpha = 0.72f),
                     ),
             )
-
-            Spacer(Modifier.height(12.dp))
-
+            Spacer(Modifier.height(14.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TvSearchChip(
@@ -313,7 +302,6 @@ fun TvSearchScreen(
                     downRequester = if (results.isNotEmpty()) resultEntryRequester else null,
                     onClick = { type = TvSearchType.SERIES },
                 )
-
                 if (searchError != null) {
                     Spacer(Modifier.width(10.dp))
                     Text(
@@ -334,44 +322,41 @@ fun TvSearchScreen(
                             "Title search remains available.",
                 )
             }
-
             query.isBlank() -> {
                 SearchMessage(
                     title = "Search VUEO",
                     body = "Type a movie or series title using your TV keyboard.",
                 )
             }
-
             results.isEmpty() && searching -> {
                 SearchMessage(
                     title = "Searching…",
                     body = "Checking VUEO metadata catalogs.",
                 )
             }
-
             results.isEmpty() -> {
                 SearchMessage(
                     title = "No results",
                     body = "Try another title or change the Movie / Series filter.",
                 )
             }
-
             else -> {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
+                    columns = GridCells.Fixed(5),
                     state = gridState,
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .padding(top = 282.dp),
-                    contentPadding = PaddingValues(
-                        start = 58.dp,
-                        end = 58.dp,
-                        top = 12.dp,
-                        bottom = 48.dp,
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                            .padding(top = 292.dp),
+                    contentPadding =
+                        PaddingValues(
+                            start = 58.dp,
+                            end = 58.dp,
+                            top = 14.dp,
+                            bottom = 50.dp,
+                        ),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
                     itemsIndexed(
                         items = results,
@@ -385,17 +370,16 @@ fun TvSearchScreen(
                             } else {
                                 Modifier
                             }
-
                         TvSearchPosterCard(
                             result = result,
                             modifier = entryModifier,
-                            upRequester = if (index < 6) allTypeRequester else null,
+                            upRequester = if (index < 5) allTypeRequester else null,
                             onFocused = {
                                 focusedIndex = index
                                 TvSearchFocusMemory.resultIndex = index
                                 scope.launch {
                                     gridState.animateScrollToItem(
-                                        index = (index - 6).coerceAtLeast(0),
+                                        index = (index - 5).coerceAtLeast(0),
                                     )
                                 }
                             },
@@ -424,19 +408,19 @@ private fun SearchMessage(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(start = 58.dp, top = 330.dp),
+                .padding(start = 58.dp, top = 340.dp),
     ) {
         Text(
             text = title,
             color = Color.White,
-            fontSize = 22.sp,
+            fontSize = 25.sp,
             fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(9.dp))
         Text(
             text = body,
             color = SearchMuted,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
         )
     }
 }
@@ -451,12 +435,11 @@ private fun TvSearchChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "searchChipScale")
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "searchChipScale")
     val borderColor by animateColorAsState(
-        if (focused) SearchYellow else Color.Transparent,
+        if (focused) Color.White else Color.Transparent,
         label = "searchChipBorder",
     )
-
     Box(
         modifier =
             Modifier
@@ -468,25 +451,25 @@ private fun TvSearchChip(
                     color =
                         when {
                             selected -> Color.White
-                            focused -> Color.White.copy(alpha = 0.16f)
-                            else -> Color.White.copy(alpha = 0.08f)
+                            focused -> Color.White.copy(alpha = 0.17f)
+                            else -> Color.White.copy(alpha = 0.07f)
                         },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(11.dp),
                 )
                 .border(
-                    width = 1.dp,
+                    width = if (focused) 2.dp else 1.dp,
                     color = borderColor,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(11.dp),
                 )
                 .clickable(onClick = onClick)
                 .focusable()
-                .padding(horizontal = 16.dp, vertical = 9.dp),
+                .padding(horizontal = 18.dp, vertical = 10.dp),
     ) {
         Text(
             text = label,
             color = if (selected) Color.Black else Color.White,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 14.sp,
+            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
         )
     }
 }
@@ -500,22 +483,18 @@ private fun TvSearchPosterCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "searchPosterScale")
+    val scale by animateFloatAsState(if (focused) 1.075f else 1f, label = "searchPosterScale")
     val borderColor by animateColorAsState(
-        if (focused) SearchYellow else Color.Transparent,
+        if (focused) Color.White else Color.White.copy(alpha = 0.10f),
         label = "searchPosterBorder",
-    )
-    val glowColor by animateColorAsState(
-        if (focused) SearchGreen.copy(alpha = 0.18f) else Color.Transparent,
-        label = "searchPosterGlow",
     )
 
     Column(
         modifier =
             modifier
-                .width(154.dp)
+                .width(176.dp)
                 .scale(scale)
-                .tvVerticalFocus(up = upRequester)
+                .then(if (upRequester != null) Modifier.tvVerticalFocus(up = upRequester) else Modifier)
                 .onFocusChanged { state ->
                     focused = state.isFocused
                     if (state.isFocused) onFocused()
@@ -527,14 +506,13 @@ private fun TvSearchPosterCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(222.dp)
-                    .background(glowColor, RoundedCornerShape(12.dp))
+                    .height(254.dp)
+                    .background(SearchPanel, RoundedCornerShape(12.dp))
                     .border(
                         width = if (focused) 2.dp else 1.dp,
                         color = borderColor,
                         shape = RoundedCornerShape(12.dp),
-                    )
-                    .padding(3.dp),
+                    ),
         ) {
             TvNetworkImage(
                 url = result.media.poster,
@@ -542,21 +520,33 @@ private fun TvSearchPosterCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            if (focused) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .border(
+                                width = 1.dp,
+                                color = Color.White.copy(alpha = 0.34f),
+                                shape = RoundedCornerShape(12.dp),
+                            ),
+                )
+            }
         }
-
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text = result.media.name,
             color = Color.White,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.height(2.dp))
         Text(
-            text = "${result.media.displayType} • ${result.providerName}",
-            color = if (focused) Color.White.copy(alpha = 0.76f) else SearchMuted,
-            fontSize = 11.sp,
+            text = "${result.media.displayType}  •  ${result.providerName}",
+            color = if (focused) Color.White.copy(alpha = 0.74f) else SearchMuted,
+            fontSize = 12.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
