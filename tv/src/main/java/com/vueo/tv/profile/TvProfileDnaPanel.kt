@@ -193,13 +193,13 @@ fun TvProfileDnaPanel(
                             shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
                         )
                         .verticalScroll(scrollState)
-                        .padding(start = 22.dp, end = 22.dp, top = 22.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                        .padding(start = 28.dp, end = 28.dp, top = 26.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     text = "Settings",
                     color = Color.White,
-                    fontSize = 24.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Black,
                 )
 
@@ -225,8 +225,8 @@ fun TvProfileDnaPanel(
 
                 panelSettings.chunked(2).forEachIndexed { rowIndex, row ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         row.forEachIndexed { columnIndex, setting ->
                             val index = rowIndex * 2 + columnIndex
@@ -306,11 +306,11 @@ private fun TvSettingsProfileCard(
     var profileFocused by remember { mutableStateOf(false) }
     var switchFocused by remember { mutableStateOf(false) }
     val profileScale by animateFloatAsState(
-        targetValue = if (profileFocused) 1.012f else 1f,
+        targetValue = if (profileFocused) 1.018f else 1f,
         label = "settingsProfileScale",
     )
     val switchScale by animateFloatAsState(
-        targetValue = if (switchFocused) 1.018f else 1f,
+        targetValue = if (switchFocused) 1.025f else 1f,
         label = "settingsSwitchScale",
     )
 
@@ -325,8 +325,8 @@ private fun TvSettingsProfileCard(
                     color = if (profileFocused) Color.White else Color.White.copy(alpha = 0.10f),
                     shape = RoundedCornerShape(15.dp),
                 )
-                .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Row(
             modifier =
@@ -356,8 +356,8 @@ private fun TvSettingsProfileCard(
             Box(
                 modifier =
                     Modifier
-                        .width(44.dp)
-                        .height(44.dp)
+                        .width(50.dp)
+                        .height(50.dp)
                         .background(Color.White.copy(alpha = 0.10f), CircleShape)
                         .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
                 contentAlignment = Alignment.Center,
@@ -365,7 +365,7 @@ private fun TvSettingsProfileCard(
                 Text(
                     text = profileName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "V",
                     color = Color.White,
-                    fontSize = 17.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Black,
                 )
             }
@@ -374,7 +374,7 @@ private fun TvSettingsProfileCard(
                 Text(
                     text = profileName,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Black,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -383,13 +383,13 @@ private fun TvSettingsProfileCard(
                 Text(
                     text = if (isKids) "Kids profile" else "Active profile",
                     color = PanelMuted,
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                 )
                 if (tastePreview.isNotBlank()) {
                     Text(
                         text = tastePreview,
                         color = PanelMuted,
-                        fontSize = 8.sp,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -415,7 +415,7 @@ private fun TvSettingsProfileCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(32.dp)
+                    .height(40.dp)
                     .focusRequester(switchRequester)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) {
@@ -450,7 +450,7 @@ private fun TvSettingsProfileCard(
             Text(
                 text = "Switch Profiles",
                 color = Color.White,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -466,7 +466,7 @@ private fun CompactProfileStat(
     Row(
         modifier =
             modifier
-                .height(28.dp)
+                .height(34.dp)
                 .background(Color.White.copy(alpha = 0.045f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -475,13 +475,13 @@ private fun CompactProfileStat(
         Text(
             text = label,
             color = PanelMuted,
-            fontSize = 8.sp,
+            fontSize = 10.sp,
             maxLines = 1,
         )
         Text(
             text = value,
             color = Color.White,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Black,
             maxLines = 1,
         )
@@ -498,14 +498,14 @@ private fun SettingsPanelCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.025f else 1f,
+        targetValue = if (focused) 1.035f else 1f,
         label = "settingsPanelCardScale",
     )
 
     Row(
         modifier =
             modifier
-                .height(62.dp)
+                .height(88.dp)
                 .focusRequester(requester)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
@@ -523,25 +523,25 @@ private fun SettingsPanelCard(
                     color = if (focused) Color.White else Color.White.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(11.dp),
                 )
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier =
                 Modifier
-                    .width(28.dp)
-                    .height(28.dp)
+                    .width(34.dp)
+                    .height(34.dp)
                     .background(Color.White.copy(alpha = if (focused) 0.14f else 0.07f), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = setting.symbol,
                 color = Color.White,
-                fontSize = if (setting.symbol == "CC") 8.sp else 13.sp,
+                fontSize = if (setting.symbol == "CC") 10.sp else 16.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(11.dp))
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
@@ -549,17 +549,17 @@ private fun SettingsPanelCard(
             Text(
                 text = setting.title,
                 color = Color.White,
-                fontSize = 10.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = setting.subtitle,
                 color = PanelMuted,
-                fontSize = 8.sp,
-                lineHeight = 9.sp,
+                fontSize = 14.sp,
+                lineHeight = 17.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
