@@ -51,13 +51,24 @@ class TvHomeRepository(
             ),
         )
 
-    fun cached(): TvHomeData? =
-        prefs.getString(KEY_HOME_CACHE, null)
+    fun cached(): TvHomeData? {
+        val activeProfileId = profileStore.activeProfileId()
+        val cachedProfileId = prefs.getString(KEY_PROFILE_ID, null)
+        if (cachedProfileId != activeProfileId) return null
+
+        return prefs.getString(KEY_HOME_CACHE, null)
             ?.let { raw ->
                 runCatching {
                     homeFromJson(JSONObject(raw))
                 }.getOrNull()
             }
+    }
+
+    fun shouldRefresh(home: TvHomeData?): Boolean {
+        if (home == null) return true
+        val age = System.currentTimeMillis() - home.refreshedAtEpochMs
+        return age < 0L || age >= CACHE_MAX_AGE_MS
+    }
 
     suspend fun refresh(): TvHomeData = coroutineScope {
         val year = Calendar.getInstance().get(Calendar.YEAR)
@@ -195,6 +206,7 @@ class TvHomeRepository(
                 KEY_HOME_CACHE,
                 homeToJson(home).toString(),
             )
+            .putString(KEY_PROFILE_ID, profileStore.activeProfileId())
             .apply()
     }
 
@@ -237,6 +249,8 @@ class TvHomeRepository(
     companion object {
         private const val PREFS_NAME = "vueo_tv_home"
         private const val KEY_HOME_CACHE = "home_cache_v1"
+        private const val KEY_PROFILE_ID = "home_cache_profile_v1"
+        private const val CACHE_MAX_AGE_MS = 20L * 60L * 1000L
 
         private const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
         private const val CONNECT_TIMEOUT_MS = 5_000

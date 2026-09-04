@@ -30,6 +30,9 @@ object TvFocusMemory {
     var lastMediaKey: String? = null
         private set
 
+    var lastRailColumn: Int = 0
+        private set
+
     private val rowIndexes = linkedMapOf<String, Int>()
 
     fun rememberNav(label: String) {
@@ -47,10 +50,12 @@ object TvFocusMemory {
         itemIndex: Int,
         mediaKey: String,
     ) {
+        val safeIndex = itemIndex.coerceAtLeast(0)
         lastZone = TvFocusZone.Rail
         lastRowId = rowId
         lastMediaKey = mediaKey
-        rowIndexes[rowId] = itemIndex.coerceAtLeast(0)
+        lastRailColumn = safeIndex
+        rowIndexes[rowId] = safeIndex
     }
 
     fun railIndex(
@@ -58,7 +63,15 @@ object TvFocusMemory {
         itemCount: Int,
     ): Int {
         if (itemCount <= 0) return 0
-        return (rowIndexes[rowId] ?: 0).coerceIn(0, itemCount - 1)
+        return (rowIndexes[rowId] ?: lastRailColumn).coerceIn(0, itemCount - 1)
+    }
+
+    fun resetToHero() {
+        lastZone = TvFocusZone.Hero
+        lastHeroAction = 0
+        lastRowId = null
+        lastMediaKey = null
+        lastRailColumn = 0
     }
 }
 
@@ -74,6 +87,22 @@ fun Modifier.tvVerticalFocus(
         when (event.key) {
             Key.DirectionUp -> requestTvFocus(up)
             Key.DirectionDown -> requestTvFocus(down)
+            else -> false
+        }
+    }
+
+fun Modifier.tvHorizontalEdgeGuard(
+    blockLeft: Boolean,
+    blockRight: Boolean,
+): Modifier =
+    onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            return@onPreviewKeyEvent false
+        }
+
+        when (event.key) {
+            Key.DirectionLeft -> blockLeft
+            Key.DirectionRight -> blockRight
             else -> false
         }
     }

@@ -1,5 +1,9 @@
 package com.vueo.tv
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -34,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,6 +53,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +91,7 @@ import com.vueo.tv.search.TvSearchRepository
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.ui.focus.TvFocusMemory
 import com.vueo.tv.ui.focus.TvFocusZone
+import com.vueo.tv.ui.focus.tvHorizontalEdgeGuard
 import com.vueo.tv.ui.focus.tvVerticalFocus
 import com.vueo.tv.update.VueoTvUpdateManager
 import com.vueo.tv.update.VueoTvUpdateRelease
@@ -98,6 +107,7 @@ private val VueoGreen = Color(0xFF84E100)
 private val VueoYellow = Color(0xFFD6FF00)
 private val VueoMuted = Color(0xFFAAB2AD)
 private const val TV_UPDATER_ENABLED = true
+private const val HOME_HERO_IDLE_ROTATE_MS = 18_000L
 
 internal val TV_TOP_NAV_LABELS =
     listOf("Search", "Library", "Home", "Movie", "Series", "Anime")
@@ -348,6 +358,7 @@ fun VueoTvApp() {
                         TvProfilePickerScreen(
                             profileStore = profileStore,
                             onProfileSelected = {
+                                TvFocusMemory.resetToHero()
                                 homeFocusRestoreToken += 1
                                 searchFocusRestoreToken += 1
                                 libraryFocusRestoreToken += 1
@@ -368,6 +379,7 @@ fun VueoTvApp() {
                             },
                             onNavigate = navigate,
                             onProfileChanged = {
+                                TvFocusMemory.resetToHero()
                                 homeFocusRestoreToken += 1
                                 searchFocusRestoreToken += 1
                                 libraryFocusRestoreToken += 1
@@ -575,37 +587,54 @@ private fun VueoTvHome(
         }
     val navRequesters =
         remember {
-            TV_TOP_NAV_LABELS
-                .associateWith { FocusRequester() }
+            TV_TOP_NAV_LABELS.associateWith { FocusRequester() }
         }
     val heroPlayRequester = remember { FocusRequester() }
-    val heroListRequester = remember { FocusRequester() }
+    val heroMoreInfoRequester = remember { FocusRequester() }
 
-    var home by remember {
-        mutableStateOf(repository.cached())
+    var home by remember { mutableStateOf(repository.cached()) }
+    var selectedHero by remember { mutableStateOf(home?.hero) }
+    var loading by remember { mutableStateOf(home == null) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
+    var refreshNonce by remember { mutableIntStateOf(0) }
+    var interactionNonce by remember { mutableIntStateOf(0) }
+    var exitConfirmVisible by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = !exitConfirmVisible) {
+        exitConfirmVisible = true
+        interactionNonce += 1
     }
-    var selectedHero by remember {
-        mutableStateOf(home?.hero)
-    }
-    var loading by remember {
-        mutableStateOf(home == null)
-    }
-    var refreshError by remember {
-        mutableStateOf<String?>(null)
+    BackHandler(enabled = exitConfirmVisible) {
+        exitConfirmVisible = false
+        interactionNonce += 1
     }
 
-    LaunchedEffect(focusRestoreToken) {
-        runCatching {
-            repository.refresh()
+    LaunchedEffect(refreshNonce) {
+        val current = home
+        if (refreshNonce == 0 && !repository.shouldRefresh(current)) {
+            loading = false
+            return@LaunchedEffect
         }
+
+        loading = current == null
+        runCatching { repository.refresh() }
             .onSuccess { fresh ->
-                val rememberedMedia = TvFocusMemory.lastMediaKey
                 val restoredHero =
-                    rememberedMedia?.let { mediaKey ->
-                        fresh.rows
-                            .asSequence()
-                            .flatMap { it.items.asSequence() }
-                            .firstOrNull { "${it.type}:${it.id}" == mediaKey }
+                    if (TvFocusMemory.lastZone == TvFocusZone.Rail) {
+                        val rememberedMedia = TvFocusMemory.lastMediaKey
+                        rememberedMedia?.let { mediaKey ->
+                            libraryStore.continueWatching()
+                                .firstOrNull {
+                                    "${it.media.type}:${it.media.id}" == mediaKey
+                                }
+                                ?.media
+                                ?: fresh.rows
+                                    .asSequence()
+                                    .flatMap { it.items.asSequence() }
+                                    .firstOrNull { "${it.type}:${it.id}" == mediaKey }
+                        }
+                    } else {
+                        null
                     }
 
                 home = fresh
@@ -617,18 +646,49 @@ private fun VueoTvHome(
                     if (home == null) {
                         "Unable to load VUEO catalogs"
                     } else {
-                        "Showing cached catalog"
+                        "Offline. Showing saved Home."
                     }
             }
 
         loading = false
     }
 
+    LaunchedEffect(home, interactionNonce) {
+        val currentHome = home ?: return@LaunchedEffect
+        while (true) {
+            delay(HOME_HERO_IDLE_ROTATE_MS)
+            if (exitConfirmVisible || TvFocusMemory.lastZone == TvFocusZone.Rail) {
+                continue
+            }
+
+            val candidates =
+                currentHome.rows
+                    .asSequence()
+                    .flatMap { it.items.asSequence() }
+                    .filter { !it.background.isNullOrBlank() }
+                    .distinctBy { "${it.type}:${it.id}" }
+                    .take(8)
+                    .toList()
+
+            if (candidates.size > 1) {
+                val currentKey = selectedHero?.let { "${it.type}:${it.id}" }
+                val currentIndex = candidates.indexOfFirst { "${it.type}:${it.id}" == currentKey }
+                selectedHero = candidates[(currentIndex + 1) % candidates.size]
+            }
+        }
+    }
+
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(VueoBlack),
+                .background(VueoBlack)
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && !exitConfirmVisible) {
+                        interactionNonce += 1
+                    }
+                    false
+                },
     ) {
         when {
             home != null && selectedHero != null -> {
@@ -638,12 +698,11 @@ private fun VueoTvHome(
                     continueWatching = libraryStore.continueWatching(),
                     navRequesters = navRequesters,
                     heroPlayRequester = heroPlayRequester,
-                    heroListRequester = heroListRequester,
+                    heroMoreInfoRequester = heroMoreInfoRequester,
                     focusRestoreToken = focusRestoreToken,
                     refreshError = refreshError,
+                    onUserInteraction = { interactionNonce += 1 },
                     onCardFocused = { selectedHero = it },
-                    isInMyList = { libraryStore.contains(it) },
-                    onToggleMyList = { libraryStore.toggle(it) },
                     onOpenMedia = onOpenMedia,
                     onPlayMedia = onPlayMedia,
                     onResumeEntry = onResumeEntry,
@@ -654,6 +713,7 @@ private fun VueoTvHome(
 
             else -> ErrorHome(
                 message = refreshError ?: "Unable to load VUEO catalogs",
+                onRetry = { refreshNonce += 1 },
             )
         }
 
@@ -663,6 +723,18 @@ private fun VueoTvHome(
             selectedLabel = "Home",
             onSelected = onNavigate,
         )
+
+        if (exitConfirmVisible) {
+            TvHomeExitOverlay(
+                onStay = {
+                    exitConfirmVisible = false
+                    interactionNonce += 1
+                },
+                onExit = {
+                    context.findActivity()?.finish()
+                },
+            )
+        }
     }
 }
 
@@ -673,12 +745,11 @@ private fun HomeContent(
     continueWatching: List<LibraryPlaybackEntry>,
     navRequesters: Map<String, FocusRequester>,
     heroPlayRequester: FocusRequester,
-    heroListRequester: FocusRequester,
+    heroMoreInfoRequester: FocusRequester,
     focusRestoreToken: Int,
     refreshError: String?,
+    onUserInteraction: () -> Unit,
     onCardFocused: (TvMediaItem) -> Unit,
-    isInMyList: (TvMediaItem) -> Boolean,
-    onToggleMyList: (TvMediaItem) -> Boolean,
     onOpenMedia: (TvMediaItem) -> Unit,
     onPlayMedia: (TvMediaItem) -> Unit,
     onResumeEntry: (LibraryPlaybackEntry) -> Unit,
@@ -689,9 +760,7 @@ private fun HomeContent(
     val contentRowIds =
         remember(home.rows, continueWatching) {
             buildList {
-                if (continueWatching.isNotEmpty()) {
-                    add(continueRowId)
-                }
+                if (continueWatching.isNotEmpty()) add(continueRowId)
                 addAll(home.rows.map { it.id })
             }
         }
@@ -700,26 +769,31 @@ private fun HomeContent(
         remember(rowKey) {
             contentRowIds.associateWith { FocusRequester() }
         }
-    val firstRowRequester =
-        contentRowIds.firstOrNull()
-            ?.let(rowEntryRequesters::get)
+    val firstRowRequester = contentRowIds.firstOrNull()?.let(rowEntryRequesters::get)
     val homeNavRequester = navRequesters.getValue("Home")
     val railStartIndex = if (refreshError != null) 2 else 1
     val catalogRowOffset = if (continueWatching.isNotEmpty()) 1 else 0
     var lastVerticalRow by remember { mutableStateOf<String?>(null) }
+    var preferredRailColumn by remember { mutableIntStateOf(TvFocusMemory.lastRailColumn) }
+
+    val heroResumeEntry =
+        remember(hero.type, hero.id, continueWatching) {
+            continueWatching.firstOrNull {
+                it.media.type.equals(hero.type, ignoreCase = true) && it.media.id == hero.id
+            }
+        }
 
     LaunchedEffect(rowKey, focusRestoreToken) {
         delay(90)
         val target =
             when (TvFocusMemory.lastZone) {
                 TvFocusZone.Nav ->
-                    navRequesters[TvFocusMemory.lastNavLabel]
-                        ?: homeNavRequester
+                    navRequesters[TvFocusMemory.lastNavLabel] ?: homeNavRequester
 
                 TvFocusZone.Hero -> {
                     columnState.scrollToItem(0)
                     if (TvFocusMemory.lastHeroAction == 1) {
-                        heroListRequester
+                        heroMoreInfoRequester
                     } else {
                         heroPlayRequester
                     }
@@ -727,15 +801,12 @@ private fun HomeContent(
 
                 TvFocusZone.Rail -> {
                     val rememberedRowId = TvFocusMemory.lastRowId
-                    val rememberedRowIndex =
-                        contentRowIds.indexOf(rememberedRowId)
+                    val rememberedRowIndex = contentRowIds.indexOf(rememberedRowId)
                     if (rememberedRowIndex >= 0) {
                         columnState.scrollToItem(railStartIndex + rememberedRowIndex)
                         delay(70)
                     }
-                    rememberedRowId
-                        ?.let(rowEntryRequesters::get)
-                        ?: heroPlayRequester
+                    rememberedRowId?.let(rowEntryRequesters::get) ?: heroPlayRequester
                 }
             }
 
@@ -754,19 +825,20 @@ private fun HomeContent(
             Hero(
                 item = hero,
                 playRequester = heroPlayRequester,
-                listRequester = heroListRequester,
+                moreInfoRequester = heroMoreInfoRequester,
                 upRequester = homeNavRequester,
                 downRequester = firstRowRequester,
                 providerName = home.providerName,
-                inMyList = isInMyList(hero),
-                onToggleMyList = { onToggleMyList(hero) },
-                onPlay = { onPlayMedia(hero) },
+                resumeEntry = heroResumeEntry,
+                onPlay = {
+                    heroResumeEntry?.let(onResumeEntry) ?: onPlayMedia(hero)
+                },
+                onMoreInfo = { onOpenMedia(hero) },
                 onFocused = {
+                    onUserInteraction()
                     if (lastVerticalRow != null) {
                         lastVerticalRow = null
-                        scope.launch {
-                            columnState.animateScrollToItem(0)
-                        }
+                        scope.launch { columnState.animateScrollToItem(0) }
                     }
                 },
             )
@@ -789,10 +861,11 @@ private fun HomeContent(
                     entries = continueWatching,
                     entryRequester = rowEntryRequesters.getValue(continueRowId),
                     upRequester = heroPlayRequester,
-                    downRequester =
-                        home.rows.firstOrNull()
-                            ?.let { rowEntryRequesters[it.id] },
+                    downRequester = home.rows.firstOrNull()?.let { rowEntryRequesters[it.id] },
+                    preferredIndex = preferredRailColumn,
                     onFocused = { entry, index ->
+                        preferredRailColumn = index
+                        onUserInteraction()
                         onCardFocused(entry.media)
                         TvFocusMemory.rememberRail(
                             rowId = continueRowId,
@@ -801,11 +874,7 @@ private fun HomeContent(
                         )
                         if (lastVerticalRow != continueRowId) {
                             lastVerticalRow = continueRowId
-                            scope.launch {
-                                columnState.animateScrollToItem(
-                                    index = railStartIndex,
-                                )
-                            }
+                            scope.launch { columnState.animateScrollToItem(railStartIndex) }
                         }
                     },
                     onResume = onResumeEntry,
@@ -819,12 +888,10 @@ private fun HomeContent(
                 if (contentIndex == 0) {
                     heroPlayRequester
                 } else {
-                    contentRowIds.getOrNull(contentIndex - 1)
-                        ?.let(rowEntryRequesters::get)
+                    contentRowIds.getOrNull(contentIndex - 1)?.let(rowEntryRequesters::get)
                 }
             val downRequester =
-                contentRowIds.getOrNull(contentIndex + 1)
-                    ?.let(rowEntryRequesters::get)
+                contentRowIds.getOrNull(contentIndex + 1)?.let(rowEntryRequesters::get)
             val entryRequester = rowEntryRequesters.getValue(row.id)
 
             item(key = row.id) {
@@ -833,7 +900,10 @@ private fun HomeContent(
                     entryRequester = entryRequester,
                     upRequester = upRequester,
                     downRequester = downRequester,
-                    onCardFocused = { item, _ ->
+                    preferredIndex = preferredRailColumn,
+                    onCardFocused = { item, index ->
+                        preferredRailColumn = index
+                        onUserInteraction()
                         onCardFocused(item)
                         if (lastVerticalRow != row.id) {
                             lastVerticalRow = row.id
@@ -1224,13 +1294,13 @@ private fun TvNavItem(
 private fun Hero(
     item: TvMediaItem,
     playRequester: FocusRequester,
-    listRequester: FocusRequester,
+    moreInfoRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
     providerName: String,
-    inMyList: Boolean,
-    onToggleMyList: () -> Boolean,
+    resumeEntry: LibraryPlaybackEntry?,
     onPlay: () -> Unit,
+    onMoreInfo: () -> Unit,
     onFocused: () -> Unit,
 ) {
     Box(
@@ -1312,7 +1382,7 @@ private fun Hero(
                 text =
                     item.description
                         ?: item.genres.take(3).joinToString(" • ")
-                        .ifBlank { "Available from $providerName" },
+                            .ifBlank { "Available from $providerName" },
                 color = VueoMuted,
                 fontSize = 16.sp,
                 lineHeight = 23.sp,
@@ -1322,7 +1392,7 @@ private fun Hero(
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TvHeroButton(
-                    text = "▶  Play",
+                    text = if (resumeEntry != null) "▶  Resume" else "▶  Play",
                     primary = true,
                     requester = playRequester,
                     upRequester = upRequester,
@@ -1331,20 +1401,25 @@ private fun Hero(
                     onFocused = onFocused,
                     onClick = onPlay,
                 )
-                var saved by remember(item.type, item.id, inMyList) { mutableStateOf(inMyList) }
                 TvHeroButton(
-                    text = if (saved) "✓  My List" else "+  My List",
-                    requester = listRequester,
+                    text = "More Info",
+                    requester = moreInfoRequester,
                     upRequester = upRequester,
                     downRequester = downRequester,
                     actionIndex = 1,
                     onFocused = onFocused,
-                    onClick = { saved = onToggleMyList() },
+                    onClick = onMoreInfo,
                 )
             }
             Spacer(Modifier.height(9.dp))
             Text(
-                text = "Source • $providerName",
+                text =
+                    if (resumeEntry != null) {
+                        val percent = (resumeEntry.progressFraction * 100).toInt().coerceIn(1, 99)
+                        "Resume from $percent%  •  $providerName"
+                    } else {
+                        "Source • $providerName"
+                    },
                 color = VueoMuted.copy(alpha = 0.72f),
                 fontSize = 11.sp,
             )
@@ -1417,40 +1492,36 @@ private fun TvContinueWatchingRail(
     entryRequester: FocusRequester,
     upRequester: FocusRequester?,
     downRequester: FocusRequester?,
+    preferredIndex: Int,
     onFocused: (LibraryPlaybackEntry, Int) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
 ) {
-    val rememberedIndex =
-        TvFocusMemory.railIndex(
-            "continue-watching",
-            entries.size,
-        )
+    val rememberedIndex = TvFocusMemory.railIndex("continue-watching", entries.size)
     val listState =
         rememberLazyListState(
-            initialFirstVisibleItemIndex =
-                (rememberedIndex - 1)
-                    .coerceAtLeast(0),
+            initialFirstVisibleItemIndex = (rememberedIndex - 1).coerceAtLeast(0),
         )
     val scope = rememberCoroutineScope()
-    var entryIndex by remember(entries.size) {
-        mutableStateOf(rememberedIndex)
+    var entryIndex by remember(entries.size) { mutableIntStateOf(rememberedIndex) }
+
+    LaunchedEffect(preferredIndex, entries.size) {
+        if (entries.isNotEmpty()) {
+            val targetIndex = preferredIndex.coerceIn(0, entries.lastIndex)
+            if (entryIndex != targetIndex) {
+                entryIndex = targetIndex
+                listState.scrollToItem((targetIndex - 1).coerceAtLeast(0))
+            }
+        }
     }
 
-    Column(
-        modifier = Modifier.padding(top = 10.dp),
-    ) {
+    Column(modifier = Modifier.padding(top = 10.dp)) {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(
-                        horizontal = 58.dp,
-                        vertical = 8.dp,
-                    ),
-            horizontalArrangement =
-                Arrangement.SpaceBetween,
-            verticalAlignment =
-                Alignment.CenterVertically,
+                    .padding(horizontal = 58.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Continue Watching",
@@ -1467,26 +1538,22 @@ private fun TvContinueWatchingRail(
 
         LazyRow(
             state = listState,
-            contentPadding =
-                PaddingValues(
-                    horizontal = 58.dp,
-                    vertical = 10.dp,
-                ),
-            horizontalArrangement =
-                Arrangement.spacedBy(15.dp),
+            contentPadding = PaddingValues(horizontal = 58.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(15.dp),
         ) {
             itemsIndexed(
                 items = entries,
                 key = { _, entry -> entry.mediaKey },
             ) { index, entry ->
                 val entryModifier =
-                    if (index == entryIndex) {
-                        Modifier.focusRequester(
-                            entryRequester
-                        )
+                    (if (index == entryIndex) {
+                        Modifier.focusRequester(entryRequester)
                     } else {
                         Modifier
-                    }
+                    }).tvHorizontalEdgeGuard(
+                        blockLeft = index == 0,
+                        blockRight = index == entries.lastIndex,
+                    )
 
                 TvContinueWatchingCard(
                     entry = entry,
@@ -1497,16 +1564,10 @@ private fun TvContinueWatchingRail(
                         entryIndex = index
                         onFocused(entry, index)
                         scope.launch {
-                            listState.animateScrollToItem(
-                                index =
-                                    (index - 1)
-                                        .coerceAtLeast(0),
-                            )
+                            listState.animateScrollToItem((index - 1).coerceAtLeast(0))
                         }
                     },
-                    onClick = {
-                        onResume(entry)
-                    },
+                    onClick = { onResume(entry) },
                 )
             }
         }
@@ -1664,6 +1725,7 @@ private fun TvRail(
     entryRequester: FocusRequester,
     upRequester: FocusRequester?,
     downRequester: FocusRequester?,
+    preferredIndex: Int,
     onCardFocused: (TvMediaItem, Int) -> Unit,
     onOpenMedia: (TvMediaItem) -> Unit,
 ) {
@@ -1673,13 +1735,19 @@ private fun TvRail(
             initialFirstVisibleItemIndex = (rememberedIndex - 1).coerceAtLeast(0),
         )
     val scope = rememberCoroutineScope()
-    var entryIndex by remember(row.id, row.items.size) {
-        mutableStateOf(rememberedIndex)
+    var entryIndex by remember(row.id, row.items.size) { mutableIntStateOf(rememberedIndex) }
+
+    LaunchedEffect(preferredIndex, row.id, row.items.size) {
+        if (row.items.isNotEmpty()) {
+            val targetIndex = preferredIndex.coerceIn(0, row.items.lastIndex)
+            if (entryIndex != targetIndex) {
+                entryIndex = targetIndex
+                listState.scrollToItem((targetIndex - 1).coerceAtLeast(0))
+            }
+        }
     }
 
-    Column(
-        modifier = Modifier.padding(top = 10.dp),
-    ) {
+    Column(modifier = Modifier.padding(top = 10.dp)) {
         Row(
             modifier =
                 Modifier
@@ -1711,11 +1779,14 @@ private fun TvRail(
                 key = { _, item -> "${row.id}:${item.type}:${item.id}" },
             ) { index, item ->
                 val entryModifier =
-                    if (index == entryIndex) {
+                    (if (index == entryIndex) {
                         Modifier.focusRequester(entryRequester)
                     } else {
                         Modifier
-                    }
+                    }).tvHorizontalEdgeGuard(
+                        blockLeft = index == 0,
+                        blockRight = index == row.items.lastIndex,
+                    )
 
                 TvPosterCard(
                     item = item,
@@ -1730,11 +1801,8 @@ private fun TvRail(
                             mediaKey = "${item.type}:${item.id}",
                         )
                         onCardFocused(item, index)
-
                         scope.launch {
-                            listState.animateScrollToItem(
-                                index = (index - 1).coerceAtLeast(0),
-                            )
+                            listState.animateScrollToItem((index - 1).coerceAtLeast(0))
                         }
                     },
                     onClick = { onOpenMedia(item) },
@@ -1992,28 +2060,95 @@ private fun TvUpdateOverlay(
     }
 }
 
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
 @Composable
 private fun LoadingHome() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 104.dp),
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(
-                color = Color.White,
+        Row(
+            modifier = Modifier.padding(horizontal = 58.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.fillMaxWidth(0.42f)) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth(0.78f)
+                            .height(42.dp)
+                            .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(8.dp)),
+                )
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(86.dp)
+                            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(8.dp)),
+                )
+                Spacer(Modifier.height(18.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.width(28.dp).height(28.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+            }
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp)),
             )
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = "Loading VUEO",
-                color = VueoMuted,
-                fontSize = 14.sp,
-            )
+        }
+
+        Spacer(Modifier.height(38.dp))
+        Text(
+            text = "Loading Home",
+            color = VueoMuted,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(horizontal = 58.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 58.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            repeat(6) {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(158.dp)
+                            .height(226.dp)
+                            .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp)),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ErrorHome(message: String) {
+private fun ErrorHome(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    val retryRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        runCatching { retryRequester.requestFocus() }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -2031,6 +2166,88 @@ private fun ErrorHome(message: String) {
                 color = VueoMuted,
                 fontSize = 15.sp,
             )
+            Spacer(Modifier.height(18.dp))
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.focusRequester(retryRequester),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                    ),
+            ) {
+                Text("Retry", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
+
+@Composable
+private fun TvHomeExitOverlay(
+    onStay: () -> Unit,
+    onExit: () -> Unit,
+) {
+    val stayRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { stayRequester.requestFocus() }
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .zIndex(40f)
+                .background(Color.Black.copy(alpha = 0.70f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .width(430.dp)
+                    .background(VueoPanel, RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 30.dp, vertical = 26.dp),
+        ) {
+            Text(
+                text = "Exit Vueo?",
+                color = Color.White,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Your Home position and playback progress are already saved.",
+                color = VueoMuted,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(22.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onStay,
+                    modifier = Modifier.focusRequester(stayRequester),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                        ),
+                ) {
+                    Text("Stay", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onExit,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.12f),
+                            contentColor = Color.White,
+                        ),
+                ) {
+                    Text("Exit", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
