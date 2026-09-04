@@ -1,20 +1,34 @@
 package com.vueo.tv.detail
 
 import android.content.Context
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaPreferences
+import com.vueo.shared.core.enrichment.GeminiClient
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
 import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
+import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.media.MediaCompany
+import com.vueo.shared.core.media.MediaPerson
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.storage.LibraryStore
+import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.data.TvMediaItem
+import com.vueo.tv.data.TvUnifiedDiscovery
+import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 
+/**
+ * TV Details adapter over canonical Shared Core metadata/discovery clients.
+ *
+ * No provider endpoint is hardcoded here. Core metadata comes from the same
+ * UnifiedMediaEngine used by Mobile, while TMDB, MDBList, local discovery and
+ * Gemini all remain shared:core features.
+ */
 class TvDetailRepository(
     context: Context,
 ) {
@@ -25,32 +39,48 @@ class TvDetailRepository(
             context = appContext,
             prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
         )
+    private val discovery = TvUnifiedDiscovery(appContext)
+    private val profileStore = ProfileStore(appContext)
+    private val dnaPreferences =
+        UserDnaPreferences(
+            context = appContext,
+            prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+        )
+    private val dnaEngine =
+        UserDnaEngine(
+            LibraryStore(
+                context = appContext,
+                prefsName = TvLibraryStore.PREFS_NAME,
+                watchlistStorageKey = TvLibraryStore.KEY_LIBRARY,
+            )
+        )
 
     suspend fun load(seed: TvMediaItem): TvDetailData =
         withContext(Dispatchers.IO) {
-            val url = "$CINEMETA_BASE/meta/${seed.type}/${seed.id}.json"
-            val root = JSONObject(httpGet(url))
-            val meta = root.optJSONObject("meta") ?: root
+            val tmdbKey = pluginStore.tmdbApiKey().trim()
+            val preparedSeed =
+                if (tmdbKey.isNotBlank() && seed.id.startsWith("tmdb:")) {
+                    runCatching {
+                        TmdbEnhancementClient.prepareForCore(
+                            item = seed,
+                            apiKey = tmdbKey,
+                        )
+                    }.getOrDefault(seed)
+                } else {
+                    seed
+                }
 
-            val cinemetaMedia =
-                TvMediaItem(
-                    id = meta.optString("id").trim().ifBlank { seed.id },
-                    type = meta.optString("type").trim().ifBlank { seed.type },
-                    name = meta.optString("name").trim().ifBlank { seed.name },
-                    poster = httpsOrNull(meta.optString("poster")) ?: seed.poster,
-                    background = httpsOrNull(meta.optString("background")) ?: seed.background,
-                    description = meta.optString("description").trim().takeIf { it.isNotBlank() } ?: seed.description,
-                    releaseInfo = meta.optString("releaseInfo").trim().takeIf { it.isNotBlank() } ?: seed.releaseInfo,
-                    genres = meta.stringList("genres").ifEmpty { seed.genres },
-                    imdbRating = meta.flexibleDouble("imdbRating", "imdb_rating") ?: seed.imdbRating,
-                )
+            val coreMedia =
+                runCatching {
+                    discovery.loadMeta(preparedSeed)
+                }.getOrDefault(preparedSeed)
 
             val enhanced =
                 MetadataEnhancementEngine.enrich(
-                    media = cinemetaMedia,
+                    media = coreMedia,
                     options =
                         MetadataEnhancementOptions(
-                            tmdbApiKey = pluginStore.tmdbApiKey(),
+                            tmdbApiKey = tmdbKey,
                             mdblistApiKey = settingsStore.mdblistApiKey(),
                             tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
                             tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
@@ -72,73 +102,102 @@ class TvDetailRepository(
                     }
                 }
 
-            val runtime =
-                meta.optString("runtime").trim().takeIf { it.isNotBlank() }
-                    ?: media.runtimeMinutes?.let { "$it min" }
+            val localRelated =
+                CatalogDiscoveryCache.related(
+                    item = media,
+                    limit = RELATED_LIMIT,
+                )
 
-            val directors =
-                media.directors.ifEmpty {
-                    meta.stringList("director")
+            val tmdbRelatedEnabled =
+                tmdbKey.isNotBlank() &&
+                    (
+                        settingsStore.tmdbRecommendationsEnabled() ||
+                            settingsStore.tmdbSimilarTitlesEnabled()
+                    )
+
+            val tmdbRelated =
+                if (tmdbRelatedEnabled) {
+                    runCatching {
+                        TmdbEnhancementClient.moreLikeThis(
+                            item = media,
+                            apiKey = tmdbKey,
+                            recommendationsEnabled = settingsStore.tmdbRecommendationsEnabled(),
+                            similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),
+                            limit = RELATED_LIMIT,
+                        )
+                    }.getOrDefault(emptyList())
+                } else {
+                    emptyList()
                 }
 
-            val cast =
-                media.cast
-                    .map { it.name }
-                    .filter { it.isNotBlank() }
-                    .ifEmpty { meta.stringList("cast") }
-
-            val network =
-                media.networks.firstOrNull()?.name
-                    ?: meta.optString("network").trim().takeIf { it.isNotBlank() }
-                    ?: meta.optString("country").trim().takeIf { it.isNotBlank() }
+            val related =
+                (tmdbRelated + localRelated)
+                    .asSequence()
+                    .filterNot { candidate ->
+                        candidate.id == media.id && candidate.type == media.type
+                    }
+                    .distinctBy { candidate ->
+                        "${candidate.type}:${candidate.id}"
+                    }
+                    .take(RELATED_LIMIT)
+                    .toList()
 
             TvDetailData(
                 media = media,
-                runtime = runtime,
-                director = directors,
-                cast = cast,
-                network = network,
-                episodes = meta.optJSONArray("videos").toEpisodes(),
+                runtime = media.runtimeMinutes?.let(::formatRuntime),
+                director = media.directors,
+                cast = media.cast,
+                productionCompanies = media.productionCompanies,
+                networks = media.networks,
+                episodes = media.episodes,
                 ratings = ratings,
-                providerName =
-                    if (media != cinemetaMedia || ratings.isNotEmpty()) {
-                        "Cinemeta + VUEO Enhancements"
-                    } else {
-                        "Cinemeta"
-                    },
+                related = related,
+                relatedUsesTmdb = tmdbRelated.isNotEmpty(),
+                geminiAvailable =
+                    settingsStore.geminiInsightsEnabled() &&
+                        settingsStore.geminiApiKey().isNotBlank(),
             )
         }
 
-    private fun httpGet(url: String): String {
-        require(url.startsWith("https://")) {
-            "VUEO TV detail requests require HTTPS."
-        }
-
-        val connection =
-            (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "VUEO-TV/0.5")
+    suspend fun generateGeminiInsight(media: TvMediaItem): String =
+        withContext(Dispatchers.IO) {
+            check(settingsStore.geminiInsightsEnabled()) {
+                "Gemini Insights are disabled in Settings."
             }
 
-        return try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                error("HTTP $code from Cinemeta")
+            val apiKey = settingsStore.geminiApiKey().trim()
+            check(apiKey.isNotBlank()) {
+                "Gemini API key is not configured."
             }
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
+
+            val profileId = profileStore.activeProfileId()
+            val dna =
+                if (dnaPreferences.userDnaEnabled(profileId)) {
+                    dnaEngine.build()
+                } else {
+                    null
+                }
+            val visibleMatch =
+                if (
+                    dna != null &&
+                    dna.hasUsefulData &&
+                    dnaPreferences.shouldShowDnaMatch(profileId)
+                ) {
+                    dnaEngine.matchPercent(media = media, dna = dna)
+                } else {
+                    null
+                }
+
+            GeminiClient.titleInsight(
+                media = media,
+                dna = dna,
+                dnaMatchPercent = visibleMatch,
+                apiKey = apiKey,
+            )
         }
-    }
 
     companion object {
-        private const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
-        private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val READ_TIMEOUT_MS = 7_000
+        private const val RELATED_LIMIT = 18
     }
 }
 
@@ -146,11 +205,14 @@ data class TvDetailData(
     val media: TvMediaItem,
     val runtime: String?,
     val director: List<String>,
-    val cast: List<String>,
-    val network: String?,
+    val cast: List<MediaPerson>,
+    val productionCompanies: List<MediaCompany>,
+    val networks: List<MediaCompany>,
     val episodes: List<TvEpisode>,
     val ratings: List<MediaRating> = emptyList(),
-    val providerName: String,
+    val related: List<TvMediaItem> = emptyList(),
+    val relatedUsesTmdb: Boolean = false,
+    val geminiAvailable: Boolean = false,
 ) {
     val seasons: List<Int>
         get() = episodes.map { it.season }.filter { it > 0 }.distinct().sorted()
@@ -161,64 +223,10 @@ data class TvDetailData(
 
 typealias TvEpisode = com.vueo.shared.core.media.EpisodeItem
 
-private fun JSONArray?.toEpisodes(): List<TvEpisode> {
-    if (this == null) return emptyList()
-
-    return (0 until length())
-        .mapNotNull { index ->
-            val video = optJSONObject(index) ?: return@mapNotNull null
-            val id = video.optString("id").trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val season = video.optInt("season", 0)
-            val episode = video.optInt("episode", 0)
-            val title =
-                video.optString("title").trim().takeIf { it.isNotBlank() }
-                    ?: video.optString("name").trim().takeIf { it.isNotBlank() }
-                    ?: if (episode > 0) "Episode $episode" else "Episode"
-
-            TvEpisode(
-                id = id,
-                title = title,
-                season = season,
-                episode = episode,
-                overview =
-                    video.optString("overview").trim().takeIf { it.isNotBlank() }
-                        ?: video.optString("description").trim().takeIf { it.isNotBlank() },
-                thumbnail = httpsOrNull(video.optString("thumbnail")),
-                released = video.optString("released").trim().takeIf { it.isNotBlank() },
-            )
-        }
-        .distinctBy { it.id }
-}
-
-private fun JSONObject.stringList(key: String): List<String> {
-    val value = opt(key)
-    return when (value) {
-        is JSONArray ->
-            (0 until value.length())
-                .mapNotNull { index ->
-                    value.optString(index).trim().takeIf { it.isNotBlank() }
-                }
-        is String ->
-            value.split(',')
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-        else -> emptyList()
+private fun formatRuntime(minutes: Int): String =
+    when {
+        minutes <= 0 -> ""
+        minutes < 60 -> "$minutes min"
+        minutes % 60 == 0 -> "${minutes / 60}h"
+        else -> "${minutes / 60}h ${minutes % 60}m"
     }
-}
-
-private fun JSONObject.flexibleDouble(vararg keys: String): Double? {
-    for (key in keys) {
-        val raw = opt(key)
-        val parsed =
-            when (raw) {
-                is Number -> raw.toDouble()
-                is String -> raw.toDoubleOrNull()
-                else -> null
-            }
-        if (parsed != null) return parsed
-    }
-    return null
-}
-
-private fun httpsOrNull(value: String?): String? =
-    value?.trim()?.takeIf { it.startsWith("https://") }

@@ -52,6 +52,9 @@ class TvUnifiedDiscovery(
                 catalogOrder = contentStore.catalogOrder(),
             )
 
+    suspend fun loadMeta(item: TvMediaItem): TvMediaItem =
+        syncedEngine().loadMeta(item)
+
     suspend fun search(
         query: String,
         type: TvDiscoverySearchType,

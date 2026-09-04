@@ -138,6 +138,7 @@ fun VueoTvApp() {
     var homeFocusRestoreToken by remember { mutableStateOf(0) }
     var currentScreen by remember { mutableStateOf(TvRootScreen.HOME) }
     var detailMedia by remember { mutableStateOf<TvMediaItem?>(null) }
+    var detailHistory by remember { mutableStateOf<List<TvMediaItem>>(emptyList()) }
     var playbackRequest by remember { mutableStateOf<TvPlaybackRequest?>(null) }
     var selectedSource by remember { mutableStateOf<SourceCandidate?>(null) }
     var selectedSubtitles by remember { mutableStateOf<List<SubtitleCandidate>>(emptyList()) }
@@ -218,6 +219,7 @@ fun VueoTvApp() {
                     profileDnaVisible = false
                     settingsInitialCategory = null
                     detailMedia = null
+                    detailHistory = emptyList()
                     playbackRequest = null
                     selectedSource = null
                     selectedSubtitles = emptyList()
@@ -269,6 +271,7 @@ fun VueoTvApp() {
                             onNavigate = navigate,
                             libraryStore = libraryStore,
                             onOpenMedia = { media ->
+                                detailHistory = emptyList()
                                 detailMedia = media
                                 detailReturnScreen = TvRootScreen.HOME
                                 currentScreen = TvRootScreen.DETAIL
@@ -285,6 +288,7 @@ fun VueoTvApp() {
                                     selectedSubtitles = emptyList()
                                     currentScreen = TvRootScreen.SOURCE_PICKER
                                 } else {
+                                    detailHistory = emptyList()
                                     detailMedia = media
                                     detailReturnScreen = TvRootScreen.HOME
                                     currentScreen = TvRootScreen.DETAIL
@@ -305,6 +309,7 @@ fun VueoTvApp() {
                             focusRestoreToken = searchFocusRestoreToken,
                             onNavigate = navigate,
                             onOpenMedia = { media ->
+                                detailHistory = emptyList()
                                 detailMedia = media
                                 detailReturnScreen = TvRootScreen.SEARCH
                                 currentScreen = TvRootScreen.DETAIL
@@ -317,6 +322,7 @@ fun VueoTvApp() {
                             focusRestoreToken = libraryFocusRestoreToken,
                             onNavigate = navigate,
                             onOpenMedia = { media ->
+                                detailHistory = emptyList()
                                 detailMedia = media
                                 detailReturnScreen = TvRootScreen.LIBRARY
                                 currentScreen = TvRootScreen.DETAIL
@@ -337,6 +343,7 @@ fun VueoTvApp() {
                             focusRestoreToken = browseFocusRestoreToken,
                             onNavigate = navigate,
                             onOpenMedia = { media ->
+                                detailHistory = emptyList()
                                 detailMedia = media
                                 detailReturnScreen = currentScreen
                                 currentScreen = TvRootScreen.DETAIL
@@ -432,20 +439,39 @@ fun VueoTvApp() {
                                     selectedSubtitles = emptyList()
                                     currentScreen = TvRootScreen.SOURCE_PICKER
                                 },
-                                onBack = {
-                                    val target = detailReturnScreen
-                                    detailMedia = null
+                                onOpenMedia = { related ->
+                                    detailMedia?.let { current ->
+                                        detailHistory = detailHistory + current
+                                    }
+                                    detailMedia = related
                                     playbackRequest = null
                                     selectedSource = null
                                     selectedSubtitles = emptyList()
-                                    currentScreen = target
-                                    when (target) {
-                                        TvRootScreen.SEARCH -> searchFocusRestoreToken += 1
-                                        TvRootScreen.LIBRARY -> libraryFocusRestoreToken += 1
-                                        TvRootScreen.MOVIE,
-                                        TvRootScreen.SERIES,
-                                        TvRootScreen.ANIME -> browseFocusRestoreToken += 1
-                                        else -> homeFocusRestoreToken += 1
+                                    currentScreen = TvRootScreen.DETAIL
+                                },
+                                onBack = {
+                                    if (detailHistory.isNotEmpty()) {
+                                        detailMedia = detailHistory.last()
+                                        detailHistory = detailHistory.dropLast(1)
+                                        playbackRequest = null
+                                        selectedSource = null
+                                        selectedSubtitles = emptyList()
+                                        currentScreen = TvRootScreen.DETAIL
+                                    } else {
+                                        val target = detailReturnScreen
+                                        detailMedia = null
+                                        playbackRequest = null
+                                        selectedSource = null
+                                        selectedSubtitles = emptyList()
+                                        currentScreen = target
+                                        when (target) {
+                                            TvRootScreen.SEARCH -> searchFocusRestoreToken += 1
+                                            TvRootScreen.LIBRARY -> libraryFocusRestoreToken += 1
+                                            TvRootScreen.MOVIE,
+                                            TvRootScreen.SERIES,
+                                            TvRootScreen.ANIME -> browseFocusRestoreToken += 1
+                                            else -> homeFocusRestoreToken += 1
+                                        }
                                     }
                                 },
                             )
