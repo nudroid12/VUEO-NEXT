@@ -4,6 +4,7 @@ import android.content.Context
 import com.vueo.shared.core.extensions.CatalogDescriptor
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.StremioAddonExtension
+import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryManager
@@ -27,6 +28,7 @@ class TvContentManagerStore(
     private val pluginStore = PluginStore(appContext)
     private val pluginRepositoryManager = PluginRepositoryManager(appContext)
     private val providerCodeSyncManager = ProviderCodeSyncManager(appContext)
+    private val pluginHealthStore = PluginHealthStore(appContext)
     private val pluginPrepareMutex = Mutex()
     @Volatile private var pluginsPrepared = false
 
@@ -99,6 +101,24 @@ class TvContentManagerStore(
             info.copy(enabled = true)
         }
 
+    suspend fun refreshAddon(manifestUrl: String): TvStremioAddonInfo =
+        withContext(Dispatchers.IO) {
+            val info = fetchAddon(manifestUrl)
+            val next = addonUrls().toMutableSet().apply { add(manifestUrl) }
+            prefs.edit().putStringSet(KEY_ADDON_URLS, next).apply()
+            bumpDiscoveryRevision()
+            info.copy(enabled = isAddonEnabled(manifestUrl))
+        }
+
+    fun removeAddon(manifestUrl: String) {
+        val next = addonUrls().filterNot { it == manifestUrl }.toSet()
+        prefs.edit()
+            .putStringSet(KEY_ADDON_URLS, next)
+            .remove(addonEnabledKey(manifestUrl))
+            .apply()
+        bumpDiscoveryRevision()
+    }
+
     suspend fun addRepository(input: String): TvPluginRepositoryInfo =
         withContext(Dispatchers.IO) {
             val installed =
@@ -116,6 +136,58 @@ class TvContentManagerStore(
             }
             installed.repository.toTvInfo()
         }
+
+    suspend fun refreshRepository(manifestUrl: String): TvPluginRepositoryInfo =
+        withContext(Dispatchers.IO) {
+            pluginRepositoryManager.installOrRefresh(
+                inputUrl = manifestUrl,
+                forceCodeRefresh = true,
+            ).repository.toTvInfo()
+        }
+
+    suspend fun refreshRepositories(): String =
+        withContext(Dispatchers.IO) {
+            val summary = pluginRepositoryManager.refreshInstalled(forceCodeRefresh = true)
+            buildString {
+                append("Refreshed ${summary.refreshedRepositories} repositories")
+                if (summary.failedRepositories > 0) append(" • ${summary.failedRepositories} failed")
+                append(" • ${summary.readyProviders} providers ready")
+            }
+        }
+
+    fun removeRepository(manifestUrl: String) {
+        pluginHealthStore.removeRepository(manifestUrl)
+        pluginStore.remove(manifestUrl)
+    }
+
+    fun providerHealthSnapshot(): TvProviderHealthSnapshot {
+        val repositories = pluginStore.repositories()
+        val records = pluginHealthStore.records()
+        val summary = pluginHealthStore.summary(repositories, pluginStore)
+        return TvProviderHealthSnapshot(
+            online = summary.online,
+            slow = summary.slow,
+            noResults = summary.noResults,
+            needsSetup = summary.needsSetup,
+            unavailable = summary.unavailable,
+            blocked = summary.blocked,
+            timeout = summary.timeout,
+            failed = summary.failed,
+            unknown = summary.unknown,
+            disabled = summary.disabled,
+            records = records.map { record ->
+                TvProviderHealthInfo(
+                    repositoryManifestUrl = record.repositoryManifestUrl,
+                    providerId = record.providerId,
+                    status = record.status.label,
+                    responseMs = record.responseMs,
+                    streamCount = record.streamCount,
+                    error = record.error,
+                    lastCheckedEpochMs = record.lastCheckedEpochMs,
+                )
+            },
+        )
+    }
 
     fun setAddonEnabled(url: String, enabled: Boolean) {
         if (isAddonEnabled(url) == enabled) return
@@ -395,6 +467,30 @@ data class TvPluginProviderInfo(
     val description: String?,
     val version: String?,
     val enabled: Boolean,
+)
+
+data class TvProviderHealthSnapshot(
+    val online: Int,
+    val slow: Int,
+    val noResults: Int,
+    val needsSetup: Int,
+    val unavailable: Int,
+    val blocked: Int,
+    val timeout: Int,
+    val failed: Int,
+    val unknown: Int,
+    val disabled: Int,
+    val records: List<TvProviderHealthInfo>,
+)
+
+data class TvProviderHealthInfo(
+    val repositoryManifestUrl: String,
+    val providerId: String,
+    val status: String,
+    val responseMs: Long?,
+    val streamCount: Int,
+    val error: String?,
+    val lastCheckedEpochMs: Long,
 )
 
 data class TvAddonInstallation(

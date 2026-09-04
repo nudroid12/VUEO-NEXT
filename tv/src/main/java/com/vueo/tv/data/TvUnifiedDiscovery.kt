@@ -55,6 +55,37 @@ class TvUnifiedDiscovery(
     suspend fun loadMeta(item: TvMediaItem): TvMediaItem =
         syncedEngine().loadMeta(item)
 
+    suspend fun hasActorSearchSource(): Boolean =
+        syncedEngine().hasActorSearchAddons()
+
+    suspend fun searchActor(
+        query: String,
+    ): List<TvDiscoverySearchResult> {
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2) return emptyList()
+
+        val engine = syncedEngine()
+        val providerNames = engine.installed()
+            .associate { extension ->
+                extension.descriptor.id to extension.descriptor.name
+            }
+
+        return engine.searchActor(
+            query = cleanQuery,
+            maxCatalogs = MAX_SEARCH_CATALOGS,
+            maxResults = MAX_SEARCH_RESULTS,
+        )
+            .map { media ->
+                TvDiscoverySearchResult(
+                    media = media,
+                    providerName = media.catalogSources.firstOrNull()
+                        ?: media.sourceExtensionId?.let(providerNames::get)
+                        ?: "Content Manager",
+                )
+            }
+            .take(MAX_SEARCH_RESULTS)
+    }
+
     suspend fun search(
         query: String,
         type: TvDiscoverySearchType,

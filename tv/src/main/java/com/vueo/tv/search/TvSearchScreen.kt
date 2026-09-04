@@ -65,6 +65,8 @@ private object TvSearchFocusMemory {
     var query: String = ""
     var mode: TvSearchMode = TvSearchMode.TITLE
     var type: TvSearchType = TvSearchType.ALL
+    var sort: TvSearchSort = TvSearchSort.POPULAR
+    var genre: String? = null
     var resultIndex: Int = 0
 }
 
@@ -86,20 +88,42 @@ fun TvSearchScreen(
     val allTypeRequester = remember { FocusRequester() }
     val movieTypeRequester = remember { FocusRequester() }
     val seriesTypeRequester = remember { FocusRequester() }
+    val animeTypeRequester = remember { FocusRequester() }
+    val popularSortRequester = remember { FocusRequester() }
+    val trendingSortRequester = remember { FocusRequester() }
+    val newestSortRequester = remember { FocusRequester() }
+    val genreRequester = remember { FocusRequester() }
     val resultEntryRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf(TvSearchFocusMemory.query) }
     var mode by remember { mutableStateOf(TvSearchFocusMemory.mode) }
     var type by remember { mutableStateOf(TvSearchFocusMemory.type) }
+    var sort by remember { mutableStateOf(TvSearchFocusMemory.sort) }
+    var genre by remember { mutableStateOf(TvSearchFocusMemory.genre) }
     var results by remember { mutableStateOf<List<TvSearchResult>>(emptyList()) }
+    var actorAvailable by remember { mutableStateOf(true) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var requestGeneration by remember { mutableStateOf(0L) }
     var focusedIndex by remember { mutableStateOf(TvSearchFocusMemory.resultIndex) }
 
+    val availableGenres = repository.availableGenres(results)
+    val displayResults = repository.filterAndSort(
+        items = results,
+        type = type,
+        genre = genre,
+        sort = sort,
+        query = query,
+        actorMode = mode == TvSearchMode.ACTOR,
+    )
+
     BackHandler {
         onNavigate("Home")
+    }
+
+    LaunchedEffect(Unit) {
+        actorAvailable = runCatching { repository.actorSearchAvailable() }.getOrDefault(false)
     }
 
     LaunchedEffect(focusRestoreToken) {
@@ -109,10 +133,10 @@ fun TvSearchScreen(
         }
     }
 
-    LaunchedEffect(focusRestoreToken, results.size) {
-        if (focusRestoreToken > 0 && results.isNotEmpty()) {
+    LaunchedEffect(focusRestoreToken, displayResults.size) {
+        if (focusRestoreToken > 0 && displayResults.isNotEmpty()) {
             delay(100)
-            focusedIndex = TvSearchFocusMemory.resultIndex.coerceIn(0, results.lastIndex)
+            focusedIndex = TvSearchFocusMemory.resultIndex.coerceIn(0, displayResults.lastIndex)
             gridState.scrollToItem((focusedIndex - 5).coerceAtLeast(0))
             runCatching { resultEntryRequester.requestFocus() }
         }
@@ -122,6 +146,8 @@ fun TvSearchScreen(
         TvSearchFocusMemory.query = query
         TvSearchFocusMemory.mode = mode
         TvSearchFocusMemory.type = type
+        TvSearchFocusMemory.sort = sort
+        TvSearchFocusMemory.genre = genre
         requestGeneration += 1L
         val generation = requestGeneration
         searchError = null
@@ -131,39 +157,56 @@ fun TvSearchScreen(
             searching = false
             return@LaunchedEffect
         }
-        if (mode == TvSearchMode.ACTOR) {
-            results = emptyList()
-            searching = false
-            return@LaunchedEffect
-        }
-
         delay(250)
         if (generation != requestGeneration) return@LaunchedEffect
 
-        val local = repository.searchLocal(query, type)
-        results = local
         searching = true
-        runCatching {
-            repository.searchRemote(query, type)
+        if (mode == TvSearchMode.ACTOR) {
+            results = emptyList()
+            runCatching { repository.searchActorRemote(query, type) }
+                .onSuccess { actorResults ->
+                    if (generation == requestGeneration) {
+                        results = actorResults
+                        searchError = null
+                    }
+                }
+                .onFailure { failure ->
+                    if (generation == requestGeneration) {
+                        searchError = failure.message ?: "Unable to search actor filmography"
+                    }
+                }
+        } else {
+            val local = repository.searchLocal(query, type)
+            results = local
+            runCatching { repository.searchRemote(query, type) }
+                .onSuccess { remote ->
+                    if (generation == requestGeneration) {
+                        results = repository.merge(query, type, local, remote)
+                        searchError = null
+                    }
+                }
+                .onFailure { failure ->
+                    if (generation == requestGeneration) {
+                        searchError =
+                            if (local.isEmpty()) {
+                                failure.message ?: "Unable to search VUEO catalogs"
+                            } else {
+                                "Showing cached results"
+                            }
+                    }
+                }
         }
-            .onSuccess { remote ->
-                if (generation == requestGeneration) {
-                    results = repository.merge(query, type, local, remote)
-                    searchError = null
-                }
-            }
-            .onFailure { failure ->
-                if (generation == requestGeneration) {
-                    searchError =
-                        if (local.isEmpty()) {
-                            failure.message ?: "Unable to search VUEO catalogs"
-                        } else {
-                            "Showing cached results"
-                        }
-                }
-            }
-        if (generation == requestGeneration) {
-            searching = false
+        if (generation == requestGeneration) searching = false
+    }
+
+    LaunchedEffect(sort, genre) {
+        TvSearchFocusMemory.sort = sort
+        TvSearchFocusMemory.genre = genre
+    }
+
+    LaunchedEffect(results, availableGenres) {
+        if (genre != null && availableGenres.none { it.equals(genre, ignoreCase = true) }) {
+            genre = null
         }
     }
 
@@ -201,7 +244,7 @@ fun TvSearchScreen(
                     )
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        text = "Find movies and series across enabled Content Manager catalogs.",
+                        text = "Find titles or actor filmographies across Shared Core discovery sources.",
                         color = SearchMuted,
                         fontSize = 15.sp,
                     )
@@ -219,7 +262,7 @@ fun TvSearchScreen(
                         onClick = { mode = TvSearchMode.TITLE },
                     )
                     TvSearchChip(
-                        label = "Actor",
+                        label = if (actorAvailable) "Actor" else "Actor*",
                         selected = mode == TvSearchMode.ACTOR,
                         requester = actorModeRequester,
                         upRequester = inputRequester,
@@ -279,66 +322,61 @@ fun TvSearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TvSearchChip(
-                    label = "All",
-                    selected = type == TvSearchType.ALL,
-                    requester = allTypeRequester,
-                    upRequester = titleModeRequester,
-                    downRequester = if (results.isNotEmpty()) resultEntryRequester else null,
-                    onClick = { type = TvSearchType.ALL },
-                )
-                TvSearchChip(
-                    label = "Movies",
-                    selected = type == TvSearchType.MOVIE,
-                    requester = movieTypeRequester,
-                    upRequester = titleModeRequester,
-                    downRequester = if (results.isNotEmpty()) resultEntryRequester else null,
-                    onClick = { type = TvSearchType.MOVIE },
-                )
-                TvSearchChip(
-                    label = "Series",
-                    selected = type == TvSearchType.SERIES,
-                    requester = seriesTypeRequester,
-                    upRequester = titleModeRequester,
-                    downRequester = if (results.isNotEmpty()) resultEntryRequester else null,
-                    onClick = { type = TvSearchType.SERIES },
-                )
+                TvSearchChip("All", type == TvSearchType.ALL, allTypeRequester, titleModeRequester, popularSortRequester) { type = TvSearchType.ALL }
+                TvSearchChip("Movies", type == TvSearchType.MOVIE, movieTypeRequester, titleModeRequester, popularSortRequester) { type = TvSearchType.MOVIE }
+                TvSearchChip("Series", type == TvSearchType.SERIES, seriesTypeRequester, titleModeRequester, popularSortRequester) { type = TvSearchType.SERIES }
+                TvSearchChip("Anime", type == TvSearchType.ANIME, animeTypeRequester, titleModeRequester, popularSortRequester) { type = TvSearchType.ANIME }
                 if (searchError != null) {
                     Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = searchError.orEmpty(),
-                        color = SearchMuted,
-                        fontSize = 12.sp,
-                    )
+                    Text(searchError.orEmpty(), color = SearchMuted, fontSize = 12.sp)
                 }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TvSearchChip("Popular", sort == TvSearchSort.POPULAR, popularSortRequester, allTypeRequester, if (displayResults.isNotEmpty()) resultEntryRequester else null) { sort = TvSearchSort.POPULAR }
+                TvSearchChip("Trending", sort == TvSearchSort.TRENDING, trendingSortRequester, allTypeRequester, if (displayResults.isNotEmpty()) resultEntryRequester else null) { sort = TvSearchSort.TRENDING }
+                TvSearchChip("Newest", sort == TvSearchSort.NEWEST, newestSortRequester, allTypeRequester, if (displayResults.isNotEmpty()) resultEntryRequester else null) { sort = TvSearchSort.NEWEST }
+                TvSearchChip(
+                    label = "Genre: ${genre ?: "All"}",
+                    selected = genre != null,
+                    requester = genreRequester,
+                    upRequester = allTypeRequester,
+                    downRequester = if (displayResults.isNotEmpty()) resultEntryRequester else null,
+                    onClick = {
+                        val options = listOf<String?>(null) + availableGenres
+                        val current = options.indexOfFirst { it?.equals(genre, ignoreCase = true) ?: (genre == null) }.coerceAtLeast(0)
+                        genre = options[(current + 1) % options.size]
+                    },
+                )
             }
         }
 
         when {
-            mode == TvSearchMode.ACTOR && query.isNotBlank() -> {
+            mode == TvSearchMode.ACTOR && !actorAvailable && query.isNotBlank() -> {
                 SearchMessage(
-                    title = "Actor search unavailable",
-                    body =
-                        "The enabled TV metadata source does not expose a cast/person search catalog yet. " +
-                            "Title search remains available.",
+                    title = "Actor source unavailable",
+                    body = "Enable an actor-capable addon or configure a TMDB API key in Settings.",
                 )
             }
             query.isBlank() -> {
                 SearchMessage(
                     title = "Search VUEO",
-                    body = "Type a movie or series title using your TV keyboard.",
+                    body = if (mode == TvSearchMode.ACTOR) "Type an actor name using your TV keyboard." else "Type a movie, series or anime title using your TV keyboard.",
                 )
             }
-            results.isEmpty() && searching -> {
+            displayResults.isEmpty() && searching -> {
                 SearchMessage(
                     title = "Searching…",
                     body = "Checking enabled Content Manager catalogs.",
                 )
             }
-            results.isEmpty() -> {
+            displayResults.isEmpty() -> {
                 SearchMessage(
                     title = "No results",
-                    body = "Try another title or change the Movie / Series filter.",
+                    body = "Try another query, type, genre or sort filter.",
                 )
             }
             else -> {
@@ -348,7 +386,7 @@ fun TvSearchScreen(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .padding(top = 292.dp),
+                            .padding(top = 346.dp),
                     contentPadding =
                         PaddingValues(
                             start = 58.dp,
@@ -360,13 +398,13 @@ fun TvSearchScreen(
                     verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
                     itemsIndexed(
-                        items = results,
+                        items = displayResults,
                         key = { _, result ->
                             "${result.media.type}:${result.media.id}:${result.providerName}"
                         },
                     ) { index, result ->
                         val entryModifier =
-                            if (index == focusedIndex.coerceIn(0, results.lastIndex)) {
+                            if (index == focusedIndex.coerceIn(0, displayResults.lastIndex)) {
                                 Modifier.focusRequester(resultEntryRequester)
                             } else {
                                 Modifier
@@ -374,7 +412,7 @@ fun TvSearchScreen(
                         TvSearchPosterCard(
                             result = result,
                             modifier = entryModifier,
-                            upRequester = if (index < 5) allTypeRequester else null,
+                            upRequester = if (index < 5) popularSortRequester else null,
                             onFocused = {
                                 focusedIndex = index
                                 TvSearchFocusMemory.resultIndex = index

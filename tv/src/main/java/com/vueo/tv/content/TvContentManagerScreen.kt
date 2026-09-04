@@ -94,20 +94,27 @@ fun TvContentManagerScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf(false) }
     var catalogOrder by remember { mutableStateOf<List<String>>(emptyList()) }
+    var providerHealth by remember { mutableStateOf<TvProviderHealthSnapshot?>(null) }
+    var actionKey by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         scope.launch {
             loading = true
-            if (mode != TvManagerMode.PROVIDERS) {
+            if (mode == TvManagerMode.PROVIDERS) {
+                runCatching { store.refreshRepositories() }
+                    .onSuccess { message = it }
+                    .onFailure { message = it.message ?: "Unable to refresh repositories" }
+            } else {
                 store.invalidateDiscovery()
             }
             runCatching { store.snapshot() }
                 .onSuccess {
                     snapshot = it
+                    providerHealth = store.providerHealthSnapshot()
                     catalogOrder = store.reconcileCatalogOrder(
                         it.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
                     )
-                    message = null
+                    if (mode != TvManagerMode.PROVIDERS) message = null
                 }
                 .onFailure {
                     message = it.message ?: "Unable to refresh Content Manager"
@@ -122,6 +129,7 @@ fun TvContentManagerScreen(
         runCatching { store.snapshot() }
             .onSuccess {
                 snapshot = it
+                providerHealth = store.providerHealthSnapshot()
                 catalogOrder = store.reconcileCatalogOrder(
                     it.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
                 )
@@ -286,6 +294,7 @@ fun TvContentManagerScreen(
                                         input = ""
                                         message = "Installed successfully"
                                         snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                        providerHealth = store.providerHealthSnapshot()
                                         snapshot?.let { current ->
                                             catalogOrder = store.reconcileCatalogOrder(
                                                 current.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
@@ -339,19 +348,43 @@ fun TvContentManagerScreen(
                     TvManagerMode.STREMIO ->
                         StremioAddonList(
                             addons = snapshot?.addons.orEmpty(),
+                            actionKey = actionKey,
                             onToggle = { addon ->
                                 store.setAddonEnabled(addon.manifestUrl, !addon.enabled)
-                                snapshot =
-                                    snapshot?.copy(
-                                        addons =
-                                            snapshot!!.addons.map {
-                                                if (it.manifestUrl == addon.manifestUrl) {
-                                                    it.copy(enabled = !it.enabled)
-                                                } else {
-                                                    it
-                                                }
+                                snapshot = snapshot?.copy(
+                                    addons = snapshot!!.addons.map {
+                                        if (it.manifestUrl == addon.manifestUrl) it.copy(enabled = !it.enabled) else it
+                                    }
+                                )
+                            },
+                            onRefresh = { addon ->
+                                scope.launch {
+                                    actionKey = "addon:${addon.manifestUrl}"
+                                    runCatching { store.refreshAddon(addon.manifestUrl) }
+                                        .onSuccess {
+                                            snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                            snapshot?.let { current ->
+                                                catalogOrder = store.reconcileCatalogOrder(
+                                                    current.addons.flatMap { it.catalogs.filter { catalog -> catalog.canLoadWithoutExtras }.map { catalog -> catalog.key } }
+                                                )
                                             }
-                                    )
+                                            message = "${addon.name} refreshed"
+                                        }
+                                        .onFailure { message = it.message ?: "Unable to refresh addon" }
+                                    actionKey = null
+                                }
+                            },
+                            onRemove = { addon ->
+                                store.removeAddon(addon.manifestUrl)
+                                scope.launch {
+                                    snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                    snapshot?.let { current ->
+                                        catalogOrder = store.reconcileCatalogOrder(
+                                            current.addons.flatMap { it.catalogs.filter { catalog -> catalog.canLoadWithoutExtras }.map { catalog -> catalog.key } }
+                                        )
+                                    }
+                                    message = "${addon.name} removed"
+                                }
                             },
                         )
 
@@ -374,6 +407,8 @@ fun TvContentManagerScreen(
                     TvManagerMode.PROVIDERS ->
                         ProviderRepositoryList(
                             repositories = snapshot?.repositories.orEmpty(),
+                            health = providerHealth,
+                            actionKey = actionKey,
                             onToggleRepository = { repo ->
                                 store.setRepositoryEnabled(repo.manifestUrl, !repo.enabled)
                                 snapshot =
@@ -390,23 +425,40 @@ fun TvContentManagerScreen(
                             },
                             onToggleProvider = { repo, provider ->
                                 store.setProviderEnabled(repo.manifestUrl, provider.id, !provider.enabled)
-                                snapshot =
-                                    snapshot?.copy(
-                                        repositories =
-                                            snapshot!!.repositories.map { storedRepo ->
-                                                if (storedRepo.manifestUrl != repo.manifestUrl) {
-                                                    storedRepo
-                                                } else {
-                                                    storedRepo.copy(
-                                                        providers =
-                                                            storedRepo.providers.map {
-                                                                if (it.id == provider.id) it.copy(enabled = !it.enabled) else it
-                                                            }
-                                                    )
-                                                }
+                                snapshot = snapshot?.copy(
+                                    repositories = snapshot!!.repositories.map { storedRepo ->
+                                        if (storedRepo.manifestUrl != repo.manifestUrl) storedRepo
+                                        else storedRepo.copy(
+                                            providers = storedRepo.providers.map {
+                                                if (it.id == provider.id) it.copy(enabled = !it.enabled) else it
                                             }
-                                    )
+                                        )
+                                    }
+                                )
+                                providerHealth = store.providerHealthSnapshot()
                             },
+                            onRefreshRepository = { repo ->
+                                scope.launch {
+                                    actionKey = "repo:${repo.manifestUrl}"
+                                    runCatching { store.refreshRepository(repo.manifestUrl) }
+                                        .onSuccess {
+                                            snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                            providerHealth = store.providerHealthSnapshot()
+                                            message = "${repo.name} refreshed"
+                                        }
+                                        .onFailure { message = it.message ?: "Unable to refresh repository" }
+                                    actionKey = null
+                                }
+                            },
+                            onRemoveRepository = { repo ->
+                                store.removeRepository(repo.manifestUrl)
+                                scope.launch {
+                                    snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                    providerHealth = store.providerHealthSnapshot()
+                                    message = "${repo.name} removed"
+                                }
+                            },
+                            onRefreshHealth = { providerHealth = store.providerHealthSnapshot() },
                         )
                 }
             }
@@ -471,7 +523,10 @@ private fun ManagerModeChip(
 @Composable
 private fun StremioAddonList(
     addons: List<TvStremioAddonInfo>,
+    actionKey: String?,
     onToggle: (TvStremioAddonInfo) -> Unit,
+    onRefresh: (TvStremioAddonInfo) -> Unit,
+    onRemove: (TvStremioAddonInfo) -> Unit,
 ) {
     if (addons.isEmpty()) {
         ManagerEmpty("No Stremio addons installed")
@@ -492,18 +547,32 @@ private fun StremioAddonList(
             )
         }
         items(addons, key = { it.manifestUrl }) { addon ->
-            ManagerToggleCard(
-                title = addon.name,
-                subtitle =
-                    buildList {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ManagerToggleCard(
+                    title = addon.name,
+                    subtitle = buildList {
                         addon.version?.let { add("v$it") }
                         if (addon.resources.isNotEmpty()) add(addon.resources.take(4).joinToString(" • "))
                         if (!addon.reachable) add("Manifest unavailable")
                     }.joinToString("  •  ").ifBlank { addon.manifestUrl },
-                enabled = addon.enabled,
-                warning = !addon.reachable,
-                onClick = { onToggle(addon) },
-            )
+                    enabled = addon.enabled,
+                    warning = !addon.reachable,
+                    onClick = { onToggle(addon) },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        enabled = actionKey == null,
+                        onClick = { onRefresh(addon) },
+                    ) { Text(if (actionKey == "addon:${addon.manifestUrl}") "Refreshing..." else "Refresh") }
+                    TextButton(
+                        enabled = actionKey == null,
+                        onClick = { onRemove(addon) },
+                    ) { Text("Remove", color = ManagerRed) }
+                }
+            }
         }
     }
 }
@@ -640,8 +709,13 @@ private fun CatalogOrderList(
 @Composable
 private fun ProviderRepositoryList(
     repositories: List<TvPluginRepositoryInfo>,
+    health: TvProviderHealthSnapshot?,
+    actionKey: String?,
     onToggleRepository: (TvPluginRepositoryInfo) -> Unit,
     onToggleProvider: (TvPluginRepositoryInfo, TvPluginProviderInfo) -> Unit,
+    onRefreshRepository: (TvPluginRepositoryInfo) -> Unit,
+    onRemoveRepository: (TvPluginRepositoryInfo) -> Unit,
+    onRefreshHealth: () -> Unit,
 ) {
     if (repositories.isEmpty()) {
         ManagerEmpty("No JavaScript provider repositories installed")
@@ -653,12 +727,30 @@ private fun ProviderRepositoryList(
         contentPadding = PaddingValues(bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "provider-health") {
+            ProviderHealthCard(health = health, onRefresh = onRefreshHealth)
+        }
         repositories.forEach { repository ->
             item(key = "repo:${repository.manifestUrl}") {
-                RepositoryHeader(
-                    repository = repository,
-                    onClick = { onToggleRepository(repository) },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    RepositoryHeader(
+                        repository = repository,
+                        onClick = { onToggleRepository(repository) },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 26.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(
+                            enabled = actionKey == null,
+                            onClick = { onRefreshRepository(repository) },
+                        ) { Text(if (actionKey == "repo:${repository.manifestUrl}") "Refreshing..." else "Refresh Repository") }
+                        TextButton(
+                            enabled = actionKey == null,
+                            onClick = { onRemoveRepository(repository) },
+                        ) { Text("Remove Repository", color = ManagerRed) }
+                    }
+                }
             }
 
             if (repository.reachable) {
@@ -669,11 +761,43 @@ private fun ProviderRepositoryList(
                     ProviderCard(
                         repositoryEnabled = repository.enabled,
                         provider = provider,
+                        health = health?.records?.firstOrNull {
+                            it.repositoryManifestUrl == repository.manifestUrl && it.providerId == provider.id
+                        },
                         onClick = { onToggleProvider(repository, provider) },
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ProviderHealthCard(
+    health: TvProviderHealthSnapshot?,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ManagerPanelRaised, RoundedCornerShape(11.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(11.dp))
+            .padding(horizontal = 20.dp, vertical = 15.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text("Provider Health", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = health?.let {
+                    "${it.online} online • ${it.slow} slow • ${it.noResults} no results • ${it.timeout + it.failed + it.blocked} issues"
+                } ?: "No provider health data yet",
+                color = ManagerMuted,
+                fontSize = 12.sp,
+            )
+        }
+        TextButton(onClick = onRefresh) { Text("Refresh Status") }
     }
 }
 
@@ -731,6 +855,7 @@ private fun RepositoryHeader(
 private fun ProviderCard(
     repositoryEnabled: Boolean,
     provider: TvPluginProviderInfo,
+    health: TvProviderHealthInfo?,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -768,6 +893,21 @@ private fun ProviderCard(
                     text = it,
                     color = ManagerMuted,
                     fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            health?.let { record ->
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = buildString {
+                        append(record.status)
+                        record.responseMs?.let { append(" • ${it}ms") }
+                        if (record.streamCount > 0) append(" • ${record.streamCount} streams")
+                        record.error?.takeIf(String::isNotBlank)?.let { append(" • $it") }
+                    },
+                    color = if (record.status == "Online") ManagerGreen else ManagerMuted,
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

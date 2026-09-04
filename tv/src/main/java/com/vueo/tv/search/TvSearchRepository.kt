@@ -1,6 +1,8 @@
 package com.vueo.tv.search
 
 import android.content.Context
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
+import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.tv.content.TvContentManagerStore
 import com.vueo.tv.data.TvDiscoverySearchType
 import com.vueo.tv.data.TvHomeRepository
@@ -19,6 +21,13 @@ enum class TvSearchType {
     ALL,
     MOVIE,
     SERIES,
+    ANIME,
+}
+
+enum class TvSearchSort {
+    POPULAR,
+    TRENDING,
+    NEWEST,
 }
 
 data class TvSearchResult(
@@ -34,12 +43,10 @@ class TvSearchRepository(
     private val homeRepository = TvHomeRepository(appContext)
     private val contentStore = TvContentManagerStore(appContext)
     private val discovery = TvUnifiedDiscovery(appContext)
+    private val pluginStore = PluginStore(appContext)
 
-    /**
-     * Actor mode remains unavailable until an enabled addon exposes a compatible person/cast
-     * discovery surface. Title search below is now driven by searchable Content Manager catalogs.
-     */
-    val actorSearchAvailable: Boolean = false
+    suspend fun actorSearchAvailable(): Boolean =
+        pluginStore.tmdbApiKey().isNotBlank() || discovery.hasActorSearchSource()
 
     fun searchLocal(
         query: String,
@@ -98,6 +105,97 @@ class TvSearchRepository(
         return ranked
     }
 
+    suspend fun searchActorRemote(
+        query: String,
+        type: TvSearchType,
+    ): List<TvSearchResult> {
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2) return emptyList()
+
+        val addonResults =
+            discovery.searchActor(cleanQuery)
+                .map { result ->
+                    TvSearchResult(
+                        media = result.media,
+                        providerName = result.providerName,
+                    )
+                }
+
+        val tmdbResults =
+            pluginStore.tmdbApiKey()
+                .takeIf(String::isNotBlank)
+                ?.let { key ->
+                    TmdbEnhancementClient.actorFilmography(
+                        query = cleanQuery,
+                        apiKey = key,
+                        limit = MAX_RESULTS,
+                    )
+                }
+                .orEmpty()
+                .map { media ->
+                    TvSearchResult(
+                        media = media,
+                        providerName = "TMDB",
+                    )
+                }
+
+        return (addonResults + tmdbResults)
+            .filter { type.accepts(it.media) }
+            .distinctBy { canonicalKey(it.media) }
+            .take(MAX_RESULTS)
+    }
+
+    fun availableGenres(items: List<TvSearchResult>): List<String> =
+        items
+            .flatMap { it.media.genres }
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .sorted()
+            .take(MAX_GENRES)
+
+    fun filterAndSort(
+        items: List<TvSearchResult>,
+        type: TvSearchType,
+        genre: String?,
+        sort: TvSearchSort,
+        query: String,
+        actorMode: Boolean,
+    ): List<TvSearchResult> {
+        val filtered = items
+            .asSequence()
+            .filter { type.accepts(it.media) }
+            .filter { result ->
+                genre == null || result.media.genres.any { it.equals(genre, ignoreCase = true) }
+            }
+            .distinctBy { canonicalKey(it.media) }
+            .toList()
+
+        if (actorMode && sort != TvSearchSort.NEWEST) return filtered
+
+        val normalizedQuery = normalize(query)
+        val queryTokens = normalizedQuery.split(' ').filter(String::isNotBlank)
+        fun relevance(result: TvSearchResult): Int =
+            relevanceScore(normalizedQuery, queryTokens, result.media)
+
+        return when (sort) {
+            TvSearchSort.POPULAR ->
+                filtered.sortedWith(
+                    compareByDescending<TvSearchResult> { relevance(it) }
+                        .thenByDescending { it.media.imdbRating ?: it.media.tmdbRating ?: 0.0 }
+                        .thenByDescending { releaseYear(it.media) }
+                )
+            TvSearchSort.TRENDING ->
+                filtered.sortedByDescending { relevance(it) }
+            TvSearchSort.NEWEST ->
+                filtered.sortedWith(
+                    compareByDescending<TvSearchResult> { relevance(it) }
+                        .thenByDescending { releaseYear(it.media) }
+                        .thenByDescending { it.media.imdbRating ?: it.media.tmdbRating ?: 0.0 }
+                )
+        }
+    }
+
     fun merge(
         query: String,
         type: TvSearchType,
@@ -121,7 +219,7 @@ class TvSearchRepository(
 
         return items
             .asSequence()
-            .filter { result -> type.accepts(result.media.type) }
+            .filter { result -> type.accepts(result.media) }
             .map { result ->
                 result to relevanceScore(normalizedQuery, queryTokens, result.media)
             }
@@ -225,24 +323,42 @@ class TvSearchRepository(
         private const val KEY_SEARCH_CACHE_REVISION = "search_cache_revision_v2"
         private const val MAX_CACHED_ITEMS = 120
         private const val MAX_RESULTS = 60
+        private const val MAX_GENRES = 18
         private const val MIN_RELEVANCE_SCORE = 180
     }
 }
 
 private fun TvSearchType.toDiscoveryType(): TvDiscoverySearchType =
     when (this) {
-        TvSearchType.ALL -> TvDiscoverySearchType.ALL
+        TvSearchType.ALL,
+        TvSearchType.ANIME -> TvDiscoverySearchType.ALL
         TvSearchType.MOVIE -> TvDiscoverySearchType.MOVIE
         TvSearchType.SERIES -> TvDiscoverySearchType.SERIES
     }
 
-private fun TvSearchType.accepts(mediaType: String): Boolean =
-    when (this) {
+private fun TvSearchType.accepts(media: TvMediaItem): Boolean {
+    val mediaType = media.type.trim().lowercase(Locale.ROOT)
+    val anime = isAnime(media)
+    return when (this) {
         TvSearchType.ALL -> true
-        TvSearchType.MOVIE -> mediaType.equals("movie", ignoreCase = true)
-        TvSearchType.SERIES ->
-            mediaType.equals("series", ignoreCase = true) || mediaType.equals("tv", ignoreCase = true)
+        TvSearchType.MOVIE -> mediaType == "movie" && !anime
+        TvSearchType.SERIES -> (mediaType == "series" || mediaType == "tv") && !anime
+        TvSearchType.ANIME -> anime
     }
+}
+
+private fun isAnime(media: TvMediaItem): Boolean =
+    media.type.equals("anime", ignoreCase = true) ||
+        media.genres.any { it.equals("anime", ignoreCase = true) } ||
+        media.sourceExtensionId?.contains("anime", ignoreCase = true) == true ||
+        media.id.contains("anime", ignoreCase = true)
+
+private fun releaseYear(media: TvMediaItem): Int =
+    Regex("(19|20)\\d{2}")
+        .find(media.releaseInfo.orEmpty())
+        ?.value
+        ?.toIntOrNull()
+        ?: 0
 
 private fun normalize(value: String): String =
     value
