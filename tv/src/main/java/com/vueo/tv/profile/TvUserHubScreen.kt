@@ -111,7 +111,7 @@ fun TvUserHubScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Content Manager", "Luckez")
+            listOf("Home", "Search", "Library", "Settings")
                 .associateWith { FocusRequester() }
         }
 
@@ -324,7 +324,7 @@ fun TvUserHubScreen(
             item {
                 Column {
                     Text(
-                        text = "Profiles & Settings",
+                        text = "Settings",
                         color = Color.White,
                         fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
@@ -334,6 +334,25 @@ fun TvUserHubScreen(
                         text = "Active profile • ${profileStore.activeProfile().name}",
                         color = HubMuted,
                         fontSize = 14.sp,
+                    )
+                }
+            }
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Content & Sources",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    SettingButton(
+                        title = "Content Manager",
+                        value = "Open",
+                        onClick = { onNavigate("Content Manager") },
                     )
                 }
             }
@@ -829,7 +848,7 @@ fun TvUserHubScreen(
         TvTopNav(
             navRequesters = navRequesters,
             contentDownRequester = firstProfileRequester,
-            selectedLabel = "Luckez",
+            selectedLabel = "Settings",
             onSelected = onNavigate,
         )
 

@@ -72,7 +72,7 @@ fun TvContentManagerScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Content Manager", "Luckez")
+            listOf("Home", "Search", "Library", "Settings")
                 .associateWith { FocusRequester() }
         }
     val stremioRequester = remember { FocusRequester() }
@@ -104,7 +104,7 @@ fun TvContentManagerScreen(
         }
     }
 
-    BackHandler { onNavigate("Home") }
+    BackHandler { onNavigate("Settings") }
 
     LaunchedEffect(Unit) {
         runCatching { store.snapshot() }
@@ -160,7 +160,7 @@ fun TvContentManagerScreen(
                         text = "Stremio Addons",
                         selected = mode == TvManagerMode.STREMIO,
                         requester = stremioRequester,
-                        upRequester = navRequesters.getValue("Content Manager"),
+                        upRequester = navRequesters.getValue("Settings"),
                         downRequester = inputRequester,
                         onClick = { mode = TvManagerMode.STREMIO },
                     )
@@ -168,7 +168,7 @@ fun TvContentManagerScreen(
                         text = "JS Providers",
                         selected = mode == TvManagerMode.PROVIDERS,
                         requester = providersRequester,
-                        upRequester = navRequesters.getValue("Content Manager"),
+                        upRequester = navRequesters.getValue("Settings"),
                         downRequester = inputRequester,
                         onClick = { mode = TvManagerMode.PROVIDERS },
                     )
@@ -344,7 +344,7 @@ fun TvContentManagerScreen(
         TvTopNav(
             navRequesters = navRequesters,
             contentDownRequester = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
-            selectedLabel = "Content Manager",
+            selectedLabel = "Settings",
             onSelected = onNavigate,
         )
     }

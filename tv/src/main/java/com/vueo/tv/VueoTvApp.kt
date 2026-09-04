@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,6 +65,7 @@ import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.player.TvSourceEngine
 import com.vueo.tv.player.TvSourcePickerScreen
+import com.vueo.tv.profile.TvProfileDnaPanel
 import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.profile.TvUserHubScreen
 import com.vueo.shared.core.source.SourceCandidate
@@ -121,6 +123,8 @@ fun VueoTvApp() {
     var playbackReturnScreen by remember { mutableStateOf(TvRootScreen.DETAIL) }
     var searchFocusRestoreToken by remember { mutableStateOf(0) }
     var libraryFocusRestoreToken by remember { mutableStateOf(0) }
+    var profileDnaVisible by remember { mutableStateOf(false) }
+    var profileFocusReturnToken by remember { mutableStateOf(0) }
     val libraryStore =
         remember(context) {
             TvLibraryStore(context.applicationContext)
@@ -158,21 +162,33 @@ fun VueoTvApp() {
         }
 
     val navigate: (String) -> Unit = { label ->
-        val nextScreen =
-            when (label) {
-                "Home" -> TvRootScreen.HOME
-                "Search" -> TvRootScreen.SEARCH
-                "Library" -> TvRootScreen.LIBRARY
-                "Content Manager" -> TvRootScreen.CONTENT_MANAGER
-                "Luckez" -> TvRootScreen.USER_HUB
-                else -> currentScreen
+        if (label == "Profile") {
+            profileDnaVisible = true
+        } else {
+            val nextScreen =
+                when (label) {
+                    "Home" -> TvRootScreen.HOME
+                    "Search" -> TvRootScreen.SEARCH
+                    "Library" -> TvRootScreen.LIBRARY
+                    "Settings" -> TvRootScreen.USER_HUB
+                    "Content Manager" -> TvRootScreen.CONTENT_MANAGER
+                    else -> currentScreen
+                }
+            if (nextScreen != currentScreen) {
+                profileDnaVisible = false
+                detailMedia = null
+                playbackRequest = null
+                selectedSource = null
+                selectedSubtitles = emptyList()
+                currentScreen = nextScreen
             }
-        if (nextScreen != currentScreen) {
-            detailMedia = null
-            playbackRequest = null
-            selectedSource = null
-            selectedSubtitles = emptyList()
-            currentScreen = nextScreen
+        }
+    }
+
+    LaunchedEffect(profileFocusReturnToken) {
+        if (profileFocusReturnToken > 0) {
+            delay(70)
+            runCatching { TvTopNavProfileFocus.requester?.requestFocus() }
         }
     }
 
@@ -383,6 +399,24 @@ fun VueoTvApp() {
                     }
                 }
 
+                if (profileDnaVisible) {
+                    TvProfileDnaPanel(
+                        profileStore = profileStore,
+                        onDismiss = {
+                            profileDnaVisible = false
+                            profileFocusReturnToken += 1
+                        },
+                        onSwitchProfile = {
+                            profileDnaVisible = false
+                            currentScreen = TvRootScreen.PROFILE_PICKER
+                        },
+                        onOpenSettings = {
+                            profileDnaVisible = false
+                            navigate("Settings")
+                        },
+                    )
+                }
+
                 val release = updateRelease
                 if (updateVisible && release != null) {
                     TvUpdateOverlay(
@@ -446,7 +480,7 @@ private fun VueoTvHome(
         }
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Content Manager", "Luckez")
+            listOf("Home", "Search", "Library", "Settings")
                 .associateWith { FocusRequester() }
         }
     val heroPlayRequester = remember { FocusRequester() }
@@ -780,21 +814,79 @@ internal fun TvTopNav(
                     onClick = { onSelected("Library") },
                 )
                 TvNavItem(
-                    label = "Content Manager",
-                    selected = selectedLabel == "Content Manager",
-                    requester = navRequesters.getValue("Content Manager"),
+                    label = "Settings",
+                    selected = selectedLabel == "Settings",
+                    requester = navRequesters.getValue("Settings"),
                     downRequester = contentDownRequester,
-                    onClick = { onSelected("Content Manager") },
+                    onClick = { onSelected("Settings") },
                 )
             }
         }
 
-        TvNavItem(
-            label = "Luckez",
-            selected = selectedLabel == "Luckez",
-            requester = navRequesters.getValue("Luckez"),
+        TvProfileNavItem(
             downRequester = contentDownRequester,
-            onClick = { onSelected("Luckez") },
+            onClick = { onSelected("Profile") },
+        )
+    }
+}
+
+private object TvTopNavProfileFocus {
+    var requester: FocusRequester? = null
+}
+
+@Composable
+private fun TvProfileNavItem(
+    downRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val profileName =
+        remember(context) {
+            ProfileStore(context.applicationContext).activeProfile().name
+        }
+    val requester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        if (focused) 1.09f else 1f,
+        label = "profileNavScale",
+    )
+
+    LaunchedEffect(requester) {
+        TvTopNavProfileFocus.requester = requester
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .width(44.dp)
+                .height(44.dp)
+                .focusRequester(requester)
+                .tvVerticalFocus(down = downRequester)
+                .scale(scale)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) {
+                        TvFocusMemory.rememberNav("Profile")
+                    }
+                }
+                .clickable(onClick = onClick)
+                .focusable()
+                .background(
+                    color = if (focused) Color.White.copy(alpha = 0.18f) else VueoPanel,
+                    shape = CircleShape,
+                )
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) Color.White else Color.White.copy(alpha = 0.18f),
+                    shape = CircleShape,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = profileName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "V",
+            color = Color.White,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Black,
         )
     }
 }

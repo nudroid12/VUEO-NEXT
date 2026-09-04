@@ -69,7 +69,7 @@ fun TvLibraryScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Content Manager", "Luckez")
+            listOf("Home", "Search", "Library", "Settings")
                 .associateWith { FocusRequester() }
         }
     val firstCardRequester = remember { FocusRequester() }
