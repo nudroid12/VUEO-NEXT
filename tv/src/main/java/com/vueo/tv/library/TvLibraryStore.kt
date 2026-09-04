@@ -27,6 +27,10 @@ class TvLibraryStore(
     fun history(): List<LibraryPlaybackEntry> =
         delegate.history()
 
+    fun clearContinueWatching() {
+        delegate.clearContinueWatching()
+    }
+
     fun clearHistory() {
         delegate.clearHistory()
     }

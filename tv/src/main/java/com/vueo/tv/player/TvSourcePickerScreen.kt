@@ -43,6 +43,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.ui.components.TvNetworkImage
 import kotlinx.coroutines.delay
 
@@ -73,6 +75,16 @@ fun TvSourcePickerScreen(
     var subtitleLoading by remember(request.cacheKey) { mutableStateOf(true) }
     var status by remember(request.cacheKey) { mutableStateOf("Finding sources…") }
     var notice by remember(request.cacheKey) { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val settingsStore = remember(context) {
+        SettingsStore(
+            context = context.applicationContext,
+            prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+        )
+    }
+    val showTechnicalDetails = remember(request.cacheKey) {
+        settingsStore.showSourceTechnicalDetails()
+    }
 
     val playBestRequester = remember { FocusRequester() }
     val backRequester = remember { FocusRequester() }
@@ -269,6 +281,7 @@ fun TvSourcePickerScreen(
                     SourcePickerRow(
                         source = source,
                         recommended = source.id == playableSources.firstOrNull()?.id,
+                        showTechnicalDetails = showTechnicalDetails,
                         requester = if (index == firstPlayableIndex) firstSourceRequester else null,
                         onUp = if (index == firstPlayableIndex) {
                             {
@@ -349,6 +362,7 @@ private fun PickerButton(
 private fun SourcePickerRow(
     source: SourceCandidate,
     recommended: Boolean,
+    showTechnicalDetails: Boolean,
     requester: FocusRequester? = null,
     onUp: (() -> Unit)? = null,
     onClick: (() -> Unit)?,
@@ -410,7 +424,12 @@ private fun SourcePickerRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (recommended) "Recommended • $availability" else availability,
+                text =
+                    if (showTechnicalDetails) {
+                        if (recommended) "Recommended • $availability" else availability
+                    } else {
+                        if (recommended) "Recommended • Direct" else if (source.isDirectPlayable) "Direct" else "Unavailable"
+                    },
                 color = if (source.isDirectPlayable) Color.White else PickerMuted,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -419,20 +438,22 @@ private fun SourcePickerRow(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = source.name,
+                text = if (showTechnicalDetails) source.name else source.providerName,
                 color = PickerMuted,
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(18.dp))
-        Text(
-            text = source.providerName,
-            color = if (source.isDirectPlayable) PickerGreen else PickerMuted.copy(alpha = 0.68f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
+        if (showTechnicalDetails) {
+            Spacer(Modifier.width(18.dp))
+            Text(
+                text = source.providerName,
+                color = if (source.isDirectPlayable) PickerGreen else PickerMuted.copy(alpha = 0.68f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
     }
 }

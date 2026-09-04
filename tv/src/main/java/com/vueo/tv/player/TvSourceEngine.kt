@@ -5,6 +5,7 @@ import android.net.Uri
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.TmdbResolver
 import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SubtitleCandidate
@@ -36,9 +37,6 @@ class TvSourceEngine(
             context = appContext,
             prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
         )
-    private val cache = LinkedHashMap<String, CachedSources>()
-    private val subtitleCache = LinkedHashMap<String, CachedSubtitles>()
-    private val cacheMutex = Mutex()
 
     suspend fun discoverProgressive(
         request: TvPlaybackRequest,
@@ -357,6 +355,18 @@ class TvSourceEngine(
     )
 
     companion object {
+        private val cache = LinkedHashMap<String, CachedSources>()
+        private val subtitleCache = LinkedHashMap<String, CachedSubtitles>()
+        private val cacheMutex = Mutex()
+
+        suspend fun clearAllCaches() {
+            cacheMutex.withLock {
+                cache.clear()
+                subtitleCache.clear()
+            }
+            SourceDiscoveryCache.clearAll()
+        }
+
         private const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
         private const val CONNECT_TIMEOUT_MS = 4_500
         private const val READ_TIMEOUT_MS = 7_500

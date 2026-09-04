@@ -340,97 +340,17 @@ fun TvUserHubScreen(
                 title = category!!.title,
                 subtitle = category!!.subtitle,
             ) {
-                when (category) {
-                    SettingsCategory.PERSONALIZATION ->
-                        PersonalizationPage(
-                            profileStore = profileStore,
-                            dnaPreferences = dnaPreferences,
-                            firstRequester = subPageFirstRequester,
-                            revision = profileRevision,
-                            onOpenDna = { onNavigate("Profile") },
-                            onSetPin = { flow ->
-                                pinError = null
-                                pinFlow = flow
-                            },
-                        )
-
-                    SettingsCategory.ENHANCEMENTS ->
-                        EnhancementsPage(
-                            pluginStore = pluginStore,
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                        )
-
-                    SettingsCategory.PLAYBACK ->
-                        PlaybackPage(
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                        )
-
-                    SettingsCategory.SUBTITLES ->
-                        SubtitlesPage(
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                        )
-
-                    SettingsCategory.SOURCES ->
-                        SourcesPage(
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                        )
-
-                    SettingsCategory.APPEARANCE ->
-                        AppearancePage(
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                        )
-
-                    SettingsCategory.DATA_STORAGE ->
-                        DataStoragePage(
-                            firstRequester = subPageFirstRequester,
-                            includeCredentials = includeCredentials,
-                            onIncludeCredentialsChange = {
-                                includeCredentials = it
-                                settingsStore.setIncludeCredentialsInBackup(it)
-                            },
-                            historyCount = historyCount,
-                            backupStatus = backupStatus,
-                            onCreateBackup = {
-                                createBackupLauncher.launch(
-                                    "vueo-backup-${System.currentTimeMillis()}.json"
-                                )
-                            },
-                            onRestoreBackup = {
-                                restoreBackupLauncher.launch(
-                                    arrayOf(
-                                        "application/json",
-                                        "text/plain",
-                                        "application/octet-stream",
-                                    )
-                                )
-                            },
-                            onClearHistory = {
-                                libraryStore.clearHistory()
-                                historyCount = 0
-                            },
-                        )
-
-                    SettingsCategory.UPDATES ->
-                        UpdatesPage(
-                            settingsStore = settingsStore,
-                            firstRequester = subPageFirstRequester,
-                            updateStatus = updateStatus,
-                            onCheck = {
-                                updateStatus = "Checking for updates..."
-                                onCheckForUpdates { result -> updateStatus = result }
-                            },
-                        )
-
-                    SettingsCategory.ABOUT ->
-                        AboutPage(firstRequester = subPageFirstRequester)
-
-                    SettingsCategory.CONTENT_MANAGER,
-                    null -> Unit
+                if (category != SettingsCategory.CONTENT_MANAGER) {
+                    TvFunctionalSettingsPage(
+                        categoryKey = category!!.name,
+                        profileStore = profileStore,
+                        settingsStore = settingsStore,
+                        libraryStore = libraryStore,
+                        pluginStore = pluginStore,
+                        firstRequester = subPageFirstRequester,
+                        onProfileChanged = onProfileChanged,
+                        onCheckForUpdates = onCheckForUpdates,
+                    )
                 }
             }
         }

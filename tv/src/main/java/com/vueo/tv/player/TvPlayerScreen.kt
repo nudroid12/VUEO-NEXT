@@ -73,6 +73,7 @@ import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
 import com.vueo.shared.core.storage.SettingsStore
+import com.vueo.shared.core.storage.SubtitleSize
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -266,6 +267,7 @@ fun TvPlayerScreen(
                         tracks = tracks,
                         settingsStore = settingsStore,
                         contentId = request.cacheKey,
+                        externalSubtitleIds = externalSubtitles.map { it.id }.toSet(),
                     )
                 }
                 audioLabel = selectedTrackLabel(tracks, C.TRACK_TYPE_AUDIO, "Audio")
@@ -512,9 +514,17 @@ fun TvPlayerScreen(
                     useController = false
                     keepScreenOn = true
                     this.player = player
+                    subtitleView?.setFractionalTextSize(
+                        subtitleFraction(settingsStore.subtitleSize())
+                    )
                 }
             },
-            update = { it.player = player },
+            update = {
+                it.player = player
+                it.subtitleView?.setFractionalTextSize(
+                    subtitleFraction(settingsStore.subtitleSize())
+                )
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -1694,6 +1704,7 @@ private fun applyStoredTrackPreferences(
     tracks: Tracks,
     settingsStore: SettingsStore,
     contentId: String,
+    externalSubtitleIds: Set<String>,
 ) {
     val audioChoices = trackChoices(tracks, C.TRACK_TYPE_AUDIO)
     val savedAudio = settingsStore.audioSelection(contentId)
@@ -1717,23 +1728,49 @@ private fun applyStoredTrackPreferences(
                 ?.let { applyTrackChoice(player, C.TRACK_TYPE_TEXT, it) }
 
         settingsStore.autoSelectPreferredSubtitle() -> {
-            val languageCode =
-                settingsStore.preferredSubtitleLanguage().languageCode
-                    ?: return
-            subtitleChoices
-                .firstOrNull { choice ->
-                    choice.group
-                        .getTrackFormat(choice.trackIndex)
-                        .language
-                        ?.lowercase()
-                        ?.let { language ->
-                            language == languageCode || language.startsWith("$languageCode-")
-                        } == true
+            val ordered =
+                if (settingsStore.embeddedSubtitlePriority()) {
+                    subtitleChoices.sortedBy { choice ->
+                        val id = choice.group.getTrackFormat(choice.trackIndex).id
+                        if (id != null && id in externalSubtitleIds) 1 else 0
+                    }
+                } else {
+                    subtitleChoices
                 }
-                ?.let { applyTrackChoice(player, C.TRACK_TYPE_TEXT, it) }
+
+            val preferred = settingsStore.preferredSubtitleLanguage().languageCode
+            val secondary = settingsStore.secondarySubtitleLanguage().languageCode
+            val selected =
+                findSubtitleForLanguage(ordered, preferred)
+                    ?: findSubtitleForLanguage(ordered, secondary)
+
+            selected?.let { applyTrackChoice(player, C.TRACK_TYPE_TEXT, it) }
         }
     }
 }
+
+private fun findSubtitleForLanguage(
+    choices: List<TrackChoice>,
+    languageCode: String?,
+): TrackChoice? {
+    if (languageCode.isNullOrBlank()) return null
+    return choices.firstOrNull { choice ->
+        choice.group
+            .getTrackFormat(choice.trackIndex)
+            .language
+            ?.lowercase()
+            ?.let { language ->
+                language == languageCode || language.startsWith("$languageCode-")
+            } == true
+    }
+}
+
+private fun subtitleFraction(size: SubtitleSize): Float =
+    when (size) {
+        SubtitleSize.SMALL -> 0.044f
+        SubtitleSize.MEDIUM -> 0.0533f
+        SubtitleSize.LARGE -> 0.066f
+    }
 
 private fun trackSelectionId(
     choice: TrackChoice,
