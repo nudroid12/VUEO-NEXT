@@ -29,7 +29,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,6 +63,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -179,6 +195,7 @@ fun TvPlayerScreen(
     var positionMs by remember(request.cacheKey) { mutableLongStateOf(0L) }
     var durationMs by remember(request.cacheKey) { mutableLongStateOf(0L) }
     var controlsVisible by remember(request.cacheKey) { mutableStateOf(true) }
+    var controlsLocked by remember(request.cacheKey) { mutableStateOf(false) }
     var sidePanel by remember(request.cacheKey) { mutableStateOf<PlayerSidePanel?>(null) }
     var panelReturnFocus by remember(request.cacheKey) { mutableStateOf<PlayerSidePanel?>(null) }
     var interactionToken by remember(request.cacheKey) { mutableIntStateOf(0) }
@@ -209,13 +226,18 @@ fun TvPlayerScreen(
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
     val seekRequester = remember { FocusRequester() }
-    val restartRequester = remember { FocusRequester() }
+    val rewindRequester = remember { FocusRequester() }
     val playRequester = remember { FocusRequester() }
+    val forwardRequester = remember { FocusRequester() }
     val subtitleRequester = remember { FocusRequester() }
     val audioRequester = remember { FocusRequester() }
     val sourcesRequester = remember { FocusRequester() }
     val episodesRequester = remember { FocusRequester() }
     val nextRequester = remember { FocusRequester() }
+    val lockRequester = remember { FocusRequester() }
+    val moreRequester = remember { FocusRequester() }
+    val backRequester = remember { FocusRequester() }
+    val unlockRequester = remember { FocusRequester() }
     val firstPanelRequester = remember { FocusRequester() }
     val problemRequester = remember { FocusRequester() }
     val autoNextPlayRequester = remember { FocusRequester() }
@@ -378,6 +400,10 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
+            controlsLocked -> {
+                controlsLocked = false
+                touchControls()
+            }
             resumePromptVisible -> {
                 resumePromptVisible = false
                 saveProgress()
@@ -423,6 +449,7 @@ fun TvPlayerScreen(
         sidePanel = null
         panelReturnFocus = null
         controlsVisible = true
+        controlsLocked = false
         trackPreferencesApplied = false
         activeSkipSegment = null
         quickSeekDeltaMs = 0L
@@ -624,9 +651,10 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, sidePanel, interactionToken, isPlaying, playerError, resumePromptVisible) {
+    LaunchedEffect(controlsVisible, controlsLocked, sidePanel, interactionToken, isPlaying, playerError, resumePromptVisible) {
         if (
             controlsVisible &&
+            !controlsLocked &&
             sidePanel == null &&
             isPlaying &&
             playerError == null &&
@@ -637,9 +665,10 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, sidePanel, playerError, pendingAutoNext, resumePromptVisible) {
+    LaunchedEffect(controlsVisible, controlsLocked, sidePanel, playerError, pendingAutoNext, resumePromptVisible) {
         delay(90)
         when {
+            controlsLocked -> runCatching { unlockRequester.requestFocus() }
             resumePromptVisible -> runCatching { resumeRequester.requestFocus() }
             pendingAutoNext != null -> runCatching { autoNextPlayRequester.requestFocus() }
             sidePanel != null -> runCatching { firstPanelRequester.requestFocus() }
@@ -654,7 +683,7 @@ fun TvPlayerScreen(
                         PlayerSidePanel.SUBTITLES -> subtitleRequester
                         PlayerSidePanel.SOURCES -> sourcesRequester
                         PlayerSidePanel.EPISODES -> episodesRequester
-                        PlayerSidePanel.PLAYBACK -> playRequester
+                        PlayerSidePanel.PLAYBACK -> moreRequester
                         null -> playRequester
                     }
                 runCatching { target.requestFocus() }
@@ -672,7 +701,7 @@ fun TvPlayerScreen(
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     if (resumePromptVisible) return@onPreviewKeyEvent false
 
-                    if (controlsVisible && sidePanel == null && playerError == null && pendingAutoNext == null) {
+                    if (controlsVisible && !controlsLocked && sidePanel == null && playerError == null && pendingAutoNext == null) {
                         interactionToken += 1
                     }
 
@@ -694,7 +723,7 @@ fun TvPlayerScreen(
                         }
 
                         Key.DirectionLeft -> {
-                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
+                            if (!controlsVisible && !controlsLocked && sidePanel == null && pendingAutoNext == null) {
                                 quickSeek(-SEEK_STEP_MS)
                                 true
                             } else {
@@ -703,7 +732,7 @@ fun TvPlayerScreen(
                         }
 
                         Key.DirectionRight -> {
-                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
+                            if (!controlsVisible && !controlsLocked && sidePanel == null && pendingAutoNext == null) {
                                 quickSeek(SEEK_STEP_MS)
                                 true
                             } else {
@@ -716,7 +745,7 @@ fun TvPlayerScreen(
                         Key.Enter,
                         Key.NumPadEnter,
                         Key.DirectionCenter -> {
-                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
+                            if (!controlsVisible && !controlsLocked && sidePanel == null && pendingAutoNext == null) {
                                 touchControls()
                                 true
                             } else {
@@ -784,7 +813,7 @@ fun TvPlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible && sidePanel == null && sources.isNotEmpty(),
+            visible = controlsVisible && !controlsLocked && sidePanel == null && sources.isNotEmpty(),
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
@@ -797,24 +826,22 @@ fun TvPlayerScreen(
                 positionMs = positionMs,
                 durationMs = durationMs,
                 seekRequester = seekRequester,
-                restartRequester = restartRequester,
+                rewindRequester = rewindRequester,
                 playRequester = playRequester,
+                forwardRequester = forwardRequester,
                 subtitleRequester = subtitleRequester,
                 audioRequester = audioRequester,
                 sourcesRequester = sourcesRequester,
                 episodesRequester = episodesRequester,
                 nextRequester = nextRequester,
+                lockRequester = lockRequester,
+                moreRequester = moreRequester,
+                backRequester = backRequester,
                 onSeekBackward = {
                     quickSeek(-SEEK_STEP_MS, showControls = true)
                 },
                 onSeekForward = {
                     quickSeek(SEEK_STEP_MS, showControls = true)
-                },
-                onRestart = {
-                    pendingAutoNext = null
-                    player.seekTo(0L)
-                    player.play()
-                    touchControls()
                 },
                 onPlayPause = {
                     if (player.isPlaying) player.pause() else player.play()
@@ -851,20 +878,42 @@ fun TvPlayerScreen(
                         onPlayRequest(next)
                     }
                 },
+                onLock = {
+                    controlsLocked = true
+                    controlsVisible = false
+                    interactionToken += 1
+                },
+                onBack = {
+                    saveProgress()
+                    onBack()
+                },
             )
         }
 
-        activeSkipSegment?.let { segment ->
-            SkipSegmentButton(
-                segment = segment,
-                controlsVisible = controlsVisible,
-                onSkip = {
-                    player.seekTo(segment.endMs)
-                    activeSkipSegment = null
+        if (controlsLocked) {
+            PlayerUnlockAction(
+                requester = unlockRequester,
+                onUnlock = {
+                    controlsLocked = false
                     touchControls()
                 },
-                modifier = Modifier.align(Alignment.BottomStart),
+                modifier = Modifier.align(Alignment.TopEnd),
             )
+        }
+
+        if (!controlsLocked) {
+            activeSkipSegment?.let { segment ->
+                SkipSegmentButton(
+                    segment = segment,
+                    controlsVisible = controlsVisible,
+                    onSkip = {
+                        player.seekTo(segment.endMs)
+                        activeSkipSegment = null
+                        touchControls()
+                    },
+                    modifier = Modifier.align(Alignment.BottomStart),
+                )
+            }
         }
 
         if (showContentWarnings && sidePanel == null && !resumePromptVisible) {
@@ -1132,40 +1181,52 @@ private fun AutoNextOverlay(
     onCancel: () -> Unit,
 ) {
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)),
-        contentAlignment = Alignment.CenterEnd,
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomEnd,
     ) {
         Column(
             modifier =
                 Modifier
-                    .padding(end = 48.dp)
-                    .width(430.dp)
-                    .background(PlayerPanel, RoundedCornerShape(18.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
-                    .padding(24.dp),
+                    .padding(end = 44.dp, bottom = 150.dp)
+                    .width(520.dp)
+                    .background(Color(0xED181A1C), RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(18.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = "Up next",
-                color = PlayerMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = next.displayTitle,
-                color = Color.White,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(3.dp)
+                            .height(22.dp)
+                            .background(TvAccent, RoundedCornerShape(999.dp)),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Next Episode",
+                        color = Color.White.copy(alpha = 0.62f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = next.displayTitle,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Text(
                 text = "Playing in ${seconds.coerceAtLeast(1)}s",
                 color = PlayerMuted,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
             )
-            Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PlayerButton(
                     text = "Play Now",
@@ -1179,6 +1240,21 @@ private fun AutoNextOverlay(
                     requester = cancelRequester,
                     onClick = onCancel,
                     onLeft = { playRequester.requestFocus() },
+                )
+            }
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp)),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth((seconds / AUTO_NEXT_COUNTDOWN_SECONDS.toFloat()).coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(TvAccent, RoundedCornerShape(999.dp)),
                 )
             }
         }
@@ -1231,8 +1307,8 @@ private fun SkipSegmentButton(
         modifier =
             modifier
                 .padding(
-                    start = 56.dp,
-                    bottom = if (controlsVisible) 186.dp else 48.dp,
+                    start = 42.dp,
+                    bottom = if (controlsVisible) 150.dp else 48.dp,
                 )
                 .scale(if (focused) 1.06f else 1f)
                 .border(
@@ -1264,16 +1340,19 @@ private fun PlayerControls(
     positionMs: Long,
     durationMs: Long,
     seekRequester: FocusRequester,
-    restartRequester: FocusRequester,
+    rewindRequester: FocusRequester,
     playRequester: FocusRequester,
+    forwardRequester: FocusRequester,
     subtitleRequester: FocusRequester,
     audioRequester: FocusRequester,
     sourcesRequester: FocusRequester,
     episodesRequester: FocusRequester,
     nextRequester: FocusRequester,
+    lockRequester: FocusRequester,
+    moreRequester: FocusRequester,
+    backRequester: FocusRequester,
     onSeekBackward: () -> Unit,
     onSeekForward: () -> Unit,
-    onRestart: () -> Unit,
     onPlayPause: () -> Unit,
     onAudio: () -> Unit,
     onSubtitles: () -> Unit,
@@ -1281,125 +1360,165 @@ private fun PlayerControls(
     onEpisodes: () -> Unit,
     onPlaybackOptions: () -> Unit,
     onNext: (() -> Unit)?,
+    onLock: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    val episodeLine =
-        buildList {
-            if (request.season != null && request.episode != null) {
-                add("S${request.season.toString().padStart(2, '0')}E${request.episode.toString().padStart(2, '0')}")
-            }
-            request.episodeTitle?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
-        }.joinToString("  •  ")
     val hasEpisodes = request.episodeQueue.isNotEmpty()
+    val topTitle =
+        if (request.season != null && request.episode != null) {
+            buildString {
+                append("S${request.season} E${request.episode}")
+                request.episodeTitle
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { append(" • $it") }
+            }
+        } else {
+            request.media.name
+        }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier =
                 Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(188.dp)
+                    .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                Color.Black.copy(alpha = 0.84f),
-                                Color.Black.copy(alpha = 0.46f),
+                                Color.Black.copy(alpha = 0.62f),
                                 Color.Transparent,
+                                Color.Black.copy(alpha = 0.70f),
                             ),
                         ),
                     ),
         )
 
-        Column(
+        Row(
             modifier =
                 Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 56.dp, top = 42.dp)
-                    .width(760.dp),
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 42.dp, vertical = 26.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = request.media.name,
+                text = topTitle,
+                modifier = Modifier.weight(1f),
                 color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (episodeLine.isNotBlank()) {
-                Spacer(Modifier.height(5.dp))
+
+            if (waitingForRecovery || isBuffering) {
                 Text(
-                    text = episodeLine,
-                    color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (waitingForRecovery) {
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = "Switching source…",
+                    text = if (waitingForRecovery) "TRYING NEXT SOURCE" else "BUFFERING",
                     color = TvAccent,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Black,
                 )
+                Spacer(Modifier.width(18.dp))
             }
+
+            if (onNext != null) {
+                MobilePlayerTopAction(
+                    icon = Icons.Default.SkipNext,
+                    contentDescription = "Next episode",
+                    requester = nextRequester,
+                    onClick = onNext,
+                    onLeft = { nextRequester.requestFocus() },
+                    onRight = { lockRequester.requestFocus() },
+                    onDown = { rewindRequester.requestFocus() },
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+
+            MobilePlayerTopAction(
+                icon = Icons.Default.Lock,
+                contentDescription = "Lock controls",
+                requester = lockRequester,
+                onClick = onLock,
+                onLeft = {
+                    if (onNext != null) nextRequester.requestFocus() else lockRequester.requestFocus()
+                },
+                onRight = { moreRequester.requestFocus() },
+                onDown = { playRequester.requestFocus() },
+            )
+            Spacer(Modifier.width(10.dp))
+
+            MobilePlayerTopAction(
+                icon = Icons.Default.MoreHoriz,
+                contentDescription = "More controls",
+                requester = moreRequester,
+                onClick = onPlaybackOptions,
+                onLeft = { lockRequester.requestFocus() },
+                onRight = { backRequester.requestFocus() },
+                onDown = { playRequester.requestFocus() },
+            )
+            Spacer(Modifier.width(10.dp))
+
+            MobilePlayerTopAction(
+                icon = Icons.Default.ArrowBack,
+                contentDescription = "Back",
+                requester = backRequester,
+                onClick = onBack,
+                onLeft = { moreRequester.requestFocus() },
+                onRight = { backRequester.requestFocus() },
+                onDown = { forwardRequester.requestFocus() },
+            )
         }
 
         Row(
             modifier =
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 56.dp, top = 38.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .align(Alignment.Center)
+                    .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(34.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlayerIconButton(
-                text = "↻",
-                requester = restartRequester,
-                onClick = onRestart,
-                onLeft = { restartRequester.requestFocus() },
-                onRight = {
-                    if (onNext != null) nextRequester.requestFocus() else restartRequester.requestFocus()
+            MobilePlayerRoundAction(
+                icon = Icons.Default.Replay10,
+                contentDescription = "Rewind 10 seconds",
+                requester = rewindRequester,
+                onClick = onSeekBackward,
+                onLeft = { rewindRequester.requestFocus() },
+                onRight = { playRequester.requestFocus() },
+                onUp = {
+                    if (onNext != null) nextRequester.requestFocus() else lockRequester.requestFocus()
                 },
                 onDown = { seekRequester.requestFocus() },
             )
-            if (onNext != null) {
-                PlayerIconButton(
-                    text = "⏭",
-                    requester = nextRequester,
-                    onClick = onNext,
-                    onLeft = { restartRequester.requestFocus() },
-                    onRight = { nextRequester.requestFocus() },
-                    onDown = { seekRequester.requestFocus() },
-                )
-            }
+            MobilePlayerRoundAction(
+                icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                requester = playRequester,
+                primary = true,
+                onClick = onPlayPause,
+                onLeft = { rewindRequester.requestFocus() },
+                onRight = { forwardRequester.requestFocus() },
+                onUp = { moreRequester.requestFocus() },
+                onDown = { seekRequester.requestFocus() },
+            )
+            MobilePlayerRoundAction(
+                icon = Icons.Default.Forward10,
+                contentDescription = "Forward 10 seconds",
+                requester = forwardRequester,
+                onClick = onSeekForward,
+                onLeft = { playRequester.requestFocus() },
+                onRight = { forwardRequester.requestFocus() },
+                onUp = { backRequester.requestFocus() },
+                onDown = { seekRequester.requestFocus() },
+            )
         }
-
-        Box(
-            modifier =
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(214.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.42f),
-                                Color.Black.copy(alpha = 0.92f),
-                                Color.Black.copy(alpha = 0.98f),
-                            ),
-                        ),
-                    ),
-        )
 
         Column(
             modifier =
                 Modifier
-                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(start = 56.dp, end = 56.dp, bottom = 30.dp),
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 44.dp, vertical = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             PlayerSeekBar(
                 positionMs = positionMs,
@@ -1408,90 +1527,135 @@ private fun PlayerControls(
                 onSeekBackward = onSeekBackward,
                 onSeekForward = onSeekForward,
                 onPlayPause = onPlayPause,
-                onUp = { restartRequester.requestFocus() },
-                onDown = { playRequester.requestFocus() },
+                onUp = { playRequester.requestFocus() },
+                onDown = { subtitleRequester.requestFocus() },
             )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = formatTime(positionMs),
-                    color = Color.White.copy(alpha = 0.82f),
-                    fontSize = 12.sp,
+                    color = Color.White,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                 )
+                Spacer(Modifier.weight(1f))
                 Text(
-                    text = formatRemainingTime(positionMs, durationMs),
-                    color = Color.White.copy(alpha = 0.82f),
-                    fontSize = 12.sp,
+                    text = formatTime(durationMs),
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Spacer(Modifier.height(5.dp))
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                PlayerIconButton(
-                    text =
-                        when {
-                            isBuffering -> "…"
-                            isPlaying -> "Ⅱ"
-                            else -> "▶"
-                        },
-                    requester = playRequester,
-                    onClick = onPlayPause,
-                    primary = true,
-                    onLeft = { playRequester.requestFocus() },
-                    onRight = { subtitleRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = onPlaybackOptions,
-                )
-                PlayerTextButton(
-                    text = "Subtitles",
-                    requester = subtitleRequester,
-                    onClick = onSubtitles,
-                    onLeft = { playRequester.requestFocus() },
-                    onRight = { audioRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = onPlaybackOptions,
-                )
-                PlayerTextButton(
-                    text = "Audio",
-                    requester = audioRequester,
-                    onClick = onAudio,
-                    onLeft = { subtitleRequester.requestFocus() },
-                    onRight = { sourcesRequester.requestFocus() },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = onPlaybackOptions,
-                )
-                PlayerTextButton(
-                    text = "Sources",
-                    requester = sourcesRequester,
-                    onClick = onSources,
-                    onLeft = { audioRequester.requestFocus() },
-                    onRight = {
-                        if (hasEpisodes) episodesRequester.requestFocus() else sourcesRequester.requestFocus()
-                    },
-                    onUp = { seekRequester.requestFocus() },
-                    onDown = onPlaybackOptions,
-                )
-                if (hasEpisodes) {
-                    PlayerTextButton(
-                        text = "Episodes",
-                        requester = episodesRequester,
-                        onClick = onEpisodes,
-                        onLeft = { sourcesRequester.requestFocus() },
-                        onRight = { episodesRequester.requestFocus() },
+                Row(
+                    modifier =
+                        Modifier
+                            .background(Color(0xD9161719), RoundedCornerShape(999.dp))
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.16f),
+                                RoundedCornerShape(999.dp),
+                            )
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MobilePlayerPanelAction(
+                        icon = Icons.Default.ClosedCaption,
+                        label = "Subs",
+                        requester = subtitleRequester,
+                        onClick = onSubtitles,
+                        onLeft = { subtitleRequester.requestFocus() },
+                        onRight = { audioRequester.requestFocus() },
                         onUp = { seekRequester.requestFocus() },
-                        onDown = onPlaybackOptions,
                     )
+                    MobilePlayerPanelAction(
+                        icon = Icons.Default.VolumeUp,
+                        label = "Audio",
+                        requester = audioRequester,
+                        onClick = onAudio,
+                        onLeft = { subtitleRequester.requestFocus() },
+                        onRight = { sourcesRequester.requestFocus() },
+                        onUp = { seekRequester.requestFocus() },
+                    )
+                    MobilePlayerPanelAction(
+                        icon = Icons.Default.Dns,
+                        label = "Sources",
+                        requester = sourcesRequester,
+                        onClick = onSources,
+                        onLeft = { audioRequester.requestFocus() },
+                        onRight = {
+                            if (hasEpisodes) episodesRequester.requestFocus() else sourcesRequester.requestFocus()
+                        },
+                        onUp = { seekRequester.requestFocus() },
+                    )
+                    if (hasEpisodes) {
+                        MobilePlayerPanelAction(
+                            icon = Icons.Default.VideoLibrary,
+                            label = "Episodes",
+                            requester = episodesRequester,
+                            onClick = onEpisodes,
+                            onLeft = { sourcesRequester.requestFocus() },
+                            onRight = { episodesRequester.requestFocus() },
+                            onUp = { seekRequester.requestFocus() },
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PlayerUnlockAction(
+    requester: FocusRequester,
+    onUnlock: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier =
+            modifier
+                .padding(top = 26.dp, end = 42.dp)
+                .focusRequester(requester)
+                .onFocusChanged { focused = it.isFocused }
+                .playerRemoteKeys(onClick = onUnlock)
+                .scale(if (focused) 1.06f else 1f)
+                .background(
+                    if (focused) Color.White else Color.Black.copy(alpha = 0.62f),
+                    RoundedCornerShape(999.dp),
+                )
+                .border(
+                    1.dp,
+                    if (focused) Color.Transparent else Color.White.copy(alpha = 0.16f),
+                    RoundedCornerShape(999.dp),
+                )
+                .clickable(onClick = onUnlock)
+                .focusable()
+                .padding(horizontal = 17.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.LockOpen,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = if (focused) Color.Black else Color.White,
+        )
+        Text(
+            text = "Unlock",
+            color = if (focused) Color.Black else Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -1536,7 +1700,7 @@ private fun PlayerSeekBar(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(if (focused) 8.dp else 5.dp)
+                    .height(if (focused) 6.dp else 4.dp)
                     .background(
                         if (focused) Color.White.copy(alpha = 0.42f) else Color.White.copy(alpha = 0.30f),
                         RoundedCornerShape(999.dp),
@@ -1546,7 +1710,7 @@ private fun PlayerSeekBar(
             modifier =
                 Modifier
                     .fillMaxWidth(fraction)
-                    .height(if (focused) 9.dp else 6.dp)
+                    .height(if (focused) 7.dp else 5.dp)
                     .background(TvAccent, RoundedCornerShape(999.dp)),
         )
         if (durationMs > 0L) {
@@ -1560,8 +1724,8 @@ private fun PlayerSeekBar(
                 Box(
                     modifier =
                         Modifier
-                            .size(if (focused) 18.dp else 14.dp)
-                            .background(Color.White, CircleShape),
+                            .size(if (focused) 17.dp else 13.dp)
+                            .background(TvAccent, CircleShape),
                 )
             }
         }
@@ -1596,18 +1760,20 @@ private fun Modifier.playerRemoteKeys(
     }
 
 @Composable
-private fun PlayerIconButton(
-    text: String,
+private fun MobilePlayerRoundAction(
+    icon: ImageVector,
+    contentDescription: String,
     requester: FocusRequester,
-    onClick: () -> Unit,
     primary: Boolean = false,
+    onClick: () -> Unit,
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
     onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val buttonSize = if (primary) 58.dp else 54.dp
+    val buttonSize = if (primary) 92.dp else 76.dp
+    val iconSize = if (primary) 58.dp else 46.dp
 
     Box(
         modifier =
@@ -1616,39 +1782,35 @@ private fun PlayerIconButton(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
-                .scale(if (focused) 1.08f else 1f)
+                .scale(if (focused) 1.09f else 1f)
                 .background(
                     color =
                         when {
-                            focused -> PlayerFocus
-                            primary -> Color.White.copy(alpha = 0.16f)
-                            else -> Color.Black.copy(alpha = 0.42f)
+                            focused -> Color.White
+                            primary -> Color.White.copy(alpha = 0.12f)
+                            else -> Color.Transparent
                         },
-                    shape = CircleShape,
-                )
-                .border(
-                    width = 1.dp,
-                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.14f),
                     shape = CircleShape,
                 )
                 .clickable(onClick = onClick)
                 .focusable(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = text,
-            color = if (focused) Color.Black else Color.White,
-            fontSize = if (primary) 23.sp else 22.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(iconSize),
+            tint = if (focused) Color.Black else Color.White,
         )
     }
 }
 
 @Composable
-private fun PlayerTextButton(
-    text: String,
+private fun MobilePlayerTopAction(
+    icon: ImageVector,
+    contentDescription: String,
     requester: FocusRequester,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
@@ -1656,34 +1818,93 @@ private fun PlayerTextButton(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-
     Box(
         modifier =
             Modifier
-                .height(52.dp)
+                .size(54.dp)
+                .focusRequester(requester)
+                .onFocusChanged { focused = it.isFocused }
+                .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
+                .scale(if (focused) 1.08f else 1f)
+                .background(
+                    if (focused) Color.White else Color.Black.copy(alpha = 0.42f),
+                    CircleShape,
+                )
+                .border(
+                    1.dp,
+                    if (focused) Color.Transparent else Color.White.copy(alpha = 0.12f),
+                    CircleShape,
+                )
+                .clickable(enabled = enabled, onClick = onClick)
+                .focusable(enabled),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(27.dp),
+            tint =
+                if (focused) {
+                    Color.Black
+                } else {
+                    Color.White.copy(alpha = if (enabled) 0.94f else 0.38f)
+                },
+        )
+    }
+}
+
+@Composable
+private fun MobilePlayerPanelAction(
+    icon: ImageVector,
+    label: String,
+    requester: FocusRequester,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    onLeft: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    Row(
+        modifier =
+            Modifier
+                .height(48.dp)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
                 .scale(if (focused) 1.045f else 1f)
                 .background(
-                    color = if (focused) PlayerFocus else Color.Black.copy(alpha = 0.38f),
-                    shape = RoundedCornerShape(999.dp),
+                    if (focused) Color.White else Color.Transparent,
+                    RoundedCornerShape(22.dp),
                 )
-                .border(
-                    width = 1.dp,
-                    color = if (focused) Color.Transparent else Color.White.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(999.dp),
-                )
-                .clickable(onClick = onClick)
-                .focusable()
-                .padding(horizontal = 22.dp),
-        contentAlignment = Alignment.Center,
+                .clickable(enabled = enabled, onClick = onClick)
+                .focusable(enabled)
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(22.dp),
+            tint =
+                if (focused) {
+                    Color.Black
+                } else {
+                    Color.White.copy(alpha = if (enabled) 0.94f else 0.38f)
+                },
+        )
         Text(
-            text = text,
-            color = if (focused) Color.Black else Color.White,
+            text = label,
+            color =
+                if (focused) {
+                    Color.Black
+                } else {
+                    Color.White.copy(alpha = if (enabled) 0.88f else 0.38f)
+                },
             fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
     }
@@ -1735,6 +1956,65 @@ private fun PlayerButton(
             fontSize = 13.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun PlayerWideButton(
+    text: String,
+    requester: FocusRequester,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    primary: Boolean = false,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+) {
+    var focused by remember(text) { mutableStateOf(false) }
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .focusRequester(requester)
+                .onFocusChanged { focused = it.isFocused }
+                .playerRemoteKeys(onClick = onClick, onUp = onUp, onDown = onDown)
+                .scale(if (focused) 1.025f else 1f)
+                .background(
+                    color =
+                        when {
+                            focused -> Color.White
+                            primary -> TvAccent.copy(alpha = 0.90f)
+                            else -> Color.White.copy(alpha = 0.08f)
+                        },
+                    shape = RoundedCornerShape(14.dp),
+                )
+                .border(
+                    1.dp,
+                    if (focused) Color.Transparent else Color.White.copy(alpha = 0.12f),
+                    RoundedCornerShape(14.dp),
+                )
+                .clickable(onClick = onClick)
+                .focusable()
+                .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        icon?.let {
+            Icon(
+                imageVector = it,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = if (focused) Color.Black else Color.White,
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(
+            text = text,
+            color = if (focused) Color.Black else Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
         )
     }
 }
@@ -2161,8 +2441,8 @@ private fun PlaybackOptionsPanel(
         }
 
     RightPanel(
-        title = "Playback Options",
-        subtitle = "Session controls • Sleep timer $timerStatus",
+        title = "More",
+        subtitle = "Playback controls • Sleep timer $timerStatus",
     ) {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -2316,45 +2596,66 @@ private fun ResumePromptOverlay(
     onStartOver: () -> Unit,
 ) {
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.68f)),
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.60f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier =
                 Modifier
-                    .width(470.dp)
-                    .background(PlayerPanel, RoundedCornerShape(18.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
-                    .padding(28.dp),
+                    .width(560.dp)
+                    .background(Color(0xF2131416), RoundedCornerShape(22.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(22.dp))
+                    .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                "Resume watching?",
-                color = Color.White,
-                fontSize = 27.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Continue from ${formatTime(positionMs)} or start this title from the beginning.",
-                color = PlayerMuted,
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.height(22.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PlayerButton(
-                    text = "Resume ${formatTime(positionMs)}",
-                    requester = resumeRequester,
-                    primary = true,
-                    onRight = { startOverRequester.requestFocus() },
-                    onClick = onResume,
-                )
-                PlayerButton(
-                    text = "Start Over",
-                    requester = startOverRequester,
-                    onLeft = { resumeRequester.requestFocus() },
-                    onClick = onStartOver,
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(52.dp)
+                            .background(TvAccent.copy(alpha = 0.14f), CircleShape)
+                            .border(1.dp, TvAccent.copy(alpha = 0.42f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(30.dp),
+                        tint = TvAccent,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "Resume watching?",
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "Continue from ${formatTime(positionMs)}",
+                        color = Color.White.copy(alpha = 0.58f),
+                        fontSize = 14.sp,
+                    )
+                }
             }
+
+            PlayerWideButton(
+                text = "Resume ${formatTime(positionMs)}",
+                icon = Icons.Default.PlayArrow,
+                requester = resumeRequester,
+                primary = true,
+                onDown = { startOverRequester.requestFocus() },
+                onClick = onResume,
+            )
+            PlayerWideButton(
+                text = "Start Over",
+                requester = startOverRequester,
+                onUp = { resumeRequester.requestFocus() },
+                onClick = onStartOver,
+            )
         }
     }
 }
@@ -2427,34 +2728,32 @@ private fun RightPanel(
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.46f)),
-        contentAlignment = Alignment.CenterEnd,
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.52f)),
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier =
                 Modifier
-                    .width(470.dp)
-                    .fillMaxHeight()
-                    .background(PlayerPanel)
-                    .padding(top = 36.dp),
+                    .width(760.dp)
+                    .fillMaxHeight(0.82f)
+                    .background(Color(0xF2131416), RoundedCornerShape(24.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
+                    .padding(top = 24.dp),
         ) {
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 26.sp,
+                fontSize = 25.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Text(
                 text = subtitle,
-                color = PlayerMuted,
-                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.58f),
+                fontSize = 13.sp,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             content()
         }
     }
@@ -2473,31 +2772,44 @@ private fun PlaybackProblemPanel(
 
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.CenterEnd,
+        contentAlignment = Alignment.BottomEnd,
     ) {
         Column(
             modifier =
                 Modifier
-                    .padding(end = 34.dp)
-                    .width(390.dp)
-                    .background(PlayerPanel, RoundedCornerShape(16.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                    .padding(22.dp),
+                    .padding(end = 44.dp, bottom = 150.dp)
+                    .width(520.dp)
+                    .background(Color(0xED181A1C), RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(18.dp))
+                    .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = "Playback problem",
-                color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .width(3.dp)
+                            .height(22.dp)
+                            .background(TvAccent, RoundedCornerShape(999.dp)),
+                )
+                Text(
+                    text = "Playback problem",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             Text(
                 text = message,
-                color = PlayerMuted,
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
+                color = Color.White.copy(alpha = 0.58f),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PlayerButton(
                     text = "Retry",
@@ -2507,7 +2819,7 @@ private fun PlaybackProblemPanel(
                     onRight = { sourcesRequester.requestFocus() },
                 )
                 PlayerButton(
-                    text = "Change Source",
+                    text = "Choose Source",
                     requester = sourcesRequester,
                     onClick = onSources,
                     onLeft = { requester.requestFocus() },
