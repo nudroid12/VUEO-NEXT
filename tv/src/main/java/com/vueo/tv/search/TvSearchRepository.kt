@@ -1,18 +1,12 @@
 package com.vueo.tv.search
 
 import android.content.Context
+import com.vueo.tv.content.TvContentManagerStore
+import com.vueo.tv.data.TvDiscoverySearchType
 import com.vueo.tv.data.TvHomeRepository
+import com.vueo.tv.data.TvUnifiedDiscovery
 import com.vueo.tv.data.TvMediaItem
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -38,11 +32,12 @@ class TvSearchRepository(
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val homeRepository = TvHomeRepository(appContext)
+    private val contentStore = TvContentManagerStore(appContext)
+    private val discovery = TvUnifiedDiscovery(appContext)
 
     /**
-     * TV currently has Cinemeta as its metadata catalog. Cinemeta exposes title search,
-     * not a dedicated cast/person catalog, so Actor mode is surfaced honestly as unavailable
-     * until a provider or TMDB actor source is wired into the shared TV core.
+     * Actor mode remains unavailable until an enabled addon exposes a compatible person/cast
+     * discovery surface. Title search below is now driven by searchable Content Manager catalogs.
      */
     val actorSearchAvailable: Boolean = false
 
@@ -61,7 +56,7 @@ class TvSearchRepository(
                     row.items.map { item ->
                         TvSearchResult(
                             media = item,
-                            providerName = row.providerName.ifBlank { "Cinemeta" },
+                            providerName = row.providerName.ifBlank { "Content Manager" },
                         )
                     }
                 }
@@ -76,51 +71,32 @@ class TvSearchRepository(
     suspend fun searchRemote(
         query: String,
         type: TvSearchType,
-    ): List<TvSearchResult> =
-        coroutineScope {
-            val cleanQuery = query.trim()
-            if (cleanQuery.isBlank()) return@coroutineScope emptyList()
+    ): List<TvSearchResult> {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) return emptyList()
 
-            val encoded =
-                URLEncoder
-                    .encode(cleanQuery, StandardCharsets.UTF_8.name())
-                    .replace("+", "%20")
-
-            val requestedTypes =
-                when (type) {
-                    TvSearchType.ALL -> listOf("movie", "series")
-                    TvSearchType.MOVIE -> listOf("movie")
-                    TvSearchType.SERIES -> listOf("series")
-                }
-
-            val remote =
-                requestedTypes
-                    .map { mediaType ->
-                        async(Dispatchers.IO) {
-                            runCatching {
-                                fetchCatalogSearch(
-                                    mediaType = mediaType,
-                                    encodedQuery = encoded,
-                                )
-                            }.getOrDefault(emptyList())
-                        }
-                    }
-                    .awaitAll()
-                    .flatten()
-
-            val ranked =
-                rankAndDedupe(
-                    query = cleanQuery,
-                    items = remote,
-                    type = type,
-                )
-
-            if (ranked.isNotEmpty()) {
-                persistRemoteItems(ranked)
-            }
-
-            ranked
+        val remote = discovery.search(
+            query = cleanQuery,
+            type = type.toDiscoveryType(),
+        ).map { result ->
+            TvSearchResult(
+                media = result.media,
+                providerName = result.providerName,
+            )
         }
+
+        val ranked = rankAndDedupe(
+            query = cleanQuery,
+            items = remote,
+            type = type,
+        )
+
+        if (ranked.isNotEmpty()) {
+            persistRemoteItems(ranked)
+        }
+
+        return ranked
+    }
 
     fun merge(
         query: String,
@@ -133,29 +109,6 @@ class TvSearchRepository(
             items = local + remote,
             type = type,
         )
-
-    private suspend fun fetchCatalogSearch(
-        mediaType: String,
-        encodedQuery: String,
-    ): List<TvSearchResult> =
-        withContext(Dispatchers.IO) {
-            val url = "$CINEMETA_BASE/catalog/$mediaType/top/search=$encodedQuery.json"
-            val json = JSONObject(httpGet(url))
-            val metas = json.optJSONArray("metas") ?: JSONArray()
-
-            (0 until metas.length())
-                .mapNotNull { index ->
-                    metas.optJSONObject(index)
-                        ?.toMediaItem(mediaType)
-                        ?.let { media ->
-                            TvSearchResult(
-                                media = media,
-                                providerName = "Cinemeta",
-                            )
-                        }
-                }
-                .take(MAX_REMOTE_ITEMS_PER_TYPE)
-        }
 
     private fun rankAndDedupe(
         query: String,
@@ -242,10 +195,14 @@ class TvSearchRepository(
 
         prefs.edit()
             .putString(KEY_SEARCH_CACHE, array.toString())
+            .putInt(KEY_SEARCH_CACHE_REVISION, contentStore.discoveryRevision())
             .apply()
     }
 
     private fun cachedRemoteItems(): List<TvSearchResult> {
+        if (prefs.getInt(KEY_SEARCH_CACHE_REVISION, Int.MIN_VALUE) != contentStore.discoveryRevision()) {
+            return emptyList()
+        }
         val raw = prefs.getString(KEY_SEARCH_CACHE, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
@@ -256,59 +213,35 @@ class TvSearchRepository(
                         ?: return@mapNotNull null
                     TvSearchResult(
                         media = media,
-                        providerName = entry.optString("providerName", "Cinemeta"),
+                        providerName = entry.optString("providerName", "Content Manager"),
                     )
                 }
         }.getOrDefault(emptyList())
     }
 
-    private fun httpGet(url: String): String {
-        require(url.startsWith("https://")) {
-            "VUEO TV search requests require HTTPS."
-        }
-
-        val connection =
-            (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "VUEO-TV-Search/0.4")
-            }
-
-        return try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                error("HTTP $code from Cinemeta search")
-            }
-
-            connection.inputStream
-                .bufferedReader()
-                .use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     companion object {
         private const val PREFS_NAME = "vueo_tv_search"
-        private const val KEY_SEARCH_CACHE = "search_cache_v1"
-        private const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
-        private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val READ_TIMEOUT_MS = 7_000
-        private const val MAX_REMOTE_ITEMS_PER_TYPE = 30
+        private const val KEY_SEARCH_CACHE = "search_cache_v2"
+        private const val KEY_SEARCH_CACHE_REVISION = "search_cache_revision_v2"
         private const val MAX_CACHED_ITEMS = 120
         private const val MAX_RESULTS = 60
         private const val MIN_RELEVANCE_SCORE = 180
     }
 }
 
+private fun TvSearchType.toDiscoveryType(): TvDiscoverySearchType =
+    when (this) {
+        TvSearchType.ALL -> TvDiscoverySearchType.ALL
+        TvSearchType.MOVIE -> TvDiscoverySearchType.MOVIE
+        TvSearchType.SERIES -> TvDiscoverySearchType.SERIES
+    }
+
 private fun TvSearchType.accepts(mediaType: String): Boolean =
     when (this) {
         TvSearchType.ALL -> true
         TvSearchType.MOVIE -> mediaType.equals("movie", ignoreCase = true)
-        TvSearchType.SERIES -> mediaType.equals("series", ignoreCase = true)
+        TvSearchType.SERIES ->
+            mediaType.equals("series", ignoreCase = true) || mediaType.equals("tv", ignoreCase = true)
     }
 
 private fun normalize(value: String): String =

@@ -201,7 +201,7 @@ fun TvSearchScreen(
                     )
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        text = "Find movies and series across VUEO metadata catalogs.",
+                        text = "Find movies and series across enabled Content Manager catalogs.",
                         color = SearchMuted,
                         fontSize = 15.sp,
                     )
@@ -332,7 +332,7 @@ fun TvSearchScreen(
             results.isEmpty() && searching -> {
                 SearchMessage(
                     title = "Searching…",
-                    body = "Checking VUEO metadata catalogs.",
+                    body = "Checking enabled Content Manager catalogs.",
                 )
             }
             results.isEmpty() -> {

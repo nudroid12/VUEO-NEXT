@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,6 +64,7 @@ private val ManagerRed = Color(0xFFFF7A73)
 
 private enum class TvManagerMode {
     STREMIO,
+    CATALOGS,
     PROVIDERS,
 }
 
@@ -78,6 +80,7 @@ fun TvContentManagerScreen(
                 .associateWith { FocusRequester() }
         }
     val stremioRequester = remember { FocusRequester() }
+    val catalogsRequester = remember { FocusRequester() }
     val providersRequester = remember { FocusRequester() }
     val inputRequester = remember { FocusRequester() }
     val installRequester = remember { FocusRequester() }
@@ -90,13 +93,20 @@ fun TvContentManagerScreen(
     var input by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf(false) }
+    var catalogOrder by remember { mutableStateOf<List<String>>(emptyList()) }
 
     fun refresh() {
         scope.launch {
             loading = true
+            if (mode != TvManagerMode.PROVIDERS) {
+                store.invalidateDiscovery()
+            }
             runCatching { store.snapshot() }
                 .onSuccess {
                     snapshot = it
+                    catalogOrder = store.reconcileCatalogOrder(
+                        it.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
+                    )
                     message = null
                 }
                 .onFailure {
@@ -110,7 +120,12 @@ fun TvContentManagerScreen(
 
     LaunchedEffect(Unit) {
         runCatching { store.snapshot() }
-            .onSuccess { snapshot = it }
+            .onSuccess {
+                snapshot = it
+                catalogOrder = store.reconcileCatalogOrder(
+                    it.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
+                )
+            }
             .onFailure { message = it.message ?: "Unable to load Content Manager" }
         loading = false
         delay(100)
@@ -167,6 +182,14 @@ fun TvContentManagerScreen(
                         onClick = { mode = TvManagerMode.STREMIO },
                     )
                     ManagerModeChip(
+                        text = "Catalog Order",
+                        selected = mode == TvManagerMode.CATALOGS,
+                        requester = catalogsRequester,
+                        upRequester = navRequesters.getValue("Home"),
+                        downRequester = refreshRequester,
+                        onClick = { mode = TvManagerMode.CATALOGS },
+                    )
+                    ManagerModeChip(
                         text = "JS Providers",
                         selected = mode == TvManagerMode.PROVIDERS,
                         requester = providersRequester,
@@ -179,87 +202,117 @@ fun TvContentManagerScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier =
-                        Modifier
-                            .width(800.dp)
-                            .focusRequester(inputRequester)
-                            .tvVerticalFocus(
-                                up = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
-                                down = installRequester,
-                            ),
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            if (mode == TvManagerMode.STREMIO) {
-                                "Paste Stremio addon manifest URL..."
-                            } else {
-                                "Paste JavaScript provider repository URL..."
-                            }
-                        )
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    shape = RoundedCornerShape(12.dp),
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            cursorColor = Color.White,
-                            focusedBorderColor = Color.White,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.24f),
-                            focusedContainerColor = ManagerPanelRaised,
-                            unfocusedContainerColor = ManagerPanel,
-                            focusedPlaceholderColor = ManagerMuted,
-                            unfocusedPlaceholderColor = ManagerMuted.copy(alpha = 0.72f),
-                        ),
-                )
-
-                Button(
-                    onClick = {
-                        val requested = input.trim()
-                        if (requested.isNotBlank() && !installing) {
-                            installing = true
-                            message = null
-                            scope.launch {
-                                val result =
-                                    runCatching {
-                                        if (mode == TvManagerMode.STREMIO) {
-                                            store.addAddon(requested)
-                                        } else {
-                                            store.addRepository(requested)
-                                        }
-                                    }
-                                if (result.isSuccess) {
-                                    input = ""
-                                    message = "Installed successfully"
-                                    snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
-                                } else {
-                                    message = result.exceptionOrNull()?.message ?: "Unable to install source"
-                                }
-                                installing = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.focusRequester(installRequester),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+            if (mode == TvManagerMode.CATALOGS) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (installing) "Installing..." else "Install", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Top catalogs appear first on Home. Disabled addons keep their saved position.",
+                        color = ManagerMuted,
+                        fontSize = 13.sp,
+                    )
+                    Button(
+                        onClick = ::refresh,
+                        modifier =
+                            Modifier
+                                .focusRequester(refreshRequester)
+                                .tvVerticalFocus(up = catalogsRequester),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ManagerPanelRaised, contentColor = Color.White),
+                    ) {
+                        Text("Refresh Catalogs")
+                    }
                 }
-
-                Button(
-                    onClick = ::refresh,
-                    modifier = Modifier.focusRequester(refreshRequester),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ManagerPanelRaised, contentColor = Color.White),
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Refresh")
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier =
+                            Modifier
+                                .width(800.dp)
+                                .focusRequester(inputRequester)
+                                .tvVerticalFocus(
+                                    up = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
+                                    down = installRequester,
+                                ),
+                        singleLine = true,
+                        placeholder = {
+                            Text(
+                                if (mode == TvManagerMode.STREMIO) {
+                                    "Paste Stremio addon manifest URL..."
+                                } else {
+                                    "Paste JavaScript provider repository URL..."
+                                }
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        shape = RoundedCornerShape(12.dp),
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color.White,
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.24f),
+                                focusedContainerColor = ManagerPanelRaised,
+                                unfocusedContainerColor = ManagerPanel,
+                                focusedPlaceholderColor = ManagerMuted,
+                                unfocusedPlaceholderColor = ManagerMuted.copy(alpha = 0.72f),
+                            ),
+                    )
+
+                    Button(
+                        onClick = {
+                            val requested = input.trim()
+                            if (requested.isNotBlank() && !installing) {
+                                installing = true
+                                message = null
+                                scope.launch {
+                                    val result =
+                                        runCatching {
+                                            if (mode == TvManagerMode.STREMIO) {
+                                                store.addAddon(requested)
+                                            } else {
+                                                store.addRepository(requested)
+                                            }
+                                        }
+                                    if (result.isSuccess) {
+                                        input = ""
+                                        message = "Installed successfully"
+                                        snapshot = runCatching { store.snapshot() }.getOrNull() ?: snapshot
+                                        snapshot?.let { current ->
+                                            catalogOrder = store.reconcileCatalogOrder(
+                                                current.addons.flatMap { addon -> addon.catalogs.filter { it.canLoadWithoutExtras }.map { catalog -> catalog.key } }
+                                            )
+                                        }
+                                    } else {
+                                        message = result.exceptionOrNull()?.message ?: "Unable to install source"
+                                    }
+                                    installing = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.focusRequester(installRequester),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    ) {
+                        Text(if (installing) "Installing..." else "Install", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = ::refresh,
+                        modifier = Modifier.focusRequester(refreshRequester),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ManagerPanelRaised, contentColor = Color.White),
+                    ) {
+                        Text("Refresh")
+                    }
                 }
             }
 
@@ -299,6 +352,22 @@ fun TvContentManagerScreen(
                                                 }
                                             }
                                     )
+                            },
+                        )
+
+                    TvManagerMode.CATALOGS ->
+                        CatalogOrderList(
+                            addons = snapshot?.addons.orEmpty(),
+                            order = catalogOrder,
+                            onMove = { index, delta ->
+                                val target = index + delta
+                                if (index in catalogOrder.indices && target in catalogOrder.indices) {
+                                    val next = catalogOrder.toMutableList()
+                                    val moved = next.removeAt(index)
+                                    next.add(target, moved)
+                                    catalogOrder = next
+                                    store.setCatalogOrder(next)
+                                }
                             },
                         )
 
@@ -345,7 +414,12 @@ fun TvContentManagerScreen(
 
         TvTopNav(
             navRequesters = navRequesters,
-            contentDownRequester = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
+            contentDownRequester =
+                when (mode) {
+                    TvManagerMode.STREMIO -> stremioRequester
+                    TvManagerMode.CATALOGS -> catalogsRequester
+                    TvManagerMode.PROVIDERS -> providersRequester
+                },
             selectedLabel = "",
             onSelected = onNavigate,
         )
@@ -430,6 +504,135 @@ private fun StremioAddonList(
                 warning = !addon.reachable,
                 onClick = { onToggle(addon) },
             )
+        }
+    }
+}
+
+private data class TvCatalogOrderEntry(
+    val key: String,
+    val title: String,
+    val providerName: String,
+    val type: String,
+    val addonEnabled: Boolean,
+)
+
+@Composable
+private fun CatalogOrderList(
+    addons: List<TvStremioAddonInfo>,
+    order: List<String>,
+    onMove: (Int, Int) -> Unit,
+) {
+    val entries =
+        remember(addons) {
+            addons.flatMap { addon ->
+                addon.catalogs
+                    .filter { it.canLoadWithoutExtras }
+                    .map { catalog ->
+                        TvCatalogOrderEntry(
+                            key = catalog.key,
+                            title = catalog.name,
+                            providerName = catalog.providerName,
+                            type = catalog.type.replaceFirstChar { it.uppercase() },
+                            addonEnabled = addon.enabled && addon.reachable,
+                        )
+                    }
+            }
+        }
+    val entryByKey = remember(entries) { entries.associateBy { it.key } }
+    val visibleOrder = order.filter { it in entryByKey }
+
+    if (entries.isEmpty()) {
+        ManagerEmpty("No loadable catalogs found")
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Text(
+                text = "${entries.count { it.addonEnabled }} active catalog entries • Home follows this order",
+                color = ManagerMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+
+        visibleOrder.forEachIndexed { index, key ->
+            val entry = entryByKey[key] ?: return@forEachIndexed
+            item(key = "catalog-order:$key") {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .background(ManagerPanel, RoundedCornerShape(10.dp))
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.10f),
+                                RoundedCornerShape(10.dp),
+                            )
+                            .padding(horizontal = 18.dp, vertical = 13.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier.width(850.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(15.dp),
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .width(38.dp)
+                                    .height(38.dp)
+                                    .background(ManagerPanelRaised, RoundedCornerShape(19.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                color = if (entry.addonEnabled) Color.White else ManagerMuted,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = entry.title,
+                                color = if (entry.addonEnabled) Color.White else ManagerMuted,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                text =
+                                    "${entry.providerName}  •  ${entry.type}" +
+                                        if (entry.addonEnabled) "" else "  •  Addon disabled",
+                                color = ManagerMuted,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            enabled = index > 0,
+                            onClick = { onMove(index, -1) },
+                        ) {
+                            Text("↑", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            enabled = index < visibleOrder.lastIndex,
+                            onClick = { onMove(index, 1) },
+                        ) {
+                            Text("↓", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 }

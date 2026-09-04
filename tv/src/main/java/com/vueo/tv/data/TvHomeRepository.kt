@@ -5,25 +5,18 @@ import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.tv.content.TvContentManagerStore
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Calendar
 
 /**
  * TV-02 real home feed.
  *
- * Uses the same Cinemeta Stremio addon that VUEO Mobile seeds by default.
- * The TV app keeps its own small home cache so a previously loaded home can
- * render immediately while fresh catalog requests happen in the background.
+ * Loads Home rows from enabled Stremio catalogs managed by Content Manager.
+ * The TV app keeps a profile and discovery-revision aware cache so returning
+ * from Detail or Player does not unnecessarily rebuild Home.
  */
 class TvHomeRepository(
     context: Context,
@@ -37,6 +30,8 @@ class TvHomeRepository(
         )
 
     private val profileStore = ProfileStore(appContext)
+    private val contentStore = TvContentManagerStore(appContext)
+    private val discovery = TvUnifiedDiscovery(appContext)
     private val dnaPreferences =
         UserDnaPreferences(
             context = appContext,
@@ -55,6 +50,7 @@ class TvHomeRepository(
         val activeProfileId = profileStore.activeProfileId()
         val cachedProfileId = prefs.getString(KEY_PROFILE_ID, null)
         if (cachedProfileId != activeProfileId) return null
+        if (prefs.getInt(KEY_DISCOVERY_REVISION, Int.MIN_VALUE) != contentStore.discoveryRevision()) return null
 
         return prefs.getString(KEY_HOME_CACHE, null)
             ?.let { raw ->
@@ -70,56 +66,17 @@ class TvHomeRepository(
         return age < 0L || age >= CACHE_MAX_AGE_MS
     }
 
-    suspend fun refresh(): TvHomeData = coroutineScope {
-        val year = Calendar.getInstance().get(Calendar.YEAR)
-
-        val requests =
-            listOf(
-                CatalogRequest(
-                    id = "popular-movies",
-                    title = "Popular Movies",
-                    type = "movie",
-                    url = "$CINEMETA_BASE/catalog/movie/top.json",
-                ),
-                CatalogRequest(
-                    id = "popular-series",
-                    title = "Popular Series",
-                    type = "series",
-                    url = "$CINEMETA_BASE/catalog/series/top.json",
-                ),
-                CatalogRequest(
-                    id = "new-movies",
-                    title = "New Movies",
-                    type = "movie",
-                    url = "$CINEMETA_BASE/catalog/movie/year/genre=$year.json",
-                ),
-                CatalogRequest(
-                    id = "new-series",
-                    title = "New Series",
-                    type = "series",
-                    url = "$CINEMETA_BASE/catalog/series/year/genre=$year.json",
-                ),
-            )
-
-        val rows =
-            requests
-                .map { request ->
-                    async(Dispatchers.IO) {
-                        runCatching {
-                            fetchCatalog(request)
-                        }.getOrNull()
-                    }
-                }
-                .awaitAll()
-                .filterNotNull()
-                .filter { it.items.isNotEmpty() }
+    suspend fun refresh(): TvHomeData {
+        val rows = discovery.catalogRows(
+            maxRows = MAX_HOME_ROWS,
+            maxItemsPerRow = MAX_ITEMS_PER_ROW,
+        )
 
         if (rows.isEmpty()) {
-            error("No VUEO TV catalogs could be loaded.")
+            error("No enabled Content Manager catalog could be loaded.")
         }
 
         val finalRows = personalize(rows)
-
         val hero =
             finalRows
                 .asSequence()
@@ -127,41 +84,22 @@ class TvHomeRepository(
                 .firstOrNull { !it.background.isNullOrBlank() }
                 ?: finalRows.first().items.first()
 
+        val providers = finalRows
+            .map { it.providerName }
+            .filter { it.isNotBlank() && it != "VUEO DNA" }
+            .distinct()
+
         val home =
             TvHomeData(
                 hero = hero,
                 rows = finalRows,
-                providerName = "Cinemeta",
+                providerName = if (providers.size == 1) providers.first() else "Content Manager",
                 refreshedAtEpochMs = System.currentTimeMillis(),
             )
 
         persist(home)
-        home
+        return home
     }
-
-    private suspend fun fetchCatalog(
-        request: CatalogRequest,
-    ): TvCatalogRow =
-        withContext(Dispatchers.IO) {
-            val json = JSONObject(httpGet(request.url))
-            val metas = json.optJSONArray("metas") ?: JSONArray()
-
-            val items =
-                (0 until metas.length())
-                    .mapNotNull { index ->
-                        metas.optJSONObject(index)
-                            ?.toMediaItem(request.type)
-                    }
-                    .distinctBy { "${it.type}:${it.id}" }
-                    .take(MAX_ITEMS_PER_ROW)
-
-            TvCatalogRow(
-                id = request.id,
-                title = request.title,
-                providerName = "Cinemeta",
-                items = items,
-            )
-        }
 
     private fun personalize(
         rows: List<TvCatalogRow>,
@@ -207,54 +145,17 @@ class TvHomeRepository(
                 homeToJson(home).toString(),
             )
             .putString(KEY_PROFILE_ID, profileStore.activeProfileId())
+            .putInt(KEY_DISCOVERY_REVISION, contentStore.discoveryRevision())
             .apply()
     }
-
-    private fun httpGet(url: String): String {
-        require(url.startsWith("https://")) {
-            "VUEO TV catalog requests require HTTPS."
-        }
-
-        val connection =
-            (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "VUEO-TV/0.2")
-            }
-
-        return try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                error("HTTP $code from Cinemeta")
-            }
-
-            connection.inputStream
-                .bufferedReader()
-                .use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private data class CatalogRequest(
-        val id: String,
-        val title: String,
-        val type: String,
-        val url: String,
-    )
 
     companion object {
         private const val PREFS_NAME = "vueo_tv_home"
         private const val KEY_HOME_CACHE = "home_cache_v1"
         private const val KEY_PROFILE_ID = "home_cache_profile_v1"
+        private const val KEY_DISCOVERY_REVISION = "home_cache_discovery_revision_v1"
         private const val CACHE_MAX_AGE_MS = 20L * 60L * 1000L
-
-        private const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
-        private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val READ_TIMEOUT_MS = 7_000
+        private const val MAX_HOME_ROWS = 12
         private const val MAX_ITEMS_PER_ROW = 24
         private const val MIN_PERSONALIZED_ITEMS = 6
     }
@@ -372,7 +273,7 @@ private fun homeFromJson(json: JSONObject): TvHomeData {
                 TvCatalogRow(
                     id = rowJson.optString("id"),
                     title = rowJson.optString("title"),
-                    providerName = rowJson.optString("providerName", "Cinemeta"),
+                    providerName = rowJson.optString("providerName", "Content Manager"),
                     items = items,
                 )
             }
@@ -386,7 +287,7 @@ private fun homeFromJson(json: JSONObject): TvHomeData {
     return TvHomeData(
         hero = hero,
         rows = rows,
-        providerName = json.optString("providerName", "Cinemeta"),
+        providerName = json.optString("providerName", "Content Manager"),
         refreshedAtEpochMs = json.optLong("refreshedAtEpochMs", 0L),
     )
 }
@@ -402,6 +303,8 @@ private fun mediaToJson(item: TvMediaItem): JSONObject =
         .put("releaseInfo", item.releaseInfo)
         .put("genres", JSONArray(item.genres))
         .put("imdbRating", item.imdbRating)
+        .put("sourceExtensionId", item.sourceExtensionId)
+        .put("catalogSources", JSONArray(item.catalogSources))
 
 private fun mediaFromJson(json: JSONObject): TvMediaItem =
     TvMediaItem(
@@ -413,6 +316,8 @@ private fun mediaFromJson(json: JSONObject): TvMediaItem =
         description = json.optString("description").takeIf { it.isNotBlank() && it != "null" },
         releaseInfo = json.optString("releaseInfo").takeIf { it.isNotBlank() && it != "null" },
         genres = json.optJSONArray("genres").toStringList(),
+        sourceExtensionId = json.optString("sourceExtensionId").takeIf { it.isNotBlank() && it != "null" },
+        catalogSources = json.optJSONArray("catalogSources").toStringList(),
         imdbRating = json.opt("imdbRating").let { value ->
             when (value) {
                 is Number -> value.toDouble()
