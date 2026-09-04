@@ -44,8 +44,7 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 
 private val SecurityBlack = Color(0xFF050706)
-private val SecurityPanel = Color(0xFF121613)
-private val SecurityYellow = Color(0xFFD6FF00)
+private val SecurityPanel = Color(0xFF111412)
 private val SecurityMuted = Color(0xFFAAB2AD)
 
 @Composable
@@ -80,49 +79,51 @@ fun TvPinEntryOverlay(
             Modifier
                 .fillMaxSize()
                 .zIndex(80f)
-                .background(SecurityBlack.copy(alpha = 0.97f)),
+                .background(SecurityBlack.copy(alpha = 0.985f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier =
                 Modifier
-                    .width(520.dp)
-                    .background(SecurityPanel, RoundedCornerShape(22.dp))
+                    .width(560.dp)
+                    .background(SecurityPanel, RoundedCornerShape(24.dp))
                     .border(
                         1.dp,
-                        Color.White.copy(alpha = 0.10f),
-                        RoundedCornerShape(22.dp),
+                        Color.White.copy(alpha = 0.14f),
+                        RoundedCornerShape(24.dp),
                     )
-                    .padding(horizontal = 46.dp, vertical = 34.dp),
+                    .padding(horizontal = 48.dp, vertical = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 30.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Black,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = subtitle,
                 color = SecurityMuted,
-                fontSize = 14.sp,
+                fontSize = 15.sp,
             )
-            Spacer(Modifier.height(22.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Spacer(Modifier.height(24.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(17.dp)) {
                 repeat(PIN_LENGTH) { index ->
+                    val filled = index < pin.length
                     Box(
                         modifier =
                             Modifier
-                                .size(22.dp)
+                                .size(23.dp)
                                 .background(
-                                    if (index < pin.length) SecurityYellow else Color.Transparent,
+                                    if (filled) Color.White else Color.Transparent,
                                     CircleShape,
                                 )
                                 .border(
                                     2.dp,
-                                    if (index < pin.length) SecurityYellow else Color.White.copy(alpha = 0.28f),
+                                    if (filled) Color.White else Color.White.copy(alpha = 0.30f),
                                     CircleShape,
                                 ),
                     )
@@ -130,26 +131,27 @@ fun TvPinEntryOverlay(
             }
 
             if (!errorText.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(13.dp))
                 Text(
                     text = errorText,
                     color = Color(0xFFFF8A80),
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(26.dp))
 
-            val keys = listOf(
-                "1", "2", "3",
-                "4", "5", "6",
-                "7", "8", "9",
-                "Delete", "0", "Cancel",
-            )
+            val keys =
+                listOf(
+                    "1", "2", "3",
+                    "4", "5", "6",
+                    "7", "8", "9",
+                    "Delete", "0", "Cancel",
+                )
 
             keys.chunked(3).forEachIndexed { rowIndex, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     row.forEachIndexed { columnIndex, label ->
                         val index = rowIndex * 3 + columnIndex
                         PinKey(
@@ -163,6 +165,7 @@ fun TvPinEntryOverlay(
                                         PinMove.Up -> if (rowIndex > 0) index - 3 else index
                                         PinMove.Down -> if (rowIndex < 3) index + 3 else index
                                     }
+
                                 if (next != index) {
                                     runCatching { requesters[next].requestFocus() }
                                     true
@@ -180,8 +183,9 @@ fun TvPinEntryOverlay(
                         )
                     }
                 }
+
                 if (rowIndex < 3) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                 }
             }
         }
@@ -204,24 +208,33 @@ private fun PinKey(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.08f else 1f,
+        targetValue = if (focused) 1.06f else 1f,
         label = "pinKeyScale",
     )
 
     Box(
         modifier =
             Modifier
-                .width(122.dp)
-                .height(62.dp)
+                .width(128.dp)
+                .height(64.dp)
                 .scale(scale)
                 .background(
-                    if (focused) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.06f),
+                    if (focused) {
+                        Color.White.copy(alpha = 0.18f)
+                    } else {
+                        Color.White.copy(alpha = 0.055f)
+                    },
                     RoundedCornerShape(14.dp),
                 )
                 .border(
-                    if (focused) 2.dp else 1.dp,
-                    if (focused) SecurityYellow else Color.White.copy(alpha = 0.10f),
-                    RoundedCornerShape(14.dp),
+                    width = if (focused) 2.dp else 1.dp,
+                    color =
+                        if (focused) {
+                            Color.White
+                        } else {
+                            Color.White.copy(alpha = 0.10f)
+                        },
+                    shape = RoundedCornerShape(14.dp),
                 )
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
@@ -245,7 +258,7 @@ private fun PinKey(
         Text(
             text = label,
             color = Color.White,
-            fontSize = if (label.length == 1) 23.sp else 14.sp,
+            fontSize = if (label.length == 1) 24.sp else 14.sp,
             fontWeight = FontWeight.Bold,
         )
     }

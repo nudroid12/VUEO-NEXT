@@ -46,7 +46,6 @@ import kotlinx.coroutines.delay
 
 private val PickerBlack = Color(0xFF050706)
 private val PickerPanel = Color(0xFF101412)
-private val PickerYellow = Color(0xFFD6FF00)
 private val PickerGreen = Color(0xFF84E100)
 private val PickerMuted = Color(0xFFAAB2AD)
 
@@ -75,7 +74,8 @@ fun TvProfilePickerScreen(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFF0A100C),
+                            Color(0xFF111513),
+                            Color(0xFF080B09),
                             PickerBlack,
                             PickerBlack,
                         )
@@ -89,19 +89,19 @@ fun TvProfilePickerScreen(
             Text(
                 text = "Who's Watching?",
                 color = Color.White,
-                fontSize = 42.sp,
+                fontSize = 46.sp,
                 fontWeight = FontWeight.Black,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = "Choose a profile to continue",
                 color = PickerMuted,
-                fontSize = 16.sp,
+                fontSize = 17.sp,
             )
-            Spacer(Modifier.height(34.dp))
+            Spacer(Modifier.height(40.dp))
 
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(22.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 itemsIndexed(
                     profiles,
@@ -167,14 +167,14 @@ private fun PickerProfileCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.08f else 1f,
+        targetValue = if (focused) 1.065f else 1f,
         label = "pickerProfileScale",
     )
 
     Column(
         modifier =
             modifier
-                .width(170.dp)
+                .width(188.dp)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onClick)
@@ -184,13 +184,21 @@ private fun PickerProfileCard(
         Box(
             modifier =
                 Modifier
-                    .width(128.dp)
-                    .height(128.dp)
-                    .background(PickerPanel, CircleShape)
-                    .border(
-                        if (focused) 3.dp else 1.dp,
-                        if (focused) PickerYellow else Color.White.copy(alpha = 0.12f),
+                    .width(140.dp)
+                    .height(140.dp)
+                    .background(
+                        if (focused) Color.White.copy(alpha = 0.12f) else PickerPanel,
                         CircleShape,
+                    )
+                    .border(
+                        width = if (focused) 3.dp else 1.dp,
+                        color =
+                            if (focused) {
+                                Color.White
+                            } else {
+                                Color.White.copy(alpha = 0.13f)
+                            },
+                        shape = CircleShape,
                     ),
             contentAlignment = Alignment.Center,
         ) {
@@ -202,7 +210,7 @@ private fun PickerProfileCard(
                         ?.uppercase()
                         ?: "V",
                 color = Color.White,
-                fontSize = 42.sp,
+                fontSize = 46.sp,
                 fontWeight = FontWeight.Black,
             )
 
@@ -211,34 +219,36 @@ private fun PickerProfileCard(
                     modifier =
                         Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 7.dp)
+                            .padding(bottom = 8.dp)
                             .background(
-                                PickerBlack.copy(alpha = 0.88f),
+                                PickerBlack.copy(alpha = 0.92f),
                                 RoundedCornerShape(8.dp),
                             )
                             .border(
                                 1.dp,
-                                PickerGreen.copy(alpha = 0.55f),
+                                Color.White.copy(alpha = 0.26f),
                                 RoundedCornerShape(8.dp),
                             )
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
                 ) {
                     Text(
                         text = "PIN",
-                        color = PickerGreen,
+                        color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Black,
                     )
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+
+        Spacer(Modifier.height(13.dp))
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = profile.name,
                 color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                fontWeight = if (focused) FontWeight.Black else FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
