@@ -51,7 +51,16 @@ android {
                 signingConfig =
                     signingConfigs.getByName("vueoRelease")
             }
-            isMinifyEnabled = false
+
+            // Release APKs are distributed directly, so keep the package lean.
+            // R8 removes unused Compose/icon/dependency code and resource shrinking
+            // removes resources that become unreachable after minification.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -77,28 +86,19 @@ dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
 
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
     implementation("androidx.media3:media3-exoplayer-dash:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
 
-    // Nuvio-style local JavaScript provider runtime.
-    implementation("io.github.dokar3:quickjs-kt:1.0.14")
-
-    // Native HTTP bridge used by plugins. DNS-over-HTTPS is a fallback when
-    // the device resolver cannot resolve provider or repository hosts.
+    // Mobile still directly references OkHttp request/client types in its
+    // update/compatibility facade. QuickJS, DNS-over-HTTPS and Jsoup are owned
+    // by :shared:core and must not be declared a second time here.
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
-    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.4.0")
-
-    // Native DOM engine behind the Nuvio-compatible Cheerio bridge.
-    implementation("org.jsoup:jsoup:1.23.2")
 }
