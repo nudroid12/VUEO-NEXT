@@ -33,9 +33,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -93,8 +95,10 @@ import com.vueo.tv.ui.focus.TvFocusMemory
 import com.vueo.tv.ui.focus.TvFocusZone
 import com.vueo.tv.ui.focus.tvHorizontalEdgeGuard
 import com.vueo.tv.ui.focus.tvVerticalFocus
+import com.vueo.tv.ui.theme.LocalTvAccent
 import com.vueo.tv.update.VueoTvUpdateManager
 import com.vueo.tv.update.VueoTvUpdateRelease
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -103,7 +107,6 @@ import kotlinx.coroutines.launch
 
 private val VueoBlack = Color(0xFF050706)
 private val VueoPanel = Color(0xFF101412)
-private val VueoGreen = Color(0xFF84E100)
 private val VueoYellow = Color(0xFFD6FF00)
 private val VueoMuted = Color(0xFFAAB2AD)
 private const val TV_UPDATER_ENABLED = true
@@ -166,6 +169,7 @@ fun VueoTvApp() {
                 prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
             )
         }
+    var appAccent by remember { mutableStateOf(settingsStore.appAccent()) }
     val contentManagerStore =
         remember(context) {
             TvContentManagerStore(context.applicationContext)
@@ -258,12 +262,16 @@ fun VueoTvApp() {
         }
     }
 
-    MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = VueoBlack,
+    val tvAccent = Color(appAccent.argb)
+    CompositionLocalProvider(LocalTvAccent provides tvAccent) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(primary = tvAccent),
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = VueoBlack,
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
                 when (currentScreen) {
                     TvRootScreen.HOME ->
                         VueoTvHome(
@@ -386,10 +394,14 @@ fun VueoTvApp() {
                             },
                             onNavigate = navigate,
                             onProfileChanged = {
+                                appAccent = settingsStore.appAccent()
                                 TvFocusMemory.resetToHero()
                                 homeFocusRestoreToken += 1
                                 searchFocusRestoreToken += 1
                                 libraryFocusRestoreToken += 1
+                            },
+                            onAccentChanged = {
+                                appAccent = settingsStore.appAccent()
                             },
                             onResume = { entry ->
                                 playbackReturnScreen = TvRootScreen.USER_HUB
@@ -594,6 +606,7 @@ fun VueoTvApp() {
                 }
             }
         }
+    }
     }
 }
 
@@ -1693,7 +1706,7 @@ private fun TvContinueWatchingCard(
                             )
                             .fillMaxHeight()
                             .background(
-                                VueoGreen
+                                TvAccent
                             ),
                 )
             }

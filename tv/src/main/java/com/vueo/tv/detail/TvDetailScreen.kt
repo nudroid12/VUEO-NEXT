@@ -65,12 +65,12 @@ import com.vueo.tv.player.TvPlaybackRequest
 import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.focus.tvVerticalFocus
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val DetailBlack = Color(0xFF050706)
 private val DetailPanel = Color(0xFF101412)
-private val DetailGreen = Color(0xFF84E100)
 private val DetailMuted = Color(0xFFAAB2AD)
 
 @Composable
@@ -454,7 +454,7 @@ private fun DetailHero(
             Spacer(Modifier.height(10.dp))
             Text(
                 text = "VUEO DNA Match • $score%",
-                color = DetailGreen,
+                color = TvAccent,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -872,7 +872,7 @@ private fun GeminiInsightSection(
                 .fillMaxWidth()
                 .padding(horizontal = 62.dp, vertical = 20.dp)
                 .background(DetailPanel.copy(alpha = 0.94f), RoundedCornerShape(14.dp))
-                .border(1.dp, DetailGreen.copy(alpha = 0.20f), RoundedCornerShape(14.dp))
+                .border(1.dp, TvAccent.copy(alpha = 0.20f), RoundedCornerShape(14.dp))
                 .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -895,7 +895,7 @@ private fun GeminiInsightSection(
             }
             Text(
                 text = "GEMINI",
-                color = DetailGreen,
+                color = TvAccent,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
             )

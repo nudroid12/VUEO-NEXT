@@ -87,6 +87,7 @@ import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleSize
 import java.util.concurrent.TimeUnit
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -94,7 +95,6 @@ import kotlinx.coroutines.withContext
 
 private val PlayerBlack = Color(0xFF030403)
 private val PlayerPanel = Color(0xF20A0D0B)
-private val PlayerGreen = Color(0xFF84E100)
 private val PlayerFocus = Color.White
 private val PlayerMuted = Color(0xFFAAB2AD)
 private val PlayerDanger = Color(0xFFFFB4AB)
@@ -1195,7 +1195,7 @@ private fun LoadingPlayerState(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = PlayerGreen)
+            CircularProgressIndicator(color = TvAccent)
             Spacer(Modifier.height(18.dp))
             Text(
                 text = title,
@@ -1339,7 +1339,7 @@ private fun PlayerControls(
                 Spacer(Modifier.height(5.dp))
                 Text(
                     text = "Switching source…",
-                    color = PlayerGreen,
+                    color = TvAccent,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -1547,7 +1547,7 @@ private fun PlayerSeekBar(
                 Modifier
                     .fillMaxWidth(fraction)
                     .height(if (focused) 9.dp else 6.dp)
-                    .background(PlayerGreen, RoundedCornerShape(999.dp)),
+                    .background(TvAccent, RoundedCornerShape(999.dp)),
         )
         if (durationMs > 0L) {
             Box(
@@ -1825,7 +1825,7 @@ private fun SourcePickerPanel(
                             .background(
                                 when {
                                     focused -> Color.White.copy(alpha = 0.16f)
-                                    active -> PlayerGreen.copy(alpha = 0.10f)
+                                    active -> TvAccent.copy(alpha = 0.10f)
                                     else -> Color.White.copy(alpha = 0.055f)
                                 },
                                 RoundedCornerShape(11.dp),
@@ -1834,7 +1834,7 @@ private fun SourcePickerPanel(
                                 width = if (focused) 2.dp else 1.dp,
                                 color = when {
                                     focused -> PlayerFocus
-                                    active -> PlayerGreen.copy(alpha = 0.75f)
+                                    active -> TvAccent.copy(alpha = 0.75f)
                                     else -> Color.Transparent
                                 },
                                 shape = RoundedCornerShape(11.dp),
@@ -1863,7 +1863,7 @@ private fun SourcePickerPanel(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = source.providerName,
-                        color = PlayerGreen.copy(alpha = 0.92f),
+                        color = TvAccent.copy(alpha = 0.92f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1921,7 +1921,7 @@ private fun EpisodePickerPanel(
                                 .background(
                                     when {
                                         focused -> Color.White.copy(alpha = 0.16f)
-                                        active -> PlayerGreen.copy(alpha = 0.10f)
+                                        active -> TvAccent.copy(alpha = 0.10f)
                                         else -> Color.White.copy(alpha = 0.055f)
                                     },
                                     RoundedCornerShape(11.dp),
@@ -1930,7 +1930,7 @@ private fun EpisodePickerPanel(
                                     width = if (focused) 2.dp else 1.dp,
                                     color = when {
                                         focused -> PlayerFocus
-                                        active -> PlayerGreen.copy(alpha = 0.75f)
+                                        active -> TvAccent.copy(alpha = 0.75f)
                                         else -> Color.Transparent
                                     },
                                     shape = RoundedCornerShape(11.dp),
@@ -1941,7 +1941,7 @@ private fun EpisodePickerPanel(
                     ) {
                         Text(
                             text = number,
-                            color = if (active) PlayerGreen else Color.White,
+                            color = if (active) TvAccent else Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                         )
@@ -2020,7 +2020,7 @@ private fun TrackPickerPanel(
                                 .background(
                                     when {
                                         focused -> Color.White.copy(alpha = 0.16f)
-                                        option.selected -> PlayerGreen.copy(alpha = 0.10f)
+                                        option.selected -> TvAccent.copy(alpha = 0.10f)
                                         else -> Color.White.copy(alpha = 0.055f)
                                     },
                                     RoundedCornerShape(11.dp),
@@ -2029,7 +2029,7 @@ private fun TrackPickerPanel(
                                     width = if (focused) 2.dp else 1.dp,
                                     color = when {
                                         focused -> PlayerFocus
-                                        option.selected -> PlayerGreen.copy(alpha = 0.75f)
+                                        option.selected -> TvAccent.copy(alpha = 0.75f)
                                         else -> Color.Transparent
                                     },
                                     shape = RoundedCornerShape(11.dp),
@@ -2270,7 +2270,7 @@ private fun PanelOptionRow(
                 .background(
                     when {
                         focused -> Color.White.copy(alpha = 0.16f)
-                        selected -> PlayerGreen.copy(alpha = 0.10f)
+                        selected -> TvAccent.copy(alpha = 0.10f)
                         else -> Color.White.copy(alpha = 0.055f)
                     },
                     RoundedCornerShape(11.dp),
@@ -2279,7 +2279,7 @@ private fun PanelOptionRow(
                     if (focused) 2.dp else 1.dp,
                     when {
                         focused -> PlayerFocus
-                        selected -> PlayerGreen.copy(alpha = 0.70f)
+                        selected -> TvAccent.copy(alpha = 0.70f)
                         else -> Color.Transparent
                     },
                     RoundedCornerShape(11.dp),

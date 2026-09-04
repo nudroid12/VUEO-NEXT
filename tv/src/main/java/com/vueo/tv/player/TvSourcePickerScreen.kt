@@ -55,11 +55,11 @@ import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.ui.components.TvNetworkImage
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 
 private val PickerBlack = Color(0xFF050706)
 private val PickerPanel = Color(0xE9101411)
-private val PickerGreen = Color(0xFF84E100)
 private val PickerFocus = Color.White
 private val PickerMuted = Color(0xFFAAB2AD)
 
@@ -199,7 +199,7 @@ fun TvSourcePickerScreen(
         ) {
             Text(
                 text = "Choose source",
-                color = PickerGreen,
+                color = TvAccent,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
             )
@@ -219,7 +219,7 @@ fun TvSourcePickerScreen(
             ) {
                 if (loading) {
                     CircularProgressIndicator(
-                        color = PickerGreen,
+                        color = TvAccent,
                         strokeWidth = 2.dp,
                         modifier = Modifier.width(18.dp).height(18.dp),
                     )
@@ -379,14 +379,14 @@ private fun PickerProviderChip(
             .background(
                 when {
                     focused -> Color.White
-                    selected -> PickerGreen.copy(alpha = 0.18f)
+                    selected -> TvAccent.copy(alpha = 0.18f)
                     else -> Color.White.copy(alpha = 0.08f)
                 },
                 RoundedCornerShape(999.dp),
             )
             .border(
                 if (focused) 2.dp else 1.dp,
-                if (focused) Color.White else if (selected) PickerGreen else Color.White.copy(alpha = 0.10f),
+                if (focused) Color.White else if (selected) TvAccent else Color.White.copy(alpha = 0.10f),
                 RoundedCornerShape(999.dp),
             )
             .clickable(onClick = onClick)
@@ -496,7 +496,7 @@ private fun SourcePickerRow(
                 .background(
                     when {
                         focused -> Color.White.copy(alpha = 0.16f)
-                        recommended -> PickerGreen.copy(alpha = 0.10f)
+                        recommended -> TvAccent.copy(alpha = 0.10f)
                         else -> PickerPanel
                     },
                     RoundedCornerShape(12.dp),
@@ -505,7 +505,7 @@ private fun SourcePickerRow(
                     width = if (focused) 2.dp else 1.dp,
                     color = when {
                         focused -> PickerFocus
-                        recommended -> PickerGreen.copy(alpha = 0.60f)
+                        recommended -> TvAccent.copy(alpha = 0.60f)
                         else -> Color.White.copy(alpha = 0.06f)
                     },
                     shape = RoundedCornerShape(12.dp),
@@ -547,7 +547,7 @@ private fun SourcePickerRow(
             Spacer(Modifier.width(18.dp))
             Text(
                 text = source.providerName,
-                color = if (source.isDirectPlayable) PickerGreen else PickerMuted.copy(alpha = 0.68f),
+                color = if (source.isDirectPlayable) TvAccent else PickerMuted.copy(alpha = 0.68f),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,

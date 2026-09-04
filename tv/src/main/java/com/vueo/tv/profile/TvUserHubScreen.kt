@@ -65,13 +65,13 @@ import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val SettingsBlack = Color(0xFF050706)
 private val SettingsPanel = Color(0xFF101612)
 private val SettingsMuted = Color(0xFFAAB2AD)
-private val SettingsGreen = Color(0xFF84E100)
 private val SettingsDanger = Color(0xFFFF8A80)
 
 
@@ -193,6 +193,7 @@ fun TvUserHubScreen(
     onExitToPanel: (() -> Unit)? = null,
     onNavigate: (String) -> Unit,
     onProfileChanged: (String) -> Unit,
+    onAccentChanged: () -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
     onCheckForUpdates: ((String) -> Unit) -> Unit,
 ) {
@@ -349,6 +350,7 @@ fun TvUserHubScreen(
                         pluginStore = pluginStore,
                         firstRequester = subPageFirstRequester,
                         onProfileChanged = onProfileChanged,
+                        onAccentChanged = onAccentChanged,
                         onCheckForUpdates = onCheckForUpdates,
                     )
                 }
@@ -599,7 +601,7 @@ private fun SettingsHubCard(
             )
             Text(
                 text = category.badge,
-                color = if (focused) Color.White else SettingsGreen,
+                color = if (focused) Color.White else TvAccent,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Black,
             )

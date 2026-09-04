@@ -52,13 +52,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.ui.focus.tvVerticalFocus
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val ManagerBlack = Color(0xFF050706)
 private val ManagerPanel = Color(0xFF101412)
 private val ManagerPanelRaised = Color(0xFF151B17)
-private val ManagerGreen = Color(0xFF84E100)
 private val ManagerMuted = Color(0xFFAAB2AD)
 private val ManagerRed = Color(0xFFFF7A73)
 
@@ -329,7 +329,7 @@ fun TvContentManagerScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(
                     text = it,
-                    color = if (it.contains("success", ignoreCase = true)) ManagerGreen else ManagerMuted,
+                    color = if (it.contains("success", ignoreCase = true)) TvAccent else ManagerMuted,
                     fontSize = 12.sp,
                 )
             }
@@ -490,7 +490,7 @@ private fun ManagerModeChip(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "managerModeScale")
     val background by animateColorAsState(
-        if (selected) ManagerGreen.copy(alpha = 0.18f) else ManagerPanel,
+        if (selected) TvAccent.copy(alpha = 0.18f) else ManagerPanel,
         label = "managerModeBackground",
     )
 
@@ -906,7 +906,7 @@ private fun ProviderCard(
                         if (record.streamCount > 0) append(" • ${record.streamCount} streams")
                         record.error?.takeIf(String::isNotBlank)?.let { append(" • $it") }
                     },
-                    color = if (record.status == "Online") ManagerGreen else ManagerMuted,
+                    color = if (record.status == "Online") TvAccent else ManagerMuted,
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -980,19 +980,19 @@ private fun StatusPill(
         modifier =
             Modifier
                 .background(
-                    color = if (enabled) ManagerGreen.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.07f),
+                    color = if (enabled) TvAccent.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.07f),
                     shape = RoundedCornerShape(50),
                 )
                 .border(
                     1.dp,
-                    if (enabled) ManagerGreen.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.12f),
+                    if (enabled) TvAccent.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.12f),
                     RoundedCornerShape(50),
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         Text(
             text = if (enabled) enabledText else disabledText,
-            color = if (enabled) ManagerGreen else ManagerMuted,
+            color = if (enabled) TvAccent else ManagerMuted,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
         )

@@ -1,5 +1,6 @@
 package com.vueo.tv.library
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -17,9 +18,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -41,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +55,7 @@ import com.vueo.tv.TvTopNav
 import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.focus.tvVerticalFocus
+import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -68,29 +74,36 @@ fun TvLibraryScreen(
     onNavigate: (String) -> Unit,
     onOpenMedia: (TvMediaItem) -> Unit,
 ) {
-    val navRequesters =
-        remember {
-            TV_TOP_NAV_LABELS
-                .associateWith { FocusRequester() }
-        }
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("vueo_tv_library_ui", Context.MODE_PRIVATE)
+    }
+    val navRequesters = remember { TV_TOP_NAV_LABELS.associateWith { FocusRequester() } }
+    val viewToggleRequester = remember { FocusRequester() }
     val firstCardRequester = remember { FocusRequester() }
     val browseRequester = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf(store.items()) }
     var focusedIndex by remember { mutableStateOf(TvLibraryFocusMemory.resultIndex) }
+    var gridView by remember { mutableStateOf(preferences.getBoolean("grid_view", true)) }
 
     BackHandler { onNavigate("Home") }
 
-    LaunchedEffect(focusRestoreToken) {
+    LaunchedEffect(focusRestoreToken, gridView) {
         items = store.items()
         delay(100)
         if (items.isEmpty()) {
-            runCatching { browseRequester.requestFocus() }
+            runCatching { viewToggleRequester.requestFocus() }
         } else {
             focusedIndex = TvLibraryFocusMemory.resultIndex.coerceIn(0, items.lastIndex)
-            gridState.scrollToItem((focusedIndex - 5).coerceAtLeast(0))
-            runCatching { firstCardRequester.requestFocus() }
+            if (gridView) {
+                gridState.scrollToItem((focusedIndex - 5).coerceAtLeast(0))
+            } else {
+                listState.scrollToItem((focusedIndex - 2).coerceAtLeast(0))
+            }
+            runCatching { viewToggleRequester.requestFocus() }
         }
     }
 
@@ -100,19 +113,12 @@ fun TvLibraryScreen(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        listOf(
-                            Color(0xFF0A0D0B),
-                            LibraryBlack,
-                            LibraryBlack,
-                        )
+                        listOf(Color(0xFF0A0D0B), LibraryBlack, LibraryBlack)
                     )
                 ),
     ) {
         Column(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(top = 98.dp),
+            modifier = Modifier.fillMaxSize().padding(top = 98.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp),
@@ -120,12 +126,7 @@ fun TvLibraryScreen(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Column {
-                    Text(
-                        text = "Library",
-                        color = Color.White,
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.Black,
-                    )
+                    Text("Library", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(5.dp))
                     Text(
                         text = "My List  •  ${items.size} title${if (items.size == 1) "" else "s"}",
@@ -133,16 +134,27 @@ fun TvLibraryScreen(
                         fontSize = 15.sp,
                     )
                 }
+
+                LibraryViewToggle(
+                    gridView = gridView,
+                    requester = viewToggleRequester,
+                    upRequester = navRequesters.getValue("Library"),
+                    downRequester = if (items.isEmpty()) browseRequester else firstCardRequester,
+                    onToggle = {
+                        gridView = !gridView
+                        preferences.edit().putBoolean("grid_view", gridView).apply()
+                    },
+                )
             }
             Spacer(Modifier.height(24.dp))
 
             if (items.isEmpty()) {
                 LibraryEmpty(
                     requester = browseRequester,
-                    upRequester = navRequesters.getValue("Library"),
+                    upRequester = viewToggleRequester,
                     onBrowse = { onNavigate("Home") },
                 )
-            } else {
+            } else if (gridView) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),
                     state = gridState,
@@ -151,26 +163,45 @@ fun TvLibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(22.dp),
                     verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
-                    itemsIndexed(
+                    gridItemsIndexed(
                         items = items,
                         key = { _, media -> "${media.type}:${media.id}" },
                     ) { index, media ->
                         LibraryPoster(
                             media = media,
-                            modifier =
-                                if (index == focusedIndex) {
-                                    Modifier.focusRequester(firstCardRequester)
-                                } else {
-                                    Modifier
-                                },
-                            upRequester = if (index < 5) navRequesters.getValue("Library") else null,
+                            modifier = if (index == focusedIndex) Modifier.focusRequester(firstCardRequester) else Modifier,
+                            upRequester = if (index < 5) viewToggleRequester else null,
                             onFocused = {
                                 focusedIndex = index
                                 TvLibraryFocusMemory.resultIndex = index
                                 if (index >= 5) {
-                                    scope.launch {
-                                        gridState.animateScrollToItem((index - 5).coerceAtLeast(0))
-                                    }
+                                    scope.launch { gridState.animateScrollToItem((index - 5).coerceAtLeast(0)) }
+                                }
+                            },
+                            onClick = { onOpenMedia(media) },
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 58.dp, end = 58.dp, bottom = 50.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(
+                        items = items,
+                        key = { _, media -> "list:${media.type}:${media.id}" },
+                    ) { index, media ->
+                        LibraryListRow(
+                            media = media,
+                            modifier = if (index == focusedIndex) Modifier.focusRequester(firstCardRequester) else Modifier,
+                            upRequester = if (index == 0) viewToggleRequester else null,
+                            onFocused = {
+                                focusedIndex = index
+                                TvLibraryFocusMemory.resultIndex = index
+                                if (index >= 2) {
+                                    scope.launch { listState.animateScrollToItem((index - 2).coerceAtLeast(0)) }
                                 }
                             },
                             onClick = { onOpenMedia(media) },
@@ -182,10 +213,40 @@ fun TvLibraryScreen(
 
         TvTopNav(
             navRequesters = navRequesters,
-            contentDownRequester = if (items.isEmpty()) browseRequester else firstCardRequester,
+            contentDownRequester = viewToggleRequester,
             selectedLabel = "Library",
             onSelected = onNavigate,
         )
+    }
+}
+
+@Composable
+private fun LibraryViewToggle(
+    gridView: Boolean,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
+    onToggle: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "libraryViewToggleScale")
+    Row(
+        modifier =
+            Modifier
+                .focusRequester(requester)
+                .tvVerticalFocus(up = upRequester, down = downRequester)
+                .scale(scale)
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(onClick = onToggle)
+                .focusable()
+                .background(if (focused) Color.White else Color.White.copy(alpha = 0.07f), RoundedCornerShape(11.dp))
+                .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = 0.10f), RoundedCornerShape(11.dp))
+                .padding(horizontal = 17.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(if (gridView) "▦" else "☰", color = if (focused) Color.Black else TvAccent, fontSize = 18.sp, fontWeight = FontWeight.Black)
+        Text(if (gridView) "Grid" else "List", color = if (focused) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -198,35 +259,15 @@ private fun LibraryEmpty(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "libraryEmptyButtonScale")
 
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp, vertical = 48.dp),
-    ) {
-        Text(
-            text = "Your Library is empty",
-            color = Color.White,
-            fontSize = 27.sp,
-            fontWeight = FontWeight.Bold,
-        )
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp, vertical = 48.dp)) {
+        Text("Your Library is empty", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(9.dp))
-        Text(
-            text = "Add movies and series to My List from Home or Detail.",
-            color = LibraryMuted,
-            fontSize = 15.sp,
-        )
+        Text("Add movies and series to My List from Home or Detail.", color = LibraryMuted, fontSize = 15.sp)
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = onBrowse,
-            modifier =
-                Modifier
-                    .focusRequester(requester)
-                    .tvVerticalFocus(up = upRequester)
-                    .onFocusChanged { focused = it.isFocused }
-                    .scale(scale),
-            colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black,
-                ),
+            modifier = Modifier.focusRequester(requester).tvVerticalFocus(up = upRequester).onFocusChanged { focused = it.isFocused }.scale(scale),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
             shape = RoundedCornerShape(11.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
         ) {
@@ -265,11 +306,7 @@ private fun LibraryPoster(
                     .fillMaxWidth()
                     .height(254.dp)
                     .background(LibraryPanel, RoundedCornerShape(12.dp))
-                    .border(
-                        width = if (focused) 2.dp else 1.dp,
-                        color = if (focused) Color.White else Color.White.copy(alpha = 0.10f),
-                        shape = RoundedCornerShape(12.dp),
-                    ),
+                    .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp)),
         ) {
             TvNetworkImage(
                 url = media.poster,
@@ -279,31 +316,62 @@ private fun LibraryPoster(
             )
             if (focused) {
                 Box(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .border(
-                                width = 1.dp,
-                                color = Color.White.copy(alpha = 0.38f),
-                                shape = RoundedCornerShape(12.dp),
-                            ),
+                    modifier = Modifier.fillMaxSize().border(1.dp, Color.White.copy(alpha = 0.38f), RoundedCornerShape(12.dp)),
                 )
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text(
-            text = media.name,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Text(media.name, color = Color.White, fontSize = 15.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(2.dp))
-        Text(
-            text = media.displayType,
-            color = if (focused) Color.White.copy(alpha = 0.72f) else LibraryMuted,
-            fontSize = 12.sp,
-        )
+        Text(media.displayType, color = if (focused) Color.White.copy(alpha = 0.72f) else LibraryMuted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun LibraryListRow(
+    media: TvMediaItem,
+    modifier: Modifier,
+    upRequester: FocusRequester?,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "libraryListRowScale")
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(116.dp)
+                .scale(scale)
+                .then(if (upRequester != null) Modifier.tvVerticalFocus(up = upRequester) else Modifier)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocused()
+                }
+                .clickable(onClick = onClick)
+                .focusable()
+                .background(if (focused) Color.White.copy(alpha = 0.13f) else LibraryPanel, RoundedCornerShape(13.dp))
+                .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = 0.08f), RoundedCornerShape(13.dp))
+                .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.width(66.dp).height(96.dp).background(Color.Black, RoundedCornerShape(8.dp)),
+        ) {
+            TvNetworkImage(
+                url = media.poster,
+                contentDescription = media.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Spacer(Modifier.width(18.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(media.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(5.dp))
+            Text(media.displayType, color = if (focused) TvAccent else LibraryMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Text("Open", color = if (focused) Color.White else LibraryMuted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(12.dp))
     }
 }

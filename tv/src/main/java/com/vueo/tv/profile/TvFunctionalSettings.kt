@@ -60,6 +60,7 @@ import com.vueo.shared.core.enrichment.GeminiClient
 import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.PreferredQuality
@@ -142,6 +143,7 @@ internal fun TvFunctionalSettingsPage(
     pluginStore: PluginStore,
     firstRequester: FocusRequester,
     onProfileChanged: (String) -> Unit,
+    onAccentChanged: () -> Unit,
     onCheckForUpdates: ((String) -> Unit) -> Unit,
 ) {
     when (categoryKey) {
@@ -169,6 +171,7 @@ internal fun TvFunctionalSettingsPage(
         "APPEARANCE" -> FunctionalAppearancePage(
             settingsStore = settingsStore,
             firstRequester = firstRequester,
+            onAccentChanged = onAccentChanged,
         )
         "DATA_STORAGE" -> FunctionalDataStoragePage(
             profileStore = profileStore,
@@ -1065,27 +1068,58 @@ private fun FunctionalSourcesPage(
 private fun FunctionalAppearancePage(
     settingsStore: SettingsStore,
     firstRequester: FocusRequester,
+    onAccentChanged: () -> Unit,
 ) {
+    var accent by remember { mutableStateOf(settingsStore.appAccent()) }
+    var chooseAccent by remember { mutableStateOf(false) }
+
     FunctionalList {
         item {
             FunctionalInfoCard(
                 title = "Theme",
-                text = "VUEO Dark is fixed on TV for comfortable living-room viewing.",
+                text = "VUEO Dark stays fixed for comfortable living-room viewing.",
                 requester = firstRequester,
+            )
+        }
+        item {
+            FunctionalRow(
+                title = "Accent Colour",
+                subtitle = "Choose the highlight colour used by VUEO status and selection accents.",
+                value = accent.label,
+                onClick = { chooseAccent = true },
             )
         }
         item {
             FunctionalInfoCard(
                 title = "TV Focus",
-                text = "White outline + scale is fixed for clear D-pad focus from a sofa.",
+                text = "D-pad focus stays white + scale for maximum visibility from a sofa, regardless of accent colour.",
             )
         }
         item {
             FunctionalInfoCard(
-                title = "TV appearance",
-                text = "Phone-only colour customisation is intentionally omitted so the TV interface keeps the VUEO cinematic identity.",
+                title = "Cinematic identity",
+                text = "Dark surfaces stay fixed while TV uses the same Shared Core accent choices as mobile.",
             )
         }
+    }
+
+    if (chooseAccent) {
+        FunctionalChoiceOverlay(
+            title = "Accent Colour",
+            items = AppAccent.entries.map { option ->
+                ChoiceItem(
+                    label = option.label,
+                    selected = option == accent,
+                    onSelect = {
+                        accent = option
+                        settingsStore.setAppAccent(option)
+                        onAccentChanged()
+                        chooseAccent = false
+                    },
+                )
+            },
+            onDismiss = { chooseAccent = false },
+        )
     }
 }
 
