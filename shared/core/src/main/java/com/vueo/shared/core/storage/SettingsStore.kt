@@ -483,6 +483,9 @@ class SettingsStore(
     }
 
 
+    fun hasContentWarningsPreference(): Boolean =
+        prefs.contains(profileKey(KEY_CONTENT_WARNINGS))
+
     fun contentWarningsEnabled(): Boolean =
         prefs.getBoolean(
             profileKey(KEY_CONTENT_WARNINGS),

@@ -86,7 +86,7 @@ import com.vueo.app.core.storage.PlayerOrientation
 import com.vueo.app.core.storage.SettingsStore
 import com.vueo.app.core.storage.SubtitleLanguage
 import com.vueo.app.core.storage.SubtitleSize
-import com.vueo.app.core.storage.VueoBackupManager
+import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.app.core.update.VueoUpdateManager
 import com.vueo.app.core.update.VueoUpdateStore
 import kotlinx.coroutines.launch
@@ -132,21 +132,20 @@ private fun Context.setSeekGestureSensitivity(
         .apply()
 }
 
-internal fun Context.contentWarningsEnabled(): Boolean =
-    getSharedPreferences(
-        PLAYER_GESTURE_PREFS,
-        Context.MODE_PRIVATE,
-    ).getBoolean(CONTENT_WARNINGS_KEY, true)
-
-private fun Context.setContentWarningsEnabled(
-    enabled: Boolean,
+internal fun Context.migrateLegacyContentWarningsToShared(
+    settingsStore: SettingsStore,
 ) {
-    getSharedPreferences(
+    if (settingsStore.hasContentWarningsPreference()) return
+
+    val legacy = getSharedPreferences(
         PLAYER_GESTURE_PREFS,
         Context.MODE_PRIVATE,
-    ).edit()
-        .putBoolean(CONTENT_WARNINGS_KEY, enabled)
-        .apply()
+    )
+    if (legacy.contains(CONTENT_WARNINGS_KEY)) {
+        settingsStore.setContentWarningsEnabled(
+            legacy.getBoolean(CONTENT_WARNINGS_KEY, true)
+        )
+    }
 }
 
 @Composable
@@ -1966,8 +1965,9 @@ internal fun PlaybackSettingsScreen(
     var showSeekSensitivityDialog by remember {
         mutableStateOf(false)
     }
-    var contentWarnings by remember {
-        mutableStateOf(context.contentWarningsEnabled())
+    var contentWarnings by remember(settingsStore) {
+        context.migrateLegacyContentWarningsToShared(settingsStore)
+        mutableStateOf(settingsStore.contentWarningsEnabled())
     }
 
     if (showQualityDialog) {
@@ -2149,7 +2149,7 @@ internal fun PlaybackSettingsScreen(
                 checked = contentWarnings,
                 onCheckedChange = { enabled ->
                     contentWarnings = enabled
-                    context.setContentWarningsEnabled(enabled)
+                    settingsStore.setContentWarningsEnabled(enabled)
                 },
             )
         }

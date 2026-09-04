@@ -178,6 +178,8 @@ import com.vueo.app.core.enrichment.MdblistClient
 import com.vueo.app.core.enrichment.MediaRating
 import com.vueo.app.core.enrichment.RichDetailsClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
+import com.vueo.shared.core.enrichment.ContentWarning
+import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.app.core.dna.UserDnaEngine
 import com.vueo.app.core.dna.UserDnaPreferences
 import com.vueo.app.core.model.CatalogRow
@@ -204,7 +206,6 @@ import com.vueo.app.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.app.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
 import com.vueo.app.core.player.PLAYER_STARTUP_TIMEOUT_MS
 import com.vueo.app.core.storage.VueoDataMigration
-import com.vueo.app.core.stremio.SimpleHttp
 import com.vueo.app.core.update.VueoUpdateManager
 import com.vueo.app.core.model.SubtitleTrack
 import com.vueo.app.core.plugin.PluginStore
@@ -230,7 +231,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import kotlin.math.roundToInt
 
 private enum class AppTab {
@@ -13673,126 +13673,8 @@ private fun StreamSourceCard(
 }
 
 
-private data class PlayerContentWarning(
-    val label: String,
-    val severity: String,
-    val severityRank: Int,
-)
-
-private object PlayerContentWarningRepository {
-    private const val BASE_URL = "https://api.tiffara.com"
-    private val cache = mutableMapOf<String, List<PlayerContentWarning>>()
-
-    suspend fun get(imdbId: String): List<PlayerContentWarning> {
-        synchronized(cache) {
-            cache[imdbId]?.let { return it }
-        }
-
-        val warnings = runCatching {
-            val root = JSONObject(
-                SimpleHttp.get(
-                    "$BASE_URL/titles/$imdbId/parentsGuide"
-                )
-            )
-            val categories = root.optJSONArray("parentsGuide")
-                ?: return@runCatching emptyList()
-            val result = mutableListOf<PlayerContentWarning>()
-
-            for (categoryIndex in 0 until categories.length()) {
-                val category = categories.optJSONObject(categoryIndex)
-                    ?: continue
-                val categoryName = category.optString("category")
-                    .uppercase()
-                val label = when (categoryName) {
-                    "SEXUAL_CONTENT" -> "Nudity"
-                    "VIOLENCE" -> "Violence"
-                    "PROFANITY" -> "Profanity"
-                    "ALCOHOL_DRUGS" -> "Alcohol/Drugs"
-                    "FRIGHTENING_INTENSE_SCENES" -> "Frightening"
-                    else -> null
-                } ?: continue
-                val breakdowns = category
-                    .optJSONArray("severityBreakdowns")
-                    ?: continue
-                var noneVotes = 0
-                var dominantLevel: String? = null
-                var dominantVotes = -1
-
-                for (severityIndex in 0 until breakdowns.length()) {
-                    val breakdown = breakdowns
-                        .optJSONObject(severityIndex)
-                        ?: continue
-                    val level = breakdown
-                        .optString("severityLevel")
-                        .lowercase()
-                    val votes = breakdown.optInt("voteCount", 0)
-
-                    if (level == "none") {
-                        noneVotes = votes
-                    } else if (
-                        level in setOf("mild", "moderate", "severe") &&
-                        votes > dominantVotes
-                    ) {
-                        dominantLevel = level
-                        dominantVotes = votes
-                    }
-                }
-
-                if (dominantLevel == null || dominantVotes <= noneVotes) {
-                    continue
-                }
-
-                val severity = when (dominantLevel) {
-                    "severe" -> "Severe"
-                    "moderate" -> "Moderate"
-                    else -> "Mild"
-                }
-                val rank = when (dominantLevel) {
-                    "severe" -> 0
-                    "moderate" -> 1
-                    else -> 2
-                }
-                result += PlayerContentWarning(
-                    label = label,
-                    severity = severity,
-                    severityRank = rank,
-                )
-            }
-
-            result.sortedBy { it.severityRank }.take(5)
-        }.getOrDefault(emptyList())
-
-        synchronized(cache) {
-            cache[imdbId] = warnings
-        }
-        return warnings
-    }
-}
-
 private fun extractPlayerImdbId(value: String?): String? =
-    value?.let {
-        Regex("tt\\d+", RegexOption.IGNORE_CASE)
-            .find(it)
-            ?.value
-            ?.lowercase()
-    }
-
-private fun Context.playerContentWarningsEnabled(): Boolean =
-    getSharedPreferences(
-        "vueo_player_gestures",
-        Context.MODE_PRIVATE,
-    ).getBoolean("content_warnings", true)
-
-private fun Context.setPlayerContentWarningsEnabled(
-    enabled: Boolean,
-) {
-    getSharedPreferences(
-        "vueo_player_gestures",
-        Context.MODE_PRIVATE,
-    ).edit()
-        .putBoolean("content_warnings", enabled)
-        .apply()
-}
+    ContentWarningRepository.extractImdbId(value)
 
 private fun Context.playerSubtitleDelayMs(mediaKey: String): Int =
     getSharedPreferences(
@@ -13818,7 +13700,7 @@ private fun Context.setPlayerSubtitleDelayMs(
 
 @Composable
 private fun PlayerContentWarningsOverlay(
-    warnings: List<PlayerContentWarning>,
+    warnings: List<ContentWarning>,
     onAnimationComplete: () -> Unit,
 ) {
     val count = warnings.size
@@ -13973,10 +13855,9 @@ private fun PlayerScreen(
             context.applicationContext
         )
     }
-    var contentWarningsEnabled by remember {
-        mutableStateOf(
-            context.playerContentWarningsEnabled()
-        )
+    var contentWarningsEnabled by remember(settingsStore) {
+        context.migrateLegacyContentWarningsToShared(settingsStore)
+        mutableStateOf(settingsStore.contentWarningsEnabled())
     }
 
     val savedPositionMs = remember(mediaKey) {
@@ -14166,7 +14047,7 @@ private fun PlayerScreen(
         )
     }
     var contentWarnings by remember(mediaKey) {
-        mutableStateOf<List<PlayerContentWarning>>(emptyList())
+        mutableStateOf<List<ContentWarning>>(emptyList())
     }
     var showContentWarnings by remember(mediaKey) {
         mutableStateOf(false)
@@ -14698,7 +14579,7 @@ private fun PlayerScreen(
 
         if (imdbId != null) {
             contentWarnings =
-                PlayerContentWarningRepository.get(imdbId)
+                ContentWarningRepository.get(imdbId)
         }
     }
 
@@ -15462,7 +15343,7 @@ private fun PlayerScreen(
             },
             onContentWarningsChange = { enabled ->
                 contentWarningsEnabled = enabled
-                context.setPlayerContentWarningsEnabled(enabled)
+                settingsStore.setContentWarningsEnabled(enabled)
                 if (!enabled) {
                     showContentWarnings = false
                 }
@@ -15481,7 +15362,7 @@ private fun PlayerScreen(
                 skipSegmentsEnabled = true
                 settingsStore.setSkipSegmentsEnabled(true)
                 contentWarningsEnabled = true
-                context.setPlayerContentWarningsEnabled(true)
+                settingsStore.setContentWarningsEnabled(true)
                 gestureMessage = "Player controls reset"
             },
             onDismiss = { showMoreDialog = false },

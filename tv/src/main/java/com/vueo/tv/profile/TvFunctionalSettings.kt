@@ -73,7 +73,6 @@ import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.player.TvSourceEngine
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1376,26 +1375,7 @@ private suspend fun clearTvCatalogAndSearchCaches(context: Context) {
 }
 
 private suspend fun resetTvUserData(context: Context) {
-    val appContext = context.applicationContext
-    withContext(Dispatchers.IO) {
-        listOf(
-            "vueo_tv_content_manager",
-            "vueo_plugins",
-            "vueo_tv_settings",
-            "vueo_tv_library",
-            "vueo_tv_playback",
-            "vueo_profiles",
-            "vueo_plugin_health",
-            "vueo_tv_update_state",
-            "vueo_tv_home",
-            "vueo_tv_browse",
-            "vueo_tv_search",
-        ).distinct().forEach { name ->
-            appContext.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
-        }
-        runCatching { File(appContext.filesDir, "nuvio_plugin_scrapers").deleteRecursively() }
-        runCatching { appContext.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
-    }
+    VueoBackupManager.resetUserData(context.applicationContext)
     TvSourceEngine.clearAllCaches()
 }
 

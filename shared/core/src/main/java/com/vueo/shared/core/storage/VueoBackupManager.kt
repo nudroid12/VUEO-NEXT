@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Shared VUEO backup/restore format for Mobile and TV.
@@ -70,6 +71,20 @@ object VueoBackupManager {
 
     private val tvToMobileAliases = mobileToTvAliases.entries
         .associate { (mobile, tv) -> tv to mobile }
+
+    private val resetPreferenceFiles = (
+        backupPreferenceFiles +
+            listOf(
+                "vueo_plugin_health",
+                "vueo_update_state",
+                "vueo_tv_update_state",
+                "vueo_tv_home",
+                "vueo_tv_browse",
+                "vueo_tv_search",
+                "vueo_player_gestures",
+                "vueo_player_subtitles",
+            )
+        ).distinct()
 
     suspend fun exportToUri(
         context: Context,
@@ -235,6 +250,41 @@ object VueoBackupManager {
             sourceVersion = root.optString("appVersion")
                 .takeIf { it.isNotBlank() },
         )
+    }
+
+    suspend fun resetUserData(
+        context: Context,
+    ) {
+        val appContext = context.applicationContext
+
+        withContext(Dispatchers.IO) {
+            resetPreferenceFiles.forEach { name ->
+                check(
+                    appContext
+                        .getSharedPreferences(name, Context.MODE_PRIVATE)
+                        .edit()
+                        .clear()
+                        .commit()
+                ) {
+                    "Unable to clear $name preferences."
+                }
+            }
+
+            runCatching {
+                File(appContext.filesDir, "nuvio_plugin_scrapers")
+                    .deleteRecursively()
+            }
+
+            runCatching {
+                appContext.cacheDir
+                    .listFiles()
+                    ?.forEach { it.deleteRecursively() }
+            }
+        }
+
+        CatalogDiscoveryCache.clearAll(appContext)
+        SourceDiscoveryCache.clearAll()
+        ProfileStore(appContext).ensureDefaultProfile()
     }
 
     private fun buildRestoreGroups(
