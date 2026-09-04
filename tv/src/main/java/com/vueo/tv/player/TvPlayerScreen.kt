@@ -1,6 +1,9 @@
 package com.vueo.tv.player
 
+import android.graphics.Typeface
 import android.net.Uri
+import android.os.SystemClock
+import android.util.TypedValue
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -64,14 +67,23 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.text.TextOutput
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.vueo.shared.core.enrichment.ContentWarning
+import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleSize
 import java.util.concurrent.TimeUnit
@@ -92,6 +104,20 @@ private enum class PlayerSidePanel {
     AUDIO,
     SUBTITLES,
     EPISODES,
+    PLAYBACK,
+}
+
+private enum class TvSleepTimerOption(
+    val label: String,
+    val minutes: Int? = null,
+    val endOfEpisode: Boolean = false,
+) {
+    OFF("Off"),
+    MINUTES_15("15 min", minutes = 15),
+    MINUTES_30("30 min", minutes = 30),
+    MINUTES_45("45 min", minutes = 45),
+    MINUTES_60("60 min", minutes = 60),
+    END_OF_EPISODE("End of episode", endOfEpisode = true),
 }
 
 @Composable
@@ -112,6 +138,11 @@ fun TvPlayerScreen(
                 prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
             )
         }
+    val subtitleDelayUs = remember(request.cacheKey) {
+        java.util.concurrent.atomic.AtomicLong(
+            settingsStore.subtitleDelayMs(request.cacheKey).toLong() * 1_000L,
+        )
+    }
     val httpFactory = remember(context, request.cacheKey) {
         DefaultHttpDataSource.Factory()
             .setUserAgent("VUEO-TV/0.7")
@@ -121,10 +152,17 @@ fun TvPlayerScreen(
         val mediaSourceFactory =
             DefaultMediaSourceFactory(context)
                 .setDataSourceFactory(httpFactory)
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(
+            context,
+            TvSubtitleOffsetRenderersFactory(
+                context = context,
+                subtitleDelayUsProvider = { subtitleDelayUs.get() },
+            ),
+        )
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
             .apply {
+                setPlaybackSpeed(settingsStore.playerPlaybackSpeed())
                 playWhenReady = true
             }
     }
@@ -155,6 +193,19 @@ fun TvPlayerScreen(
     var quickSeekToken by remember(request.cacheKey) { mutableIntStateOf(0) }
     var pendingAutoNext by remember(request.cacheKey) { mutableStateOf<TvPlaybackRequest?>(null) }
     var autoNextSeconds by remember(request.cacheKey) { mutableIntStateOf(AUTO_NEXT_COUNTDOWN_SECONDS) }
+    var playbackSpeed by remember(request.cacheKey) { mutableStateOf(settingsStore.playerPlaybackSpeed()) }
+    var videoFit by remember(request.cacheKey) { mutableStateOf(settingsStore.playerVideoFit()) }
+    var subtitleDelayMs by remember(request.cacheKey) { mutableIntStateOf(settingsStore.subtitleDelayMs(request.cacheKey)) }
+    var contentWarningsEnabled by remember(request.cacheKey) { mutableStateOf(settingsStore.contentWarningsEnabled()) }
+    var contentWarnings by remember(request.cacheKey) { mutableStateOf<List<ContentWarning>>(emptyList()) }
+    var showContentWarnings by remember(request.cacheKey) { mutableStateOf(false) }
+    var contentWarningsShown by remember(request.cacheKey) { mutableStateOf(false) }
+    var resumePromptVisible by remember(request.cacheKey) { mutableStateOf(false) }
+    var pendingResumePositionMs by remember(request.cacheKey) { mutableLongStateOf(0L) }
+    var sleepTimerOption by remember(request.cacheKey) { mutableStateOf(TvSleepTimerOption.OFF) }
+    var sleepTimerDeadlineMs by remember(request.cacheKey) { mutableStateOf<Long?>(null) }
+    var sleepTimerRemainingSeconds by remember(request.cacheKey) { mutableStateOf<Long?>(null) }
+    var sessionNotice by remember(request.cacheKey) { mutableStateOf<String?>(null) }
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
     val seekRequester = remember { FocusRequester() }
@@ -169,6 +220,8 @@ fun TvPlayerScreen(
     val problemRequester = remember { FocusRequester() }
     val autoNextPlayRequester = remember { FocusRequester() }
     val autoNextCancelRequester = remember { FocusRequester() }
+    val resumeRequester = remember { FocusRequester() }
+    val startOverRequester = remember { FocusRequester() }
 
     fun touchControls() {
         controlsVisible = true
@@ -192,6 +245,7 @@ fun TvPlayerScreen(
     fun playSource(
         source: SourceCandidate,
         resumeMs: Long = positionMs,
+        autoPlay: Boolean = true,
     ) {
         val sourceUrl = source.url ?: return
         httpFactory.setDefaultRequestProperties(source.headers)
@@ -208,7 +262,7 @@ fun TvPlayerScreen(
         )
         player.prepare()
         if (resumeMs > 0L) player.seekTo(resumeMs)
-        player.playWhenReady = true
+        player.playWhenReady = autoPlay
         hasStartedPlayback = true
         touchControls()
     }
@@ -279,10 +333,17 @@ fun TvPlayerScreen(
                     controlsVisible = true
                     interactionToken += 1
 
-                    val next = request.nextRequest()
-                    if (settingsStore.autoPlayNextEpisodeEnabled() && next != null) {
-                        pendingAutoNext = next
-                        autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+                    if (sleepTimerOption == TvSleepTimerOption.END_OF_EPISODE) {
+                        sleepTimerOption = TvSleepTimerOption.OFF
+                        sleepTimerDeadlineMs = null
+                        sleepTimerRemainingSeconds = null
+                        sessionNotice = "Sleep timer finished"
+                    } else {
+                        val next = request.nextRequest()
+                        if (settingsStore.autoPlayNextEpisodeEnabled() && next != null) {
+                            pendingAutoNext = next
+                            autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+                        }
                     }
                 }
             }
@@ -317,6 +378,11 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
+            resumePromptVisible -> {
+                resumePromptVisible = false
+                saveProgress()
+                onBack()
+            }
             pendingAutoNext != null -> {
                 pendingAutoNext = null
                 autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
@@ -362,11 +428,31 @@ fun TvPlayerScreen(
         quickSeekDeltaMs = 0L
         pendingAutoNext = null
         autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+        playbackSpeed = settingsStore.playerPlaybackSpeed()
+        videoFit = settingsStore.playerVideoFit()
+        subtitleDelayMs = settingsStore.subtitleDelayMs(request.cacheKey)
+        subtitleDelayUs.set(subtitleDelayMs.toLong() * 1_000L)
+        contentWarningsEnabled = settingsStore.contentWarningsEnabled()
+        contentWarnings = emptyList()
+        showContentWarnings = false
+        contentWarningsShown = false
+        sleepTimerOption = TvSleepTimerOption.OFF
+        sleepTimerDeadlineMs = null
+        sleepTimerRemainingSeconds = null
+        sessionNotice = null
+        pendingResumePositionMs =
+            if (settingsStore.resumePlaybackEnabled()) playbackStore.resumePositionMs(request) else 0L
+        resumePromptVisible = pendingResumePositionMs > RESUME_PROMPT_THRESHOLD_MS
+        player.setPlaybackSpeed(playbackSpeed)
 
         if (initialSource.isDirectPlayable) {
             sources = listOf(initialSource)
             allSources = listOf(initialSource)
-            playSource(initialSource, playbackStore.resumePositionMs(request))
+            playSource(
+                source = initialSource,
+                resumeMs = if (resumePromptVisible) 0L else pendingResumePositionMs,
+                autoPlay = !resumePromptVisible,
+            )
         }
 
         val discovery = sourceEngine.discoverProgressive(request) { progress ->
@@ -383,8 +469,13 @@ fun TvPlayerScreen(
                 }
 
                 if (candidate != null) {
-                    val resume = if (!hasStartedPlayback) playbackStore.resumePositionMs(request) else positionMs
-                    playSource(candidate, resume)
+                    val resume =
+                        if (!hasStartedPlayback) {
+                            if (resumePromptVisible) 0L else pendingResumePositionMs
+                        } else {
+                            positionMs
+                        }
+                    playSource(candidate, resume, autoPlay = !resumePromptVisible)
                 }
             }
         }
@@ -401,7 +492,11 @@ fun TvPlayerScreen(
             }
 
         if (!hasStartedPlayback && sources.isNotEmpty()) {
-            playSource(sources.first(), playbackStore.resumePositionMs(request))
+            playSource(
+                source = sources.first(),
+                resumeMs = if (resumePromptVisible) 0L else pendingResumePositionMs,
+                autoPlay = !resumePromptVisible,
+            )
         } else if (waitingForRecovery) {
             val next = nextRecoveryCandidate()
             if (next != null) {
@@ -445,6 +540,60 @@ fun TvPlayerScreen(
         }
     }
 
+
+    LaunchedEffect(request.cacheKey, contentWarningsEnabled) {
+        contentWarnings = emptyList()
+        showContentWarnings = false
+        contentWarningsShown = false
+        if (!contentWarningsEnabled) return@LaunchedEffect
+        val imdbId = ContentWarningRepository.extractImdbId(request.media.id)
+            ?: ContentWarningRepository.extractImdbId(request.videoId)
+            ?: return@LaunchedEffect
+        contentWarnings = withContext(Dispatchers.IO) {
+            ContentWarningRepository.get(imdbId)
+        }
+    }
+
+    LaunchedEffect(isPlaying, contentWarnings, contentWarningsEnabled, resumePromptVisible) {
+        if (
+            isPlaying &&
+            !resumePromptVisible &&
+            contentWarningsEnabled &&
+            contentWarnings.isNotEmpty() &&
+            !contentWarningsShown
+        ) {
+            contentWarningsShown = true
+            showContentWarnings = true
+            delay(CONTENT_WARNING_VISIBLE_MS)
+            showContentWarnings = false
+        }
+    }
+
+    LaunchedEffect(sleepTimerDeadlineMs) {
+        val deadline = sleepTimerDeadlineMs ?: return@LaunchedEffect
+        while (isActive && sleepTimerDeadlineMs == deadline) {
+            val remainingMs = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+            sleepTimerRemainingSeconds = (remainingMs + 999L) / 1_000L
+            if (remainingMs <= 0L) {
+                sleepTimerDeadlineMs = null
+                sleepTimerRemainingSeconds = null
+                sleepTimerOption = TvSleepTimerOption.OFF
+                player.pause()
+                controlsVisible = true
+                interactionToken += 1
+                sessionNotice = "Sleep timer finished"
+                break
+            }
+            delay(1_000L)
+        }
+    }
+
+    LaunchedEffect(sessionNotice) {
+        val notice = sessionNotice ?: return@LaunchedEffect
+        delay(1_800L)
+        if (sessionNotice == notice) sessionNotice = null
+    }
+
     LaunchedEffect(quickSeekToken) {
         if (quickSeekToken <= 0) return@LaunchedEffect
         val token = quickSeekToken
@@ -475,16 +624,23 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, sidePanel, interactionToken, isPlaying, playerError) {
-        if (controlsVisible && sidePanel == null && isPlaying && playerError == null) {
+    LaunchedEffect(controlsVisible, sidePanel, interactionToken, isPlaying, playerError, resumePromptVisible) {
+        if (
+            controlsVisible &&
+            sidePanel == null &&
+            isPlaying &&
+            playerError == null &&
+            !resumePromptVisible
+        ) {
             delay(5_000)
             controlsVisible = false
         }
     }
 
-    LaunchedEffect(controlsVisible, sidePanel, playerError, pendingAutoNext) {
+    LaunchedEffect(controlsVisible, sidePanel, playerError, pendingAutoNext, resumePromptVisible) {
         delay(90)
         when {
+            resumePromptVisible -> runCatching { resumeRequester.requestFocus() }
             pendingAutoNext != null -> runCatching { autoNextPlayRequester.requestFocus() }
             sidePanel != null -> runCatching { firstPanelRequester.requestFocus() }
             playerError != null -> {
@@ -498,6 +654,7 @@ fun TvPlayerScreen(
                         PlayerSidePanel.SUBTITLES -> subtitleRequester
                         PlayerSidePanel.SOURCES -> sourcesRequester
                         PlayerSidePanel.EPISODES -> episodesRequester
+                        PlayerSidePanel.PLAYBACK -> playRequester
                         null -> playRequester
                     }
                 runCatching { target.requestFocus() }
@@ -513,6 +670,7 @@ fun TvPlayerScreen(
                 .background(PlayerBlack)
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (resumePromptVisible) return@onPreviewKeyEvent false
 
                     if (controlsVisible && sidePanel == null && playerError == null && pendingAutoNext == null) {
                         interactionToken += 1
@@ -576,16 +734,14 @@ fun TvPlayerScreen(
                     useController = false
                     keepScreenOn = true
                     this.player = player
-                    subtitleView?.setFractionalTextSize(
-                        subtitleFraction(settingsStore.subtitleSize())
-                    )
+                    resizeMode = videoFit.toMedia3ResizeMode()
+                    applyTvSubtitleStyle(this, settingsStore)
                 }
             },
             update = {
                 it.player = player
-                it.subtitleView?.setFractionalTextSize(
-                    subtitleFraction(settingsStore.subtitleSize())
-                )
+                it.resizeMode = videoFit.toMedia3ResizeMode()
+                applyTvSubtitleStyle(it, settingsStore)
             },
             modifier = Modifier.fillMaxSize(),
         )
@@ -684,6 +840,11 @@ fun TvPlayerScreen(
                     sidePanel = PlayerSidePanel.EPISODES
                     interactionToken += 1
                 },
+                onPlaybackOptions = {
+                    panelReturnFocus = PlayerSidePanel.PLAYBACK
+                    sidePanel = PlayerSidePanel.PLAYBACK
+                    interactionToken += 1
+                },
                 onNext = request.nextRequest()?.let { next ->
                     {
                         saveProgress()
@@ -703,6 +864,20 @@ fun TvPlayerScreen(
                     touchControls()
                 },
                 modifier = Modifier.align(Alignment.BottomStart),
+            )
+        }
+
+        if (showContentWarnings && sidePanel == null && !resumePromptVisible) {
+            ContentWarningsOverlay(
+                warnings = contentWarnings,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+        }
+
+        sessionNotice?.let { notice ->
+            SessionNoticeOverlay(
+                message = notice,
+                modifier = Modifier.align(Alignment.Center),
             )
         }
 
@@ -747,10 +922,15 @@ fun TvPlayerScreen(
                 )
 
             PlayerSidePanel.SUBTITLES ->
-                TrackPickerPanel(
-                    title = "Subtitles",
+                SubtitlePickerPanel(
                     options = trackOptions(player.currentTracks, C.TRACK_TYPE_TEXT, allowOff = true),
+                    subtitleDelayMs = subtitleDelayMs,
                     firstRequester = firstPanelRequester,
+                    onDelayChange = { updated ->
+                        subtitleDelayMs = updated.coerceIn(-60_000, 60_000)
+                        subtitleDelayUs.set(subtitleDelayMs.toLong() * 1_000L)
+                        settingsStore.setSubtitleDelayMs(request.cacheKey, subtitleDelayMs)
+                    },
                     onSelect = { option ->
                         if (option.choice == null) {
                             disableTrackType(player, C.TRACK_TYPE_TEXT)
@@ -795,7 +975,72 @@ fun TvPlayerScreen(
                     },
                 )
 
+            PlayerSidePanel.PLAYBACK ->
+                PlaybackOptionsPanel(
+                    playbackSpeed = playbackSpeed,
+                    videoFit = videoFit,
+                    sleepTimerOption = sleepTimerOption,
+                    sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+                    contentWarningsEnabled = contentWarningsEnabled,
+                    firstRequester = firstPanelRequester,
+                    onPlaybackSpeedChange = { speed ->
+                        playbackSpeed = speed
+                        settingsStore.setPlayerPlaybackSpeed(speed)
+                        player.setPlaybackSpeed(speed)
+                        sessionNotice = "Playback ${speed}x"
+                    },
+                    onVideoFitChange = { fit ->
+                        videoFit = fit
+                        settingsStore.setPlayerVideoFit(fit)
+                        sessionNotice = "Video ${fit.label}"
+                    },
+                    onSleepTimerChange = { option ->
+                        sleepTimerOption = option
+                        sleepTimerDeadlineMs = option.minutes?.let { minutes ->
+                            SystemClock.elapsedRealtime() + minutes * 60_000L
+                        }
+                        sleepTimerRemainingSeconds = option.minutes?.let { it * 60L }
+                        sessionNotice = when (option) {
+                            TvSleepTimerOption.OFF -> "Sleep timer off"
+                            TvSleepTimerOption.END_OF_EPISODE -> "Sleep after this episode"
+                            else -> "Sleep timer ${option.label}"
+                        }
+                    },
+                    onContentWarningsChange = { enabled ->
+                        contentWarningsEnabled = enabled
+                        settingsStore.setContentWarningsEnabled(enabled)
+                        if (!enabled) showContentWarnings = false
+                        if (enabled) contentWarningsShown = false
+                    },
+                    onClose = {
+                        sidePanel = null
+                        touchControls()
+                    },
+                )
+
             null -> Unit
+        }
+
+        if (resumePromptVisible && sidePanel == null) {
+            ResumePromptOverlay(
+                positionMs = pendingResumePositionMs,
+                resumeRequester = resumeRequester,
+                startOverRequester = startOverRequester,
+                onResume = {
+                    player.seekTo(pendingResumePositionMs)
+                    player.playWhenReady = true
+                    resumePromptVisible = false
+                    touchControls()
+                },
+                onStartOver = {
+                    playbackStore.clear(request)
+                    pendingResumePositionMs = 0L
+                    player.seekTo(0L)
+                    player.playWhenReady = true
+                    resumePromptVisible = false
+                    touchControls()
+                },
+            )
         }
 
         pendingAutoNext?.let { next ->
@@ -1034,6 +1279,7 @@ private fun PlayerControls(
     onSubtitles: () -> Unit,
     onSources: () -> Unit,
     onEpisodes: () -> Unit,
+    onPlaybackOptions: () -> Unit,
     onNext: (() -> Unit)?,
 ) {
     val episodeLine =
@@ -1202,6 +1448,7 @@ private fun PlayerControls(
                     onLeft = { playRequester.requestFocus() },
                     onRight = { subtitleRequester.requestFocus() },
                     onUp = { seekRequester.requestFocus() },
+                    onDown = onPlaybackOptions,
                 )
                 PlayerTextButton(
                     text = "Subtitles",
@@ -1210,6 +1457,7 @@ private fun PlayerControls(
                     onLeft = { playRequester.requestFocus() },
                     onRight = { audioRequester.requestFocus() },
                     onUp = { seekRequester.requestFocus() },
+                    onDown = onPlaybackOptions,
                 )
                 PlayerTextButton(
                     text = "Audio",
@@ -1218,6 +1466,7 @@ private fun PlayerControls(
                     onLeft = { subtitleRequester.requestFocus() },
                     onRight = { sourcesRequester.requestFocus() },
                     onUp = { seekRequester.requestFocus() },
+                    onDown = onPlaybackOptions,
                 )
                 PlayerTextButton(
                     text = "Sources",
@@ -1228,6 +1477,7 @@ private fun PlayerControls(
                         if (hasEpisodes) episodesRequester.requestFocus() else sourcesRequester.requestFocus()
                     },
                     onUp = { seekRequester.requestFocus() },
+                    onDown = onPlaybackOptions,
                 )
                 if (hasEpisodes) {
                     PlayerTextButton(
@@ -1237,6 +1487,7 @@ private fun PlayerControls(
                         onLeft = { sourcesRequester.requestFocus() },
                         onRight = { episodesRequester.requestFocus() },
                         onUp = { seekRequester.requestFocus() },
+                        onDown = onPlaybackOptions,
                     )
                 }
             }
@@ -1499,17 +1750,69 @@ private fun SourcePickerPanel(
 ) {
     BackHandler(onBack = onClose)
 
-    val restoreIndex =
-        sources.indexOfFirst { source -> source.id == selected?.id && source.isDirectPlayable }
-            .takeIf { it >= 0 }
-            ?: sources.indexOfFirst { it.isDirectPlayable }.coerceAtLeast(0)
+    var providerFilter by remember { mutableStateOf<String?>(null) }
+    val providers =
+        sources
+            .filter { it.isDirectPlayable }
+            .map { it.providerName }
+            .filter { it.isNotBlank() }
+            .distinct()
+    val visibleSources =
+        if (providerFilter == null) {
+            sources
+        } else {
+            sources.filter { it.providerName == providerFilter }
+        }
 
-    RightPanel(title = "Sources", subtitle = "VUEO ranked for fast direct playback") {
+    RightPanel(
+        title = "Sources",
+        subtitle = buildString {
+            append("VUEO ranked for fast direct playback")
+            providerFilter?.let { append(" • $it") }
+        },
+    ) {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            itemsIndexed(sources, key = { _, source -> source.id }) { index, source ->
+            item {
+                Text(
+                    text = "PROVIDER",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                )
+            }
+            item {
+                PanelOptionRow(
+                    label = "All providers",
+                    secondary = "${sources.count { it.isDirectPlayable }} playable sources",
+                    selected = providerFilter == null,
+                    requester = firstRequester,
+                    onClick = { providerFilter = null },
+                )
+            }
+            providers.forEach { provider ->
+                item(key = "provider:$provider") {
+                    PanelOptionRow(
+                        label = provider,
+                        secondary = "${sources.count { it.providerName == provider && it.isDirectPlayable }} playable",
+                        selected = providerFilter == provider,
+                        onClick = { providerFilter = provider },
+                    )
+                }
+            }
+            item {
+                Text(
+                    text = "SOURCES",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+                )
+            }
+            itemsIndexed(visibleSources, key = { _, source -> source.id }) { index, source ->
                 var focused by remember(source.id) { mutableStateOf(false) }
                 val active = selected?.id == source.id
                 val assessment = SourceRanker.assess(source, originalLanguage = originalLanguage)
@@ -1518,7 +1821,6 @@ private fun SourcePickerPanel(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .then(if (index == restoreIndex) Modifier.focusRequester(firstRequester) else Modifier)
                             .onFocusChanged { focused = it.isFocused }
                             .background(
                                 when {
@@ -1756,6 +2058,365 @@ private fun TrackPickerPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SubtitlePickerPanel(
+    options: List<TrackOption>,
+    subtitleDelayMs: Int,
+    firstRequester: FocusRequester,
+    onDelayChange: (Int) -> Unit,
+    onSelect: (TrackOption) -> Unit,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+
+    RightPanel(
+        title = "Subtitles",
+        subtitle = "Track selection • Sync ${formatSubtitleDelay(subtitleDelayMs)}",
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                PanelOptionRow(
+                    label = "Sync earlier",
+                    secondary = "Move subtitles 0.5 seconds earlier",
+                    requester = firstRequester,
+                    onClick = { onDelayChange(subtitleDelayMs - 500) },
+                )
+            }
+            item {
+                PanelOptionRow(
+                    label = "Reset sync",
+                    secondary = "Current ${formatSubtitleDelay(subtitleDelayMs)}",
+                    selected = subtitleDelayMs == 0,
+                    onClick = { onDelayChange(0) },
+                )
+            }
+            item {
+                PanelOptionRow(
+                    label = "Sync later",
+                    secondary = "Move subtitles 0.5 seconds later",
+                    onClick = { onDelayChange(subtitleDelayMs + 500) },
+                )
+            }
+            item {
+                Text(
+                    text = "TRACKS",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+                )
+            }
+            if (options.isEmpty()) {
+                item {
+                    Text(
+                        text = "No subtitle tracks are available in this source.",
+                        color = PlayerMuted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            } else {
+                itemsIndexed(options) { _, option ->
+                    PanelOptionRow(
+                        label = if (option.selected) "✓  ${option.label}" else option.label,
+                        secondary = option.secondary,
+                        selected = option.selected,
+                        onClick = { onSelect(option) },
+                    )
+                }
+            }
+            item { Spacer(Modifier.height(12.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackOptionsPanel(
+    playbackSpeed: Float,
+    videoFit: PlayerVideoFit,
+    sleepTimerOption: TvSleepTimerOption,
+    sleepTimerRemainingSeconds: Long?,
+    contentWarningsEnabled: Boolean,
+    firstRequester: FocusRequester,
+    onPlaybackSpeedChange: (Float) -> Unit,
+    onVideoFitChange: (PlayerVideoFit) -> Unit,
+    onSleepTimerChange: (TvSleepTimerOption) -> Unit,
+    onContentWarningsChange: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    val timerStatus =
+        when {
+            sleepTimerRemainingSeconds != null ->
+                "${(sleepTimerRemainingSeconds / 60).coerceAtLeast(0)} min remaining"
+            sleepTimerOption == TvSleepTimerOption.END_OF_EPISODE ->
+                "End of episode"
+            else -> "Off"
+        }
+
+    RightPanel(
+        title = "Playback Options",
+        subtitle = "Session controls • Sleep timer $timerStatus",
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Text(
+                    "SPEED",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                )
+            }
+            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEachIndexed { index, speed ->
+                item(key = "speed:$speed") {
+                    PanelOptionRow(
+                        label = "${speed}x",
+                        secondary = if (speed == 1f) "Normal speed" else null,
+                        selected = playbackSpeed == speed,
+                        requester = if (index == 0) firstRequester else null,
+                        onClick = { onPlaybackSpeedChange(speed) },
+                    )
+                }
+            }
+            item {
+                Text(
+                    "VIDEO FIT",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+                )
+            }
+            PlayerVideoFit.entries.forEach { fit ->
+                item(key = "fit:${fit.name}") {
+                    PanelOptionRow(
+                        label = fit.label,
+                        secondary = when (fit) {
+                            PlayerVideoFit.FIT -> "Show the complete frame"
+                            PlayerVideoFit.FILL -> "Fill the television screen"
+                            PlayerVideoFit.ZOOM -> "Crop edges to fill without stretching"
+                        },
+                        selected = videoFit == fit,
+                        onClick = { onVideoFitChange(fit) },
+                    )
+                }
+            }
+            item {
+                Text(
+                    "SLEEP TIMER",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+                )
+            }
+            TvSleepTimerOption.entries.forEach { option ->
+                item(key = "timer:${option.name}") {
+                    PanelOptionRow(
+                        label = option.label,
+                        selected = sleepTimerOption == option,
+                        onClick = { onSleepTimerChange(option) },
+                    )
+                }
+            }
+            item {
+                Text(
+                    "BEHAVIOUR",
+                    color = PlayerMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+                )
+            }
+            item {
+                PanelOptionRow(
+                    label = "Content warnings",
+                    secondary = "Parents-guide warning at playback start when available",
+                    selected = contentWarningsEnabled,
+                    onClick = { onContentWarningsChange(!contentWarningsEnabled) },
+                )
+            }
+            item { Spacer(Modifier.height(14.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun PanelOptionRow(
+    label: String,
+    secondary: String? = null,
+    selected: Boolean = false,
+    requester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+                .onFocusChanged { focused = it.isFocused }
+                .scale(if (focused) 1.025f else 1f)
+                .background(
+                    when {
+                        focused -> Color.White.copy(alpha = 0.16f)
+                        selected -> PlayerGreen.copy(alpha = 0.10f)
+                        else -> Color.White.copy(alpha = 0.055f)
+                    },
+                    RoundedCornerShape(11.dp),
+                )
+                .border(
+                    if (focused) 2.dp else 1.dp,
+                    when {
+                        focused -> PlayerFocus
+                        selected -> PlayerGreen.copy(alpha = 0.70f)
+                        else -> Color.Transparent
+                    },
+                    RoundedCornerShape(11.dp),
+                )
+                .clickable(onClick = onClick)
+                .focusable()
+                .padding(horizontal = 15.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = if (selected) "✓  $label" else label,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        secondary?.let {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = it,
+                color = PlayerMuted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResumePromptOverlay(
+    positionMs: Long,
+    resumeRequester: FocusRequester,
+    startOverRequester: FocusRequester,
+    onResume: () -> Unit,
+    onStartOver: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.68f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .width(470.dp)
+                    .background(PlayerPanel, RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
+                    .padding(28.dp),
+        ) {
+            Text(
+                "Resume watching?",
+                color = Color.White,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Continue from ${formatTime(positionMs)} or start this title from the beginning.",
+                color = PlayerMuted,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(22.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PlayerButton(
+                    text = "Resume ${formatTime(positionMs)}",
+                    requester = resumeRequester,
+                    primary = true,
+                    onRight = { startOverRequester.requestFocus() },
+                    onClick = onResume,
+                )
+                PlayerButton(
+                    text = "Start Over",
+                    requester = startOverRequester,
+                    onLeft = { resumeRequester.requestFocus() },
+                    onClick = onStartOver,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContentWarningsOverlay(
+    warnings: List<ContentWarning>,
+    modifier: Modifier = Modifier,
+) {
+    if (warnings.isEmpty()) return
+    Column(
+        modifier =
+            modifier
+                .padding(start = 56.dp, top = 132.dp)
+                .width(285.dp)
+                .background(Color.Black.copy(alpha = 0.78f), RoundedCornerShape(14.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+    ) {
+        Text(
+            "Content warning",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(7.dp))
+        warnings.forEach { warning ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(warning.label, color = PlayerMuted, fontSize = 12.sp)
+                Text(
+                    warning.severity,
+                    color = if (warning.severityRank == 0) PlayerDanger else Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(3.dp))
+        }
+    }
+}
+
+@Composable
+private fun SessionNoticeOverlay(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .background(Color.Black.copy(alpha = 0.76f), RoundedCornerShape(999.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp))
+                .padding(horizontal = 22.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = message,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -2145,6 +2806,104 @@ private fun subtitleMimeType(url: String): String =
         else -> MimeTypes.APPLICATION_SUBRIP
     }
 
+private fun PlayerVideoFit.toMedia3ResizeMode(): Int =
+    when (this) {
+        PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+        PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
+
+private fun applyTvSubtitleStyle(
+    playerView: PlayerView,
+    settingsStore: SettingsStore,
+) {
+    val opacity = settingsStore.subtitleTextOpacityPercent().coerceIn(20, 100)
+    val alpha = ((opacity / 100f) * 255f).toInt().coerceIn(0, 255)
+    val textColor =
+        (settingsStore.subtitleTextColor() and 0x00FFFFFF) or (alpha shl 24)
+
+    playerView.subtitleView?.apply {
+        setApplyEmbeddedStyles(false)
+        setApplyEmbeddedFontSizes(false)
+        setFixedTextSize(
+            TypedValue.COMPLEX_UNIT_SP,
+            settingsStore.subtitleFontSizeSp().toFloat(),
+        )
+        setBottomPaddingFraction(
+            settingsStore.subtitleBottomPaddingPercent() / 100f,
+        )
+        setStyle(
+            CaptionStyleCompat(
+                textColor,
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+                if (settingsStore.subtitleOutlineEnabled()) {
+                    CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                } else {
+                    CaptionStyleCompat.EDGE_TYPE_NONE
+                },
+                settingsStore.subtitleOutlineColor(),
+                if (settingsStore.subtitleBold()) {
+                    Typeface.DEFAULT_BOLD
+                } else {
+                    Typeface.DEFAULT
+                },
+            ),
+        )
+    }
+}
+
+private fun formatSubtitleDelay(delayMs: Int): String =
+    if (delayMs == 0) {
+        "0.0s"
+    } else {
+        val seconds = delayMs / 1_000f
+        String.format("%+.1fs", seconds)
+    }
+
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private class TvSubtitleOffsetRenderersFactory(
+    context: android.content.Context,
+    private val subtitleDelayUsProvider: () -> Long,
+) : DefaultRenderersFactory(context) {
+    override fun buildTextRenderers(
+        context: android.content.Context,
+        output: TextOutput,
+        outputLooper: android.os.Looper,
+        extensionRendererMode: Int,
+        out: ArrayList<Renderer>,
+    ) {
+        val firstTextRenderer = out.size
+        super.buildTextRenderers(
+            context,
+            output,
+            outputLooper,
+            extensionRendererMode,
+            out,
+        )
+        for (index in firstTextRenderer until out.size) {
+            out[index] = TvSubtitleOffsetRenderer(
+                baseRenderer = out[index],
+                subtitleDelayUsProvider = subtitleDelayUsProvider,
+            )
+        }
+    }
+}
+
+private class TvSubtitleOffsetRenderer(
+    baseRenderer: Renderer,
+    private val subtitleDelayUsProvider: () -> Long,
+) : ForwardingRenderer(baseRenderer) {
+    override fun render(
+        positionUs: Long,
+        elapsedRealtimeUs: Long,
+    ) {
+        val subtitlePositionUs =
+            (positionUs - subtitleDelayUsProvider()).coerceAtLeast(0L)
+        super.render(subtitlePositionUs, elapsedRealtimeUs)
+    }
+}
+
 private fun formatRemainingTime(
     positionMs: Long,
     durationMs: Long,
@@ -2168,6 +2927,8 @@ private fun formatTime(ms: Long): String {
 }
 
 private const val AUTO_NEXT_COUNTDOWN_SECONDS = 5
+private const val RESUME_PROMPT_THRESHOLD_MS = 5_000L
+private const val CONTENT_WARNING_VISIBLE_MS = 6_000L
 private const val BUFFER_RECOVERY_TIMEOUT_MS = 18_000L
 private const val SEEK_STEP_MS = 10_000L
 private const val TRACK_SELECTION_OFF = "__off__"

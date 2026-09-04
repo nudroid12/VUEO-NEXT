@@ -61,6 +61,7 @@ import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.storage.LibraryStore
+import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
@@ -723,16 +724,19 @@ private fun FunctionalPlaybackPage(
 ) {
     var resume by remember { mutableStateOf(settingsStore.resumePlaybackEnabled()) }
     var quality by remember { mutableStateOf(settingsStore.preferredQuality()) }
+    var speed by remember { mutableStateOf(settingsStore.playerPlaybackSpeed()) }
+    var videoFit by remember { mutableStateOf(settingsStore.playerVideoFit()) }
     var autoRecovery by remember { mutableStateOf(settingsStore.autoSourceRecoveryEnabled()) }
     var autoNext by remember { mutableStateOf(settingsStore.autoPlayNextEpisodeEnabled()) }
     var skipSegments by remember { mutableStateOf(settingsStore.skipSegmentsEnabled()) }
-    var showQuality by remember { mutableStateOf(false) }
+    var warnings by remember { mutableStateOf(settingsStore.contentWarningsEnabled()) }
+    var chooser by remember { mutableStateOf<String?>(null) }
 
     FunctionalList {
         item {
             FunctionalToggleRow(
                 "Resume Playback",
-                "Continue supported titles from the last saved position.",
+                "Ask to Resume or Start Over when saved progress exists.",
                 resume,
                 requester = firstRequester,
             ) {
@@ -742,7 +746,23 @@ private fun FunctionalPlaybackPage(
         }
         item {
             FunctionalRow("Preferred Quality", "Preferred resolution used by Smart Source ranking.", quality.label) {
-                showQuality = true
+                chooser = "quality"
+            }
+        }
+        item {
+            FunctionalRow("Playback Speed", "Default playback speed used by the TV Player.", "${speed}x") {
+                chooser = "speed"
+            }
+        }
+        item {
+            FunctionalRow("Video Fit", "Choose how video fills the television screen.", videoFit.label) {
+                chooser = "fit"
+            }
+        }
+        item {
+            FunctionalToggleRow("Content Warnings", "Show a short parents-guide warning when supported metadata is available.", warnings) {
+                warnings = it
+                settingsStore.setContentWarningsEnabled(it)
             }
         }
         item {
@@ -765,23 +785,45 @@ private fun FunctionalPlaybackPage(
         }
         item {
             FunctionalInfoCard(
-                "TV controls",
-                "Mobile-only controls such as screen orientation and swipe seek sensitivity are intentionally not shown on TV.",
+                "Player session controls",
+                "In the Player, press Down from the bottom control row to open Playback Options for speed, video fit, Sleep Timer and warnings without adding another button to the main overlay.",
             )
         }
     }
 
-    if (showQuality) {
-        FunctionalChoiceOverlay(
+    when (chooser) {
+        "quality" -> FunctionalChoiceOverlay(
             title = "Preferred Quality",
             items = PreferredQuality.entries.map { option ->
                 ChoiceItem(option.label, option == quality) {
                     quality = option
                     settingsStore.setPreferredQuality(option)
-                    showQuality = false
+                    chooser = null
                 }
             },
-            onDismiss = { showQuality = false },
+            onDismiss = { chooser = null },
+        )
+        "speed" -> FunctionalChoiceOverlay(
+            title = "Playback Speed",
+            items = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).map { option ->
+                ChoiceItem("${option}x", option == speed) {
+                    speed = option
+                    settingsStore.setPlayerPlaybackSpeed(option)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
+        )
+        "fit" -> FunctionalChoiceOverlay(
+            title = "Video Fit",
+            items = PlayerVideoFit.entries.map { option ->
+                ChoiceItem(option.label, option == videoFit) {
+                    videoFit = option
+                    settingsStore.setPlayerVideoFit(option)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
         )
     }
 }
@@ -796,7 +838,13 @@ private fun FunctionalSubtitlesPage(
     var defaultOn by remember { mutableStateOf(settingsStore.subtitlesOnByDefault()) }
     var autoSelect by remember { mutableStateOf(settingsStore.autoSelectPreferredSubtitle()) }
     var embedded by remember { mutableStateOf(settingsStore.embeddedSubtitlePriority()) }
-    var size by remember { mutableStateOf(settingsStore.subtitleSize()) }
+    var fontSize by remember { mutableIntStateOf(settingsStore.subtitleFontSizeSp()) }
+    var bold by remember { mutableStateOf(settingsStore.subtitleBold()) }
+    var textColor by remember { mutableIntStateOf(settingsStore.subtitleTextColor()) }
+    var opacity by remember { mutableIntStateOf(settingsStore.subtitleTextOpacityPercent()) }
+    var outline by remember { mutableStateOf(settingsStore.subtitleOutlineEnabled()) }
+    var outlineColor by remember { mutableIntStateOf(settingsStore.subtitleOutlineColor()) }
+    var bottomPadding by remember { mutableIntStateOf(settingsStore.subtitleBottomPaddingPercent()) }
     var chooser by remember { mutableStateOf<String?>(null) }
 
     FunctionalList {
@@ -829,14 +877,72 @@ private fun FunctionalSubtitlesPage(
             }
         }
         item {
-            FunctionalRow("Subtitle Size", "Saved display size for the VUEO player.", size.label) {
-                chooser = "size"
+            FunctionalRow("Font Size", "Exact subtitle text size.", "${fontSize}sp") {
+                chooser = "fontSize"
             }
         }
         item {
-            FunctionalInfoCard("Subtitle sources", "Subtitle addons remain in Content Manager. This page controls selection and display behavior only.")
+            FunctionalToggleRow("Bold Text", "Use a heavier subtitle typeface.", bold) {
+                bold = it
+                settingsStore.setSubtitleBold(it)
+            }
+        }
+        item {
+            FunctionalRow("Text Colour", "Subtitle foreground colour.", subtitleColourLabel(textColor)) {
+                chooser = "textColor"
+            }
+        }
+        item {
+            FunctionalRow("Text Opacity", "Subtitle foreground opacity.", "$opacity%") {
+                chooser = "opacity"
+            }
+        }
+        item {
+            FunctionalToggleRow("Outline", "Draw an outline around subtitle text for readability.", outline) {
+                outline = it
+                settingsStore.setSubtitleOutlineEnabled(it)
+            }
+        }
+        item {
+            FunctionalRow("Outline Colour", "Colour used by the subtitle outline.", subtitleColourLabel(outlineColor), enabled = outline) {
+                chooser = "outlineColor"
+            }
+        }
+        item {
+            FunctionalRow("Bottom Offset", "Move subtitle text higher or lower from the bottom edge.", "$bottomPadding%") {
+                chooser = "bottomPadding"
+            }
+        }
+        item {
+            FunctionalRow("Reset Subtitle Style", "Restore VUEO subtitle display defaults.", "Reset") {
+                fontSize = 20
+                bold = false
+                textColor = 0xFFFFFFFF.toInt()
+                opacity = 100
+                outline = true
+                outlineColor = 0xFF000000.toInt()
+                bottomPadding = 22
+                settingsStore.setSubtitleSize(SubtitleSize.MEDIUM)
+                settingsStore.setSubtitleFontSizeSp(fontSize)
+                settingsStore.setSubtitleBold(bold)
+                settingsStore.setSubtitleTextColor(textColor)
+                settingsStore.setSubtitleTextOpacityPercent(opacity)
+                settingsStore.setSubtitleOutlineEnabled(outline)
+                settingsStore.setSubtitleOutlineColor(outlineColor)
+                settingsStore.setSubtitleBottomPaddingPercent(bottomPadding)
+            }
+        }
+        item {
+            FunctionalInfoCard("Subtitle Sync", "Per-title subtitle delay is available from the Player subtitle panel. Subtitle providers remain in Content Manager.")
         }
     }
+
+    val colourChoices = listOf(
+        "White" to 0xFFFFFFFF.toInt(),
+        "Yellow" to 0xFFFFEB3B.toInt(),
+        "Cyan" to 0xFF80DEEA.toInt(),
+        "Black" to 0xFF000000.toInt(),
+    )
 
     when (chooser) {
         "preferred" -> FunctionalChoiceOverlay(
@@ -861,12 +967,56 @@ private fun FunctionalSubtitlesPage(
             },
             onDismiss = { chooser = null },
         )
-        "size" -> FunctionalChoiceOverlay(
-            title = "Subtitle Size",
-            items = SubtitleSize.entries.map { option ->
-                ChoiceItem(option.label, option == size) {
-                    size = option
-                    settingsStore.setSubtitleSize(option)
+        "fontSize" -> FunctionalChoiceOverlay(
+            title = "Subtitle Font Size",
+            items = listOf(14, 16, 18, 20, 22, 24, 28, 32, 36).map { option ->
+                ChoiceItem("${option}sp", option == fontSize) {
+                    fontSize = option
+                    settingsStore.setSubtitleFontSizeSp(option)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
+        )
+        "textColor" -> FunctionalChoiceOverlay(
+            title = "Subtitle Text Colour",
+            items = colourChoices.map { (label, value) ->
+                ChoiceItem(label, value == textColor) {
+                    textColor = value
+                    settingsStore.setSubtitleTextColor(value)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
+        )
+        "opacity" -> FunctionalChoiceOverlay(
+            title = "Subtitle Text Opacity",
+            items = listOf(40, 60, 80, 100).map { option ->
+                ChoiceItem("$option%", option == opacity) {
+                    opacity = option
+                    settingsStore.setSubtitleTextOpacityPercent(option)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
+        )
+        "outlineColor" -> FunctionalChoiceOverlay(
+            title = "Subtitle Outline Colour",
+            items = colourChoices.map { (label, value) ->
+                ChoiceItem(label, value == outlineColor) {
+                    outlineColor = value
+                    settingsStore.setSubtitleOutlineColor(value)
+                    chooser = null
+                }
+            },
+            onDismiss = { chooser = null },
+        )
+        "bottomPadding" -> FunctionalChoiceOverlay(
+            title = "Subtitle Bottom Offset",
+            items = listOf(8, 12, 16, 22, 28, 34, 40).map { option ->
+                ChoiceItem("$option%", option == bottomPadding) {
+                    bottomPadding = option
+                    settingsStore.setSubtitleBottomPaddingPercent(option)
                     chooser = null
                 }
             },
@@ -874,6 +1024,15 @@ private fun FunctionalSubtitlesPage(
         )
     }
 }
+
+private fun subtitleColourLabel(value: Int): String =
+    when (value) {
+        0xFFFFFFFF.toInt() -> "White"
+        0xFFFFEB3B.toInt() -> "Yellow"
+        0xFF80DEEA.toInt() -> "Cyan"
+        0xFF000000.toInt() -> "Black"
+        else -> "Custom"
+    }
 
 @Composable
 private fun FunctionalSourcesPage(

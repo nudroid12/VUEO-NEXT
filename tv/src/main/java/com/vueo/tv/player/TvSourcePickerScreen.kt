@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +77,7 @@ fun TvSourcePickerScreen(
     var subtitleLoading by remember(request.cacheKey) { mutableStateOf(true) }
     var status by remember(request.cacheKey) { mutableStateOf("Finding sources…") }
     var notice by remember(request.cacheKey) { mutableStateOf<String?>(null) }
+    var providerFilter by remember(request.cacheKey) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val settingsStore = remember(context) {
         SettingsStore(
@@ -88,6 +91,7 @@ fun TvSourcePickerScreen(
 
     val playBestRequester = remember { FocusRequester() }
     val backRequester = remember { FocusRequester() }
+    val filterRequester = remember { FocusRequester() }
     val firstSourceRequester = remember { FocusRequester() }
 
     BackHandler(onBack = onBack)
@@ -138,6 +142,16 @@ fun TvSourcePickerScreen(
             runCatching { backRequester.requestFocus() }
         }
     }
+
+    val providerNames =
+        allSources
+            .filter { it.isDirectPlayable }
+            .map { it.providerName }
+            .filter { it.isNotBlank() }
+            .distinct()
+    val visibleSources =
+        if (providerFilter == null) allSources
+        else allSources.filter { it.providerName == providerFilter }
 
     Box(
         modifier = Modifier.fillMaxSize().background(PickerBlack),
@@ -227,8 +241,8 @@ fun TvSourcePickerScreen(
                     enabled = playableSources.isNotEmpty(),
                     onRight = { backRequester.requestFocus() },
                     onDown = {
-                        if (allSources.any { it.isDirectPlayable }) {
-                            firstSourceRequester.requestFocus()
+                        if (allSources.isNotEmpty()) {
+                            filterRequester.requestFocus()
                         }
                     },
                     onClick = {
@@ -242,8 +256,8 @@ fun TvSourcePickerScreen(
                         if (playableSources.isNotEmpty()) playBestRequester.requestFocus()
                     },
                     onDown = {
-                        if (allSources.any { it.isDirectPlayable }) {
-                            firstSourceRequester.requestFocus()
+                        if (allSources.isNotEmpty()) {
+                            filterRequester.requestFocus()
                         }
                     },
                     onClick = onBack,
@@ -268,29 +282,59 @@ fun TvSourcePickerScreen(
             )
             Spacer(Modifier.height(10.dp))
 
+            if (allSources.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .width(900.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    PickerProviderChip(
+                        label = "All providers",
+                        selected = providerFilter == null,
+                        requester = filterRequester,
+                        onUp = { playBestRequester.requestFocus() },
+                        onDown = {
+                            if (visibleSources.any { it.isDirectPlayable }) {
+                                firstSourceRequester.requestFocus()
+                            }
+                        },
+                        onClick = { providerFilter = null },
+                    )
+                    providerNames.forEach { provider ->
+                        PickerProviderChip(
+                            label = provider,
+                            selected = providerFilter == provider,
+                            onUp = { playBestRequester.requestFocus() },
+                            onDown = {
+                                if (visibleSources.any { it.isDirectPlayable }) {
+                                    firstSourceRequester.requestFocus()
+                                }
+                            },
+                            onClick = { providerFilter = provider },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             LazyColumn(
                 modifier = Modifier.width(900.dp),
                 contentPadding = PaddingValues(bottom = 26.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 itemsIndexed(
-                    items = allSources,
+                    items = visibleSources,
                     key = { _, source -> source.id },
                 ) { index, source ->
-                    val firstPlayableIndex = allSources.indexOfFirst { it.isDirectPlayable }
+                    val firstPlayableIndex = visibleSources.indexOfFirst { it.isDirectPlayable }
                     SourcePickerRow(
                         source = source,
                         recommended = source.id == playableSources.firstOrNull()?.id,
                         showTechnicalDetails = showTechnicalDetails,
                         requester = if (index == firstPlayableIndex) firstSourceRequester else null,
                         onUp = if (index == firstPlayableIndex) {
-                            {
-                                if (playableSources.isNotEmpty()) {
-                                    playBestRequester.requestFocus()
-                                } else {
-                                    backRequester.requestFocus()
-                                }
-                            }
+                            { filterRequester.requestFocus() }
                         } else {
                             null
                         },
@@ -303,6 +347,60 @@ fun TvSourcePickerScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PickerProviderChip(
+    label: String,
+    selected: Boolean,
+    requester: FocusRequester? = null,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) {
+                    false
+                } else {
+                    when (event.key) {
+                        Key.DirectionUp -> onUp?.let { it(); true } ?: false
+                        Key.DirectionDown -> onDown?.let { it(); true } ?: false
+                        else -> false
+                    }
+                }
+            }
+            .scale(if (focused) 1.04f else 1f)
+            .background(
+                when {
+                    focused -> Color.White
+                    selected -> PickerGreen.copy(alpha = 0.18f)
+                    else -> Color.White.copy(alpha = 0.08f)
+                },
+                RoundedCornerShape(999.dp),
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) Color.White else if (selected) PickerGreen else Color.White.copy(alpha = 0.10f),
+                RoundedCornerShape(999.dp),
+            )
+            .clickable(onClick = onClick)
+            .focusable()
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (focused) Color.Black else Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 

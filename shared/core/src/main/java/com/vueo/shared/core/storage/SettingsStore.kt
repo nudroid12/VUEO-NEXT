@@ -482,6 +482,59 @@ class SettingsStore(
             .apply()
     }
 
+
+    fun contentWarningsEnabled(): Boolean =
+        prefs.getBoolean(
+            profileKey(KEY_CONTENT_WARNINGS),
+            true,
+        )
+
+    fun setContentWarningsEnabled(
+        enabled: Boolean,
+    ) {
+        prefs.edit()
+            .putBoolean(
+                profileKey(KEY_CONTENT_WARNINGS),
+                enabled,
+            )
+            .apply()
+    }
+
+    fun subtitleTextOpacityPercent(): Int =
+        prefs.getInt(
+            profileKey(KEY_SUBTITLE_TEXT_OPACITY_PERCENT),
+            100,
+        ).coerceIn(20, 100)
+
+    fun setSubtitleTextOpacityPercent(value: Int) {
+        prefs.edit()
+            .putInt(
+                profileKey(KEY_SUBTITLE_TEXT_OPACITY_PERCENT),
+                value.coerceIn(20, 100),
+            )
+            .apply()
+    }
+
+    fun subtitleDelayMs(contentId: String): Int =
+        prefs.getInt(
+            profileKey("$KEY_SUBTITLE_DELAY_MS|${contentId.trim()}"),
+            0,
+        ).coerceIn(-60_000, 60_000)
+
+    fun setSubtitleDelayMs(
+        contentId: String,
+        delayMs: Int,
+    ) {
+        val normalized = contentId.trim()
+        if (normalized.isBlank()) return
+        prefs.edit()
+            .putInt(
+                profileKey("$KEY_SUBTITLE_DELAY_MS|$normalized"),
+                delayMs.coerceIn(-60_000, 60_000),
+            )
+            .apply()
+    }
+
     fun subtitleSelection(contentId: String): String? =
         contentId
             .trim()
@@ -931,6 +984,16 @@ class SettingsStore(
 
         private const val KEY_SUBTITLE_BOTTOM_PADDING_PERCENT =
             "subtitle_bottom_padding_percent"
+
+
+        private const val KEY_CONTENT_WARNINGS =
+            "content_warnings"
+
+        private const val KEY_SUBTITLE_TEXT_OPACITY_PERCENT =
+            "subtitle_text_opacity_percent"
+
+        private const val KEY_SUBTITLE_DELAY_MS =
+            "subtitle_delay_ms"
 
         private const val KEY_SUBTITLE_SELECTION =
             "subtitle_selection"
