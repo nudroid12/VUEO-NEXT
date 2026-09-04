@@ -37,6 +37,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,7 +56,7 @@ import kotlinx.coroutines.delay
 private val PickerBlack = Color(0xFF050706)
 private val PickerPanel = Color(0xE9101411)
 private val PickerGreen = Color(0xFF84E100)
-private val PickerYellow = Color(0xFFD6FF00)
+private val PickerFocus = Color.White
 private val PickerMuted = Color(0xFFAAB2AD)
 
 @Composable
@@ -71,6 +76,7 @@ fun TvSourcePickerScreen(
 
     val playBestRequester = remember { FocusRequester() }
     val backRequester = remember { FocusRequester() }
+    val firstSourceRequester = remember { FocusRequester() }
 
     BackHandler(onBack = onBack)
 
@@ -207,6 +213,12 @@ fun TvSourcePickerScreen(
                     requester = playBestRequester,
                     primary = true,
                     enabled = playableSources.isNotEmpty(),
+                    onRight = { backRequester.requestFocus() },
+                    onDown = {
+                        if (allSources.any { it.isDirectPlayable }) {
+                            firstSourceRequester.requestFocus()
+                        }
+                    },
                     onClick = {
                         playableSources.firstOrNull()?.let { onPlay(it, subtitles) }
                     },
@@ -214,6 +226,14 @@ fun TvSourcePickerScreen(
                 PickerButton(
                     text = "Back",
                     requester = backRequester,
+                    onLeft = {
+                        if (playableSources.isNotEmpty()) playBestRequester.requestFocus()
+                    },
+                    onDown = {
+                        if (allSources.any { it.isDirectPlayable }) {
+                            firstSourceRequester.requestFocus()
+                        }
+                    },
                     onClick = onBack,
                 )
             }
@@ -245,9 +265,22 @@ fun TvSourcePickerScreen(
                     items = allSources,
                     key = { _, source -> source.id },
                 ) { index, source ->
+                    val firstPlayableIndex = allSources.indexOfFirst { it.isDirectPlayable }
                     SourcePickerRow(
                         source = source,
                         recommended = source.id == playableSources.firstOrNull()?.id,
+                        requester = if (index == firstPlayableIndex) firstSourceRequester else null,
+                        onUp = if (index == firstPlayableIndex) {
+                            {
+                                if (playableSources.isNotEmpty()) {
+                                    playBestRequester.requestFocus()
+                                } else {
+                                    backRequester.requestFocus()
+                                }
+                            }
+                        } else {
+                            null
+                        },
                         onClick = if (source.isDirectPlayable) {
                             { onPlay(source, subtitles) }
                         } else {
@@ -267,6 +300,9 @@ private fun PickerButton(
     onClick: () -> Unit,
     primary: Boolean = false,
     enabled: Boolean = true,
+    onLeft: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -277,9 +313,22 @@ private fun PickerButton(
             Modifier
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) {
+                        false
+                    } else {
+                        when (event.key) {
+                            Key.DirectionLeft -> onLeft?.let { it(); true } ?: false
+                            Key.DirectionRight -> onRight?.let { it(); true } ?: false
+                            Key.DirectionDown -> onDown?.let { it(); true } ?: false
+                            else -> false
+                        }
+                    }
+                }
+                .scale(if (focused) 1.05f else 1f)
                 .border(
                     width = if (focused) 2.dp else 1.dp,
-                    color = if (focused) PickerYellow else Color.Transparent,
+                    color = if (focused) PickerFocus else Color.Transparent,
                     shape = RoundedCornerShape(10.dp),
                 ),
         colors =
@@ -300,12 +349,14 @@ private fun PickerButton(
 private fun SourcePickerRow(
     source: SourceCandidate,
     recommended: Boolean,
+    requester: FocusRequester? = null,
+    onUp: (() -> Unit)? = null,
     onClick: (() -> Unit)?,
 ) {
     var focused by remember(source.id) { mutableStateOf(false) }
     val assessment = SourceRanker.assess(source)
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (focused) 1.015f else 1f,
+        targetValue = if (focused) 1.025f else 1f,
         label = "sourcePickerScale",
     )
     val availability = when {
@@ -319,8 +370,17 @@ private fun SourcePickerRow(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp && onUp != null) {
+                        onUp()
+                        true
+                    } else {
+                        false
+                    }
+                }
                 .background(
                     when {
                         focused -> Color.White.copy(alpha = 0.16f)
@@ -332,7 +392,7 @@ private fun SourcePickerRow(
                 .border(
                     width = if (focused) 2.dp else 1.dp,
                     color = when {
-                        focused -> PickerYellow
+                        focused -> PickerFocus
                         recommended -> PickerGreen.copy(alpha = 0.60f)
                         else -> Color.White.copy(alpha = 0.06f)
                     },

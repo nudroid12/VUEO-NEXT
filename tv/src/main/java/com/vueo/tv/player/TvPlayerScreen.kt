@@ -140,6 +140,7 @@ fun TvPlayerScreen(
     var durationMs by remember(request.cacheKey) { mutableLongStateOf(0L) }
     var controlsVisible by remember(request.cacheKey) { mutableStateOf(true) }
     var sidePanel by remember(request.cacheKey) { mutableStateOf<PlayerSidePanel?>(null) }
+    var panelReturnFocus by remember(request.cacheKey) { mutableStateOf<PlayerSidePanel?>(null) }
     var interactionToken by remember(request.cacheKey) { mutableIntStateOf(0) }
     var hasStartedPlayback by remember(request.cacheKey) { mutableStateOf(false) }
     var waitingForRecovery by remember(request.cacheKey) { mutableStateOf(false) }
@@ -150,6 +151,7 @@ fun TvPlayerScreen(
     var trackPreferencesApplied by remember(request.cacheKey) { mutableStateOf(false) }
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
+    val seekRequester = remember { FocusRequester() }
     val rewindRequester = remember { FocusRequester() }
     val playRequester = remember { FocusRequester() }
     val forwardRequester = remember { FocusRequester() }
@@ -314,6 +316,7 @@ fun TvPlayerScreen(
         positionMs = 0L
         durationMs = 0L
         sidePanel = null
+        panelReturnFocus = null
         controlsVisible = true
         trackPreferencesApplied = false
         activeSkipSegment = null
@@ -411,8 +414,21 @@ fun TvPlayerScreen(
         delay(90)
         when {
             sidePanel != null -> runCatching { firstPanelRequester.requestFocus() }
-            playerError != null -> runCatching { problemRequester.requestFocus() }
-            controlsVisible -> runCatching { playRequester.requestFocus() }
+            playerError != null -> {
+                panelReturnFocus = null
+                runCatching { problemRequester.requestFocus() }
+            }
+            controlsVisible -> {
+                val target =
+                    when (panelReturnFocus) {
+                        PlayerSidePanel.AUDIO -> audioRequester
+                        PlayerSidePanel.SUBTITLES -> subtitleRequester
+                        PlayerSidePanel.SOURCES -> sourcesRequester
+                        null -> playRequester
+                    }
+                runCatching { target.requestFocus() }
+                panelReturnFocus = null
+            }
         }
     }
 
@@ -533,6 +549,7 @@ fun TvPlayerScreen(
                 waitingForRecovery = waitingForRecovery,
                 positionMs = positionMs,
                 durationMs = durationMs,
+                seekRequester = seekRequester,
                 rewindRequester = rewindRequester,
                 playRequester = playRequester,
                 forwardRequester = forwardRequester,
@@ -560,14 +577,17 @@ fun TvPlayerScreen(
                     touchControls()
                 },
                 onAudio = {
+                    panelReturnFocus = PlayerSidePanel.AUDIO
                     sidePanel = PlayerSidePanel.AUDIO
                     interactionToken += 1
                 },
                 onSubtitles = {
+                    panelReturnFocus = PlayerSidePanel.SUBTITLES
                     sidePanel = PlayerSidePanel.SUBTITLES
                     interactionToken += 1
                 },
                 onSources = {
+                    panelReturnFocus = PlayerSidePanel.SOURCES
                     sidePanel = PlayerSidePanel.SOURCES
                     interactionToken += 1
                 },
@@ -674,6 +694,7 @@ fun TvPlayerScreen(
                     }
                 },
                 onSources = {
+                    panelReturnFocus = PlayerSidePanel.SOURCES
                     sidePanel = PlayerSidePanel.SOURCES
                     interactionToken += 1
                 },
@@ -737,7 +758,7 @@ private fun SkipSegmentButton(
                     color = if (focused) PlayerFocus else Color.White.copy(alpha = 0.24f),
                     shape = RoundedCornerShape(999.dp),
                 )
-                .background(PlayerPanel, RoundedCornerShape(999.dp))
+                .background(if (focused) PlayerFocus else PlayerPanel, RoundedCornerShape(999.dp))
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onSkip)
                 .focusable()
@@ -745,7 +766,7 @@ private fun SkipSegmentButton(
     ) {
         Text(
             text = label,
-            color = Color.White,
+            color = if (focused) Color.Black else Color.White,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -762,6 +783,7 @@ private fun PlayerControls(
     waitingForRecovery: Boolean,
     positionMs: Long,
     durationMs: Long,
+    seekRequester: FocusRequester,
     rewindRequester: FocusRequester,
     playRequester: FocusRequester,
     forwardRequester: FocusRequester,
@@ -821,7 +843,7 @@ private fun PlayerControls(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(380.dp)
+                .height(356.dp)
                 .background(
                     Brush.verticalGradient(
                         colors =
@@ -871,7 +893,15 @@ private fun PlayerControls(
             }
 
             Spacer(Modifier.height(16.dp))
-            PlayerSeekBar(positionMs = positionMs, durationMs = durationMs)
+            PlayerSeekBar(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                requester = seekRequester,
+                onSeekBackward = onRewind,
+                onSeekForward = onForward,
+                onPlayPause = onPlayPause,
+                onDown = { playRequester.requestFocus() },
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -903,7 +933,7 @@ private fun PlayerControls(
                     onClick = onRewind,
                     onLeft = { rewindRequester.requestFocus() },
                     onRight = { playRequester.requestFocus() },
-                    onUp = { rewindRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                     onDown = { audioRequester.requestFocus() },
                 )
                 Spacer(Modifier.width(18.dp))
@@ -919,7 +949,7 @@ private fun PlayerControls(
                     primary = true,
                     onLeft = { rewindRequester.requestFocus() },
                     onRight = { forwardRequester.requestFocus() },
-                    onUp = { playRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                     onDown = { subtitleRequester.requestFocus() },
                 )
                 Spacer(Modifier.width(18.dp))
@@ -929,7 +959,7 @@ private fun PlayerControls(
                     onClick = onForward,
                     onLeft = { playRequester.requestFocus() },
                     onRight = { forwardRequester.requestFocus() },
-                    onUp = { forwardRequester.requestFocus() },
+                    onUp = { seekRequester.requestFocus() },
                     onDown = { sourcesRequester.requestFocus() },
                 )
             }
@@ -996,7 +1026,13 @@ private fun PlayerControls(
 private fun PlayerSeekBar(
     positionMs: Long,
     durationMs: Long,
+    requester: FocusRequester,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
+    onPlayPause: () -> Unit,
+    onDown: () -> Unit,
 ) {
+    var focused by remember { mutableStateOf(false) }
     val fraction =
         if (durationMs > 0L) {
             (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
@@ -1008,21 +1044,35 @@ private fun PlayerSeekBar(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(22.dp),
+                .height(34.dp)
+                .focusRequester(requester)
+                .onFocusChanged { focused = it.isFocused }
+                .playerRemoteKeys(
+                    onClick = onPlayPause,
+                    onLeft = onSeekBackward,
+                    onRight = onSeekForward,
+                    onUp = { requester.requestFocus() },
+                    onDown = onDown,
+                )
+                .scale(if (focused) 1.006f else 1f)
+                .focusable(),
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(7.dp)
-                    .background(Color.White.copy(alpha = 0.26f), RoundedCornerShape(999.dp)),
+                    .height(if (focused) 10.dp else 7.dp)
+                    .background(
+                        if (focused) Color.White.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.24f),
+                        RoundedCornerShape(999.dp),
+                    ),
         )
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth(fraction)
-                    .height(8.dp)
+                    .height(if (focused) 11.dp else 8.dp)
                     .background(PlayerGreen, RoundedCornerShape(999.dp)),
         )
         if (durationMs > 0L) {
@@ -1030,14 +1080,19 @@ private fun PlayerSeekBar(
                 modifier =
                     Modifier
                         .fillMaxWidth(fraction)
-                        .height(22.dp),
+                        .height(34.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Box(
                     modifier =
                         Modifier
-                            .size(18.dp)
-                            .background(Color.White, CircleShape),
+                            .size(if (focused) 22.dp else 18.dp)
+                            .background(Color.White, CircleShape)
+                            .border(
+                                width = if (focused) 2.dp else 1.dp,
+                                color = if (focused) Color.Black.copy(alpha = 0.28f) else Color.Transparent,
+                                shape = CircleShape,
+                            ),
                 )
             }
         }
@@ -1139,8 +1194,8 @@ private fun UtilityButton(
     Column(
         modifier =
             Modifier
-                .width(205.dp)
-                .height(64.dp)
+                .width(196.dp)
+                .height(62.dp)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
@@ -1184,6 +1239,10 @@ private fun PlayerButton(
     requester: FocusRequester,
     onClick: () -> Unit,
     primary: Boolean = false,
+    onLeft: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -1192,7 +1251,7 @@ private fun PlayerButton(
             Modifier
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
-                .playerRemoteKeys(onClick = onClick)
+                .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
                 .scale(if (focused) 1.05f else 1f)
                 .background(
                     color =
@@ -1235,6 +1294,11 @@ private fun SourcePickerPanel(
 ) {
     BackHandler(onBack = onClose)
 
+    val restoreIndex =
+        sources.indexOfFirst { source -> source.id == selected?.id && source.isDirectPlayable }
+            .takeIf { it >= 0 }
+            ?: sources.indexOfFirst { it.isDirectPlayable }.coerceAtLeast(0)
+
     RightPanel(title = "Sources", subtitle = "VUEO ranked for fast direct playback") {
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -1249,7 +1313,7 @@ private fun SourcePickerPanel(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .then(if (index == 0) Modifier.focusRequester(firstRequester) else Modifier)
+                            .then(if (index == restoreIndex) Modifier.focusRequester(firstRequester) else Modifier)
                             .onFocusChanged { focused = it.isFocused }
                             .background(
                                 when {
@@ -1332,17 +1396,27 @@ private fun TrackPickerPanel(
 ) {
     BackHandler(onBack = onClose)
 
+    val restoreIndex = options.indexOfFirst { it.selected }.takeIf { it >= 0 } ?: 0
+
     RightPanel(
         title = title,
         subtitle = if (options.isEmpty()) "No tracks available" else "Select with your remote",
     ) {
         if (options.isEmpty()) {
-            Text(
-                text = "No $title tracks are available in this source.",
-                color = PlayerMuted,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(24.dp),
-            )
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = "No $title tracks are available in this source.",
+                    color = PlayerMuted,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(18.dp))
+                PlayerButton(
+                    text = "Close",
+                    requester = firstRequester,
+                    onClick = onClose,
+                    primary = true,
+                )
+            }
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -1354,7 +1428,7 @@ private fun TrackPickerPanel(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .then(if (index == 0) Modifier.focusRequester(firstRequester) else Modifier)
+                                .then(if (index == restoreIndex) Modifier.focusRequester(firstRequester) else Modifier)
                                 .onFocusChanged { focused = it.isFocused }
                                 .background(
                                     when {
@@ -1477,8 +1551,19 @@ private fun PlaybackProblemPanel(
             )
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PlayerButton("Retry", requester, onRetry, primary = true)
-                PlayerButton("Sources", sourcesRequester, onSources)
+                PlayerButton(
+                    text = "Retry",
+                    requester = requester,
+                    onClick = onRetry,
+                    primary = true,
+                    onRight = { sourcesRequester.requestFocus() },
+                )
+                PlayerButton(
+                    text = "Sources",
+                    requester = sourcesRequester,
+                    onClick = onSources,
+                    onLeft = { requester.requestFocus() },
+                )
             }
         }
     }
