@@ -1,6 +1,12 @@
 package com.vueo.tv.data
 
 import android.content.Context
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaPreferences
+import com.vueo.shared.core.storage.LibraryStore
+import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.tv.library.TvLibraryStore
+import com.vueo.tv.player.TvPlaybackStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -22,10 +28,27 @@ import java.util.Calendar
 class TvHomeRepository(
     context: Context,
 ) {
+    private val appContext = context.applicationContext
+
     private val prefs =
-        context.applicationContext.getSharedPreferences(
+        appContext.getSharedPreferences(
             PREFS_NAME,
             Context.MODE_PRIVATE,
+        )
+
+    private val profileStore = ProfileStore(appContext)
+    private val dnaPreferences =
+        UserDnaPreferences(
+            context = appContext,
+            prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+        )
+    private val dnaEngine =
+        UserDnaEngine(
+            LibraryStore(
+                context = appContext,
+                prefsName = TvLibraryStore.PREFS_NAME,
+                watchlistStorageKey = TvLibraryStore.KEY_LIBRARY,
+            ),
         )
 
     fun cached(): TvHomeData? =
@@ -84,17 +107,19 @@ class TvHomeRepository(
             error("No VUEO TV catalogs could be loaded.")
         }
 
+        val finalRows = personalize(rows)
+
         val hero =
-            rows
+            finalRows
                 .asSequence()
                 .flatMap { it.items.asSequence() }
                 .firstOrNull { !it.background.isNullOrBlank() }
-                ?: rows.first().items.first()
+                ?: finalRows.first().items.first()
 
         val home =
             TvHomeData(
                 hero = hero,
-                rows = rows,
+                rows = finalRows,
                 providerName = "Cinemeta",
                 refreshedAtEpochMs = System.currentTimeMillis(),
             )
@@ -126,6 +151,43 @@ class TvHomeRepository(
                 items = items,
             )
         }
+
+    private fun personalize(
+        rows: List<TvCatalogRow>,
+    ): List<TvCatalogRow> {
+        val profileId = profileStore.activeProfileId()
+        if (!dnaPreferences.shouldPersonalizeRecommendations(profileId)) {
+            return rows
+        }
+
+        val dna = dnaEngine.build()
+        val ranked =
+            rows
+                .asSequence()
+                .flatMap { it.items.asSequence() }
+                .distinctBy { "${it.type}:${it.id}" }
+                .mapNotNull { media ->
+                    dnaEngine.matchPercent(media, dna)
+                        ?.let { score -> media to score }
+                }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .take(MAX_ITEMS_PER_ROW)
+                .toList()
+
+        if (ranked.size < MIN_PERSONALIZED_ITEMS) {
+            return rows
+        }
+
+        return listOf(
+            TvCatalogRow(
+                id = "for-you",
+                title = "For You",
+                providerName = "VUEO DNA",
+                items = ranked,
+            ),
+        ) + rows
+    }
 
     private fun persist(home: TvHomeData) {
         prefs.edit()
@@ -180,6 +242,7 @@ class TvHomeRepository(
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val READ_TIMEOUT_MS = 7_000
         private const val MAX_ITEMS_PER_ROW = 24
+        private const val MIN_PERSONALIZED_ITEMS = 6
     }
 }
 

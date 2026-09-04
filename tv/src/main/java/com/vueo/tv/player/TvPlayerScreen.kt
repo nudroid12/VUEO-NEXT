@@ -67,6 +67,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.vueo.shared.core.player.PlayerSkipRepository
+import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
@@ -143,6 +145,9 @@ fun TvPlayerScreen(
     var waitingForRecovery by remember(request.cacheKey) { mutableStateOf(false) }
     var audioLabel by remember(request.cacheKey) { mutableStateOf("Audio") }
     var subtitleLabel by remember(request.cacheKey) { mutableStateOf("Subtitles") }
+    var skipSegments by remember(request.cacheKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
+    var activeSkipSegment by remember(request.cacheKey) { mutableStateOf<PlayerSkipSegment?>(null) }
+    var trackPreferencesApplied by remember(request.cacheKey) { mutableStateOf(false) }
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
     val rewindRequester = remember { FocusRequester() }
@@ -252,6 +257,15 @@ fun TvPlayerScreen(
             }
 
             override fun onTracksChanged(tracks: Tracks) {
+                if (!trackPreferencesApplied) {
+                    trackPreferencesApplied = true
+                    applyStoredTrackPreferences(
+                        player = player,
+                        tracks = tracks,
+                        settingsStore = settingsStore,
+                        contentId = request.cacheKey,
+                    )
+                }
                 audioLabel = selectedTrackLabel(tracks, C.TRACK_TYPE_AUDIO, "Audio")
                 subtitleLabel = selectedTrackLabel(tracks, C.TRACK_TYPE_TEXT, "Subtitles")
             }
@@ -301,6 +315,8 @@ fun TvPlayerScreen(
         durationMs = 0L
         sidePanel = null
         controlsVisible = true
+        trackPreferencesApplied = false
+        activeSkipSegment = null
 
         if (initialSource.isDirectPlayable) {
             sources = listOf(initialSource)
@@ -352,10 +368,33 @@ fun TvPlayerScreen(
         }
     }
 
+    LaunchedEffect(request.cacheKey) {
+        skipSegments = emptyList()
+        activeSkipSegment = null
+        if (!settingsStore.skipSegmentsEnabled()) return@LaunchedEffect
+
+        val season = request.season ?: return@LaunchedEffect
+        val episode = request.episode ?: return@LaunchedEffect
+        val imdbId = request.imdbIdForSkip() ?: return@LaunchedEffect
+
+        skipSegments =
+            withContext(Dispatchers.IO) {
+                PlayerSkipRepository.segments(
+                    imdbId = imdbId,
+                    season = season,
+                    episode = episode,
+                )
+            }
+    }
+
     LaunchedEffect(player) {
         while (isActive) {
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
+            activeSkipSegment =
+                skipSegments.firstOrNull { segment ->
+                    positionMs >= segment.startMs && positionMs < segment.endMs
+                }
             if (positionMs > 0L) saveProgress()
             delay(1_000)
         }
@@ -541,6 +580,19 @@ fun TvPlayerScreen(
             )
         }
 
+        activeSkipSegment?.let { segment ->
+            SkipSegmentButton(
+                segment = segment,
+                controlsVisible = controlsVisible,
+                onSkip = {
+                    player.seekTo(segment.endMs)
+                    activeSkipSegment = null
+                    touchControls()
+                },
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
+        }
+
         when (sidePanel) {
             PlayerSidePanel.SOURCES ->
                 SourcePickerPanel(
@@ -565,7 +617,12 @@ fun TvPlayerScreen(
                     options = trackOptions(player.currentTracks, C.TRACK_TYPE_AUDIO, allowOff = false),
                     firstRequester = firstPanelRequester,
                     onSelect = { option ->
-                        option.choice?.let { applyTrackChoice(player, C.TRACK_TYPE_AUDIO, it) }
+                        option.choice?.let { choice ->
+                            applyTrackChoice(player, C.TRACK_TYPE_AUDIO, choice)
+                            val selectionId = trackSelectionId(choice)
+                            settingsStore.setAudioSelection(request.cacheKey, selectionId)
+                            settingsStore.setLastAudioSelection(selectionId)
+                        }
                         audioLabel = selectedTrackLabel(player.currentTracks, C.TRACK_TYPE_AUDIO, "Audio")
                         sidePanel = null
                         touchControls()
@@ -584,8 +641,13 @@ fun TvPlayerScreen(
                     onSelect = { option ->
                         if (option.choice == null) {
                             disableTrackType(player, C.TRACK_TYPE_TEXT)
+                            settingsStore.setSubtitleSelection(request.cacheKey, TRACK_SELECTION_OFF)
+                            settingsStore.setLastSubtitleSelection(TRACK_SELECTION_OFF)
                         } else {
                             applyTrackChoice(player, C.TRACK_TYPE_TEXT, option.choice)
+                            val selectionId = trackSelectionId(option.choice)
+                            settingsStore.setSubtitleSelection(request.cacheKey, selectionId)
+                            settingsStore.setLastSubtitleSelection(selectionId)
                         }
                         subtitleLabel = selectedTrackLabel(player.currentTracks, C.TRACK_TYPE_TEXT, "Subtitles")
                         sidePanel = null
@@ -643,6 +705,50 @@ private fun LoadingPlayerState(
             Spacer(Modifier.height(8.dp))
             Text(message, color = PlayerMuted, fontSize = 14.sp)
         }
+    }
+}
+
+@Composable
+private fun SkipSegmentButton(
+    segment: PlayerSkipSegment,
+    controlsVisible: Boolean,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember(segment.key) { mutableStateOf(false) }
+    val label =
+        when (segment.kind.name) {
+            "INTRO" -> "Skip Intro"
+            "RECAP" -> "Skip Recap"
+            "ENDING" -> "Skip Ending"
+            else -> "Skip"
+        }
+
+    Box(
+        modifier =
+            modifier
+                .padding(
+                    end = 56.dp,
+                    bottom = if (controlsVisible) 356.dp else 48.dp,
+                )
+                .scale(if (focused) 1.06f else 1f)
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) PlayerFocus else Color.White.copy(alpha = 0.24f),
+                    shape = RoundedCornerShape(999.dp),
+                )
+                .background(PlayerPanel, RoundedCornerShape(999.dp))
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(onClick = onSkip)
+                .focusable()
+                .padding(horizontal = 22.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -1498,6 +1604,73 @@ private fun disableTrackType(
             .build()
 }
 
+private fun applyStoredTrackPreferences(
+    player: Player,
+    tracks: Tracks,
+    settingsStore: SettingsStore,
+    contentId: String,
+) {
+    val audioChoices = trackChoices(tracks, C.TRACK_TYPE_AUDIO)
+    val savedAudio = settingsStore.audioSelection(contentId)
+    audioChoices
+        .firstOrNull { trackSelectionId(it) == savedAudio }
+        ?.let { applyTrackChoice(player, C.TRACK_TYPE_AUDIO, it) }
+
+    val subtitleChoices = trackChoices(tracks, C.TRACK_TYPE_TEXT)
+    val savedSubtitle = settingsStore.subtitleSelection(contentId)
+
+    when {
+        !settingsStore.subtitlesOnByDefault() ->
+            disableTrackType(player, C.TRACK_TYPE_TEXT)
+
+        savedSubtitle == TRACK_SELECTION_OFF ->
+            disableTrackType(player, C.TRACK_TYPE_TEXT)
+
+        !savedSubtitle.isNullOrBlank() ->
+            subtitleChoices
+                .firstOrNull { trackSelectionId(it) == savedSubtitle }
+                ?.let { applyTrackChoice(player, C.TRACK_TYPE_TEXT, it) }
+
+        settingsStore.autoSelectPreferredSubtitle() -> {
+            val languageCode =
+                settingsStore.preferredSubtitleLanguage().languageCode
+                    ?: return
+            subtitleChoices
+                .firstOrNull { choice ->
+                    choice.group
+                        .getTrackFormat(choice.trackIndex)
+                        .language
+                        ?.lowercase()
+                        ?.let { language ->
+                            language == languageCode || language.startsWith("$languageCode-")
+                        } == true
+                }
+                ?.let { applyTrackChoice(player, C.TRACK_TYPE_TEXT, it) }
+        }
+    }
+}
+
+private fun trackSelectionId(
+    choice: TrackChoice,
+): String {
+    val format = choice.group.getTrackFormat(choice.trackIndex)
+    return format.id
+        ?.takeIf { it.isNotBlank() }
+        ?: listOf(
+            format.language.orEmpty(),
+            format.label.orEmpty(),
+            format.codecs.orEmpty(),
+            choice.trackIndex.toString(),
+        ).joinToString("|")
+}
+
+private fun TvPlaybackRequest.imdbIdForSkip(): String? =
+    sequenceOf(media.id, videoId)
+        .mapNotNull { value ->
+            IMDB_ID_REGEX.find(value)?.value?.lowercase()
+        }
+        .firstOrNull()
+
 private fun selectedTrackLabel(
     tracks: Tracks,
     type: Int,
@@ -1581,3 +1754,5 @@ private fun formatTime(ms: Long): String {
 }
 
 private const val SEEK_STEP_MS = 10_000L
+private const val TRACK_SELECTION_OFF = "__off__"
+private val IMDB_ID_REGEX = Regex("tt\\d{5,10}", RegexOption.IGNORE_CASE)

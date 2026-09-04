@@ -53,15 +53,18 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
+import com.vueo.shared.core.storage.SubtitleLanguage
 import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
+import com.vueo.tv.player.TvPlaybackStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -119,6 +122,13 @@ fun TvUserHubScreen(
         remember(context) {
             PluginStore(context.applicationContext)
         }
+    val dnaPreferences =
+        remember(context) {
+            UserDnaPreferences(
+                context = context.applicationContext,
+                prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+            )
+        }
 
     val firstProfileRequester = remember { FocusRequester() }
     var profiles by remember { mutableStateOf(profileStore.profiles()) }
@@ -135,6 +145,27 @@ fun TvUserHubScreen(
     }
     var quality by remember(activeProfileId) {
         mutableStateOf(settingsStore.preferredQuality())
+    }
+    var skipSegmentsEnabled by remember(activeProfileId) {
+        mutableStateOf(settingsStore.skipSegmentsEnabled())
+    }
+    var preferredSubtitle by remember(activeProfileId) {
+        mutableStateOf(settingsStore.preferredSubtitleLanguage())
+    }
+    var subtitlesByDefault by remember(activeProfileId) {
+        mutableStateOf(settingsStore.subtitlesOnByDefault())
+    }
+    var autoSelectSubtitle by remember(activeProfileId) {
+        mutableStateOf(settingsStore.autoSelectPreferredSubtitle())
+    }
+    var userDnaEnabled by remember(activeProfileId) {
+        mutableStateOf(dnaPreferences.userDnaEnabled(activeProfileId))
+    }
+    var personalizedRecommendations by remember(activeProfileId) {
+        mutableStateOf(dnaPreferences.personalizedRecommendationsEnabled(activeProfileId))
+    }
+    var showDnaMatch by remember(activeProfileId) {
+        mutableStateOf(dnaPreferences.showDnaMatchEnabled(activeProfileId))
     }
     var askOnStartup by remember {
         mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
@@ -174,6 +205,13 @@ fun TvUserHubScreen(
         recoveryEnabled = settingsStore.autoSourceRecoveryEnabled()
         autoNextEnabled = settingsStore.autoPlayNextEpisodeEnabled()
         quality = settingsStore.preferredQuality()
+        skipSegmentsEnabled = settingsStore.skipSegmentsEnabled()
+        preferredSubtitle = settingsStore.preferredSubtitleLanguage()
+        subtitlesByDefault = settingsStore.subtitlesOnByDefault()
+        autoSelectSubtitle = settingsStore.autoSelectPreferredSubtitle()
+        userDnaEnabled = dnaPreferences.userDnaEnabled(profileId)
+        personalizedRecommendations = dnaPreferences.personalizedRecommendationsEnabled(profileId)
+        showDnaMatch = dnaPreferences.showDnaMatchEnabled(profileId)
         askOnStartup = profileStore.askWhoIsWatchingOnStartup()
         onProfileChanged(profileId)
     }
@@ -399,6 +437,44 @@ fun TvUserHubScreen(
                     )
 
                     SettingButton(
+                        title = "Skip Intro / Recap / Ending",
+                        value = if (skipSegmentsEnabled) "On" else "Off",
+                        onClick = {
+                            skipSegmentsEnabled = !skipSegmentsEnabled
+                            settingsStore.setSkipSegmentsEnabled(skipSegmentsEnabled)
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Subtitles by default",
+                        value = if (subtitlesByDefault) "On" else "Off",
+                        onClick = {
+                            subtitlesByDefault = !subtitlesByDefault
+                            settingsStore.setSubtitlesOnByDefault(subtitlesByDefault)
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Preferred subtitle",
+                        value = preferredSubtitle.label,
+                        onClick = {
+                            val values = SubtitleLanguage.entries
+                            val next = values[(values.indexOf(preferredSubtitle) + 1) % values.size]
+                            preferredSubtitle = next
+                            settingsStore.setPreferredSubtitleLanguage(next)
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Auto select preferred subtitle",
+                        value = if (autoSelectSubtitle) "On" else "Off",
+                        onClick = {
+                            autoSelectSubtitle = !autoSelectSubtitle
+                            settingsStore.setAutoSelectPreferredSubtitle(autoSelectSubtitle)
+                        },
+                    )
+
+                    SettingButton(
                         title = "Preferred quality",
                         value = quality.label,
                         onClick = {
@@ -411,6 +487,55 @@ fun TvUserHubScreen(
                             quality = next
                             settingsStore.setPreferredQuality(next)
                         },
+                    )
+                }
+            }
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "VUEO DNA",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    SettingButton(
+                        title = "User DNA",
+                        value = if (userDnaEnabled) "On" else "Off",
+                        onClick = {
+                            userDnaEnabled = !userDnaEnabled
+                            dnaPreferences.setUserDnaEnabled(activeProfileId, userDnaEnabled)
+                        },
+                    )
+
+                    SettingButton(
+                        title = "Personalized recommendations",
+                        value = if (personalizedRecommendations) "On" else "Off",
+                        onClick = {
+                            personalizedRecommendations = !personalizedRecommendations
+                            dnaPreferences.setPersonalizedRecommendationsEnabled(
+                                activeProfileId,
+                                personalizedRecommendations,
+                            )
+                        },
+                    )
+
+                    SettingButton(
+                        title = "DNA Match on details",
+                        value = if (showDnaMatch) "On" else "Off",
+                        onClick = {
+                            showDnaMatch = !showDnaMatch
+                            dnaPreferences.setShowDnaMatchEnabled(activeProfileId, showDnaMatch)
+                        },
+                    )
+
+                    Text(
+                        text = "DNA is calculated locally from this profile's History and My List.",
+                        color = HubMuted,
+                        fontSize = 12.sp,
                     )
                 }
             }

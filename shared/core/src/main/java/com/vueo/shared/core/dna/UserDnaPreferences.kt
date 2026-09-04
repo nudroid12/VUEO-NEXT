@@ -15,11 +15,12 @@ import com.vueo.shared.core.storage.ProfileStore
  */
 class UserDnaPreferences(
     context: Context,
+    prefsName: String = PREFS_NAME,
 ) {
     private val prefs =
         context.applicationContext
             .getSharedPreferences(
-                PREFS_NAME,
+                prefsName,
                 Context.MODE_PRIVATE,
             )
 

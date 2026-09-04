@@ -43,14 +43,21 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaPreferences
+import com.vueo.shared.core.storage.LibraryStore
+import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.player.TvEpisodeRef
 import com.vueo.tv.player.TvPlaybackRequest
+import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.focus.tvVerticalFocus
 import kotlinx.coroutines.delay
@@ -90,6 +97,29 @@ fun TvDetailScreen(
     var selectedSeason by remember(seed.type, seed.id) { mutableStateOf<Int?>(null) }
 
     val media = details?.media ?: seed
+    val context = LocalContext.current
+    val dnaMatch =
+        remember(media, context) {
+            val appContext = context.applicationContext
+            val profileStore = ProfileStore(appContext)
+            val profileId = profileStore.activeProfileId()
+            val preferences =
+                UserDnaPreferences(
+                    context = appContext,
+                    prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+                )
+            if (!preferences.shouldShowDnaMatch(profileId)) {
+                null
+            } else {
+                UserDnaEngine(
+                    LibraryStore(
+                        context = appContext,
+                        prefsName = TvLibraryStore.PREFS_NAME,
+                        watchlistStorageKey = TvLibraryStore.KEY_LIBRARY,
+                    ),
+                ).matchPercent(media)
+            }
+        }
     val seasons = details?.seasons.orEmpty()
     val episodes =
         selectedSeason
@@ -191,6 +221,7 @@ fun TvDetailScreen(
                     media = media,
                     runtime = details?.runtime,
                     director = details?.director.orEmpty(),
+                    dnaMatch = dnaMatch,
                     playRequester = playRequester,
                     listRequester = listRequester,
                     backRequester = backRequester,
@@ -330,6 +361,7 @@ private fun DetailHero(
     media: TvMediaItem,
     runtime: String?,
     director: List<String>,
+    dnaMatch: Int?,
     playRequester: FocusRequester,
     listRequester: FocusRequester,
     backRequester: FocusRequester,
@@ -375,6 +407,15 @@ private fun DetailHero(
                 text = "Director • ${director.take(2).joinToString(", ")}",
                 color = DetailMuted.copy(alpha = 0.84f),
                 fontSize = 12.sp,
+            )
+        }
+        dnaMatch?.let { score ->
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "VUEO DNA Match • $score%",
+                color = DetailGreen,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
             )
         }
         Spacer(Modifier.height(22.dp))

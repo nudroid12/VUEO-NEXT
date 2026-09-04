@@ -465,7 +465,7 @@ private fun VueoTvHome(
         mutableStateOf<String?>(null)
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(focusRestoreToken) {
         runCatching {
             repository.refresh()
         }
