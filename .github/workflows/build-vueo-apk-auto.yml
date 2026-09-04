@@ -141,24 +141,6 @@ jobs:
             exit 1
           }
 
-      - name: Upload Mobile debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VUEO-NEXT-Mobile-Debug-${{ github.run_number }}
-          path: mobile/build/outputs/apk/debug/mobile-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload TV debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: VUEO-NEXT-TV-Debug-${{ github.run_number }}
-          path: tv/build/outputs/apk/debug/tv-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Detect updater readiness
         id: updater
         if: github.event_name != 'pull_request'
@@ -394,3 +376,4 @@ jobs:
             echo "| Updater ready | ${{ steps.updater.outputs.ready || 'not-applicable' }} |"
             echo "| Updater release | vueo-dev |"
           } >> "$GITHUB_STEP_SUMMARY"
+          
