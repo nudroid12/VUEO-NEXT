@@ -51,7 +51,15 @@ android {
                 signingConfig =
                     signingConfigs.getByName("vueoRelease")
             }
-            isMinifyEnabled = false
+            // TV release APKs are distributed directly, so keep them lean.
+            // R8 removes unreachable code while resource shrinking removes
+            // resources made unused by minification.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -75,13 +83,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
     implementation("androidx.media3:media3-exoplayer-dash:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
 }
