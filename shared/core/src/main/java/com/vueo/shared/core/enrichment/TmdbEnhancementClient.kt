@@ -864,7 +864,8 @@ object TmdbEnhancementClient {
 
         val resolved =
             TmdbResolver.resolve(
-                media = media,
+                rawId = media.id,
+                mediaType = media.type,
                 apiKey = apiKey,
             )
                 ?: return null

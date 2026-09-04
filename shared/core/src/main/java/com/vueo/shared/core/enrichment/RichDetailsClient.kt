@@ -113,7 +113,8 @@ object RichDetailsClient {
         apiKey: String,
     ): String? {
         TmdbResolver.resolve(
-            media = media,
+            rawId = media.id,
+            mediaType = media.type,
             apiKey = apiKey,
         )?.let {
             return it
@@ -126,10 +127,8 @@ object RichDetailsClient {
 
         if (embeddedImdbId != null) {
             TmdbResolver.resolve(
-                media =
-                    media.copy(
-                        id = embeddedImdbId
-                    ),
+                rawId = embeddedImdbId,
+                mediaType = media.type,
                 apiKey = apiKey,
             )?.let {
                 return it
