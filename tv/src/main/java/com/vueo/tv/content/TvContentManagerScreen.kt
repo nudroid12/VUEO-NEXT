@@ -56,7 +56,6 @@ import kotlinx.coroutines.launch
 private val ManagerBlack = Color(0xFF050706)
 private val ManagerPanel = Color(0xFF101412)
 private val ManagerPanelRaised = Color(0xFF151B17)
-private val ManagerYellow = Color(0xFFD6FF00)
 private val ManagerGreen = Color(0xFF84E100)
 private val ManagerMuted = Color(0xFFAAB2AD)
 private val ManagerRed = Color(0xFFFF7A73)
@@ -134,7 +133,7 @@ fun TvContentManagerScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(start = 58.dp, end = 58.dp, top = 94.dp, bottom = 34.dp),
+                    .padding(start = 62.dp, end = 62.dp, top = 100.dp, bottom = 38.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -145,7 +144,7 @@ fun TvContentManagerScreen(
                     Text(
                         text = "Content Manager",
                         color = Color.White,
-                        fontSize = 34.sp,
+                        fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -187,7 +186,7 @@ fun TvContentManagerScreen(
                     onValueChange = { input = it },
                     modifier =
                         Modifier
-                            .width(760.dp)
+                            .width(800.dp)
                             .focusRequester(inputRequester)
                             .tvVerticalFocus(
                                 up = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
@@ -209,8 +208,8 @@ fun TvContentManagerScreen(
                         OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            cursorColor = ManagerYellow,
-                            focusedBorderColor = ManagerYellow,
+                            cursorColor = Color.White,
+                            focusedBorderColor = Color.White,
                             unfocusedBorderColor = Color.White.copy(alpha = 0.24f),
                             focusedContainerColor = ManagerPanelRaised,
                             unfocusedContainerColor = ManagerPanel,
@@ -247,7 +246,7 @@ fun TvContentManagerScreen(
                     },
                     modifier = Modifier.focusRequester(installRequester),
                     shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ManagerGreen, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                 ) {
                     Text(if (installing) "Installing..." else "Install", fontWeight = FontWeight.Bold)
                 }
@@ -278,7 +277,7 @@ fun TvContentManagerScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 46.dp),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    CircularProgressIndicator(color = ManagerYellow)
+                    CircularProgressIndicator(color = Color.White)
                 }
             } else {
                 when (mode) {
@@ -361,7 +360,7 @@ private fun ManagerModeChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "managerModeScale")
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "managerModeScale")
     val background by animateColorAsState(
         if (selected) ManagerGreen.copy(alpha = 0.18f) else ManagerPanel,
         label = "managerModeBackground",
@@ -379,7 +378,7 @@ private fun ManagerModeChip(
                 .background(background, RoundedCornerShape(9.dp))
                 .border(
                     width = 1.dp,
-                    color = if (focused || selected) ManagerYellow.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.12f),
+                    color = if (focused || selected) Color.White.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.12f),
                     shape = RoundedCornerShape(9.dp),
                 )
                 .padding(horizontal = 15.dp, vertical = 9.dp),
@@ -479,7 +478,7 @@ private fun RepositoryHeader(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "repoScale")
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "repoScale")
 
     Row(
         modifier =
@@ -492,10 +491,10 @@ private fun RepositoryHeader(
                 .background(ManagerPanelRaised, RoundedCornerShape(11.dp))
                 .border(
                     1.dp,
-                    if (focused) ManagerYellow else Color.White.copy(alpha = 0.12f),
+                    if (focused) Color.White else Color.White.copy(alpha = 0.12f),
                     RoundedCornerShape(11.dp),
                 )
-                .padding(horizontal = 18.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -530,7 +529,7 @@ private fun ProviderCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "providerScale")
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "providerScale")
 
     Row(
         modifier =
@@ -544,10 +543,10 @@ private fun ProviderCard(
                 .background(ManagerPanel, RoundedCornerShape(10.dp))
                 .border(
                     1.dp,
-                    if (focused) ManagerYellow.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.08f),
+                    if (focused) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.08f),
                     RoundedCornerShape(10.dp),
                 )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -586,7 +585,7 @@ private fun ManagerToggleCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "managerCardScale")
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "managerCardScale")
 
     Row(
         modifier =
@@ -599,10 +598,10 @@ private fun ManagerToggleCard(
                 .background(ManagerPanel, RoundedCornerShape(10.dp))
                 .border(
                     1.dp,
-                    if (focused) ManagerYellow.copy(alpha = 0.78f) else Color.White.copy(alpha = 0.10f),
+                    if (focused) Color.White.copy(alpha = 0.78f) else Color.White.copy(alpha = 0.10f),
                     RoundedCornerShape(10.dp),
                 )
-                .padding(horizontal = 17.dp, vertical = 13.dp),
+                .padding(horizontal = 19.dp, vertical = 15.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

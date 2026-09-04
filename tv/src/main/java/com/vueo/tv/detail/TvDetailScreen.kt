@@ -66,7 +66,6 @@ import kotlinx.coroutines.launch
 private val DetailBlack = Color(0xFF050706)
 private val DetailPanel = Color(0xFF101412)
 private val DetailGreen = Color(0xFF84E100)
-private val DetailYellow = Color(0xFFD6FF00)
 private val DetailMuted = Color(0xFFAAB2AD)
 
 @Composable
@@ -86,7 +85,6 @@ fun TvDetailScreen(
         }
     val playRequester = remember { FocusRequester() }
     val listRequester = remember { FocusRequester() }
-    val backRequester = remember { FocusRequester() }
     val seasonRequester = remember { FocusRequester() }
     val firstEpisodeRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
@@ -177,14 +175,14 @@ fun TvDetailScreen(
             url = media.background ?: media.poster,
             contentDescription = media.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxWidth().height(570.dp),
+            modifier = Modifier.fillMaxWidth().height(640.dp),
         )
 
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(570.dp)
+                    .height(640.dp)
                     .background(
                         Brush.horizontalGradient(
                             listOf(
@@ -199,7 +197,7 @@ fun TvDetailScreen(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(610.dp)
+                    .height(680.dp)
                     .background(
                         Brush.verticalGradient(
                             listOf(
@@ -213,7 +211,7 @@ fun TvDetailScreen(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().padding(top = 76.dp),
+            modifier = Modifier.fillMaxSize().padding(top = 82.dp),
             contentPadding = PaddingValues(bottom = 56.dp),
         ) {
             item {
@@ -224,7 +222,6 @@ fun TvDetailScreen(
                     dnaMatch = dnaMatch,
                     playRequester = playRequester,
                     listRequester = listRequester,
-                    backRequester = backRequester,
                     upRequester = navRequesters.getValue("Home"),
                     inMyList = isInMyList,
                     onToggleMyList = onToggleMyList,
@@ -238,7 +235,6 @@ fun TvDetailScreen(
                             }
                         onPlay(playbackRequest(firstPlayableEpisode))
                     },
-                    onBack = onBack,
                 )
             }
 
@@ -364,24 +360,22 @@ private fun DetailHero(
     dnaMatch: Int?,
     playRequester: FocusRequester,
     listRequester: FocusRequester,
-    backRequester: FocusRequester,
     upRequester: FocusRequester,
     inMyList: Boolean,
     onToggleMyList: () -> Boolean,
     downRequester: FocusRequester?,
     onPlay: () -> Unit,
-    onBack: () -> Unit,
 ) {
     Column(
         modifier =
             Modifier
-                .width(760.dp)
-                .padding(start = 58.dp, top = 78.dp, bottom = 38.dp),
+                .width(820.dp)
+                .padding(start = 62.dp, top = 88.dp, bottom = 42.dp),
     ) {
         Text(
             text = media.name,
             color = Color.White,
-            fontSize = 42.sp,
+            fontSize = 46.sp,
             fontWeight = FontWeight.Black,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -436,13 +430,6 @@ private fun DetailHero(
                 downRequester = downRequester,
                 onClick = { saved = onToggleMyList() },
             )
-            DetailActionButton(
-                text = "Back",
-                requester = backRequester,
-                upRequester = upRequester,
-                downRequester = downRequester,
-                onClick = onBack,
-            )
         }
     }
 }
@@ -469,7 +456,7 @@ private fun DetailActionButton(
     primary: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "detailActionScale")
+    val scale by animateFloatAsState(if (focused) 1.065f else 1f, label = "detailActionScale")
 
     Button(
         onClick = onClick,
@@ -481,7 +468,7 @@ private fun DetailActionButton(
                 .scale(scale)
                 .border(
                     width = 1.dp,
-                    color = if (focused) DetailYellow else Color.Transparent,
+                    color = if (focused) Color.White else Color.Transparent,
                     shape = RoundedCornerShape(9.dp),
                 ),
         shape = RoundedCornerShape(9.dp),
@@ -504,8 +491,8 @@ private fun DetailSection(
     Column(
         modifier =
             Modifier
-                .width(900.dp)
-                .padding(horizontal = 58.dp, vertical = 14.dp),
+                .width(980.dp)
+                .padding(horizontal = 62.dp, vertical = 16.dp),
     ) {
         Text(
             text = title,
@@ -530,7 +517,7 @@ private fun SectionTitle(title: String) {
         color = Color.White,
         fontSize = 20.sp,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 58.dp, vertical = 6.dp),
+        modifier = Modifier.padding(horizontal = 62.dp, vertical = 7.dp),
     )
 }
 
@@ -546,7 +533,7 @@ private fun SeasonChip(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "seasonScale")
     val borderColor by animateColorAsState(
-        if (focused) DetailYellow else Color.Transparent,
+        if (focused) Color.White else Color.Transparent,
         label = "seasonBorder",
     )
 
@@ -582,9 +569,9 @@ private fun EpisodeCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "episodeScale")
+    val scale by animateFloatAsState(if (focused) 1.03f else 1f, label = "episodeScale")
     val borderColor by animateColorAsState(
-        if (focused) DetailYellow else Color.White.copy(alpha = 0.08f),
+        if (focused) Color.White else Color.White.copy(alpha = 0.08f),
         label = "episodeBorder",
     )
 
@@ -592,7 +579,7 @@ private fun EpisodeCard(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(horizontal = 58.dp, vertical = 7.dp)
+                .padding(horizontal = 62.dp, vertical = 9.dp)
                 .scale(scale)
                 .tvVerticalFocus(up = upRequester)
                 .onFocusChanged { focused = it.isFocused }
@@ -607,9 +594,9 @@ private fun EpisodeCard(
             url = episode.thumbnail,
             contentDescription = episode.title,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.width(180.dp).height(100.dp),
+            modifier = Modifier.width(200.dp).height(112.dp),
         )
-        Column(modifier = Modifier.width(650.dp).padding(start = 16.dp)) {
+        Column(modifier = Modifier.width(690.dp).padding(start = 18.dp)) {
             Text(
                 text = if (episode.episode > 0) "${episode.episode}. ${episode.title}" else episode.title,
                 color = Color.White,

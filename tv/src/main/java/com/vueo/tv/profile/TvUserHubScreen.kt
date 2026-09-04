@@ -70,7 +70,6 @@ import kotlinx.coroutines.launch
 
 private val HubBlack = Color(0xFF050706)
 private val HubPanel = Color(0xFF101412)
-private val HubYellow = Color(0xFFD6FF00)
 private val HubGreen = Color(0xFF84E100)
 private val HubMuted = Color(0xFFAAB2AD)
 
@@ -320,14 +319,14 @@ fun TvUserHubScreen(
                     end = 58.dp,
                     bottom = 48.dp,
                 ),
-            verticalArrangement = Arrangement.spacedBy(26.dp),
+            verticalArrangement = Arrangement.spacedBy(30.dp),
         ) {
             item {
                 Column {
                     Text(
                         text = "Profiles & Settings",
                         color = Color.White,
-                        fontSize = 34.sp,
+                        fontSize = 38.sp,
                         fontWeight = FontWeight.Black,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -344,12 +343,12 @@ fun TvUserHubScreen(
                     Text(
                         text = "Who's Watching",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Spacer(Modifier.height(12.dp))
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
                     ) {
                         itemsIndexed(
                             profiles,
@@ -405,7 +404,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "Playback",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -498,7 +497,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "VUEO DNA",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -547,7 +546,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "App",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -578,7 +577,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "Metadata & Enhancements",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -659,7 +658,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "Backup & Migration",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -724,7 +723,7 @@ fun TvUserHubScreen(
                     Text(
                         text = "Profile Security",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                     )
 
@@ -789,7 +788,7 @@ fun TvUserHubScreen(
                         Text(
                             text = "Recent History",
                             color = Color.White,
-                            fontSize = 20.sp,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                         )
                         Button(
@@ -951,11 +950,11 @@ private fun ApiKeyField(
             OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                focusedBorderColor = HubYellow,
+                focusedBorderColor = Color.White,
                 unfocusedBorderColor = Color.White.copy(alpha = 0.20f),
-                focusedLabelColor = HubYellow,
+                focusedLabelColor = Color.White,
                 unfocusedLabelColor = HubMuted,
-                cursorColor = HubYellow,
+                cursorColor = Color.White,
             ),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -978,7 +977,7 @@ private fun ProfileCard(
     Column(
         modifier =
             modifier
-                .width(142.dp)
+                .width(168.dp)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onClick)
@@ -988,8 +987,8 @@ private fun ProfileCard(
         Box(
             modifier =
                 Modifier
-                    .width(104.dp)
-                    .height(104.dp)
+                    .width(120.dp)
+                    .height(120.dp)
                     .background(
                         if (selected) HubGreen.copy(alpha = 0.18f) else HubPanel,
                         CircleShape,
@@ -997,7 +996,7 @@ private fun ProfileCard(
                     .border(
                         width = if (focused || selected) 2.dp else 1.dp,
                         color =
-                            if (focused) HubYellow
+                            if (focused) Color.White
                             else if (selected) HubGreen
                             else Color.White.copy(alpha = 0.12f),
                         shape = CircleShape,
@@ -1012,7 +1011,7 @@ private fun ProfileCard(
                         ?.uppercase()
                         ?: "V",
                 color = Color.White,
-                fontSize = 34.sp,
+                fontSize = 38.sp,
                 fontWeight = FontWeight.Black,
             )
         }
@@ -1040,7 +1039,7 @@ private fun ProfileCard(
             if (locked) {
                 Text(
                     text = "PIN",
-                    color = HubYellow,
+                    color = Color.White,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black,
                 )
@@ -1070,7 +1069,7 @@ private fun AddProfileCard(
     Column(
         modifier =
             Modifier
-                .width(142.dp)
+                .width(168.dp)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onClick)
@@ -1080,12 +1079,12 @@ private fun AddProfileCard(
         Box(
             modifier =
                 Modifier
-                    .width(104.dp)
-                    .height(104.dp)
+                    .width(120.dp)
+                    .height(120.dp)
                     .background(HubPanel, CircleShape)
                     .border(
                         width = if (focused) 2.dp else 1.dp,
-                        color = if (focused) HubYellow else Color.White.copy(alpha = 0.12f),
+                        color = if (focused) Color.White else Color.White.copy(alpha = 0.12f),
                         shape = CircleShape,
                     ),
             contentAlignment = Alignment.Center,
@@ -1115,7 +1114,7 @@ private fun SettingButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        if (focused) 1.015f else 1f,
+        if (focused) 1.02f else 1f,
         label = "settingScale",
     )
 
@@ -1130,14 +1129,14 @@ private fun SettingButton(
                 )
                 .border(
                     1.dp,
-                    if (focused) HubYellow.copy(alpha = 0.72f)
+                    if (focused) Color.White.copy(alpha = 0.72f)
                     else Color.White.copy(alpha = 0.08f),
                     RoundedCornerShape(11.dp),
                 )
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onClick)
                 .focusable()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1149,7 +1148,7 @@ private fun SettingButton(
         )
         Text(
             text = value,
-            color = if (focused) HubYellow else HubMuted,
+            color = if (focused) Color.White else HubMuted,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -1170,18 +1169,18 @@ private fun HistoryCard(
     Column(
         modifier =
             Modifier
-                .width(220.dp)
+                .width(240.dp)
                 .scale(scale)
                 .background(HubPanel, RoundedCornerShape(11.dp))
                 .border(
                     1.dp,
-                    if (focused) HubYellow else Color.White.copy(alpha = 0.10f),
+                    if (focused) Color.White else Color.White.copy(alpha = 0.10f),
                     RoundedCornerShape(11.dp),
                 )
                 .onFocusChanged { focused = it.isFocused }
                 .clickable(onClick = onClick)
                 .focusable()
-                .padding(14.dp),
+                .padding(16.dp),
     ) {
         Text(
             text = entry.media.name,

@@ -733,7 +733,7 @@ internal fun TvTopNav(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(76.dp)
+                .height(82.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(
@@ -743,7 +743,7 @@ internal fun TvTopNav(
                         )
                     )
                 )
-                .padding(horizontal = 42.dp),
+                .padding(horizontal = 52.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -751,13 +751,13 @@ internal fun TvTopNav(
             Text(
                 text = "VUEO",
                 color = VueoYellow,
-                fontSize = 28.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.sp,
             )
-            Spacer(Modifier.width(44.dp))
+            Spacer(Modifier.width(48.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TvNavItem(
                     label = "Home",
                     selected = selectedLabel == "Home",
@@ -813,7 +813,7 @@ private fun TvNavItem(
         label = "navColor",
     )
     val scale by animateFloatAsState(
-        if (focused) 1.04f else 1f,
+        if (focused) 1.055f else 1f,
         label = "navScale",
     )
 
@@ -832,12 +832,12 @@ private fun TvNavItem(
                 .clickable(onClick = onClick)
                 .focusable()
                 .background(
-                    color = if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent,
+                    color = if (focused) Color.White.copy(alpha = 0.14f) else Color.Transparent,
                     shape = RoundedCornerShape(9.dp),
                 )
                 .border(
                     width = 1.dp,
-                    color = if (focused) VueoYellow.copy(alpha = 0.62f) else Color.Transparent,
+                    color = if (focused) Color.White else Color.Transparent,
                     shape = RoundedCornerShape(9.dp),
                 )
                 .padding(horizontal = 15.dp, vertical = 9.dp),
@@ -868,7 +868,7 @@ private fun Hero(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(350.dp)
+                .height(420.dp)
                 .background(VueoBlack),
     ) {
         TvNetworkImage(
@@ -879,7 +879,7 @@ private fun Hero(
                 Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
-                    .fillMaxWidth(0.68f),
+                    .fillMaxWidth(0.72f),
         )
 
         Box(
@@ -918,13 +918,13 @@ private fun Hero(
             modifier =
                 Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 58.dp, end = 40.dp)
-                    .fillMaxWidth(0.50f),
+                    .padding(start = 62.dp, end = 42.dp)
+                    .fillMaxWidth(0.49f),
         ) {
             Text(
                 text = item.name,
                 color = Color.White,
-                fontSize = 40.sp,
+                fontSize = 44.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1004,7 +1004,7 @@ private fun TvHeroButton(
     primary: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "heroButtonScale")
+    val scale by animateFloatAsState(if (focused) 1.065f else 1f, label = "heroButtonScale")
 
     Button(
         onClick = onClick,
@@ -1025,7 +1025,7 @@ private fun TvHeroButton(
                 .scale(scale)
                 .border(
                     width = 1.dp,
-                    color = if (focused) VueoYellow.copy(alpha = 0.70f) else Color.Transparent,
+                    color = if (focused) Color.White else Color.Transparent,
                     shape = RoundedCornerShape(9.dp),
                 ),
         shape = RoundedCornerShape(9.dp),
@@ -1086,8 +1086,8 @@ private fun TvContinueWatchingRail(
             Text(
                 text = "Continue Watching",
                 color = Color.White,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "Your progress",
@@ -1161,7 +1161,7 @@ private fun TvContinueWatchingCard(
         label = "continueCardScale",
     )
     val borderColor by animateColorAsState(
-        if (focused) VueoYellow
+        if (focused) Color.White
         else Color.Transparent,
         label = "continueCardBorder",
     )
@@ -1169,7 +1169,7 @@ private fun TvContinueWatchingCard(
     Column(
         modifier =
             modifier
-                .width(230.dp)
+                .width(252.dp)
                 .zIndex(if (focused) 1f else 0f)
                 .scale(scale)
                 .tvVerticalFocus(
@@ -1189,7 +1189,7 @@ private fun TvContinueWatchingCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(132.dp)
+                    .height(142.dp)
                     .background(
                         VueoPanel,
                         RoundedCornerShape(12.dp),
@@ -1237,7 +1237,7 @@ private fun TvContinueWatchingCard(
                             )
                             .fillMaxHeight()
                             .background(
-                                VueoYellow
+                                VueoGreen
                             ),
                 )
             }
@@ -1322,8 +1322,8 @@ private fun TvRail(
             Text(
                 text = row.title,
                 color = Color.White,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 text = row.providerName,
@@ -1335,7 +1335,7 @@ private fun TvRail(
         LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = 58.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(15.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             itemsIndexed(
                 items = row.items,
@@ -1387,18 +1387,18 @@ private fun TvPosterCard(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "cardScale")
     val borderColor by animateColorAsState(
-        if (focused) VueoYellow else Color.Transparent,
+        if (focused) Color.White else Color.Transparent,
         label = "cardBorder",
     )
     val glowColor by animateColorAsState(
-        if (focused) VueoGreen.copy(alpha = 0.18f) else Color.Transparent,
+        if (focused) Color.White.copy(alpha = 0.08f) else Color.Transparent,
         label = "cardGlow",
     )
 
     Column(
         modifier =
             modifier
-                .width(154.dp)
+                .width(176.dp)
                 .zIndex(if (focused) 1f else 0f)
                 .scale(scale)
                 .tvVerticalFocus(
@@ -1418,7 +1418,7 @@ private fun TvPosterCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(222.dp)
+                    .height(255.dp)
                     .background(
                         color = glowColor,
                         shape = RoundedCornerShape(12.dp),
@@ -1631,7 +1631,7 @@ private fun LoadingHome() {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(
-                color = VueoYellow,
+                color = Color.White,
             )
             Spacer(Modifier.height(14.dp))
             Text(
