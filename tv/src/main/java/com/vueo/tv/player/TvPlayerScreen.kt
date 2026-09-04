@@ -151,6 +151,10 @@ fun TvPlayerScreen(
     var skipSegments by remember(request.cacheKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
     var activeSkipSegment by remember(request.cacheKey) { mutableStateOf<PlayerSkipSegment?>(null) }
     var trackPreferencesApplied by remember(request.cacheKey) { mutableStateOf(false) }
+    var quickSeekDeltaMs by remember(request.cacheKey) { mutableLongStateOf(0L) }
+    var quickSeekToken by remember(request.cacheKey) { mutableIntStateOf(0) }
+    var pendingAutoNext by remember(request.cacheKey) { mutableStateOf<TvPlaybackRequest?>(null) }
+    var autoNextSeconds by remember(request.cacheKey) { mutableIntStateOf(AUTO_NEXT_COUNTDOWN_SECONDS) }
     val failedSourceUrls = remember(request.cacheKey) { mutableSetOf<String>() }
 
     val seekRequester = remember { FocusRequester() }
@@ -163,10 +167,26 @@ fun TvPlayerScreen(
     val nextRequester = remember { FocusRequester() }
     val firstPanelRequester = remember { FocusRequester() }
     val problemRequester = remember { FocusRequester() }
+    val autoNextPlayRequester = remember { FocusRequester() }
+    val autoNextCancelRequester = remember { FocusRequester() }
 
     fun touchControls() {
         controlsVisible = true
         interactionToken += 1
+    }
+
+    fun quickSeek(deltaMs: Long, showControls: Boolean = false) {
+        val current = player.currentPosition.coerceAtLeast(0L)
+        val target =
+            if (durationMs > 0L) {
+                (current + deltaMs).coerceIn(0L, durationMs)
+            } else {
+                (current + deltaMs).coerceAtLeast(0L)
+            }
+        player.seekTo(target)
+        quickSeekDeltaMs = deltaMs
+        quickSeekToken += 1
+        if (showControls) touchControls()
     }
 
     fun playSource(
@@ -178,6 +198,8 @@ fun TvPlayerScreen(
         currentSource = source
         playerError = null
         waitingForRecovery = false
+        pendingAutoNext = null
+        trackPreferencesApplied = false
         player.setMediaItem(
             buildPlayerMediaItem(
                 sourceUrl = sourceUrl,
@@ -237,6 +259,9 @@ fun TvPlayerScreen(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
+                if (!value && player.currentPosition > 0L) {
+                    saveProgress()
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -252,10 +277,12 @@ fun TvPlayerScreen(
                         durationMs = completedDuration,
                     )
                     controlsVisible = true
+                    interactionToken += 1
 
-                    if (settingsStore.autoPlayNextEpisodeEnabled()) {
-                        request.nextRequest()
-                            ?.let(onPlayRequest)
+                    val next = request.nextRequest()
+                    if (settingsStore.autoPlayNextEpisodeEnabled() && next != null) {
+                        pendingAutoNext = next
+                        autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
                     }
                 }
             }
@@ -290,11 +317,20 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
+            pendingAutoNext != null -> {
+                pendingAutoNext = null
+                autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+                touchControls()
+            }
             sidePanel != null -> {
                 sidePanel = null
                 touchControls()
             }
-            controlsVisible && playerError == null -> {
+            playerError != null -> {
+                saveProgress()
+                onBack()
+            }
+            controlsVisible -> {
                 controlsVisible = false
             }
             else -> {
@@ -323,6 +359,9 @@ fun TvPlayerScreen(
         controlsVisible = true
         trackPreferencesApplied = false
         activeSkipSegment = null
+        quickSeekDeltaMs = 0L
+        pendingAutoNext = null
+        autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
 
         if (initialSource.isDirectPlayable) {
             sources = listOf(initialSource)
@@ -406,6 +445,36 @@ fun TvPlayerScreen(
         }
     }
 
+    LaunchedEffect(quickSeekToken) {
+        if (quickSeekToken <= 0) return@LaunchedEffect
+        val token = quickSeekToken
+        delay(900)
+        if (quickSeekToken == token) quickSeekDeltaMs = 0L
+    }
+
+    LaunchedEffect(pendingAutoNext) {
+        val next = pendingAutoNext ?: return@LaunchedEffect
+        autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+        for (remaining in AUTO_NEXT_COUNTDOWN_SECONDS downTo 1) {
+            if (pendingAutoNext != next) return@LaunchedEffect
+            autoNextSeconds = remaining
+            delay(1_000)
+        }
+        if (pendingAutoNext == next) {
+            pendingAutoNext = null
+            saveProgress()
+            onPlayRequest(next)
+        }
+    }
+
+    LaunchedEffect(isBuffering, currentSource?.id, request.cacheKey) {
+        if (!isBuffering || currentSource == null || playerError != null) return@LaunchedEffect
+        delay(BUFFER_RECOVERY_TIMEOUT_MS)
+        if (isBuffering && currentSource != null && playerError == null) {
+            recoverOrWait("Playback is taking too long to continue.")
+        }
+    }
+
     LaunchedEffect(controlsVisible, sidePanel, interactionToken, isPlaying, playerError) {
         if (controlsVisible && sidePanel == null && isPlaying && playerError == null) {
             delay(5_000)
@@ -413,9 +482,10 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, sidePanel, playerError) {
+    LaunchedEffect(controlsVisible, sidePanel, playerError, pendingAutoNext) {
         delay(90)
         when {
+            pendingAutoNext != null -> runCatching { autoNextPlayRequester.requestFocus() }
             sidePanel != null -> runCatching { firstPanelRequester.requestFocus() }
             playerError != null -> {
                 panelReturnFocus = null
@@ -444,6 +514,10 @@ fun TvPlayerScreen(
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
 
+                    if (controlsVisible && sidePanel == null && playerError == null && pendingAutoNext == null) {
+                        interactionToken += 1
+                    }
+
                     when (event.key) {
                         Key.MediaPlayPause -> {
                             if (player.isPlaying) player.pause() else player.play()
@@ -452,26 +526,18 @@ fun TvPlayerScreen(
                         }
 
                         Key.MediaRewind -> {
-                            player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0L))
-                            touchControls()
+                            quickSeek(-SEEK_STEP_MS, showControls = true)
                             true
                         }
 
                         Key.MediaFastForward -> {
-                            val target = if (durationMs > 0L) {
-                                (player.currentPosition + SEEK_STEP_MS).coerceAtMost(durationMs)
-                            } else {
-                                player.currentPosition + SEEK_STEP_MS
-                            }
-                            player.seekTo(target)
-                            touchControls()
+                            quickSeek(SEEK_STEP_MS, showControls = true)
                             true
                         }
 
                         Key.DirectionLeft -> {
-                            if (!controlsVisible && sidePanel == null) {
-                                player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0L))
-                                touchControls()
+                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
+                                quickSeek(-SEEK_STEP_MS)
                                 true
                             } else {
                                 false
@@ -479,14 +545,8 @@ fun TvPlayerScreen(
                         }
 
                         Key.DirectionRight -> {
-                            if (!controlsVisible && sidePanel == null) {
-                                val target = if (durationMs > 0L) {
-                                    (player.currentPosition + SEEK_STEP_MS).coerceAtMost(durationMs)
-                                } else {
-                                    player.currentPosition + SEEK_STEP_MS
-                                }
-                                player.seekTo(target)
-                                touchControls()
+                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
+                                quickSeek(SEEK_STEP_MS)
                                 true
                             } else {
                                 false
@@ -498,7 +558,7 @@ fun TvPlayerScreen(
                         Key.Enter,
                         Key.NumPadEnter,
                         Key.DirectionCenter -> {
-                            if (!controlsVisible && sidePanel == null) {
+                            if (!controlsVisible && sidePanel == null && pendingAutoNext == null) {
                                 touchControls()
                                 true
                             } else {
@@ -529,6 +589,27 @@ fun TvPlayerScreen(
             },
             modifier = Modifier.fillMaxSize(),
         )
+
+        if (isBuffering && hasStartedPlayback && playerError == null && pendingAutoNext == null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(42.dp),
+                )
+            }
+        }
+
+        if (quickSeekDeltaMs != 0L) {
+            QuickSeekOverlay(
+                deltaMs = quickSeekDeltaMs,
+                positionMs = positionMs,
+                durationMs = durationMs,
+            )
+        }
 
         if (!hasStartedPlayback && sourceLoading) {
             LoadingPlayerState(
@@ -568,19 +649,13 @@ fun TvPlayerScreen(
                 episodesRequester = episodesRequester,
                 nextRequester = nextRequester,
                 onSeekBackward = {
-                    player.seekTo((player.currentPosition - SEEK_STEP_MS).coerceAtLeast(0L))
-                    touchControls()
+                    quickSeek(-SEEK_STEP_MS, showControls = true)
                 },
                 onSeekForward = {
-                    val target = if (durationMs > 0L) {
-                        (player.currentPosition + SEEK_STEP_MS).coerceAtMost(durationMs)
-                    } else {
-                        player.currentPosition + SEEK_STEP_MS
-                    }
-                    player.seekTo(target)
-                    touchControls()
+                    quickSeek(SEEK_STEP_MS, showControls = true)
                 },
                 onRestart = {
+                    pendingAutoNext = null
                     player.seekTo(0L)
                     player.play()
                     touchControls()
@@ -723,6 +798,25 @@ fun TvPlayerScreen(
             null -> Unit
         }
 
+        pendingAutoNext?.let { next ->
+            AutoNextOverlay(
+                next = next,
+                seconds = autoNextSeconds,
+                playRequester = autoNextPlayRequester,
+                cancelRequester = autoNextCancelRequester,
+                onPlayNow = {
+                    pendingAutoNext = null
+                    saveProgress()
+                    onPlayRequest(next)
+                },
+                onCancel = {
+                    pendingAutoNext = null
+                    autoNextSeconds = AUTO_NEXT_COUNTDOWN_SECONDS
+                    touchControls()
+                },
+            )
+        }
+
         if (playerError != null && sidePanel == null && sources.isNotEmpty()) {
             PlaybackProblemPanel(
                 message = playerError ?: "Playback problem",
@@ -739,7 +833,109 @@ fun TvPlayerScreen(
                     sidePanel = PlayerSidePanel.SOURCES
                     interactionToken += 1
                 },
+                onExit = {
+                    saveProgress()
+                    onBack()
+                },
             )
+        }
+    }
+}
+
+@Composable
+private fun QuickSeekOverlay(
+    deltaMs: Long,
+    positionMs: Long,
+    durationMs: Long,
+) {
+    val forward = deltaMs > 0L
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = if (forward) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .padding(horizontal = 92.dp)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(999.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = if (forward) "+10s" else "−10s",
+                color = Color.White,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                text = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                color = PlayerMuted,
+                fontSize = 11.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutoNextOverlay(
+    next: TvPlaybackRequest,
+    seconds: Int,
+    playRequester: FocusRequester,
+    cancelRequester: FocusRequester,
+    onPlayNow: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .padding(end = 48.dp)
+                    .width(430.dp)
+                    .background(PlayerPanel, RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                    .padding(24.dp),
+        ) {
+            Text(
+                text = "Up next",
+                color = PlayerMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = next.displayTitle,
+                color = Color.White,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Playing in ${seconds.coerceAtLeast(1)}s",
+                color = PlayerMuted,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PlayerButton(
+                    text = "Play Now",
+                    requester = playRequester,
+                    onClick = onPlayNow,
+                    primary = true,
+                    onRight = { cancelRequester.requestFocus() },
+                )
+                PlayerButton(
+                    text = "Cancel",
+                    requester = cancelRequester,
+                    onClick = onCancel,
+                    onLeft = { playRequester.requestFocus() },
+                )
+            }
         }
     }
 }
@@ -1609,8 +1805,10 @@ private fun PlaybackProblemPanel(
     requester: FocusRequester,
     onRetry: () -> Unit,
     onSources: () -> Unit,
+    onExit: () -> Unit,
 ) {
     val sourcesRequester = remember { FocusRequester() }
+    val exitRequester = remember { FocusRequester() }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -1648,10 +1846,17 @@ private fun PlaybackProblemPanel(
                     onRight = { sourcesRequester.requestFocus() },
                 )
                 PlayerButton(
-                    text = "Sources",
+                    text = "Change Source",
                     requester = sourcesRequester,
                     onClick = onSources,
                     onLeft = { requester.requestFocus() },
+                    onRight = { exitRequester.requestFocus() },
+                )
+                PlayerButton(
+                    text = "Exit",
+                    requester = exitRequester,
+                    onClick = onExit,
+                    onLeft = { sourcesRequester.requestFocus() },
                 )
             }
         }
@@ -1962,6 +2167,8 @@ private fun formatTime(ms: Long): String {
     }
 }
 
+private const val AUTO_NEXT_COUNTDOWN_SECONDS = 5
+private const val BUFFER_RECOVERY_TIMEOUT_MS = 18_000L
 private const val SEEK_STEP_MS = 10_000L
 private const val TRACK_SELECTION_OFF = "__off__"
 private val IMDB_ID_REGEX = Regex("tt\\d{5,10}", RegexOption.IGNORE_CASE)
