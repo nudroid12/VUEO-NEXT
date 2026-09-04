@@ -47,12 +47,18 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaPreferences
+import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.tv.library.TvLibraryStore
+import com.vueo.tv.player.TvPlaybackStore
 import kotlinx.coroutines.delay
 
 private val PanelBlack = Color(0xFF050706)
@@ -62,6 +68,7 @@ private val PanelMuted = Color(0xFFAAB2AD)
 
 private data class PanelSetting(
     val key: String,
+    val symbol: String,
     val title: String,
     val subtitle: String,
     val contentManager: Boolean = false,
@@ -69,16 +76,16 @@ private data class PanelSetting(
 
 private val panelSettings =
     listOf(
-        PanelSetting("PERSONALIZATION", "Personalization", "Profile & recommendations"),
-        PanelSetting("CONTENT_MANAGER", "Content Manager", "Addons, repos & providers", contentManager = true),
-        PanelSetting("ENHANCEMENTS", "Enhancements", "Metadata & external services"),
-        PanelSetting("PLAYBACK", "Playback", "Player & streaming preferences"),
-        PanelSetting("SUBTITLES", "Subtitles", "Language & display preferences"),
-        PanelSetting("SOURCES", "Sources", "Source ranking & information"),
-        PanelSetting("APPEARANCE", "Appearance", "Interface preferences"),
-        PanelSetting("DATA_STORAGE", "Data & Storage", "Backup, history & app data"),
-        PanelSetting("UPDATES", "Updates", "Version & update preferences"),
-        PanelSetting("ABOUT", "About VUEO", "Privacy & app information"),
+        PanelSetting("PERSONALIZATION", "✦", "Personalization", "DNA & recommendations"),
+        PanelSetting("CONTENT_MANAGER", "▦", "Content Manager", "Addons & providers", contentManager = true),
+        PanelSetting("ENHANCEMENTS", "✧", "Enhancements", "Metadata & services"),
+        PanelSetting("PLAYBACK", "▶", "Playback", "Player preferences"),
+        PanelSetting("SUBTITLES", "CC", "Subtitles", "Language & display"),
+        PanelSetting("SOURCES", "↗", "Sources", "Source preferences"),
+        PanelSetting("APPEARANCE", "◐", "Appearance", "Interface options"),
+        PanelSetting("DATA_STORAGE", "▤", "Data & Storage", "Backup & app data"),
+        PanelSetting("UPDATES", "↻", "Updates", "Version & updates"),
+        PanelSetting("ABOUT", "ⓘ", "About VUEO", "App & privacy"),
     )
 
 @Composable
@@ -90,7 +97,32 @@ fun TvProfileDnaPanel(
     onOpenSettings: (String) -> Unit,
     onOpenContentManager: () -> Unit,
 ) {
+    val context = LocalContext.current
     val activeProfile = remember(visible) { profileStore.activeProfile() }
+    val tvLibrary = remember(context) { TvLibraryStore(context.applicationContext) }
+    val dnaPreferences =
+        remember(context) {
+            UserDnaPreferences(
+                context = context.applicationContext,
+                prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+            )
+        }
+    val dnaEnabled = remember(visible, activeProfile.id) { dnaPreferences.userDnaEnabled(activeProfile.id) }
+    val dnaSnapshot =
+        remember(visible, activeProfile.id) {
+            runCatching {
+                UserDnaEngine(
+                    LibraryStore(
+                        context = context.applicationContext,
+                        prefsName = TvLibraryStore.PREFS_NAME,
+                        watchlistStorageKey = TvLibraryStore.KEY_LIBRARY,
+                        profileStore = profileStore,
+                    )
+                ).build()
+            }.getOrNull()
+        }
+    val myListCount = remember(visible, activeProfile.id) { tvLibrary.items().size }
+    val watchedCount = remember(visible, activeProfile.id) { tvLibrary.history().size }
     val profileRequester = remember { FocusRequester() }
     val switchRequester = remember { FocusRequester() }
     val settingRequesters = remember { List(panelSettings.size) { FocusRequester() } }
@@ -174,6 +206,15 @@ fun TvProfileDnaPanel(
                 TvSettingsProfileCard(
                     profileName = activeProfile.name,
                     isKids = activeProfile.isKids,
+                    myListCount = myListCount,
+                    watchedCount = watchedCount,
+                    dnaPercent = if (dnaEnabled) dnaSnapshot?.confidencePercent else null,
+                    tastePreview =
+                        dnaSnapshot
+                            ?.topGenres
+                            ?.take(2)
+                            ?.joinToString(" • ") { it.name }
+                            .orEmpty(),
                     profileRequester = profileRequester,
                     switchRequester = switchRequester,
                     firstSettingRequester = settingRequesters.first(),
@@ -251,6 +292,10 @@ fun TvProfileDnaPanel(
 private fun TvSettingsProfileCard(
     profileName: String,
     isKids: Boolean,
+    myListCount: Int,
+    watchedCount: Int,
+    dnaPercent: Int?,
+    tastePreview: String,
     profileRequester: FocusRequester,
     switchRequester: FocusRequester,
     firstSettingRequester: FocusRequester,
@@ -261,11 +306,11 @@ private fun TvSettingsProfileCard(
     var profileFocused by remember { mutableStateOf(false) }
     var switchFocused by remember { mutableStateOf(false) }
     val profileScale by animateFloatAsState(
-        targetValue = if (profileFocused) 1.015f else 1f,
+        targetValue = if (profileFocused) 1.012f else 1f,
         label = "settingsProfileScale",
     )
     val switchScale by animateFloatAsState(
-        targetValue = if (switchFocused) 1.02f else 1f,
+        targetValue = if (switchFocused) 1.018f else 1f,
         label = "settingsSwitchScale",
     )
 
@@ -280,8 +325,8 @@ private fun TvSettingsProfileCard(
                     color = if (profileFocused) Color.White else Color.White.copy(alpha = 0.10f),
                     shape = RoundedCornerShape(15.dp),
                 )
-                .padding(11.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Row(
             modifier =
@@ -297,7 +342,6 @@ private fun TvSettingsProfileCard(
                                     onExitLeft()
                                     true
                                 }
-
                                 Key.DirectionDown -> runCatching { switchRequester.requestFocus() }.isSuccess
                                 else -> false
                             }
@@ -306,14 +350,14 @@ private fun TvSettingsProfileCard(
                     .onFocusChanged { profileFocused = it.isFocused }
                     .clickable(onClick = onOpenPersonalization)
                     .focusable()
-                    .padding(2.dp),
+                    .padding(1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier =
                     Modifier
-                        .width(48.dp)
-                        .height(48.dp)
+                        .width(44.dp)
+                        .height(44.dp)
                         .background(Color.White.copy(alpha = 0.10f), CircleShape)
                         .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
                 contentAlignment = Alignment.Center,
@@ -321,39 +365,57 @@ private fun TvSettingsProfileCard(
                 Text(
                     text = profileName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "V",
                     color = Color.White,
-                    fontSize = 19.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Black,
                 )
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = profileName,
                     color = Color.White,
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(1.dp))
                 Text(
                     text = if (isKids) "Kids profile" else "Active profile",
                     color = PanelMuted,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                 )
+                if (tastePreview.isNotBlank()) {
+                    Text(
+                        text = tastePreview,
+                        color = PanelMuted,
+                        fontSize = 8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Text(
                 text = "›",
                 color = PanelMuted,
-                fontSize = 24.sp,
+                fontSize = 22.sp,
             )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CompactProfileStat("My List", myListCount.toString(), Modifier.weight(1f))
+            CompactProfileStat("Watched", watchedCount.toString(), Modifier.weight(1f))
+            CompactProfileStat("DNA", dnaPercent?.let { "$it%" } ?: "Off", Modifier.weight(1f))
         }
 
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(32.dp)
                     .focusRequester(switchRequester)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) {
@@ -364,7 +426,6 @@ private fun TvSettingsProfileCard(
                                     onExitLeft()
                                     true
                                 }
-
                                 Key.DirectionUp -> runCatching { profileRequester.requestFocus() }.isSuccess
                                 Key.DirectionDown -> runCatching { firstSettingRequester.requestFocus() }.isSuccess
                                 else -> false
@@ -377,22 +438,53 @@ private fun TvSettingsProfileCard(
                     .focusable()
                     .background(
                         if (switchFocused) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.055f),
-                        RoundedCornerShape(10.dp),
+                        RoundedCornerShape(9.dp),
                     )
                     .border(
                         width = if (switchFocused) 2.dp else 1.dp,
                         color = if (switchFocused) Color.White else Color.White.copy(alpha = 0.08f),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(9.dp),
                     ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "Switch Profiles",
                 color = Color.White,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+@Composable
+private fun CompactProfileStat(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .height(28.dp)
+                .background(Color.White.copy(alpha = 0.045f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            color = PanelMuted,
+            fontSize = 8.sp,
+            maxLines = 1,
+        )
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+        )
     }
 }
 
@@ -406,14 +498,14 @@ private fun SettingsPanelCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.03f else 1f,
+        targetValue = if (focused) 1.025f else 1f,
         label = "settingsPanelCardScale",
     )
 
-    Column(
+    Row(
         modifier =
             modifier
-                .height(72.dp)
+                .height(62.dp)
                 .focusRequester(requester)
                 .scale(scale)
                 .onFocusChanged { focused = it.isFocused }
@@ -424,32 +516,53 @@ private fun SettingsPanelCard(
                 .focusable()
                 .background(
                     if (focused) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f),
-                    RoundedCornerShape(12.dp),
+                    RoundedCornerShape(11.dp),
                 )
                 .border(
                     width = if (focused) 2.dp else 1.dp,
                     color = if (focused) Color.White else Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(11.dp),
                 )
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.Center,
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = setting.title,
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = setting.subtitle,
-            color = PanelMuted,
-            fontSize = 9.sp,
-            lineHeight = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Box(
+            modifier =
+                Modifier
+                    .width(28.dp)
+                    .height(28.dp)
+                    .background(Color.White.copy(alpha = if (focused) 0.14f else 0.07f), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = setting.symbol,
+                color = Color.White,
+                fontSize = if (setting.symbol == "CC") 8.sp else 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = setting.title,
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = setting.subtitle,
+                color = PanelMuted,
+                fontSize = 8.sp,
+                lineHeight = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
