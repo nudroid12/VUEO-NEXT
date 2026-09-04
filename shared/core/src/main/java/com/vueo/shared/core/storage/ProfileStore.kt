@@ -1,9 +1,14 @@
 package com.vueo.shared.core.storage
 
 import android.content.Context
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.UUID
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 data class VueoProfile(
     val id: String,
@@ -269,6 +274,10 @@ class ProfileStore(
 
         writeProfiles(current)
         clearProfileData(profileId)
+        prefs.edit()
+            .remove(pinSaltKey(profileId))
+            .remove(pinHashKey(profileId))
+            .apply()
 
         if (
             prefs.getString(
@@ -296,6 +305,121 @@ class ProfileStore(
         return true
     }
 
+    @Synchronized
+    fun hasProfilePin(
+        profileId: String,
+    ): Boolean {
+        if (profiles().none { it.id == profileId }) {
+            return false
+        }
+
+        return !prefs.getString(
+            pinHashKey(profileId),
+            null,
+        ).isNullOrBlank() &&
+            !prefs.getString(
+                pinSaltKey(profileId),
+                null,
+            ).isNullOrBlank()
+    }
+
+    @Synchronized
+    fun setProfilePin(
+        profileId: String,
+        pin: String,
+    ): Boolean {
+        if (profiles().none { it.id == profileId }) {
+            return false
+        }
+
+        if (!PIN_REGEX.matches(pin)) {
+            return false
+        }
+
+        val salt = ByteArray(PIN_SALT_BYTES)
+        SecureRandom().nextBytes(salt)
+
+        val hash = derivePin(pin, salt)
+
+        prefs.edit()
+            .putString(
+                pinSaltKey(profileId),
+                Base64.encodeToString(
+                    salt,
+                    Base64.NO_WRAP,
+                ),
+            )
+            .putString(
+                pinHashKey(profileId),
+                Base64.encodeToString(
+                    hash,
+                    Base64.NO_WRAP,
+                ),
+            )
+            .apply()
+
+        return true
+    }
+
+    @Synchronized
+    fun verifyProfilePin(
+        profileId: String,
+        pin: String,
+    ): Boolean {
+        if (!PIN_REGEX.matches(pin)) {
+            return false
+        }
+
+        val encodedSalt =
+            prefs.getString(
+                pinSaltKey(profileId),
+                null,
+            )
+                ?: return false
+
+        val encodedHash =
+            prefs.getString(
+                pinHashKey(profileId),
+                null,
+            )
+                ?: return false
+
+        return runCatching {
+            val salt =
+                Base64.decode(
+                    encodedSalt,
+                    Base64.NO_WRAP,
+                )
+            val expected =
+                Base64.decode(
+                    encodedHash,
+                    Base64.NO_WRAP,
+                )
+            val actual = derivePin(pin, salt)
+
+            MessageDigest.isEqual(
+                expected,
+                actual,
+            )
+        }.getOrDefault(false)
+    }
+
+    @Synchronized
+    fun clearProfilePin(
+        profileId: String,
+    ): Boolean {
+        if (!hasProfilePin(profileId)) {
+            return false
+        }
+
+        prefs.edit()
+            .remove(pinSaltKey(profileId))
+            .remove(pinHashKey(profileId))
+            .apply()
+
+        return true
+    }
+
     fun askWhoIsWatchingOnStartup():
         Boolean =
         prefs.getBoolean(
@@ -315,9 +439,17 @@ class ProfileStore(
     }
 
     fun shouldShowPickerOnStartup():
-        Boolean =
-        profiles().size > 1 &&
-            askWhoIsWatchingOnStartup()
+        Boolean {
+        val profileList = profiles()
+        val activeLocked =
+            hasProfilePin(
+                activeProfileId()
+            )
+
+        return activeLocked ||
+            (profileList.size > 1 &&
+                askWhoIsWatchingOnStartup())
+    }
 
     private fun readProfiles():
         List<VueoProfile> {
@@ -470,6 +602,38 @@ class ProfileStore(
         }
     }
 
+    private fun derivePin(
+        pin: String,
+        salt: ByteArray,
+    ): ByteArray {
+        val spec =
+            PBEKeySpec(
+                pin.toCharArray(),
+                salt,
+                PIN_ITERATIONS,
+                PIN_KEY_BITS,
+            )
+
+        return try {
+            SecretKeyFactory
+                .getInstance(PIN_ALGORITHM)
+                .generateSecret(spec)
+                .encoded
+        } finally {
+            spec.clearPassword()
+        }
+    }
+
+    private fun pinSaltKey(
+        profileId: String,
+    ): String =
+        "profile_pin_salt:$profileId"
+
+    private fun pinHashKey(
+        profileId: String,
+    ): String =
+        "profile_pin_hash:$profileId"
+
     companion object {
         const val PREFS_NAME =
             "vueo_profiles"
@@ -497,6 +661,21 @@ class ProfileStore(
 
         private const val MAX_NAME_LENGTH =
             24
+
+        private const val PIN_ALGORITHM =
+            "PBKDF2WithHmacSHA1"
+
+        private const val PIN_ITERATIONS =
+            120_000
+
+        private const val PIN_KEY_BITS =
+            256
+
+        private const val PIN_SALT_BYTES =
+            16
+
+        private val PIN_REGEX =
+            Regex("\\d{4}")
 
         private val DEFAULT_SCOPED_PREFERENCE_FILES =
             setOf(

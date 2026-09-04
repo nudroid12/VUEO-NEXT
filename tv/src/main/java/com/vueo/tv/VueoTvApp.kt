@@ -64,6 +64,7 @@ import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.player.TvSourceEngine
 import com.vueo.tv.player.TvSourcePickerScreen
+import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.profile.TvUserHubScreen
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
@@ -96,6 +97,7 @@ private enum class TvRootScreen {
     LIBRARY,
     CONTENT_MANAGER,
     USER_HUB,
+    PROFILE_PICKER,
     DETAIL,
     SOURCE_PICKER,
     PLAYER,
@@ -189,7 +191,7 @@ fun VueoTvApp() {
 
     LaunchedEffect(profileStore) {
         if (profileStore.shouldShowPickerOnStartup()) {
-            currentScreen = TvRootScreen.USER_HUB
+            currentScreen = TvRootScreen.PROFILE_PICKER
         }
     }
 
@@ -264,6 +266,17 @@ fun VueoTvApp() {
                         TvContentManagerScreen(
                             store = contentManagerStore,
                             onNavigate = navigate,
+                        )
+
+                    TvRootScreen.PROFILE_PICKER ->
+                        TvProfilePickerScreen(
+                            profileStore = profileStore,
+                            onProfileSelected = {
+                                homeFocusRestoreToken += 1
+                                searchFocusRestoreToken += 1
+                                libraryFocusRestoreToken += 1
+                                currentScreen = TvRootScreen.HOME
+                            },
                         )
 
                     TvRootScreen.USER_HUB ->

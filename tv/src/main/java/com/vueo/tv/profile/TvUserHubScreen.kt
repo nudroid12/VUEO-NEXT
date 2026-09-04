@@ -29,6 +29,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +60,33 @@ private val HubPanel = Color(0xFF101412)
 private val HubYellow = Color(0xFFD6FF00)
 private val HubGreen = Color(0xFF84E100)
 private val HubMuted = Color(0xFFAAB2AD)
+
+private sealed interface HubPinFlow {
+    data class UnlockProfile(
+        val profile: VueoProfile,
+    ) : HubPinFlow
+
+    data class SetFirst(
+        val profileId: String,
+        val profileName: String,
+    ) : HubPinFlow
+
+    data class SetConfirm(
+        val profileId: String,
+        val profileName: String,
+        val firstPin: String,
+    ) : HubPinFlow
+
+    data class ChangeVerify(
+        val profileId: String,
+        val profileName: String,
+    ) : HubPinFlow
+
+    data class RemoveVerify(
+        val profileId: String,
+        val profileName: String,
+    ) : HubPinFlow
+}
 
 @Composable
 fun TvUserHubScreen(
@@ -96,8 +125,40 @@ fun TvUserHubScreen(
     var autoUpdates by remember {
         mutableStateOf(settingsStore.automaticUpdateChecksEnabled())
     }
+    var pinFlow by remember { mutableStateOf<HubPinFlow?>(null) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    var pinResetToken by remember { mutableIntStateOf(0) }
 
-    BackHandler { onNavigate("Home") }
+    fun refreshActiveProfileState(
+        profileId: String,
+    ) {
+        activeProfileId = profileId
+        profiles = profileStore.profiles()
+        history = libraryStore.history()
+        resumeEnabled = settingsStore.resumePlaybackEnabled()
+        recoveryEnabled = settingsStore.autoSourceRecoveryEnabled()
+        autoNextEnabled = settingsStore.autoPlayNextEpisodeEnabled()
+        quality = settingsStore.preferredQuality()
+        askOnStartup = profileStore.askWhoIsWatchingOnStartup()
+        onProfileChanged(profileId)
+    }
+
+    fun activateProfile(
+        profileId: String,
+    ) {
+        if (profileStore.setActiveProfile(profileId)) {
+            refreshActiveProfileState(profileId)
+        }
+    }
+
+    BackHandler {
+        if (pinFlow != null) {
+            pinFlow = null
+            pinError = null
+        } else {
+            onNavigate("Home")
+        }
+    }
 
     LaunchedEffect(activeProfileId) {
         delay(90)
@@ -169,6 +230,7 @@ fun TvUserHubScreen(
                             ProfileCard(
                                 profile = profile,
                                 selected = profile.id == activeProfileId,
+                                locked = profileStore.hasProfilePin(profile.id),
                                 modifier =
                                     if (index == 0) {
                                         Modifier.focusRequester(firstProfileRequester)
@@ -176,14 +238,13 @@ fun TvUserHubScreen(
                                         Modifier
                                     },
                                 onClick = {
-                                    if (profileStore.setActiveProfile(profile.id)) {
-                                        activeProfileId = profile.id
-                                        history = libraryStore.history()
-                                        resumeEnabled = settingsStore.resumePlaybackEnabled()
-                                        recoveryEnabled = settingsStore.autoSourceRecoveryEnabled()
-                                        autoNextEnabled = settingsStore.autoPlayNextEpisodeEnabled()
-                                        quality = settingsStore.preferredQuality()
-                                        onProfileChanged(profile.id)
+                                    when {
+                                        profile.id == activeProfileId -> Unit
+                                        profileStore.hasProfilePin(profile.id) -> {
+                                            pinError = null
+                                            pinFlow = HubPinFlow.UnlockProfile(profile)
+                                        }
+                                        else -> activateProfile(profile.id)
                                     }
                                 },
                             )
@@ -199,16 +260,8 @@ fun TvUserHubScreen(
                                                 avatar = "avatar_man_1",
                                                 isKids = false,
                                             )
-                                        profiles = profileStore.profiles()
                                         profileStore.setActiveProfile(created.id)
-                                        activeProfileId = created.id
-                                        history = libraryStore.history()
-                                        resumeEnabled = settingsStore.resumePlaybackEnabled()
-                                        recoveryEnabled = settingsStore.autoSourceRecoveryEnabled()
-                                        autoNextEnabled = settingsStore.autoPlayNextEpisodeEnabled()
-                                        quality = settingsStore.preferredQuality()
-                                        askOnStartup = profileStore.askWhoIsWatchingOnStartup()
-                                        onProfileChanged(created.id)
+                                        refreshActiveProfileState(created.id)
                                     }
                                 },
                             )
@@ -303,6 +356,73 @@ fun TvUserHubScreen(
                 }
             }
 
+            item {
+                val activeProfile =
+                    profiles.firstOrNull { it.id == activeProfileId }
+                        ?: profileStore.activeProfile()
+                val hasPin = profileStore.hasProfilePin(activeProfile.id)
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Profile Security",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    SettingButton(
+                        title = "Profile PIN",
+                        value = if (hasPin) "Change PIN" else "Set PIN",
+                        onClick = {
+                            pinError = null
+                            pinFlow =
+                                if (hasPin) {
+                                    HubPinFlow.ChangeVerify(
+                                        profileId = activeProfile.id,
+                                        profileName = activeProfile.name,
+                                    )
+                                } else {
+                                    HubPinFlow.SetFirst(
+                                        profileId = activeProfile.id,
+                                        profileName = activeProfile.name,
+                                    )
+                                }
+                        },
+                    )
+
+                    if (hasPin) {
+                        SettingButton(
+                            title = "Remove profile PIN",
+                            value = "Verify PIN",
+                            onClick = {
+                                pinError = null
+                                pinFlow =
+                                    HubPinFlow.RemoveVerify(
+                                        profileId = activeProfile.id,
+                                        profileName = activeProfile.name,
+                                    )
+                            },
+                        )
+                    }
+
+                    SettingButton(
+                        title = "Kids profile",
+                        value = if (activeProfile.isKids) "On" else "Off",
+                        onClick = {
+                            profileStore.updateProfile(
+                                profileId = activeProfile.id,
+                                name = activeProfile.name,
+                                avatar = activeProfile.avatar,
+                                isKids = !activeProfile.isKids,
+                            )
+                            profiles = profileStore.profiles()
+                        },
+                    )
+                }
+            }
+
             if (history.isNotEmpty()) {
                 item {
                     Row(
@@ -357,6 +477,105 @@ fun TvUserHubScreen(
             selectedLabel = "Luckez",
             onSelected = onNavigate,
         )
+
+        val flow = pinFlow
+        if (flow != null) {
+            key(flow, pinResetToken) {
+                val title =
+                    when (flow) {
+                        is HubPinFlow.UnlockProfile -> "Unlock ${flow.profile.name}"
+                        is HubPinFlow.SetFirst -> "Set PIN for ${flow.profileName}"
+                        is HubPinFlow.SetConfirm -> "Confirm PIN"
+                        is HubPinFlow.ChangeVerify -> "Verify ${flow.profileName}"
+                        is HubPinFlow.RemoveVerify -> "Remove PIN from ${flow.profileName}"
+                    }
+
+                val subtitle =
+                    when (flow) {
+                        is HubPinFlow.UnlockProfile -> "Enter the 4-digit profile PIN"
+                        is HubPinFlow.SetFirst -> "Choose a new 4-digit PIN"
+                        is HubPinFlow.SetConfirm -> "Enter the same PIN again"
+                        is HubPinFlow.ChangeVerify -> "Enter the current PIN before changing it"
+                        is HubPinFlow.RemoveVerify -> "Enter the current PIN to remove the lock"
+                    }
+
+                TvPinEntryOverlay(
+                    title = title,
+                    subtitle = subtitle,
+                    errorText = pinError,
+                    onComplete = { pin ->
+                        when (flow) {
+                            is HubPinFlow.UnlockProfile -> {
+                                if (profileStore.verifyProfilePin(flow.profile.id, pin)) {
+                                    pinFlow = null
+                                    pinError = null
+                                    activateProfile(flow.profile.id)
+                                } else {
+                                    pinError = "Incorrect PIN"
+                                    pinResetToken += 1
+                                }
+                            }
+
+                            is HubPinFlow.SetFirst -> {
+                                pinError = null
+                                pinFlow =
+                                    HubPinFlow.SetConfirm(
+                                        profileId = flow.profileId,
+                                        profileName = flow.profileName,
+                                        firstPin = pin,
+                                    )
+                            }
+
+                            is HubPinFlow.SetConfirm -> {
+                                if (pin == flow.firstPin) {
+                                    if (profileStore.setProfilePin(flow.profileId, pin)) {
+                                        profiles = profileStore.profiles()
+                                        pinFlow = null
+                                        pinError = null
+                                    } else {
+                                        pinError = "Unable to save PIN"
+                                        pinResetToken += 1
+                                    }
+                                } else {
+                                    pinError = "PINs did not match"
+                                    pinResetToken += 1
+                                }
+                            }
+
+                            is HubPinFlow.ChangeVerify -> {
+                                if (profileStore.verifyProfilePin(flow.profileId, pin)) {
+                                    pinError = null
+                                    pinFlow =
+                                        HubPinFlow.SetFirst(
+                                            profileId = flow.profileId,
+                                            profileName = flow.profileName,
+                                        )
+                                } else {
+                                    pinError = "Incorrect PIN"
+                                    pinResetToken += 1
+                                }
+                            }
+
+                            is HubPinFlow.RemoveVerify -> {
+                                if (profileStore.verifyProfilePin(flow.profileId, pin)) {
+                                    profileStore.clearProfilePin(flow.profileId)
+                                    profiles = profileStore.profiles()
+                                    pinFlow = null
+                                    pinError = null
+                                } else {
+                                    pinError = "Incorrect PIN"
+                                    pinResetToken += 1
+                                }
+                            }
+                        }
+                    },
+                    onCancel = {
+                        pinFlow = null
+                        pinError = null
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -364,6 +583,7 @@ fun TvUserHubScreen(
 private fun ProfileCard(
     profile: VueoProfile,
     selected: Boolean,
+    locked: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -423,13 +643,34 @@ private fun ProfileCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (selected) {
-            Text(
-                text = "Active",
-                color = HubGreen,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (selected) {
+                Text(
+                    text = "ACTIVE",
+                    color = HubGreen,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                )
+            }
+            if (locked) {
+                Text(
+                    text = "PIN",
+                    color = HubYellow,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                )
+            }
+            if (profile.isKids) {
+                Text(
+                    text = "KIDS",
+                    color = HubGreen,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                )
+            }
         }
     }
 }
