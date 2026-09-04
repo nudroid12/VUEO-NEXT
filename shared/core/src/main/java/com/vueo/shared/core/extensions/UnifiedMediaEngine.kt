@@ -1343,6 +1343,222 @@ class UnifiedMediaEngine {
         )
     }
 
+    /**
+     * Canonical browse discovery shared by Mobile and TV.
+     *
+     * It only queries enabled Stremio catalog extensions. Movie/Series use
+     * catalogs that require no extras. Anime additionally supports catalogs
+     * explicitly named for anime and catalogs that expose a genre=Anime extra.
+     */
+    suspend fun browse(
+        kind: MediaBrowseKind,
+        maxCatalogs: Int = 10,
+        maxResults: Int = 80,
+        catalogOrder: List<String> = emptyList(),
+    ): List<MediaItem> = coroutineScope {
+        val orderIndex =
+            catalogOrder
+                .withIndex()
+                .associate {
+                    it.value to it.index
+                }
+
+        val bindings =
+            activeStremioAddons()
+                .flatMap { extension ->
+                    extension.descriptor.catalogs
+                        .mapNotNull { catalog ->
+                            browseExtras(
+                                kind = kind,
+                                catalog = catalog,
+                            )?.let { extras ->
+                                BrowseCatalogBinding(
+                                    extension = extension,
+                                    catalog = catalog,
+                                    extras = extras,
+                                )
+                            }
+                        }
+                }
+                .distinctBy { binding ->
+                    catalogKey(
+                        extensionId = binding.extension.descriptor.id,
+                        type = binding.catalog.type,
+                        catalogId = binding.catalog.id,
+                    ) + binding.extras.toString()
+                }
+                .sortedWith(
+                    compareBy<BrowseCatalogBinding> { binding ->
+                        orderIndex[
+                            catalogKey(
+                                extensionId = binding.extension.descriptor.id,
+                                type = binding.catalog.type,
+                                catalogId = binding.catalog.id,
+                            )
+                        ] ?: Int.MAX_VALUE
+                    }.thenBy { binding ->
+                        binding.extension.descriptor.name.lowercase()
+                    }.thenBy { binding ->
+                        binding.catalog.name
+                            ?.lowercase()
+                            .orEmpty()
+                    }
+                )
+                .take(maxCatalogs)
+
+        val loaded =
+            bindings
+                .map { binding ->
+                    async {
+                        try {
+                            withTimeoutOrNull(
+                                ADDON_REQUEST_TIMEOUT_MS
+                            ) {
+                                binding.extension
+                                    .catalog(
+                                        type = binding.catalog.type,
+                                        catalogId = binding.catalog.id,
+                                        extras = binding.extras,
+                                    )
+                                    .items
+                                    .map { item ->
+                                        item.withCatalogSource(
+                                            binding.extension.descriptor.name
+                                        )
+                                    }
+                            } ?: emptyList()
+                        } catch (
+                            cancelled: CancellationException
+                        ) {
+                            throw cancelled
+                        } catch (
+                            _: Throwable
+                        ) {
+                            emptyList()
+                        }
+                    }
+                }
+                .awaitAll()
+                .flatten()
+                .filter { item ->
+                    browseAccepts(
+                        kind = kind,
+                        item = item,
+                    )
+                }
+
+        mergeSearchDuplicates(
+            items = loaded,
+            query = "",
+        ).take(maxResults)
+    }
+
+    private fun browseExtras(
+        kind: MediaBrowseKind,
+        catalog: CatalogDescriptor,
+    ): Map<String, String>? {
+        val type = catalog.type.trim().lowercase()
+        val isMovie = type == "movie"
+        val isSeries = type == "series" || type == "tv"
+
+        return when (kind) {
+            MediaBrowseKind.MOVIE ->
+                if (isMovie && catalog.canLoadWithoutExtras) {
+                    emptyMap()
+                } else {
+                    null
+                }
+
+            MediaBrowseKind.SERIES ->
+                if (isSeries && catalog.canLoadWithoutExtras) {
+                    emptyMap()
+                } else {
+                    null
+                }
+
+            MediaBrowseKind.ANIME -> {
+                if (!isMovie && !isSeries) {
+                    return null
+                }
+
+                val explicitAnime =
+                    catalog.id.contains(
+                        "anime",
+                        ignoreCase = true,
+                    ) ||
+                        catalog.name
+                            ?.contains(
+                                "anime",
+                                ignoreCase = true,
+                            ) == true
+
+                if (
+                    explicitAnime &&
+                    catalog.canLoadWithoutExtras
+                ) {
+                    return emptyMap()
+                }
+
+                val genreExtra =
+                    catalog.extras.firstOrNull { extra ->
+                        extra.name.equals(
+                            "genre",
+                            ignoreCase = true,
+                        ) &&
+                            (
+                                extra.options.isEmpty() ||
+                                    extra.options.any { option ->
+                                        option.equals(
+                                            "Anime",
+                                            ignoreCase = true,
+                                        )
+                                    }
+                                )
+                    }
+
+                val requiredSupported =
+                    catalog.extras
+                        .filter { it.isRequired }
+                        .all { extra ->
+                            extra.name.equals(
+                                "genre",
+                                ignoreCase = true,
+                            )
+                        }
+
+                if (
+                    genreExtra != null &&
+                    requiredSupported
+                ) {
+                    mapOf("genre" to "Anime")
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    private fun browseAccepts(
+        kind: MediaBrowseKind,
+        item: MediaItem,
+    ): Boolean {
+        val type = item.type.trim().lowercase()
+        val isMovie = type == "movie"
+        val isSeries = type == "series" || type == "tv"
+
+        return when (kind) {
+            MediaBrowseKind.MOVIE -> isMovie
+            MediaBrowseKind.SERIES -> isSeries
+            MediaBrowseKind.ANIME -> isMovie || isSeries
+        }
+    }
+
+    private data class BrowseCatalogBinding(
+        val extension: MediaExtension,
+        val catalog: CatalogDescriptor,
+        val extras: Map<String, String>,
+    )
+
     suspend fun loadMeta(
         item: MediaItem,
     ): MediaItem = coroutineScope {

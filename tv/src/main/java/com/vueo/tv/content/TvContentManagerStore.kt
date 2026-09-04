@@ -1,19 +1,19 @@
 package com.vueo.tv.content
 
 import android.content.Context
+import com.vueo.shared.core.extensions.CatalogDescriptor
+import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryManager
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
-import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 
 class TvContentManagerStore(
     context: Context,
@@ -160,6 +160,7 @@ class TvContentManagerStore(
     private fun bumpDiscoveryRevision() {
         val next = discoveryRevision().let { if (it == Int.MAX_VALUE) 1 else it + 1 }
         prefs.edit().putInt(KEY_DISCOVERY_REVISION, next).apply()
+        CatalogDiscoveryCache.clearMemory()
     }
 
     fun setRepositoryEnabled(url: String, enabled: Boolean) {
@@ -185,6 +186,14 @@ class TvContentManagerStore(
 
     fun enabledAddonUrls(): List<String> =
         addonUrls().filter(::isAddonEnabled)
+
+    fun addonInstallations(): List<TvAddonInstallation> =
+        addonUrls().map { manifestUrl ->
+            TvAddonInstallation(
+                manifestUrl = manifestUrl,
+                enabled = isAddonEnabled(manifestUrl),
+            )
+        }
 
     private fun addonUrls(): List<String> =
         prefs.getStringSet(KEY_ADDON_URLS, emptySet())
@@ -241,27 +250,29 @@ class TvContentManagerStore(
         prefs.edit().putBoolean(KEY_SHARED_PLUGIN_MIGRATION_DONE, true).apply()
     }
 
-    private fun fetchAddon(manifestUrl: String): TvStremioAddonInfo {
-        val json = JSONObject(httpGet(manifestUrl))
-        val id = json.optString("id").trim().ifBlank { fallbackName(manifestUrl) }
-        val name = json.optString("name").trim().ifBlank { fallbackName(manifestUrl) }
-        val resources = json.optJSONArray("resources").resourceNames()
-        val baseUrl = manifestUrl.removeSuffix("/manifest.json").removeSuffix("/")
-        val catalogs = json.optJSONArray("catalogs").catalogs(
-            addonId = id,
-            manifestUrl = manifestUrl,
-            baseUrl = baseUrl,
-            providerName = name,
-        )
+    private suspend fun fetchAddon(manifestUrl: String): TvStremioAddonInfo {
+        val extension = StremioAddonExtension.fromManifestUrl(manifestUrl)
+        val descriptor = extension.descriptor
+        val baseUrl = descriptor.baseUrl
+            .removeSuffix("/manifest.json")
+            .removeSuffix("manifest.json")
+            .removeSuffix("/")
 
         return TvStremioAddonInfo(
-            id = id,
+            id = descriptor.id,
             manifestUrl = manifestUrl,
             baseUrl = baseUrl,
-            name = name,
-            version = json.optString("version").trim().takeIf { it.isNotBlank() },
-            resources = resources,
-            catalogs = catalogs,
+            name = descriptor.name,
+            version = descriptor.version.takeIf { it.isNotBlank() },
+            resources = descriptor.resources.toList().sorted(),
+            catalogs = descriptor.catalogs.map { catalog ->
+                catalog.toTvInfo(
+                    addonId = descriptor.id,
+                    manifestUrl = manifestUrl,
+                    baseUrl = baseUrl,
+                    providerName = descriptor.name,
+                )
+            },
             enabled = isAddonEnabled(manifestUrl),
             reachable = true,
         )
@@ -289,30 +300,6 @@ class TvContentManagerStore(
             enabled = pluginStore.isProviderEnabled(repository, this),
         )
 
-    private fun httpGet(url: String): String {
-        require(url.startsWith("https://")) {
-            "VUEO requires an HTTPS manifest URL."
-        }
-
-        val connection =
-            (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = true
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "VUEO-TV-Content-Manager")
-            }
-
-        return try {
-            val code = connection.responseCode
-            if (code !in 200..299) error("HTTP $code while loading manifest")
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private fun normalizeManifestUrl(input: String): String {
         val trimmed = input.trim().removeSuffix("/")
         require(trimmed.startsWith("https://")) {
@@ -339,8 +326,6 @@ class TvContentManagerStore(
         private const val KEY_CATALOG_ORDER = "catalog_order_v1"
         private const val KEY_DISCOVERY_REVISION = "discovery_revision_v1"
         private const val DEFAULTS_REVISION = 1
-        private const val CONNECT_TIMEOUT_MS = 5_000
-        private const val READ_TIMEOUT_MS = 7_000
 
         val DEFAULT_STREMIO_ADDONS = setOf(
             "https://yastream.tamthai.de/manifest.json",
@@ -412,74 +397,31 @@ data class TvPluginProviderInfo(
     val enabled: Boolean,
 )
 
-private fun JSONArray?.catalogs(
+data class TvAddonInstallation(
+    val manifestUrl: String,
+    val enabled: Boolean,
+)
+
+private fun CatalogDescriptor.toTvInfo(
     addonId: String,
     manifestUrl: String,
     baseUrl: String,
     providerName: String,
-): List<TvStremioCatalogInfo> {
-    if (this == null) return emptyList()
-
-    return (0 until length()).mapNotNull { index ->
-        val item = optJSONObject(index) ?: return@mapNotNull null
-        val type = item.optString("type").trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        val id = item.optString("id").trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        val name = item.optString("name").trim().ifBlank { id }
-        val extras = item.optJSONArray("extra").catalogExtras()
-
-        TvStremioCatalogInfo(
-            key = "$addonId:$type:$id",
-            addonId = addonId,
-            manifestUrl = manifestUrl,
-            baseUrl = baseUrl,
-            providerName = providerName,
-            type = type,
-            id = id,
-            name = name,
-            extras = extras,
-        )
-    }
-}
-
-private fun JSONArray?.catalogExtras(): List<TvStremioCatalogExtraInfo> {
-    if (this == null) return emptyList()
-
-    return (0 until length()).mapNotNull { index ->
-        when (val value = opt(index)) {
-            is String ->
-                value.trim().takeIf { it.isNotBlank() }?.let {
-                    TvStremioCatalogExtraInfo(it, false, emptyList())
-                }
-            is JSONObject -> {
-                val name = value.optString("name").trim().takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-                val options = value.optJSONArray("options").stringValues()
-                TvStremioCatalogExtraInfo(
-                    name = name,
-                    isRequired = value.optBoolean("isRequired", false),
-                    options = options,
-                )
-            }
-            else -> null
-        }
-    }
-}
-
-private fun JSONArray?.stringValues(): List<String> {
-    if (this == null) return emptyList()
-    return (0 until length())
-        .mapNotNull { index -> optString(index).trim().takeIf { it.isNotBlank() } }
-}
-
-private fun JSONArray?.resourceNames(): List<String> {
-    if (this == null) return emptyList()
-    return (0 until length())
-        .mapNotNull { index ->
-            when (val value = opt(index)) {
-                is String -> value.takeIf { it.isNotBlank() }
-                is JSONObject -> value.optString("name").takeIf { it.isNotBlank() }
-                else -> null
-            }
-        }
-        .distinct()
-}
+): TvStremioCatalogInfo =
+    TvStremioCatalogInfo(
+        key = "$addonId:$type:$id",
+        addonId = addonId,
+        manifestUrl = manifestUrl,
+        baseUrl = baseUrl,
+        providerName = providerName,
+        type = type,
+        id = id,
+        name = name?.takeIf { it.isNotBlank() } ?: id,
+        extras = extras.map { extra ->
+            TvStremioCatalogExtraInfo(
+                name = extra.name,
+                isRequired = extra.isRequired,
+                options = extra.options,
+            )
+        },
+    )

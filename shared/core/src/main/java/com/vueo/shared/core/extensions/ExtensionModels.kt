@@ -5,6 +5,12 @@ enum class ExtensionKind {
     PROVIDER_PLUGIN,
 }
 
+enum class MediaBrowseKind {
+    MOVIE,
+    SERIES,
+    ANIME,
+}
+
 enum class ExtensionHealth {
     ONLINE,
     SLOW,
