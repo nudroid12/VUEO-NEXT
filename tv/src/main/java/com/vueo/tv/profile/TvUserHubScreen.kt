@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,7 +61,6 @@ import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleLanguage
 import com.vueo.shared.core.storage.SubtitleSize
 import com.vueo.shared.core.storage.VueoBackupManager
-import com.vueo.tv.BuildConfig
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
@@ -74,6 +72,36 @@ private val SettingsPanel = Color(0xFF101612)
 private val SettingsMuted = Color(0xFFAAB2AD)
 private val SettingsGreen = Color(0xFF84E100)
 private val SettingsDanger = Color(0xFFFF8A80)
+
+
+private data class TvVersionInfo(
+    val name: String,
+    val code: Long,
+)
+
+@Composable
+private fun rememberTvVersionInfo(): TvVersionInfo {
+    val context = LocalContext.current
+    return remember(context) {
+        runCatching {
+            val packageInfo =
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    0,
+                )
+            @Suppress("DEPRECATION")
+            TvVersionInfo(
+                name = packageInfo.versionName.orEmpty().ifBlank { "Unknown" },
+                code = packageInfo.versionCode.toLong(),
+            )
+        }.getOrElse {
+            TvVersionInfo(
+                name = "Unknown",
+                code = 0L,
+            )
+        }
+    }
+}
 
 private enum class SettingsCategory(
     val title: String,
@@ -498,6 +526,7 @@ private fun SettingsHub(
     focusedIndex: Int,
     onSelect: (Int, SettingsCategory) -> Unit,
 ) {
+    val versionInfo = rememberTvVersionInfo()
     val activeProfile = profileStore.activeProfile()
     val dnaOn = dnaPreferences.userDnaEnabled(activeProfile.id)
     val enhancementCount =
@@ -518,7 +547,7 @@ private fun SettingsHub(
             SettingsCategory.APPEARANCE to "VUEO Dark • ${settingsStore.appAccent().label}",
             SettingsCategory.DATA_STORAGE to "Local device data",
             SettingsCategory.UPDATES to if (settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Manual checks",
-            SettingsCategory.ABOUT to "VUEO TV ${BuildConfig.VERSION_NAME}",
+            SettingsCategory.ABOUT to "VUEO TV ${versionInfo.name}",
         )
 
     Column(
@@ -1229,6 +1258,7 @@ private fun UpdatesPage(
     updateStatus: String?,
     onCheck: () -> Unit,
 ) {
+    val versionInfo = rememberTvVersionInfo()
     var automatic by remember { mutableStateOf(settingsStore.automaticUpdateChecksEnabled()) }
 
     SettingsList {
@@ -1247,7 +1277,7 @@ private fun UpdatesPage(
         item {
             SettingRow(
                 title = "Check for Updates",
-                subtitle = "Current version ${BuildConfig.VERSION_NAME} • build ${BuildConfig.VERSION_CODE}",
+                subtitle = "Current version ${versionInfo.name} • build ${versionInfo.code}",
                 value = "Check Now",
                 onClick = onCheck,
             )
@@ -1273,11 +1303,13 @@ private fun UpdatesPage(
 private fun AboutPage(
     firstRequester: FocusRequester,
 ) {
+    val versionInfo = rememberTvVersionInfo()
+
     SettingsList {
         item {
             SettingsInfoCard(
-                title = "VUEO TV ${BuildConfig.VERSION_NAME}",
-                text = "Build ${BuildConfig.VERSION_CODE} • package com.vueo.tv",
+                title = "VUEO TV ${versionInfo.name}",
+                text = "Build ${versionInfo.code} • package com.vueo.tv",
                 requester = firstRequester,
             )
         }
