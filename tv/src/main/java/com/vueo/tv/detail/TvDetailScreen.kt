@@ -53,6 +53,7 @@ import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.tv.library.TvLibraryStore
+import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.player.TvEpisodeRef
@@ -80,7 +81,7 @@ fun TvDetailScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Settings")
+            TV_TOP_NAV_LABELS
                 .associateWith { FocusRequester() }
         }
     val playRequester = remember { FocusRequester() }

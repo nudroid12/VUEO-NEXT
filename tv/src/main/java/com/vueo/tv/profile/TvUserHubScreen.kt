@@ -61,6 +61,7 @@ import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleLanguage
 import com.vueo.shared.core.storage.SubtitleSize
 import com.vueo.shared.core.storage.VueoBackupManager
+import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
@@ -188,6 +189,8 @@ fun TvUserHubScreen(
     profileStore: ProfileStore,
     settingsStore: SettingsStore,
     libraryStore: TvLibraryStore,
+    initialCategoryKey: String? = null,
+    onExitToPanel: (() -> Unit)? = null,
     onNavigate: (String) -> Unit,
     onProfileChanged: (String) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
@@ -195,7 +198,7 @@ fun TvUserHubScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Settings")
+            TV_TOP_NAV_LABELS
                 .associateWith { FocusRequester() }
         }
     val hubRequesters = remember { List(SettingsCategory.entries.size) { FocusRequester() } }
@@ -211,7 +214,13 @@ fun TvUserHubScreen(
             )
         }
 
-    var category by remember { mutableStateOf<SettingsCategory?>(null) }
+    var category by remember(initialCategoryKey) {
+        mutableStateOf(
+            initialCategoryKey?.let { key ->
+                SettingsCategory.entries.firstOrNull { it.name == key }
+            }
+        )
+    }
     var hubFocusIndex by remember { mutableIntStateOf(0) }
     var profileRevision by remember { mutableIntStateOf(0) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
@@ -275,8 +284,12 @@ fun TvUserHubScreen(
         }
 
     BackHandler(enabled = pinFlow == null) {
-        if (category != null) {
+        if (category != null && !initialCategoryKey.isNullOrBlank() && onExitToPanel != null) {
+            onExitToPanel()
+        } else if (category != null) {
             category = null
+        } else if (onExitToPanel != null) {
+            onExitToPanel()
         } else {
             onNavigate("Home")
         }
@@ -430,7 +443,7 @@ fun TvUserHubScreen(
                 } else {
                     subPageFirstRequester
                 },
-            selectedLabel = "Settings",
+            selectedLabel = "",
             onSelected = onNavigate,
         )
 

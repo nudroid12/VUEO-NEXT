@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
+import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.ui.focus.tvVerticalFocus
 import kotlinx.coroutines.delay
@@ -69,10 +70,11 @@ private enum class TvManagerMode {
 fun TvContentManagerScreen(
     store: TvContentManagerStore,
     onNavigate: (String) -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Settings")
+            TV_TOP_NAV_LABELS
                 .associateWith { FocusRequester() }
         }
     val stremioRequester = remember { FocusRequester() }
@@ -104,7 +106,7 @@ fun TvContentManagerScreen(
         }
     }
 
-    BackHandler { onNavigate("Settings") }
+    BackHandler { onBack?.invoke() ?: onNavigate("Home") }
 
     LaunchedEffect(Unit) {
         runCatching { store.snapshot() }
@@ -160,7 +162,7 @@ fun TvContentManagerScreen(
                         text = "Stremio Addons",
                         selected = mode == TvManagerMode.STREMIO,
                         requester = stremioRequester,
-                        upRequester = navRequesters.getValue("Settings"),
+                        upRequester = navRequesters.getValue("Home"),
                         downRequester = inputRequester,
                         onClick = { mode = TvManagerMode.STREMIO },
                     )
@@ -168,7 +170,7 @@ fun TvContentManagerScreen(
                         text = "JS Providers",
                         selected = mode == TvManagerMode.PROVIDERS,
                         requester = providersRequester,
-                        upRequester = navRequesters.getValue("Settings"),
+                        upRequester = navRequesters.getValue("Home"),
                         downRequester = inputRequester,
                         onClick = { mode = TvManagerMode.PROVIDERS },
                     )
@@ -344,7 +346,7 @@ fun TvContentManagerScreen(
         TvTopNav(
             navRequesters = navRequesters,
             contentDownRequester = if (mode == TvManagerMode.STREMIO) stremioRequester else providersRequester,
-            selectedLabel = "Settings",
+            selectedLabel = "",
             onSelected = onNavigate,
         )
     }

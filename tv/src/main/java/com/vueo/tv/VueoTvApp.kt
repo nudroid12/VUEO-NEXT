@@ -2,6 +2,7 @@ package com.vueo.tv
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.data.TvCatalogRow
+import com.vueo.tv.data.TvBrowseKind
 import com.vueo.tv.data.TvHomeData
 import com.vueo.tv.data.TvHomeRepository
 import com.vueo.tv.data.TvMediaItem
@@ -84,6 +87,9 @@ import com.vueo.tv.ui.focus.tvVerticalFocus
 import com.vueo.tv.update.VueoTvUpdateManager
 import com.vueo.tv.update.VueoTvUpdateRelease
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val VueoBlack = Color(0xFF050706)
@@ -93,10 +99,16 @@ private val VueoYellow = Color(0xFFD6FF00)
 private val VueoMuted = Color(0xFFAAB2AD)
 private const val TV_UPDATER_ENABLED = true
 
+internal val TV_TOP_NAV_LABELS =
+    listOf("Search", "Home", "Library", "Movie", "Series", "Anime")
+
 private enum class TvRootScreen {
     HOME,
     SEARCH,
     LIBRARY,
+    MOVIE,
+    SERIES,
+    ANIME,
     CONTENT_MANAGER,
     USER_HUB,
     PROFILE_PICKER,
@@ -123,7 +135,10 @@ fun VueoTvApp() {
     var playbackReturnScreen by remember { mutableStateOf(TvRootScreen.DETAIL) }
     var searchFocusRestoreToken by remember { mutableStateOf(0) }
     var libraryFocusRestoreToken by remember { mutableStateOf(0) }
+    var browseFocusRestoreToken by remember { mutableStateOf(0) }
     var profileDnaVisible by remember { mutableStateOf(false) }
+    var settingsInitialCategory by remember { mutableStateOf<String?>(null) }
+    var settingsReturnScreen by remember { mutableStateOf(TvRootScreen.HOME) }
     var profileFocusReturnToken by remember { mutableStateOf(0) }
     val libraryStore =
         remember(context) {
@@ -162,25 +177,37 @@ fun VueoTvApp() {
         }
 
     val navigate: (String) -> Unit = { label ->
-        if (label == "Profile") {
-            profileDnaVisible = true
-        } else {
-            val nextScreen =
-                when (label) {
-                    "Home" -> TvRootScreen.HOME
-                    "Search" -> TvRootScreen.SEARCH
-                    "Library" -> TvRootScreen.LIBRARY
-                    "Settings" -> TvRootScreen.USER_HUB
-                    "Content Manager" -> TvRootScreen.CONTENT_MANAGER
-                    else -> currentScreen
+        when (label) {
+            "Profile" -> {
+                profileDnaVisible = true
+            }
+
+            "Settings" -> {
+                currentScreen = settingsReturnScreen
+                profileDnaVisible = true
+            }
+
+            else -> {
+                val nextScreen =
+                    when (label) {
+                        "Home" -> TvRootScreen.HOME
+                        "Search" -> TvRootScreen.SEARCH
+                        "Library" -> TvRootScreen.LIBRARY
+                        "Movie" -> TvRootScreen.MOVIE
+                        "Series" -> TvRootScreen.SERIES
+                        "Anime" -> TvRootScreen.ANIME
+                        "Content Manager" -> TvRootScreen.CONTENT_MANAGER
+                        else -> currentScreen
+                    }
+                if (nextScreen != currentScreen) {
+                    profileDnaVisible = false
+                    settingsInitialCategory = null
+                    detailMedia = null
+                    playbackRequest = null
+                    selectedSource = null
+                    selectedSubtitles = emptyList()
+                    currentScreen = nextScreen
                 }
-            if (nextScreen != currentScreen) {
-                profileDnaVisible = false
-                detailMedia = null
-                playbackRequest = null
-                selectedSource = null
-                selectedSubtitles = emptyList()
-                currentScreen = nextScreen
             }
         }
     }
@@ -281,10 +308,35 @@ fun VueoTvApp() {
                             },
                         )
 
+                    TvRootScreen.MOVIE,
+                    TvRootScreen.SERIES,
+                    TvRootScreen.ANIME -> {
+                        val kind =
+                            when (currentScreen) {
+                                TvRootScreen.MOVIE -> TvBrowseKind.MOVIE
+                                TvRootScreen.SERIES -> TvBrowseKind.SERIES
+                                else -> TvBrowseKind.ANIME
+                            }
+                        TvBrowseScreen(
+                            kind = kind,
+                            focusRestoreToken = browseFocusRestoreToken,
+                            onNavigate = navigate,
+                            onOpenMedia = { media ->
+                                detailMedia = media
+                                detailReturnScreen = currentScreen
+                                currentScreen = TvRootScreen.DETAIL
+                            },
+                        )
+                    }
+
                     TvRootScreen.CONTENT_MANAGER ->
                         TvContentManagerScreen(
                             store = contentManagerStore,
                             onNavigate = navigate,
+                            onBack = {
+                                currentScreen = settingsReturnScreen
+                                profileDnaVisible = true
+                            },
                         )
 
                     TvRootScreen.PROFILE_PICKER ->
@@ -303,6 +355,12 @@ fun VueoTvApp() {
                             profileStore = profileStore,
                             settingsStore = settingsStore,
                             libraryStore = libraryStore,
+                            initialCategoryKey = settingsInitialCategory,
+                            onExitToPanel = {
+                                settingsInitialCategory = null
+                                currentScreen = settingsReturnScreen
+                                profileDnaVisible = true
+                            },
                             onNavigate = navigate,
                             onProfileChanged = {
                                 homeFocusRestoreToken += 1
@@ -367,6 +425,9 @@ fun VueoTvApp() {
                                     when (target) {
                                         TvRootScreen.SEARCH -> searchFocusRestoreToken += 1
                                         TvRootScreen.LIBRARY -> libraryFocusRestoreToken += 1
+                                        TvRootScreen.MOVIE,
+                                        TvRootScreen.SERIES,
+                                        TvRootScreen.ANIME -> browseFocusRestoreToken += 1
                                         else -> homeFocusRestoreToken += 1
                                     }
                                 },
@@ -433,9 +494,16 @@ fun VueoTvApp() {
                             profileDnaVisible = false
                             currentScreen = TvRootScreen.PROFILE_PICKER
                         },
-                        onOpenSettings = {
+                        onOpenSettings = { categoryKey ->
+                            settingsReturnScreen = currentScreen
+                            settingsInitialCategory = categoryKey
                             profileDnaVisible = false
-                            navigate("Settings")
+                            currentScreen = TvRootScreen.USER_HUB
+                        },
+                        onOpenContentManager = {
+                            settingsReturnScreen = currentScreen
+                            profileDnaVisible = false
+                            currentScreen = TvRootScreen.CONTENT_MANAGER
                         },
                     )
                 }
@@ -503,7 +571,7 @@ private fun VueoTvHome(
         }
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Settings")
+            TV_TOP_NAV_LABELS
                 .associateWith { FocusRequester() }
         }
     val heroPlayRequester = remember { FocusRequester() }
@@ -812,22 +880,24 @@ internal fun TvTopNav(
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.sp,
             )
-            Spacer(Modifier.width(48.dp))
+            Spacer(Modifier.width(40.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TvSearchNavItem(
+                    selected = selectedLabel == "Search",
+                    requester = navRequesters.getValue("Search"),
+                    downRequester = contentDownRequester,
+                    onClick = { onSelected("Search") },
+                )
                 TvNavItem(
                     label = "Home",
                     selected = selectedLabel == "Home",
                     requester = navRequesters.getValue("Home"),
                     downRequester = contentDownRequester,
                     onClick = { onSelected("Home") },
-                )
-                TvNavItem(
-                    label = "Search",
-                    selected = selectedLabel == "Search",
-                    requester = navRequesters.getValue("Search"),
-                    downRequester = contentDownRequester,
-                    onClick = { onSelected("Search") },
                 )
                 TvNavItem(
                     label = "Library",
@@ -837,19 +907,39 @@ internal fun TvTopNav(
                     onClick = { onSelected("Library") },
                 )
                 TvNavItem(
-                    label = "Settings",
-                    selected = selectedLabel == "Settings",
-                    requester = navRequesters.getValue("Settings"),
+                    label = "Movie",
+                    selected = selectedLabel == "Movie",
+                    requester = navRequesters.getValue("Movie"),
                     downRequester = contentDownRequester,
-                    onClick = { onSelected("Settings") },
+                    onClick = { onSelected("Movie") },
+                )
+                TvNavItem(
+                    label = "Series",
+                    selected = selectedLabel == "Series",
+                    requester = navRequesters.getValue("Series"),
+                    downRequester = contentDownRequester,
+                    onClick = { onSelected("Series") },
+                )
+                TvNavItem(
+                    label = "Anime",
+                    selected = selectedLabel == "Anime",
+                    requester = navRequesters.getValue("Anime"),
+                    downRequester = contentDownRequester,
+                    onClick = { onSelected("Anime") },
                 )
             }
         }
 
-        TvProfileNavItem(
-            downRequester = contentDownRequester,
-            onClick = { onSelected("Profile") },
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TvClock()
+            TvProfileNavItem(
+                downRequester = contentDownRequester,
+                onClick = { onSelected("Profile") },
+            )
+        }
     }
 }
 
@@ -858,15 +948,96 @@ private object TvTopNavProfileFocus {
 }
 
 @Composable
+private fun TvClock() {
+    val context = LocalContext.current
+    var now by remember { mutableStateOf(Date()) }
+    val pattern =
+        remember(context) {
+            if (android.text.format.DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a"
+        }
+    val formatter = remember(pattern) { SimpleDateFormat(pattern, Locale.getDefault()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = Date()
+            delay(30_000L)
+        }
+    }
+
+    Text(
+        text = formatter.format(now),
+        color = Color.White.copy(alpha = 0.82f),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+@Composable
+private fun TvSearchNavItem(
+    selected: Boolean,
+    requester: FocusRequester,
+    downRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.09f else 1f,
+        label = "searchNavScale",
+    )
+
+    Box(
+        modifier =
+            Modifier
+                .width(42.dp)
+                .height(42.dp)
+                .focusRequester(requester)
+                .tvVerticalFocus(down = downRequester)
+                .scale(scale)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) TvFocusMemory.rememberNav("Search")
+                }
+                .clickable(onClick = onClick)
+                .focusable()
+                .background(
+                    color =
+                        when {
+                            selected -> Color.White.copy(alpha = 0.16f)
+                            focused -> Color.White.copy(alpha = 0.12f)
+                            else -> Color.Transparent
+                        },
+                    shape = CircleShape,
+                )
+                .border(
+                    width = if (focused) 2.dp else 0.dp,
+                    color = if (focused) Color.White else Color.Transparent,
+                    shape = CircleShape,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.width(20.dp).height(20.dp)) {
+            val stroke = 2.2.dp.toPx()
+            drawCircle(
+                color = Color.White,
+                radius = size.minDimension * 0.31f,
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.43f, size.height * 0.43f),
+                style = Stroke(width = stroke),
+            )
+            drawLine(
+                color = Color.White,
+                start = androidx.compose.ui.geometry.Offset(size.width * 0.64f, size.height * 0.64f),
+                end = androidx.compose.ui.geometry.Offset(size.width * 0.88f, size.height * 0.88f),
+                strokeWidth = stroke,
+            )
+        }
+    }
+}
+
+@Composable
 private fun TvProfileNavItem(
     downRequester: FocusRequester,
     onClick: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val profileName =
-        remember(context) {
-            ProfileStore(context.applicationContext).activeProfile().name
-        }
     val requester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -905,12 +1076,21 @@ private fun TvProfileNavItem(
                 ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = profileName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "V",
-            color = Color.White,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Black,
-        )
+        Canvas(modifier = Modifier.width(24.dp).height(24.dp)) {
+            drawCircle(
+                color = Color.White,
+                radius = size.minDimension * 0.18f,
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.34f),
+            )
+            drawArc(
+                color = Color.White,
+                startAngle = 195f,
+                sweepAngle = 150f,
+                useCenter = true,
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.20f, size.height * 0.47f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.60f, size.height * 0.48f),
+            )
+        }
     }
 }
 

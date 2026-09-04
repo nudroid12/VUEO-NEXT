@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.tv.TV_TOP_NAV_LABELS
 import com.vueo.tv.TvTopNav
 import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.ui.components.TvNetworkImage
@@ -69,7 +70,7 @@ fun TvLibraryScreen(
 ) {
     val navRequesters =
         remember {
-            listOf("Home", "Search", "Library", "Settings")
+            TV_TOP_NAV_LABELS
                 .associateWith { FocusRequester() }
         }
     val firstCardRequester = remember { FocusRequester() }
