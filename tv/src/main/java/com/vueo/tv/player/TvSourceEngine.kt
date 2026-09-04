@@ -8,6 +8,7 @@ import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.stremio.StremioSourceResolver
 import com.vueo.tv.content.TvContentManagerStore
 import com.vueo.tv.data.TvMediaItem
@@ -30,6 +31,11 @@ class TvSourceEngine(
     private val appContext = context.applicationContext
     private val pluginStore = contentStore.sharedPluginStore()
     private val pluginEngine = PluginSourceEngine(appContext, pluginStore)
+    private val settingsStore =
+        SettingsStore(
+            context = appContext,
+            prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+        )
     private val cache = LinkedHashMap<String, CachedSources>()
     private val subtitleCache = LinkedHashMap<String, CachedSubtitles>()
     private val cacheMutex = Mutex()
@@ -39,7 +45,8 @@ class TvSourceEngine(
         onProgress: suspend (TvSourceProgress) -> Unit = {},
     ): TvSourceDiscovery = coroutineScope {
         val effectiveRequest = resolvePlayableRequest(request)
-        val key = effectiveRequest.cacheKey
+        val qualityKey = settingsStore.preferredQuality().name
+        val key = "${effectiveRequest.cacheKey}|quality:$qualityKey"
         val cached = cacheMutex.withLock { cache[key] }
 
         if (cached != null && System.currentTimeMillis() - cached.atMs <= CACHE_TTL_MS) {
@@ -297,13 +304,17 @@ class TvSourceEngine(
     ): List<SourceCandidate> =
         SourceSelector.playable(
             sources = input,
+            preferredQuality = settingsStore.preferredQuality().rankKey,
             originalLanguage = originalLanguage,
         )
 
     private fun orderAllSources(
         input: List<SourceCandidate>,
     ): List<SourceCandidate> =
-        SourceSelector.orderAll(input)
+        SourceSelector.orderAll(
+            sources = input,
+            preferredQuality = settingsStore.preferredQuality().rankKey,
+        )
 
     private fun httpGet(url: String): String {
         require(url.startsWith("https://")) {

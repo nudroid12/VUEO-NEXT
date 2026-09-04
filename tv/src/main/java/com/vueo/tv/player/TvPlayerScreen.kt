@@ -70,6 +70,7 @@ import androidx.media3.ui.PlayerView
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRanker
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.storage.SettingsStore
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -100,6 +101,13 @@ fun TvPlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val settingsStore =
+        remember(context) {
+            SettingsStore(
+                context = context.applicationContext,
+                prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+            )
+        }
     val httpFactory = remember(context, request.cacheKey) {
         DefaultHttpDataSource.Factory()
             .setUserAgent("VUEO-TV/0.7")
@@ -183,6 +191,14 @@ fun TvPlayerScreen(
 
     fun recoverOrWait(message: String?) {
         currentSource?.url?.let { failedSourceUrls += it }
+
+        if (!settingsStore.autoSourceRecoveryEnabled()) {
+            waitingForRecovery = false
+            playerError = message ?: "Playback failed."
+            touchControls()
+            return
+        }
+
         val next = nextRecoveryCandidate()
         when {
             next != null -> playSource(next, positionMs)
@@ -217,8 +233,21 @@ fun TvPlayerScreen(
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_ENDED) {
-                    playbackStore.clear(request)
+                    val completedDuration =
+                        player.duration
+                            .takeIf { it > 0L }
+                            ?: durationMs
+
+                    playbackStore.complete(
+                        request = request,
+                        durationMs = completedDuration,
+                    )
                     controlsVisible = true
+
+                    if (settingsStore.autoPlayNextEpisodeEnabled()) {
+                        request.nextRequest()
+                            ?.let(onPlayRequest)
+                    }
                 }
             }
 

@@ -64,8 +64,12 @@ import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.player.TvSourceEngine
 import com.vueo.tv.player.TvSourcePickerScreen
+import com.vueo.tv.profile.TvUserHubScreen
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.content.TvContentManagerScreen
 import com.vueo.tv.content.TvContentManagerStore
 import com.vueo.tv.ui.components.TvNetworkImage
@@ -91,6 +95,7 @@ private enum class TvRootScreen {
     SEARCH,
     LIBRARY,
     CONTENT_MANAGER,
+    USER_HUB,
     DETAIL,
     SOURCE_PICKER,
     PLAYER,
@@ -111,11 +116,23 @@ fun VueoTvApp() {
     var selectedSource by remember { mutableStateOf<SourceCandidate?>(null) }
     var selectedSubtitles by remember { mutableStateOf<List<SubtitleCandidate>>(emptyList()) }
     var detailReturnScreen by remember { mutableStateOf(TvRootScreen.HOME) }
+    var playbackReturnScreen by remember { mutableStateOf(TvRootScreen.DETAIL) }
     var searchFocusRestoreToken by remember { mutableStateOf(0) }
     var libraryFocusRestoreToken by remember { mutableStateOf(0) }
     val libraryStore =
         remember(context) {
             TvLibraryStore(context.applicationContext)
+        }
+    val profileStore =
+        remember(context) {
+            ProfileStore(context.applicationContext)
+        }
+    val settingsStore =
+        remember(context) {
+            SettingsStore(
+                context = context.applicationContext,
+                prefsName = TvPlaybackStore.SETTINGS_PREFS_NAME,
+            )
         }
     val contentManagerStore =
         remember(context) {
@@ -142,6 +159,7 @@ fun VueoTvApp() {
                 "Search" -> TvRootScreen.SEARCH
                 "Library" -> TvRootScreen.LIBRARY
                 "Content Manager" -> TvRootScreen.CONTENT_MANAGER
+                "Luckez" -> TvRootScreen.USER_HUB
                 else -> currentScreen
             }
         if (nextScreen != currentScreen) {
@@ -154,7 +172,7 @@ fun VueoTvApp() {
     }
 
     LaunchedEffect(Unit) {
-        if (TV_UPDATER_ENABLED) {
+        if (TV_UPDATER_ENABLED && settingsStore.automaticUpdateChecksEnabled()) {
             VueoTvUpdateManager.check(
                 context = context.applicationContext,
                 force = false,
@@ -166,6 +184,12 @@ fun VueoTvApp() {
                     updateError = null
                 }
             }
+        }
+    }
+
+    LaunchedEffect(profileStore) {
+        if (profileStore.shouldShowPickerOnStartup()) {
+            currentScreen = TvRootScreen.USER_HUB
         }
     }
 
@@ -185,6 +209,30 @@ fun VueoTvApp() {
                                 detailMedia = media
                                 detailReturnScreen = TvRootScreen.HOME
                                 currentScreen = TvRootScreen.DETAIL
+                            },
+                            onPlayMedia = { media ->
+                                if (media.type.equals("movie", ignoreCase = true)) {
+                                    playbackReturnScreen = TvRootScreen.HOME
+                                    playbackRequest =
+                                        TvPlaybackRequest(
+                                            media = media,
+                                            videoId = media.id,
+                                        )
+                                    selectedSource = null
+                                    selectedSubtitles = emptyList()
+                                    currentScreen = TvRootScreen.SOURCE_PICKER
+                                } else {
+                                    detailMedia = media
+                                    detailReturnScreen = TvRootScreen.HOME
+                                    currentScreen = TvRootScreen.DETAIL
+                                }
+                            },
+                            onResumeEntry = { entry ->
+                                playbackReturnScreen = TvRootScreen.HOME
+                                playbackRequest = entry.toTvPlaybackRequest()
+                                selectedSource = null
+                                selectedSubtitles = emptyList()
+                                currentScreen = TvRootScreen.SOURCE_PICKER
                             },
                         )
 
@@ -218,6 +266,26 @@ fun VueoTvApp() {
                             onNavigate = navigate,
                         )
 
+                    TvRootScreen.USER_HUB ->
+                        TvUserHubScreen(
+                            profileStore = profileStore,
+                            settingsStore = settingsStore,
+                            libraryStore = libraryStore,
+                            onNavigate = navigate,
+                            onProfileChanged = {
+                                homeFocusRestoreToken += 1
+                                searchFocusRestoreToken += 1
+                                libraryFocusRestoreToken += 1
+                            },
+                            onResume = { entry ->
+                                playbackReturnScreen = TvRootScreen.USER_HUB
+                                playbackRequest = entry.toTvPlaybackRequest()
+                                selectedSource = null
+                                selectedSubtitles = emptyList()
+                                currentScreen = TvRootScreen.SOURCE_PICKER
+                            },
+                        )
+
                     TvRootScreen.DETAIL -> {
                         val media = detailMedia
                         if (media != null) {
@@ -228,6 +296,7 @@ fun VueoTvApp() {
                                 isInMyList = libraryStore.contains(media),
                                 onToggleMyList = { libraryStore.toggle(media) },
                                 onPlay = { request ->
+                                    playbackReturnScreen = TvRootScreen.DETAIL
                                     playbackRequest = request
                                     selectedSource = null
                                     selectedSubtitles = emptyList()
@@ -265,7 +334,7 @@ fun VueoTvApp() {
                                     playbackRequest = null
                                     selectedSource = null
                                     selectedSubtitles = emptyList()
-                                    currentScreen = TvRootScreen.DETAIL
+                                    currentScreen = playbackReturnScreen
                                 },
                             )
                         }
@@ -291,7 +360,7 @@ fun VueoTvApp() {
                                     playbackRequest = null
                                     selectedSource = null
                                     selectedSubtitles = emptyList()
-                                    currentScreen = TvRootScreen.DETAIL
+                                    currentScreen = playbackReturnScreen
                                 },
                             )
                         }
@@ -351,6 +420,8 @@ private fun VueoTvHome(
     onNavigate: (String) -> Unit,
     libraryStore: TvLibraryStore,
     onOpenMedia: (TvMediaItem) -> Unit,
+    onPlayMedia: (TvMediaItem) -> Unit,
+    onResumeEntry: (LibraryPlaybackEntry) -> Unit,
 ) {
     val context = LocalContext.current
     val repository =
@@ -419,6 +490,7 @@ private fun VueoTvHome(
                 HomeContent(
                     home = home!!,
                     hero = selectedHero!!,
+                    continueWatching = libraryStore.continueWatching(),
                     navRequesters = navRequesters,
                     heroPlayRequester = heroPlayRequester,
                     heroListRequester = heroListRequester,
@@ -428,6 +500,8 @@ private fun VueoTvHome(
                     isInMyList = { libraryStore.contains(it) },
                     onToggleMyList = { libraryStore.toggle(it) },
                     onOpenMedia = onOpenMedia,
+                    onPlayMedia = onPlayMedia,
+                    onResumeEntry = onResumeEntry,
                 )
             }
 
@@ -451,6 +525,7 @@ private fun VueoTvHome(
 private fun HomeContent(
     home: TvHomeData,
     hero: TvMediaItem,
+    continueWatching: List<LibraryPlaybackEntry>,
     navRequesters: Map<String, FocusRequester>,
     heroPlayRequester: FocusRequester,
     heroListRequester: FocusRequester,
@@ -460,17 +535,32 @@ private fun HomeContent(
     isInMyList: (TvMediaItem) -> Boolean,
     onToggleMyList: (TvMediaItem) -> Boolean,
     onOpenMedia: (TvMediaItem) -> Unit,
+    onPlayMedia: (TvMediaItem) -> Unit,
+    onResumeEntry: (LibraryPlaybackEntry) -> Unit,
 ) {
     val columnState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val rowKey = remember(home.rows) { home.rows.joinToString("|") { it.id } }
+    val continueRowId = "continue-watching"
+    val contentRowIds =
+        remember(home.rows, continueWatching) {
+            buildList {
+                if (continueWatching.isNotEmpty()) {
+                    add(continueRowId)
+                }
+                addAll(home.rows.map { it.id })
+            }
+        }
+    val rowKey = remember(contentRowIds) { contentRowIds.joinToString("|") }
     val rowEntryRequesters =
         remember(rowKey) {
-            home.rows.associate { it.id to FocusRequester() }
+            contentRowIds.associateWith { FocusRequester() }
         }
-    val firstRowRequester = home.rows.firstOrNull()?.let { rowEntryRequesters[it.id] }
+    val firstRowRequester =
+        contentRowIds.firstOrNull()
+            ?.let(rowEntryRequesters::get)
     val homeNavRequester = navRequesters.getValue("Home")
     val railStartIndex = if (refreshError != null) 2 else 1
+    val catalogRowOffset = if (continueWatching.isNotEmpty()) 1 else 0
     var lastVerticalRow by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(rowKey, focusRestoreToken) {
@@ -493,7 +583,7 @@ private fun HomeContent(
                 TvFocusZone.Rail -> {
                     val rememberedRowId = TvFocusMemory.lastRowId
                     val rememberedRowIndex =
-                        home.rows.indexOfFirst { it.id == rememberedRowId }
+                        contentRowIds.indexOf(rememberedRowId)
                     if (rememberedRowIndex >= 0) {
                         columnState.scrollToItem(railStartIndex + rememberedRowIndex)
                         delay(70)
@@ -525,6 +615,7 @@ private fun HomeContent(
                 providerName = home.providerName,
                 inMyList = isInMyList(hero),
                 onToggleMyList = { onToggleMyList(hero) },
+                onPlay = { onPlayMedia(hero) },
                 onFocused = {
                     if (lastVerticalRow != null) {
                         lastVerticalRow = null
@@ -547,16 +638,48 @@ private fun HomeContent(
             }
         }
 
+        if (continueWatching.isNotEmpty()) {
+            item(key = continueRowId) {
+                TvContinueWatchingRail(
+                    entries = continueWatching,
+                    entryRequester = rowEntryRequesters.getValue(continueRowId),
+                    upRequester = heroPlayRequester,
+                    downRequester =
+                        home.rows.firstOrNull()
+                            ?.let { rowEntryRequesters[it.id] },
+                    onFocused = { entry, index ->
+                        onCardFocused(entry.media)
+                        TvFocusMemory.rememberRail(
+                            rowId = continueRowId,
+                            itemIndex = index,
+                            mediaKey = "${entry.media.type}:${entry.media.id}",
+                        )
+                        if (lastVerticalRow != continueRowId) {
+                            lastVerticalRow = continueRowId
+                            scope.launch {
+                                columnState.animateScrollToItem(
+                                    index = railStartIndex,
+                                )
+                            }
+                        }
+                    },
+                    onResume = onResumeEntry,
+                )
+            }
+        }
+
         home.rows.forEachIndexed { rowIndex, row ->
+            val contentIndex = rowIndex + catalogRowOffset
             val upRequester =
-                if (rowIndex == 0) {
+                if (contentIndex == 0) {
                     heroPlayRequester
                 } else {
-                    rowEntryRequesters[home.rows[rowIndex - 1].id]
+                    contentRowIds.getOrNull(contentIndex - 1)
+                        ?.let(rowEntryRequesters::get)
                 }
             val downRequester =
-                home.rows.getOrNull(rowIndex + 1)
-                    ?.let { rowEntryRequesters[it.id] }
+                contentRowIds.getOrNull(contentIndex + 1)
+                    ?.let(rowEntryRequesters::get)
             val entryRequester = rowEntryRequesters.getValue(row.id)
 
             item(key = row.id) {
@@ -571,7 +694,7 @@ private fun HomeContent(
                             lastVerticalRow = row.id
                             scope.launch {
                                 columnState.animateScrollToItem(
-                                    index = railStartIndex + rowIndex,
+                                    index = railStartIndex + contentIndex,
                                 )
                             }
                         }
@@ -722,6 +845,7 @@ private fun Hero(
     providerName: String,
     inMyList: Boolean,
     onToggleMyList: () -> Boolean,
+    onPlay: () -> Unit,
     onFocused: () -> Unit,
 ) {
     Box(
@@ -820,7 +944,7 @@ private fun Hero(
                     downRequester = downRequester,
                     actionIndex = 0,
                     onFocused = onFocused,
-                    onClick = { },
+                    onClick = onPlay,
                 )
                 var saved by remember(item.type, item.id, inMyList) { mutableStateOf(inMyList) }
                 TvHeroButton(
@@ -899,6 +1023,253 @@ private fun TvHeroButton(
         contentPadding = PaddingValues(horizontal = 23.dp, vertical = 12.dp),
     ) {
         Text(text = text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun TvContinueWatchingRail(
+    entries: List<LibraryPlaybackEntry>,
+    entryRequester: FocusRequester,
+    upRequester: FocusRequester?,
+    downRequester: FocusRequester?,
+    onFocused: (LibraryPlaybackEntry, Int) -> Unit,
+    onResume: (LibraryPlaybackEntry) -> Unit,
+) {
+    val rememberedIndex =
+        TvFocusMemory.railIndex(
+            "continue-watching",
+            entries.size,
+        )
+    val listState =
+        rememberLazyListState(
+            initialFirstVisibleItemIndex =
+                (rememberedIndex - 1)
+                    .coerceAtLeast(0),
+        )
+    val scope = rememberCoroutineScope()
+    var entryIndex by remember(entries.size) {
+        mutableStateOf(rememberedIndex)
+    }
+
+    Column(
+        modifier = Modifier.padding(top = 10.dp),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 58.dp,
+                        vertical = 8.dp,
+                    ),
+            horizontalArrangement =
+                Arrangement.SpaceBetween,
+            verticalAlignment =
+                Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Continue Watching",
+                color = Color.White,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Your progress",
+                color = VueoMuted.copy(alpha = 0.68f),
+                fontSize = 11.sp,
+            )
+        }
+
+        LazyRow(
+            state = listState,
+            contentPadding =
+                PaddingValues(
+                    horizontal = 58.dp,
+                    vertical = 10.dp,
+                ),
+            horizontalArrangement =
+                Arrangement.spacedBy(15.dp),
+        ) {
+            itemsIndexed(
+                items = entries,
+                key = { _, entry -> entry.mediaKey },
+            ) { index, entry ->
+                val entryModifier =
+                    if (index == entryIndex) {
+                        Modifier.focusRequester(
+                            entryRequester
+                        )
+                    } else {
+                        Modifier
+                    }
+
+                TvContinueWatchingCard(
+                    entry = entry,
+                    modifier = entryModifier,
+                    upRequester = upRequester,
+                    downRequester = downRequester,
+                    onFocused = {
+                        entryIndex = index
+                        onFocused(entry, index)
+                        scope.launch {
+                            listState.animateScrollToItem(
+                                index =
+                                    (index - 1)
+                                        .coerceAtLeast(0),
+                            )
+                        }
+                    },
+                    onClick = {
+                        onResume(entry)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvContinueWatchingCard(
+    entry: LibraryPlaybackEntry,
+    modifier: Modifier = Modifier,
+    upRequester: FocusRequester?,
+    downRequester: FocusRequester?,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember {
+        mutableStateOf(false)
+    }
+    val scale by animateFloatAsState(
+        if (focused) 1.06f else 1f,
+        label = "continueCardScale",
+    )
+    val borderColor by animateColorAsState(
+        if (focused) VueoYellow
+        else Color.Transparent,
+        label = "continueCardBorder",
+    )
+
+    Column(
+        modifier =
+            modifier
+                .width(230.dp)
+                .zIndex(if (focused) 1f else 0f)
+                .scale(scale)
+                .tvVerticalFocus(
+                    up = upRequester,
+                    down = downRequester,
+                )
+                .onFocusChanged { state ->
+                    focused = state.isFocused
+                    if (state.isFocused) {
+                        onFocused()
+                    }
+                }
+                .clickable(onClick = onClick)
+                .focusable(),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(132.dp)
+                    .background(
+                        VueoPanel,
+                        RoundedCornerShape(12.dp),
+                    )
+                    .border(
+                        width =
+                            if (focused) 2.dp
+                            else 1.dp,
+                        color = borderColor,
+                        shape =
+                            RoundedCornerShape(12.dp),
+                    ),
+        ) {
+            TvNetworkImage(
+                url =
+                    entry.media.background
+                        ?: entry.media.poster,
+                contentDescription =
+                    entry.media.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .background(
+                            Color.White.copy(
+                                alpha = 0.24f
+                            )
+                        ),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth(
+                                entry.progressFraction
+                                    .coerceIn(
+                                        0.02f,
+                                        1f,
+                                    )
+                            )
+                            .fillMaxHeight()
+                            .background(
+                                VueoYellow
+                            ),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = entry.media.name,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight =
+                if (focused) FontWeight.Bold
+                else FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text =
+                buildList {
+                    if (
+                        entry.season != null &&
+                        entry.episode != null
+                    ) {
+                        add(
+                            "S${entry.season}E${entry.episode}"
+                        )
+                    }
+                    entry.episodeTitle
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let(::add)
+                    if (isEmpty()) {
+                        add(
+                            "${(entry.progressFraction * 100).toInt()}% watched"
+                        )
+                    }
+                }.joinToString(" • "),
+            color =
+                if (focused) {
+                    Color.White.copy(alpha = 0.74f)
+                } else {
+                    VueoMuted
+                },
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1073,6 +1444,16 @@ private fun cardMeta(item: TvMediaItem): String =
         item.displayType,
         item.releaseInfo?.takeIf { it.isNotBlank() },
     ).joinToString(" • ")
+
+private fun LibraryPlaybackEntry.toTvPlaybackRequest():
+    TvPlaybackRequest =
+    TvPlaybackRequest(
+        media = media,
+        videoId = videoId,
+        episodeTitle = episodeTitle,
+        season = season,
+        episode = episode,
+    )
 
 @Composable
 private fun TvUpdateOverlay(

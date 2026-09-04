@@ -1,27 +1,44 @@
 package com.vueo.tv.library
 
 import android.content.Context
-import com.vueo.shared.core.storage.MediaLibraryStore
+import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.tv.data.TvMediaItem
 
 class TvLibraryStore(
     context: Context,
 ) {
     private val delegate =
-        MediaLibraryStore(
+        LibraryStore(
             context = context.applicationContext,
             prefsName = PREFS_NAME,
-            storageKey = KEY_LIBRARY,
+            watchlistStorageKey = KEY_LIBRARY,
         )
 
-    fun items(): List<TvMediaItem> = delegate.items()
+    fun items(): List<TvMediaItem> = delegate.watchlist()
 
-    fun contains(media: TvMediaItem): Boolean = delegate.contains(media)
+    fun contains(media: TvMediaItem): Boolean = delegate.isWatchlisted(media)
 
-    fun toggle(media: TvMediaItem): Boolean = delegate.toggle(media)
+    fun toggle(media: TvMediaItem): Boolean = delegate.toggleWatchlist(media)
+
+    fun continueWatching(): List<LibraryPlaybackEntry> =
+        delegate.continueWatching()
+
+    fun history(): List<LibraryPlaybackEntry> =
+        delegate.history()
+
+    fun clearHistory() {
+        delegate.clearHistory()
+    }
+
+    fun removeFromContinueWatching(
+        entry: LibraryPlaybackEntry,
+    ) {
+        delegate.removeFromContinueWatching(entry)
+    }
 
     companion object {
-        private const val PREFS_NAME = "vueo_tv_library"
-        private const val KEY_LIBRARY = "my_list_v1"
+        const val PREFS_NAME = "vueo_tv_library"
+        const val KEY_LIBRARY = "my_list_v1"
     }
 }
