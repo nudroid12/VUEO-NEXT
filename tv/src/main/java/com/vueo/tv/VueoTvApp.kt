@@ -179,7 +179,12 @@ fun VueoTvApp() {
     val navigate: (String) -> Unit = { label ->
         when (label) {
             "Profile" -> {
-                profileDnaVisible = true
+                if (profileDnaVisible) {
+                    profileDnaVisible = false
+                    profileFocusReturnToken += 1
+                } else {
+                    profileDnaVisible = true
+                }
             }
 
             "Settings" -> {
@@ -214,7 +219,7 @@ fun VueoTvApp() {
 
     LaunchedEffect(profileFocusReturnToken) {
         if (profileFocusReturnToken > 0) {
-            delay(70)
+            delay(220)
             runCatching { TvTopNavProfileFocus.requester?.requestFocus() }
         }
     }
@@ -483,8 +488,8 @@ fun VueoTvApp() {
                     }
                 }
 
-                if (profileDnaVisible) {
-                    TvProfileDnaPanel(
+                TvProfileDnaPanel(
+                        visible = profileDnaVisible,
                         profileStore = profileStore,
                         onDismiss = {
                             profileDnaVisible = false
@@ -506,7 +511,6 @@ fun VueoTvApp() {
                             currentScreen = TvRootScreen.CONTENT_MANAGER
                         },
                     )
-                }
 
                 val release = updateRelease
                 if (updateVisible && release != null) {
