@@ -3424,7 +3424,7 @@ private fun EmptyHomeCard(
                             "The installed addon does not expose a catalog that can load without extra filters."
 
                         else ->
-                            "Install a Stremio addon in Content Manager. Available catalogs will appear here automatically."
+                            "Install an addon in Content Manager. Available catalogs will appear here automatically."
                     },
                 color =
                     VueoPalette.Muted,
@@ -7278,183 +7278,96 @@ private fun ContentManagerScreen(
         }
 
     LazyColumn(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    VueoPalette.Background
-                ),
-        contentPadding =
-            PaddingValues(
-                horizontal = 20.dp,
-                vertical = 14.dp,
-            ),
-        verticalArrangement =
-            Arrangement.spacedBy(
-                14.dp
-            ),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(VueoPalette.Background),
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp,
+            top = 16.dp,
+            bottom = 116.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
+        item(key = "content-manager-header") {
             Row(
-                modifier =
-                    Modifier.fillMaxWidth(),
-                verticalAlignment =
-                    Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
             ) {
-                IconButton(
-                    onClick = onBack
-                ) {
+                IconButton(onClick = onBack) {
                     Icon(
                         Icons.Default.ArrowBack,
-                        contentDescription =
-                            "Back to Settings",
+                        contentDescription = "Back to Settings",
                         tint = Color.White,
                     )
                 }
-
-                Column(
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        ),
-                    verticalArrangement =
-                        Arrangement.spacedBy(
-                            3.dp
-                        ),
-                ) {
-                    Text(
-                        "Content Manager",
-                        color = Color.White,
-                        fontSize = 30.sp,
-                        fontWeight =
-                            FontWeight.Black,
-                    )
-                    Text(
-                        "Manage addons, plugins, providers and catalogs.",
-                        color =
-                            VueoPalette.Muted,
-                        fontSize = 12.sp,
+                Spacer(Modifier.width(4.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    VueoSettingsTitle(
+                        title = "Content Manager",
+                        subtitle = "Manage addons, providers and catalogs.",
                     )
                 }
             }
         }
 
-        item {
-            Card(
-                shape =
-                    RoundedCornerShape(
-                        20.dp
-                    ),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor =
-                            VueoPalette
-                                .SurfaceElevated
-                    ),
-            ) {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                16.dp
-                            ),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(
-                            8.dp
-                        ),
-                ) {
-                    ContentMetric(
-                        modifier =
-                            Modifier.weight(1f),
-                        value =
-                            addons.size.toString(),
-                        label = "Installed",
-                    )
-                    ContentMetric(
-                        modifier =
-                            Modifier.weight(1f),
-                        value =
-                            onlineCount.toString(),
-                        label = "Online",
-                    )
-                    ContentMetric(
-                        modifier =
-                            Modifier.weight(1f),
-                        value =
-                            slowCount.toString(),
-                        label = "Slow",
-                    )
-                    ContentMetric(
-                        modifier =
-                            Modifier.weight(1f),
-                        value =
-                            failedCount.toString(),
-                        label = "Failed",
-                    )
-                }
+        item(key = "content-manager-health") {
+            ContentHealthSummary(
+                installed = addons.size,
+                online = onlineCount,
+                slow = slowCount,
+                failed = failedCount,
+            )
+        }
+
+        item(key = "content-manager-group") {
+            VueoSettingsHubGroup(label = "CONTENT") {
+                VueoSettingsHubRow(
+                    title = "Addons",
+                    subtitle = "Catalogs, metadata, streams and subtitles.",
+                    status = "${addons.size} installed",
+                    icon = Icons.Default.Extension,
+                    onClick = onAddons,
+                )
+                VueoSettingsHubDivider()
+                VueoSettingsHubRow(
+                    title = "Plugins & Providers",
+                    subtitle = "Repositories, runtime providers, health and diagnostics.",
+                    status = "$repositoryCount repos • $providerCount providers",
+                    icon = Icons.Default.SettingsInputComponent,
+                    onClick = onPlugins,
+                )
+                VueoSettingsHubDivider()
+                VueoSettingsHubRow(
+                    title = "Catalog Order",
+                    subtitle = "Choose the order catalogs appear on Home.",
+                    status = "$catalogCount catalogs",
+                    icon = Icons.Default.VideoLibrary,
+                    onClick = onCatalogOrder,
+                )
             }
         }
 
-        item {
-            ContentManagerCard(
-                title = "Addons",
-                subtitle =
-                    "Stremio compatible catalogs, metadata, streams and subtitles.",
-                status =
-                    "${addons.size} installed",
-                icon =
-                    Icons.Default.Extension,
-                onClick = onAddons,
-            )
-        }
-
-        item {
-            ContentManagerCard(
-                title =
-                    "Plugins & Providers",
-                subtitle =
-                    "QuickJS repositories, runtime providers, health and diagnostics.",
-                status =
-                    "$repositoryCount repos • $providerCount providers",
-                icon =
-                    Icons.Default.SettingsInputComponent,
-                onClick = onPlugins,
-            )
-        }
-
-        item {
-            ContentManagerCard(
-                title = "Catalog Order",
-                subtitle =
-                    "Choose the order catalogs appear on Home.",
-                status =
-                    "$catalogCount catalogs",
-                icon =
-                    Icons.Default.VideoLibrary,
-                onClick =
-                    onCatalogOrder,
-            )
-        }
-
-        item {
-            Surface(
-                shape =
-                    RoundedCornerShape(
-                        18.dp
-                    ),
-                color =
-                    VueoPalette.Surface,
+        item(key = "content-manager-note") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 3.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.Top,
             ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(VueoPalette.BrandLime.copy(alpha = .75f))
+                )
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    "Provider Health feeds Smart Source ranking. Slow or failed providers never need to block faster sources.",
-                    modifier =
-                        Modifier.padding(
-                            16.dp
-                        ),
-                    color =
-                        VueoPalette.Muted,
-                    fontSize = 11.sp,
+                    text = "Provider health feeds Smart Source ranking, so slower or unavailable providers do not need to block faster sources.",
+                    color = VueoPalette.Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                 )
             }
         }
@@ -7767,6 +7680,32 @@ private fun CatalogOrderScreen(
 }
 
 @Composable
+private fun ContentHealthSummary(
+    installed: Int,
+    online: Int,
+    slow: Int,
+    failed: Int,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = VueoPalette.SurfaceElevated,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ContentMetric(Modifier.weight(1f), installed.toString(), "Installed")
+            ContentMetric(Modifier.weight(1f), online.toString(), "Online")
+            ContentMetric(Modifier.weight(1f), slow.toString(), "Slow")
+            ContentMetric(Modifier.weight(1f), failed.toString(), "Failed")
+        }
+    }
+}
+
+@Composable
 private fun ContentMetric(
     modifier: Modifier,
     value: String,
@@ -7783,123 +7722,17 @@ private fun ContentMetric(
     ) {
         Text(
             value,
-            color =
-                VueoPalette.Accent,
-            fontSize = 22.sp,
+            color = VueoPalette.BrandLime,
+            fontSize = 18.sp,
             fontWeight =
                 FontWeight.Black,
         )
 
         Text(
             label,
-            color =
-                VueoPalette.Muted,
-            fontSize = 10.sp,
+            color = VueoPalette.Muted,
+            fontSize = 9.sp,
         )
-    }
-}
-
-@Composable
-private fun ContentManagerCard(
-    title: String,
-    subtitle: String,
-    status: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                onClick = onClick
-            ),
-        shape =
-            RoundedCornerShape(
-                20.dp
-            ),
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    VueoPalette
-                        .SurfaceElevated
-            ),
-    ) {
-        Row(
-            modifier =
-                Modifier.padding(
-                    17.dp
-                ),
-            verticalAlignment =
-                Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            14.dp
-                        )
-                    )
-                    .background(
-                        VueoPalette
-                            .SurfaceStrong
-                    ),
-                contentAlignment =
-                    Alignment.Center,
-            ) {
-                Icon(
-                    icon,
-                    contentDescription =
-                        null,
-                    tint =
-                        VueoPalette.Accent,
-                )
-            }
-
-            Spacer(
-                Modifier.width(14.dp)
-            )
-
-            Column(
-                modifier =
-                    Modifier.weight(1f),
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        3.dp
-                    ),
-            ) {
-                Text(
-                    title,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight =
-                        FontWeight.Bold,
-                )
-
-                Text(
-                    subtitle,
-                    color =
-                        VueoPalette.Muted,
-                    fontSize = 11.sp,
-                )
-
-                Text(
-                    status,
-                    color =
-                        VueoPalette.Accent,
-                    fontSize = 10.sp,
-                    fontWeight =
-                        FontWeight.Bold,
-                )
-            }
-
-            Text(
-                "›",
-                color =
-                    VueoPalette.Muted,
-                fontSize = 28.sp,
-            )
-        }
     }
 }
 
@@ -7927,7 +7760,7 @@ private fun AddonsScreen(
     ) {
         ScreenHeader(
             title = "Addons",
-            subtitle = "Stremio compatible content sources",
+            subtitle = "Catalogs, metadata, streams & subtitles",
             onBack = onBack,
             action = {
                 FilledIconButton(onClick = { showInstallDialog = true }) {
@@ -7960,12 +7793,12 @@ private fun AddonsScreen(
                         fontSize = 20.sp,
                     )
                     Text(
-                        "Install an HTTPS Stremio manifest URL. Catalogs exposed by the addon can then populate Home.",
+                        "Install an HTTPS addon manifest URL. Catalogs exposed by the addon can then populate Home.",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f),
                     )
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { showInstallDialog = true }) {
-                        Text("Add Stremio Addon")
+                        Text("Add Addon")
                     }
                 }
             }
@@ -8006,7 +7839,7 @@ private fun AddonsScreen(
                                     AddonCategory.MULTI_PURPOSE ->
                                         "Addons with more than one content capability"
                                     AddonCategory.OTHER ->
-                                        "Other Stremio addon resources"
+                                        "Other addon resources"
                                 },
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
                                 fontSize = 11.sp,
@@ -8092,7 +7925,7 @@ private fun AddonsScreen(
                     status = null
                 }
             },
-            title = { Text("Install Stremio Addon") },
+            title = { Text("Install Addon") },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -17011,7 +16844,7 @@ private class VueoCueNormalizingTextOutput(
     }
 
     @Deprecated(
-        "Uses the deprecated Media3 callback for text outputs."
+        "Uses a deprecated player callback for text outputs."
     )
     override fun onCues(cues: List<Cue>) {
         delegate.onCues(
