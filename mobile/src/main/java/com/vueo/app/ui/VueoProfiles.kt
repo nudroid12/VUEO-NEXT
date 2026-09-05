@@ -1,9 +1,9 @@
 package com.vueo.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -125,12 +125,6 @@ internal fun WhosWatchingScreen(
     val activeProfileId = remember(profileVersion) {
         profileStore.activeProfileId()
     }
-    var askOnStartup by remember(profileVersion) {
-        mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
-    }
-    var editor by remember {
-        mutableStateOf<ProfileEditorState?>(null)
-    }
     var managingProfiles by remember {
         mutableStateOf(false)
     }
@@ -147,22 +141,6 @@ internal fun WhosWatchingScreen(
             onBack = { managingProfiles = false },
         )
         return
-    }
-
-    editor?.let { state ->
-        ProfileEditorDialog(
-            state = state,
-            onDismiss = { editor = null },
-            onSave = { name, avatar, isKids ->
-                profileStore.createProfile(
-                    name = name,
-                    avatar = avatar,
-                    isKids = isKids,
-                )
-                onProfilesChanged()
-                editor = null
-            },
-        )
     }
 
     lockedProfile?.let { profile ->
@@ -186,35 +164,24 @@ internal fun WhosWatchingScreen(
             .fillMaxSize()
             .background(VueoPalette.Background),
         contentPadding = PaddingValues(
-            horizontal = 24.dp,
-            vertical = 24.dp,
+            horizontal = 28.dp,
+            vertical = 34.dp,
         ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item {
             VueoBrandLockup()
         }
 
         item {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text(
-                    "Who's Watching?",
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 30.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    "Choose a profile",
-                    color = VueoPalette.Muted,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            Text(
+                "Who's Watching?",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 31.sp,
+                textAlign = TextAlign.Center,
+            )
         }
 
         items(
@@ -223,7 +190,7 @@ internal fun WhosWatchingScreen(
         ) { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 row.forEach { profile ->
                     WatchingProfileCard(
@@ -240,6 +207,7 @@ internal fun WhosWatchingScreen(
                         },
                     )
                 }
+
                 if (row.size == 1) {
                     Spacer(Modifier.weight(1f))
                 }
@@ -247,70 +215,31 @@ internal fun WhosWatchingScreen(
         }
 
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+            OutlinedButton(
+                onClick = { managingProfiles = true },
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(
+                    1.dp,
+                    VueoPalette.Stroke,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 24.dp,
+                    vertical = 10.dp,
+                ),
             ) {
-                if (profiles.size < ProfileStore.MAX_PROFILES) {
-                    ProfilePickerAction(
-                        title = "Add Profile",
-                        icon = Icons.Default.Add,
-                        onClick = {
-                            editor = ProfileEditorState(profile = null)
-                        },
-                    )
-                }
-                ProfilePickerAction(
-                    title = "Manage Profiles",
-                    icon = Icons.Default.Edit,
-                    onClick = { managingProfiles = true },
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = VueoPalette.Muted,
+                    modifier = Modifier.size(17.dp),
                 )
-            }
-        }
-
-        item {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        askOnStartup = !askOnStartup
-                        profileStore.setAskWhoIsWatchingOnStartup(askOnStartup)
-                    },
-                shape = RoundedCornerShape(16.dp),
-                color = VueoPalette.Surface,
-            ) {
-                Row(
-                    modifier = Modifier.padding(
-                        horizontal = 16.dp,
-                        vertical = 9.dp,
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            "Ask on startup",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                        )
-                        Text(
-                            "Show profile picker when VUEO launches",
-                            color = VueoPalette.Muted,
-                            fontSize = 10.sp,
-                        )
-                    }
-                    Switch(
-                        checked = askOnStartup,
-                        onCheckedChange = {
-                            askOnStartup = it
-                            profileStore.setAskWhoIsWatchingOnStartup(it)
-                        },
-                    )
-                }
+                Spacer(Modifier.size(7.dp))
+                Text(
+                    "Manage Profiles",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -947,21 +876,22 @@ private fun WatchingProfileCard(
     Column(
         modifier = modifier
             .clickable(onClick = onClick)
-            .padding(vertical = 2.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Box(
+            modifier = Modifier.size(112.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
-                    .size(94.dp)
+                    .size(106.dp)
                     .then(
                         if (active) {
                             Modifier.border(
-                                width = 3.dp,
-                                color = VueoPalette.Accent,
+                                width = 2.dp,
+                                color = VueoPalette.BrandLime,
                                 shape = CircleShape,
                             )
                         } else {
@@ -973,7 +903,7 @@ private fun WatchingProfileCard(
             ) {
                 ProfileAvatar(
                     profile = profile,
-                    size = if (active) 82 else 90,
+                    size = if (active) 96 else 104,
                 )
             }
 
@@ -981,10 +911,13 @@ private fun WatchingProfileCard(
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .size(24.dp),
+                        .size(25.dp),
                     shape = CircleShape,
-                    color = VueoPalette.Accent,
-                    border = BorderStroke(3.dp, VueoPalette.Background),
+                    color = VueoPalette.BrandLime,
+                    border = BorderStroke(
+                        3.dp,
+                        VueoPalette.Background,
+                    ),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
@@ -999,24 +932,28 @@ private fun WatchingProfileCard(
         }
 
         Text(
-            profile.name,
+            text = profile.name,
             color = Color.White,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
             maxLines = 1,
         )
 
-        Row(
-            modifier = Modifier.height(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (profile.isKids) {
-                ProfileStatusChip("KIDS")
+        if (profile.isKids || locked) {
+            Row(
+                modifier = Modifier.height(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (profile.isKids) {
+                    ProfileStatusChip("KIDS")
+                }
+                if (locked) {
+                    ProfileStatusChip("PIN")
+                }
             }
-            if (locked) {
-                ProfileStatusChip("PIN")
-            }
+        } else {
+            Spacer(Modifier.height(18.dp))
         }
     }
 }
@@ -1027,49 +964,21 @@ private fun ProfileStatusChip(
 ) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = VueoPalette.Accent.copy(alpha = .10f),
+        color = VueoPalette.BrandLime.copy(alpha = .10f),
         border = BorderStroke(
             1.dp,
-            VueoPalette.Accent.copy(alpha = .32f),
+            VueoPalette.BrandLime.copy(alpha = .28f),
         ),
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(
                 horizontal = 7.dp,
-                vertical = 3.dp,
+                vertical = 2.dp,
             ),
-            color = VueoPalette.Accent,
+            color = VueoPalette.BrandLime,
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,
-        )
-    }
-}
-
-@Composable
-private fun ProfilePickerAction(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    TextButton(
-        modifier = modifier,
-        onClick = onClick,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = VueoPalette.Muted,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.size(6.dp))
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
         )
     }
 }
@@ -1081,8 +990,12 @@ private fun ProfileUnlockDialog(
     onUnlocked: () -> Unit,
     verifyPin: (String) -> Boolean,
 ) {
-    var pin by remember(profile.id) { mutableStateOf("") }
-    var error by remember(profile.id) { mutableStateOf(false) }
+    var pin by remember(profile.id) {
+        mutableStateOf("")
+    }
+    var error by remember(profile.id) {
+        mutableStateOf(false)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1100,7 +1013,10 @@ private fun ProfileUnlockDialog(
                 OutlinedTextField(
                     value = pin,
                     onValueChange = { value ->
-                        if (value.length <= 4 && value.all(Char::isDigit)) {
+                        if (
+                            value.length <= 4 &&
+                            value.all(Char::isDigit)
+                        ) {
                             pin = value
                             error = false
                         }
@@ -1144,6 +1060,58 @@ private fun ProfileUnlockDialog(
     )
 }
 
+@Composable
+private fun AddProfileCard(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = VueoPalette.SurfaceElevated,
+        ),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = 12.dp,
+                    vertical = 20.dp,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = VueoPalette.SurfaceStrong,
+            ) {
+                Box(
+                    modifier = Modifier.size(74.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = VueoPalette.Accent,
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+            }
+            Text(
+                "Add Profile",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+            )
+            Text(
+                "Local",
+                color = VueoPalette.Muted,
+                fontSize = 11.sp,
+            )
+        }
+    }
+}
 @Composable
 private fun ManageProfileCard(
     profile: VueoProfile,
