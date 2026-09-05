@@ -3,6 +3,10 @@ name: VUEO Lean Build and Publish
 on:
   workflow_dispatch:
 
+  repository_dispatch:
+  types:
+    - vueo_build
+
   push:
     branches:
       - main
