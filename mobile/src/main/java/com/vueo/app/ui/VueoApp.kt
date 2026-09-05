@@ -14,6 +14,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -239,6 +240,18 @@ private enum class AppTab {
     SEARCH,
     LIBRARY,
     SETTINGS,
+}
+
+private enum class AppSurface {
+    ROOT,
+    CATALOG,
+    DETAILS,
+}
+
+private enum class DetailSurface {
+    DETAILS,
+    SOURCES,
+    PLAYER,
 }
 
 private enum class SettingsPage {
@@ -558,82 +571,104 @@ fun VueoApp() {
         return
     }
 
-    if (
-        selectedCatalogRow != null &&
-        selectedMedia == null
-    ) {
-        CatalogSeeAllScreen(
-            row =
-                selectedCatalogRow!!,
-            libraryStore =
-                libraryStore,
-            libraryVersion =
-                libraryVersion,
-            onLibraryChanged = {
-                libraryVersion++
-            },
-            onBack = {
-                selectedCatalogRow =
-                    null
-            },
-            onMediaClick = {
-                item ->
-                selectedLibraryEntry =
-                    null
-                mediaBackStack =
-                    emptyList()
-                selectedMedia = item
-            },
-        )
-        return
+    var transitionCatalogRow by remember {
+        mutableStateOf<CatalogRow?>(null)
+    }
+    var transitionMedia by remember {
+        mutableStateOf<MediaItem?>(null)
+    }
+    var transitionLibraryEntry by remember {
+        mutableStateOf<LibraryPlaybackEntry?>(null)
     }
 
-    if (selectedMedia != null) {
-        MediaDetailsScreen(
-            engine = engine,
-            settingsStore =
-                settingsStore,
-            initialItem = selectedMedia!!,
-            initialLibraryEntry =
-                selectedLibraryEntry,
-            onLibraryChanged = {
-                libraryVersion++
-            },
-            onBack = {
-                val previous =
-                    mediaBackStack
-                        .lastOrNull()
-
-                if (previous == null) {
-                    selectedMedia = null
-                    selectedLibraryEntry =
-                        null
-                } else {
-                    selectedMedia =
-                        previous
-                    mediaBackStack =
-                        mediaBackStack
-                            .dropLast(1)
-                }
-            },
-            onMediaClick = { next ->
-                selectedMedia?.let {
-                    current ->
-
-                    mediaBackStack =
-                        mediaBackStack +
-                            current
-                }
-
-                selectedLibraryEntry =
-                    null
-                selectedMedia = next
-            },
-        )
-        return
+    selectedCatalogRow?.let { row ->
+        transitionCatalogRow = row
+    }
+    selectedMedia?.let { media ->
+        transitionMedia = media
+        transitionLibraryEntry = selectedLibraryEntry
     }
 
-    Scaffold(
+    val appSurface =
+        when {
+            selectedMedia != null -> AppSurface.DETAILS
+            selectedCatalogRow != null -> AppSurface.CATALOG
+            else -> AppSurface.ROOT
+        }
+
+    AnimatedContent(
+        targetState = appSurface,
+        transitionSpec = {
+            vueoFadeThrough(
+                enterDurationMillis = 340,
+                exitDurationMillis = 190,
+                enterDelayMillis = 28,
+                initialScale = 0.988f,
+                targetScale = 0.994f,
+            )
+        },
+        modifier = Modifier.fillMaxSize(),
+        label = "VUEO app surface transition",
+    ) { surface ->
+        when (surface) {
+            AppSurface.CATALOG -> {
+                transitionCatalogRow?.let { row ->
+                    CatalogSeeAllScreen(
+                        row = row,
+                        libraryStore = libraryStore,
+                        libraryVersion = libraryVersion,
+                        onLibraryChanged = {
+                            libraryVersion++
+                        },
+                        onBack = {
+                            selectedCatalogRow = null
+                        },
+                        onMediaClick = { item ->
+                            selectedLibraryEntry = null
+                            mediaBackStack = emptyList()
+                            selectedMedia = item
+                        },
+                    )
+                }
+            }
+
+            AppSurface.DETAILS -> {
+                transitionMedia?.let { detailItem ->
+                    MediaDetailsScreen(
+                        engine = engine,
+                        settingsStore = settingsStore,
+                        initialItem = detailItem,
+                        initialLibraryEntry = transitionLibraryEntry,
+                        onLibraryChanged = {
+                            libraryVersion++
+                        },
+                        onBack = {
+                            val previous =
+                                mediaBackStack.lastOrNull()
+
+                            if (previous == null) {
+                                selectedMedia = null
+                                selectedLibraryEntry = null
+                            } else {
+                                selectedMedia = previous
+                                mediaBackStack =
+                                    mediaBackStack.dropLast(1)
+                            }
+                        },
+                        onMediaClick = { next ->
+                            selectedMedia?.let { current ->
+                                mediaBackStack =
+                                    mediaBackStack + current
+                            }
+
+                            selectedLibraryEntry = null
+                            selectedMedia = next
+                        },
+                    )
+                }
+            }
+
+            AppSurface.ROOT -> Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             Box(
@@ -1117,6 +1152,8 @@ fun VueoApp() {
                 }
             }
         }
+        }
+    }
         }
     }
 }
@@ -10477,171 +10514,217 @@ private fun MediaDetailsScreen(
         onBack()
     }
 
-    if (playbackSource != null && playbackVideoId != null) {
-        val nextEpisode =
-            if (
-                item.type == "series" &&
-                selectedEpisode != null
-            ) {
-                val currentEpisode =
-                    selectedEpisode!!
-
-                item.episodes
-                    .sortedWith(
-                        compareBy<EpisodeItem> {
-                            it.season
-                        }.thenBy {
-                            it.episode
-                        }
-                    )
-                    .firstOrNull { candidate ->
-                        candidate.season >
-                            currentEpisode.season ||
-                            (
-                                candidate.season ==
-                                    currentEpisode.season &&
-                                    candidate.episode >
-                                        currentEpisode.episode
-                            )
-                    }
-            } else {
-                null
-            }
-
-        PlayerScreen(
-            settingsStore =
-                settingsStore,
-            title = playbackTitle(
-                media = item,
-                episode = selectedEpisode,
-            ),
-            mediaKey =
-                "${item.type}:${item.id}:$playbackVideoId",
-            media = item,
-            videoId =
-                playbackVideoId,
-            episode =
-                selectedEpisode,
-            episodes =
-                item.episodes,
-            nextEpisode =
-                nextEpisode,
-            source = playbackSource,
-            availableSources =
-                sourcePickerStreams
-                    .orEmpty(),
-            sourceProviderOrder =
-                sourcePickerProviderOrder,
-            subtitles =
-                sourcePickerSubtitles,
-            initialPositionMs =
-                selectedPlaybackStartPositionMs,
-            episodeSwitchingTo =
-                pendingPlaybackEpisode,
-            episodeSwitchFailed =
-                pendingPlaybackFailed ||
-                    (
-                        pendingPlaybackEpisode != null &&
-                            !sourcePickerSearching &&
-                            sourcePickerStreams != null &&
-                            sourcePickerStreams
-                                .orEmpty()
-                                .none { it.isDirectPlayable }
-                    ),
-            onEpisodeSwitchCompleted = {
-                pendingPlaybackEpisode = null
-                pendingPlaybackFailed = false
-            },
-            onEpisodeSwitchFailed = {
-                pendingPlaybackFailed = true
-            },
-            onLibraryChanged = {
-                refreshDetailPlaybackEntries()
-                onLibraryChanged()
-            },
-            onSwitchSource = {
-                nextSource,
-                positionMs ->
-                selectedPlaybackStartPositionMs =
-                    positionMs
-                selectedPlaybackSource =
-                    nextSource
-            },
-            onNextEpisode = { next ->
-                pendingPlaybackEpisode = next
-                pendingPlaybackFailed = false
-                startSourceDiscovery(
-                    targetEpisode = next,
-                    autoPlayFirst = true,
-                )
-            },
-            onEpisodeSelected = { selected ->
-                pendingPlaybackEpisode = selected
-                pendingPlaybackFailed = false
-                startSourceDiscovery(
-                    targetEpisode = selected,
-                    autoPlayFirst = true,
-                )
-            },
-            onBack = {
-                sourceDiscoveryJob?.cancel()
-                sourceDiscoveryJob = null
-                sourcePickerSearching = false
-                sourcePickerStreams = null
-                loadingStreams = false
-                pendingPlaybackEpisode = null
-                pendingPlaybackFailed = false
-                selectedPlaybackSource = null
-                selectedPlaybackVideoId = null
-                selectedPlaybackStartPositionMs =
-                    0L
-            },
-        )
-        return
+    var transitionSourceStreams by remember {
+        mutableStateOf<List<StreamSource>>(emptyList())
+    }
+    var transitionPlaybackSource by remember {
+        mutableStateOf<StreamSource?>(null)
+    }
+    var transitionPlaybackVideoId by remember {
+        mutableStateOf<String?>(null)
     }
 
     sourcePickerStreams?.let { streams ->
-        SourcePickerScreen(
-            mediaTitle = playbackTitle(
-                media = item,
-                episode = selectedEpisode,
-            ),
-            streams = streams,
-            rawCount = sourcePickerRawCount,
-            notice = sourcePickerNotice,
-            searching = sourcePickerSearching,
-            progressText = sourcePickerProgress,
-            firstResultMs = sourcePickerFirstResultMs,
-            providerOrder =
-                sourcePickerProviderOrder,
-            originalLanguage =
-                item.originalLanguage,
-            showTechnicalDetails =
-                showSourceTechnicalDetails,
-            onBack = {
-                sourceDiscoveryJob?.cancel()
-                sourceDiscoveryJob = null
-                sourcePickerSearching = false
-                loadingStreams = false
-                sourcePickerStreams = null
-            },
-            onPlay = { source ->
-                sourcePickerSearching = false
-
-                val videoId = selectedVideoId(item, selectedEpisode)
-
-                if (videoId != null && source.isDirectPlayable) {
-                    selectedPlaybackStartPositionMs =
-                        selectedPlaybackStartPositionMs
-                            .coerceAtLeast(0L)
-                    selectedPlaybackVideoId = videoId
-                    selectedPlaybackSource = source
-                }
-            },
-        )
-        return
+        transitionSourceStreams = streams
+    }
+    playbackSource?.let { source ->
+        transitionPlaybackSource = source
+    }
+    playbackVideoId?.let { videoId ->
+        transitionPlaybackVideoId = videoId
     }
 
+    val detailSurface =
+        when {
+            playbackSource != null && playbackVideoId != null ->
+                DetailSurface.PLAYER
+            sourcePickerStreams != null ->
+                DetailSurface.SOURCES
+            else -> DetailSurface.DETAILS
+        }
+
+    AnimatedContent(
+        targetState = detailSurface,
+        transitionSpec = {
+            if (
+                initialState == DetailSurface.PLAYER ||
+                targetState == DetailSurface.PLAYER
+            ) {
+                vueoPlayerFadeThrough()
+            } else {
+                vueoFadeThrough(
+                    enterDurationMillis = 320,
+                    exitDurationMillis = 180,
+                    enterDelayMillis = 36,
+                    initialScale = 0.992f,
+                    targetScale = 0.996f,
+                )
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+        label = "VUEO detail source player transition",
+    ) { surface ->
+        when (surface) {
+            DetailSurface.PLAYER -> {
+                val playerSource = transitionPlaybackSource
+                val playerVideoId = transitionPlaybackVideoId
+
+                if (playerSource != null && playerVideoId != null) {
+                    val nextEpisode =
+                        if (
+                            item.type == "series" &&
+                            selectedEpisode != null
+                        ) {
+                            val currentEpisode = selectedEpisode!!
+
+                            item.episodes
+                                .sortedWith(
+                                    compareBy<EpisodeItem> {
+                                        it.season
+                                    }.thenBy {
+                                        it.episode
+                                    }
+                                )
+                                .firstOrNull { candidate ->
+                                    candidate.season >
+                                        currentEpisode.season ||
+                                        (
+                                            candidate.season ==
+                                                currentEpisode.season &&
+                                                candidate.episode >
+                                                    currentEpisode.episode
+                                        )
+                                }
+                        } else {
+                            null
+                        }
+
+                    PlayerScreen(
+                        settingsStore = settingsStore,
+                        title = playbackTitle(
+                            media = item,
+                            episode = selectedEpisode,
+                        ),
+                        mediaKey =
+                            "${item.type}:${item.id}:$playerVideoId",
+                        media = item,
+                        videoId = playerVideoId,
+                        episode = selectedEpisode,
+                        episodes = item.episodes,
+                        nextEpisode = nextEpisode,
+                        source = playerSource,
+                        availableSources = transitionSourceStreams,
+                        sourceProviderOrder =
+                            sourcePickerProviderOrder,
+                        subtitles = sourcePickerSubtitles,
+                        initialPositionMs =
+                            selectedPlaybackStartPositionMs,
+                        episodeSwitchingTo =
+                            pendingPlaybackEpisode,
+                        episodeSwitchFailed =
+                            pendingPlaybackFailed ||
+                                (
+                                    pendingPlaybackEpisode != null &&
+                                        !sourcePickerSearching &&
+                                        sourcePickerStreams != null &&
+                                        sourcePickerStreams
+                                            .orEmpty()
+                                            .none { it.isDirectPlayable }
+                                ),
+                        onEpisodeSwitchCompleted = {
+                            pendingPlaybackEpisode = null
+                            pendingPlaybackFailed = false
+                        },
+                        onEpisodeSwitchFailed = {
+                            pendingPlaybackFailed = true
+                        },
+                        onLibraryChanged = {
+                            refreshDetailPlaybackEntries()
+                            onLibraryChanged()
+                        },
+                        onSwitchSource = {
+                            nextSource,
+                            positionMs ->
+                            selectedPlaybackStartPositionMs =
+                                positionMs
+                            selectedPlaybackSource = nextSource
+                        },
+                        onNextEpisode = { next ->
+                            pendingPlaybackEpisode = next
+                            pendingPlaybackFailed = false
+                            startSourceDiscovery(
+                                targetEpisode = next,
+                                autoPlayFirst = true,
+                            )
+                        },
+                        onEpisodeSelected = { selected ->
+                            pendingPlaybackEpisode = selected
+                            pendingPlaybackFailed = false
+                            startSourceDiscovery(
+                                targetEpisode = selected,
+                                autoPlayFirst = true,
+                            )
+                        },
+                        onBack = {
+                            sourceDiscoveryJob?.cancel()
+                            sourceDiscoveryJob = null
+                            sourcePickerSearching = false
+                            sourcePickerStreams = null
+                            loadingStreams = false
+                            pendingPlaybackEpisode = null
+                            pendingPlaybackFailed = false
+                            selectedPlaybackSource = null
+                            selectedPlaybackVideoId = null
+                            selectedPlaybackStartPositionMs = 0L
+                        },
+                    )
+                }
+            }
+
+            DetailSurface.SOURCES -> {
+                SourcePickerScreen(
+                    mediaTitle = playbackTitle(
+                        media = item,
+                        episode = selectedEpisode,
+                    ),
+                    streams = transitionSourceStreams,
+                    rawCount = sourcePickerRawCount,
+                    notice = sourcePickerNotice,
+                    searching = sourcePickerSearching,
+                    progressText = sourcePickerProgress,
+                    firstResultMs = sourcePickerFirstResultMs,
+                    providerOrder = sourcePickerProviderOrder,
+                    originalLanguage = item.originalLanguage,
+                    showTechnicalDetails =
+                        showSourceTechnicalDetails,
+                    onBack = {
+                        sourceDiscoveryJob?.cancel()
+                        sourceDiscoveryJob = null
+                        sourcePickerSearching = false
+                        loadingStreams = false
+                        sourcePickerStreams = null
+                    },
+                    onPlay = { source ->
+                        sourcePickerSearching = false
+
+                        val videoId =
+                            selectedVideoId(item, selectedEpisode)
+
+                        if (
+                            videoId != null &&
+                            source.isDirectPlayable
+                        ) {
+                            selectedPlaybackStartPositionMs =
+                                selectedPlaybackStartPositionMs
+                                    .coerceAtLeast(0L)
+                            selectedPlaybackVideoId = videoId
+                            selectedPlaybackSource = source
+                        }
+                    },
+                )
+            }
+
+            DetailSurface.DETAILS -> {
     val activePlaybackEntry =
         detailsPlaybackEntry(
             media = item,
@@ -11593,6 +11676,9 @@ private fun MediaDetailsScreen(
                         }
                     },
                 )
+            }
+        }
+    }
             }
         }
     }
@@ -15743,7 +15829,18 @@ private fun PlayerScreen(
             )
         }
 
-        if (controlsVisible && !controlsLocked) {
+        AnimatedVisibility(
+            visible = controlsVisible && !controlsLocked,
+            enter = vueoSoftEnter(
+                durationMillis = 220,
+                initialScale = 0.996f,
+            ),
+            exit = vueoSoftExit(
+                durationMillis = 150,
+                targetScale = 0.998f,
+            ),
+        ) {
+            Box(Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -16152,6 +16249,7 @@ private fun PlayerScreen(
                         }
                     }
                 }
+            }
             }
         }
 

@@ -66,6 +66,25 @@ internal fun vueoFadeThrough(
                 )
         )
 
+internal fun vueoPlayerFadeThrough(
+    enterDurationMillis: Int = 260,
+    exitDurationMillis: Int = 150,
+    enterDelayMillis: Int = 70,
+): ContentTransform =
+    fadeIn(
+        animationSpec = tween(
+            durationMillis = enterDurationMillis,
+            delayMillis = enterDelayMillis,
+            easing = VueoMotion.EaseOut,
+        ),
+    ) togetherWith
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = exitDurationMillis,
+                easing = VueoMotion.EaseInOut,
+            ),
+        )
+
 internal fun vueoSoftEnter(
     durationMillis: Int = VueoMotion.STANDARD_MS,
     delayMillis: Int = 0,
