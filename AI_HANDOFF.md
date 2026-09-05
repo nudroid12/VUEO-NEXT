@@ -33,3 +33,7 @@ Current Mobile stabilisation rules:
 - `Ask on startup` must show Who's Watching whenever the setting is enabled, even if only one profile currently exists.
 - Do not reintroduce the old `profiles.size > 1` gate in either the setting control or `ProfileStore.shouldShowPickerOnStartup()`.
 
+
+## TV 29A lock
+
+Do not rebuild TV from the previous V2/V3 visual direction. `TvHomeExperienceFoundation.kt` is the new Home baseline. Preserve these locks unless the user explicitly changes them: Premium / Cinematic / Fluid; Hero + Peeking Row; top contextual nav (`Home`, `Search`, `Library`, `Settings`); small persistent VUEO/profile anchors; hero is not focusable; first rail receives startup focus; focused cards drive the hero after a 180 ms settle delay; OK opens Details; no auto-rotating hero, hero buttons, carousel dots or ornamental parallax; 60 FPS first.

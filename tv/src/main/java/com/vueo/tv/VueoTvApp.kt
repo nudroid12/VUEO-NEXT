@@ -73,7 +73,7 @@ import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.detail.TvDetailRepository
 import com.vueo.tv.detail.TvDetailScreen
 import com.vueo.tv.library.TvLibraryScreen
-import com.vueo.tv.home.TvHomeScreenV3
+import com.vueo.tv.home.TvHomeExperienceFoundation
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackRequest
 import com.vueo.tv.player.TvPlaybackStore
@@ -169,6 +169,7 @@ fun VueoTvApp() {
     var profileDnaVisible by remember { mutableStateOf(false) }
     var settingsInitialCategory by remember { mutableStateOf<String?>(null) }
     var settingsReturnScreen by remember { mutableStateOf(TvRootScreen.HOME) }
+    var settingsExitToProfilePanel by remember { mutableStateOf(true) }
     var profileFocusReturnToken by remember { mutableStateOf(0) }
     val libraryStore =
         remember(context) {
@@ -219,8 +220,11 @@ fun VueoTvApp() {
             }
 
             "Settings" -> {
-                currentScreen = settingsReturnScreen
-                profileDnaVisible = true
+                settingsReturnScreen = currentScreen
+                settingsInitialCategory = null
+                settingsExitToProfilePanel = false
+                profileDnaVisible = false
+                currentScreen = TvRootScreen.USER_HUB
             }
 
             else -> {
@@ -321,7 +325,7 @@ fun VueoTvApp() {
                         }
 
                     TvRootScreen.HOME ->
-                        TvHomeScreenV3(
+                        TvHomeExperienceFoundation(
                             focusRestoreToken = homeFocusRestoreToken,
                             onNavigate = navigate,
                             libraryStore = libraryStore,
@@ -331,31 +335,6 @@ fun VueoTvApp() {
                                 detailMedia = media
                                 detailReturnScreen = TvRootScreen.HOME
                                 currentScreen = TvRootScreen.DETAIL
-                            },
-                            onPlayMedia = { media ->
-                                if (media.type.equals("movie", ignoreCase = true)) {
-                                    playbackReturnScreen = TvRootScreen.HOME
-                                    playbackRequest =
-                                        TvPlaybackRequest(
-                                            media = media,
-                                            videoId = media.id,
-                                        )
-                                    selectedSource = null
-                                    selectedSubtitles = emptyList()
-                                    currentScreen = TvRootScreen.SOURCE_PICKER
-                                } else {
-                                    detailHistory = emptyList()
-                                    detailMedia = media
-                                    detailReturnScreen = TvRootScreen.HOME
-                                    currentScreen = TvRootScreen.DETAIL
-                                }
-                            },
-                            onResumeEntry = { entry ->
-                                playbackReturnScreen = TvRootScreen.HOME
-                                playbackRequest = entry.toTvPlaybackRequest()
-                                selectedSource = null
-                                selectedSubtitles = emptyList()
-                                currentScreen = TvRootScreen.SOURCE_PICKER
                             },
                             onExitApp = { context.findActivity()?.finish() },
                         )
@@ -445,7 +424,8 @@ fun VueoTvApp() {
                             onExitToPanel = {
                                 settingsInitialCategory = null
                                 currentScreen = settingsReturnScreen
-                                profileDnaVisible = true
+                                profileDnaVisible = settingsExitToProfilePanel
+                                settingsExitToProfilePanel = true
                             },
                             onNavigate = navigate,
                             onProfileChanged = {
@@ -609,6 +589,7 @@ fun VueoTvApp() {
                         onOpenSettings = { categoryKey ->
                             settingsReturnScreen = currentScreen
                             settingsInitialCategory = categoryKey
+                            settingsExitToProfilePanel = true
                             profileDnaVisible = false
                             currentScreen = TvRootScreen.USER_HUB
                         },

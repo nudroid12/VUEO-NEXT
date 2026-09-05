@@ -1,0 +1,69 @@
+# VUEO TV Design Bible — Foundation v1
+
+Status: **LOCKED for 29A**
+
+## Product DNA
+
+VUEO TV is built around three qualities:
+
+1. **Premium** — restrained chrome, deliberate spacing, quiet brand presence, no decorative clutter.
+2. **Cinematic** — artwork owns the canvas; UI overlays support the content instead of boxing it in.
+3. **Fluid** — remote input responds immediately while larger visual changes settle smoothly.
+
+Performance rule: **60 FPS first.** Any visual effect that causes unstable frame pacing is removed or simplified.
+
+## Home composition
+
+Locked composition: **Hero + Peeking Row**.
+
+- Full-canvas cinematic artwork.
+- Small persistent VUEO brand anchor at the top-left.
+- Profile anchor at the top-right.
+- Hero is presentation only and never receives focus.
+- The first content rail is visible in the initial viewport.
+- Continue Watching is the initial focus target when available; otherwise the first available rail is used.
+
+## Navigation
+
+Locked navigation: **Top contextual navigation**.
+
+Primary items: `Home`, `Search`, `Library`, `Settings`.
+
+- Navigation labels visually recede during content browsing.
+- UP from the first rail focuses Home and reveals the navigation.
+- DOWN from navigation restores the exact previous content card.
+- No hamburger menu and no persistent sidebar.
+- Profile remains a separate small anchor.
+
+## Home interaction
+
+- Card focus is immediate.
+- The focused card becomes the pending hero item.
+- Hero artwork/text update after a 180 ms settle delay to avoid flashing during fast D-pad movement.
+- Hero transition is a soft fade-through, not a slide or zoom.
+- OK on a content card opens Details directly.
+- No hero buttons.
+- No hero carousel dots.
+- No auto-rotating hero.
+- No ornamental parallax.
+
+## Motion language
+
+Home uses only three primary motion ideas:
+
+1. Shallow card focus depth/scale.
+2. Smooth hero fade-through.
+3. Contextual navigation reveal/recede.
+
+Principle: **Input fast. Visuals smooth. Navigation obvious.**
+
+## Focus language
+
+- Focus uses a clean neutral white edge and small depth increase.
+- Avoid loud neon outlines for ordinary browsing.
+- Focus must remain unambiguous from normal TV viewing distance.
+- Vertical movement should be deterministic and preserve horizontal intent where possible.
+
+## 29A scope
+
+29A replaces only the Home experience foundation. Search, Library, Settings, Details and Player retain their current implementations until their own rebuild phases. This intentionally prevents a large all-at-once TV rewrite.
