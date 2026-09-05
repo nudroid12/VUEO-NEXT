@@ -32,6 +32,12 @@ data class ProviderDiagnostic(
     val status: ProviderHealthStatus,
     val responseMs: Long,
     val streamCount: Int,
+    val requestTmdbId: String? = null,
+    val requestMediaType: String? = null,
+    val requestSeason: Int? = null,
+    val requestEpisode: Int? = null,
+    val timeoutMs: Long? = null,
+    val errorType: String? = null,
     val error: String? = null,
     val logs: List<String> = emptyList(),
 )
@@ -344,6 +350,12 @@ private fun saveHealth(
             streamCount =
                 run.diagnostic
                     .streamCount,
+            requestTmdbId = run.diagnostic.requestTmdbId,
+            requestMediaType = run.diagnostic.requestMediaType,
+            requestSeason = run.diagnostic.requestSeason,
+            requestEpisode = run.diagnostic.requestEpisode,
+            timeoutMs = run.diagnostic.timeoutMs,
+            errorType = run.diagnostic.errorType,
             error =
                 run.diagnostic
                     .error,
@@ -510,6 +522,7 @@ private fun providerPriority(
                                 ?: error::class
                                     .java
                                     .simpleName,
+                        errorType = error::class.java.simpleName,
                         logs =
                             emptyList(),
                     )
@@ -521,6 +534,7 @@ private fun providerPriority(
                     error =
                         "Timed out after " +
                         "${providerTimeoutMs / 1000}s",
+                    errorType = "Timeout",
                     logs =
                         emptyList(),
                 )
@@ -607,6 +621,12 @@ private fun providerPriority(
                         elapsedMs,
                     streamCount =
                         execution.streams.size,
+                    requestTmdbId = tmdbId,
+                    requestMediaType = mediaType,
+                    requestSeason = season,
+                    requestEpisode = episode,
+                    timeoutMs = providerTimeoutMs,
+                    errorType = execution.errorType,
                     error =
                         error,
                     logs =
@@ -637,6 +657,7 @@ private fun providerPriority(
                     error =
                         "Provider code is not installed locally. " +
                         "Open Content Manager > Plugins and refresh this repository.",
+                    errorType = "ProviderCodeMissing",
                     logs =
                         emptyList(),
                 )
@@ -859,6 +880,7 @@ private fun providerPriority(
                                     .simpleName
                         )
                     },
+                errorType = error::class.java.simpleName,
                 logs =
                     logs.toList(),
             )
@@ -2946,6 +2968,7 @@ private fun providerPriority(
     private data class ProviderExecution(
         val streams: List<SourceCandidate>,
         val error: String?,
+        val errorType: String? = null,
         val logs: List<String>,
     )
 
@@ -2973,10 +2996,10 @@ private fun providerPriority(
             3_000L
 
         private const val MAX_STORED_LOGS =
-            6
+            24
 
         private const val MAX_LOG_LENGTH =
-            500
+            1000
     }
 }
 

@@ -27,6 +27,12 @@ data class ProviderHealthRecord(
     val status: ProviderHealthStatus,
     val responseMs: Long? = null,
     val streamCount: Int = 0,
+    val requestTmdbId: String? = null,
+    val requestMediaType: String? = null,
+    val requestSeason: Int? = null,
+    val requestEpisode: Int? = null,
+    val timeoutMs: Long? = null,
+    val errorType: String? = null,
     val error: String? = null,
     val logs: List<String> =
         emptyList(),
@@ -387,6 +393,14 @@ private fun ProviderHealthRecord
             "streamCount",
             streamCount,
         )
+        .apply {
+            requestTmdbId?.let { put("requestTmdbId", it) }
+            requestMediaType?.let { put("requestMediaType", it) }
+            requestSeason?.let { put("requestSeason", it) }
+            requestEpisode?.let { put("requestEpisode", it) }
+            timeoutMs?.let { put("timeoutMs", it) }
+            errorType?.let { put("errorType", it) }
+        }
         .put(
             "error",
             error,
@@ -464,6 +478,18 @@ private fun JSONObject
                 "streamCount",
                 0,
             ),
+        requestTmdbId =
+            optString("requestTmdbId").takeIf { it.isNotBlank() && it != "null" },
+        requestMediaType =
+            optString("requestMediaType").takeIf { it.isNotBlank() && it != "null" },
+        requestSeason =
+            if (has("requestSeason")) optInt("requestSeason") else null,
+        requestEpisode =
+            if (has("requestEpisode")) optInt("requestEpisode") else null,
+        timeoutMs =
+            if (has("timeoutMs")) optLong("timeoutMs") else null,
+        errorType =
+            optString("errorType").takeIf { it.isNotBlank() && it != "null" },
         error =
             optString(
                 "error"

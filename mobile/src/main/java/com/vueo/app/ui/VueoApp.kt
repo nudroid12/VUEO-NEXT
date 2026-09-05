@@ -3,12 +3,15 @@ package com.vueo.app.ui
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.os.Build
 import android.os.SystemClock
+import android.widget.Toast
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -137,6 +140,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -235,6 +239,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 import kotlin.math.roundToInt
 
 private enum class AppTab {
@@ -8757,6 +8763,7 @@ private fun PluginRepositoryCard(
                             provider = provider,
                             health = health,
                             enabled = enabled,
+                            providerCodeReady = codeStore.isReady(repository, provider),
                             onEnabledChanged = { next ->
                                 store.setProviderEnabled(repository, provider, next)
                                 onProviderChanged()
@@ -8775,8 +8782,17 @@ private fun ProviderHealthRow(
     provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
     health: ProviderHealthRecord?,
     enabled: Boolean,
+    providerCodeReady: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
 ) {
+    val context = LocalContext.current
+    var expanded by remember(repository.manifestUrl, provider.id) {
+        mutableStateOf(false)
+    }
+    var rawExpanded by remember(repository.manifestUrl, provider.id) {
+        mutableStateOf(false)
+    }
+
     val effectiveStatus = if (!enabled) {
         "Disabled"
     } else {
@@ -8794,6 +8810,8 @@ private fun ProviderHealthRow(
                 Text(
                     provider.name,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
 
                 val details = buildList {
@@ -8811,6 +8829,8 @@ private fun ProviderHealthRow(
                         details,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f),
                         fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -8820,20 +8840,7 @@ private fun ProviderHealthRow(
             ) {
                 Text(
                     effectiveStatus,
-                    color = when {
-                        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = .45f)
-                        health?.status in setOf(
-                            ProviderHealthStatus.FAILED,
-                            ProviderHealthStatus.BLOCKED,
-                            ProviderHealthStatus.TIMEOUT,
-                            ProviderHealthStatus.UNAVAILABLE,
-                        ) -> MaterialTheme.colorScheme.error
-
-                        health?.status == ProviderHealthStatus.NEEDS_SETUP ->
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = .7f)
-
-                        else -> MaterialTheme.colorScheme.primary
-                    },
+                    color = providerStatusColor(enabled, health),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -8847,7 +8854,24 @@ private fun ProviderHealthRow(
                 }
             }
 
-            Spacer(Modifier.width(8.dp))
+            if (health != null) {
+                IconButton(
+                    onClick = {
+                        expanded = !expanded
+                        if (!expanded) rawExpanded = false
+                    },
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Text(
+                        text = if (expanded) "↑" else "↓",
+                        color = Color.White.copy(alpha = .76f),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            } else {
+                Spacer(Modifier.width(34.dp))
+            }
 
             Switch(
                 checked = enabled,
@@ -8855,37 +8879,485 @@ private fun ProviderHealthRow(
             )
         }
 
-        if (
-            enabled &&
-            health?.status in setOf(
-                ProviderHealthStatus.FAILED,
-                ProviderHealthStatus.NEEDS_SETUP,
-                ProviderHealthStatus.UNAVAILABLE,
-                ProviderHealthStatus.BLOCKED,
-                ProviderHealthStatus.TIMEOUT,
-            )
-        ) {
-            health?.error?.let { error ->
-                Text(
-                    error,
-                    color = MaterialTheme.colorScheme.error.copy(alpha = .85f),
-                    fontSize = 10.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+        AnimatedVisibility(visible = expanded && health != null) {
+            health?.let { record ->
+                ProviderDiagnosticPanel(
+                    repository = repository,
+                    provider = provider,
+                    health = record,
+                    currentlyEnabled = enabled,
+                    providerCodeReady = providerCodeReady,
+                    rawExpanded = rawExpanded,
+                    onRawExpandedChanged = { rawExpanded = it },
+                    onCopySummary = {
+                        copyProviderDiagnostic(
+                            context = context,
+                            label = "VUEO provider diagnostic",
+                            text = providerDiagnosticSummary(
+                                repository = repository,
+                                provider = provider,
+                                health = record,
+                                currentlyEnabled = enabled,
+                                providerCodeReady = providerCodeReady,
+                            ),
+                        )
+                    },
+                    onCopyFullLog = {
+                        copyProviderDiagnostic(
+                            context = context,
+                            label = "VUEO provider diagnostic log",
+                            text = providerDiagnosticFullLog(
+                                repository = repository,
+                                provider = provider,
+                                health = record,
+                                currentlyEnabled = enabled,
+                                providerCodeReady = providerCodeReady,
+                            ),
+                        )
+                    },
                 )
             }
-        } else if (enabled && health?.status == ProviderHealthStatus.NO_RESULTS) {
-            Text(
-                "Runtime completed but this title returned no sources.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .42f),
-                fontSize = 10.sp,
-            )
         }
 
         HorizontalDivider(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f),
         )
     }
+}
+
+@Composable
+private fun ProviderDiagnosticPanel(
+    repository: PluginRepositoryDescriptor,
+    provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+    health: ProviderHealthRecord,
+    currentlyEnabled: Boolean,
+    providerCodeReady: Boolean,
+    rawExpanded: Boolean,
+    onRawExpandedChanged: (Boolean) -> Unit,
+    onCopySummary: () -> Unit,
+    onCopyFullLog: () -> Unit,
+) {
+    val failureCategory = providerFailureCategory(health)
+    val likelyCause = providerLikelyCause(health, providerCodeReady)
+    val httpStatus = providerHttpStatus(health)
+    val request = providerRequestLabel(health)
+    val capabilities = providerCapabilitiesLabel(provider)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp, bottom = 5.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = VueoPalette.SurfaceStrong.copy(alpha = .72f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Text(
+                text = "DIAGNOSTIC SUMMARY",
+                color = VueoPalette.Muted,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.05.sp,
+            )
+
+            DiagnosticFact("Status", if (currentlyEnabled) health.status.label else "Disabled • last ${health.status.label}")
+            DiagnosticFact("Provider", "${provider.name} • v${provider.version}")
+            DiagnosticFact("Repository", "${repository.name} • v${repository.version}")
+            DiagnosticFact("Provider ID", provider.id)
+            DiagnosticFact("Request", request)
+            DiagnosticFact("Capabilities", capabilities)
+            DiagnosticFact("Duration", providerDurationLabel(health))
+            DiagnosticFact("Results", "${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}")
+            DiagnosticFact("Code", if (providerCodeReady) "Installed and ready" else "Missing or not ready")
+            DiagnosticFact("Failure stage", providerFailureStage(health, providerCodeReady))
+            DiagnosticFact("Category", failureCategory)
+            httpStatus?.let { DiagnosticFact("HTTP status", it) }
+            health.errorType?.takeIf { it.isNotBlank() }?.let { DiagnosticFact("Error type", sanitizeDiagnosticText(it)) }
+            DiagnosticFact("Last checked", providerLastCheckedLabel(health))
+
+            Surface(
+                shape = RoundedCornerShape(11.dp),
+                color = VueoPalette.SurfaceElevated.copy(alpha = .72f),
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = "Likely cause",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = likelyCause,
+                        color = VueoPalette.Muted,
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+            }
+
+            health.error?.takeIf { it.isNotBlank() }?.let { error ->
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "Error summary",
+                        color = Color.White.copy(alpha = .88f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = sanitizeDiagnosticText(error),
+                        color = MaterialTheme.colorScheme.error.copy(alpha = .86f),
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 5,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = "Search summary",
+                    color = Color.White.copy(alpha = .88f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = providerSearchSummary(repository, provider, health, providerCodeReady),
+                    color = VueoPalette.Muted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onCopySummary) {
+                    Text("Copy Summary", fontSize = 10.5.sp)
+                }
+                TextButton(onClick = onCopyFullLog) {
+                    Text("Copy Full Log", fontSize = 10.5.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = { onRawExpandedChanged(!rawExpanded) },
+                ) {
+                    Text(
+                        text = if (rawExpanded) "Raw log ↑" else "Raw log ↓",
+                        fontSize = 10.5.sp,
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = rawExpanded) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.Black.copy(alpha = .28f),
+                ) {
+                    Text(
+                        text = providerRawDiagnosticLog(health),
+                        color = Color.White.copy(alpha = .72f),
+                        fontSize = 9.5.sp,
+                        lineHeight = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticFact(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = label,
+            color = VueoPalette.Muted.copy(alpha = .78f),
+            fontSize = 9.5.sp,
+            modifier = Modifier.width(92.dp),
+        )
+        Text(
+            text = value,
+            color = Color.White.copy(alpha = .88f),
+            fontSize = 9.8.sp,
+            lineHeight = 13.sp,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun providerStatusColor(
+    enabled: Boolean,
+    health: ProviderHealthRecord?,
+): Color =
+    when {
+        !enabled -> VueoPalette.Muted.copy(alpha = .55f)
+        health?.status in setOf(
+            ProviderHealthStatus.FAILED,
+            ProviderHealthStatus.BLOCKED,
+            ProviderHealthStatus.TIMEOUT,
+            ProviderHealthStatus.UNAVAILABLE,
+        ) -> MaterialTheme.colorScheme.error
+        health?.status == ProviderHealthStatus.NEEDS_SETUP -> VueoPalette.Muted
+        else -> Color.White.copy(alpha = .88f)
+    }
+
+private fun providerRequestLabel(health: ProviderHealthRecord): String {
+    val parts = buildList {
+        health.requestMediaType?.takeIf { it.isNotBlank() }?.let { add(it.lowercase()) }
+        health.requestTmdbId?.takeIf { it.isNotBlank() }?.let { add("TMDB $it") }
+        if (health.requestSeason != null && health.requestEpisode != null) {
+            add("S${health.requestSeason.toString().padStart(2, '0')} E${health.requestEpisode.toString().padStart(2, '0')}")
+        }
+    }
+    return parts.joinToString(" • ").ifBlank {
+        "Not captured • run source discovery again"
+    }
+}
+
+private fun providerCapabilitiesLabel(
+    provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+): String {
+    val parts = buildList {
+        if (provider.supportedTypes.isNotEmpty()) add(provider.supportedTypes.sorted().joinToString("/"))
+        if (provider.formats.isNotEmpty()) add(provider.formats.sorted().joinToString(", "))
+        if (provider.limited) add("limited")
+    }
+    return parts.joinToString(" • ").ifBlank { "Not declared" }
+}
+
+private fun providerDurationLabel(health: ProviderHealthRecord): String {
+    val elapsed = health.responseMs?.let { "${it} ms" } ?: "Unknown"
+    val timeout = health.timeoutMs?.let { " • timeout ${it} ms" }.orEmpty()
+    return elapsed + timeout
+}
+
+private fun providerFailureStage(
+    health: ProviderHealthRecord,
+    providerCodeReady: Boolean,
+): String {
+    val error = health.error.orEmpty().lowercase()
+    return when {
+        !providerCodeReady || "code is not installed" in error -> "Provider preparation"
+        health.status == ProviderHealthStatus.NEEDS_SETUP -> "Provider configuration"
+        health.status == ProviderHealthStatus.UNAVAILABLE || health.status == ProviderHealthStatus.BLOCKED -> "Network / upstream access"
+        health.status == ProviderHealthStatus.TIMEOUT -> "Provider execution"
+        health.status == ProviderHealthStatus.NO_RESULTS -> "Result extraction"
+        else -> "Source discovery"
+    }
+}
+
+private fun providerFailureCategory(health: ProviderHealthRecord): String {
+    val error = health.error.orEmpty().lowercase()
+    return when {
+        health.status == ProviderHealthStatus.ONLINE -> "Healthy"
+        health.status == ProviderHealthStatus.SLOW -> "Slow response"
+        health.status == ProviderHealthStatus.NO_RESULTS -> "No playable sources"
+        health.status == ProviderHealthStatus.NEEDS_SETUP -> "Configuration required"
+        health.status == ProviderHealthStatus.TIMEOUT -> "Execution timeout"
+        health.status == ProviderHealthStatus.UNAVAILABLE -> "Host unavailable / DNS"
+        health.status == ProviderHealthStatus.BLOCKED -> "Upstream blocked request"
+        "not found" in error && health.requestSeason != null -> "Episode or source not found"
+        "status 404" in error || "http 404" in error -> "HTTP not found"
+        "status 429" in error || "http 429" in error -> "Rate limited"
+        "status 5" in error || "http 5" in error -> "Upstream server error"
+        health.status == ProviderHealthStatus.FAILED -> "Provider execution failed"
+        else -> "Unknown"
+    }
+}
+
+private fun providerLikelyCause(
+    health: ProviderHealthRecord,
+    providerCodeReady: Boolean,
+): String {
+    val error = health.error.orEmpty().lowercase()
+    return when {
+        !providerCodeReady || "code is not installed" in error ->
+            "The provider script is missing or not ready locally. Refresh the repository before testing again."
+        health.status == ProviderHealthStatus.TIMEOUT ->
+            "The provider did not finish inside its runtime timeout. The upstream site may be slow, blocking automation, or the provider logic may be waiting on a request that never completes."
+        health.status == ProviderHealthStatus.UNAVAILABLE ->
+            "The provider could not reach its upstream host. Check DNS, host availability, network restrictions, or whether the upstream domain has changed."
+        health.status == ProviderHealthStatus.BLOCKED ->
+            "The upstream service appears to reject automated access. A 403 response, anti-bot challenge, CAPTCHA, or access rule may require provider changes."
+        health.status == ProviderHealthStatus.NEEDS_SETUP ->
+            "The provider requires configuration or a token before it can return sources."
+        health.status == ProviderHealthStatus.NO_RESULTS ->
+            "The provider completed without a runtime error but returned zero playable sources for this request. The title may be unavailable or the provider selector/parser may no longer match the upstream site."
+        "not found" in error && health.requestSeason != null ->
+            "The provider ran, but it could not map the requested season or episode to an upstream source. Check episode naming, numbering, URL construction, and selector logic."
+        providerHttpStatus(health) == "404" ->
+            "The provider requested a resource that the upstream site reports as missing. The endpoint, title slug, season/episode route, or upstream page structure may have changed."
+        providerHttpStatus(health) == "429" ->
+            "The upstream service is rate limiting requests. The provider may need throttling, caching, or a different request strategy."
+        health.status == ProviderHealthStatus.FAILED ->
+            "The provider raised an execution error before producing playable sources. Use the error summary and raw log below to identify the failing request or parser step."
+        health.status == ProviderHealthStatus.SLOW ->
+            "The provider returns sources but is slower than VUEO's healthy threshold."
+        health.status == ProviderHealthStatus.ONLINE ->
+            "The last provider run completed successfully and returned playable sources."
+        else -> "There is not enough captured diagnostic data yet. Run source discovery again and reopen this summary."
+    }
+}
+
+private fun providerHttpStatus(health: ProviderHealthRecord): String? {
+    val combined = buildString {
+        health.error?.let { append(it).append('\n') }
+        health.logs.forEach { append(it).append('\n') }
+    }
+    val regexes = listOf(
+        Regex("(?i)(?:http|status|status code|request failed with status)\\s*[:=]?\\s*(\\d{3})"),
+        Regex("(?i)\\b(4\\d{2}|5\\d{2})\\b"),
+    )
+    return regexes.asSequence()
+        .mapNotNull { it.find(combined)?.groupValues?.getOrNull(1) }
+        .firstOrNull()
+}
+
+private fun providerLastCheckedLabel(health: ProviderHealthRecord): String =
+    if (health.lastCheckedEpochMs <= 0L) {
+        "Unknown"
+    } else {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            .format(Date(health.lastCheckedEpochMs))
+    }
+
+private fun providerSearchSummary(
+    repository: PluginRepositoryDescriptor,
+    provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+    health: ProviderHealthRecord,
+    providerCodeReady: Boolean,
+): String {
+    val http = providerHttpStatus(health)?.let { " HTTP $it" }.orEmpty()
+    val request = providerRequestLabel(health)
+    val error = health.error?.let(::sanitizeDiagnosticText)?.take(180).orEmpty()
+    return buildString {
+        append(provider.name)
+        append(" provider ")
+        append(providerFailureCategory(health).lowercase())
+        append(http)
+        append(" during ")
+        append(providerFailureStage(health, providerCodeReady).lowercase())
+        append(" • ")
+        append(request)
+        append(" • repo ")
+        append(repository.name)
+        if (error.isNotBlank()) {
+            append(" • error: ")
+            append(error)
+        }
+    }
+}
+
+private fun providerDiagnosticSummary(
+    repository: PluginRepositoryDescriptor,
+    provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+    health: ProviderHealthRecord,
+    currentlyEnabled: Boolean,
+    providerCodeReady: Boolean,
+): String = buildString {
+    appendLine("VUEO Provider Diagnostic Summary")
+    appendLine("Status: ${if (currentlyEnabled) health.status.label else "Disabled (last ${health.status.label})"}")
+    appendLine("Provider: ${provider.name} v${provider.version}")
+    appendLine("Provider ID: ${provider.id}")
+    appendLine("Repository: ${repository.name} v${repository.version}")
+    appendLine("Request: ${providerRequestLabel(health)}")
+    appendLine("Capabilities: ${providerCapabilitiesLabel(provider)}")
+    appendLine("Duration: ${providerDurationLabel(health)}")
+    appendLine("Results: ${health.streamCount}")
+    appendLine("Code ready: $providerCodeReady")
+    appendLine("Failure stage: ${providerFailureStage(health, providerCodeReady)}")
+    appendLine("Category: ${providerFailureCategory(health)}")
+    providerHttpStatus(health)?.let { appendLine("HTTP status: $it") }
+    health.errorType?.let { appendLine("Error type: ${sanitizeDiagnosticText(it)}") }
+    appendLine("Last checked: ${providerLastCheckedLabel(health)}")
+    appendLine("Likely cause: ${providerLikelyCause(health, providerCodeReady)}")
+    health.error?.takeIf { it.isNotBlank() }?.let { appendLine("Error: ${sanitizeDiagnosticText(it)}") }
+    appendLine("Search summary: ${providerSearchSummary(repository, provider, health, providerCodeReady)}")
+}
+
+private fun providerDiagnosticFullLog(
+    repository: PluginRepositoryDescriptor,
+    provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+    health: ProviderHealthRecord,
+    currentlyEnabled: Boolean,
+    providerCodeReady: Boolean,
+): String = buildString {
+    append(providerDiagnosticSummary(repository, provider, health, currentlyEnabled, providerCodeReady))
+    appendLine()
+    appendLine("Raw technical log (sanitized)")
+    append(providerRawDiagnosticLog(health))
+}
+
+private fun providerRawDiagnosticLog(health: ProviderHealthRecord): String {
+    val lines = buildList {
+        health.error?.takeIf { it.isNotBlank() }?.let { add("ERROR: $it") }
+        addAll(health.logs)
+    }
+    return if (lines.isEmpty()) {
+        "No raw provider log was captured for this run."
+    } else {
+        lines.joinToString("\n") { sanitizeDiagnosticText(it) }
+    }
+}
+
+private fun sanitizeDiagnosticText(raw: String): String {
+    var text = raw
+
+    text = text.replace(
+        Regex("(?i)(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|token)\\s*[:=]\\s*([^\\s,;]+)"),
+    ) { match -> "${match.groupValues[1]}=<redacted>" }
+
+    text = text.replace(
+        Regex("https?://[^\\s\\]\\[<>\\\"']+"),
+    ) { match -> sanitizeDiagnosticUrl(match.value) }
+
+    return text.take(12_000)
+}
+
+private fun sanitizeDiagnosticUrl(url: String): String {
+    val queryIndex = url.indexOf('?')
+    if (queryIndex < 0) return url
+
+    val base = url.substring(0, queryIndex)
+    val rawQuery = url.substring(queryIndex + 1)
+    if (rawQuery.isBlank()) return base
+
+    val safeQuery = rawQuery
+        .split('&')
+        .take(12)
+        .mapNotNull { part ->
+            val key = part.substringBefore('=').takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            "$key=<redacted>"
+        }
+        .joinToString("&")
+
+    return if (safeQuery.isBlank()) base else "$base?$safeQuery"
+}
+
+private fun copyProviderDiagnostic(
+    context: Context,
+    label: String,
+    text: String,
+) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
+    Toast.makeText(context, "Diagnostic copied", Toast.LENGTH_SHORT).show()
 }
 
 @Composable
