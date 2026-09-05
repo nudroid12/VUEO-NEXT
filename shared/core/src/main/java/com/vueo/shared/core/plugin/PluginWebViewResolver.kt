@@ -27,6 +27,28 @@ import java.net.URL
 import java.util.Collections
 import kotlin.coroutines.resume
 
+
+private fun JSONArray?.toVueoStringList(): List<String> {
+    if (this == null) return emptyList()
+    return (0 until length())
+        .mapNotNull { index ->
+            optString(index).trim().takeIf { it.isNotBlank() }
+        }
+}
+
+private fun JSONArray?.toVueoLongList(): List<Long> {
+    if (this == null) return emptyList()
+    return (0 until length())
+        .mapNotNull { index ->
+            when (val value = opt(index)) {
+                is Number -> value.toLong()
+                is String -> value.toLongOrNull()
+                else -> null
+            }
+        }
+}
+
+
 /**
  * Native WebView fallback for JavaScript providers whose upstream players only
  * reveal media URLs after JavaScript execution or user interaction.
@@ -437,17 +459,17 @@ internal class PluginWebViewResolver(
                     .coerceIn(MIN_WEBVIEW_TIMEOUT_MS, MAX_WEBVIEW_TIMEOUT_MS)
 
                 val matchParts = json.optJSONArray("match")
-                    .toStringList()
+                    .toVueoStringList()
                     .map { it.lowercase() }
                     .ifEmpty { DEFAULT_MATCH_PARTS }
 
                 val blockedParts = json.optJSONArray("blocked")
-                    .toStringList()
+                    .toVueoStringList()
                     .map { it.lowercase() }
                     .ifEmpty { DEFAULT_BLOCKED_PARTS }
 
                 val clickDelays = json.optJSONArray("clickDelaysMs")
-                    .toLongList()
+                    .toVueoLongList()
                     .filter { it >= 0L }
                     .distinct()
                     .sorted()
@@ -590,25 +612,6 @@ internal class PluginWebViewResolver(
             .replace("<", "&lt;")
             .replace(">", "&gt;")
 
-    private fun JSONArray?.toStringList(): List<String> {
-        if (this == null) return emptyList()
-        return (0 until length())
-            .mapNotNull { index ->
-                optString(index).trim().takeIf { it.isNotBlank() }
-            }
-    }
-
-    private fun JSONArray?.toLongList(): List<Long> {
-        if (this == null) return emptyList()
-        return (0 until length())
-            .mapNotNull { index ->
-                when (val value = opt(index)) {
-                    is Number -> value.toLong()
-                    is String -> value.toLongOrNull()
-                    else -> null
-                }
-            }
-    }
 
     companion object {
         private const val BRIDGE_NAME = "vueoCapture"
