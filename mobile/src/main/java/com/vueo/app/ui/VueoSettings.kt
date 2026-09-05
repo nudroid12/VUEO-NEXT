@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -376,570 +378,563 @@ internal fun VueoSettingsHub(
                 )
 
             else ->
-    LazyColumn(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(
-                    VueoPalette.Background
-                ),
-        contentPadding =
-            PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = 24.dp,
-                bottom = 32.dp,
-            ),
-        verticalArrangement =
-            Arrangement.spacedBy(
-                12.dp
-            ),
-    ) {
-        item(
-            key = "settings-header"
-        ) {
-            Column {
-                Text(
-                    text = "Settings",
-                    color = Color.White,
-                    fontSize = 34.sp,
-                    fontWeight =
-                        FontWeight.Black,
-                )
-
-                Spacer(
-                    Modifier.height(
-                        8.dp
-                    )
-                )
-            }
-        }
-
-        item(
-            key = "settings-profile"
-        ) {
-            Card(
-                modifier =
-                    Modifier.fillMaxWidth(),
-                shape =
-                    RoundedCornerShape(
-                        20.dp
-                    ),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor =
-                            VueoPalette
-                                .SurfaceElevated,
-                    ),
-            ) {
-                Column(
+                LazyColumn(
                     modifier =
-                        Modifier.fillMaxWidth(),
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                VueoPalette.Background
+                            ),
+                    contentPadding =
+                        PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 24.dp,
+                            bottom = 116.dp,
+                        ),
+                    verticalArrangement =
+                        Arrangement.spacedBy(
+                            16.dp
+                        ),
                 ) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (dnaEnabled) {
-                                        showUserDna = true
-                                    } else {
-                                        showPersonalization = true
+                    item(
+                        key = "settings-header"
+                    ) {
+                        Text(
+                            text = "Settings",
+                            color = Color.White,
+                            fontSize = 34.sp,
+                            fontWeight =
+                                FontWeight.Black,
+                        )
+                    }
+
+                    item(
+                        key = "settings-profile"
+                    ) {
+                        val profileShape =
+                            RoundedCornerShape(
+                                22.dp
+                            )
+
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(
+                                        profileShape
+                                    )
+                                    .background(
+                                        brush =
+                                            Brush.linearGradient(
+                                                colors =
+                                                    listOf(
+                                                        Color(0xFF17232D),
+                                                        Color(0xFF10292A),
+                                                        Color(0xFF11171C),
+                                                    )
+                                            )
+                                    ),
+                        ) {
+                            Column(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (dnaEnabled) {
+                                                    showUserDna = true
+                                                } else {
+                                                    showPersonalization = true
+                                                }
+                                            }
+                                            .padding(
+                                                start = 16.dp,
+                                                end = 16.dp,
+                                                top = 14.dp,
+                                                bottom = 7.dp,
+                                            ),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically,
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .size(
+                                                    56.dp
+                                                )
+                                                .clip(
+                                                    RoundedCornerShape(
+                                                        50
+                                                    )
+                                                )
+                                                .background(
+                                                    Color.Black
+                                                        .copy(
+                                                            alpha = .20f
+                                                        )
+                                                ),
+                                        contentAlignment =
+                                            Alignment.Center,
+                                    ) {
+                                        if (
+                                            avatarDrawable != null
+                                        ) {
+                                            Image(
+                                                painter =
+                                                    painterResource(
+                                                        avatarDrawable
+                                                    ),
+                                                contentDescription =
+                                                    activeProfile.name,
+                                                contentScale =
+                                                    ContentScale.Crop,
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxSize(),
+                                            )
+                                        } else {
+                                            Text(
+                                                text =
+                                                    activeProfile.name
+                                                        .trim()
+                                                        .firstOrNull()
+                                                        ?.uppercase()
+                                                        ?: "P",
+                                                color =
+                                                    Color.White,
+                                                fontSize = 21.sp,
+                                                fontWeight =
+                                                    FontWeight.Bold,
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(
+                                        Modifier.width(
+                                            14.dp
+                                        )
+                                    )
+
+                                    Column(
+                                        modifier =
+                                            Modifier.weight(
+                                                1f
+                                            ),
+                                        verticalArrangement =
+                                            Arrangement.spacedBy(
+                                                3.dp
+                                            ),
+                                    ) {
+                                        Text(
+                                            text =
+                                                activeProfile.name,
+                                            color =
+                                                Color.White,
+                                            fontSize = 21.sp,
+                                            fontWeight =
+                                                FontWeight.Black,
+                                        )
+
+                                        Text(
+                                            text =
+                                                "$vueoClass • $dnaClass",
+                                            color =
+                                                Color.White.copy(
+                                                    alpha = .62f
+                                                ),
+                                            fontSize = 11.sp,
+                                            fontWeight =
+                                                FontWeight.Medium,
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "›",
+                                        color =
+                                            Color.White.copy(
+                                                alpha = .58f
+                                            ),
+                                        fontSize = 27.sp,
+                                    )
+                                }
+
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                horizontal = 16.dp,
+                                                vertical = 6.dp,
+                                            ),
+                                    horizontalArrangement =
+                                        Arrangement.spacedBy(
+                                            8.dp
+                                        ),
+                                ) {
+                                    VueoProfileStat(
+                                        modifier =
+                                            Modifier.weight(
+                                                1f
+                                            ),
+                                        label = "My List",
+                                        value =
+                                            myListCount
+                                                .toString(),
+                                    )
+
+                                    VueoProfileStat(
+                                        modifier =
+                                            Modifier.weight(
+                                                1f
+                                            ),
+                                        label = "Watched",
+                                        value =
+                                            watchedTitlesCount
+                                                .toString(),
+                                    )
+
+                                    VueoProfileStat(
+                                        modifier =
+                                            Modifier.weight(
+                                                1f
+                                            ),
+                                        label = "DNA",
+                                        value =
+                                            dnaSnapshot
+                                                ?.let {
+                                                    "${it.confidencePercent}%"
+                                                }
+                                                ?: "Off",
+                                        highlighted =
+                                            dnaEnabled &&
+                                                dnaSnapshot !=
+                                                null,
+                                    )
+                                }
+
+                                Text(
+                                    text =
+                                        dnaTastePreview
+                                            .takeIf {
+                                                it.isNotBlank()
+                                            }
+                                            ?: if (
+                                                dnaEnabled
+                                            ) {
+                                                "Keep watching to shape your DNA class."
+                                            } else {
+                                                "Enable User DNA in Personalization."
+                                            },
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                start = 17.dp,
+                                                end = 17.dp,
+                                                top = 2.dp,
+                                                bottom = 7.dp,
+                                            ),
+                                    color =
+                                        Color.White.copy(
+                                            alpha = .60f
+                                        ),
+                                    fontSize = 10.sp,
+                                    fontWeight =
+                                        FontWeight.Medium,
+                                    maxLines = 1,
+                                )
+
+                                Surface(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                start = 16.dp,
+                                                end = 16.dp,
+                                                bottom = 13.dp,
+                                            )
+                                            .clickable(
+                                                onClick = onProfiles
+                                            ),
+                                    shape =
+                                        RoundedCornerShape(
+                                            13.dp
+                                        ),
+                                    color =
+                                        Color.Black.copy(
+                                            alpha = .23f
+                                        ),
+                                ) {
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(
+                                                    horizontal = 13.dp,
+                                                    vertical = 8.dp,
+                                                ),
+                                        horizontalArrangement =
+                                            Arrangement.Center,
+                                        verticalAlignment =
+                                            Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "⇄",
+                                            color =
+                                                VueoPalette.BrandLime,
+                                            fontSize = 15.sp,
+                                            fontWeight =
+                                                FontWeight.Black,
+                                        )
+
+                                        Spacer(
+                                            Modifier.width(
+                                                8.dp
+                                            )
+                                        )
+
+                                        Text(
+                                            text = "Switch Profiles",
+                                            color =
+                                                Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight =
+                                                FontWeight.Bold,
+                                        )
                                     }
                                 }
-                                .padding(
-                                    start = 16.dp,
-                                    end = 16.dp,
-                                    top = 12.dp,
-                                    bottom = 6.dp,
-                                ),
-                        verticalAlignment =
-                            Alignment.CenterVertically,
+                            }
+                        }
+                    }
+
+                    item(
+                        key = "settings-vueo-group"
+                    ) {
+                        VueoSettingsHubGroup(
+                            label = "VUEO"
+                        ) {
+                            VueoSettingsHubRow(
+                                title = "Personalization",
+                                subtitle =
+                                    "User DNA, DNA Match & recommendations.",
+                                status = "",
+                                icon =
+                                    Icons.Default.Settings,
+                                onClick = {
+                                    showPersonalization = true
+                                },
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Content Manager",
+                                subtitle =
+                                    "Addons, repos & providers.",
+                                status =
+                                    "${addons.size} addons • " +
+                                        "${repositories.size} repos • " +
+                                        "$providers providers",
+                                icon =
+                                    Icons.Default.Extension,
+                                onClick =
+                                    onContentManager,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Enhancements",
+                                subtitle =
+                                    "Metadata, ratings & external services.",
+                                status =
+                                    buildString {
+                                        append("TMDB ")
+                                        append(
+                                            if (tmdbConfigured) {
+                                                "configured"
+                                            } else {
+                                                "optional"
+                                            }
+                                        )
+                                        append(" • MDBList ")
+                                        append(
+                                            if (mdblistConfigured) {
+                                                "configured"
+                                            } else {
+                                                "optional"
+                                            }
+                                        )
+                                        append(" • Gemini ")
+                                        append(
+                                            if (geminiConfigured) {
+                                                "configured"
+                                            } else {
+                                                "optional"
+                                            }
+                                        )
+                                    },
+                                icon =
+                                    Icons.Default.SettingsInputComponent,
+                                onClick =
+                                    onEnhancements,
+                            )
+                        }
+                    }
+
+                    item(
+                        key = "settings-playback-group"
+                    ) {
+                        VueoSettingsHubGroup(
+                            label = "PLAYBACK"
+                        ) {
+                            VueoSettingsHubRow(
+                                title = "Playback",
+                                subtitle =
+                                    "Player & streaming preferences.",
+                                status =
+                                    "${if (settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • " +
+                                        settingsStore
+                                            .preferredQuality()
+                                            .label,
+                                icon =
+                                    Icons.Default.PlayArrow,
+                                onClick =
+                                    onPlayback,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Subtitles",
+                                subtitle =
+                                    "Language & display preferences.",
+                                status =
+                                    "${settingsStore.preferredSubtitleLanguage().label} • " +
+                                        if (
+                                            settingsStore
+                                                .subtitlesOnByDefault()
+                                        ) {
+                                            "Default on"
+                                        } else {
+                                            "Default off"
+                                        },
+                                icon =
+                                    Icons.Default.VideoLibrary,
+                                onClick =
+                                    onSubtitles,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Sources",
+                                subtitle =
+                                    "Source ranking & information.",
+                                status =
+                                    if (
+                                        settingsStore
+                                            .showSourceTechnicalDetails()
+                                    ) {
+                                        "Technical details on"
+                                    } else {
+                                        "Technical details off"
+                                    },
+                                icon =
+                                    Icons.Default.SettingsInputComponent,
+                                onClick =
+                                    onSources,
+                            )
+                        }
+                    }
+
+                    item(
+                        key = "settings-app-group"
+                    ) {
+                        VueoSettingsHubGroup(
+                            label = "APP"
+                        ) {
+                            VueoSettingsHubRow(
+                                title = "Appearance",
+                                subtitle =
+                                    "Interface preferences.",
+                                status =
+                                    "VUEO Dark • ${settingsStore.appAccent().label} accent",
+                                icon =
+                                    Icons.Default.Settings,
+                                onClick =
+                                    onAppearance,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Data & Storage",
+                                subtitle =
+                                    "Backup, history, cache & app data.",
+                                status =
+                                    "Local device data",
+                                icon =
+                                    Icons.Default.VideoLibrary,
+                                onClick =
+                                    onDataStorage,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "Updates",
+                                subtitle =
+                                    "Version & update preferences.",
+                                status =
+                                    if (
+                                        latestUpdate
+                                            ?.isNewerThanCurrent() ==
+                                            true
+                                    ) {
+                                        "Update ${latestUpdate.versionName} available"
+                                    } else {
+                                        "Up to date"
+                                    },
+                                icon =
+                                    Icons.Default.Refresh,
+                                onClick =
+                                    onUpdates,
+                            )
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                title = "About VUEO",
+                                subtitle =
+                                    "Privacy, architecture & build information.",
+                                status =
+                                    "Local-first app info",
+                                icon =
+                                    Icons.Default.Settings,
+                                onClick =
+                                    onAbout,
+                            )
+                        }
+                    }
+
+                    item(
+                        key = "settings-version"
                     ) {
                         Box(
                             modifier =
                                 Modifier
-                                    .size(
-                                        60.dp
-                                    )
-                                    .clip(
-                                        RoundedCornerShape(
-                                            50
-                                        )
-                                    )
-                                    .background(
-                                        VueoPalette
-                                            .SurfaceStrong
+                                    .fillMaxWidth()
+                                    .padding(
+                                        top = 2.dp,
+                                        bottom = 8.dp,
                                     ),
                             contentAlignment =
                                 Alignment.Center,
                         ) {
-                            if (
-                                avatarDrawable != null
-                            ) {
-                                Image(
-                                    painter =
-                                        painterResource(
-                                            avatarDrawable
-                                        ),
-                                    contentDescription =
-                                        activeProfile.name,
-                                    contentScale =
-                                        ContentScale.Crop,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxSize(),
-                                )
-                            } else {
-                                Text(
-                                    text =
-                                        activeProfile.name
-                                            .trim()
-                                            .firstOrNull()
-                                            ?.uppercase()
-                                            ?: "P",
-                                    color =
-                                        Color.White,
-                                    fontSize = 22.sp,
-                                    fontWeight =
-                                        FontWeight.Bold,
-                                )
-                            }
-                        }
-
-                        Spacer(
-                            Modifier.width(
-                                14.dp
-                            )
-                        )
-
-                        Column(
-                            modifier =
-                                Modifier.weight(
-                                    1f
-                                ),
-                            verticalArrangement =
-                                Arrangement.spacedBy(
-                                    3.dp
-                                ),
-                        ) {
                             Text(
                                 text =
-                                    "VUEO • ${activeProfile.name}",
-                                color =
-                                    Color.White,
-                                fontSize = 20.sp,
-                                fontWeight =
-                                    FontWeight.Black,
-                            )
-
-                            Text(
-                                text =
-                                    "$vueoClass • $dnaClass",
+                                    "VUEO ${BuildConfig.VERSION_NAME}",
                                 color =
                                     VueoPalette.Muted,
-                                fontSize = 11.sp,
-                                fontWeight =
-                                    FontWeight.Medium,
-                            )
-
-                        }
-
-                        Text(
-                            text = "›",
-                            color =
-                                VueoPalette.Muted,
-                            fontSize = 27.sp,
-                        )
-                    }
-
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = 16.dp,
-                                    vertical = 7.dp,
-                                ),
-                        horizontalArrangement =
-                            Arrangement.spacedBy(
-                                8.dp
-                            ),
-                    ) {
-                        VueoProfileStat(
-                            modifier =
-                                Modifier.weight(
-                                    1f
-                                ),
-                            label = "My List",
-                            value =
-                                myListCount
-                                    .toString(),
-                        )
-
-                        VueoProfileStat(
-                            modifier =
-                                Modifier.weight(
-                                    1f
-                                ),
-                            label = "Watched",
-                            value =
-                                watchedTitlesCount
-                                    .toString(),
-                        )
-
-                        VueoProfileStat(
-                            modifier =
-                                Modifier.weight(
-                                    1f
-                                ),
-                            label = "DNA",
-                            value =
-                                dnaSnapshot
-                                    ?.let {
-                                        "${it.confidencePercent}%"
-                                    }
-                                    ?: "Off",
-                            highlighted =
-                                dnaEnabled &&
-                                    dnaSnapshot !=
-                                    null,
-                        )
-                    }
-
-                    Text(
-                        text =
-                            dnaTastePreview
-                                .takeIf {
-                                    it.isNotBlank()
-                                }
-                                ?: if (
-                                    dnaEnabled
-                                ) {
-                                    "Keep watching to shape your DNA class."
-                                } else {
-                                    "Enable User DNA in Personalization."
-                                },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    start = 18.dp,
-                                    end = 18.dp,
-                                    top = 1.dp,
-                                    bottom = 8.dp,
-                                ),
-                        color =
-                            VueoPalette.Muted,
-                        fontSize = 10.sp,
-                        fontWeight =
-                            FontWeight.Medium,
-                        maxLines = 2,
-                    )
-
-                    Surface(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    start = 16.dp,
-                                    end = 16.dp,
-                                    bottom = 12.dp,
-                                )
-                                .clickable(
-                                    onClick = onProfiles
-                                ),
-                        shape =
-                            RoundedCornerShape(
-                                14.dp
-                            ),
-                        color =
-                            VueoPalette.Surface
-                                .copy(
-                                    alpha = .82f
-                                ),
-                    ) {
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = 13.dp,
-                                        vertical = 8.dp,
-                                    ),
-                            horizontalArrangement =
-                                Arrangement.Center,
-                            verticalAlignment =
-                                Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "⇄",
-                                color =
-                                    VueoPalette.Accent,
-                                fontSize = 15.sp,
-                                fontWeight =
-                                    FontWeight.Black,
-                            )
-
-                            Spacer(
-                                Modifier.width(
-                                    8.dp
-                                )
-                            )
-
-                            Text(
-                                text = "Switch Profiles",
-                                color =
-                                    Color.White,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight =
                                     FontWeight.Bold,
                             )
                         }
                     }
                 }
-            }
-        }
 
-        item {
-            VueoSettingsNavigationCard(
-                title = "Personalization",
-                subtitle =
-                    "User DNA, DNA Match & recommendations.",
-                status = "",
-                icon =
-                    Icons.Default.Settings,
-                onClick = {
-                    showPersonalization = true
-                },
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Content Manager",
-                subtitle =
-                    "Addons, repos & providers.",
-                status =
-                    "${addons.size} addons • " +
-                        "${repositories.size} repos • " +
-                        "$providers providers",
-                icon =
-                    Icons.Default.Extension,
-                onClick =
-                    onContentManager,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Enhancements",
-                subtitle =
-                    "Metadata, ratings & external services.",
-                status =
-                    buildString {
-                        append("TMDB ")
-                        append(
-                            if (
-                                tmdbConfigured
-                            ) {
-                                "configured"
-                            } else {
-                                "optional"
-                            }
-                        )
-                        append(" • MDBList ")
-                        append(
-                            if (
-                                mdblistConfigured
-                            ) {
-                                "configured"
-                            } else {
-                                "optional"
-                            }
-                        )
-                        append(" • Gemini ")
-                        append(
-                            if (
-                                geminiConfigured
-                            ) {
-                                "configured"
-                            } else {
-                                "optional"
-                            }
-                        )
-                    },
-                icon =
-                    Icons.Default
-                        .SettingsInputComponent,
-                onClick =
-                    onEnhancements,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Playback",
-                subtitle =
-                    "Player & streaming preferences.",
-                status =
-                    "${if (settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • " +
-                        settingsStore
-                            .preferredQuality()
-                            .label,
-                icon =
-                    Icons.Default.PlayArrow,
-                onClick =
-                    onPlayback,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Subtitles",
-                subtitle =
-                    "Language & display preferences.",
-                status =
-                    "${settingsStore.preferredSubtitleLanguage().label} • " +
-                        if (
-                            settingsStore
-                                .subtitlesOnByDefault()
-                        ) {
-                            "Default on"
-                        } else {
-                            "Default off"
-                        },
-                icon =
-                    Icons.Default.VideoLibrary,
-                onClick =
-                    onSubtitles,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Sources",
-                subtitle =
-                    "Source ranking & information.",
-                status =
-                    if (
-                        settingsStore
-                            .showSourceTechnicalDetails()
-                    ) {
-                        "Technical details on"
-                    } else {
-                        "Technical details off"
-                    },
-                icon =
-                    Icons.Default
-                        .SettingsInputComponent,
-                onClick =
-                    onSources,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Appearance",
-                subtitle =
-                    "Interface preferences.",
-                status =
-                    "VUEO Dark • " +
-                        "${settingsStore.appAccent().label} accent",
-                icon =
-                    Icons.Default.Settings,
-                onClick =
-                    onAppearance,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Data & Storage",
-                subtitle =
-                    "Backup, history, cache & app data.",
-                status =
-                    "Local device data",
-                icon =
-                    Icons.Default.VideoLibrary,
-                onClick =
-                    onDataStorage,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "Updates",
-                subtitle =
-                    "Version & update preferences.",
-                status =
-                    if (
-                        latestUpdate
-                            ?.isNewerThanCurrent() ==
-                            true
-                    ) {
-                        "Update " +
-                            "${latestUpdate.versionName} available"
-                    } else {
-                        "Up to date"
-                    },
-                icon =
-                    Icons.Default.Refresh,
-                onClick =
-                    onUpdates,
-                compact = true,
-            )
-        }
-
-        item {
-            VueoSettingsNavigationCard(
-                title = "About VUEO",
-                subtitle =
-                    "Privacy, architecture & build information.",
-                status =
-                    "Local-first app info",
-                icon =
-                    Icons.Default.Settings,
-                onClick =
-                    onAbout,
-                compact = true,
-            )
-        }
-
-        item(
-            key = "settings-version"
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            top = 4.dp,
-                            bottom = 8.dp,
-                        ),
-                contentAlignment =
-                    Alignment.Center,
-            ) {
-                Text(
-                    text =
-                        "VUEO ${BuildConfig.VERSION_NAME}",
-                    color =
-                        VueoPalette.Muted,
-                    fontSize = 10.sp,
-                    fontWeight =
-                        FontWeight.Bold,
-                )
-            }
-        }
-    }
         }
     }
 }
@@ -3497,6 +3492,195 @@ private enum class DataClearAction(
 }
 
 @Composable
+private fun VueoSettingsHubGroup(
+    label: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        verticalArrangement =
+            Arrangement.spacedBy(
+                7.dp
+            ),
+    ) {
+        Text(
+            text = label,
+            color =
+                VueoPalette.Muted,
+            fontSize = 10.sp,
+            fontWeight =
+                FontWeight.Bold,
+            letterSpacing = 1.15.sp,
+            modifier =
+                Modifier.padding(
+                    start = 3.dp
+                ),
+        )
+
+        Surface(
+            modifier =
+                Modifier.fillMaxWidth(),
+            shape =
+                RoundedCornerShape(
+                    18.dp
+                ),
+            color =
+                VueoPalette.SurfaceElevated,
+        ) {
+            Column(
+                modifier =
+                    Modifier.fillMaxWidth(),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VueoSettingsHubDivider() {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 62.dp,
+                    end = 14.dp,
+                )
+                .height(
+                    1.dp
+                )
+                .background(
+                    VueoPalette.Stroke
+                        .copy(
+                            alpha = .55f
+                        )
+                )
+    )
+}
+
+@Composable
+private fun VueoSettingsHubRow(
+    title: String,
+    subtitle: String,
+    status: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClick = onClick
+                )
+                .padding(
+                    horizontal = 14.dp,
+                    vertical = 11.dp,
+                ),
+        verticalAlignment =
+            Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(
+                        38.dp
+                    )
+                    .clip(
+                        RoundedCornerShape(
+                            11.dp
+                        )
+                    )
+                    .background(
+                        VueoPalette.SurfaceStrong
+                            .copy(
+                                alpha = .78f
+                            )
+                    ),
+            contentAlignment =
+                Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint =
+                    Color.White.copy(
+                        alpha = .92f
+                    ),
+                modifier =
+                    Modifier.size(
+                        20.dp
+                    ),
+            )
+        }
+
+        Spacer(
+            Modifier.width(
+                12.dp
+            )
+        )
+
+        Column(
+            modifier =
+                Modifier.weight(
+                    1f
+                ),
+            verticalArrangement =
+                Arrangement.spacedBy(
+                    2.dp
+                ),
+        ) {
+            Text(
+                text = title,
+                color =
+                    Color.White,
+                fontSize = 15.sp,
+                fontWeight =
+                    FontWeight.Bold,
+            )
+
+            Text(
+                text = subtitle,
+                color =
+                    VueoPalette.Muted,
+                fontSize = 10.5.sp,
+                maxLines = 1,
+            )
+
+            if (
+                status.isNotBlank()
+            ) {
+                Text(
+                    text = status,
+                    color =
+                        Color.White.copy(
+                            alpha = .72f
+                        ),
+                    fontSize = 9.5.sp,
+                    fontWeight =
+                        FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+        }
+
+        Spacer(
+            Modifier.width(
+                8.dp
+            )
+        )
+
+        Text(
+            text = "›",
+            color =
+                VueoPalette.Muted,
+            fontSize = 24.sp,
+            fontWeight =
+                FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
 private fun VueoSettingsPage(
     title: String,
     subtitle: String,
@@ -3594,12 +3778,14 @@ private fun VueoProfileStat(
             ),
         color =
             if (highlighted) {
-                VueoPalette.Accent
+                VueoPalette.BrandLime
                     .copy(
-                        alpha = .10f
+                        alpha = .12f
                     )
             } else {
-                VueoPalette.Surface
+                Color.Black.copy(
+                    alpha = .20f
+                )
             },
     ) {
         Column(
@@ -3619,7 +3805,7 @@ private fun VueoProfileStat(
                 text = value,
                 color =
                     if (highlighted) {
-                        VueoPalette.Accent
+                        VueoPalette.BrandLime
                     } else {
                         Color.White
                     },
