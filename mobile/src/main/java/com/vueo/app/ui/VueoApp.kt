@@ -16,6 +16,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -1225,6 +1227,36 @@ private fun RowScope.ProfileBottomTab(
 ) {
     val context =
         LocalContext.current
+    val profileTabSelected = selected == tab
+    val profileAvatarSize by animateDpAsState(
+        targetValue = if (profileTabSelected) 30.dp else 28.dp,
+        animationSpec = tween(
+            durationMillis = VueoMotion.QUICK_MS,
+            easing = VueoMotion.EaseOut,
+        ),
+        label = "VUEO profile tab avatar size",
+    )
+    val profileBorderWidth by animateDpAsState(
+        targetValue = if (profileTabSelected) 2.dp else 1.dp,
+        animationSpec = tween(
+            durationMillis = VueoMotion.QUICK_MS,
+            easing = VueoMotion.EaseOut,
+        ),
+        label = "VUEO profile tab border width",
+    )
+    val profileBorderColor by animateColorAsState(
+        targetValue =
+            if (profileTabSelected) {
+                VueoPalette.Accent
+            } else {
+                VueoPalette.Stroke
+            },
+        animationSpec = tween(
+            durationMillis = VueoMotion.QUICK_MS,
+            easing = VueoMotion.EaseOut,
+        ),
+        label = "VUEO profile tab border color",
+    )
 
     val avatarDrawable =
         remember(
@@ -1260,13 +1292,7 @@ private fun RowScope.ProfileBottomTab(
             Surface(
                 modifier =
                     Modifier.size(
-                        if (
-                            selected == tab
-                        ) {
-                            30.dp
-                        } else {
-                            28.dp
-                        }
+                        profileAvatarSize
                     ),
                 shape = CircleShape,
                 color =
@@ -1276,21 +1302,9 @@ private fun RowScope.ProfileBottomTab(
                         .foundation
                         .BorderStroke(
                             width =
-                                if (
-                                    selected == tab
-                                ) {
-                                    2.dp
-                                } else {
-                                    1.dp
-                                },
+                                profileBorderWidth,
                             color =
-                                if (
-                                    selected == tab
-                                ) {
-                                    VueoPalette.Accent
-                                } else {
-                                    VueoPalette.Stroke
-                                },
+                                profileBorderColor,
                         ),
             ) {
                 Box(
@@ -16253,15 +16267,25 @@ private fun PlayerScreen(
             }
         }
 
-        if (controlsLocked) {
+        AnimatedVisibility(
+            visible = controlsLocked,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(14.dp),
+            enter = vueoSoftEnter(
+                durationMillis = 200,
+                initialScale = 0.97f,
+            ),
+            exit = vueoSoftExit(
+                durationMillis = 140,
+                targetScale = 0.985f,
+            ),
+        ) {
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(14.dp)
-                    .clickable {
-                        controlsLocked = false
-                        controlsVisible = true
-                    },
+                modifier = Modifier.clickable {
+                    controlsLocked = false
+                    controlsVisible = true
+                },
                 shape = RoundedCornerShape(50),
                 color = Color.Black.copy(
                     alpha = .62f

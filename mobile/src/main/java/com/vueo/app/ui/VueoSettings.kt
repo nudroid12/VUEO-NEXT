@@ -9,6 +9,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -300,37 +301,19 @@ internal fun VueoSettingsHub(
         mutableStateOf(false)
     }
 
-    if (showUserDna && dnaEnabled) {
-        BackHandler {
-            showUserDna = false
+    val settingsSurface =
+        when {
+            showUserDna && dnaEnabled -> 2
+            showPersonalization -> 1
+            else -> 0
         }
 
-        UserDnaScreen(
-            profile = activeProfile,
-            libraryStore = libraryStore,
-            dataVersion = profileVersion,
-            onBack = {
-                showUserDna = false
-            },
-        )
-        return
-    }
-
-    if (showPersonalization) {
-        BackHandler {
+    BackHandler(enabled = settingsSurface != 0) {
+        if (settingsSurface == 2) {
+            showUserDna = false
+        } else {
             showPersonalization = false
         }
-
-        PersonalizationSettingsScreen(
-            profileStore = profileStore,
-            onBack = {
-                showPersonalization = false
-            },
-            onViewDna = {
-                showUserDna = true
-            },
-        )
-        return
     }
 
     val avatarDrawable =
@@ -356,6 +339,43 @@ internal fun VueoSettingsHub(
             }
         }
 
+    AnimatedContent(
+        targetState = settingsSurface,
+        transitionSpec = {
+            vueoFadeThrough(
+                enterDurationMillis = 320,
+                exitDurationMillis = 170,
+                enterDelayMillis = 24,
+                initialScale = 0.992f,
+                targetScale = 0.996f,
+            )
+        },
+        label = "VUEO settings personalization transition",
+        modifier = Modifier.fillMaxSize(),
+    ) { surface ->
+        when (surface) {
+            2 ->
+                UserDnaScreen(
+                    profile = activeProfile,
+                    libraryStore = libraryStore,
+                    dataVersion = profileVersion,
+                    onBack = {
+                        showUserDna = false
+                    },
+                )
+
+            1 ->
+                PersonalizationSettingsScreen(
+                    profileStore = profileStore,
+                    onBack = {
+                        showPersonalization = false
+                    },
+                    onViewDna = {
+                        showUserDna = true
+                    },
+                )
+
+            else ->
     LazyColumn(
         modifier =
             Modifier
@@ -918,6 +938,8 @@ internal fun VueoSettingsHub(
                         FontWeight.Bold,
                 )
             }
+        }
+    }
         }
     }
 }
