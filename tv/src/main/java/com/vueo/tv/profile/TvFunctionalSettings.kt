@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -39,17 +41,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +66,8 @@ import com.vueo.shared.core.enrichment.GeminiClient
 import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
+import com.vueo.shared.core.profile.ProfileAvatarSpec
 import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlayerVideoFit
@@ -150,6 +157,7 @@ internal fun TvFunctionalSettingsPage(
         "PERSONALIZATION" -> FunctionalPersonalizationPage(
             profileStore = profileStore,
             firstRequester = firstRequester,
+            onProfileChanged = onProfileChanged,
         )
         "ENHANCEMENTS" -> FunctionalEnhancementsPage(
             pluginStore = pluginStore,
@@ -198,9 +206,11 @@ internal fun TvFunctionalSettingsPage(
 private fun FunctionalPersonalizationPage(
     profileStore: ProfileStore,
     firstRequester: FocusRequester,
+    onProfileChanged: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val activeProfile = profileStore.activeProfile()
+    var profileRevision by remember { mutableIntStateOf(0) }
+    val activeProfile = remember(profileRevision) { profileStore.activeProfile() }
     val preferences = remember(context) {
         UserDnaPreferences(
             context.applicationContext,
@@ -212,6 +222,7 @@ private fun FunctionalPersonalizationPage(
     var recommendations by remember(activeProfile.id) { mutableStateOf(preferences.personalizedRecommendationsEnabled(activeProfile.id)) }
     var askWho by remember(activeProfile.id) { mutableStateOf(profileStore.askWhoIsWatchingOnStartup()) }
     var showDnaDetails by remember { mutableStateOf(false) }
+    var showAvatarPicker by remember { mutableStateOf(false) }
     var pinFlow by remember { mutableStateOf<FunctionalPinFlow?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
@@ -317,6 +328,14 @@ private fun FunctionalPersonalizationPage(
             }
             item { FunctionalSectionLabel("TV PROFILE") }
             item {
+                FunctionalRow(
+                    title = "Profile Avatar",
+                    subtitle = "Choose from the shared VUEO avatar collection.",
+                    value = "Change",
+                    onClick = { showAvatarPicker = true },
+                )
+            }
+            item {
                 FunctionalToggleRow(
                     title = "Ask Who's Watching",
                     subtitle = "Show the profile picker at launch when multiple profiles exist.",
@@ -363,6 +382,28 @@ private fun FunctionalPersonalizationPage(
                 )
             }
         }
+    }
+
+    if (showAvatarPicker) {
+        TvAvatarPickerOverlay(
+            profileName = activeProfile.name,
+            selectedAvatarId = activeProfile.avatar,
+            onDismiss = { showAvatarPicker = false },
+            onSelect = { avatarId ->
+                if (
+                    profileStore.updateProfile(
+                        profileId = activeProfile.id,
+                        name = activeProfile.name,
+                        avatar = avatarId,
+                        isKids = activeProfile.isKids,
+                    )
+                ) {
+                    profileRevision += 1
+                    onProfileChanged(activeProfile.id)
+                    showAvatarPicker = false
+                }
+            },
+        )
     }
 
     val flow = pinFlow
@@ -1537,6 +1578,168 @@ private fun FunctionalApiKeyField(
             cursorColor = Color.White,
         ),
     )
+}
+
+@Composable
+private fun TvAvatarPickerOverlay(
+    profileName: String,
+    selectedAvatarId: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val avatars = ProfileAvatarCatalog.selectable
+    val columns = 6
+    val requesters = remember(avatars.size) { List(avatars.size) { FocusRequester() } }
+
+    BackHandler(onBack = onDismiss)
+
+    LaunchedEffect(selectedAvatarId, avatars.size) {
+        delay(70)
+        val selectedIndex = avatars.indexOfFirst { it.id == selectedAvatarId }.coerceAtLeast(0)
+        requesters.getOrNull(selectedIndex)?.let { requester ->
+            runCatching { requester.requestFocus() }
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.92f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .width(720.dp)
+                    .background(FunctionalRaised, RoundedCornerShape(24.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 28.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Choose Profile Avatar",
+                color = Color.White,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = profileName,
+                color = FunctionalMuted,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            avatars.chunked(columns).forEachIndexed { rowIndex, row ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    row.forEachIndexed { columnIndex, avatar ->
+                        val index = rowIndex * columns + columnIndex
+                        TvAvatarChoice(
+                            avatar = avatar,
+                            selected = avatar.id == selectedAvatarId,
+                            requester = requesters[index],
+                            onMove = { key ->
+                                val target =
+                                    when (key) {
+                                        Key.DirectionLeft ->
+                                            if (columnIndex > 0) index - 1 else index
+                                        Key.DirectionRight ->
+                                            if (columnIndex < row.lastIndex) index + 1 else index
+                                        Key.DirectionUp ->
+                                            if (index - columns >= 0) index - columns else index
+                                        Key.DirectionDown ->
+                                            if (index + columns < avatars.size) index + columns else index
+                                        else -> index
+                                    }
+                                if (target != index) {
+                                    runCatching { requesters[target].requestFocus() }
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                            onClick = { onSelect(avatar.id) },
+                        )
+                    }
+                    repeat(columns - row.size) {
+                        Spacer(Modifier.size(84.dp))
+                    }
+                }
+                if (rowIndex < (avatars.size - 1) / columns) {
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = "BACK to cancel",
+                color = FunctionalMuted.copy(alpha = 0.72f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvAvatarChoice(
+    avatar: ProfileAvatarSpec,
+    selected: Boolean,
+    requester: FocusRequester,
+    onMove: (Key) -> Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember(avatar.id) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.08f else 1f,
+        label = "tvAvatarChoiceScale",
+    )
+    val lime = Color(0xFFB6FF00)
+
+    Box(
+        modifier =
+            Modifier
+                .size(84.dp)
+                .focusRequester(requester)
+                .scale(scale)
+                .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) onMove(event.key) else false
+                }
+                .clickable(onClick = onClick)
+                .focusable()
+                .clip(CircleShape)
+                .border(
+                    width = if (focused) 4.dp else if (selected) 3.dp else 1.dp,
+                    color =
+                        when {
+                            focused -> Color.White
+                            selected -> lime
+                            else -> Color.White.copy(alpha = 0.12f)
+                        },
+                    shape = CircleShape,
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(avatar.drawableRes),
+            contentDescription = "Profile avatar",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (selected) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 5.dp)
+                        .width(28.dp)
+                        .height(5.dp)
+                        .background(lime, RoundedCornerShape(50)),
+            )
+        }
+    }
 }
 
 @Composable

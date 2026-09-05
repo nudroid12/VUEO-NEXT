@@ -71,6 +71,7 @@ import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.storage.LibraryStore
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.library.TvLibraryStore
@@ -172,14 +173,8 @@ fun TvProfileDnaPanel(
         }
 
     val avatarDrawable =
-        remember(activeProfile.avatar, context) {
-            if (activeProfile.avatar.startsWith("avatar_")) {
-                context.resources
-                    .getIdentifier(activeProfile.avatar, "drawable", context.packageName)
-                    .takeIf { it != 0 }
-            } else {
-                null
-            }
+        remember(activeProfile.avatar) {
+            ProfileAvatarCatalog.drawableRes(activeProfile.avatar)
         }
 
     BackHandler(enabled = visible, onBack = onDismiss)

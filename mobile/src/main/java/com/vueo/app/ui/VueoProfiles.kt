@@ -74,69 +74,18 @@ import androidx.compose.ui.unit.sp
 import com.vueo.app.R
 import com.vueo.app.core.storage.ProfileStore
 import com.vueo.app.core.storage.VueoProfile
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class StockProfileAvatar(
-    val id: String,
-    val drawableRes: Int,
-)
-
-private val PROFILE_AVATARS =
-    listOf(
-        StockProfileAvatar("avatar_man_1", R.drawable.avatar_man_1),
-        StockProfileAvatar("avatar_man_2", R.drawable.avatar_man_2),
-        StockProfileAvatar("avatar_man_3", R.drawable.avatar_man_3),
-        StockProfileAvatar("avatar_man_4", R.drawable.avatar_man_4),
-        StockProfileAvatar("avatar_man_5", R.drawable.avatar_man_5),
-        StockProfileAvatar("avatar_woman_1", R.drawable.avatar_woman_1),
-        StockProfileAvatar("avatar_woman_2", R.drawable.avatar_woman_2),
-        StockProfileAvatar("avatar_woman_3", R.drawable.avatar_woman_3),
-        StockProfileAvatar("avatar_woman_4", R.drawable.avatar_woman_4),
-        StockProfileAvatar("avatar_woman_5", R.drawable.avatar_woman_5),
-        StockProfileAvatar("avatar_boy_1", R.drawable.avatar_boy_1),
-        StockProfileAvatar("avatar_boy_2", R.drawable.avatar_boy_2),
-        StockProfileAvatar("avatar_boy_3", R.drawable.avatar_boy_3),
-        StockProfileAvatar("avatar_girl_1", R.drawable.avatar_girl_1),
-        StockProfileAvatar("avatar_girl_2", R.drawable.avatar_girl_2),
-        StockProfileAvatar("avatar_girl_3", R.drawable.avatar_girl_3),
-        StockProfileAvatar("avatar_character_1", R.drawable.avatar_character_1),
-        StockProfileAvatar("avatar_character_2", R.drawable.avatar_character_2),
-        StockProfileAvatar("avatar_character_3", R.drawable.avatar_character_3),
-        StockProfileAvatar("avatar_character_4", R.drawable.avatar_character_4),
-        StockProfileAvatar("avatar_character_5", R.drawable.avatar_character_5),
-        StockProfileAvatar("avatar_character_6", R.drawable.avatar_character_6),
-        StockProfileAvatar("avatar_character_7", R.drawable.avatar_character_7),
-        StockProfileAvatar("avatar_character_8", R.drawable.avatar_character_8),
-        StockProfileAvatar("avatar_malaysia_1", R.drawable.avatar_malaysia_1),
-        StockProfileAvatar("avatar_malaysia_2", R.drawable.avatar_malaysia_2),
-        StockProfileAvatar("avatar_malaysia_3", R.drawable.avatar_malaysia_3),
-        StockProfileAvatar("avatar_malaysia_4", R.drawable.avatar_malaysia_4),
-        StockProfileAvatar("avatar_malaysia_5", R.drawable.avatar_malaysia_5),
-        StockProfileAvatar("avatar_malaysia_6", R.drawable.avatar_malaysia_6),
-        StockProfileAvatar("avatar_malaysia_7", R.drawable.avatar_malaysia_7),
-        StockProfileAvatar("avatar_malaysia_8", R.drawable.avatar_malaysia_8),
-    )
-
-private val LEGACY_PROFILE_AVATARS =
-    listOf(
-        StockProfileAvatar("avatar_vueo_1", R.drawable.avatar_vueo_1),
-        StockProfileAvatar("avatar_vueo_2", R.drawable.avatar_vueo_2),
-        StockProfileAvatar("avatar_vueo_3", R.drawable.avatar_vueo_3),
-        StockProfileAvatar("avatar_vueo_4", R.drawable.avatar_vueo_4),
-    )
+private val PROFILE_AVATARS = ProfileAvatarCatalog.selectable
 
 private fun stockAvatarDrawable(
     avatarId: String,
-): Int? =
-    (PROFILE_AVATARS + LEGACY_PROFILE_AVATARS)
-        .firstOrNull {
-            it.id == avatarId
-        }
-        ?.drawableRes
+): Int? = ProfileAvatarCatalog.drawableRes(avatarId)
 
 private const val LOCAL_AVATAR_PREFIX = "local_avatar:"
 private const val PROFILE_AVATAR_SIZE = 512

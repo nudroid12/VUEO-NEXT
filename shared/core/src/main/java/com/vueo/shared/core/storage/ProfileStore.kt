@@ -2,6 +2,7 @@ package com.vueo.shared.core.storage
 
 import android.content.Context
 import android.util.Base64
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -648,7 +649,7 @@ class ProfileStore(
             "You"
 
         private const val DEFAULT_AVATAR =
-            "avatar_man_1"
+            ProfileAvatarCatalog.DEFAULT_ID
 
         private const val KEY_PROFILES =
             "profiles"

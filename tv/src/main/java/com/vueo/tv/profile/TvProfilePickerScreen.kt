@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.R
@@ -58,18 +59,6 @@ private val PickerPanelRaised = Color(0xFF171C19)
 private val PickerGreen = Color(0xFF84E100)
 private val PickerMuted = Color(0xFFAAB2AD)
 private val PickerStroke = Color.White.copy(alpha = 0.14f)
-
-private val TvProfileAvatars =
-    mapOf(
-        "avatar_man_1" to R.drawable.avatar_man_1,
-        "avatar_man_2" to R.drawable.avatar_man_2,
-        "avatar_woman_1" to R.drawable.avatar_woman_1,
-        "avatar_woman_2" to R.drawable.avatar_woman_2,
-        "avatar_boy_1" to R.drawable.avatar_boy_1,
-        "avatar_boy_2" to R.drawable.avatar_boy_2,
-        "avatar_girl_1" to R.drawable.avatar_girl_1,
-        "avatar_girl_2" to R.drawable.avatar_girl_2,
-    )
 
 @Composable
 fun TvProfilePickerScreen(
@@ -227,7 +216,7 @@ private fun PickerProfileCard(
         targetValue = if (focused) 1.065f else 1f,
         label = "pickerProfileScale",
     )
-    val avatarDrawable = TvProfileAvatars[profile.avatar]
+    val avatarDrawable = ProfileAvatarCatalog.drawableRes(profile.avatar)
 
     Column(
         modifier =
