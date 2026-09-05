@@ -398,12 +398,12 @@ internal fun VueoSettingsHub(
                                 .background(
                                     Brush.linearGradient(
                                         listOf(
-                                            VueoPalette.ProfileSurface,
-                                            VueoPalette.ProfileSurfaceAlt,
+                                            Color.White.copy(alpha = .145f),
+                                            Color.White.copy(alpha = .095f),
                                         )
                                     )
                                 )
-                                .border(1.dp, Color.White.copy(alpha = .07f), profileShape),
+                                .border(1.dp, Color.White.copy(alpha = .12f), profileShape),
                         ) {
                             Column(Modifier.fillMaxWidth()) {
                                 Row(
@@ -461,7 +461,6 @@ internal fun VueoSettingsHub(
                                         modifier = Modifier.weight(1f),
                                         label = "DNA",
                                         value = dnaSnapshot?.let { "${it.confidencePercent}%" } ?: "Off",
-                                        highlighted = dnaEnabled && dnaSnapshot != null,
                                     )
                                 }
 
@@ -3349,55 +3348,28 @@ private fun VueoProfileStat(
     modifier: Modifier = Modifier,
     label: String,
     value: String,
-    highlighted: Boolean = false,
 ) {
     Surface(
-        modifier =
-            modifier,
-        shape =
-            RoundedCornerShape(
-                14.dp
-            ),
-        color =
-            if (highlighted) {
-                VueoPalette.BrandLime.copy(alpha = .12f)
-            } else {
-                Color.Black.copy(alpha = .20f)
-            },
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = Color.Black.copy(alpha = .20f),
     ) {
         Column(
-            modifier =
-                Modifier.padding(
-                    horizontal = 10.dp,
-                    vertical = 10.dp,
-                ),
-            horizontalAlignment =
-                Alignment.CenterHorizontally,
-            verticalArrangement =
-                Arrangement.spacedBy(
-                    2.dp
-                ),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = value,
-                color =
-                    if (highlighted) {
-                        VueoPalette.BrandLime
-                    } else {
-                        Color.White
-                    },
+                color = Color.White,
                 fontSize = 15.sp,
-                fontWeight =
-                    FontWeight.Black,
+                fontWeight = FontWeight.Black,
             )
-
             Text(
                 text = label,
-                color =
-                    VueoPalette.Muted,
+                color = VueoPalette.Muted,
                 fontSize = 9.sp,
-                fontWeight =
-                    FontWeight.Medium,
+                fontWeight = FontWeight.Medium,
             )
         }
     }
