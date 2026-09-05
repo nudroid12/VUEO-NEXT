@@ -68,6 +68,7 @@ import com.vueo.tv.player.TvPlaybackStore
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val SettingsBlack = Color(0xFF050706)
 private val SettingsPanel = Color(0xFF101612)
@@ -548,7 +549,8 @@ private fun SettingsHubCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.035f else 1f,
+        targetValue = if (focused) 1.022f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "settingsHubCardScale",
     )
 
@@ -1290,6 +1292,7 @@ private fun SettingRow(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused && enabled) 1.012f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "settingsRowScale",
     )
     val requesterModifier = if (requester != null) Modifier.focusRequester(requester) else Modifier

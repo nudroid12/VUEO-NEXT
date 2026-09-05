@@ -1,6 +1,7 @@
 package com.vueo.tv.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +58,7 @@ import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val PickerBlack = Color(0xFF050706)
 private val PickerPanel = Color(0xE9101411)
@@ -360,6 +362,11 @@ private fun PickerProviderChip(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.025f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "sourceFilterFocusScale",
+    )
     Box(
         modifier = Modifier
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
@@ -375,7 +382,7 @@ private fun PickerProviderChip(
                     }
                 }
             }
-            .scale(if (focused) 1.04f else 1f)
+            .scale(focusScale)
             .background(
                 when {
                     focused -> Color.White
@@ -416,6 +423,11 @@ private fun PickerButton(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.03f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "sourceActionFocusScale",
+    )
 
     Button(
         onClick = onClick,
@@ -436,7 +448,7 @@ private fun PickerButton(
                         }
                     }
                 }
-                .scale(if (focused) 1.05f else 1f)
+                .scale(focusScale)
                 .border(
                     width = if (focused) 2.dp else 1.dp,
                     color = if (focused) PickerFocus else Color.Transparent,
@@ -468,7 +480,8 @@ private fun SourcePickerRow(
     var focused by remember(source.id) { mutableStateOf(false) }
     val assessment = SourceRanker.assess(source)
     val scale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (focused) 1.025f else 1f,
+        targetValue = if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "sourcePickerScale",
     )
     val availability = when {

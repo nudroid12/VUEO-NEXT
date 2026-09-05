@@ -52,6 +52,8 @@ import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.focus.tvVerticalFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvFocusColorSpec
 
 private val BrowseBlack = Color(0xFF050706)
 private val BrowsePanel = Color(0xFF101412)
@@ -248,11 +250,13 @@ private fun BrowsePosterCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.075f else 1f,
+        targetValue = if (focused) 1.045f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "browsePosterScale",
     )
     val borderColor by animateColorAsState(
         targetValue = if (focused) Color.White else Color.White.copy(alpha = 0.10f),
+        animationSpec = tvFocusColorSpec(),
         label = "browsePosterBorder",
     )
 

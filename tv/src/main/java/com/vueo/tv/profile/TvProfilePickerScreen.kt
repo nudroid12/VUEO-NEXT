@@ -52,6 +52,7 @@ import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.R
 import kotlinx.coroutines.delay
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val PickerBlack = Color(0xFF050706)
 private val PickerPanel = Color(0xFF101412)
@@ -213,7 +214,8 @@ private fun PickerProfileCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.065f else 1f,
+        targetValue = if (focused) 1.045f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "pickerProfileScale",
     )
     val avatarDrawable = ProfileAvatarCatalog.drawableRes(profile.avatar)
@@ -350,7 +352,8 @@ private fun TvPickerToggleRow(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.025f else 1f,
+        targetValue = if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "pickerToggleScale",
     )
 

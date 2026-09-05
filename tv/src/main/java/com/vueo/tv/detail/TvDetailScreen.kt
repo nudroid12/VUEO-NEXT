@@ -68,6 +68,8 @@ import com.vueo.tv.ui.focus.tvVerticalFocus
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvFocusColorSpec
 
 private val DetailBlack = Color(0xFF050706)
 private val DetailPanel = Color(0xFF101412)
@@ -503,7 +505,8 @@ private fun DetailActionButton(
     primary: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.065f else 1f, label = "detailActionScale")
+    val scale by animateFloatAsState(if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(), label = "detailActionScale")
 
     Button(
         onClick = onClick,
@@ -578,9 +581,11 @@ private fun SeasonChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "seasonScale")
+    val scale by animateFloatAsState(if (focused) 1.03f else 1f,
+        animationSpec = tvFocusSpec(), label = "seasonScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.Transparent,
+        animationSpec = tvFocusColorSpec(),
         label = "seasonBorder",
     )
 
@@ -616,9 +621,11 @@ private fun EpisodeCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.03f else 1f, label = "episodeScale")
+    val scale by animateFloatAsState(if (focused) 1.018f else 1f,
+        animationSpec = tvFocusSpec(), label = "episodeScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.White.copy(alpha = 0.08f),
+        animationSpec = tvFocusColorSpec(),
         label = "episodeBorder",
     )
 
@@ -812,9 +819,11 @@ private fun RelatedPoster(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.055f else 1f, label = "relatedPosterScale")
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f,
+        animationSpec = tvFocusSpec(), label = "relatedPosterScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.White.copy(alpha = 0.08f),
+        animationSpec = tvFocusColorSpec(),
         label = "relatedPosterBorder",
     )
 
@@ -919,7 +928,8 @@ private fun GeminiInsightSection(
         }
 
         var focused by remember { mutableStateOf(false) }
-        val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "geminiButtonScale")
+        val scale by animateFloatAsState(if (focused) 1.025f else 1f,
+        animationSpec = tvFocusSpec(), label = "geminiButtonScale")
         Button(
             onClick = onGenerate,
             enabled = !loading,

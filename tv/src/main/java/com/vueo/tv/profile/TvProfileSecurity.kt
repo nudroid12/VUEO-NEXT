@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val SecurityBlack = Color(0xFF050706)
 private val SecurityPanel = Color(0xFF111412)
@@ -208,7 +209,8 @@ private fun PinKey(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.06f else 1f,
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "pinKeyScale",
     )
 

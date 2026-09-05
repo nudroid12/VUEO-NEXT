@@ -55,6 +55,8 @@ import com.vueo.tv.ui.focus.tvVerticalFocus
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvFocusColorSpec
 
 private val ManagerBlack = Color(0xFF050706)
 private val ManagerPanel = Color(0xFF101412)
@@ -488,9 +490,11 @@ private fun ManagerModeChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "managerModeScale")
+    val scale by animateFloatAsState(if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(), label = "managerModeScale")
     val background by animateColorAsState(
         if (selected) TvAccent.copy(alpha = 0.18f) else ManagerPanel,
+        animationSpec = tvFocusColorSpec(),
         label = "managerModeBackground",
     )
 
@@ -807,7 +811,8 @@ private fun RepositoryHeader(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "repoScale")
+    val scale by animateFloatAsState(if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(), label = "repoScale")
 
     Row(
         modifier =
@@ -859,7 +864,8 @@ private fun ProviderCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "providerScale")
+    val scale by animateFloatAsState(if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(), label = "providerScale")
 
     Row(
         modifier =
@@ -930,7 +936,8 @@ private fun ManagerToggleCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "managerCardScale")
+    val scale by animateFloatAsState(if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(), label = "managerCardScale")
 
     Row(
         modifier =

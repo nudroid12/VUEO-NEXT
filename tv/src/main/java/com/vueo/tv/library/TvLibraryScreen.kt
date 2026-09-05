@@ -58,6 +58,7 @@ import com.vueo.tv.ui.focus.tvVerticalFocus
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val LibraryBlack = Color(0xFF050706)
 private val LibraryPanel = Color(0xFF101412)
@@ -229,7 +230,8 @@ private fun LibraryViewToggle(
     onToggle: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "libraryViewToggleScale")
+    val scale by animateFloatAsState(if (focused) 1.025f else 1f,
+        animationSpec = tvFocusSpec(), label = "libraryViewToggleScale")
     Row(
         modifier =
             Modifier
@@ -257,7 +259,8 @@ private fun LibraryEmpty(
     onBrowse: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "libraryEmptyButtonScale")
+    val scale by animateFloatAsState(if (focused) 1.03f else 1f,
+        animationSpec = tvFocusSpec(), label = "libraryEmptyButtonScale")
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 58.dp, vertical = 48.dp)) {
         Text("Your Library is empty", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
@@ -285,7 +288,8 @@ private fun LibraryPoster(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.075f else 1f, label = "libraryPosterScale")
+    val scale by animateFloatAsState(if (focused) 1.045f else 1f,
+        animationSpec = tvFocusSpec(), label = "libraryPosterScale")
 
     Column(
         modifier =
@@ -336,7 +340,8 @@ private fun LibraryListRow(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "libraryListRowScale")
+    val scale by animateFloatAsState(if (focused) 1.014f else 1f,
+        animationSpec = tvFocusSpec(), label = "libraryListRowScale")
     Row(
         modifier =
             modifier

@@ -79,6 +79,7 @@ import com.vueo.tv.ui.motion.tvPanelEnter
 import com.vueo.tv.ui.motion.tvPanelExit
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val PanelBlack = Color(0xFF050706)
 private val PanelSurface = Color(0xFF101412)
@@ -327,8 +328,10 @@ private fun TvMobileSettingsProfileCard(
 ) {
     var profileFocused by remember { mutableStateOf(false) }
     var switchFocused by remember { mutableStateOf(false) }
-    val profileScale by animateFloatAsState(if (profileFocused) 1.018f else 1f, label = "settingsProfileScale")
-    val switchScale by animateFloatAsState(if (switchFocused) 1.022f else 1f, label = "settingsSwitchScale")
+    val profileScale by animateFloatAsState(if (profileFocused) 1.018f else 1f,
+        animationSpec = tvFocusSpec(), label = "settingsProfileScale")
+    val switchScale by animateFloatAsState(if (switchFocused) 1.022f else 1f,
+        animationSpec = tvFocusSpec(), label = "settingsSwitchScale")
 
     Column(
         modifier =
@@ -513,7 +516,8 @@ private fun MobileSettingsNavigationCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.018f else 1f, label = "mobileSettingsCardScale")
+    val scale by animateFloatAsState(if (focused) 1.018f else 1f,
+        animationSpec = tvFocusSpec(), label = "mobileSettingsCardScale")
 
     Row(
         modifier =

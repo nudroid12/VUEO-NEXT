@@ -84,6 +84,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.vueo.tv.ui.motion.tvFocusSpec
 
 private val FunctionalPanel = Color(0xFF101612)
 private val FunctionalRaised = Color(0xFF151A17)
@@ -1441,7 +1442,8 @@ private fun FunctionalRow(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f, label = "functionalRowScale")
+    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f,
+        animationSpec = tvFocusSpec(), label = "functionalRowScale")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1497,7 +1499,8 @@ private fun FunctionalToggleRow(
     onToggle: (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f, label = "functionalToggleScale")
+    val scale by animateFloatAsState(if (focused && enabled) 1.014f else 1f,
+        animationSpec = tvFocusSpec(), label = "functionalToggleScale")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1692,7 +1695,8 @@ private fun TvAvatarChoice(
 ) {
     var focused by remember(avatar.id) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.08f else 1f,
+        targetValue = if (focused) 1.05f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "tvAvatarChoiceScale",
     )
     val lime = Color(0xFFB6FF00)

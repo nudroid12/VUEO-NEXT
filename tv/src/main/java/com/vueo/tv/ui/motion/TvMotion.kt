@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Color
 
 /**
  * VUEO TV motion language.
@@ -125,6 +126,12 @@ internal fun tvPanelExit(): ExitTransition =
         )
 
 internal fun tvFocusSpec(): FiniteAnimationSpec<Float> =
+    tween(
+        durationMillis = TvMotion.FOCUS_MS,
+        easing = TvMotion.EaseOut,
+    )
+
+internal fun tvFocusColorSpec(): FiniteAnimationSpec<Color> =
     tween(
         durationMillis = TvMotion.FOCUS_MS,
         easing = TvMotion.EaseOut,

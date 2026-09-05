@@ -108,6 +108,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvFocusColorSpec
 
 private val VueoBlack = Color(0xFF050706)
 private val VueoPanel = Color(0xFF101412)
@@ -1122,7 +1124,8 @@ private fun TvSearchNavItem(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.09f else 1f,
+        targetValue = if (focused) 1.055f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "searchNavScale",
     )
 
@@ -1183,7 +1186,8 @@ private fun TvLibraryNavItem(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.09f else 1f,
+        targetValue = if (focused) 1.055f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "libraryNavScale",
     )
 
@@ -1253,7 +1257,8 @@ private fun TvProfileNavItem(
     val requester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        if (focused) 1.09f else 1f,
+        if (focused) 1.055f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "profileNavScale",
     )
 
@@ -1317,10 +1322,12 @@ private fun TvNavItem(
     var focused by remember { mutableStateOf(false) }
     val color by animateColorAsState(
         if (focused || selected) Color.White else VueoMuted,
+        animationSpec = tvFocusColorSpec(),
         label = "navColor",
     )
     val scale by animateFloatAsState(
-        if (focused) 1.055f else 1f,
+        if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "navScale",
     )
 
@@ -1516,7 +1523,8 @@ private fun TvHeroButton(
     primary: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.065f else 1f, label = "heroButtonScale")
+    val scale by animateFloatAsState(if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(), label = "heroButtonScale")
 
     Button(
         onClick = onClick,
@@ -1655,12 +1663,14 @@ private fun TvContinueWatchingCard(
         mutableStateOf(false)
     }
     val scale by animateFloatAsState(
-        if (focused) 1.06f else 1f,
+        if (focused) 1.04f else 1f,
+        animationSpec = tvFocusSpec(),
         label = "continueCardScale",
     )
     val borderColor by animateColorAsState(
         if (focused) Color.White
         else Color.Transparent,
+        animationSpec = tvFocusColorSpec(),
         label = "continueCardBorder",
     )
 
@@ -1890,13 +1900,16 @@ private fun TvPosterCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "cardScale")
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f,
+        animationSpec = tvFocusSpec(), label = "cardScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.Transparent,
+        animationSpec = tvFocusColorSpec(),
         label = "cardBorder",
     )
     val glowColor by animateColorAsState(
         if (focused) Color.White.copy(alpha = 0.08f) else Color.Transparent,
+        animationSpec = tvFocusColorSpec(),
         label = "cardGlow",
     )
 

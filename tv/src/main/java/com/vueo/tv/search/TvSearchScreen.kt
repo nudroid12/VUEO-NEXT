@@ -56,6 +56,8 @@ import com.vueo.tv.ui.components.TvNetworkImage
 import com.vueo.tv.ui.focus.tvVerticalFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvFocusColorSpec
 
 private val SearchBlack = Color(0xFF050706)
 private val SearchPanel = Color(0xFF101412)
@@ -474,9 +476,11 @@ private fun TvSearchChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "searchChipScale")
+    val scale by animateFloatAsState(if (focused) 1.03f else 1f,
+        animationSpec = tvFocusSpec(), label = "searchChipScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.Transparent,
+        animationSpec = tvFocusColorSpec(),
         label = "searchChipBorder",
     )
     Box(
@@ -522,9 +526,11 @@ private fun TvSearchPosterCard(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.075f else 1f, label = "searchPosterScale")
+    val scale by animateFloatAsState(if (focused) 1.045f else 1f,
+        animationSpec = tvFocusSpec(), label = "searchPosterScale")
     val borderColor by animateColorAsState(
         if (focused) Color.White else Color.White.copy(alpha = 0.10f),
+        animationSpec = tvFocusColorSpec(),
         label = "searchPosterBorder",
     )
 

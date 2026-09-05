@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -111,6 +112,7 @@ import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleSize
 import java.util.concurrent.TimeUnit
 import com.vueo.tv.ui.motion.TvMotion
+import com.vueo.tv.ui.motion.tvFocusSpec
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1353,6 +1355,11 @@ private fun SkipSegmentButton(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember(segment.key) { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "skipSegmentFocusScale",
+    )
     val label =
         when (segment.kind.name) {
             "INTRO" -> "Skip Intro"
@@ -1368,7 +1375,7 @@ private fun SkipSegmentButton(
                     start = 42.dp,
                     bottom = if (controlsVisible) 150.dp else 48.dp,
                 )
-                .scale(if (focused) 1.06f else 1f)
+                .scale(focusScale)
                 .border(
                     width = if (focused) 2.dp else 1.dp,
                     color = if (focused) PlayerFocus else Color.White.copy(alpha = 0.24f),
@@ -1679,6 +1686,11 @@ private fun PlayerUnlockAction(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.035f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "unlockFocusScale",
+    )
     Row(
         modifier =
             modifier
@@ -1686,7 +1698,7 @@ private fun PlayerUnlockAction(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick = onUnlock)
-                .scale(if (focused) 1.06f else 1f)
+                .scale(focusScale)
                 .background(
                     if (focused) Color.White else Color.Black.copy(alpha = 0.62f),
                     RoundedCornerShape(999.dp),
@@ -1729,6 +1741,11 @@ private fun PlayerSeekBar(
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.004f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "seekBarFocusScale",
+    )
     val fraction =
         if (durationMs > 0L) {
             (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
@@ -1750,7 +1767,7 @@ private fun PlayerSeekBar(
                     onUp = onUp,
                     onDown = onDown,
                 )
-                .scale(if (focused) 1.004f else 1f)
+                .scale(focusScale)
                 .focusable(),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -1830,6 +1847,11 @@ private fun MobilePlayerRoundAction(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.055f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "roundActionFocusScale",
+    )
     val buttonSize = if (primary) 92.dp else 76.dp
     val iconSize = if (primary) 58.dp else 46.dp
 
@@ -1840,7 +1862,7 @@ private fun MobilePlayerRoundAction(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
-                .scale(if (focused) 1.09f else 1f)
+                .scale(focusScale)
                 .background(
                     color =
                         when {
@@ -1876,6 +1898,11 @@ private fun MobilePlayerTopAction(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.045f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "topActionFocusScale",
+    )
     Box(
         modifier =
             Modifier
@@ -1883,7 +1910,7 @@ private fun MobilePlayerTopAction(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
-                .scale(if (focused) 1.08f else 1f)
+                .scale(focusScale)
                 .background(
                     if (focused) Color.White else Color.Black.copy(alpha = 0.42f),
                     CircleShape,
@@ -1924,6 +1951,11 @@ private fun MobilePlayerPanelAction(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.025f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "panelActionFocusScale",
+    )
     Row(
         modifier =
             Modifier
@@ -1931,7 +1963,7 @@ private fun MobilePlayerPanelAction(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
-                .scale(if (focused) 1.045f else 1f)
+                .scale(focusScale)
                 .background(
                     if (focused) Color.White else Color.Transparent,
                     RoundedCornerShape(22.dp),
@@ -1980,6 +2012,11 @@ private fun PlayerButton(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.03f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "playerButtonFocusScale",
+    )
 
     Box(
         modifier =
@@ -1987,7 +2024,7 @@ private fun PlayerButton(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick, onLeft, onRight, onUp, onDown)
-                .scale(if (focused) 1.05f else 1f)
+                .scale(focusScale)
                 .background(
                     color =
                         when {
@@ -2029,6 +2066,11 @@ private fun PlayerWideButton(
     onDown: (() -> Unit)? = null,
 ) {
     var focused by remember(text) { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "wideButtonFocusScale",
+    )
     Row(
         modifier =
             Modifier
@@ -2037,7 +2079,7 @@ private fun PlayerWideButton(
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .playerRemoteKeys(onClick = onClick, onUp = onUp, onDown = onDown)
-                .scale(if (focused) 1.025f else 1f)
+                .scale(focusScale)
                 .background(
                     color =
                         when {
@@ -2598,13 +2640,18 @@ private fun PanelOptionRow(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.015f else 1f,
+        animationSpec = tvFocusSpec(),
+        label = "panelOptionFocusScale",
+    )
     Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
                 .onFocusChanged { focused = it.isFocused }
-                .scale(if (focused) 1.025f else 1f)
+                .scale(focusScale)
                 .background(
                     when {
                         focused -> Color.White.copy(alpha = 0.16f)
