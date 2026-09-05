@@ -107,6 +107,14 @@ private val PROFILE_AVATARS =
         StockProfileAvatar("avatar_character_2", R.drawable.avatar_character_2),
         StockProfileAvatar("avatar_character_3", R.drawable.avatar_character_3),
         StockProfileAvatar("avatar_character_4", R.drawable.avatar_character_4),
+        StockProfileAvatar("avatar_character_5", R.drawable.avatar_character_5),
+        StockProfileAvatar("avatar_character_6", R.drawable.avatar_character_6),
+        StockProfileAvatar("avatar_character_7", R.drawable.avatar_character_7),
+        StockProfileAvatar("avatar_character_8", R.drawable.avatar_character_8),
+    )
+
+private val LEGACY_PROFILE_AVATARS =
+    listOf(
         StockProfileAvatar("avatar_vueo_1", R.drawable.avatar_vueo_1),
         StockProfileAvatar("avatar_vueo_2", R.drawable.avatar_vueo_2),
         StockProfileAvatar("avatar_vueo_3", R.drawable.avatar_vueo_3),
@@ -116,7 +124,7 @@ private val PROFILE_AVATARS =
 private fun stockAvatarDrawable(
     avatarId: String,
 ): Int? =
-    PROFILE_AVATARS
+    (PROFILE_AVATARS + LEGACY_PROFILE_AVATARS)
         .firstOrNull {
             it.id == avatarId
         }
