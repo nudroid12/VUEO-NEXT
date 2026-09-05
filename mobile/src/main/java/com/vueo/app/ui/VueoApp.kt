@@ -7391,289 +7391,160 @@ private fun CatalogOrderScreen(
     onBack: () -> Unit,
 ) {
     val entries =
-        remember(
-            contentVersion
-        ) {
+        remember(contentVersion) {
             engine.stremioAddons()
-                .flatMap {
-                    extension ->
-                    extension.descriptor
-                        .catalogs
-                        .filter {
-                            it.canLoadWithoutExtras
-                        }
-                        .map {
-                            catalog ->
+                .flatMap { extension ->
+                    extension.descriptor.catalogs
+                        .filter { it.canLoadWithoutExtras }
+                        .map { catalog ->
                             CatalogOrderEntry(
-                                key =
-                                    "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
-                                title =
-                                    catalog.name
-                                        ?: catalog.id,
-                                providerName =
-                                    extension.descriptor.name,
-                                type =
-                                    catalog.type
-                                        .replaceFirstChar {
-                                            it.uppercase()
-                                        },
-                                addonEnabled =
-                                    engine.isExtensionEnabled(
-                                        extension.descriptor.id
-                                    ),
+                                key = "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
+                                title = catalog.name ?: catalog.id,
+                                providerName = extension.descriptor.name,
+                                type = catalog.type.replaceFirstChar { it.uppercase() },
+                                addonEnabled = engine.isExtensionEnabled(extension.descriptor.id),
                             )
                         }
                 }
         }
 
-    val entryByKey =
-        remember(entries) {
-            entries.associateBy {
-                it.key
-            }
-        }
+    val entryByKey = remember(entries) { entries.associateBy { it.key } }
 
-    var order by remember(
-        contentVersion,
-        entries,
-    ) {
-        mutableStateOf(
-            store.reconcileCatalogOrder(
-                entries.map {
-                    it.key
-                }
-            )
-        )
+    var order by remember(contentVersion, entries) {
+        mutableStateOf(store.reconcileCatalogOrder(entries.map { it.key }))
     }
 
-    fun move(
-        index: Int,
-        delta: Int,
-    ) {
-        val target =
-            index + delta
-
-        if (
-            index !in order.indices ||
-            target !in order.indices
-        ) {
-            return
-        }
-
-        val next =
-            order.toMutableList()
-        val moved =
-            next.removeAt(index)
-
-        next.add(
-            target,
-            moved,
-        )
-
+    fun move(index: Int, delta: Int) {
+        val target = index + delta
+        if (index !in order.indices || target !in order.indices) return
+        val next = order.toMutableList()
+        val moved = next.removeAt(index)
+        next.add(target, moved)
         order = next
         store.setCatalogOrder(next)
         onContentChanged()
     }
 
     Column(
-        modifier =
-            Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(VueoPalette.Background),
     ) {
         ScreenHeader(
-            title =
-                "Catalog Order",
-            subtitle =
-                "Arrange how catalogs appear on Home",
-            onBack =
-                onBack,
+            title = "Catalog Order",
+            subtitle = "Arrange how catalogs appear on Home",
+            onBack = onBack,
         )
 
         if (entries.isEmpty()) {
             Box(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                contentAlignment =
-                    Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    "No catalogs available",
-                    color =
-                        VueoPalette.Muted,
-                )
+                Text("No catalogs available", color = VueoPalette.Muted)
             }
             return@Column
         }
 
         LazyColumn(
-            modifier =
-                Modifier.weight(1f),
-            contentPadding =
-                PaddingValues(
-                    horizontal = 20.dp,
-                    vertical = 8.dp,
-                ),
-            verticalArrangement =
-                Arrangement.spacedBy(
-                    10.dp
-                ),
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 4.dp,
+                bottom = 116.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
+            item(key = "catalog-order-note") {
                 Text(
-                    "Top catalogs appear first on Home. Catalogs from disabled addons keep their position but are not loaded.",
-                    color =
-                        VueoPalette.Muted,
-                    fontSize = 11.sp,
+                    text = "Top catalogs appear first. Disabled addons keep their saved position but are skipped on Home.",
+                    color = VueoPalette.Muted,
+                    fontSize = 10.5.sp,
+                    lineHeight = 15.sp,
+                    modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
                 )
             }
 
-            order.forEachIndexed {
-                index,
-                key ->
-                val entry =
-                    entryByKey[key]
-                        ?: return@forEachIndexed
-
-                item(
-                    key =
-                        "catalog-order:$key"
-                ) {
-                    ElevatedCard(
-                        modifier =
-                            Modifier.fillMaxWidth(),
+            order.forEachIndexed { index, key ->
+                val entry = entryByKey[key] ?: return@forEachIndexed
+                item(key = "catalog-order:$key") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = VueoPalette.SurfaceElevated,
                     ) {
                         Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = 14.dp,
-                                        vertical = 12.dp,
-                                    ),
-                            verticalAlignment =
-                                Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 13.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Surface(
-                                modifier =
-                                    Modifier.size(
-                                        34.dp
-                                    ),
-                                shape =
-                                    CircleShape,
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .primary
-                                        .copy(
-                                            alpha = .12f
-                                        ),
+                                modifier = Modifier.size(32.dp),
+                                shape = CircleShape,
+                                color = VueoPalette.SurfaceStrong,
                             ) {
-                                Box(
-                                    contentAlignment =
-                                        Alignment.Center,
-                                ) {
+                                Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        "${index + 1}",
-                                        color =
-                                            MaterialTheme
-                                                .colorScheme
-                                                .primary,
-                                        fontWeight =
-                                            FontWeight.Black,
+                                        text = "${index + 1}",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Black,
                                     )
                                 }
                             }
 
-                            Spacer(
-                                Modifier.width(
-                                    12.dp
-                                )
-                            )
+                            Spacer(Modifier.width(11.dp))
 
                             Column(
-                                modifier =
-                                    Modifier.weight(1f),
-                                verticalArrangement =
-                                    Arrangement.spacedBy(
-                                        2.dp
-                                    ),
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 Text(
-                                    entry.title,
-                                    fontWeight =
-                                        FontWeight.Bold,
-                                    color =
-                                        if (
-                                            entry.addonEnabled
-                                        ) {
-                                            Color.White
-                                        } else {
-                                            VueoPalette.Muted
-                                        },
+                                    text = entry.title,
+                                    color = if (entry.addonEnabled) Color.White else VueoPalette.Muted,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    "${entry.providerName} • ${entry.type}",
-                                    color =
-                                        VueoPalette.Muted,
-                                    fontSize = 11.sp,
+                                    text = "${entry.providerName} • ${entry.type}",
+                                    color = VueoPalette.Muted,
+                                    fontSize = 10.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
-                                if (
-                                    !entry.addonEnabled
-                                ) {
+                                if (!entry.addonEnabled) {
                                     Text(
-                                        "Addon disabled",
-                                        color =
-                                            VueoPalette.Muted,
-                                        fontSize = 10.sp,
-                                        fontWeight =
-                                            FontWeight.Bold,
+                                        text = "Disabled",
+                                        color = VueoPalette.Muted.copy(alpha = .72f),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                     )
                                 }
                             }
 
-                            TextButton(
-                                enabled =
-                                    index > 0,
-                                onClick = {
-                                    move(
-                                        index,
-                                        -1,
-                                    )
-                                },
+                            IconButton(
+                                enabled = index > 0,
+                                onClick = { move(index, -1) },
+                                modifier = Modifier.size(38.dp),
                             ) {
-                                Text(
-                                    "↑",
-                                    fontSize = 20.sp,
-                                )
+                                Text("↑", fontSize = 19.sp)
                             }
-                            TextButton(
-                                enabled =
-                                    index <
-                                        order.lastIndex,
-                                onClick = {
-                                    move(
-                                        index,
-                                        1,
-                                    )
-                                },
+                            IconButton(
+                                enabled = index < order.lastIndex,
+                                onClick = { move(index, 1) },
+                                modifier = Modifier.size(38.dp),
                             ) {
-                                Text(
-                                    "↓",
-                                    fontSize = 20.sp,
-                                )
+                                Text("↓", fontSize = 19.sp)
                             }
                         }
                     }
                 }
-            }
-
-            item {
-                Spacer(
-                    Modifier.height(
-                        20.dp
-                    )
-                )
             }
         }
     }
@@ -7763,7 +7634,10 @@ private fun AddonsScreen(
             subtitle = "Catalogs, metadata, streams & subtitles",
             onBack = onBack,
             action = {
-                FilledIconButton(onClick = { showInstallDialog = true }) {
+                FilledIconButton(
+                    onClick = { showInstallDialog = true },
+                    modifier = Modifier.size(44.dp),
+                ) {
                     Icon(Icons.Default.Add, contentDescription = "Add addon")
                 }
             },
@@ -7812,8 +7686,8 @@ private fun AddonsScreen(
                 }
 
             LazyColumn(
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 116.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 groupedAddons.forEach { (category, addons) ->
                     item(key = "header:${category.name}") {
@@ -8010,133 +7884,137 @@ private fun AddonsScreen(
     }
 }
 
+private fun neutralizePlatformCopy(value: String): String =
+    value
+        .replace(Regex("(?i)\\bfor\\s+stremio\\b"), "")
+        .replace(Regex("(?i)\\bstremio[- ]compatible\\b"), "compatible")
+        .replace(Regex("(?i)\\bstremio\\b"), "the app")
+        .replace(Regex("(?i)\\bnuvio[- ]style\\b"), "provider")
+        .replace(Regex("(?i)\\bnuvio\\b"), "the app")
+        .replace(Regex("\\s+([.,])"), "$1")
+        .replace(Regex("\\s{2,}"), " ")
+        .trim()
+
 @Composable
 private fun AddonCard(
     addon: MediaExtension,
     enabled: Boolean,
-    onEnabledChanged:
-        (Boolean) -> Unit,
+    onEnabledChanged: (Boolean) -> Unit,
     isDevelopmentDefault: Boolean,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    ElevatedCard(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(17.dp),
+        color = VueoPalette.SurfaceElevated,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(VueoPalette.SurfaceStrong),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        "S",
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.primary,
+                    Icon(
+                        imageVector = Icons.Default.Extension,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = .92f),
+                        modifier = Modifier.size(21.dp),
                     )
                 }
 
-                Spacer(Modifier.width(13.dp))
+                Spacer(Modifier.width(11.dp))
 
-                Column(Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        addon.descriptor.name,
+                        text = addon.descriptor.name,
+                        color = Color.White,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "v${addon.descriptor.version}",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f),
-                            fontSize = 12.sp,
-                        )
-
-                        if (isDevelopmentDefault) {
-                            Spacer(Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = .14f),
-                            ) {
-                                Text(
-                                    "DEV DEFAULT",
-                                    modifier = Modifier.padding(
-                                        horizontal = 8.dp,
-                                        vertical = 3.dp,
-                                    ),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = "v${addon.descriptor.version}  •  " +
+                            "${addon.descriptor.catalogs.size} catalogs  •  " +
+                            "${addon.descriptor.resources.size} resources",
+                        color = VueoPalette.Muted,
+                        fontSize = 10.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
 
                 Switch(
                     checked = enabled,
-                    onCheckedChange =
-                        onEnabledChanged,
+                    onCheckedChange = onEnabledChanged,
                 )
-                Spacer(
-                    Modifier.width(
-                        6.dp
-                    )
-                )
-                IconButton(
-                    onClick = onRefresh,
-                    enabled = !refreshing,
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                }
-
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
             }
 
             if (refreshing) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
 
-            addon.descriptor.description?.let {
+            addon.descriptor.description
+                ?.let(::neutralizePlatformCopy)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { description ->
+                    Text(
+                        text = description,
+                        color = VueoPalette.Muted,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    it,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f),
-                    maxLines = 3,
+                    text = addon.descriptor.resources
+                        .sorted()
+                        .joinToString("  •  ")
+                        .ifBlank { "Addon" },
+                    color = VueoPalette.Muted.copy(alpha = .72f),
+                    fontSize = 10.sp,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-            }
 
-            HorizontalDivider()
-
-            Text(
-                "${addon.descriptor.catalogs.size} catalogs  •  " +
-                    "${addon.descriptor.resources.size} resources",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 12.sp,
-            )
-
-            if (addon.descriptor.resources.isNotEmpty()) {
-                Text(
-                    addon.descriptor.resources.sorted().joinToString("  •  "),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f),
-                    fontSize = 12.sp,
-                )
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !refreshing,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Refresh",
+                        tint = Color.White.copy(alpha = .82f),
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = .82f),
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
             }
         }
     }
@@ -8256,13 +8134,14 @@ private fun PluginsScreen(
         ScreenHeader(
             title = "Plugins",
             subtitle =
-                "JavaScript provider repositories",
+                "Provider repositories",
             onBack = onBack,
             action = {
                 FilledIconButton(
                     onClick = {
                         showAddDialog = true
                     },
+                    modifier = Modifier.size(44.dp),
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -8278,168 +8157,90 @@ private fun PluginsScreen(
                 Modifier.weight(1f),
             contentPadding =
                 PaddingValues(
-                    horizontal = 20.dp,
-                    vertical = 8.dp,
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 4.dp,
+                    bottom = 116.dp,
                 ),
             verticalArrangement =
                 Arrangement.spacedBy(
-                    14.dp
+                    10.dp
                 ),
         ) {
-            item {
-                ElevatedCard(
-                    modifier =
-                        Modifier.fillMaxWidth(),
+            item(key = "plugins-master") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(17.dp),
+                    color = VueoPalette.SurfaceElevated,
                 ) {
                     Row(
-                        modifier =
-                            Modifier.padding(
-                                18.dp
-                            ),
-                        verticalAlignment =
-                            Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(
-                            modifier =
-                                Modifier.weight(1f),
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Plugin providers",
-                                fontWeight =
-                                    FontWeight.Bold,
-                                fontSize = 18.sp,
+                                text = "Providers",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                "${repositories.size} repos • " +
-                                    "${store.enabledProviderCount()} enabled providers",
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurface
-                                        .copy(alpha = .6f),
-                                fontSize = 12.sp,
+                                text = "${repositories.size} repositories • ${store.enabledProviderCount()} enabled",
+                                color = VueoPalette.Muted,
+                                fontSize = 10.5.sp,
                             )
                         }
                         Switch(
-                            checked =
-                                pluginsEnabled,
+                            checked = pluginsEnabled,
                             onCheckedChange = {
                                 pluginsEnabled = it
-                                store.setPluginsEnabled(
-                                    it
-                                )
+                                store.setPluginsEnabled(it)
                             },
                         )
                     }
                 }
             }
 
-            item {
+            item(key = "plugins-health") {
                 val summary =
                     healthStore.summary(
-                        repositories =
-                            repositories,
-                        pluginStore =
-                            store,
+                        repositories = repositories,
+                        pluginStore = store,
                     )
-                ElevatedCard(
-                    modifier =
-                        Modifier.fillMaxWidth(),
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(17.dp),
+                    color = VueoPalette.SurfaceElevated,
                 ) {
-                    Column(
-                        modifier =
-                            Modifier.padding(
-                                18.dp
-                            ),
-                        verticalArrangement =
-                            Arrangement.spacedBy(
-                                9.dp
-                            ),
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier =
-                                Modifier.fillMaxWidth(),
-                            verticalAlignment =
-                                Alignment.CenterVertically,
-                        ) {
-                            Column(
-                                Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    "Provider Health",
-                                    fontWeight =
-                                        FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                )
-                                Text(
-                                    "Updated whenever VUEO runs source discovery.",
-                                    color =
-                                        MaterialTheme
-                                            .colorScheme
-                                            .onSurface
-                                            .copy(alpha = .58f),
-                                    fontSize = 11.sp,
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    healthRevision++
-                                },
-                            ) {
-                                Icon(
-                                    Icons.Default.Refresh,
-                                    contentDescription =
-                                        "Refresh health",
-                                )
-                            }
-                        }
-
-                        Text(
-                            "${summary.online} online • ${summary.slow} slow • " +
-                                "${summary.noResults} no results",
-                            color =
-                                MaterialTheme
-                                    .colorScheme
-                                    .primary,
-                            fontWeight =
-                                FontWeight.Bold,
-                            fontSize = 12.sp,
-                        )
-
-                        if (
-                            summary.needsSetup > 0 ||
-                            summary.unavailable > 0 ||
-                            summary.blocked > 0 ||
-                            summary.timeout > 0 ||
-                            summary.failed > 0
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "${summary.needsSetup} setup • " +
-                                    "${summary.unavailable} unavailable • " +
-                                    "${summary.blocked} blocked • " +
-                                    "${summary.timeout} timeout • " +
-                                    "${summary.failed} failed",
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurface
-                                        .copy(alpha = .5f),
-                                fontSize = 11.sp,
+                                text = "Provider Health",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "${summary.online} online • ${summary.slow} slow • " +
+                                    "${summary.noResults} no results • ${summary.failed} failed",
+                                color = VueoPalette.Muted,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
-
-                        if (
-                            summary.unknown > 0 ||
-                            summary.disabled > 0
+                        IconButton(
+                            onClick = { healthRevision++ },
+                            modifier = Modifier.size(38.dp),
                         ) {
-                            Text(
-                                "${summary.unknown} unknown • ${summary.disabled} disabled",
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .onSurface
-                                        .copy(alpha = .5f),
-                                fontSize = 11.sp,
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh health",
+                                tint = Color.White.copy(alpha = .82f),
+                                modifier = Modifier.size(19.dp),
                             )
                         }
                     }
@@ -8469,7 +8270,7 @@ private fun PluginsScreen(
                                     FontWeight.Black,
                             )
                             Text(
-                                "Add a Nuvio-style provider repository URL.",
+                                "Add a provider repository URL.",
                                 color =
                                     MaterialTheme
                                         .colorScheme
@@ -8510,10 +8311,8 @@ private fun PluginsScreen(
                     )
 
                     LazyRow(
-                        horizontalArrangement =
-                            Arrangement.spacedBy(
-                                8.dp
-                            ),
+                        contentPadding = PaddingValues(end = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         items(
                             repositories,
@@ -8533,6 +8332,7 @@ private fun PluginsScreen(
                                 label = {
                                     Text(
                                         repository.name,
+                                        fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow =
                                             TextOverflow.Ellipsis,
@@ -8636,36 +8436,13 @@ private fun PluginsScreen(
                     }
             }
 
-            item {
-                ElevatedCard(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier =
-                            Modifier.padding(
-                                18.dp
-                            ),
-                        verticalArrangement =
-                            Arrangement.spacedBy(
-                                7.dp
-                            ),
-                    ) {
-                        Text(
-                            "Runtime status",
-                            fontWeight =
-                                FontWeight.Bold,
-                        )
-                        Text(
-                            "Provider runtime ACTIVE. Disabled repositories are skipped completely during source discovery.",
-                            color =
-                                MaterialTheme
-                                    .colorScheme
-                                    .primary,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
+            item(key = "plugins-runtime-note") {
+                Text(
+                    text = "Disabled repositories are skipped during source discovery.",
+                    color = VueoPalette.Muted.copy(alpha = .72f),
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp),
+                )
             }
         }
     }
@@ -8806,259 +8583,170 @@ private fun PluginRepositoryCard(
     codeStore: ProviderCodeStore,
     codeRevision: Int,
     repositoryEnabled: Boolean,
-    onRepositoryEnabledChanged:
-        (Boolean) -> Unit,
+    onRepositoryEnabledChanged: (Boolean) -> Unit,
     isDevelopmentDefault: Boolean,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onProviderChanged: () -> Unit,
 ) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement =
-                Arrangement.spacedBy(12.dp),
+    val readyProviderCode =
+        remember(repository.manifestUrl, repository.version, codeRevision) {
+            codeStore.readyCount(repository)
+        }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(17.dp),
+            color = VueoPalette.SurfaceElevated,
         ) {
-            Row(
-                verticalAlignment =
-                    Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(
-                            RoundedCornerShape(
-                                12.dp
-                            )
-                        )
-                        .background(
-                            MaterialTheme
-                                .colorScheme
-                                .surfaceVariant
-                        ),
-                    contentAlignment =
-                        Alignment.Center,
-                ) {
-                    Text(
-                        "JS",
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .primary,
-                        fontWeight =
-                            FontWeight.Black,
-                    )
-                }
-
-                Spacer(
-                    Modifier.width(12.dp)
-                )
-
-                Column(
-                    modifier =
-                        Modifier.weight(1f),
-                ) {
-                    Row(
-                        verticalAlignment =
-                            Alignment.CenterVertically,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(VueoPalette.SurfaceStrong),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            repository.name,
-                            fontWeight =
-                                FontWeight.Black,
-                            fontSize = 18.sp,
+                            text = "P",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
                         )
-
-                        if (
-                            isDevelopmentDefault
-                        ) {
-                            Spacer(
-                                Modifier.width(8.dp)
-                            )
-                            Surface(
-                                shape =
-                                    RoundedCornerShape(
-                                        50
-                                    ),
-                                color =
-                                    MaterialTheme
-                                        .colorScheme
-                                        .primary
-                                        .copy(
-                                            alpha =
-                                                .14f
-                                        ),
-                            ) {
-                                Text(
-                                    "DEV DEFAULT",
-                                    modifier =
-                                        Modifier.padding(
-                                            horizontal =
-                                                7.dp,
-                                            vertical =
-                                                3.dp,
-                                        ),
-                                    color =
-                                        MaterialTheme
-                                            .colorScheme
-                                            .primary,
-                                    fontSize =
-                                        9.sp,
-                                    fontWeight =
-                                        FontWeight.Black,
-                                )
-                            }
-                        }
                     }
 
-                    Text(
-                        "v${repository.version} • " +
-                            "${repository.providers.size} providers",
-                        color =
-                            MaterialTheme
-                                .colorScheme
-                                .onSurface
-                                .copy(alpha = .55f),
-                        fontSize = 12.sp,
-                    )
+                    Spacer(Modifier.width(11.dp))
 
-                    val readyProviderCode =
-                        remember(
-                            repository.manifestUrl,
-                            repository.version,
-                            codeRevision,
-                        ) {
-                            codeStore.readyCount(
-                                repository
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = repository.name,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "v${repository.version}  •  ${repository.providers.size} providers  •  " +
+                                "$readyProviderCode ready",
+                            color = VueoPalette.Muted,
+                            fontSize = 10.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Switch(
+                        checked = repositoryEnabled,
+                        onCheckedChange = onRepositoryEnabledChanged,
+                    )
+                }
+
+                if (refreshing) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+
+                repository.description
+                    ?.let(::neutralizePlatformCopy)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { description ->
+                        Text(
+                            text = description,
+                            color = VueoPalette.Muted,
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (repositoryEnabled) {
+                            "Provider preferences active"
+                        } else {
+                            "Repository disabled • preferences preserved"
+                        },
+                        color = VueoPalette.Muted.copy(alpha = .72f),
+                        fontSize = 10.sp,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    IconButton(
+                        enabled = !refreshing,
+                        onClick = onRefresh,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = Color.White.copy(alpha = .82f),
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = .82f),
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (repository.providers.isNotEmpty()) {
+            Text(
+                text = "PROVIDERS",
+                color = VueoPalette.Muted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp,
+                modifier = Modifier.padding(start = 3.dp, top = 2.dp),
+            )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(17.dp),
+                color = VueoPalette.SurfaceElevated,
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    repository.providers.forEach { provider ->
+                        val enabled = store.isProviderEnabled(repository, provider)
+                        val health = if (healthRevision >= 0) {
+                            healthStore.record(
+                                repositoryManifestUrl = repository.manifestUrl,
+                                providerId = provider.id,
                             )
+                        } else {
+                            null
                         }
 
-                    Text(
-                        "Provider code $readyProviderCode/" +
-                            "${repository.providers.size} ready locally",
-                        color =
-                            if (
-                                readyProviderCode ==
-                                repository.providers.size
-                            ) {
-                                MaterialTheme
-                                    .colorScheme
-                                    .primary
-                            } else {
-                                MaterialTheme
-                                    .colorScheme
-                                    .onSurface
-                                    .copy(alpha = .55f)
+                        ProviderHealthRow(
+                            repository = repository,
+                            provider = provider,
+                            health = health,
+                            enabled = enabled,
+                            onEnabledChanged = { next ->
+                                store.setProviderEnabled(repository, provider, next)
+                                onProviderChanged()
                             },
-                        fontSize = 11.sp,
-                    )
-                }
-
-                Switch(
-                    checked =
-                        repositoryEnabled,
-                    onCheckedChange =
-                        onRepositoryEnabledChanged,
-                )
-                Spacer(
-                    Modifier.width(
-                        6.dp
-                    )
-                )
-                IconButton(
-                    enabled = !refreshing,
-                    onClick = onRefresh,
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription =
-                            "Refresh",
-                    )
-                }
-
-                IconButton(
-                    onClick = onDelete,
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription =
-                            "Delete",
-                        tint =
-                            MaterialTheme
-                                .colorScheme
-                                .error,
-                    )
-                }
-            }
-
-            if (refreshing) {
-                LinearProgressIndicator(
-                    Modifier.fillMaxWidth()
-                )
-            }
-            if (!repositoryEnabled) {
-                Text(
-                    "Repository disabled • provider preferences are preserved",
-                    color =
-                        MaterialTheme
-                            .colorScheme
-                            .onSurface
-                            .copy(alpha = .55f),
-                    fontSize = 11.sp,
-                    fontWeight =
-                        FontWeight.Bold,
-                )
-            }
-
-            repository.description?.let {
-                Text(
-                    it,
-                    color =
-                        MaterialTheme
-                            .colorScheme
-                            .onSurface
-                            .copy(alpha = .65f),
-                    fontSize = 12.sp,
-                    maxLines = 3,
-                    overflow =
-                        TextOverflow.Ellipsis,
-                )
-            }
-
-            HorizontalDivider()
-
-            repository.providers.forEach { provider ->
-                val enabled = store.isProviderEnabled(
-                    repository,
-                    provider,
-                )
-
-                val health = if (healthRevision >= 0) {
-                    healthStore.record(
-                        repositoryManifestUrl = repository.manifestUrl,
-                        providerId = provider.id,
-                    )
-                } else {
-                    null
-                }
-
-                ProviderHealthRow(
-                    repository = repository,
-                    provider = provider,
-                    health = health,
-                    enabled = enabled,
-                    onEnabledChanged = { next ->
-                        store.setProviderEnabled(
-                            repository,
-                            provider,
-                            next,
                         )
-                        onProviderChanged()
-                    },
-                )
+                    }
+                }
             }
         }
     }
@@ -17736,65 +17424,51 @@ private fun ScreenHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(
-                horizontal = 16.dp,
-                vertical = 16.dp,
-            ),
-        verticalAlignment =
-            Alignment.CenterVertically,
+            .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            shape =
-                RoundedCornerShape(
-                    50
-                ),
-            color =
-                VueoPalette
-                    .SurfaceElevated,
+            modifier = Modifier.size(42.dp),
+            shape = CircleShape,
+            color = VueoPalette.SurfaceElevated,
         ) {
-            IconButton(
-                onClick = onBack,
-            ) {
+            IconButton(onClick = onBack) {
                 Icon(
                     Icons.Default.ArrowBack,
-                    contentDescription =
-                        "Back",
+                    contentDescription = "Back",
                     tint = Color.White,
+                    modifier = Modifier.size(22.dp),
                 )
             }
         }
 
-        Spacer(
-            Modifier.width(12.dp)
-        )
+        Spacer(Modifier.width(12.dp))
 
         Column(
-            modifier =
-                Modifier.weight(1f),
-            verticalArrangement =
-                Arrangement.spacedBy(
-                    2.dp
-                ),
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
-                title,
-                color = Color.White,
-                fontSize = 25.sp,
-                fontWeight =
-                    FontWeight.Black,
-                maxLines = 1,
-                overflow =
-                    TextOverflow.Ellipsis,
+                text = "VUEO",
+                color = VueoPalette.Muted,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.7.sp,
             )
-
             Text(
-                subtitle,
-                color =
-                    VueoPalette.Muted,
-                fontSize = 11.sp,
+                text = title,
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black,
                 maxLines = 1,
-                overflow =
-                    TextOverflow.Ellipsis,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                color = VueoPalette.Muted,
+                fontSize = 10.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
