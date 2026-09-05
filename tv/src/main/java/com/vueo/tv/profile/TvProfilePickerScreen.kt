@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.R as SharedR
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.profile.ProfileAvatarSpec
 import com.vueo.shared.core.storage.ProfileStore
@@ -326,23 +328,29 @@ private fun TvManageProfiles(
 
     TvProfileBackground {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 42.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 64.dp, end = 64.dp, top = 28.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             TvProfileBrand()
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = "Manage Profiles",
                 color = Color.White,
-                fontSize = 40.sp,
+                fontSize = 36.sp,
                 fontWeight = FontWeight.Black,
             )
-            Spacer(Modifier.height(28.dp))
 
+            // The profile row owns the flexible middle of the screen. Bottom actions
+            // stay outside this area so overscan can never clip Done.
             LazyRow(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
                 horizontalArrangement = Arrangement.Center,
-                contentPadding = PaddingValues(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
             ) {
                 itemsIndexed(profiles, key = { _, profile -> profile.id }) { index, profile ->
                     ManageProfileCard(
@@ -360,7 +368,6 @@ private fun TvManageProfiles(
                 }
             }
 
-            Spacer(Modifier.height(30.dp))
             TvPickerToggleRow(
                 title = "Ask on startup",
                 subtitle = "Show Who's Watching when VUEO launches",
@@ -374,8 +381,8 @@ private fun TvManageProfiles(
                     }
                 },
             )
-            Spacer(Modifier.height(18.dp))
-            TvProfileAction(label = "Done", onClick = onDone, width = 160)
+            Spacer(Modifier.height(12.dp))
+            TvProfileAction(label = "Done", onClick = onDone, width = 180)
         }
     }
 }
@@ -428,12 +435,15 @@ private fun TvProfileEditorScreen(
 
     TvProfileBackground {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 54.dp, vertical = 38.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 52.dp, end = 52.dp, top = 28.dp, bottom = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(34.dp),
         ) {
+            // Left pane: header and primary actions are pinned. Only the form body
+            // scrolls, so Create / Save / Delete are always visible inside TV safe area.
             Column(
-                modifier = Modifier.width(390.dp).fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.width(410.dp).fillMaxHeight(),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TvIconAction(
@@ -445,138 +455,165 @@ private fun TvProfileEditorScreen(
                     Text(
                         text = if (profile == null) "Add Profile" else "Edit Profile",
                         color = Color.White,
-                        fontSize = 34.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Black,
                     )
                 }
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    color = PickerPanel,
-                    border = BorderStroke(1.dp, PickerStroke),
+                Spacer(Modifier.height(14.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 18.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ProfileAvatarImage(
-                            profile = VueoProfile(
-                                id = profile?.id ?: "preview",
-                                name = name.ifBlank { "New profile" },
-                                avatar = avatar,
-                                isKids = isKids,
-                                createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
+                    item(key = "preview") {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp),
+                            color = PickerPanel,
+                            border = BorderStroke(1.dp, PickerStroke),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                ProfileAvatarImage(
+                                    profile = VueoProfile(
+                                        id = profile?.id ?: "preview",
+                                        name = name.ifBlank { "New profile" },
+                                        avatar = avatar,
+                                        isKids = isKids,
+                                        createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
+                                    ),
+                                    size = 78,
+                                )
+                                Spacer(Modifier.width(15.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = name.ifBlank { "New profile" },
+                                        color = Color.White,
+                                        fontSize = 19.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = buildString {
+                                            append(if (isKids) "Kids profile" else "Standard profile")
+                                            if (pinEnabled) append(" • PIN")
+                                        },
+                                        color = PickerMuted,
+                                        fontSize = 12.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "name") {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it.take(24) },
+                            singleLine = true,
+                            label = { Text("Profile name") },
+                            modifier = Modifier.fillMaxWidth().focusRequester(firstRequester),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = PickerStroke,
+                                focusedLabelColor = Color.White,
+                                unfocusedLabelColor = PickerMuted,
+                                cursorColor = Color.White,
                             ),
-                            size = 86,
                         )
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = name.ifBlank { "New profile" },
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(5.dp))
-                            Text(
-                                text = buildString {
-                                    append(if (isKids) "Kids profile" else "Standard profile")
-                                    if (pinEnabled) append(" • PIN")
+                    }
+
+                    item(key = "kids") {
+                        TvEditorToggleRow(
+                            title = "Kids Profile",
+                            subtitle = "Marks this profile for age-aware controls.",
+                            checked = isKids,
+                            onClick = { isKids = !isKids },
+                        )
+                    }
+
+                    item(key = "pin") {
+                        TvEditorToggleRow(
+                            title = "Profile PIN",
+                            subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
+                            checked = pinEnabled,
+                            leadingIcon = Icons.Default.Lock,
+                            onClick = {
+                                when {
+                                    pinEnabled && hadPin && !removeExistingPin -> {
+                                        pinError = null
+                                        pinFlow = TvEditorPinFlow.VerifyRemove
+                                    }
+                                    pinEnabled -> {
+                                        pinEnabled = false
+                                        pendingPin = null
+                                    }
+                                    hadPin && removeExistingPin -> {
+                                        removeExistingPin = false
+                                        pinEnabled = true
+                                    }
+                                    else -> {
+                                        pinError = null
+                                        pinFlow = TvEditorPinFlow.SetFirst
+                                    }
+                                }
+                            },
+                        )
+                    }
+
+                    if (pinEnabled && hadPin && !removeExistingPin) {
+                        item(key = "change-pin") {
+                            TvProfileAction(
+                                label = "Change PIN",
+                                onClick = {
+                                    pinError = null
+                                    pinFlow = TvEditorPinFlow.VerifyChange
                                 },
-                                color = PickerMuted,
-                                fontSize = 12.sp,
+                                width = 180,
                             )
                         }
                     }
                 }
 
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(24) },
-                    singleLine = true,
-                    label = { Text("Profile name") },
-                    modifier = Modifier.fillMaxWidth().focusRequester(firstRequester),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = PickerStroke,
-                        focusedLabelColor = Color.White,
-                        unfocusedLabelColor = PickerMuted,
-                        cursorColor = Color.White,
-                    ),
-                )
-
-                TvEditorToggleRow(
-                    title = "Kids Profile",
-                    subtitle = "Marks this profile for age-aware controls.",
-                    checked = isKids,
-                    onClick = { isKids = !isKids },
-                )
-
-                TvEditorToggleRow(
-                    title = "Profile PIN",
-                    subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
-                    checked = pinEnabled,
-                    leadingIcon = Icons.Default.Lock,
-                    onClick = {
-                        when {
-                            pinEnabled && hadPin && !removeExistingPin -> {
-                                pinError = null
-                                pinFlow = TvEditorPinFlow.VerifyRemove
-                            }
-                            pinEnabled -> {
-                                pinEnabled = false
-                                pendingPin = null
-                            }
-                            hadPin && removeExistingPin -> {
-                                removeExistingPin = false
-                                pinEnabled = true
-                            }
-                            else -> {
-                                pinError = null
-                                pinFlow = TvEditorPinFlow.SetFirst
-                            }
-                        }
-                    },
-                )
-
-                if (pinEnabled && hadPin && !removeExistingPin) {
-                    TvProfileAction(
-                        label = "Change PIN",
-                        onClick = {
-                            pinError = null
-                            pinFlow = TvEditorPinFlow.VerifyChange
-                        },
-                        width = 180,
-                    )
-                }
-
-                Spacer(Modifier.weight(1f))
-
+                Spacer(Modifier.height(12.dp))
                 val canSave = name.trim().isNotBlank() && (!pinEnabled || hadPin || pendingPin?.length == 4)
-                TvProfileAction(
-                    label = if (profile == null) "Create Profile" else "Save Changes",
-                    onClick = ::save,
-                    enabled = canSave,
-                    width = 220,
-                    primary = true,
-                )
-
-                if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     TvProfileAction(
-                        label = "Delete Profile",
-                        onClick = { onRequestDelete(profile) },
-                        width = 220,
-                        danger = true,
-                        icon = Icons.Default.Delete,
+                        label = if (profile == null) "Create Profile" else "Save Changes",
+                        onClick = ::save,
+                        enabled = canSave,
+                        width = if (profile == null || profile.id == ProfileStore.DEFAULT_PROFILE_ID) 230 else 210,
+                        primary = true,
                     )
+
+                    if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) {
+                        TvProfileAction(
+                            label = "Delete",
+                            onClick = { onRequestDelete(profile) },
+                            width = 150,
+                            danger = true,
+                            icon = Icons.Default.Delete,
+                        )
+                    }
                 }
             }
 
+            // Right pane scrolls independently so the avatar catalogue can stay large
+            // enough for sofa viewing without pushing actions below the viewport.
             Column(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             ) {
@@ -592,14 +629,14 @@ private fun TvProfileEditorScreen(
                     color = PickerMuted,
                     fontSize = 13.sp,
                 )
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(8),
                     modifier = Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 20.dp),
+                    contentPadding = PaddingValues(bottom = 28.dp),
                 ) {
                     items(
                         items = ProfileAvatarCatalog.selectable,
@@ -705,12 +742,27 @@ private fun TvProfileBackground(content: @Composable () -> Unit) {
 
 @Composable
 private fun TvProfileBrand() {
-    Image(
-        painter = painterResource(R.drawable.vueo_tv_logo),
-        contentDescription = "VUEO",
-        contentScale = ContentScale.Fit,
-        modifier = Modifier.width(148.dp).height(42.dp),
-    )
+    // Same official lockup used by Mobile: lime V/play mark + white VUEO wordmark.
+    // Only the physical size is increased for 10-foot viewing.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Image(
+            painter = painterResource(SharedR.drawable.vueo_logo_mark),
+            contentDescription = "VUEO",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(42.dp),
+        )
+        Spacer(Modifier.width(13.dp))
+        Text(
+            text = "VUEO",
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 27.sp,
+            letterSpacing = 3.5.sp,
+        )
+    }
 }
 
 @Composable
