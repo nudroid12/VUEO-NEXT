@@ -104,17 +104,19 @@ fun VueoTvApp() {
 
     fun resume(entry: LibraryPlaybackEntry, from: TvRoute) {
         selectedMedia = entry.media
+        val resumeSeason = entry.season
+        val resumeEpisode = entry.episode
         selectedEpisode =
             if (
                 entry.media.type.lowercase() in setOf("series", "tv") &&
-                entry.season != null &&
-                entry.episode != null
+                resumeSeason != null &&
+                resumeEpisode != null
             ) {
                 EpisodeItem(
                     id = entry.videoId,
-                    title = entry.episodeTitle ?: "Episode ${entry.episode}",
-                    season = entry.season,
-                    episode = entry.episode,
+                    title = entry.episodeTitle ?: "Episode $resumeEpisode",
+                    season = resumeSeason,
+                    episode = resumeEpisode,
                 )
             } else null
         initialPositionMs = entry.positionMs

@@ -236,12 +236,13 @@ fun TvHomeScreen(
         )
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
+            val viewportHeight = maxHeight
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 52.dp),
             ) {
-                Spacer(Modifier.height(maxHeight * .19f))
+                Spacer(Modifier.height(viewportHeight * .19f))
 
                 Column(
                     modifier = Modifier.fillMaxWidth(.50f),
@@ -279,7 +280,7 @@ fun TvHomeScreen(
                     }
                 }
 
-                Spacer(Modifier.height(maxHeight * .13f))
+                Spacer(Modifier.height(viewportHeight * .13f))
 
                 if (loading && rows.isEmpty()) {
                     Row(
