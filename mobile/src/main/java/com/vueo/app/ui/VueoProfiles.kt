@@ -527,7 +527,7 @@ internal fun ProfileSettingsScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = profiles.size > 1) {
+                            .clickable {
                                 askOnStartup = !askOnStartup
                                 profileStore.setAskWhoIsWatchingOnStartup(askOnStartup)
                                 onProfilesChanged()
@@ -557,7 +557,6 @@ internal fun ProfileSettingsScreen(
                             }
                             Switch(
                                 checked = askOnStartup,
-                                enabled = profiles.size > 1,
                                 onCheckedChange = { enabled ->
                                     askOnStartup = enabled
                                     profileStore.setAskWhoIsWatchingOnStartup(enabled)

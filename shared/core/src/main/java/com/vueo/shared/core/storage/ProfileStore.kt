@@ -441,15 +441,13 @@ class ProfileStore(
 
     fun shouldShowPickerOnStartup():
         Boolean {
-        val profileList = profiles()
         val activeLocked =
             hasProfilePin(
                 activeProfileId()
             )
 
         return activeLocked ||
-            (profileList.size > 1 &&
-                askWhoIsWatchingOnStartup())
+            askWhoIsWatchingOnStartup()
     }
 
     private fun readProfiles():

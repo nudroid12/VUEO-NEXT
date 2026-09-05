@@ -519,6 +519,7 @@ Recent milestones:
 - 28C-28E: Provider diagnostics upgraded, then compacted to debug-first evidence
 - 28D: Mobile profile safe-area fix and persistent per-catalog enable/disable state
 - 28F: Mobile housekeeping and first safe extraction from `VueoApp.kt` into `VueoContentManager.kt`
+- 28G: Mobile regression lock; `Ask on startup` now always means the profile picker is the launch destination when enabled, and Mobile v1 contracts are recorded in `MOBILE_REGRESSION_LOCK.md`
 
 Do not revert to a superseded visual milestone just because an older patch or conversation mentions it.
 
@@ -592,3 +593,9 @@ At minimum record:
 - next recommended phase
 
 This file exists specifically so the project can be continued safely from another ChatGPT account, another coding model, or another development environment without relying on prior chat history.
+## Mobile v1 lock after 28G
+
+Mobile v1 is now feature-locked while the TV rebuild proceeds. Use `MOBILE_REGRESSION_LOCK.md` as the regression baseline. Mobile changes should be limited to confirmed bugs, Shared Core compatibility, or an explicit new product decision.
+
+`Ask on startup` is literal: when enabled, Who's Watching is the startup destination regardless of the number of profiles. A locked active profile also forces the picker.
+

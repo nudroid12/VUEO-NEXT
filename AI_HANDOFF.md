@@ -26,4 +26,10 @@ Current Mobile stabilisation rules:
 - Provider diagnostics should be compact in the list but must preserve useful request/failure/error/HTTP/timing/result/raw evidence when expanded.
 - User-facing Content Manager copy should avoid third-party platform branding. Internal protocol/runtime names may remain in implementation code.
 - Continue `VueoApp.kt` cleanup only as small behaviour-preserving extractions. Keep startup, profile and player flows isolated from unrelated refactors.
+28G Mobile lock:
+
+- Read `MOBILE_REGRESSION_LOCK.md` before modifying Mobile.
+- Mobile v1 is feature-locked during the TV rebuild.
+- `Ask on startup` must show Who's Watching whenever the setting is enabled, even if only one profile currently exists.
+- Do not reintroduce the old `profiles.size > 1` gate in either the setting control or `ProfileStore.shouldShowPickerOnStartup()`.
 
