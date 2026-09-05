@@ -42,3 +42,11 @@ Current Mobile stabilisation rules:
 - Behaviour comes from Mobile-proven semantics implemented through Shared Core; TV must not depend on `:mobile`.
 - Home remains locked to contextual top navigation + Hero/Peeking Row + card-driven hero with ~180 ms settle.
 
+
+
+## TV 29B — Premium Cinematic Home
+
+- Built on the green 29A-R + build-fix baseline.
+- Home only: larger hero breathing area, first rail at ~62% viewport, fully contextual nav labels, layered cinematic scrims, 244dp landscape cards, external captions, shallow neutral focus depth.
+- Preserves 180ms card-driven hero settle and all clean-rebuild runtime/data contracts.
+- Profile flow, Search, Library, Settings, Details, Source and Player behaviour are intentionally unchanged by 29B.

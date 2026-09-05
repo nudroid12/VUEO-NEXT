@@ -1,6 +1,6 @@
 # VUEO TV Rebuild Lock
 
-Baseline: **29A-R2 clean rebuild**.
+Baseline: **29A-R clean rebuild**.
 
 ## Product DNA
 
@@ -69,3 +69,17 @@ The new TV runtime adapts Mobile-proven behaviour using Shared Core:
 - source cleanup/ranking through Shared Core
 
 Do not redesign these behaviours merely because the TV UI is new.
+
+
+## 29B Home calibration lock
+
+Validated against the first real-TV Home screenshot after the clean rebuild:
+
+- Home rail origin: ~62% viewport height.
+- Contextual nav labels: alpha 0 while content has focus, reveal on UP.
+- Home brand anchor: compact 18sp; profile anchor: compact 30dp.
+- Home landscape card width: 244dp, 16:9, title outside artwork.
+- Focus: ~1.045 scale, soft shadow, 1dp neutral edge.
+- Hero fade-through: 420ms in / 220ms out after the locked 180ms focus settle.
+
+Do not shrink the hero back to the 29A-R prototype proportions or restore persistent top-nav labels.

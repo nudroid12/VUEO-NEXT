@@ -51,9 +51,10 @@ fun TvTopBar(
     onProfile: () -> Unit,
     onDownFromNav: () -> Boolean,
     modifier: Modifier = Modifier,
+    cinematicCollapsed: Boolean = false,
 ) {
     val navAlpha by animateFloatAsState(
-        targetValue = if (expanded) 1f else .18f,
+        targetValue = if (expanded) 1f else if (cinematicCollapsed) 0f else .18f,
         animationSpec = tween(150),
         label = "topNavAlpha",
     )
@@ -67,7 +68,7 @@ fun TvTopBar(
         Text(
             text = "VUEO",
             color = TvDesign.White,
-            fontSize = 20.sp,
+            fontSize = if (cinematicCollapsed) 18.sp else 20.sp,
             fontWeight = FontWeight.Black,
             letterSpacing = 1.5.sp,
         )
@@ -98,6 +99,7 @@ fun TvTopBar(
             onFocused = onFocused,
             onClick = onProfile,
             onDown = onDownFromNav,
+            compact = cinematicCollapsed,
         )
     }
 }
@@ -116,8 +118,8 @@ private fun TvNavItem(
     val textColor by animateColorAsState(
         targetValue = when {
             focused -> TvDesign.White
-            selected -> TvDesign.White.copy(alpha = .92f * contentAlpha.coerceAtLeast(.55f))
-            else -> TvDesign.Muted.copy(alpha = contentAlpha.coerceAtLeast(.35f))
+            selected -> TvDesign.White.copy(alpha = .92f * contentAlpha)
+            else -> TvDesign.Muted.copy(alpha = contentAlpha)
         },
         animationSpec = tween(120),
         label = "navTextColor",
@@ -156,11 +158,12 @@ private fun TvProfileAnchor(
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onDown: () -> Boolean,
+    compact: Boolean,
 ) {
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(if (compact) 30.dp else 34.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -176,12 +179,12 @@ private fun TvProfileAnchor(
             }
             .background(
                 color = if (focused) TvDesign.White.copy(alpha = .20f)
-                else TvDesign.White.copy(alpha = .08f),
+                else TvDesign.White.copy(alpha = if (compact) .055f else .08f),
                 shape = CircleShape,
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .18f),
+                color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = if (compact) .14f else .18f),
                 shape = CircleShape,
             )
             .focusable()
@@ -191,7 +194,7 @@ private fun TvProfileAnchor(
         Text(
             text = "P",
             color = TvDesign.White,
-            fontSize = 13.sp,
+            fontSize = if (compact) 12.sp else 13.sp,
             fontWeight = FontWeight.Bold,
         )
     }

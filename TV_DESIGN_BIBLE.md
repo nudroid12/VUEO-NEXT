@@ -1,6 +1,6 @@
-# VUEO TV Design Bible — Foundation v1
+# VUEO TV Design Bible — Home v1
 
-Status: **LOCKED for the clean TV rebuild (29A-R2+)**
+Status: **LOCKED for the clean TV rebuild (29A-R+)**
 
 ## Product DNA
 
@@ -66,6 +66,19 @@ Principle: **Input fast. Visuals smooth. Navigation obvious.**
 
 ## Clean rebuild scope
 
-29A-R2 cuts over the entire post-profile TV runtime to fresh code. Legacy Home, Search, Library, Settings, Details, Source and Player implementations are removed/tombstoned. Only the approved profile experience is intentionally preserved.
+29A-R cuts over the entire post-profile TV runtime to fresh code. Legacy Home, Search, Library, Settings, Details, Source and Player implementations are removed/tombstoned. Only the approved profile experience is intentionally preserved.
 
 Mobile provides proven behaviour contracts through Shared Core; TV does not copy Mobile UI and does not depend on `:mobile`.
+
+
+## 29B real-TV visual lock
+
+29B is calibrated from the first real-TV screenshot of the clean rebuild. Home presentation now follows these concrete rules:
+
+- First rail begins at roughly 62% of the viewport so the hero owns the upper canvas while the first row still peeks into view.
+- Home navigation labels fully disappear while browsing content; VUEO and the profile anchor remain quiet anchors.
+- Hero copy uses a wider breathing field, stronger title hierarchy and restrained three-line synopsis.
+- Layered horizontal + vertical scrims merge artwork, copy and rails into one cinematic canvas.
+- Landscape cards are larger (244dp), with titles below artwork instead of heavy text painted over every image.
+- Focus is shallow scale + soft shadow + a 1dp neutral edge. No thick white frame.
+- Hero still settles after 180ms and fades through; remote focus itself remains immediate.

@@ -2,15 +2,15 @@ package com.vueo.tv.home
 
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -61,6 +62,9 @@ import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvTopBar
 import kotlinx.coroutines.delay
+
+private const val HERO_SETTLE_MS = 180L
+private val HomeCardShape = RoundedCornerShape(11.dp)
 
 private sealed interface HomeEntry {
     val key: String
@@ -187,7 +191,7 @@ fun TvHomeScreen(
 
     LaunchedEffect(pendingHero) {
         val next = pendingHero ?: return@LaunchedEffect
-        delay(180)
+        delay(HERO_SETTLE_MS)
         hero = next
     }
 
@@ -198,7 +202,10 @@ fun TvHomeScreen(
     ) {
         AnimatedContent(
             targetState = hero?.background ?: hero?.poster,
-            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            transitionSpec = {
+                fadeIn(animationSpec = tween(durationMillis = 420)) togetherWith
+                    fadeOut(animationSpec = tween(durationMillis = 220))
+            },
             label = "homeHeroBackdrop",
             modifier = Modifier.fillMaxSize(),
         ) { url ->
@@ -211,25 +218,29 @@ fun TvHomeScreen(
             )
         }
 
+        // 29B: layered scrims keep artwork cinematic while giving copy and rows a calm reading field.
         Box(
             Modifier
                 .fillMaxSize()
+                .background(TvDesign.Black.copy(alpha = .08f))
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .96f),
-                            TvDesign.Black.copy(alpha = .76f),
-                            TvDesign.Black.copy(alpha = .16f),
+                            TvDesign.Black.copy(alpha = .98f),
+                            TvDesign.Black.copy(alpha = .84f),
+                            TvDesign.Black.copy(alpha = .43f),
+                            TvDesign.Black.copy(alpha = .08f),
                         )
                     )
                 )
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .40f),
+                            TvDesign.Black.copy(alpha = .48f),
                             Color.Transparent,
-                            TvDesign.Black.copy(alpha = .92f),
-                            TvDesign.Black,
+                            Color.Transparent,
+                            TvDesign.Black.copy(alpha = .70f),
+                            TvDesign.Black.copy(alpha = .98f),
                         )
                     )
                 )
@@ -240,19 +251,19 @@ fun TvHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 52.dp),
+                    .padding(horizontal = 54.dp),
             ) {
-                Spacer(Modifier.height(viewportHeight * .19f))
+                Spacer(Modifier.height(viewportHeight * .205f))
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(.50f),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    modifier = Modifier.fillMaxWidth(.46f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
                         text = hero?.name.orEmpty(),
                         color = TvDesign.White,
-                        fontSize = 35.sp,
-                        lineHeight = 39.sp,
+                        fontSize = 39.sp,
+                        lineHeight = 43.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -262,16 +273,18 @@ fun TvHomeScreen(
                     if (meta.isNotBlank()) {
                         Text(
                             text = meta,
-                            color = TvDesign.White.copy(alpha = .74f),
+                            color = TvDesign.White.copy(alpha = .72f),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
 
                     hero?.description?.takeIf { it.isNotBlank() }?.let { description ->
                         Text(
                             text = description,
-                            color = TvDesign.Muted,
+                            color = TvDesign.White.copy(alpha = .68f),
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                             maxLines = 3,
@@ -280,7 +293,7 @@ fun TvHomeScreen(
                     }
                 }
 
-                Spacer(Modifier.height(viewportHeight * .13f))
+                Spacer(Modifier.height(viewportHeight * .11f))
 
                 if (loading && rows.isEmpty()) {
                     Row(
@@ -309,13 +322,13 @@ fun TvHomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = maxHeight * .55f),
+                        .padding(top = maxHeight * .62f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 52.dp,
-                        end = 52.dp,
-                        bottom = 52.dp,
+                        start = 54.dp,
+                        end = 54.dp,
+                        bottom = 58.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(32.dp),
                 ) {
                     itemsIndexed(rows, key = { _, row -> row.id }) { rowIndex, row ->
                         HomeMediaRow(
@@ -357,6 +370,7 @@ fun TvHomeScreen(
                 if (target != null) runCatching { requester(target).requestFocus() }
                 target != null
             },
+            cinematicCollapsed = true,
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }
@@ -371,100 +385,119 @@ private fun HomeMediaRow(
     onUpFromFirstRow: () -> Unit,
     onOpen: (HomeEntry) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(
             text = row.title,
-            color = TvDesign.White,
+            color = TvDesign.White.copy(alpha = .92f),
             fontSize = 17.sp,
             fontWeight = FontWeight.SemiBold,
         )
 
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 5.dp,
-                bottom = 5.dp,
+                top = 9.dp,
+                bottom = 9.dp,
             ),
         ) {
             itemsIndexed(row.entries, key = { _, entry -> entry.key }) { _, entry ->
                 var focused by remember(entry.key) { mutableStateOf(false) }
                 val focusScale by animateFloatAsState(
-                    targetValue = if (focused) 1.055f else 1f,
-                    animationSpec = tween(if (focused) 135 else 105),
+                    targetValue = if (focused) 1.045f else 1f,
+                    animationSpec = tween(if (focused) 145 else 110),
                     label = "homeCardScale",
                 )
                 val progress = (entry as? HomeEntry.Resume)?.playback?.progressFraction
 
-                Box(
-                    modifier = Modifier
-                        .width(210.dp)
-                        .aspectRatio(16f / 9f)
-                        .scale(focusScale)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(TvDesign.SurfaceRaised)
-                        .border(
-                            width = if (focused) 2.dp else 0.dp,
-                            color = if (focused) TvDesign.White.copy(alpha = .94f) else Color.Transparent,
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                        .focusRequester(requester(entry.key))
-                        .onFocusChanged {
-                            focused = it.isFocused
-                            if (it.isFocused) onFocused(entry)
-                        }
-                        .onPreviewKeyEvent { event ->
-                            if (
-                                rowIndex == 0 &&
-                                event.type == KeyEventType.KeyDown &&
-                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP
-                            ) {
-                                onUpFromFirstRow()
-                                true
-                            } else false
-                        }
-                        .clickable { onOpen(entry) }
-                        .focusable(),
+                Column(
+                    modifier = Modifier.width(244.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    TvNetworkImage(
-                        url = entry.media.background ?: entry.media.poster,
-                        contentDescription = entry.media.name,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-
                     Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = .74f))
-                                )
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .scale(focusScale)
+                            .shadow(
+                                elevation = if (focused) 14.dp else 0.dp,
+                                shape = HomeCardShape,
+                                clip = false,
                             )
-                    )
+                            .clip(HomeCardShape)
+                            .background(TvDesign.SurfaceRaised)
+                            .border(
+                                width = if (focused) 1.dp else 0.dp,
+                                color = if (focused) TvDesign.White.copy(alpha = .82f) else Color.Transparent,
+                                shape = HomeCardShape,
+                            )
+                            .focusRequester(requester(entry.key))
+                            .onFocusChanged {
+                                focused = it.isFocused
+                                if (it.isFocused) onFocused(entry)
+                            }
+                            .onPreviewKeyEvent { event ->
+                                if (
+                                    rowIndex == 0 &&
+                                    event.type == KeyEventType.KeyDown &&
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP
+                                ) {
+                                    onUpFromFirstRow()
+                                    true
+                                } else false
+                            }
+                            .clickable { onOpen(entry) }
+                            .focusable(),
+                    ) {
+                        TvNetworkImage(
+                            url = entry.media.background ?: entry.media.poster,
+                            contentDescription = entry.media.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+
+                        if (focused) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.Transparent,
+                                                TvDesign.White.copy(alpha = .035f),
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+
+                        if (progress != null && progress > 0f) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomStart)
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .background(Color.Black.copy(alpha = .52f))
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                                        .height(4.dp)
+                                        .background(TvDesign.White.copy(alpha = .96f))
+                                )
+                            }
+                        }
+                    }
 
                     Text(
                         text = entry.media.name,
-                        color = TvDesign.White,
-                        fontSize = 12.sp,
-                        lineHeight = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
+                        color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .68f),
+                        fontSize = 13.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
+                        modifier = Modifier.padding(horizontal = 2.dp),
                     )
-
-                    if (progress != null && progress > 0f) {
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomStart)
-                                .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                .height(3.dp)
-                                .background(TvDesign.White)
-                        )
-                    }
-
                 }
             }
         }
