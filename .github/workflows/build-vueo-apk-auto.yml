@@ -1,11 +1,11 @@
-name: VUEO Lean Build and Publish
+name: VUEO Smart Build and Publish
 
 on:
   workflow_dispatch:
 
   repository_dispatch:
     types:
-    - vueo_build
+      - vueo_build
 
   push:
     branches:
@@ -15,6 +15,8 @@ on:
       - "tv/**"
       - "shared/**"
       - "gradle/**"
+      - "buildSrc/**"
+      - "build-logic/**"
       - "*.gradle.kts"
       - "gradle.properties"
       - "settings.gradle.kts"
@@ -33,7 +35,7 @@ concurrency:
 
 jobs:
   build-publish:
-    name: Build once, verify and publish
+    name: Smart build, verify and publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -42,9 +44,134 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: main
-          fetch-depth: 1
+          # Two commits are enough for ZIP-patch repository_dispatch runs.
+          # Direct multi-commit pushes fetch their before SHA only when needed.
+          fetch-depth: 2
+
+      - name: Determine build scope
+        id: scope
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          BUILD_MOBILE=false
+          BUILD_TV=false
+          REASON=""
+          CHANGED_FILE_LIST=""
+
+          force_both() {
+            BUILD_MOBILE=true
+            BUILD_TV=true
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            force_both
+            REASON="Manual build requested"
+          else
+            BASE_SHA=""
+
+            if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+              BASE_SHA="$(git rev-parse HEAD^ 2>/dev/null || true)"
+            elif [ "$EVENT_NAME" = "push" ]; then
+              BASE_SHA="$BEFORE_SHA"
+              case "$BASE_SHA" in
+                ""|0000000000000000000000000000000000000000)
+                  BASE_SHA=""
+                  ;;
+              esac
+
+              if [ -n "$BASE_SHA" ] && ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+                # Keep checkout shallow in the common case; fetch only the exact
+                # pre-push commit when a direct push contains multiple commits.
+                git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
+              fi
+            fi
+
+            if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              force_both
+              REASON="No reliable comparison base; safe full build"
+            else
+              mapfile -t CHANGED_FILES < <(git diff --name-only "$BASE_SHA" HEAD)
+              CHANGED_FILE_LIST="$(printf '%s\n' "${CHANGED_FILES[@]:-}" | sed '/^$/d')"
+
+              echo "Changed files since ${BASE_SHA:0:7}:"
+              if [ -n "$CHANGED_FILE_LIST" ]; then
+                printf '%s\n' "$CHANGED_FILE_LIST"
+              else
+                echo "(none)"
+              fi
+
+              for path in "${CHANGED_FILES[@]:-}"; do
+                [ -n "$path" ] || continue
+
+                case "$path" in
+                  mobile/*)
+                    BUILD_MOBILE=true
+                    ;;
+                  tv/*)
+                    BUILD_TV=true
+                    ;;
+                  shared/*|gradle/*|buildSrc/*|build-logic/*|build.gradle.kts|settings.gradle.kts|gradle.properties|gradlew|gradlew.bat|.github/workflows/build-vueo-apk-auto.yml)
+                    force_both
+                    ;;
+                esac
+              done
+
+              if [ "$BUILD_MOBILE" = "true" ] && [ "$BUILD_TV" = "true" ]; then
+                REASON="Shared/build configuration or both apps changed"
+              elif [ "$BUILD_MOBILE" = "true" ]; then
+                REASON="Mobile-only change"
+              elif [ "$BUILD_TV" = "true" ]; then
+                REASON="TV-only change"
+              else
+                REASON="No app-impacting files changed"
+              fi
+            fi
+          fi
+
+          # A selective upload deliberately leaves the unchanged app assets on
+          # the rolling release untouched. If the rolling release does not exist
+          # yet, build both once so it starts complete.
+          if { [ "$BUILD_MOBILE" = "true" ] || [ "$BUILD_TV" = "true" ]; } \
+            && { [ "$BUILD_MOBILE" != "true" ] || [ "$BUILD_TV" != "true" ]; }; then
+            if ! gh release view vueo-dev >/dev/null 2>&1; then
+              force_both
+              REASON="$REASON; vueo-dev release missing, bootstrapping both apps"
+            fi
+          fi
+
+          SHOULD_BUILD=false
+          if [ "$BUILD_MOBILE" = "true" ] || [ "$BUILD_TV" = "true" ]; then
+            SHOULD_BUILD=true
+          fi
+
+          if [ "$BUILD_MOBILE" = "true" ] && [ "$BUILD_TV" = "true" ]; then
+            SCOPE_LABEL="Mobile + TV"
+          elif [ "$BUILD_MOBILE" = "true" ]; then
+            SCOPE_LABEL="Mobile only"
+          elif [ "$BUILD_TV" = "true" ]; then
+            SCOPE_LABEL="TV only"
+          else
+            SCOPE_LABEL="No build"
+          fi
+
+          {
+            echo "build_mobile=$BUILD_MOBILE"
+            echo "build_tv=$BUILD_TV"
+            echo "should_build=$SHOULD_BUILD"
+            echo "scope_label=$SCOPE_LABEL"
+            echo "reason=$REASON"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Build scope: $SCOPE_LABEL"
+          echo "Reason: $REASON"
 
       - name: Validate signing secrets
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.VUEO_KEYSTORE_BASE64 }}
@@ -58,12 +185,14 @@ jobs:
           fi
 
       - name: Set up JDK 17
+        if: steps.scope.outputs.should_build == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Verify Gradle wrapper
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -82,9 +211,11 @@ jobs:
 
       # setup-gradle provides Gradle User Home/build-cache reuse between runs.
       - name: Set up Gradle cache
+        if: steps.scope.outputs.should_build == 'true'
         uses: gradle/actions/setup-gradle@v6
 
       - name: Ensure Android SDK 36 tools
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -119,6 +250,7 @@ jobs:
           "$SDKMANAGER" --channel=0 "${MISSING[@]}"
 
       - name: Prepare signed release metadata
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.VUEO_KEYSTORE_BASE64 }}
@@ -167,39 +299,49 @@ jobs:
             echo "VUEO_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
           } >> "$GITHUB_ENV"
 
-          echo "Mobile: $MOBILE_VERSION_NAME ($VERSION_CODE)"
-          echo "TV:     $TV_VERSION_NAME ($VERSION_CODE)"
+          if [ "${{ steps.scope.outputs.build_mobile }}" = "true" ]; then
+            echo "Mobile: $MOBILE_VERSION_NAME ($VERSION_CODE)"
+          fi
+          if [ "${{ steps.scope.outputs.build_tv }}" = "true" ]; then
+            echo "TV:     $TV_VERSION_NAME ($VERSION_CODE)"
+          fi
 
-      - name: Build Mobile and TV release APKs once
+      - name: Build selected release APKs once
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
+        env:
+          BUILD_MOBILE: ${{ steps.scope.outputs.build_mobile }}
+          BUILD_TV: ${{ steps.scope.outputs.build_tv }}
         run: |
           set -euo pipefail
 
-          # One Gradle invocation lets :shared:core compile once and be reused by
-          # both application graphs. No duplicate Debug build is performed.
+          TASKS=()
+          [ "$BUILD_MOBILE" = "true" ] && TASKS+=(":mobile:assembleRelease")
+          [ "$BUILD_TV" = "true" ] && TASKS+=(":tv:assembleRelease")
+
+          if [ "${#TASKS[@]}" -eq 0 ]; then
+            echo "No Gradle tasks selected."
+            exit 0
+          fi
+
+          echo "Gradle tasks: ${TASKS[*]}"
+
+          # Still one Gradle invocation when both apps are required, allowing
+          # :shared:core to be compiled once and reused by both dependency graphs.
           ./gradlew \
-            :mobile:assembleRelease \
-            :tv:assembleRelease \
+            "${TASKS[@]}" \
             --build-cache \
             --parallel \
             --stacktrace
 
       - name: Locate and verify signed APKs
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
+        env:
+          BUILD_MOBILE: ${{ steps.scope.outputs.build_mobile }}
+          BUILD_TV: ${{ steps.scope.outputs.build_tv }}
         run: |
           set -euo pipefail
-
-          MOBILE_APK="$(find mobile/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          TV_APK="$(find tv/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
-
-          test -n "$MOBILE_APK" && test -s "$MOBILE_APK" || {
-            echo "::error::Mobile release APK was not generated."
-            exit 1
-          }
-          test -n "$TV_APK" && test -s "$TV_APK" || {
-            echo "::error::TV release APK was not generated."
-            exit 1
-          }
 
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           APKSIGNER="$SDK_ROOT/build-tools/36.0.0/apksigner"
@@ -214,52 +356,80 @@ jobs:
             exit 1
           }
 
-          "$APKSIGNER" verify --verbose --print-certs "$MOBILE_APK"
-          "$APKSIGNER" verify --verbose --print-certs "$TV_APK"
+          if [ "$BUILD_MOBILE" = "true" ]; then
+            MOBILE_APK="$(find mobile/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+            test -n "$MOBILE_APK" && test -s "$MOBILE_APK" || {
+              echo "::error::Mobile release APK was not generated."
+              exit 1
+            }
 
-          MOBILE_PACKAGE="$(
-            "$AAPT" dump badging "$MOBILE_APK" \
-              | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
-              | head -n 1
-          )"
-          TV_PACKAGE="$(
-            "$AAPT" dump badging "$TV_APK" \
-              | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
-              | head -n 1
-          )"
+            "$APKSIGNER" verify --verbose --print-certs "$MOBILE_APK"
+            MOBILE_PACKAGE="$(
+              "$AAPT" dump badging "$MOBILE_APK" \
+                | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                | head -n 1
+            )"
+            [ "$MOBILE_PACKAGE" = "com.vueo.app" ] || {
+              echo "::error::Wrong Mobile package: $MOBILE_PACKAGE"
+              exit 1
+            }
 
-          [ "$MOBILE_PACKAGE" = "com.vueo.app" ] || {
-            echo "::error::Wrong Mobile package: $MOBILE_PACKAGE"
-            exit 1
-          }
-          [ "$TV_PACKAGE" = "com.vueo.tv" ] || {
-            echo "::error::Wrong TV package: $TV_PACKAGE"
-            exit 1
-          }
+            echo "MOBILE_APK=$MOBILE_APK" >> "$GITHUB_ENV"
+            echo "Mobile package: $MOBILE_PACKAGE"
+          fi
 
-          {
-            echo "MOBILE_APK=$MOBILE_APK"
-            echo "TV_APK=$TV_APK"
-          } >> "$GITHUB_ENV"
+          if [ "$BUILD_TV" = "true" ]; then
+            TV_APK="$(find tv/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+            test -n "$TV_APK" && test -s "$TV_APK" || {
+              echo "::error::TV release APK was not generated."
+              exit 1
+            }
 
-          echo "Mobile package: $MOBILE_PACKAGE"
-          echo "TV package: $TV_PACKAGE"
+            "$APKSIGNER" verify --verbose --print-certs "$TV_APK"
+            TV_PACKAGE="$(
+              "$AAPT" dump badging "$TV_APK" \
+                | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                | head -n 1
+            )"
+            [ "$TV_PACKAGE" = "com.vueo.tv" ] || {
+              echo "::error::Wrong TV package: $TV_PACKAGE"
+              exit 1
+            }
+
+            echo "TV_APK=$TV_APK" >> "$GITHUB_ENV"
+            echo "TV package: $TV_PACKAGE"
+          fi
 
       - name: Prepare rolling release files
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
+        env:
+          BUILD_MOBILE: ${{ steps.scope.outputs.build_mobile }}
+          BUILD_TV: ${{ steps.scope.outputs.build_tv }}
         run: |
           set -euo pipefail
 
           mkdir -p dist
-          cp "$MOBILE_APK" dist/VUEO-dev.apk
-          cp "$TV_APK" dist/VUEOTV-dev.apk
 
-          MOBILE_SHA256="$(sha256sum dist/VUEO-dev.apk | awk '{print $1}')"
-          TV_SHA256="$(sha256sum dist/VUEOTV-dev.apk | awk '{print $1}')"
+          MOBILE_SHA256=""
+          TV_SHA256=""
+
+          if [ "$BUILD_MOBILE" = "true" ]; then
+            cp "$MOBILE_APK" dist/VUEO-dev.apk
+            MOBILE_SHA256="$(sha256sum dist/VUEO-dev.apk | awk '{print $1}')"
+            sha256sum dist/VUEO-dev.apk > dist/VUEO-dev.apk.sha256
+          fi
+
+          if [ "$BUILD_TV" = "true" ]; then
+            cp "$TV_APK" dist/VUEOTV-dev.apk
+            TV_SHA256="$(sha256sum dist/VUEOTV-dev.apk | awk '{print $1}')"
+            sha256sum dist/VUEOTV-dev.apk > dist/VUEOTV-dev.apk.sha256
+          fi
+
           PUBLISHED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           COMMIT_SHA="$(git rev-parse HEAD)"
 
-          export MOBILE_SHA256 TV_SHA256 PUBLISHED_AT COMMIT_SHA
+          export BUILD_MOBILE BUILD_TV MOBILE_SHA256 TV_SHA256 PUBLISHED_AT COMMIT_SHA
 
           python3 <<'PY'
           from pathlib import Path
@@ -271,48 +441,55 @@ jobs:
           commit = os.environ["COMMIT_SHA"]
           published = os.environ["PUBLISHED_AT"]
 
-          mobile = {
-              "schemaVersion": 1,
-              "versionCode": code,
-              "versionName": os.environ["VUEO_VERSION_NAME"],
-              "title": "VUEO " + os.environ["VUEO_VERSION_NAME"],
-              "changelog": [
-                  "Latest successful VUEO development build",
-                  "Commit " + commit[:7],
-              ],
-              "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEO-dev.apk",
-              "sha256": os.environ["MOBILE_SHA256"],
-              "publishedAt": published,
-          }
+          if os.environ["BUILD_MOBILE"] == "true":
+              mobile = {
+                  "schemaVersion": 1,
+                  "versionCode": code,
+                  "versionName": os.environ["VUEO_VERSION_NAME"],
+                  "title": "VUEO " + os.environ["VUEO_VERSION_NAME"],
+                  "changelog": [
+                      "Latest successful VUEO development build",
+                      "Commit " + commit[:7],
+                  ],
+                  "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEO-dev.apk",
+                  "sha256": os.environ["MOBILE_SHA256"],
+                  "publishedAt": published,
+              }
+              Path("dist/update.json").write_text(
+                  json.dumps(mobile, indent=2) + "\n",
+                  encoding="utf-8",
+              )
 
-          tv = {
-              "schemaVersion": 1,
-              "versionCode": code,
-              "versionName": os.environ["VUEO_TV_VERSION_NAME"],
-              "title": "VUEO TV " + os.environ["VUEO_TV_VERSION_NAME"],
-              "changelog": [
-                  "Latest successful VUEO TV development build",
-                  "Commit " + commit[:7],
-              ],
-              "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEOTV-dev.apk",
-              "sha256": os.environ["TV_SHA256"],
-              "publishedAt": published,
-          }
-
-          Path("dist/update.json").write_text(json.dumps(mobile, indent=2) + "\n", encoding="utf-8")
-          Path("dist/tv-update.json").write_text(json.dumps(tv, indent=2) + "\n", encoding="utf-8")
+          if os.environ["BUILD_TV"] == "true":
+              tv = {
+                  "schemaVersion": 1,
+                  "versionCode": code,
+                  "versionName": os.environ["VUEO_TV_VERSION_NAME"],
+                  "title": "VUEO TV " + os.environ["VUEO_TV_VERSION_NAME"],
+                  "changelog": [
+                      "Latest successful VUEO TV development build",
+                      "Commit " + commit[:7],
+                  ],
+                  "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEOTV-dev.apk",
+                  "sha256": os.environ["TV_SHA256"],
+                  "publishedAt": published,
+              }
+              Path("dist/tv-update.json").write_text(
+                  json.dumps(tv, indent=2) + "\n",
+                  encoding="utf-8",
+              )
           PY
 
-          sha256sum dist/VUEO-dev.apk > dist/VUEO-dev.apk.sha256
-          sha256sum dist/VUEOTV-dev.apk > dist/VUEOTV-dev.apk.sha256
-
-          echo "Release payload:"
+          echo "Release payload for this run:"
           ls -lh dist/
 
       - name: Publish rolling VUEO Dev release
+        if: steps.scope.outputs.should_build == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_MOBILE: ${{ steps.scope.outputs.build_mobile }}
+          BUILD_TV: ${{ steps.scope.outputs.build_tv }}
         run: |
           set -euo pipefail
 
@@ -324,35 +501,57 @@ jobs:
               --notes "Rolling development release. Only successful signed builds are published."
           fi
 
-          gh release upload vueo-dev \
-            dist/VUEO-dev.apk \
-            dist/VUEO-dev.apk.sha256 \
-            dist/VUEOTV-dev.apk \
-            dist/VUEOTV-dev.apk.sha256 \
-            dist/update.json \
-            dist/tv-update.json \
-            --clobber
+          ASSETS=()
+
+          if [ "$BUILD_MOBILE" = "true" ]; then
+            ASSETS+=(
+              "dist/VUEO-dev.apk"
+              "dist/VUEO-dev.apk.sha256"
+              "dist/update.json"
+            )
+          fi
+
+          if [ "$BUILD_TV" = "true" ]; then
+            ASSETS+=(
+              "dist/VUEOTV-dev.apk"
+              "dist/VUEOTV-dev.apk.sha256"
+              "dist/tv-update.json"
+            )
+          fi
+
+          # --clobber replaces only the assets built in this run. Assets for the
+          # unchanged app stay on the rolling release exactly as they were.
+          gh release upload vueo-dev "${ASSETS[@]}" --clobber
 
       - name: Build summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## VUEO Lean Build"
+            echo "## VUEO Smart Build"
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Mobile: \`${VUEO_VERSION_NAME:-not-built}\`"
-            echo "- TV: \`${VUEO_TV_VERSION_NAME:-not-built}\`"
+            echo "- Scope: \`${{ steps.scope.outputs.scope_label || 'unknown' }}\`"
+            echo "- Reason: ${{ steps.scope.outputs.reason || 'scope step did not finish' }}"
             echo "- Build mode: Release only"
-            echo "- Gradle invocations: 1"
-            echo "- Shared Core: compiled through the app dependency graph"
+            echo "- Gradle invocations: $([ '${{ steps.scope.outputs.should_build }}' = 'true' ] && echo '1' || echo '0')"
+            echo "- Shared Core: compiled only when selected by the dependency graph"
+            echo "- Unchanged app release assets: preserved"
             echo "- Actions APK artifacts: disabled"
             echo "- Distribution: rolling \`vueo-dev\` GitHub Release"
+
             if [ -f dist/VUEO-dev.apk ]; then
+              echo "- Mobile: \`${VUEO_VERSION_NAME:-built}\`"
               echo "- Mobile size: \`$(du -h dist/VUEO-dev.apk | cut -f1)\`"
+            else
+              echo "- Mobile: not rebuilt"
             fi
+
             if [ -f dist/VUEOTV-dev.apk ]; then
+              echo "- TV: \`${VUEO_TV_VERSION_NAME:-built}\`"
               echo "- TV size: \`$(du -h dist/VUEOTV-dev.apk | cut -f1)\`"
+            else
+              echo "- TV: not rebuilt"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           
