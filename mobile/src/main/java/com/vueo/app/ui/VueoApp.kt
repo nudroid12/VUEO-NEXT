@@ -245,7 +245,6 @@ private enum class AppTab {
 }
 
 private enum class AppSurface {
-    STARTUP,
     ROOT,
     CATALOG,
     DETAILS,
@@ -358,6 +357,9 @@ fun VueoApp() {
     }
 
     LaunchedEffect(settingsStore) {
+        VueoPalette.applyTheme(
+            settingsStore.appTheme()
+        )
         VueoPalette.applyAccent(
             settingsStore.appAccent()
         )
@@ -394,9 +396,6 @@ fun VueoApp() {
     var booting by remember {
         mutableStateOf(true)
     }
-    var startupDestinationResolved by remember {
-        mutableStateOf(false)
-    }
     var selectedMedia by remember {
         mutableStateOf<MediaItem?>(null)
     }
@@ -415,7 +414,10 @@ fun VueoApp() {
         mutableIntStateOf(0)
     }
     var showProfilePicker by remember {
-        mutableStateOf(false)
+        mutableStateOf(
+            profileStore
+                .shouldShowPickerOnStartup()
+        )
     }
     var profilePickerOpenedFromApp by remember {
         mutableStateOf(false)
@@ -437,7 +439,6 @@ fun VueoApp() {
                 .shouldShowPickerOnStartup()
         profilePickerOpenedFromApp = false
         profileVersion++
-        startupDestinationResolved = true
 
         CatalogDiscoveryCache
             .restoreHome(
@@ -555,8 +556,7 @@ fun VueoApp() {
 
     val appSurface =
         when {
-            !startupDestinationResolved -> AppSurface.STARTUP
-            showProfilePicker -> AppSurface.PROFILES
+            !booting && showProfilePicker -> AppSurface.PROFILES
             selectedMedia != null -> AppSurface.DETAILS
             selectedCatalogRow != null -> AppSurface.CATALOG
             else -> AppSurface.ROOT
@@ -577,19 +577,6 @@ fun VueoApp() {
         label = "VUEO app surface transition",
     ) { surface ->
         when (surface) {
-            AppSurface.STARTUP -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            VueoPalette.Background
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    VueoBrandLockup()
-                }
-            }
-
             AppSurface.PROFILES -> {
                 WhosWatchingScreen(
                     profileStore = profileStore,

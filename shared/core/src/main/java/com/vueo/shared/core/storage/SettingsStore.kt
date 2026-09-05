@@ -65,6 +65,15 @@ enum class SubtitleSize(
     LARGE("Large"),
 }
 
+
+enum class AppTheme(
+    val label: String,
+) {
+    CHARCOAL("Charcoal"),
+    MIDNIGHT("Midnight"),
+    DEEP_TEAL("Deep Teal"),
+}
+
 enum class AppAccent(
     val label: String,
     val argb: Long,
@@ -853,6 +862,23 @@ class SettingsStore(
             .apply()
     }
 
+    fun appTheme(): AppTheme =
+        enumValue(
+            key = KEY_APP_THEME,
+            default = AppTheme.CHARCOAL,
+        )
+
+    fun setAppTheme(
+        value: AppTheme,
+    ) {
+        prefs.edit()
+            .putString(
+                KEY_APP_THEME,
+                value.name,
+            )
+            .apply()
+    }
+
     fun appAccent(): AppAccent =
         enumValue(
             key = KEY_APP_ACCENT,
@@ -1048,6 +1074,9 @@ class SettingsStore(
 
         private const val KEY_GEMINI_INSIGHTS =
             "gemini_ai_insights"
+
+        private const val KEY_APP_THEME =
+            "app_theme"
 
         private const val KEY_APP_ACCENT =
             "app_accent"

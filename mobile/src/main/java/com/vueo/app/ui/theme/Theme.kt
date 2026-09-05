@@ -13,8 +13,10 @@ fun VueoTheme(
 ) {
     val accent =
         VueoPalette.Accent
+    val appTheme =
+        VueoPalette.Theme
 
-    val colors = remember(accent) {
+    val colors = remember(accent, appTheme) {
         darkColorScheme(
             primary = accent,
             onPrimary = Color(0xFF080B0F),
