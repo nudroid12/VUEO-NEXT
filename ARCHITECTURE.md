@@ -40,3 +40,13 @@ Every shared-core migration must keep both application modules buildable.
 | VUEO TV | `com.vueo.tv` |
 
 These IDs must not be casually changed after release/signing is established.
+## Mobile UI decomposition checkpoint
+
+Mobile remains a single Compose application surface, but large screen families may be extracted from `VueoApp.kt` when the extraction preserves existing contracts.
+
+Current extracted family:
+
+- `ui/VueoContentManager.kt` contains Content Manager, Addons, Plugins/Providers, Catalog Order and Provider Diagnostics presentation.
+
+This is a file-level decomposition only. Stores, Shared Core runtime and navigation behaviour remain unchanged. Avoid broad rewrites during decomposition.
+

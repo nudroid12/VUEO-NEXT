@@ -173,6 +173,26 @@ It centralises the last major duplicated areas:
 
 At this checkpoint, 18A has passed static sanity checks in the handoff environment. A full GitHub Actions build should still be treated as the canonical build confirmation if it has not yet been run.
 
+## 6A. Mobile checkpoint after patches 26 to 28F
+
+Mobile is now in a stabilisation phase. Avoid adding new Mobile features unless a real product requirement is identified. The current source includes:
+
+- three dark application themes: Charcoal, Midnight and Deep Teal
+- a neutral translucent profile hero in Settings
+- neutral My List, Watched and DNA stats without a special DNA accent
+- grouped compact Settings and polished Settings subpages
+- Content Manager terminology that avoids third-party platform branding in user-facing copy
+- per-catalog enable/disable state persisted independently from the parent addon
+- provider diagnostics that keep request, failure, error, HTTP, timing, result and raw evidence while hiding debug noise by default
+- a startup destination gate that resolves Who's Watching before Home is allowed to render
+- navigation-bar safe spacing on Mobile profile management screens
+
+Architecture cleanup started in 28F. The Content Manager UI family was extracted from the oversized `VueoApp.kt` into:
+
+- `mobile/src/main/java/com/vueo/app/ui/VueoContentManager.kt`
+
+This extraction is presentation-only. Content Manager data models, stores, provider runtime and Shared Core contracts were not rewritten. Continue reducing `VueoApp.kt` only in small, behaviour-preserving slices. Do not move startup/profile/player logic during unrelated cleanup.
+
 ## 7. Mobile is the visual/behaviour reference where explicitly locked
 
 ### Player
@@ -345,25 +365,28 @@ Keep enrichment logic in Shared Core and the 10-foot presentation in TV.
 
 ## 13. Content Manager
 
-Official name: **Content Manager**.
+Official product name: **Content Manager**.
+
+User-facing UI should use VUEO-neutral terms such as addons, repositories, providers and catalogs. Internal protocol/runtime class names may remain technical where required by the implementation.
 
 It manages:
 
-- Stremio Addons
-- JavaScript Provider Plugins
+- addons
+- provider plugins
 - repositories
-- provider health/status
+- provider health and diagnostics
 - catalog ordering
+- per-catalog visibility
 
-TV parity work includes:
+Current Mobile behaviour includes:
 
-- refresh addon
-- remove addon
-- refresh repository
-- remove repository
+- refresh/remove addon
+- refresh/remove repository
 - provider health summary
-- latency/status/error information
-- provider code synchronisation
+- compact expandable provider diagnostics
+- sanitized raw diagnostic evidence
+- persistent per-catalog enable/disable state
+- catalog order preserved while a catalog is hidden
 
 Content Manager state should feed Shared Core discovery and playback behaviour. Avoid separate hidden state stores that drift between screens.
 
@@ -400,6 +423,18 @@ Accent options include the current Mobile/TV parity set such as:
 - Coral
 
 Accent applies to product accents/progress/status. White + scale focus remains the focus language on TV.
+
+## 14A. Current important Mobile files
+
+High-value Mobile UI entry points now include:
+
+- `mobile/src/main/java/com/vueo/app/ui/VueoApp.kt`
+- `mobile/src/main/java/com/vueo/app/ui/VueoContentManager.kt`
+- `mobile/src/main/java/com/vueo/app/ui/VueoSettings.kt`
+- `mobile/src/main/java/com/vueo/app/ui/VueoProfiles.kt`
+- `mobile/src/main/java/com/vueo/app/ui/VueoDesign.kt`
+
+`VueoApp.kt` is still large. Extract only coherent screen families, keep navigation contracts stable, and validate regression-sensitive flows after each extraction.
 
 ## 15. Current important TV files
 
@@ -478,6 +513,12 @@ Recent milestones:
 - 17B: Mobile Settings UI adapted to TV, canonical current Settings visual direction
 - 17C: Content Warning presentation matched to Mobile 1:1
 - 18A: Shared Core cleanup for Content Warning and Backup/Restore/Reset
+- 26A-27B: Mobile Settings hierarchy, themes, profile surface and Settings subpage polish
+- 28A: Mobile Content Manager presentation rebuild
+- 28B: Mobile Who's Watching startup destination gate restored
+- 28C-28E: Provider diagnostics upgraded, then compacted to debug-first evidence
+- 28D: Mobile profile safe-area fix and persistent per-catalog enable/disable state
+- 28F: Mobile housekeeping and first safe extraction from `VueoApp.kt` into `VueoContentManager.kt`
 
 Do not revert to a superseded visual milestone just because an older patch or conversation mentions it.
 

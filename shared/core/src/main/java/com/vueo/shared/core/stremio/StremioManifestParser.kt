@@ -9,7 +9,7 @@ object StremioManifestParser {
         payload: String,
     ): StremioManifest {
         require(manifestUrl.startsWith("https://", ignoreCase = true)) {
-            "VUEO requires HTTPS Stremio addon manifests."
+            "VUEO requires HTTPS addon manifest URLs."
         }
 
         val json = JSONObject(payload)

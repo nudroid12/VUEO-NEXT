@@ -49,7 +49,7 @@ class StremioAddonClient(
             httpClient: StremioHttpClient = DefaultStremioHttpClient,
         ): StremioAddonClient {
             require(manifestUrl.startsWith("https://", ignoreCase = true)) {
-                "VUEO requires HTTPS Stremio addon manifests."
+                "VUEO requires HTTPS addon manifest URLs."
             }
             val payload = httpClient.get(manifestUrl)
             return StremioAddonClient(
