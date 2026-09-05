@@ -13,6 +13,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -751,7 +752,21 @@ fun VueoApp() {
                 .padding(padding)
                 .clipToBounds(),
         ) {
-            when (selectedTab) {
+            AnimatedContent(
+                targetState = selectedTab to settingsPage,
+                transitionSpec = {
+                    vueoFadeThrough(
+                        enterDurationMillis = 300,
+                        exitDurationMillis = 170,
+                        enterDelayMillis = 22,
+                        initialScale = 0.992f,
+                        targetScale = 0.996f,
+                    )
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "VUEO main navigation transition",
+            ) { (currentTab, currentSettingsPage) ->
+                when (currentTab) {
                 AppTab.HOME -> HomeScreen(
                     engine = engine,
                     contentVersion = contentVersion,
@@ -855,7 +870,7 @@ fun VueoApp() {
                 )
 
                 AppTab.SETTINGS -> when (
-                    settingsPage
+                    currentSettingsPage
                 ) {
                     SettingsPage.ROOT ->
                         VueoSettingsHub(
@@ -1101,6 +1116,7 @@ fun VueoApp() {
                         )
                 }
             }
+        }
         }
     }
 }

@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -203,17 +204,6 @@ internal fun WhosWatchingScreen(
         mutableStateOf<VueoProfile?>(null)
     }
 
-    if (managingProfiles) {
-        ProfileSettingsScreen(
-            profileStore = profileStore,
-            profileVersion = profileVersion,
-            onProfilesChanged = onProfilesChanged,
-            onActiveProfileChanged = onProfilesChanged,
-            onBack = { managingProfiles = false },
-        )
-        return
-    }
-
     lockedProfile?.let { profile ->
         ProfileUnlockDialog(
             profile = profile,
@@ -230,89 +220,116 @@ internal fun WhosWatchingScreen(
         )
     }
 
-    LazyColumn(
+    AnimatedContent(
+        targetState = managingProfiles,
+        transitionSpec = {
+            vueoFadeThrough(
+                enterDurationMillis = 320,
+                exitDurationMillis = 180,
+                enterDelayMillis = 24,
+                initialScale = 0.994f,
+                targetScale = 0.996f,
+            )
+        },
         modifier = Modifier
             .fillMaxSize()
             .background(VueoPalette.Background),
-        contentPadding = PaddingValues(
-            start = 28.dp,
-            end = 28.dp,
-            top = 82.dp,
-            bottom = 36.dp,
-        ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(28.dp),
-    ) {
-        item {
-            VueoBrandLockup()
-        }
-
-        item {
-            Text(
-                "Who's Watching?",
-                color = Color.White,
-                fontWeight = FontWeight.Black,
-                fontSize = 31.sp,
-                textAlign = TextAlign.Center,
+        label = "VUEO profile manage transition",
+    ) { managing ->
+        if (managing) {
+            ProfileSettingsScreen(
+                profileStore = profileStore,
+                profileVersion = profileVersion,
+                onProfilesChanged = onProfilesChanged,
+                onActiveProfileChanged = onProfilesChanged,
+                onBack = { managingProfiles = false },
             )
-        }
-
-        items(
-            profiles.chunked(2),
-            key = { row -> row.joinToString("|") { it.id } },
-        ) { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(VueoPalette.Background),
+                contentPadding = PaddingValues(
+                    start = 28.dp,
+                    end = 28.dp,
+                    top = 82.dp,
+                    bottom = 36.dp,
+                ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                row.forEach { profile ->
-                    WatchingProfileCard(
-                        profile = profile,
-                        active = profile.id == activeProfileId,
-                        locked = profileStore.hasProfilePin(profile.id),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            if (profileStore.hasProfilePin(profile.id)) {
-                                lockedProfile = profile
-                            } else if (profileStore.setActiveProfile(profile.id)) {
-                                onProfileSelected()
-                            }
-                        },
+                item {
+                    VueoBrandLockup()
+                }
+
+                item {
+                    Text(
+                        "Who's Watching?",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 31.sp,
+                        textAlign = TextAlign.Center,
                     )
                 }
 
-                if (row.size == 1) {
-                    Spacer(Modifier.weight(1f))
-                }
-            }
-        }
+                items(
+                    profiles.chunked(2),
+                    key = { row -> row.joinToString("|") { it.id } },
+                ) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    ) {
+                        row.forEach { profile ->
+                            WatchingProfileCard(
+                                profile = profile,
+                                active = profile.id == activeProfileId,
+                                locked = profileStore.hasProfilePin(profile.id),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    if (profileStore.hasProfilePin(profile.id)) {
+                                        lockedProfile = profile
+                                    } else if (profileStore.setActiveProfile(profile.id)) {
+                                        onProfileSelected()
+                                    }
+                                },
+                            )
+                        }
 
-        item {
-            OutlinedButton(
-                onClick = { managingProfiles = true },
-                shape = RoundedCornerShape(50),
-                border = BorderStroke(
-                    1.dp,
-                    VueoPalette.Stroke,
-                ),
-                contentPadding = PaddingValues(
-                    horizontal = 24.dp,
-                    vertical = 10.dp,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = VueoPalette.Muted,
-                    modifier = Modifier.size(17.dp),
-                )
-                Spacer(Modifier.size(7.dp))
-                Text(
-                    "Manage Profiles",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                        if (row.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedButton(
+                        onClick = { managingProfiles = true },
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(
+                            1.dp,
+                            VueoPalette.Stroke,
+                        ),
+                        contentPadding = PaddingValues(
+                            horizontal = 24.dp,
+                            vertical = 10.dp,
+                        ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = VueoPalette.Muted,
+                            modifier = Modifier.size(17.dp),
+                        )
+                        Spacer(Modifier.size(7.dp))
+                        Text(
+                            "Manage Profiles",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
         }
     }
@@ -332,54 +349,6 @@ internal fun ProfileSettingsScreen(
     var deleteCandidate by remember { mutableStateOf<VueoProfile?>(null) }
     var askOnStartup by remember(profileVersion) {
         mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
-    }
-
-    editor?.let { state ->
-        ProfileEditorScreen(
-            state = state,
-            profileStore = profileStore,
-            onBack = { editor = null },
-            onSave = { name, avatar, isKids, pinEnabled, pin ->
-                val existing = state.profile
-                if (existing == null) {
-                    val created = profileStore.createProfile(
-                        name = name,
-                        avatar = avatar,
-                        isKids = isKids,
-                    )
-                    if (pinEnabled && pin.length == 4) {
-                        profileStore.setProfilePin(created.id, pin)
-                    }
-                } else {
-                    val previousAvatar = existing.avatar
-                    profileStore.updateProfile(
-                        profileId = existing.id,
-                        name = name,
-                        avatar = avatar,
-                        isKids = isKids,
-                    )
-                    if (!pinEnabled && profileStore.hasProfilePin(existing.id)) {
-                        profileStore.clearProfilePin(existing.id)
-                    } else if (pinEnabled && pin.length == 4) {
-                        profileStore.setProfilePin(existing.id, pin)
-                    }
-                    if (previousAvatar != avatar) {
-                        deleteLocalAvatar(context, previousAvatar)
-                    }
-                }
-                onProfilesChanged()
-                editor = null
-            },
-            onDelete = state.profile?.takeIf {
-                it.id != ProfileStore.DEFAULT_PROFILE_ID
-            }?.let { profile ->
-                {
-                    editor = null
-                    deleteCandidate = profile
-                }
-            },
-        )
-        return
     }
 
     deleteCandidate?.let { profile ->
@@ -408,122 +377,186 @@ internal fun ProfileSettingsScreen(
         )
     }
 
-    LazyColumn(
+    AnimatedContent(
+        targetState = editor,
+        transitionSpec = {
+            vueoFadeThrough(
+                enterDurationMillis = 380,
+                exitDurationMillis = 210,
+                enterDelayMillis = 34,
+                initialScale = 0.985f,
+                targetScale = 0.992f,
+            )
+        },
         modifier = Modifier
             .fillMaxSize()
             .background(VueoPalette.Background),
-        contentPadding = PaddingValues(
-            start = 24.dp,
-            end = 24.dp,
-            top = 30.dp,
-            bottom = 32.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        item {
-            VueoBrandLockup()
-        }
-
-        item {
-            Text(
-                text = "Manage Profiles",
-                color = Color.White,
-                fontWeight = FontWeight.Black,
-                fontSize = 29.sp,
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        items(
-            items = profiles.chunked(2),
-            key = { row -> "manage:${row.joinToString("|") { it.id }}" },
-        ) { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
-            ) {
-                row.forEach { profile ->
-                    ManageProfileAvatar(
-                        profile = profile,
-                        locked = profileStore.hasProfilePin(profile.id),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            editor = ProfileEditorState(profile)
-                        },
-                    )
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-
-        if (profiles.size < ProfileStore.MAX_PROFILES) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                ) {
-                    AddProfileAvatar(
-                        modifier = Modifier.weight(1f),
-                        onClick = { editor = ProfileEditorState(null) },
-                    )
-                    Spacer(Modifier.weight(1f))
-                }
-            }
-        }
-
-        item {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = profiles.size > 1) {
-                        askOnStartup = !askOnStartup
-                        profileStore.setAskWhoIsWatchingOnStartup(askOnStartup)
-                        onProfilesChanged()
-                    },
-                shape = RoundedCornerShape(16.dp),
-                color = VueoPalette.Surface,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = "Ask on startup",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+        label = "VUEO profile editor transition",
+    ) { editorState ->
+        if (editorState != null) {
+            ProfileEditorScreen(
+                state = editorState,
+                profileStore = profileStore,
+                onBack = { editor = null },
+                onSave = { name, avatar, isKids, pinEnabled, pin ->
+                    val existing = editorState.profile
+                    if (existing == null) {
+                        val created = profileStore.createProfile(
+                            name = name,
+                            avatar = avatar,
+                            isKids = isKids,
                         )
-                        Text(
-                            text = "Show profile picker when VUEO launches",
-                            color = VueoPalette.Muted,
-                            fontSize = 10.sp,
+                        if (pinEnabled && pin.length == 4) {
+                            profileStore.setProfilePin(created.id, pin)
+                        }
+                    } else {
+                        val previousAvatar = existing.avatar
+                        profileStore.updateProfile(
+                            profileId = existing.id,
+                            name = name,
+                            avatar = avatar,
+                            isKids = isKids,
                         )
+                        if (!pinEnabled && profileStore.hasProfilePin(existing.id)) {
+                            profileStore.clearProfilePin(existing.id)
+                        } else if (pinEnabled && pin.length == 4) {
+                            profileStore.setProfilePin(existing.id, pin)
+                        }
+                        if (previousAvatar != avatar) {
+                            deleteLocalAvatar(context, previousAvatar)
+                        }
                     }
-                    Switch(
-                        checked = askOnStartup,
-                        enabled = profiles.size > 1,
-                        onCheckedChange = { enabled ->
-                            askOnStartup = enabled
-                            profileStore.setAskWhoIsWatchingOnStartup(enabled)
-                            onProfilesChanged()
-                        },
+                    onProfilesChanged()
+                    editor = null
+                },
+                onDelete = editorState.profile?.takeIf {
+                    it.id != ProfileStore.DEFAULT_PROFILE_ID
+                }?.let { profile ->
+                    {
+                        editor = null
+                        deleteCandidate = profile
+                    }
+                },
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(VueoPalette.Background),
+                contentPadding = PaddingValues(
+                    start = 28.dp,
+                    end = 28.dp,
+                    top = 82.dp,
+                    bottom = 36.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    VueoBrandLockup()
+                }
+
+                item {
+                    Text(
+                        text = "Who's Watching?",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 31.sp,
+                        textAlign = TextAlign.Center,
                     )
                 }
-            }
-        }
 
-        item {
-            OutlinedButton(
-                onClick = onBack,
-                shape = RoundedCornerShape(50),
-                contentPadding = PaddingValues(horizontal = 34.dp, vertical = 11.dp),
-            ) {
-                Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                items(
+                    items = profiles.chunked(2),
+                    key = { row -> "manage:${row.joinToString("|") { it.id }}" },
+                ) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    ) {
+                        row.forEach { profile ->
+                            ManageProfileAvatar(
+                                profile = profile,
+                                locked = profileStore.hasProfilePin(profile.id),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    editor = ProfileEditorState(profile)
+                                },
+                            )
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+
+                if (profiles.size < ProfileStore.MAX_PROFILES) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        ) {
+                            AddProfileAvatar(
+                                modifier = Modifier.weight(1f),
+                                onClick = { editor = ProfileEditorState(null) },
+                            )
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = profiles.size > 1) {
+                                askOnStartup = !askOnStartup
+                                profileStore.setAskWhoIsWatchingOnStartup(askOnStartup)
+                                onProfilesChanged()
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        color = VueoPalette.Surface,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = "Ask on startup",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                )
+                                Text(
+                                    text = "Show profile picker when VUEO launches",
+                                    color = VueoPalette.Muted,
+                                    fontSize = 10.sp,
+                                )
+                            }
+                            Switch(
+                                checked = askOnStartup,
+                                enabled = profiles.size > 1,
+                                onCheckedChange = { enabled ->
+                                    askOnStartup = enabled
+                                    profileStore.setAskWhoIsWatchingOnStartup(enabled)
+                                    onProfilesChanged()
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedButton(
+                        onClick = onBack,
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 34.dp, vertical = 11.dp),
+                    ) {
+                        Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }
@@ -819,14 +852,16 @@ private fun ManageProfileAvatar(
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Box(modifier = Modifier.size(116.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(112.dp), contentAlignment = Alignment.Center) {
             ProfileAvatar(profile = profile, size = 104)
             Surface(
-                modifier = Modifier.align(Alignment.BottomEnd).size(32.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).size(28.dp),
                 shape = CircleShape,
                 color = Color.White,
                 border = BorderStroke(3.dp, VueoPalette.Background),
@@ -836,7 +871,7 @@ private fun ManageProfileAvatar(
                         Icons.Default.Edit,
                         contentDescription = "Edit ${profile.name}",
                         tint = Color.Black,
-                        modifier = Modifier.size(17.dp),
+                        modifier = Modifier.size(15.dp),
                     )
                 }
             }
