@@ -50,3 +50,9 @@ Current extracted family:
 
 This is a file-level decomposition only. Stores, Shared Core runtime and navigation behaviour remain unchanged. Avoid broad rewrites during decomposition.
 
+## TV clean rebuild boundary
+
+As of 29A-R2, `tv/src/main/java` contains a fresh TV application runtime. Legacy TV implementation files were overwritten with inert tombstones where ZIP overlay cannot delete tracked paths. Do not treat those tombstones as architecture.
+
+TV may reuse `shared/core` only; it must not import `:mobile`. Mobile is the behavioural reference, Shared Core is the reusable logic layer, and TV owns the 10-foot UI/input layer. The only preserved pre-rebuild TV experience is the profile picker/manage/add-edit family.
+

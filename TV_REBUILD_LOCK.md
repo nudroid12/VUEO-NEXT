@@ -1,6 +1,6 @@
 # VUEO TV Rebuild Lock
 
-Baseline: **29A-R1 clean cutover**.
+Baseline: **29A-R2 clean rebuild**.
 
 ## Product DNA
 
@@ -13,8 +13,8 @@ A screen is not accepted only because it looks good in a screenshot. It must fee
 
 ## Architecture lock
 
-- Compiled TV Kotlin lives in `tv/src/main/rebuild`.
-- `tv/src/main/java` is legacy history and is excluded from the build.
+- TV Kotlin lives normally in `tv/src/main/java`.
+- Legacy TV implementations were removed/overwritten; old paths that cannot be deleted by ZIP overlay are inert tombstones only.
 - New TV must never depend on `:mobile`.
 - Mobile is a behavioural reference. Shared Core is the reusable logic layer.
 - Do not bring legacy TV repositories, root navigation, focus memory, TV-only library/playback stores or source wrappers into the rebuild.

@@ -18,8 +18,6 @@ class MainActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
-        setContent {
-            VueoTvApp()
-        }
+        setContent { VueoTvApp() }
     }
 }

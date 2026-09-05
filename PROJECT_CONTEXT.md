@@ -599,3 +599,20 @@ Mobile v1 is now feature-locked while the TV rebuild proceeds. Use `MOBILE_REGRE
 
 `Ask on startup` is literal: when enabled, Who's Watching is the startup destination regardless of the number of profiles. A locked active profile also forces the picker.
 
+## 23. TV clean rebuild baseline — 29A-R2
+
+TV presentation/runtime after profile selection is now a clean rebuild. The old TV Home/Search/Library/Settings/Details/Source/Player implementations and TV-only repositories/stores are not part of the new runtime. Old Kotlin paths that cannot be physically deleted by the repository ZIP overlay are overwritten with inert tombstone comments.
+
+The only intentionally preserved TV experience is the profile family: Who's Watching, Manage Profiles, Add/Edit Profile and its existing PIN/editor behaviour.
+
+The new TV runtime adapts proven Mobile behaviour through Shared Core rather than depending on `:mobile` or legacy TV stores:
+
+- startup/profile gate -> `ProfileStore`
+- Home discovery -> `UnifiedMediaEngine` + catalog preferences matching Mobile `AddonStore` semantics
+- My List / Continue Watching / History -> `LibraryStore`
+- playback position -> `PlaybackStore`
+- settings -> `SettingsStore`
+- addon/provider discovery and source cleanup/ranking -> Shared Core runtime
+
+TV owns its own 10-foot Compose UI, D-pad focus, navigation and motion. Read `TV_REBUILD_LOCK.md` before TV work.
+

@@ -1,6 +1,6 @@
 # VUEO TV Design Bible — Foundation v1
 
-Status: **LOCKED for 29A**
+Status: **LOCKED for the clean TV rebuild (29A-R2+)**
 
 ## Product DNA
 
@@ -64,6 +64,8 @@ Principle: **Input fast. Visuals smooth. Navigation obvious.**
 - Focus must remain unambiguous from normal TV viewing distance.
 - Vertical movement should be deterministic and preserve horizontal intent where possible.
 
-## 29A scope
+## Clean rebuild scope
 
-29A replaces only the Home experience foundation. Search, Library, Settings, Details and Player retain their current implementations until their own rebuild phases. This intentionally prevents a large all-at-once TV rewrite.
+29A-R2 cuts over the entire post-profile TV runtime to fresh code. Legacy Home, Search, Library, Settings, Details, Source and Player implementations are removed/tombstoned. Only the approved profile experience is intentionally preserved.
+
+Mobile provides proven behaviour contracts through Shared Core; TV does not copy Mobile UI and does not depend on `:mobile`.

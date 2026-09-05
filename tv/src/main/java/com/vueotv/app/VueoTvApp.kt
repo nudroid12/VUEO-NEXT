@@ -1,7 +1,2 @@
-package com.vueotv.app
-
-/*
- * 11A corrective stub.
- * The active VUEO TV implementation lives under com.vueo.tv.
- * This file only neutralises the accidentally added legacy-path source.
- */
+// Legacy TV source removed by 29A-R2 clean rebuild.
+// Intentionally left as a tombstone so ZIP overlay patches can delete the old implementation safely.

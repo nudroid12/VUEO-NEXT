@@ -33,3 +33,12 @@ Current Mobile stabilisation rules:
 - `Ask on startup` must show Who's Watching whenever the setting is enabled, even if only one profile currently exists.
 - Do not reintroduce the old `profiles.size > 1` gate in either the setting control or `ProfileStore.shouldShowPickerOnStartup()`.
 
+29A-R2 TV clean rebuild:
+
+- Read `TV_REBUILD_LOCK.md` before modifying TV.
+- Do not resurrect tombstoned legacy TV repositories, stores, root navigation or UI screens.
+- Preserve the approved Who's Watching / Manage Profiles / Add/Edit Profile experience.
+- Everything after profile selection uses the new TV runtime and fresh TV UI.
+- Behaviour comes from Mobile-proven semantics implemented through Shared Core; TV must not depend on `:mobile`.
+- Home remains locked to contextual top navigation + Hero/Peeking Row + card-driven hero with ~180 ms settle.
+
