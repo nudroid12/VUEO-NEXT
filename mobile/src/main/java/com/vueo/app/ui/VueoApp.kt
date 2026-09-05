@@ -1435,6 +1435,14 @@ private fun HomeScreen(
                 .catalogOrder()
         }
 
+    val disabledCatalogKeys =
+        remember(
+            contentVersion
+        ) {
+            homeAddonStore
+                .disabledCatalogKeys()
+        }
+
 
     val profileStore =
         remember {
@@ -1479,6 +1487,7 @@ private fun HomeScreen(
     var rows by remember(
         contentVersion,
         catalogOrder,
+        disabledCatalogKeys,
     ) {
         mutableStateOf(
             orderHomeCatalogRows(
@@ -1490,6 +1499,8 @@ private fun HomeScreen(
                         .orEmpty(),
                 catalogOrder =
                     catalogOrder,
+                disabledCatalogKeys =
+                    disabledCatalogKeys,
             )
         )
     }
@@ -1544,6 +1555,8 @@ private fun HomeScreen(
                         rows = it,
                         catalogOrder =
                             catalogOrder,
+                        disabledCatalogKeys =
+                            disabledCatalogKeys,
                     )
             }
 
@@ -1562,6 +1575,8 @@ private fun HomeScreen(
                     rows.isNotEmpty(),
                 catalogOrder =
                     catalogOrder,
+                disabledCatalogKeys =
+                    disabledCatalogKeys,
             )
         }.onSuccess {
             fresh ->
@@ -1573,6 +1588,8 @@ private fun HomeScreen(
                         rows = fresh,
                         catalogOrder =
                             catalogOrder,
+                        disabledCatalogKeys =
+                            disabledCatalogKeys,
                     )
 
                 CatalogDiscoveryCache
@@ -1602,6 +1619,8 @@ private fun HomeScreen(
                                 .orEmpty(),
                         catalogOrder =
                             catalogOrder,
+                        disabledCatalogKeys =
+                            disabledCatalogKeys,
                     )
             }
         }
@@ -3475,9 +3494,17 @@ private fun EmptyHomeCard(
 private fun orderHomeCatalogRows(
     rows: List<CatalogRow>,
     catalogOrder: List<String>,
+    disabledCatalogKeys: Set<String> = emptySet(),
 ): List<CatalogRow> {
+    val enabledRows =
+        if (disabledCatalogKeys.isEmpty()) {
+            rows
+        } else {
+            rows.filterNot { it.id in disabledCatalogKeys }
+        }
+
     if (catalogOrder.isEmpty()) {
-        return rows
+        return enabledRows
     }
 
     val index =
@@ -3487,7 +3514,7 @@ private fun orderHomeCatalogRows(
                 it.value to it.index
             }
 
-    return rows.sortedBy {
+    return enabledRows.sortedBy {
         index[it.id] ?: Int.MAX_VALUE
     }
 }
@@ -7403,6 +7430,7 @@ private data class CatalogOrderEntry(
     val providerName: String,
     val type: String,
     val addonEnabled: Boolean,
+    val catalogEnabled: Boolean,
 )
 
 @Composable
@@ -7420,12 +7448,15 @@ private fun CatalogOrderScreen(
                     extension.descriptor.catalogs
                         .filter { it.canLoadWithoutExtras }
                         .map { catalog ->
+                            val key =
+                                "${extension.descriptor.id}:${catalog.type}:${catalog.id}"
                             CatalogOrderEntry(
-                                key = "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
+                                key = key,
                                 title = catalog.name ?: catalog.id,
                                 providerName = extension.descriptor.name,
                                 type = catalog.type.replaceFirstChar { it.uppercase() },
                                 addonEnabled = engine.isExtensionEnabled(extension.descriptor.id),
+                                catalogEnabled = store.isCatalogEnabled(key),
                             )
                         }
                 }
@@ -7483,7 +7514,7 @@ private fun CatalogOrderScreen(
         ) {
             item(key = "catalog-order-note") {
                 Text(
-                    text = "Top catalogs appear first. Disabled addons keep their saved position but are skipped on Home.",
+                    text = "Top catalogs appear first. Hide any catalog without changing its saved position.",
                     color = VueoPalette.Muted,
                     fontSize = 10.5.sp,
                     lineHeight = 15.sp,
@@ -7541,15 +7572,31 @@ private fun CatalogOrderScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                if (!entry.addonEnabled) {
-                                    Text(
-                                        text = "Disabled",
-                                        color = VueoPalette.Muted.copy(alpha = .72f),
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
+                                when {
+                                    !entry.addonEnabled ->
+                                        Text(
+                                            text = "Addon disabled",
+                                            color = VueoPalette.Muted.copy(alpha = .72f),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    !entry.catalogEnabled ->
+                                        Text(
+                                            text = "Hidden",
+                                            color = VueoPalette.Muted.copy(alpha = .72f),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
                                 }
                             }
+
+                            Switch(
+                                checked = entry.catalogEnabled,
+                                onCheckedChange = { enabled ->
+                                    store.setCatalogEnabled(entry.key, enabled)
+                                    onContentChanged()
+                                },
+                            )
 
                             IconButton(
                                 enabled = index > 0,

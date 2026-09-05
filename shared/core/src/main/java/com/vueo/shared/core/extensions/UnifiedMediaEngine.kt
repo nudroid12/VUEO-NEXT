@@ -81,15 +81,22 @@ class UnifiedMediaEngine {
         maxRows: Int = 10,
         forceRefresh: Boolean = false,
         catalogOrder: List<String> = emptyList(),
+        disabledCatalogKeys: Set<String> = emptySet(),
     ): List<CatalogRow> = coroutineScope {
         if (!forceRefresh) {
             CatalogDiscoveryCache
                 .home()
-                ?.let {
-                    return@coroutineScope orderCatalogRows(
-                        rows = it,
-                        catalogOrder = catalogOrder,
-                    ).take(maxRows)
+                ?.let { cachedRows ->
+                    val enabledCachedRows =
+                        orderCatalogRows(
+                            rows = cachedRows,
+                            catalogOrder = catalogOrder,
+                            disabledCatalogKeys = disabledCatalogKeys,
+                        ).take(maxRows)
+
+                    if (enabledCachedRows.isNotEmpty()) {
+                        return@coroutineScope enabledCachedRows
+                    }
                 }
         }
 
@@ -104,8 +111,13 @@ class UnifiedMediaEngine {
             activeStremioAddons()
                 .flatMap { extension ->
                     extension.descriptor.catalogs
-                        .filter {
-                            it.canLoadWithoutExtras
+                        .filter { catalog ->
+                            catalog.canLoadWithoutExtras &&
+                                catalogKey(
+                                    extensionId = extension.descriptor.id,
+                                    type = catalog.type,
+                                    catalogId = catalog.id,
+                                ) !in disabledCatalogKeys
                         }
                         .map { catalog ->
                             extension to catalog
@@ -182,6 +194,7 @@ class UnifiedMediaEngine {
                     orderCatalogRows(
                         rows = it,
                         catalogOrder = catalogOrder,
+                        disabledCatalogKeys = disabledCatalogKeys,
                     )
                 }
 
@@ -202,9 +215,17 @@ class UnifiedMediaEngine {
     private fun orderCatalogRows(
         rows: List<CatalogRow>,
         catalogOrder: List<String>,
+        disabledCatalogKeys: Set<String> = emptySet(),
     ): List<CatalogRow> {
+        val enabledRows =
+            if (disabledCatalogKeys.isEmpty()) {
+                rows
+            } else {
+                rows.filterNot { it.id in disabledCatalogKeys }
+            }
+
         if (catalogOrder.isEmpty()) {
-            return rows
+            return enabledRows
         }
 
         val index =
@@ -214,7 +235,7 @@ class UnifiedMediaEngine {
                     it.value to it.index
                 }
 
-        return rows.sortedBy {
+        return enabledRows.sortedBy {
             index[it.id] ?: Int.MAX_VALUE
         }
     }

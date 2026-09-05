@@ -31,6 +31,44 @@ class AddonStore(context: Context) {
             .apply()
     }
 
+
+    fun disabledCatalogKeys(): Set<String> =
+        prefs.getStringSet(
+            KEY_DISABLED_CATALOG_KEYS,
+            emptySet(),
+        )
+            .orEmpty()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+
+    fun isCatalogEnabled(
+        catalogKey: String,
+    ): Boolean =
+        catalogKey.trim() !in disabledCatalogKeys()
+
+    fun setCatalogEnabled(
+        catalogKey: String,
+        enabled: Boolean,
+    ) {
+        val normalized = catalogKey.trim()
+        if (normalized.isBlank()) return
+
+        val next = disabledCatalogKeys().toMutableSet()
+        if (enabled) {
+            next -= normalized
+        } else {
+            next += normalized
+        }
+
+        prefs.edit()
+            .putStringSet(
+                KEY_DISABLED_CATALOG_KEYS,
+                next,
+            )
+            .apply()
+    }
+
     fun catalogOrder(): List<String> =
         prefs.getString(
             KEY_CATALOG_ORDER,
@@ -83,6 +121,17 @@ class AddonStore(context: Context) {
 
         if (next != catalogOrder()) {
             setCatalogOrder(next)
+        }
+
+        val disabled = disabledCatalogKeys()
+        val reconciledDisabled = disabled.filterTo(mutableSetOf()) { it in available }
+        if (reconciledDisabled != disabled) {
+            prefs.edit()
+                .putStringSet(
+                    KEY_DISABLED_CATALOG_KEYS,
+                    reconciledDisabled,
+                )
+                .apply()
         }
 
         return next
@@ -154,6 +203,7 @@ class AddonStore(context: Context) {
         private const val PREFS_NAME = "vueo_content_manager"
         private const val KEY_MANIFEST_URLS = "stremio_manifest_urls"
         private const val KEY_CATALOG_ORDER = "catalog_order"
+        private const val KEY_DISABLED_CATALOG_KEYS = "disabled_catalog_keys"
         private const val KEY_DEV_DEFAULTS_REVISION = "dev_defaults_revision"
 
         private const val DEV_DEFAULTS_REVISION = 1
