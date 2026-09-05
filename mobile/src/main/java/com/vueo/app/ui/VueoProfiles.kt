@@ -84,38 +84,30 @@ private data class StockProfileAvatar(
 
 private val PROFILE_AVATARS =
     listOf(
-        StockProfileAvatar(
-            id = "avatar_man_1",
-            drawableRes = R.drawable.avatar_man_1,
-        ),
-        StockProfileAvatar(
-            id = "avatar_man_2",
-            drawableRes = R.drawable.avatar_man_2,
-        ),
-        StockProfileAvatar(
-            id = "avatar_woman_1",
-            drawableRes = R.drawable.avatar_woman_1,
-        ),
-        StockProfileAvatar(
-            id = "avatar_woman_2",
-            drawableRes = R.drawable.avatar_woman_2,
-        ),
-        StockProfileAvatar(
-            id = "avatar_boy_1",
-            drawableRes = R.drawable.avatar_boy_1,
-        ),
-        StockProfileAvatar(
-            id = "avatar_boy_2",
-            drawableRes = R.drawable.avatar_boy_2,
-        ),
-        StockProfileAvatar(
-            id = "avatar_girl_1",
-            drawableRes = R.drawable.avatar_girl_1,
-        ),
-        StockProfileAvatar(
-            id = "avatar_girl_2",
-            drawableRes = R.drawable.avatar_girl_2,
-        ),
+        StockProfileAvatar("avatar_man_1", R.drawable.avatar_man_1),
+        StockProfileAvatar("avatar_man_2", R.drawable.avatar_man_2),
+        StockProfileAvatar("avatar_man_3", R.drawable.avatar_man_3),
+        StockProfileAvatar("avatar_man_4", R.drawable.avatar_man_4),
+        StockProfileAvatar("avatar_man_5", R.drawable.avatar_man_5),
+        StockProfileAvatar("avatar_woman_1", R.drawable.avatar_woman_1),
+        StockProfileAvatar("avatar_woman_2", R.drawable.avatar_woman_2),
+        StockProfileAvatar("avatar_woman_3", R.drawable.avatar_woman_3),
+        StockProfileAvatar("avatar_woman_4", R.drawable.avatar_woman_4),
+        StockProfileAvatar("avatar_woman_5", R.drawable.avatar_woman_5),
+        StockProfileAvatar("avatar_boy_1", R.drawable.avatar_boy_1),
+        StockProfileAvatar("avatar_boy_2", R.drawable.avatar_boy_2),
+        StockProfileAvatar("avatar_boy_3", R.drawable.avatar_boy_3),
+        StockProfileAvatar("avatar_girl_1", R.drawable.avatar_girl_1),
+        StockProfileAvatar("avatar_girl_2", R.drawable.avatar_girl_2),
+        StockProfileAvatar("avatar_girl_3", R.drawable.avatar_girl_3),
+        StockProfileAvatar("avatar_character_1", R.drawable.avatar_character_1),
+        StockProfileAvatar("avatar_character_2", R.drawable.avatar_character_2),
+        StockProfileAvatar("avatar_character_3", R.drawable.avatar_character_3),
+        StockProfileAvatar("avatar_character_4", R.drawable.avatar_character_4),
+        StockProfileAvatar("avatar_vueo_1", R.drawable.avatar_vueo_1),
+        StockProfileAvatar("avatar_vueo_2", R.drawable.avatar_vueo_2),
+        StockProfileAvatar("avatar_vueo_3", R.drawable.avatar_vueo_3),
+        StockProfileAvatar("avatar_vueo_4", R.drawable.avatar_vueo_4),
     )
 
 private fun stockAvatarDrawable(
