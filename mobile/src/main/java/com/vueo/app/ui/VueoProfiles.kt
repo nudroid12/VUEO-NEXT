@@ -111,6 +111,14 @@ private val PROFILE_AVATARS =
         StockProfileAvatar("avatar_character_6", R.drawable.avatar_character_6),
         StockProfileAvatar("avatar_character_7", R.drawable.avatar_character_7),
         StockProfileAvatar("avatar_character_8", R.drawable.avatar_character_8),
+        StockProfileAvatar("avatar_malaysia_1", R.drawable.avatar_malaysia_1),
+        StockProfileAvatar("avatar_malaysia_2", R.drawable.avatar_malaysia_2),
+        StockProfileAvatar("avatar_malaysia_3", R.drawable.avatar_malaysia_3),
+        StockProfileAvatar("avatar_malaysia_4", R.drawable.avatar_malaysia_4),
+        StockProfileAvatar("avatar_malaysia_5", R.drawable.avatar_malaysia_5),
+        StockProfileAvatar("avatar_malaysia_6", R.drawable.avatar_malaysia_6),
+        StockProfileAvatar("avatar_malaysia_7", R.drawable.avatar_malaysia_7),
+        StockProfileAvatar("avatar_malaysia_8", R.drawable.avatar_malaysia_8),
     )
 
 private val LEGACY_PROFILE_AVATARS =
