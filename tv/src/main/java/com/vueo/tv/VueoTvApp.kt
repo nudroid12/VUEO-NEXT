@@ -910,8 +910,7 @@ private fun HomeContent(
         state = columnState,
         modifier =
             Modifier
-                .fillMaxSize()
-                .padding(top = 76.dp),
+                .fillMaxSize(),
         contentPadding = PaddingValues(bottom = 38.dp),
     ) {
         item {
@@ -1025,7 +1024,7 @@ internal fun TvTopNav(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(82.dp)
+                .height(74.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(
@@ -1035,7 +1034,7 @@ internal fun TvTopNav(
                         )
                     )
                 )
-                .padding(horizontal = 52.dp),
+                .padding(horizontal = 58.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1043,11 +1042,11 @@ internal fun TvTopNav(
             Text(
                 text = "VUEO",
                 color = VueoYellow,
-                fontSize = 30.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.sp,
             )
-            Spacer(Modifier.width(40.dp))
+            Spacer(Modifier.width(34.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1370,12 +1369,12 @@ private fun TvNavItem(
                 .focusable()
                 .background(
                     color = if (focused) Color.White.copy(alpha = 0.14f) else Color.Transparent,
-                    shape = RoundedCornerShape(9.dp),
+                    shape = RoundedCornerShape(12.dp),
                 )
                 .border(
                     width = 1.dp,
                     color = if (focused) Color.White else Color.Transparent,
-                    shape = RoundedCornerShape(9.dp),
+                    shape = RoundedCornerShape(12.dp),
                 )
                 .padding(horizontal = 15.dp, vertical = 9.dp),
     ) {
@@ -1405,19 +1404,28 @@ private fun Hero(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(420.dp)
+                .height(500.dp)
                 .background(VueoBlack),
     ) {
-        TvNetworkImage(
-            url = item.background ?: item.poster,
-            contentDescription = item.name,
-            contentScale = ContentScale.Crop,
-            modifier =
-                Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .fillMaxWidth(0.72f),
-        )
+        AnimatedContent(
+            targetState = item.background ?: item.poster,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                tvPlayerFadeThrough(
+                    enterDurationMillis = 320,
+                    exitDurationMillis = 150,
+                    enterDelayMillis = 18,
+                )
+            },
+            label = "homeHeroBackdrop",
+        ) { imageUrl ->
+            TvNetworkImage(
+                url = imageUrl,
+                contentDescription = item.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         Box(
             modifier =
@@ -1428,8 +1436,9 @@ private fun Hero(
                             colors =
                                 listOf(
                                     VueoBlack,
-                                    VueoBlack.copy(alpha = 0.96f),
-                                    VueoBlack.copy(alpha = 0.56f),
+                                    VueoBlack.copy(alpha = 0.94f),
+                                    VueoBlack.copy(alpha = 0.58f),
+                                    Color.Transparent,
                                     Color.Transparent,
                                 ),
                         )
@@ -1443,8 +1452,10 @@ private fun Hero(
                     .background(
                         Brush.verticalGradient(
                             listOf(
+                                VueoBlack.copy(alpha = 0.18f),
                                 Color.Transparent,
                                 Color.Transparent,
+                                VueoBlack.copy(alpha = 0.72f),
                                 VueoBlack,
                             )
                         )
@@ -1455,39 +1466,39 @@ private fun Hero(
             modifier =
                 Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 62.dp, end = 42.dp)
-                    .fillMaxWidth(0.49f),
+                    .padding(start = 64.dp, end = 44.dp, top = 42.dp)
+                    .fillMaxWidth(0.47f),
         ) {
             Text(
                 text = item.name,
                 color = Color.White,
-                fontSize = 44.sp,
+                fontSize = 48.sp,
                 fontWeight = FontWeight.Black,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = heroMeta(item),
                 color = Color.White.copy(alpha = 0.88f),
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 text =
                     item.description
                         ?: item.genres.take(3).joinToString(" • ")
                             .ifBlank { "Available from $providerName" },
                 color = VueoMuted,
-                fontSize = 16.sp,
-                lineHeight = 23.sp,
+                fontSize = 17.sp,
+                lineHeight = 24.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TvHeroButton(
                     text = if (resumeEntry != null) "▶  Resume" else "▶  Play",
@@ -1509,17 +1520,17 @@ private fun Hero(
                     onClick = onMoreInfo,
                 )
             }
-            Spacer(Modifier.height(9.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text =
                     if (resumeEntry != null) {
                         val percent = (resumeEntry.progressFraction * 100).toInt().coerceIn(1, 99)
-                        "Resume from $percent%  •  $providerName"
+                        "$percent% watched  •  $providerName"
                     } else {
-                        "Source • $providerName"
+                        providerName
                     },
                 color = VueoMuted.copy(alpha = 0.72f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
             )
         }
     }
@@ -1569,19 +1580,19 @@ private fun TvHeroButton(
                 .border(
                     width = 1.dp,
                     color = if (focused) Color.White else Color.Transparent,
-                    shape = RoundedCornerShape(9.dp),
+                    shape = RoundedCornerShape(12.dp),
                 ),
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(12.dp),
         colors =
             ButtonDefaults.buttonColors(
                 containerColor =
-                    if (primary) Color.White
-                    else Color.White.copy(alpha = if (focused) 0.20f else 0.12f),
+                    if (primary) TvAccent
+                    else Color.White.copy(alpha = if (focused) 0.22f else 0.12f),
                 contentColor = if (primary) Color.Black else Color.White,
             ),
-        contentPadding = PaddingValues(horizontal = 23.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 26.dp, vertical = 13.dp),
     ) {
-        Text(text = text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(text = text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1613,32 +1624,32 @@ private fun TvContinueWatchingRail(
         }
     }
 
-    Column(modifier = Modifier.padding(top = 10.dp)) {
+    Column(modifier = Modifier.padding(top = 6.dp)) {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 58.dp, vertical = 8.dp),
+                    .padding(horizontal = 64.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Continue Watching",
                 color = Color.White,
-                fontSize = 21.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "Your progress",
                 color = VueoMuted.copy(alpha = 0.68f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
             )
         }
 
         LazyRow(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 58.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(15.dp),
+            contentPadding = PaddingValues(horizontal = 64.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             itemsIndexed(
                 items = entries,
@@ -1700,7 +1711,7 @@ private fun TvContinueWatchingCard(
     Column(
         modifier =
             modifier
-                .width(252.dp)
+                .width(286.dp)
                 .zIndex(if (focused) 1f else 0f)
                 .scale(scale)
                 .tvVerticalFocus(
@@ -1720,7 +1731,7 @@ private fun TvContinueWatchingCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(142.dp)
+                    .height(161.dp)
                     .background(
                         VueoPanel,
                         RoundedCornerShape(12.dp),
@@ -1848,32 +1859,32 @@ private fun TvRail(
         }
     }
 
-    Column(modifier = Modifier.padding(top = 10.dp)) {
+    Column(modifier = Modifier.padding(top = 6.dp)) {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 58.dp, vertical = 8.dp),
+                    .padding(horizontal = 64.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = row.title,
                 color = Color.White,
-                fontSize = 21.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = row.providerName,
                 color = VueoMuted.copy(alpha = 0.68f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
             )
         }
 
         LazyRow(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 58.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(horizontal = 64.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             itemsIndexed(
                 items = row.items,
@@ -1939,7 +1950,7 @@ private fun TvPosterCard(
     Column(
         modifier =
             modifier
-                .width(176.dp)
+                .width(184.dp)
                 .zIndex(if (focused) 1f else 0f)
                 .scale(scale)
                 .tvVerticalFocus(
@@ -1959,7 +1970,7 @@ private fun TvPosterCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(255.dp)
+                    .height(268.dp)
                     .background(
                         color = glowColor,
                         shape = RoundedCornerShape(12.dp),
