@@ -51,6 +51,7 @@ private val AudioRowShape = RoundedCornerShape(14.dp)
 
 @Composable
 internal fun PlayerAudioWorkspace(
+    visible: Boolean,
     tracks: List<PlayerTrackChoice>,
     automaticSelected: Boolean,
     onAutomatic: () -> Unit,
@@ -59,12 +60,9 @@ internal fun PlayerAudioWorkspace(
 ) {
     val selectedTrack = tracks.firstOrNull { it.selected }
 
-    Dialog(
+    VueoMotionDialogHost(
+        visible = visible,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
         KeepAudioDialogImmersive()
         BoxWithConstraints(

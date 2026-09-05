@@ -87,6 +87,7 @@ private val SubtitleItemShape = RoundedCornerShape(13.dp)
 
 @Composable
 internal fun PlayerSubtitleWorkspace(
+    visible: Boolean,
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     preferredLanguageCode: String?,
@@ -143,12 +144,9 @@ internal fun PlayerSubtitleWorkspace(
             ).toDp()
     }
 
-    Dialog(
+    VueoMotionDialogHost(
+        visible = visible,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
         KeepSubtitleDialogImmersive()
         Box(

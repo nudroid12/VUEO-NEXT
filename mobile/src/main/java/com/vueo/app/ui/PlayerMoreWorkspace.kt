@@ -62,6 +62,7 @@ internal enum class PlayerSleepTimerOption(
 
 @Composable
 internal fun PlayerMoreWorkspace(
+    visible: Boolean,
     playbackSpeed: Float,
     videoFit: PlayerVideoFit,
     sleepTimer: PlayerSleepTimerOption,
@@ -78,12 +79,9 @@ internal fun PlayerMoreWorkspace(
     onReset: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Dialog(
+    VueoMotionDialogHost(
+        visible = visible,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
         KeepMoreWorkspaceImmersive()
         Box(

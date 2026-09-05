@@ -69,6 +69,7 @@ private val EpisodeCardShape = RoundedCornerShape(14.dp)
 
 @Composable
 internal fun PlayerEpisodesWorkspace(
+    visible: Boolean,
     seriesTitle: String,
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
@@ -115,12 +116,9 @@ internal fun PlayerEpisodesWorkspace(
         episodeListState.scrollToItem(currentIndex.coerceAtLeast(0))
     }
 
-    Dialog(
+    VueoMotionDialogHost(
+        visible = visible,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
         KeepEpisodesDialogImmersive()
         BoxWithConstraints(

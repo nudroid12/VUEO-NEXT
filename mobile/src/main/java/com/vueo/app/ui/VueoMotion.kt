@@ -1,5 +1,6 @@
 package com.vueo.app.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -9,7 +10,12 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * VUEO motion language.
@@ -123,3 +129,46 @@ internal fun vueoSoftExit(
                 easing = VueoMotion.EaseInOut,
             ),
         )
+
+/**
+ * Keeps a full-screen player workspace composed long enough for both its
+ * entrance and exit to finish. This avoids the abrupt window pop caused by
+ * wrapping Dialog() in `if (visible)`.
+ */
+@Composable
+internal fun VueoMotionDialogHost(
+    visible: Boolean,
+    onDismissRequest: () -> Unit,
+    properties: DialogProperties = DialogProperties(
+        usePlatformDefaultWidth = false,
+        decorFitsSystemWindows = false,
+    ),
+    content: @Composable () -> Unit,
+) {
+    val visibility = remember {
+        MutableTransitionState(false)
+    }
+    visibility.targetState = visible
+
+    if (visibility.currentState || visibility.targetState) {
+        Dialog(
+            onDismissRequest = onDismissRequest,
+            properties = properties,
+        ) {
+            AnimatedVisibility(
+                visibleState = visibility,
+                enter = vueoSoftEnter(
+                    durationMillis = 230,
+                    initialScale = 0.992f,
+                ),
+                exit = vueoSoftExit(
+                    durationMillis = 150,
+                    targetScale = 0.996f,
+                ),
+            ) {
+                content()
+            }
+        }
+    }
+}
+

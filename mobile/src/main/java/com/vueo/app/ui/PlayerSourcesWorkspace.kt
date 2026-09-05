@@ -59,6 +59,7 @@ private val SourceCardShape = RoundedCornerShape(14.dp)
 
 @Composable
 internal fun PlayerSourcesWorkspace(
+    visible: Boolean,
     title: String,
     sources: List<StreamSource>,
     currentSource: StreamSource,
@@ -128,12 +129,9 @@ internal fun PlayerSourcesWorkspace(
         }
     }
 
-    Dialog(
+    VueoMotionDialogHost(
+        visible = visible,
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
     ) {
         KeepSourcesDialogImmersive()
         BoxWithConstraints(

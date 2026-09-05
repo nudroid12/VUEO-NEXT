@@ -248,6 +248,7 @@ private enum class AppSurface {
     ROOT,
     CATALOG,
     DETAILS,
+    PROFILES,
 }
 
 private enum class DetailSurface {
@@ -532,47 +533,6 @@ fun VueoApp() {
         }
     }
 
-    if (
-        !booting &&
-        showProfilePicker
-    ) {
-        WhosWatchingScreen(
-            profileStore =
-                profileStore,
-            profileVersion =
-                profileVersion,
-            onProfileSelected = {
-                selectedMedia = null
-                selectedCatalogRow = null
-                selectedLibraryEntry =
-                    null
-                mediaBackStack =
-                    emptyList()
-                selectedTab =
-                    if (
-                        profilePickerOpenedFromApp
-                    ) {
-                        AppTab.SETTINGS
-                    } else {
-                        AppTab.HOME
-                    }
-                settingsPage =
-                    SettingsPage.ROOT
-                libraryVersion++
-                profileVersion++
-                showProfilePicker =
-                    false
-                profilePickerOpenedFromApp =
-                    false
-            },
-            onProfilesChanged = {
-                profileVersion++
-                libraryVersion++
-            },
-        )
-        return
-    }
-
     var transitionCatalogRow by remember {
         mutableStateOf<CatalogRow?>(null)
     }
@@ -593,6 +553,7 @@ fun VueoApp() {
 
     val appSurface =
         when {
+            !booting && showProfilePicker -> AppSurface.PROFILES
             selectedMedia != null -> AppSurface.DETAILS
             selectedCatalogRow != null -> AppSurface.CATALOG
             else -> AppSurface.ROOT
@@ -613,6 +574,34 @@ fun VueoApp() {
         label = "VUEO app surface transition",
     ) { surface ->
         when (surface) {
+            AppSurface.PROFILES -> {
+                WhosWatchingScreen(
+                    profileStore = profileStore,
+                    profileVersion = profileVersion,
+                    onProfileSelected = {
+                        selectedMedia = null
+                        selectedCatalogRow = null
+                        selectedLibraryEntry = null
+                        mediaBackStack = emptyList()
+                        selectedTab =
+                            if (profilePickerOpenedFromApp) {
+                                AppTab.SETTINGS
+                            } else {
+                                AppTab.HOME
+                            }
+                        settingsPage = SettingsPage.ROOT
+                        libraryVersion++
+                        profileVersion++
+                        showProfilePicker = false
+                        profilePickerOpenedFromApp = false
+                    },
+                    onProfilesChanged = {
+                        profileVersion++
+                        libraryVersion++
+                    },
+                )
+            }
+
             AppSurface.CATALOG -> {
                 transitionCatalogRow?.let { row ->
                     CatalogSeeAllScreen(
@@ -15166,8 +15155,8 @@ private fun PlayerScreen(
         )
     }
 
-    if (showAudioDialog) {
-        PlayerAudioWorkspace(
+    PlayerAudioWorkspace(
+            visible = showAudioDialog,
             tracks = audioTracks,
             automaticSelected = audioAutomaticSelected,
             onAutomatic = {
@@ -15198,10 +15187,9 @@ private fun PlayerScreen(
                 showAudioDialog = false
             },
         )
-    }
 
-    if (showSubtitleDialog) {
-        PlayerSubtitleWorkspace(
+    PlayerSubtitleWorkspace(
+            visible = showSubtitleDialog,
             tracks = textTracks,
             subtitlesDisabled = subtitlesDisabled,
             preferredLanguageCode =
@@ -15289,7 +15277,6 @@ private fun PlayerScreen(
                 controlsVisible = true
             },
         )
-    }
 
     if (showSubtitleStyleOverlay) {
         PlayerSubtitleStyleOverlay(
@@ -15321,8 +15308,8 @@ private fun PlayerScreen(
         )
     }
 
-    if (showSourceDialog) {
-        PlayerSourcesWorkspace(
+    PlayerSourcesWorkspace(
+            visible = showSourceDialog,
             title = episode?.let {
                 "S${it.season} E${it.episode} • ${it.title}"
             } ?: title,
@@ -15347,10 +15334,8 @@ private fun PlayerScreen(
                 switchingSourceUrl = null
             },
         )
-    }
 
-    if (showEpisodeDialog) {
-        val episodeHistory = libraryStore.history()
+    val episodeHistory = libraryStore.history()
             .filter { entry ->
                 entry.media.type == media.type &&
                     entry.media.id == media.id
@@ -15390,7 +15375,8 @@ private fun PlayerScreen(
             )
         }
 
-        PlayerEpisodesWorkspace(
+    PlayerEpisodesWorkspace(
+            visible = showEpisodeDialog,
             seriesTitle = media.name,
             episodes = episodes,
             currentEpisode = episode,
@@ -15408,10 +15394,9 @@ private fun PlayerScreen(
             },
             onDismiss = { showEpisodeDialog = false },
         )
-    }
 
-    if (showMoreDialog) {
-        PlayerMoreWorkspace(
+    PlayerMoreWorkspace(
+            visible = showMoreDialog,
             playbackSpeed = playbackSpeed,
             videoFit = videoFit,
             sleepTimer = sleepTimerOption,
@@ -15483,7 +15468,6 @@ private fun PlayerScreen(
             },
             onDismiss = { showMoreDialog = false },
         )
-    }
 
     Box(
         modifier =
@@ -16019,12 +16003,28 @@ private fun PlayerScreen(
             val nextEpisodeCardEpisode =
                 nextEpisodeCardSwitchTarget
                     ?: nextEpisode
-            if (
-                nextEpisodeCardEpisode != null &&
-                nextEpisodeCardVisible
+            AnimatedVisibility(
+                visible =
+                    nextEpisodeCardEpisode != null &&
+                        nextEpisodeCardVisible,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = 24.dp,
+                        bottom = 126.dp,
+                    ),
+                enter = vueoSoftEnter(
+                    durationMillis = 240,
+                    initialScale = 0.975f,
+                ),
+                exit = vueoSoftExit(
+                    durationMillis = 150,
+                    targetScale = 0.99f,
+                ),
             ) {
+                nextEpisodeCardEpisode?.let { cardEpisode ->
                 PlayerNextEpisodeCard(
-                    episode = nextEpisodeCardEpisode,
+                    episode = cardEpisode,
                     countdownSeconds =
                         nextEpisodeCountdown,
                     switching =
@@ -16042,19 +16042,15 @@ private fun PlayerScreen(
                             nextEpisodeCountdown = null
                             savePosition()
                             onEpisodeSelected(
-                                nextEpisodeCardEpisode
+                                cardEpisode
                             )
                         } else {
                             startNextEpisode()
                         }
                     },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(
-                            end = 24.dp,
-                            bottom = 126.dp,
-                        ),
+                    modifier = Modifier,
                 )
+                }
             }
 
             Column(
@@ -16303,25 +16299,34 @@ private fun PlayerScreen(
             }
         }
 
-        gestureMessage?.let { message ->
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(20.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(
-                    alpha = .74f
-                ),
-            ) {
-                Text(
-                    message,
-                    modifier = Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = 12.dp,
-                    ),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
+        AnimatedContent(
+            targetState = gestureMessage,
+            transitionSpec = {
+                vueoPlayerFadeThrough(
+                    enterDurationMillis = 170,
+                    exitDurationMillis = 120,
+                    enterDelayMillis = 0,
                 )
+            },
+            modifier = Modifier.align(Alignment.Center),
+            label = "VUEO player gesture feedback",
+        ) { message ->
+            if (message != null) {
+                Surface(
+                    modifier = Modifier.padding(20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = .74f),
+                ) {
+                    Text(
+                        message,
+                        modifier = Modifier.padding(
+                            horizontal = 18.dp,
+                            vertical = 12.dp,
+                        ),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
