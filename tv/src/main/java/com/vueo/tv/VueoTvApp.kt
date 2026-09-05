@@ -73,6 +73,7 @@ import com.vueo.tv.data.TvMediaItem
 import com.vueo.tv.detail.TvDetailRepository
 import com.vueo.tv.detail.TvDetailScreen
 import com.vueo.tv.library.TvLibraryScreen
+import com.vueo.tv.home.TvHomeScreenV2
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackRequest
 import com.vueo.tv.player.TvPlaybackStore
@@ -320,10 +321,11 @@ fun VueoTvApp() {
                         }
 
                     TvRootScreen.HOME ->
-                        VueoTvHome(
+                        TvHomeScreenV2(
                             focusRestoreToken = homeFocusRestoreToken,
                             onNavigate = navigate,
                             libraryStore = libraryStore,
+                            profileStore = profileStore,
                             onOpenMedia = { media ->
                                 detailHistory = emptyList()
                                 detailMedia = media
@@ -355,6 +357,7 @@ fun VueoTvApp() {
                                 selectedSubtitles = emptyList()
                                 currentScreen = TvRootScreen.SOURCE_PICKER
                             },
+                            onExitApp = { context.findActivity()?.finish() },
                         )
 
                     TvRootScreen.SEARCH ->
