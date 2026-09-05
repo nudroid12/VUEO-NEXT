@@ -103,12 +103,61 @@ internal class PluginWebViewResolver(
             var finishScheduled = false
             var destroyed = false
 
+            fun finalizedPlaybackHeaders(
+                stream: CapturedStream,
+            ): Map<String, String> {
+                val headers = stream.headers
+                    .filterKeys { key ->
+                        key.lowercase() !in BLOCKED_PLAYBACK_HEADERS
+                    }
+                    .toMutableMap()
+
+                val refreshedCookie = runCatching {
+                    CookieManager.getInstance().getCookie(stream.url)
+                }.getOrNull().orEmpty()
+
+                if (refreshedCookie.isNotBlank()) {
+                    headers["Cookie"] = refreshedCookie
+                }
+
+                /*
+                 * Cloudstream's MSM21 ExtractorLink explicitly uses the mirror
+                 * URL as playback referer. Do the same here instead of trusting
+                 * the iframe's transient request Referer.
+                 */
+                headers["User-Agent"] =
+                    headers["User-Agent"] ?: request.userAgent
+                headers["Accept"] =
+                    headers["Accept"] ?: "*/*"
+                headers["Referer"] = request.url
+
+                return headers
+            }
+
+            fun transportScore(url: String): Int {
+                val value = url.lowercase()
+                return when {
+                    value.contains(".m3u8") -> 30
+                    value.contains(".mp4") -> 20
+                    value.contains(".m4v") -> 20
+                    value.contains("/sora/") -> 10
+                    else -> 0
+                }
+            }
+
             fun sortedResult(): List<CapturedStream> =
                 synchronized(streams) {
                     streams.values
                         .distinctBy { it.url }
+                        .map { stream ->
+                            stream.copy(
+                                headers = finalizedPlaybackHeaders(stream),
+                            )
+                        }
                         .sortedWith(
                             compareByDescending<CapturedStream> {
+                                transportScore(it.url)
+                            }.thenByDescending {
                                 qualityScore(it.label, it.url)
                             }.thenBy { it.label }
                         )
@@ -222,6 +271,349 @@ internal class PluginWebViewResolver(
             fun clickWebView() {
                 if (streams.isNotEmpty()) return
 
+                if (request.directLoad) {
+                    runCatching {
+                        val interactionTextsJson =
+                            JSONArray(request.interactionTexts).toString()
+                        val searchTextJson =
+                            JSONObject.quote(request.searchText)
+
+                        webView.evaluateJavascript(
+                            """
+                            (function() {
+                              try {
+                                var wanted = $interactionTextsJson;
+                                var searchText = $searchTextJson;
+
+                                function norm(value) {
+                                  return String(value || '')
+                                    .toLowerCase()
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
+                                }
+
+                                function visible(el) {
+                                  if (!el) return false;
+                                  var style = window.getComputedStyle(el);
+                                  if (!style) return true;
+                                  if (
+                                    style.display === 'none' ||
+                                    style.visibility === 'hidden' ||
+                                    Number(style.opacity || '1') === 0
+                                  ) return false;
+                                  var rect = el.getBoundingClientRect();
+                                  return rect.width > 0 && rect.height > 0;
+                                }
+
+                                function descriptor(el) {
+                                  return norm(
+                                    (el.innerText || el.textContent || '') + ' ' +
+                                    (el.getAttribute('aria-label') || '') + ' ' +
+                                    (el.getAttribute('title') || '') + ' ' +
+                                    (el.getAttribute('placeholder') || '') + ' ' +
+                                    (el.className || '')
+                                  );
+                                }
+
+                                function clickElement(el) {
+                                  if (!el) return false;
+                                  try {
+                                    el.scrollIntoView({
+                                      block: 'center',
+                                      inline: 'center'
+                                    });
+                                  } catch(e) {}
+
+                                  try {
+                                    el.dispatchEvent(
+                                      new MouseEvent('mousedown', {
+                                        bubbles: true,
+                                        cancelable: true,
+                                        view: window
+                                      })
+                                    );
+                                    el.dispatchEvent(
+                                      new MouseEvent('mouseup', {
+                                        bubbles: true,
+                                        cancelable: true,
+                                        view: window
+                                      })
+                                    );
+                                    el.click();
+                                    return true;
+                                  } catch(e) {
+                                    return false;
+                                  }
+                                }
+
+                                function setInputValue(input, value) {
+                                  if (!input) return false;
+
+                                  try {
+                                    var proto =
+                                      input.tagName &&
+                                      input.tagName.toLowerCase() === 'textarea'
+                                        ? window.HTMLTextAreaElement.prototype
+                                        : window.HTMLInputElement.prototype;
+
+                                    var descriptor =
+                                      Object.getOwnPropertyDescriptor(
+                                        proto,
+                                        'value'
+                                      );
+
+                                    if (descriptor && descriptor.set) {
+                                      descriptor.set.call(input, value);
+                                    } else {
+                                      input.value = value;
+                                    }
+
+                                    input.dispatchEvent(
+                                      new Event('input', {
+                                        bubbles: true
+                                      })
+                                    );
+                                    input.dispatchEvent(
+                                      new Event('change', {
+                                        bubbles: true
+                                      })
+                                    );
+                                    input.dispatchEvent(
+                                      new KeyboardEvent('keydown', {
+                                        key: 'Enter',
+                                        code: 'Enter',
+                                        keyCode: 13,
+                                        which: 13,
+                                        bubbles: true
+                                      })
+                                    );
+                                    input.dispatchEvent(
+                                      new KeyboardEvent('keyup', {
+                                        key: 'Enter',
+                                        code: 'Enter',
+                                        keyCode: 13,
+                                        which: 13,
+                                        bubbles: true
+                                      })
+                                    );
+
+                                    if (input.form) {
+                                      try {
+                                        if (input.form.requestSubmit) {
+                                          input.form.requestSubmit();
+                                        }
+                                      } catch(e) {}
+                                    }
+
+                                    return true;
+                                  } catch(e) {
+                                    return false;
+                                  }
+                                }
+
+                                var searchNorm = norm(searchText);
+
+                                /*
+                                 * Stage 1:
+                                 * If a card/link for the requested title is already
+                                 * visible, click it directly. This also handles search
+                                 * results rendered after a previous interaction tick.
+                                 */
+                                if (searchNorm) {
+                                  var titleLinks =
+                                    document.querySelectorAll(
+                                      'a[href],button,[role="button"]'
+                                    );
+
+                                  for (
+                                    var t = 0;
+                                    t < titleLinks.length;
+                                    t++
+                                  ) {
+                                    var titleEl = titleLinks[t];
+                                    if (!visible(titleEl)) continue;
+
+                                    var titleDesc = descriptor(titleEl);
+                                    if (
+                                      titleDesc &&
+                                      titleDesc.indexOf(searchNorm) !== -1
+                                    ) {
+                                      if (clickElement(titleEl)) {
+                                        return 'title-click';
+                                      }
+                                    }
+                                  }
+                                }
+
+                                /*
+                                 * Stage 2:
+                                 * Open CineMode's search UI if it is collapsed.
+                                 */
+                                if (searchNorm) {
+                                  var searchButtons =
+                                    document.querySelectorAll(
+                                      'button,a,[role="button"]'
+                                    );
+
+                                  for (
+                                    var s = 0;
+                                    s < searchButtons.length;
+                                    s++
+                                  ) {
+                                    var searchButton = searchButtons[s];
+                                    if (!visible(searchButton)) continue;
+
+                                    var searchDesc =
+                                      descriptor(searchButton);
+
+                                    if (
+                                      searchDesc === 'search' ||
+                                      searchDesc.indexOf(' search ') !== -1 ||
+                                      searchDesc.indexOf('search button') !== -1 ||
+                                      searchDesc.indexOf('open search') !== -1
+                                    ) {
+                                      clickElement(searchButton);
+                                      break;
+                                    }
+                                  }
+
+                                  /*
+                                   * Stage 3:
+                                   * Fill any available search input. React controlled
+                                   * inputs need the native value setter plus input and
+                                   * change events.
+                                   */
+                                  var searchInputs =
+                                    document.querySelectorAll(
+                                      'input[type="search"],' +
+                                      'input[placeholder*="search" i],' +
+                                      'input[aria-label*="search" i],' +
+                                      'input[name*="search" i],' +
+                                      'input[name="q"]'
+                                    );
+
+                                  for (
+                                    var q = 0;
+                                    q < searchInputs.length;
+                                    q++
+                                  ) {
+                                    var input = searchInputs[q];
+                                    if (!visible(input)) continue;
+
+                                    var current = norm(input.value);
+                                    if (current !== searchNorm) {
+                                      setInputValue(input, searchText);
+                                      return 'search-fill';
+                                    }
+                                  }
+                                }
+
+                                /*
+                                 * Stage 4:
+                                 * Once on the detail/player page, interact with Watch,
+                                 * Play, Continue, Skip and Close controls.
+                                 */
+                                var nodes = Array.prototype.slice.call(
+                                  document.querySelectorAll(
+                                    'button,a,[role="button"],' +
+                                    '[class*="play" i],[class*="watch" i],' +
+                                    '[class*="skip" i],[class*="close" i]'
+                                  )
+                                );
+
+                                var best = null;
+                                var bestScore = 9999;
+
+                                for (
+                                  var n = 0;
+                                  n < nodes.length;
+                                  n++
+                                ) {
+                                  var el = nodes[n];
+                                  if (!visible(el)) continue;
+
+                                  var desc = descriptor(el);
+                                  if (!desc) continue;
+
+                                  for (
+                                    var i = 0;
+                                    i < wanted.length;
+                                    i++
+                                  ) {
+                                    var needle = norm(wanted[i]);
+                                    if (!needle) continue;
+
+                                    if (
+                                      desc === needle ||
+                                      desc.indexOf(needle) !== -1
+                                    ) {
+                                      if (i < bestScore) {
+                                        best = el;
+                                        bestScore = i;
+                                      }
+                                      break;
+                                    }
+                                  }
+                                }
+
+                                if (best) {
+                                  clickElement(best);
+                                }
+
+                                var videos =
+                                  document.querySelectorAll('video');
+
+                                for (
+                                  var v = 0;
+                                  v < videos.length;
+                                  v++
+                                ) {
+                                  try {
+                                    videos[v].muted = true;
+                                    videos[v].playsInline = true;
+
+                                    var p = videos[v].play();
+                                    if (p && p.catch) {
+                                      p.catch(function(){});
+                                    }
+                                  } catch(e) {}
+                                }
+
+                                var common = [
+                                  '.vjs-big-play-button',
+                                  '.jw-icon-display',
+                                  'button[aria-label*="play" i]',
+                                  '[data-testid*="play" i]'
+                                ];
+
+                                for (
+                                  var c = 0;
+                                  c < common.length;
+                                  c++
+                                ) {
+                                  var control =
+                                    document.querySelector(common[c]);
+
+                                  if (
+                                    !control ||
+                                    !visible(control)
+                                  ) continue;
+
+                                  clickElement(control);
+                                  break;
+                                }
+
+                                return 'interaction';
+                              } catch(e) {
+                                return 'interaction-error';
+                              }
+                            })();
+                            """.trimIndent(),
+                            null,
+                        )
+                    }
+                }
+
                 runCatching {
                     val now = SystemClock.uptimeMillis()
                     val x = request.clickX
@@ -293,11 +685,15 @@ internal class PluginWebViewResolver(
                     domStorageEnabled = true
                     mediaPlaybackRequiresUserGesture = false
                     loadsImagesAutomatically = true
-                    javaScriptCanOpenWindowsAutomatically = true
+                    javaScriptCanOpenWindowsAutomatically = !request.suppressPopups
                     setSupportMultipleWindows(false)
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     userAgentString = request.userAgent
                 }
+
+                val targetHost = runCatching {
+                    URI(request.url).host.orEmpty().lowercase()
+                }.getOrDefault("")
 
                 webView.webChromeClient = WebChromeClient()
                 webView.webViewClient = object : WebViewClient() {
@@ -310,7 +706,16 @@ internal class PluginWebViewResolver(
                     override fun onPageFinished(
                         view: WebView?,
                         url: String?,
-                    ) = Unit
+                    ) {
+                        if (!request.directLoad) return
+
+                        runCatching {
+                            val hookScript = HOOK_JS
+                                .substringAfter("<script>")
+                                .substringBeforeLast("</script>")
+                            view?.evaluateJavascript(hookScript, null)
+                        }
+                    }
 
                     override fun shouldInterceptRequest(
                         view: WebView?,
@@ -347,12 +752,31 @@ internal class PluginWebViewResolver(
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         url: String?,
-                    ): Boolean = false
+                    ): Boolean {
+                        if (!request.lockMainFrameHost) return false
+                        val host = runCatching {
+                            URI(url.orEmpty()).host.orEmpty().lowercase()
+                        }.getOrDefault("")
+                        return targetHost.isNotBlank() &&
+                            host.isNotBlank() &&
+                            host != targetHost
+                    }
 
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
-                        request: WebResourceRequest?,
-                    ): Boolean = false
+                        webRequest: WebResourceRequest?,
+                    ): Boolean {
+                        if (!request.lockMainFrameHost) return false
+                        if (webRequest?.isForMainFrame != true) return false
+
+                        val host = runCatching {
+                            webRequest.url?.host.orEmpty().lowercase()
+                        }.getOrDefault("")
+
+                        return targetHost.isNotBlank() &&
+                            host.isNotBlank() &&
+                            host != targetHost
+                    }
                 }
 
                 val wrapper = """
@@ -383,13 +807,21 @@ internal class PluginWebViewResolver(
                     </html>
                 """.trimIndent()
 
-                webView.loadDataWithBaseURL(
-                    request.referer.ifBlank { request.url },
-                    wrapper,
-                    "text/html",
-                    "UTF-8",
-                    null,
-                )
+                if (request.directLoad) {
+                    val initialHeaders = mutableMapOf<String, String>()
+                    if (request.referer.isNotBlank()) {
+                        initialHeaders["Referer"] = request.referer
+                    }
+                    webView.loadUrl(request.url, initialHeaders)
+                } else {
+                    webView.loadDataWithBaseURL(
+                        request.referer.ifBlank { request.url },
+                        wrapper,
+                        "text/html",
+                        "UTF-8",
+                        null,
+                    )
+                }
 
                 request.clickDelaysMs.forEach { clickDelay ->
                     if (clickDelay < request.timeoutMs) {
@@ -428,6 +860,11 @@ internal class PluginWebViewResolver(
         val blockedParts: List<String>,
         val userAgent: String,
         val injectAbyssHook: Boolean,
+        val directLoad: Boolean,
+        val interactionTexts: List<String>,
+        val searchText: String,
+        val suppressPopups: Boolean,
+        val lockMainFrameHost: Boolean,
         val viewportWidth: Int,
         val viewportHeight: Int,
         val clickX: Float,
@@ -495,6 +932,14 @@ internal class PluginWebViewResolver(
                         .trim()
                         .ifBlank { DEFAULT_USER_AGENT },
                     injectAbyssHook = json.optBoolean("injectAbyssHook", true),
+                    directLoad = json.optBoolean("directLoad", false),
+                    interactionTexts = json.optJSONArray("interactionTexts")
+                        .toVueoStringList()
+                        .map { it.lowercase() }
+                        .ifEmpty { DEFAULT_INTERACTION_TEXTS },
+                    searchText = json.optString("searchText").trim(),
+                    suppressPopups = json.optBoolean("suppressPopups", false),
+                    lockMainFrameHost = json.optBoolean("lockMainFrameHost", false),
                     viewportWidth = viewportWidth,
                     viewportHeight = viewportHeight,
                     clickX = json.optDouble("clickX", viewportWidth / 2.0)
@@ -634,6 +1079,19 @@ internal class PluginWebViewResolver(
             12_000L,
         )
 
+        private val DEFAULT_INTERACTION_TEXTS = listOf(
+            "watch now",
+            "start watching",
+            "watch",
+            "play now",
+            "play",
+            "continue",
+            "skip ad",
+            "skip",
+            "close ad",
+            "close",
+        )
+
         private val DEFAULT_MATCH_PARTS = listOf(
             "/sora/",
             ".m3u8",
@@ -651,6 +1109,14 @@ internal class PluginWebViewResolver(
             "decafeligiblyhad",
             "algiersreests",
             "morestamping",
+        )
+
+        private val BLOCKED_PLAYBACK_HEADERS = setOf(
+            "host",
+            "connection",
+            "accept-encoding",
+            "range",
+            "origin",
         )
 
         private const val HOOK_JS = """
