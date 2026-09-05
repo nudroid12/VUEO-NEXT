@@ -6,8 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,6 +74,9 @@ import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.tv.library.TvLibraryStore
 import com.vueo.tv.player.TvPlaybackStore
+import com.vueo.tv.ui.motion.TvMotion
+import com.vueo.tv.ui.motion.tvPanelEnter
+import com.vueo.tv.ui.motion.tvPanelExit
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.delay
 
@@ -194,8 +195,8 @@ fun TvProfileDnaPanel(
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = fadeIn(animationSpec = tween(160)),
-            exit = fadeOut(animationSpec = tween(180)),
+            enter = fadeIn(animationSpec = tween(TvMotion.STANDARD_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(animationSpec = tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(
@@ -208,8 +209,8 @@ fun TvProfileDnaPanel(
 
         AnimatedVisibility(
             visible = visible,
-            enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(190)),
-            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(190)),
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
             modifier =
                 Modifier
                     .align(Alignment.CenterEnd)

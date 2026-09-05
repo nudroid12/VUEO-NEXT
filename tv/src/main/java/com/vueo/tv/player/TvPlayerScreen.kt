@@ -110,6 +110,7 @@ import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.SettingsStore
 import com.vueo.shared.core.storage.SubtitleSize
 import java.util.concurrent.TimeUnit
+import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.theme.TvAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -846,8 +847,18 @@ fun TvPlayerScreen(
 
         AnimatedVisibility(
             visible = controlsVisible && !controlsLocked && sidePanel == null && sources.isNotEmpty(),
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = TvMotion.EaseOut,
+                ),
+            ),
+            exit = fadeOut(
+                animationSpec = tween(
+                    durationMillis = TvMotion.QUICK_MS,
+                    easing = TvMotion.EaseInOut,
+                ),
+            ),
             modifier = Modifier.fillMaxSize(),
         ) {
             PlayerControls(

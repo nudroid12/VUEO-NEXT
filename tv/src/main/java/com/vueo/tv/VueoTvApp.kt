@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -95,6 +96,9 @@ import com.vueo.tv.ui.focus.TvFocusMemory
 import com.vueo.tv.ui.focus.TvFocusZone
 import com.vueo.tv.ui.focus.tvHorizontalEdgeGuard
 import com.vueo.tv.ui.focus.tvVerticalFocus
+import com.vueo.tv.ui.motion.tvImmediateCut
+import com.vueo.tv.ui.motion.tvPlayerFadeThrough
+import com.vueo.tv.ui.motion.tvScreenFadeThrough
 import com.vueo.tv.ui.theme.LocalTvAccent
 import com.vueo.tv.update.VueoTvUpdateManager
 import com.vueo.tv.update.VueoTvUpdateRelease
@@ -129,6 +133,14 @@ private enum class TvRootScreen {
     SOURCE_PICKER,
     PLAYER,
 }
+
+private fun TvRootScreen.isTopLevelBrowse(): Boolean =
+    this == TvRootScreen.HOME ||
+        this == TvRootScreen.SEARCH ||
+        this == TvRootScreen.LIBRARY ||
+        this == TvRootScreen.MOVIE ||
+        this == TvRootScreen.SERIES ||
+        this == TvRootScreen.ANIME
 
 @Composable
 fun VueoTvApp() {
@@ -272,7 +284,22 @@ fun VueoTvApp() {
                 color = VueoBlack,
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                when (currentScreen) {
+                AnimatedContent(
+                    targetState = currentScreen,
+                    transitionSpec = {
+                        when {
+                            initialState.isTopLevelBrowse() && targetState.isTopLevelBrowse() ->
+                                tvImmediateCut()
+
+                            initialState == TvRootScreen.PLAYER || targetState == TvRootScreen.PLAYER ->
+                                tvPlayerFadeThrough()
+
+                            else -> tvScreenFadeThrough()
+                        }
+                    },
+                    label = "tvRootScreen",
+                ) { screen ->
+                when (screen) {
                     TvRootScreen.HOME ->
                         VueoTvHome(
                             focusRestoreToken = homeFocusRestoreToken,
@@ -341,7 +368,7 @@ fun VueoTvApp() {
                     TvRootScreen.SERIES,
                     TvRootScreen.ANIME -> {
                         val kind =
-                            when (currentScreen) {
+                            when (screen) {
                                 TvRootScreen.MOVIE -> TvBrowseKind.MOVIE
                                 TvRootScreen.SERIES -> TvBrowseKind.SERIES
                                 else -> TvBrowseKind.ANIME
@@ -353,7 +380,7 @@ fun VueoTvApp() {
                             onOpenMedia = { media ->
                                 detailHistory = emptyList()
                                 detailMedia = media
-                                detailReturnScreen = currentScreen
+                                detailReturnScreen = screen
                                 currentScreen = TvRootScreen.DETAIL
                             },
                         )
@@ -536,6 +563,7 @@ fun VueoTvApp() {
                             )
                         }
                     }
+                }
                 }
 
                 TvProfileDnaPanel(
