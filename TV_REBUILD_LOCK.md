@@ -1,0 +1,71 @@
+# VUEO TV Rebuild Lock
+
+Baseline: **29A-R1 clean cutover**.
+
+## Product DNA
+
+- Premium
+- Cinematic
+- Fluid
+- 60fps-first
+
+A screen is not accepted only because it looks good in a screenshot. It must feel immediate and predictable under a remote.
+
+## Architecture lock
+
+- Compiled TV Kotlin lives in `tv/src/main/rebuild`.
+- `tv/src/main/java` is legacy history and is excluded from the build.
+- New TV must never depend on `:mobile`.
+- Mobile is a behavioural reference. Shared Core is the reusable logic layer.
+- Do not bring legacy TV repositories, root navigation, focus memory, TV-only library/playback stores or source wrappers into the rebuild.
+
+## Explicit preservation exception
+
+Keep the approved existing experience for:
+
+- Who's Watching
+- Manage Profiles
+- Add Profile / Edit Profile
+- Profile PIN/editor behaviour
+
+Everything after profile selection belongs to the rebuilt TV runtime.
+
+## Home lock
+
+- Top contextual navigation: Home / Search / Library / Settings.
+- Small persistent VUEO brand anchor.
+- Hero + Peeking Row composition.
+- Hero is presentation-only and never receives focus.
+- Initial focus: first Continue Watching item; fallback first item in the first available row.
+- Focused card drives the hero after a short ~180 ms settle delay.
+- UP from first row reveals top navigation.
+- DOWN restores the last content focus.
+- OK on a card opens Details directly.
+- No hero auto-rotation.
+- No carousel dots.
+- No excessive parallax or decorative motion.
+
+## Motion lock
+
+Home motion is intentionally small:
+
+1. Immediate card focus with shallow scale/depth.
+2. Smooth hero fade-through after focus settles.
+3. Contextual navigation reveal/recede.
+
+**Input fast. Visuals smooth. Navigation obvious.**
+
+## Data/runtime direction
+
+The new TV runtime adapts Mobile-proven behaviour using Shared Core:
+
+- startup/profile gate via `ProfileStore`
+- Home discovery via `UnifiedMediaEngine`
+- catalog order + per-catalog enabled state using Mobile `AddonStore` semantics
+- My List / Continue Watching via `LibraryStore`
+- playback position via `PlaybackStore`
+- settings via `SettingsStore`
+- addon + provider source discovery through Shared Core runtime
+- source cleanup/ranking through Shared Core
+
+Do not redesign these behaviours merely because the TV UI is new.

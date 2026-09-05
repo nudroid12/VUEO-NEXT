@@ -67,6 +67,16 @@ android {
         compose = true
     }
 
+    // 29A-R clean cutover: compile only the rebuilt TV runtime.
+    // Legacy TV Kotlin sources under src/main/java remain in the repository
+    // temporarily for history, but they are intentionally excluded from the
+    // application build and have no runtime effect.
+    sourceSets {
+        getByName("main") {
+            java.setSrcDirs(listOf("src/main/rebuild"))
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

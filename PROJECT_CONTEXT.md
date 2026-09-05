@@ -599,7 +599,3 @@ Mobile v1 is now feature-locked while the TV rebuild proceeds. Use `MOBILE_REGRE
 
 `Ask on startup` is literal: when enabled, Who's Watching is the startup destination regardless of the number of profiles. A locked active profile also forces the picker.
 
-
-## TV 29A — Experience Foundation
-
-TV Home direction was reset from zero and locked around Premium / Cinematic / Fluid. The new Home entry point is `TvHomeExperienceFoundation.kt` with Hero + Peeking Row, contextual top navigation, small VUEO/profile anchors, content-first initial focus, card-driven hero with a 180 ms settle delay, neutral focus depth, and direct card -> Details behavior. Hero buttons, auto-rotation, carousel dots and decorative parallax are intentionally excluded. See `TV_DESIGN_BIBLE.md`.
