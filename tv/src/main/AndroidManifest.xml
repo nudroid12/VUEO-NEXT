@@ -13,8 +13,6 @@
     <application
         android:allowBackup="true"
         android:banner="@drawable/vueo_tv_banner"
-        android:icon="@drawable/ic_vueo_tv"
-        android:label="VUEO TV"
         android:logo="@drawable/vueo_tv_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.VUEOTV">
