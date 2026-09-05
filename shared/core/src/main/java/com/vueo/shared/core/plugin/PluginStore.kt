@@ -268,6 +268,7 @@ private fun PluginProviderDescriptor.toJson(): JSONObject =
             "supportsExternalPlayer",
             supportsExternalPlayer,
         )
+        put("runtimeTimeoutMs", runtimeTimeoutMs)
     }
 
 private fun JSONObject.toRepository():
@@ -362,6 +363,11 @@ private fun JSONObject.toStoredProvider():
                 "supportsExternalPlayer",
                 true,
             ),
+        runtimeTimeoutMs =
+            optLong(
+                "runtimeTimeoutMs",
+                10_000L,
+            ).coerceIn(3_000L, 20_000L),
     )
 }
 

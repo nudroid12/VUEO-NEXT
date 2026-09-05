@@ -67,6 +67,11 @@ class PluginSourceEngine(
 ) {
     private val concurrency = Semaphore(5)
 
+    private val webViewResolver =
+        PluginWebViewResolver(
+            context.applicationContext
+        )
+
     private val healthStore =
         PluginHealthStore(
             context.applicationContext
@@ -474,9 +479,12 @@ private fun providerPriority(
         val started =
             System.nanoTime()
 
+        val providerTimeoutMs =
+            providerRuntimeTimeoutMs(provider)
+
         val execution =
             withTimeoutOrNull(
-                PROVIDER_TIMEOUT_MS
+                providerTimeoutMs
             ) {
                 runCatching {
                     executeProvider(
@@ -512,7 +520,7 @@ private fun providerPriority(
                         emptyList(),
                     error =
                         "Timed out after " +
-                        "${PROVIDER_TIMEOUT_MS / 1000}s",
+                        "${providerTimeoutMs / 1000}s",
                     logs =
                         emptyList(),
                 )
@@ -636,11 +644,14 @@ private fun providerPriority(
         val logs =
             CopyOnWriteArrayList<String>()
 
+        val providerTimeoutMs =
+            providerRuntimeTimeoutMs(provider)
+
         return try {
             val resultJson =
                 quickJs {
                     evaluationTimeoutMillis =
-                        PROVIDER_TIMEOUT_MS
+                        providerTimeoutMs
 
                     define("console") {
                         function("log") { args ->
@@ -688,6 +699,14 @@ private fun providerPriority(
                         "__vueoNativeFetch"
                     ) { requestJson ->
                         PluginHttp.executeJson(
+                            requestJson
+                        )
+                    }
+
+                    asyncFunction<String, String>(
+                        "__vueoWebViewResolve"
+                    ) { requestJson ->
+                        webViewResolver.resolveJson(
                             requestJson
                         )
                     }
@@ -897,6 +916,37 @@ private fun providerPriority(
               }
               return normalized;
             }
+
+            globalThis.webviewResolve = async function (input, options) {
+              options = options || {};
+
+              var request = {};
+              if (input && typeof input === "object") {
+                Object.keys(input).forEach(function (key) {
+                  request[key] = input[key];
+                });
+              } else {
+                request.url = String(input || "");
+              }
+
+              Object.keys(options).forEach(function (key) {
+                request[key] = options[key];
+              });
+
+              var raw = await __vueoWebViewResolve(
+                JSON.stringify(request)
+              );
+              var result = JSON.parse(raw);
+
+              if (result.error) {
+                throw new Error(result.error);
+              }
+
+              return result;
+            };
+
+            globalThis.webViewResolve =
+              globalThis.webviewResolve;
 
             globalThis.fetch = async function (input, init) {
               init = init || {};
@@ -2904,9 +2954,20 @@ private fun providerPriority(
         val diagnostic: ProviderDiagnostic,
     )
 
+    private fun providerRuntimeTimeoutMs(
+        provider: PluginProviderDescriptor,
+    ): Long =
+        provider.runtimeTimeoutMs.coerceIn(
+            MIN_PROVIDER_TIMEOUT_MS,
+            MAX_PROVIDER_TIMEOUT_MS,
+        )
+
     companion object {
-        private const val PROVIDER_TIMEOUT_MS =
-            10_000L
+        private const val MIN_PROVIDER_TIMEOUT_MS =
+            3_000L
+
+        private const val MAX_PROVIDER_TIMEOUT_MS =
+            20_000L
 
         private const val SLOW_THRESHOLD_MS =
             3_000L

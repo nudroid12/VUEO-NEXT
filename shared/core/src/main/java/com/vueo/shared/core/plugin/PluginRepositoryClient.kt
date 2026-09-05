@@ -143,6 +143,11 @@ object PluginRepositoryClient {
                     "supportsExternalPlayer",
                     true,
                 ),
+            runtimeTimeoutMs =
+                optLong(
+                    "runtimeTimeoutMs",
+                    10_000L,
+                ).coerceIn(3_000L, 20_000L),
         )
     }
 

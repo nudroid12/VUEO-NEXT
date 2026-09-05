@@ -15,6 +15,7 @@ data class PluginProviderDescriptor(
     val limited: Boolean = false,
     val disabledPlatforms: Set<String> = emptySet(),
     val supportsExternalPlayer: Boolean = true,
+    val runtimeTimeoutMs: Long = 10_000L,
 )
 
 data class PluginRepositoryDescriptor(
