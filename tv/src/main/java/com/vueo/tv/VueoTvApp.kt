@@ -122,6 +122,7 @@ internal val TV_TOP_NAV_LABELS =
     listOf("Search", "Library", "Home", "Movie", "Series", "Anime")
 
 private enum class TvRootScreen {
+    STARTUP,
     HOME,
     SEARCH,
     LIBRARY,
@@ -153,7 +154,7 @@ fun VueoTvApp() {
     var updateProgress by remember { mutableStateOf(0) }
     var updateError by remember { mutableStateOf<String?>(null) }
     var homeFocusRestoreToken by remember { mutableStateOf(0) }
-    var currentScreen by remember { mutableStateOf(TvRootScreen.HOME) }
+    var currentScreen by remember { mutableStateOf(TvRootScreen.STARTUP) }
     var detailMedia by remember { mutableStateOf<TvMediaItem?>(null) }
     var detailHistory by remember { mutableStateOf<List<TvMediaItem>>(emptyList()) }
     var playbackRequest by remember { mutableStateOf<TvPlaybackRequest?>(null) }
@@ -271,9 +272,12 @@ fun VueoTvApp() {
     }
 
     LaunchedEffect(profileStore) {
-        if (profileStore.shouldShowPickerOnStartup()) {
-            currentScreen = TvRootScreen.PROFILE_PICKER
-        }
+        currentScreen =
+            if (profileStore.shouldShowPickerOnStartup()) {
+                TvRootScreen.PROFILE_PICKER
+            } else {
+                TvRootScreen.HOME
+            }
     }
 
     val tvAccent = Color(appAccent.argb)
@@ -302,6 +306,19 @@ fun VueoTvApp() {
                     label = "tvRootScreen",
                 ) { screen ->
                 when (screen) {
+                    TvRootScreen.STARTUP ->
+                        Box(
+                            modifier = Modifier.fillMaxSize().background(VueoBlack),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "VUEO",
+                                color = VueoYellow,
+                                fontSize = 42.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+
                     TvRootScreen.HOME ->
                         VueoTvHome(
                             focusRestoreToken = homeFocusRestoreToken,
@@ -407,6 +424,12 @@ fun VueoTvApp() {
                                 searchFocusRestoreToken += 1
                                 libraryFocusRestoreToken += 1
                                 currentScreen = TvRootScreen.HOME
+                            },
+                            onProfilesChanged = {
+                                TvFocusMemory.resetToHero()
+                                homeFocusRestoreToken += 1
+                                searchFocusRestoreToken += 1
+                                libraryFocusRestoreToken += 1
                             },
                         )
 
