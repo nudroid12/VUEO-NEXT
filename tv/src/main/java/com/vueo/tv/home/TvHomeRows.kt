@@ -1,6 +1,8 @@
 package com.vueo.tv.home
 
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,8 +31,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -43,6 +44,7 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -52,10 +54,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 private val ContinueWatchingWidth = 210.dp
@@ -65,6 +67,8 @@ private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
 private val RowHorizontalPadding = 52.dp
+private val RowHeaderFocusInset = 40.dp
+private const val FocusedCardScale = 1.022f
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -79,14 +83,14 @@ internal fun TvModernHomeRows(
 ) {
     val verticalState = rememberLazyListState()
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
-    val activeRowKey = TvHomeFocusMemory.activeRowKey
+    val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
         ?.takeIf { saved -> rows.any { it.key == saved } }
         ?: rows.firstOrNull()?.key
 
     val density = LocalDensity.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val verticalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec) {
-        val topInsetPx = with(density) { 0.dp.toPx() }
+        val topInsetPx = with(density) { RowHeaderFocusInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
             override val scrollAnimationSpec: AnimationSpec<Float> = defaultBringIntoViewSpec.scrollAnimationSpec
@@ -96,6 +100,8 @@ internal fun TvModernHomeRows(
                 size: Float,
                 containerSize: Float,
             ): Float {
+                // Mirror Nuvio Modern Home: settle each focused row around a
+                // 40dp header anchor instead of snapping it flush to the top.
                 val distance = offset - topInsetPx
                 if (abs(distance) < 1f) return 0f
                 if (distance < 0f && !verticalState.canScrollBackward) return 0f
@@ -105,16 +111,16 @@ internal fun TvModernHomeRows(
     }
 
     LaunchedEffect(rows) {
-        val rowIndex = rows.indexOfFirst { it.key == activeRowKey }.coerceAtLeast(0)
+        val rowIndex = rows.indexOfFirst { it.key == initialActiveRowKey }.coerceAtLeast(0)
         if (rowIndex > 0) verticalState.scrollToItem(rowIndex, 0)
         delay(90)
         runCatching { contentFocusRequester.requestFocus() }
     }
 
-    val focusRestorer = remember(rows, activeRowKey) {
+    val focusRestorer = remember(rows, initialActiveRowKey) {
         {
-            rowFocusRequesters[TvHomeFocusMemory.activeRowKey ?: activeRowKey]
-                ?: rowFocusRequesters[activeRowKey]
+            rowFocusRequesters[TvHomeFocusMemory.activeRowKey ?: initialActiveRowKey]
+                ?: rowFocusRequesters[initialActiveRowKey]
                 ?: FocusRequester.Default
         }
     }
@@ -136,11 +142,9 @@ internal fun TvModernHomeRows(
             itemsIndexed(
                 items = rows,
                 key = { _, row -> row.key },
-            ) { rowIndex, row ->
+            ) { _, row ->
                 TvModernHomeRow(
                     row = row,
-                    rowIndex = rowIndex,
-                    verticalState = verticalState,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     onContentFocused = onContentFocused,
                     onFocused = onFocused,
@@ -155,8 +159,6 @@ internal fun TvModernHomeRows(
 @Composable
 private fun TvModernHomeRow(
     row: TvHomeRow,
-    rowIndex: Int,
-    verticalState: LazyListState,
     rowFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
@@ -167,7 +169,6 @@ private fun TvModernHomeRow(
     var focusedIndex by remember(row.key) { mutableIntStateOf(savedIndex) }
     val rowState = rememberLazyListState(initialFirstVisibleItemIndex = savedIndex)
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
-    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
@@ -238,18 +239,11 @@ private fun TvModernHomeRow(
                         kind = row.kind,
                         requester = itemRequester,
                         onFocused = {
-                            val rowChanged = TvHomeFocusMemory.activeRowKey != row.key
                             focusedIndex = index
                             TvHomeFocusMemory.activeRowKey = row.key
                             TvHomeFocusMemory.focusedIndexByRow[row.key] = index
                             onContentFocused()
                             onFocused(row, index, entry)
-                            if (rowChanged) {
-                                scope.launch {
-                                    // Match Nuvio's row-anchor behavior without intercepting D-pad keys.
-                                    runCatching { verticalState.animateScrollToItem(rowIndex, 0) }
-                                }
-                            }
                         },
                         onOpen = { onOpen(entry) },
                     )
@@ -267,7 +261,12 @@ private fun TvModernHomeCard(
     onFocused: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    var focused by remember(entry.key) { androidx.compose.runtime.mutableStateOf(false) }
+    var focused by remember(entry.key) { mutableStateOf(false) }
+    val animatedScale by animateFloatAsState(
+        targetValue = if (focused) FocusedCardScale else 1f,
+        animationSpec = tween(durationMillis = if (focused) 125 else 95),
+        label = "modernHomeCardScale",
+    )
 
     val width = if (kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingWidth else PosterWidth
     val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingHeight else PosterHeight
@@ -277,6 +276,11 @@ private fun TvModernHomeCard(
         modifier = Modifier
             .width(width)
             .height(height)
+            .zIndex(if (focused) 1f else 0f)
+            .graphicsLayer {
+                scaleX = animatedScale
+                scaleY = animatedScale
+            }
             .focusRequester(requester)
             .onFocusChanged { state ->
                 val becameFocused = state.isFocused

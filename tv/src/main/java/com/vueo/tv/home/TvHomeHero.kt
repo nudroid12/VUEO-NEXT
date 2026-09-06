@@ -14,17 +14,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
+/**
+ * Modern Home hero scene.
+ *
+ * Important: the fades live inside the hero-media bounds, matching Nuvio's
+ * Modern Home composition. This avoids dimming the entire Home surface and
+ * gives the rows a clean black field beneath the artwork.
+ */
 @Composable
 internal fun TvModernHomeHero(
     entry: TvHomeEntry?,
@@ -33,49 +45,31 @@ internal fun TvModernHomeHero(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        Crossfade(
-            targetState = entry,
-            animationSpec = tween(durationMillis = 360),
-            label = "modernHomeHeroMedia",
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .offset(x = 56.dp)
                 .fillMaxWidth(MODERN_HOME_HERO_MEDIA_WIDTH_FRACTION)
                 .height(heroHeight),
-        ) { displayedEntry ->
-            val media = displayedEntry?.media
-            TvNetworkImage(
-                url = media?.background ?: media?.poster,
-                contentDescription = media?.name,
+        ) {
+            Crossfade(
+                targetState = entry,
+                animationSpec = tween(durationMillis = 300),
+                label = "modernHomeHeroMedia",
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                fallback = TvDesign.Black,
-            )
-        }
+            ) { displayedEntry ->
+                val media = displayedEntry?.media
+                TvNetworkImage(
+                    url = media?.background ?: media?.poster,
+                    contentDescription = media?.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    fallback = TvDesign.Black,
+                )
+            }
 
-        // Nuvio-style two-axis fade: a left reading field plus a clean handoff
-        // from the hero image into the rows below.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        0f to TvDesign.Black,
-                        .22f to TvDesign.Black.copy(alpha = .90f),
-                        .46f to TvDesign.Black.copy(alpha = .72f),
-                        .72f to TvDesign.Black.copy(alpha = .22f),
-                        1f to Color.Transparent,
-                    )
-                )
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        .58f to Color.Transparent,
-                        .78f to TvDesign.Black.copy(alpha = .58f),
-                        1f to TvDesign.Black,
-                    )
-                )
-        )
+            HeroMediaGradient(modifier = Modifier.fillMaxSize())
+        }
 
         Crossfade(
             targetState = entry,
@@ -95,6 +89,68 @@ internal fun TvModernHomeHero(
             }
         }
     }
+}
+
+@Composable
+private fun HeroMediaGradient(modifier: Modifier = Modifier) {
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val bg = TvDesign.Black
+
+    Box(
+        modifier = modifier.drawWithCache {
+            // Nuvio Modern Home only fades the leading ~45% of the hero-media
+            // plane. The rest of the artwork stays vivid.
+            val horizontalFadeWidth = size.width * .45f
+            val horizontalStops = arrayOf(
+                0.0f to bg,
+                .22f to bg.copy(alpha = .86f),
+                .46f to bg.copy(alpha = .56f),
+                .76f to bg.copy(alpha = .16f),
+                1.0f to Color.Transparent,
+            )
+            val horizontal = if (isRtl) {
+                Brush.horizontalGradient(
+                    colorStops = horizontalStops,
+                    startX = size.width,
+                    endX = size.width - horizontalFadeWidth,
+                )
+            } else {
+                Brush.horizontalGradient(
+                    colorStops = horizontalStops,
+                    startX = 0f,
+                    endX = horizontalFadeWidth,
+                )
+            }
+
+            // The bottom fade is also confined to the hero plane and starts
+            // late, so the image keeps contrast until it hands off to rows.
+            val bottomFadeStart = size.height * .82f
+            val vertical = Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0.0f to Color.Transparent,
+                    .40f to bg.copy(alpha = .25f),
+                    .75f to bg.copy(alpha = .65f),
+                    1.0f to bg,
+                ),
+                startY = bottomFadeStart,
+                endY = size.height,
+            )
+
+            onDrawBehind {
+                val left = if (isRtl) size.width - horizontalFadeWidth else 0f
+                drawRect(
+                    brush = horizontal,
+                    topLeft = Offset(left, 0f),
+                    size = Size(horizontalFadeWidth, size.height),
+                )
+                drawRect(
+                    brush = vertical,
+                    topLeft = Offset(0f, bottomFadeStart),
+                    size = Size(size.width, size.height - bottomFadeStart),
+                )
+            }
+        },
+    ) {}
 }
 
 @Composable
