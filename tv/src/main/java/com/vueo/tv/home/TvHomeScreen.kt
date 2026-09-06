@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -64,14 +63,19 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
 
-private const val HERO_SETTLE_MS = 160L
-private const val HOME_ROWS_TOP_FRACTION = .49f
-private const val HOME_HERO_TEXT_FRACTION = .42f
-private val HomeContentStart = 92.dp
-private val HomeContentEnd = 48.dp
-private val ContinueWatchingWidth = 252.dp
-private val PosterWidth = 144.dp
-private val HomeCardShape = RoundedCornerShape(12.dp)
+private const val HERO_SETTLE_MS = 145L
+private const val ROWS_TOP_FRACTION = .49f
+private const val HERO_TEXT_WIDTH_FRACTION = .42f
+private val HomeLandscapeWidth = 246.dp
+private val HomeLandscapeHeight = 138.dp
+private val HomePosterWidth = 136.dp
+private val HomePosterHeight = 204.dp
+private val HomeCardShape = RoundedCornerShape(10.dp)
+
+private object HomeFocusMemory {
+    var lastFocusedKey: String? = null
+    val rowIndices = mutableMapOf<String, Int>()
+}
 
 private sealed interface HomeEntry {
     val key: String
@@ -93,6 +97,7 @@ private data class HomeRow(
     val id: String,
     val title: String,
     val entries: List<HomeEntry>,
+    val landscape: Boolean,
 )
 
 @Composable
@@ -115,9 +120,11 @@ fun TvHomeScreen(
         val cached = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
         if (cached.isNotEmpty()) catalogRows = cached
 
-        val fresh = runCatching { runtime.homeRows(forceRefresh = true) }
-        fresh.onSuccess { if (it.isNotEmpty()) catalogRows = it }
-            .onFailure { if (catalogRows.isEmpty()) error = it.message ?: "Unable to load Home" }
+        runCatching { runtime.homeRows(forceRefresh = true) }
+            .onSuccess { fresh -> if (fresh.isNotEmpty()) catalogRows = fresh }
+            .onFailure { failure ->
+                if (catalogRows.isEmpty()) error = failure.message ?: "Unable to load Home"
+            }
 
         loading = false
     }
@@ -132,13 +139,14 @@ fun TvHomeScreen(
                     HomeRow(
                         id = "continue",
                         title = "Continue Watching",
-                        entries = continueWatching.map {
+                        entries = continueWatching.map { entry ->
                             HomeEntry.Resume(
-                                key = "continue:${it.mediaKey}",
-                                media = it.media,
-                                playback = it,
+                                key = "continue:${entry.mediaKey}",
+                                media = entry.media,
+                                playback = entry,
                             )
                         },
+                        landscape = true,
                     )
                 )
             }
@@ -148,12 +156,13 @@ fun TvHomeScreen(
                     HomeRow(
                         id = "my-list",
                         title = "My List",
-                        entries = watchlist.map {
+                        entries = watchlist.map { media ->
                             HomeEntry.Media(
-                                key = "my-list:${it.type}:${it.id}",
-                                media = it,
+                                key = "my-list:${media.type}:${media.id}",
+                                media = media,
                             )
                         },
+                        landscape = false,
                     )
                 )
             }
@@ -162,7 +171,7 @@ fun TvHomeScreen(
                 if (row.items.isNotEmpty()) {
                     add(
                         HomeRow(
-                            id = row.id,
+                            id = "catalog:${row.id}",
                             title = row.title,
                             entries = row.items.mapIndexed { index, media ->
                                 HomeEntry.Media(
@@ -170,6 +179,7 @@ fun TvHomeScreen(
                                     media = media,
                                 )
                             },
+                            landscape = false,
                         )
                     )
                 }
@@ -182,28 +192,36 @@ fun TvHomeScreen(
 
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
-    val lastIndexByRow = remember { mutableMapOf<String, Int>() }
+    val rowLastIndices = remember {
+        mutableStateMapOf<String, Int>().apply { putAll(HomeFocusMemory.rowIndices) }
+    }
 
-    var lastFocusedKey by remember { mutableStateOf<String?>(null) }
     var navExpanded by remember { mutableStateOf(false) }
-    var pendingHero by remember { mutableStateOf<MediaItem?>(null) }
-    var hero by remember { mutableStateOf<MediaItem?>(null) }
+    var initialFocusResolved by remember { mutableStateOf(false) }
+    var lastFocusedKey by remember { mutableStateOf(HomeFocusMemory.lastFocusedKey) }
+    var pendingHeroEntry by remember { mutableStateOf<HomeEntry?>(null) }
+    var heroEntry by remember { mutableStateOf<HomeEntry?>(null) }
 
     LaunchedEffect(rows) {
-        val first = rows.firstOrNull()?.entries?.firstOrNull()
-        if (hero == null) hero = first?.media
-        if (pendingHero == null) pendingHero = first?.media
-        if (lastFocusedKey == null && first != null) {
-            lastFocusedKey = first.key
-            delay(100L)
-            runCatching { requester(first.key).requestFocus() }
+        if (initialFocusResolved) return@LaunchedEffect
+        val allEntries = rows.flatMap(HomeRow::entries)
+        val restored = lastFocusedKey?.let { saved -> allEntries.firstOrNull { it.key == saved } }
+        val target = restored ?: allEntries.firstOrNull()
+        if (target != null) {
+            if (heroEntry == null) heroEntry = target
+            if (pendingHeroEntry == null) pendingHeroEntry = target
+            lastFocusedKey = target.key
+            HomeFocusMemory.lastFocusedKey = target.key
+            initialFocusResolved = true
+            delay(100)
+            runCatching { requester(target.key).requestFocus() }
         }
     }
 
-    LaunchedEffect(pendingHero) {
-        val next = pendingHero ?: return@LaunchedEffect
+    LaunchedEffect(pendingHeroEntry) {
+        val next = pendingHeroEntry ?: return@LaunchedEffect
         delay(HERO_SETTLE_MS)
-        hero = next
+        heroEntry = next
     }
 
     Box(
@@ -211,168 +229,75 @@ fun TvHomeScreen(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        AnimatedContent(
-            targetState = hero?.background ?: hero?.poster,
-            transitionSpec = {
-                fadeIn(animationSpec = tween(360)) togetherWith fadeOut(animationSpec = tween(190))
-            },
-            label = "homeHeroBackdrop",
-            modifier = Modifier.fillMaxSize(),
-        ) { url ->
-            TvNetworkImage(
-                url = url,
-                contentDescription = hero?.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                fallback = TvDesign.Black,
-            )
-        }
-
-        // VUEO 30C: keep the art alive on the right while making the left reading field calm.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(TvDesign.Black.copy(alpha = .08f))
-                .background(
-                    Brush.horizontalGradient(
-                        colorStops = arrayOf(
-                            0.00f to TvDesign.Black.copy(alpha = .96f),
-                            0.24f to TvDesign.Black.copy(alpha = .82f),
-                            0.48f to TvDesign.Black.copy(alpha = .42f),
-                            0.70f to TvDesign.Black.copy(alpha = .10f),
-                            1.00f to Color.Transparent,
-                        )
-                    )
-                )
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.00f to TvDesign.Black.copy(alpha = .16f),
-                            0.40f to Color.Transparent,
-                            0.58f to Color.Transparent,
-                            0.78f to TvDesign.Black.copy(alpha = .58f),
-                            1.00f to TvDesign.Black.copy(alpha = .97f),
-                        )
-                    )
-                )
-        )
+        HomeBackdrop(heroEntry?.media)
+        HomeScrim()
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val rowsTop = maxHeight * HOME_ROWS_TOP_FRACTION
+            val viewportHeight = maxHeight
 
-            Box(
+            HomeHeroCopy(
+                entry = heroEntry,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(rowsTop),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = HomeContentStart, end = HomeContentEnd, bottom = 24.dp)
-                        .fillMaxWidth(HOME_HERO_TEXT_FRACTION),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .fillMaxWidth(HERO_TEXT_WIDTH_FRACTION)
+                    .padding(start = 92.dp, top = viewportHeight * .145f),
+            )
+
+            if (loading && rows.isEmpty()) {
+                Row(
+                    modifier = Modifier.padding(start = 92.dp, top = viewportHeight * .43f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        text = hero?.name.orEmpty(),
+                    CircularProgressIndicator(
+                        modifier = Modifier.width(20.dp).height(20.dp),
                         color = TvDesign.White,
-                        fontSize = 38.sp,
-                        lineHeight = 41.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        strokeWidth = 2.dp,
                     )
-
-                    val meta = heroMeta(hero)
-                    if (meta.isNotBlank()) {
-                        Text(
-                            text = meta,
-                            color = TvDesign.White.copy(alpha = .74f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-
-                    hero?.description?.takeIf { it.isNotBlank() }?.let { description ->
-                        Text(
-                            text = description,
-                            color = TvDesign.White.copy(alpha = .72f),
-                            fontSize = 14.sp,
-                            lineHeight = 19.sp,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    Text("Loading Home", color = TvDesign.Muted, fontSize = 13.sp)
                 }
+            } else if (error != null && rows.isEmpty()) {
+                Text(
+                    text = error ?: "Unable to load Home",
+                    color = TvDesign.Muted,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(start = 92.dp, top = viewportHeight * .43f),
+                )
             }
 
-            when {
-                loading && rows.isEmpty() -> {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = HomeContentStart, bottom = 44.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.width(22.dp).height(22.dp),
-                            color = TvDesign.White,
-                            strokeWidth = 2.dp,
-                        )
-                        Text("Loading your library", color = TvDesign.Muted, fontSize = 14.sp)
-                    }
-                }
-
-                error != null && rows.isEmpty() -> {
-                    Text(
-                        text = error ?: "Unable to load Home",
-                        color = TvDesign.Muted,
-                        fontSize = 15.sp,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = HomeContentStart, bottom = 44.dp),
-                    )
-                }
-            }
-        }
-
-        if (rows.isNotEmpty()) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            if (rows.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = maxHeight * HOME_ROWS_TOP_FRACTION),
+                        .padding(top = viewportHeight * ROWS_TOP_FRACTION),
                     contentPadding = PaddingValues(
-                        start = HomeContentStart,
-                        end = HomeContentEnd,
-                        bottom = 64.dp,
+                        start = 92.dp,
+                        end = 34.dp,
+                        bottom = 48.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
                     itemsIndexed(rows, key = { _, row -> row.id }) { rowIndex, row ->
                         HomeMediaRow(
                             row = row,
+                            rowIndex = rowIndex,
+                            allRows = rows,
                             requester = ::requester,
-                            onFocused = { index, entry ->
-                                lastIndexByRow[row.id] = index
+                            rememberedIndexForRow = { targetRowId -> rowLastIndices[targetRowId] },
+                            onRememberIndex = { index ->
+                                rowLastIndices[row.id] = index
+                                HomeFocusMemory.rowIndices[row.id] = index
+                            },
+                            onFocused = { entry, index ->
                                 lastFocusedKey = entry.key
-                                pendingHero = entry.media
+                                HomeFocusMemory.lastFocusedKey = entry.key
+                                rowLastIndices[row.id] = index
+                                HomeFocusMemory.rowIndices[row.id] = index
+                                pendingHeroEntry = entry
                                 navExpanded = false
                             },
-                            onLeftFromRow = {
+                            onOpenSidebar = {
                                 navExpanded = true
                                 runCatching { navRequesters.getValue("Home").requestFocus() }
-                            },
-                            onVerticalMove = { currentIndex, direction ->
-                                val targetRowIndex = rowIndex + direction
-                                val targetRow = rows.getOrNull(targetRowIndex) ?: return@HomeMediaRow false
-                                val rememberedIndex = lastIndexByRow[targetRow.id] ?: currentIndex
-                                val targetIndex = rememberedIndex.coerceIn(0, targetRow.entries.lastIndex)
-                                val target = targetRow.entries.getOrNull(targetIndex) ?: return@HomeMediaRow false
-                                lastIndexByRow[targetRow.id] = targetIndex
-                                runCatching { requester(target.key).requestFocus() }.isSuccess
                             },
                             onOpen = { entry ->
                                 when (entry) {
@@ -406,197 +331,331 @@ fun TvHomeScreen(
 }
 
 @Composable
+private fun HomeBackdrop(media: MediaItem?) {
+    AnimatedContent(
+        targetState = media?.background ?: media?.poster,
+        transitionSpec = {
+            fadeIn(tween(360)) togetherWith fadeOut(tween(220))
+        },
+        label = "homeBackdrop",
+        modifier = Modifier.fillMaxSize(),
+    ) { url ->
+        TvNetworkImage(
+            url = url,
+            contentDescription = media?.name,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            fallback = TvDesign.Black,
+        )
+    }
+}
+
+@Composable
+private fun HomeScrim() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.horizontalGradient(
+                    0f to TvDesign.Black.copy(alpha = .96f),
+                    .30f to TvDesign.Black.copy(alpha = .82f),
+                    .52f to TvDesign.Black.copy(alpha = .43f),
+                    .74f to TvDesign.Black.copy(alpha = .11f),
+                    1f to TvDesign.Black.copy(alpha = .04f),
+                )
+            )
+            .background(
+                Brush.verticalGradient(
+                    0f to TvDesign.Black.copy(alpha = .20f),
+                    .40f to Color.Transparent,
+                    .60f to TvDesign.Black.copy(alpha = .18f),
+                    .80f to TvDesign.Black.copy(alpha = .72f),
+                    1f to TvDesign.Black.copy(alpha = .96f),
+                )
+            )
+    )
+}
+
+@Composable
+private fun HomeHeroCopy(
+    entry: HomeEntry?,
+    modifier: Modifier = Modifier,
+) {
+    val media = entry?.media ?: return
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = media.name,
+            color = TvDesign.White,
+            fontSize = 34.sp,
+            lineHeight = 38.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        val meta = heroMeta(entry)
+        if (meta.isNotBlank()) {
+            Text(
+                text = meta,
+                color = TvDesign.White.copy(alpha = .76f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        media.description?.takeIf { it.isNotBlank() }?.let { description ->
+            Text(
+                text = description,
+                color = TvDesign.White.copy(alpha = .72f),
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun HomeMediaRow(
     row: HomeRow,
+    rowIndex: Int,
+    allRows: List<HomeRow>,
     requester: (String) -> FocusRequester,
-    onFocused: (Int, HomeEntry) -> Unit,
-    onLeftFromRow: () -> Unit,
-    onVerticalMove: (Int, Int) -> Boolean,
+    rememberedIndexForRow: (String) -> Int?,
+    onRememberIndex: (Int) -> Unit,
+    onFocused: (HomeEntry, Int) -> Unit,
+    onOpenSidebar: () -> Unit,
     onOpen: (HomeEntry) -> Unit,
 ) {
-    val isContinueWatching = row.id == "continue"
-    val cardWidth = if (isContinueWatching) ContinueWatchingWidth else PosterWidth
-    val cardRatio = if (isContinueWatching) 16f / 9f else 2f / 3f
-    val cardGap = if (isContinueWatching) 12.dp else 13.dp
-
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         Text(
             text = row.title,
             color = TvDesign.White.copy(alpha = .92f),
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
 
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(cardGap),
-            contentPadding = PaddingValues(top = 6.dp, bottom = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (row.landscape) 14.dp else 13.dp),
+            contentPadding = PaddingValues(end = 34.dp),
         ) {
             itemsIndexed(row.entries, key = { _, entry -> entry.key }) { index, entry ->
-                var focused by remember(entry.key) { mutableStateOf(false) }
-                val focusScale by animateFloatAsState(
-                    targetValue = if (focused) 1.02f else 1f,
-                    animationSpec = tween(if (focused) 150 else 110),
-                    label = "homeCardScale",
-                )
-                val resume = entry as? HomeEntry.Resume
-                val progress = resume?.playback?.progressFraction
+                HomeMediaCard(
+                    entry = entry,
+                    landscape = row.landscape,
+                    requester = requester(entry.key),
+                    onFocused = {
+                        onRememberIndex(index)
+                        onFocused(entry, index)
+                    },
+                    onKey = { keyCode ->
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                if (index == 0) {
+                                    onOpenSidebar()
+                                    true
+                                } else false
+                            }
 
-                Column(
-                    modifier = Modifier.width(cardWidth),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(cardRatio)
-                            .scale(focusScale)
-                            .shadow(
-                                elevation = if (focused) 8.dp else 0.dp,
-                                shape = HomeCardShape,
-                                clip = false,
-                            )
-                            .clip(HomeCardShape)
-                            .background(TvDesign.SurfaceRaised)
-                            .border(
-                                width = if (focused) 2.dp else 1.dp,
-                                color = if (focused) {
-                                    TvDesign.White.copy(alpha = .88f)
+                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                if (rowIndex <= 0) {
+                                    true
                                 } else {
-                                    TvDesign.White.copy(alpha = .055f)
-                                },
-                                shape = HomeCardShape,
-                            )
-                            .focusRequester(requester(entry.key))
-                            .onFocusChanged {
-                                focused = it.isFocused
-                                if (it.isFocused) onFocused(index, entry)
-                            }
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                when (event.nativeKeyEvent.keyCode) {
-                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                        if (index == 0) {
-                                            onLeftFromRow()
-                                            true
-                                        } else false
-                                    }
-                                    KeyEvent.KEYCODE_DPAD_UP -> onVerticalMove(index, -1)
-                                    KeyEvent.KEYCODE_DPAD_DOWN -> onVerticalMove(index, 1)
-                                    else -> false
+                                    val targetRow = allRows[rowIndex - 1]
+                                    val targetIndex = (rememberedIndexForRow(targetRow.id) ?: index)
+                                        .coerceAtMost(targetRow.entries.lastIndex)
+                                    val target = targetRow.entries.getOrNull(targetIndex)
+                                    if (target != null) {
+                                        runCatching { requester(target.key).requestFocus() }
+                                        true
+                                    } else false
                                 }
                             }
-                            .clickable { onOpen(entry) }
-                            .focusable(),
-                    ) {
-                        TvNetworkImage(
-                            url = if (isContinueWatching) {
-                                entry.media.background ?: entry.media.poster
-                            } else {
-                                entry.media.poster ?: entry.media.background
-                            },
-                            contentDescription = entry.media.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
 
-                        if (isContinueWatching) {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.Transparent,
-                                                Color.Transparent,
-                                                TvDesign.Black.copy(alpha = .84f),
-                                            )
-                                        )
-                                    )
-                            )
-
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                Text(
-                                    text = entry.media.name,
-                                    color = TvDesign.White,
-                                    fontSize = 13.sp,
-                                    lineHeight = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                resume?.let {
-                                    Text(
-                                        text = continueMeta(it.playback),
-                                        color = TvDesign.White.copy(alpha = .70f),
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                if (rowIndex >= allRows.lastIndex) {
+                                    true
+                                } else {
+                                    val targetRow = allRows[rowIndex + 1]
+                                    val targetIndex = (rememberedIndexForRow(targetRow.id) ?: index)
+                                        .coerceAtMost(targetRow.entries.lastIndex)
+                                    val target = targetRow.entries.getOrNull(targetIndex)
+                                    if (target != null) {
+                                        runCatching { requester(target.key).requestFocus() }
+                                        true
+                                    } else false
                                 }
                             }
-                        }
 
-                        if (progress != null && progress > 0f) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomStart)
-                                    .fillMaxWidth()
-                                    .height(3.dp)
-                                    .background(Color.Black.copy(alpha = .50f))
-                            ) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                        .height(3.dp)
-                                        .background(TvDesign.White.copy(alpha = .94f))
-                                )
-                            }
+                            else -> false
                         }
-                    }
-
-                    if (!isContinueWatching) {
-                        Text(
-                            text = entry.media.name,
-                            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .62f),
-                            fontSize = 13.sp,
-                            lineHeight = 16.sp,
-                            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 2.dp),
-                        )
-                    }
-                }
+                    },
+                    onOpen = { onOpen(entry) },
+                )
             }
         }
     }
 }
 
-private fun continueMeta(playback: LibraryPlaybackEntry): String =
-    buildList {
-        if (playback.season != null && playback.episode != null) {
-            add("S${playback.season.toString().padStart(2, '0')} E${playback.episode.toString().padStart(2, '0')}")
-        }
-        if (playback.durationMs > playback.positionMs && playback.durationMs > 0L) {
-            val minutes = ((playback.durationMs - playback.positionMs) / 60_000L).coerceAtLeast(1L)
-            add("${minutes} min left")
-        } else {
-            add("${(playback.progressFraction * 100).toInt().coerceIn(1, 99)}% watched")
-        }
-    }.joinToString("  •  ")
+@Composable
+private fun HomeMediaCard(
+    entry: HomeEntry,
+    landscape: Boolean,
+    requester: FocusRequester,
+    onFocused: () -> Unit,
+    onKey: (Int) -> Boolean,
+    onOpen: () -> Unit,
+) {
+    var focused by remember(entry.key) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.022f else 1f,
+        animationSpec = tween(if (focused) 120 else 90),
+        label = "homeCardScale",
+    )
+    val width = if (landscape) HomeLandscapeWidth else HomePosterWidth
+    val imageHeight = if (landscape) HomeLandscapeHeight else HomePosterHeight
+    val imageUrl = if (landscape) entry.media.background ?: entry.media.poster else entry.media.poster ?: entry.media.background
+    val progress = (entry as? HomeEntry.Resume)?.playback?.progressFraction
 
-private fun heroMeta(media: MediaItem?): String {
-    if (media == null) return ""
-    return listOfNotNull(
-        media.displayType.takeIf(String::isNotBlank),
-        media.genres.firstOrNull()?.takeIf(String::isNotBlank),
-        media.releaseInfo?.takeIf(String::isNotBlank),
-        media.imdbRating?.let { "IMDb %.1f".format(it) },
-        media.runtimeMinutes?.takeIf { it > 0 }?.let { "${it}m" },
-    ).joinToString("  •  ")
+    Column(
+        modifier = Modifier.width(width),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(width)
+                .height(imageHeight)
+                .scale(scale)
+                .clip(HomeCardShape)
+                .background(TvDesign.SurfaceRaised)
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) TvDesign.White.copy(alpha = .92f) else TvDesign.White.copy(alpha = .07f),
+                    shape = HomeCardShape,
+                )
+                .focusRequester(requester)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onFocused()
+                }
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) onKey(event.nativeKeyEvent.keyCode) else false
+                }
+                .clickable(onClick = onOpen)
+                .focusable(),
+        ) {
+            TvNetworkImage(
+                url = imageUrl,
+                contentDescription = entry.media.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.Transparent,
+                                TvDesign.Black.copy(alpha = if (landscape) .64f else .18f),
+                            )
+                        )
+                    )
+            )
+
+            if (landscape) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    val resume = entry as? HomeEntry.Resume
+                    if (resume?.playback?.season != null && resume.playback.episode != null) {
+                        Text(
+                            text = "S${resume.playback.season} E${resume.playback.episode}",
+                            color = TvDesign.White.copy(alpha = .78f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        text = entry.media.name,
+                        color = TvDesign.White,
+                        fontSize = 13.sp,
+                        lineHeight = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            if (progress != null && progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.Black.copy(alpha = .55f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(TvDesign.White.copy(alpha = .94f)),
+                    )
+                }
+            }
+        }
+
+        if (!landscape) {
+            Text(
+                text = entry.media.name,
+                color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .68f),
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+        }
+    }
+}
+
+private fun heroMeta(entry: HomeEntry?): String {
+    val media = entry?.media ?: return ""
+    val resume = (entry as? HomeEntry.Resume)?.playback
+    val parts = buildList {
+        if (resume?.season != null && resume.episode != null) {
+            add("S${resume.season} E${resume.episode}")
+            resume.episodeTitle?.takeIf { it.isNotBlank() }?.let(::add)
+        }
+        media.displayType.takeIf { it.isNotBlank() }?.let(::add)
+        media.releaseInfo?.takeIf { it.isNotBlank() }?.let(::add)
+        media.genres.firstOrNull()?.takeIf { it.isNotBlank() }?.let(::add)
+        media.imdbRating?.let { add("IMDb %.1f".format(it)) }
+        if (resume != null && resume.durationMs > resume.positionMs) {
+            val minutesLeft = ((resume.durationMs - resume.positionMs) / 60_000L).coerceAtLeast(1L)
+            add("${minutesLeft}m left")
+        } else {
+            media.runtimeMinutes?.takeIf { it > 0 }?.let { add("${it}m") }
+        }
+    }
+    return parts.joinToString("  •  ")
 }
