@@ -681,3 +681,9 @@ TV Library uses one vertical responsive content canvas, My List/Cloud controls, 
 Detail now follows the project-wide rule: Mobile VUEO is canonical for feature/data behaviour, while supplied Nuvio TV is the composition/D-pad reference. The Detail screen is rebuilt around a sticky cinematic backdrop and hero action area, followed by season tabs/episode cards and supporting content. Existing Shared Core/TvRuntime contracts remain authoritative for metadata, My List, playback/history, ratings, DNA, recommendations and Gemini insight. No Nuvio runtime code is imported.
 
 29E is deliberately a functional baseline. Final cross-screen typography, density, spacing, focus motion and sidebar calibration will happen after Detail → Source → Player are functionally rebuilt.
+
+## 29F Source Selection functional baseline
+
+Source Selection now follows the same architecture rule as Library/Detail: **Mobile/Shared Core own behavior; Nuvio is the TV presentation/focus reference**. The TV source screen consumes `UnifiedMediaEngine`, `PluginSourceEngine`, `SourceCleaner`, `PlayerSourcePolicy`, `SettingsStore` and the shared `SourceDiscoveryCache` through `TvRuntime`; it does not depend on the Mobile module.
+
+TV source discovery now surfaces cached/progressive snapshots while preserving the existing final `TvSourceBundle` contract. The screen keeps provider filters, VUEO recommendation, Engine Details, direct-play gating and the source technical-details preference aligned with Mobile. The Nuvio-inspired layout is cinematic identity/engine context on the left and a rounded provider/filter + stream workspace on the right. Returning from Player restores the last selected provider/source where the source still exists. Player remains the next functional rebuild; whole-TV visual polish is deferred.

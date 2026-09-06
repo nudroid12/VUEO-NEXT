@@ -149,3 +149,9 @@ Grid/List uses the same `vueo_library_ui` / `grid_view` preference contract as M
 Detail is now a functional rebuild, not a final visual lock. VUEO Mobile/Shared Core remain canonical for Detail data/actions; supplied Nuvio Detail sources are the TV composition/focus reference only. Preserve My List, resume-aware primary action state, season/episode selection, episode progress, facts/ratings/DNA, credits, Overview, Cast, Network/Production, More Like This and optional manual VUEO Insight where supported by current Mobile/runtime behaviour. Do not create TV-only cast/company routes or duplicate playback/library stores.
 
 Use the Nuvio-style sticky cinematic backdrop + hero actions + season tabs/landscape episode row + supporting horizontal sections, with shallow neutral focus and KeyUp-only activation. This 29E screen is intentionally subject to the later whole-TV final polish pass.
+
+## 29F Source Selection lock — functional baseline
+
+Source behavior/data is sourced from VUEO Mobile + Shared Core; supplied Nuvio `StreamScreen.kt` is only the TV composition/D-pad reference. Preserve shared `SourceCleaner`/`PlayerSourcePolicy` ranking, preferred-quality/original-language context, direct-play gating, provider filters, recommendation, source technical-details preference, provider diagnostics and the short-lived shared source-discovery cache behavior. Do not create a TV-only resolver/ranker/store.
+
+The current TV composition is backdrop + left identity/engine context + right provider-chip/source-list workspace. Cached/fresh results may appear progressively. Focus alone never plays a source; OK/Enter commits once on KeyUp. First result receives initial focus only if the user has not already interacted; UP from the first result returns to the active provider chip; LEFT/RIGHT on a source row may cycle provider filters. Returning from Player should restore the last provider/source when available. This is not the final visual polish lock.

@@ -166,3 +166,9 @@ VUEO adaptation rules:
 Detail uses a sticky full-screen backdrop with strong left and bottom scrims, a bottom-weighted hero text/action block, then TV-native horizontal sections. Primary action receives initial focus; custom controls activate on KeyUp once; focus motion remains shallow (~1.02–1.025) with neutral white treatment. Series uses season tabs plus 16:9 episode cards with playback progress. More Like This uses restrained landscape cards. Overview must remain accessible even when hero copy is clamped.
 
 This is not a final visual lock. Preserve the functional composition and Mobile parity, then calibrate exact density/spacing/type/motion during the final whole-TV polish pass.
+
+## 29F Source Selection baseline — Nuvio stream grammar, Mobile source semantics
+
+Source uses the supplied Nuvio `StreamScreen.kt` as the 10-foot composition reference: cinematic full-screen backdrop, quiet information plane on the left, provider chips plus a rounded translucent stream workspace on the right. Source rows do not scale on focus; use a restrained 2dp focus edge/surface contrast instead. Keep the workspace dense enough for several rows at once and avoid oversized mobile cards.
+
+Functional presentation must still expose VUEO Mobile semantics: live/ready discovery state, optional Engine Details, provider filtering, recommended source, source metadata/technical-detail preference and progressive results. D-pad rules: initial source focus when safe, UP from the first row to the active chip, chip DOWN to results, LEFT/RIGHT source-row provider cycling, and KeyUp-only OK activation. Exact dimensions/type/motion remain subject to the final whole-TV polish pass.

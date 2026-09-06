@@ -92,3 +92,9 @@ Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonica
 ## TV 29E Detail current direction
 
 `TvDetailScreen.kt` is now the functional Detail baseline. Behaviour/data comes from Mobile + Shared Core; supplied Nuvio Detail source is the presentation/focus reference. Keep resume-aware Watch/Play labels, My List, season/episode state, progress, facts/ratings/DNA, credits, Overview, Cast, companies, More Like This and manual VUEO Insight where configured. Cast/company remain informational because VUEO Mobile has no cast/company navigation contract. Source and Player are still the next functional rebuilds. Do not spend a separate polish pass on Library/Detail yet; the maintainer wants a final whole-TV polish after the functional flow is complete.
+
+## TV 29F Source Selection current direction
+
+`TvSourceScreen.kt` is now the functional Source baseline. VUEO Mobile's Source Picker is canonical for ranking/filtering/recommendation/diagnostic behavior; supplied Nuvio `StreamScreen.kt` is the TV composition/focus reference. TV now shows shared cached results immediately, publishes addon/plugin results progressively, preserves provider order, exposes Engine Details, marks the VUEO-recommended source, obeys `showSourceTechnicalDetails`, and restores the last source/provider when returning from Player where possible.
+
+`TvRuntime.discover(...)` gained an optional `onUpdate(TvSourceDiscoverySnapshot)` callback but still returns the same final `TvSourceBundle`. Do not replace Shared Core discovery/ranking/cache with TV-only logic. Source is still a functional baseline; exact visual calibration waits for the final whole-TV polish after Player.

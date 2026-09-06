@@ -25,6 +25,7 @@ import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
 import com.vueo.shared.core.plugin.TmdbResolver
 import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlaybackStore
 import com.vueo.shared.core.storage.ProfileStore
@@ -196,22 +197,139 @@ class TvRuntime(context: Context) {
         item: MediaItem,
         episode: EpisodeItem?,
         onProgress: (String) -> Unit = {},
+        onUpdate: (TvSourceDiscoverySnapshot) -> Unit = {},
     ): TvSourceBundle = coroutineScope {
         val videoId = if (item.type.lowercase() in setOf("series", "tv")) {
             episode?.id ?: item.id
         } else {
             item.id
         }
+        val preferredQuality = settingsStore.preferredQuality().rankKey
+        val cacheKey = SourceDiscoveryCache.key(
+            mediaType = item.type,
+            mediaId = item.id,
+            videoId = videoId,
+        )
+        val cached = SourceDiscoveryCache.get(cacheKey)
+        val cachedStreams = SourceCleaner.clean(
+            sources = cached?.sources.orEmpty().map { it.toStreamSource() },
+            preferredQuality = preferredQuality,
+            originalLanguage = item.originalLanguage,
+        )
 
+        val startedAtNs = System.nanoTime()
+        var subtitles = emptyList<SubtitleTrack>()
+        var freshAddonStreams = emptyList<StreamSource>()
+        var freshPluginStreams = emptyList<StreamSource>()
+        var addonRawCount = 0
+        var pluginRawCount = 0
         var addonCompleted = 0
         var addonTotal = 0
         var pluginCompleted = 0
         var pluginTotal = 0
+        var notice = cached?.notice
+        var firstResultMs: Long? = null
+        var searching = true
+        var latestProgress =
+            if (cached != null) {
+                "Recent sources loaded instantly • refreshing in background"
+            } else {
+                "Starting source discovery…"
+            }
+        var providerOrder =
+            cachedStreams
+                .asSequence()
+                .filter { it.isDirectPlayable }
+                .map(::sourceProviderKey)
+                .distinct()
+                .toList()
+
+        fun elapsedMs(): Long =
+            (System.nanoTime() - startedAtNs) / 1_000_000L
+
+        fun recordProviders(candidates: List<StreamSource>) {
+            val next = providerOrder.toMutableList()
+            candidates
+                .asSequence()
+                .filter { it.isDirectPlayable }
+                .map(::sourceProviderKey)
+                .distinct()
+                .forEach { provider ->
+                    if (provider !in next) next += provider
+                }
+            providerOrder = next
+        }
+
+        fun cleanFresh(): List<StreamSource> =
+            SourceCleaner.clean(
+                sources = freshAddonStreams + freshPluginStreams,
+                preferredQuality = preferredQuality,
+                originalLanguage = item.originalLanguage,
+            )
+
+        fun publish(
+            progress: String,
+            streams: List<StreamSource>? = null,
+        ) {
+            latestProgress = progress
+            val fresh = cleanFresh()
+            val display = streams ?: if (searching) {
+                SourceCleaner.clean(
+                    sources = cachedStreams + fresh,
+                    preferredQuality = preferredQuality,
+                    originalLanguage = item.originalLanguage,
+                )
+            } else {
+                fresh
+            }
+
+            recordProviders(display)
+            if (
+                firstResultMs == null &&
+                cachedStreams.isEmpty() &&
+                display.isNotEmpty()
+            ) {
+                firstResultMs = elapsedMs()
+            }
+
+            val rawCount = maxOf(
+                cached?.rawCount ?: 0,
+                addonRawCount + pluginRawCount,
+            )
+            val bundle = TvSourceBundle(
+                videoId = videoId,
+                sources = display,
+                subtitles = subtitles,
+            )
+            onProgress(progress)
+            onUpdate(
+                TvSourceDiscoverySnapshot(
+                    bundle = bundle,
+                    rawCount = rawCount,
+                    notice = notice,
+                    searching = searching,
+                    progress = progress,
+                    firstResultMs = firstResultMs,
+                    providerOrder = providerOrder,
+                    fromCache = cachedStreams.isNotEmpty(),
+                )
+            )
+        }
+
+        publish(
+            latestProgress,
+            streams = cachedStreams,
+        )
 
         val subtitlesDeferred = async {
             runCatching {
                 engine.resolveSubtitles(item.type, videoId)
             }.getOrDefault(emptyList())
+        }
+
+        val subtitlesUpdateDeferred = async {
+            subtitles = subtitlesDeferred.await()
+            publish(latestProgress)
         }
 
         val addonsDeferred = async {
@@ -220,15 +338,17 @@ class TvRuntime(context: Context) {
                     type = item.type,
                     videoId = videoId,
                 ) { progress ->
+                    freshAddonStreams = progress.streams
+                    addonRawCount = progress.rawCount
                     addonCompleted = progress.completedAddons
                     addonTotal = progress.totalAddons
-                    onProgress(
+                    publish(
                         progressLabel(
                             addonCompleted,
                             addonTotal,
                             pluginCompleted,
                             pluginTotal,
-                            progress.streams.size,
+                            cleanFresh().size,
                         )
                     )
                 }
@@ -237,18 +357,32 @@ class TvRuntime(context: Context) {
 
         val pluginsDeferred = async {
             if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty()) {
-                return@async emptyList<StreamSource>()
+                return@async null
             }
 
-            val tmdbId =
-                runCatching {
-                    TmdbResolver.resolve(
-                        rawId = item.id,
-                        mediaType = item.type,
-                        apiKey = pluginStore.tmdbApiKey(),
+            val tmdbId = runCatching {
+                TmdbResolver.resolve(
+                    rawId = item.id,
+                    mediaType = item.type,
+                    apiKey = pluginStore.tmdbApiKey(),
+                )
+            }.getOrNull()
+
+            if (tmdbId == null) {
+                notice =
+                    "Plugin providers skipped: VUEO could not resolve a TMDB ID. " +
+                        "Add your TMDB API key in Settings > Enhancements > TMDB."
+                publish(
+                    progressLabel(
+                        addonCompleted,
+                        addonTotal,
+                        pluginCompleted,
+                        pluginTotal,
+                        cleanFresh().size,
                     )
-                }.getOrNull()
-                    ?: return@async emptyList<StreamSource>()
+                )
+                return@async null
+            }
 
             val mediaType =
                 if (item.type.lowercase() in setOf("series", "tv")) "tv" else "movie"
@@ -260,37 +394,85 @@ class TvRuntime(context: Context) {
                     season = episode?.season,
                     episode = episode?.episode,
                 ) { progress ->
+                    freshPluginStreams = progress.result.streams.map { it.toStreamSource() }
+                    pluginRawCount = progress.result.streams.size
                     pluginCompleted = progress.completedProviders
                     pluginTotal = progress.totalProviders
-                    onProgress(
+                    publish(
                         progressLabel(
                             addonCompleted,
                             addonTotal,
                             pluginCompleted,
                             pluginTotal,
-                            progress.result.streams.size,
+                            cleanFresh().size,
                         )
                     )
-                }.streams.map { it.toStreamSource() }
-            }.getOrDefault(emptyList())
+                }
+            }.getOrNull()
         }
 
-        val addonStreams = addonsDeferred.await()
-        val pluginStreams = pluginsDeferred.await()
-        val subtitles = subtitlesDeferred.await()
+        freshAddonStreams = addonsDeferred.await()
+        val pluginResult = pluginsDeferred.await()
+        subtitlesUpdateDeferred.await()
 
-        val ranked =
-            SourceCleaner.clean(
-                sources = addonStreams + pluginStreams,
-                preferredQuality = settingsStore.preferredQuality().rankKey,
-                originalLanguage = item.originalLanguage,
-            )
+        if (pluginResult != null) {
+            freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
+            pluginRawCount = pluginResult.streams.size
+            notice =
+                "Plugins: ${pluginResult.attemptedProviders} checked • " +
+                    "${pluginResult.successfulProviders} online • " +
+                    "${pluginResult.slowProviders} slow • " +
+                    "${pluginResult.noResultProviders} no results • " +
+                    "${pluginResult.needsSetupProviders} setup • " +
+                    "${pluginResult.unavailableProviders} unavailable • " +
+                    "${pluginResult.blockedProviders} blocked • " +
+                    "${pluginResult.timeoutProviders} timeout • " +
+                    "${pluginResult.failedProviders} failed."
+        }
 
-        TvSourceBundle(
+        val freshFinal = cleanFresh()
+        val finalStreams = freshFinal.ifEmpty { cachedStreams }
+        searching = false
+        recordProviders(finalStreams)
+
+        val rawCount = maxOf(
+            cached?.rawCount ?: 0,
+            addonRawCount + pluginRawCount,
+        )
+        val finalProgress = if (finalStreams.isEmpty()) {
+            "Search complete • no sources found"
+        } else {
+            "Search complete • ${finalStreams.size} unique sources"
+        }
+        val finalBundle = TvSourceBundle(
             videoId = videoId,
-            sources = ranked,
+            sources = finalStreams,
             subtitles = subtitles,
         )
+
+        if (finalStreams.isNotEmpty()) {
+            SourceDiscoveryCache.put(
+                key = cacheKey,
+                sources = finalStreams.map { it.toSourceCandidate() },
+                rawCount = rawCount,
+                notice = notice,
+            )
+        }
+
+        onProgress(finalProgress)
+        onUpdate(
+            TvSourceDiscoverySnapshot(
+                bundle = finalBundle,
+                rawCount = rawCount,
+                notice = notice,
+                searching = false,
+                progress = finalProgress,
+                firstResultMs = firstResultMs,
+                providerOrder = providerOrder,
+                fromCache = cachedStreams.isNotEmpty(),
+            )
+        )
+        finalBundle
     }
 
     suspend fun relatedTitles(item: MediaItem): List<MediaItem> =
@@ -383,6 +565,17 @@ class TvRuntime(context: Context) {
         }
 }
 
+data class TvSourceDiscoverySnapshot(
+    val bundle: TvSourceBundle,
+    val rawCount: Int,
+    val notice: String?,
+    val searching: Boolean,
+    val progress: String,
+    val firstResultMs: Long?,
+    val providerOrder: List<String>,
+    val fromCache: Boolean,
+)
+
 data class TvSourceBundle(
     val videoId: String,
     val sources: List<StreamSource>,
@@ -406,3 +599,33 @@ private fun SourceCandidate.toStreamSource(): StreamSource =
         providerId = providerId,
         providerName = providerName,
     )
+private fun StreamSource.toSourceCandidate(): SourceCandidate =
+    SourceCandidate(
+        id = buildString {
+            append(providerId)
+            append(':')
+            append(url ?: infoHash ?: name)
+            fileIndex?.let {
+                append(':')
+                append(it)
+            }
+        },
+        name = name,
+        url = url,
+        infoHash = infoHash,
+        fileIndex = fileIndex,
+        quality = quality,
+        codec = codec,
+        hdr = hdr,
+        audio = audio,
+        language = language,
+        sizeBytes = sizeBytes,
+        headers = headers,
+        rankBoost = rankBoost,
+        providerId = providerId,
+        providerName = providerName,
+    )
+
+private fun sourceProviderKey(source: StreamSource): String =
+    source.providerName.trim().ifBlank { "Other" }
+
