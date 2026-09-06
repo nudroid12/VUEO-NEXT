@@ -633,3 +633,9 @@ TV owns its own 10-foot Compose UI, D-pad focus, navigation and motion. Read `TV
 
 ## TV 29B.2 — Complete Settings (2026-09-06)
 TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad interaction. The temporary flat 29B.1 panel is superseded. Runtime consumers are wired for Personalization, enhancements, playback, subtitles, sources, appearance, backup/restore/data maintenance and updates. Do not reintroduce preference rows that are not consumed by TV behavior.
+
+### TV 29C — Mobile Search Parity
+- TV Search now ports the Mobile Search hierarchy and behavior instead of using the earlier minimal title-only landscape grid.
+- Added Discover, Title/Actor search, Type/Sort/Genre filters, Mobile relevance/dedupe behavior and poster-first results.
+- Search session is hoisted to `VueoTvApp` so Detail return restores query, filters, scroll and exact result focus where available.
+- All new Search behavior consumes existing Shared Core APIs; Mobile and Shared Core source remain untouched.

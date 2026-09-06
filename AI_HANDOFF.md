@@ -60,3 +60,6 @@ Top navigation now commits with a single OK/Enter press; never reintroduce stack
 - Settings row grammar: Up/Down focus, Left/Right adjust, one OK to activate, Back to parent; Up from first enabled row enters contextual nav and Down restores last row.
 - Do not expose a toggle/value unless TV has a real runtime consumer or it is explicitly informational.
 - Playback/subtitle/source/appearance/data/update consumers introduced by 29B.2 are regression-protected.
+
+## TV 29C Search lock
+TV Search is now Mobile Search parity adapted only for TV scale/focus/D-pad. Preserve Discover + Title/Actor + Type/Sort/Genre + poster grid and the root-owned `TvSearchSession` return-state behavior. Do not restore the old minimal title-only TV Search.

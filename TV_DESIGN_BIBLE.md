@@ -93,3 +93,10 @@ Mobile provides proven behaviour contracts through Shared Core; TV does not copy
 
 ## Settings interaction grammar
 Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/Right changes inline values, OK commits/opens once, and Back returns one level. The contextual top navigation remains the same global navigation plane used by Home; Down restores the exact last Settings row. Disabled informational rows are never used as the only focus target.
+
+## 29C Search lock
+- Mobile Search UI hierarchy is the visual/behavior reference for TV Search.
+- Keep Search -> field -> Discover/Search Results -> Title/Actor -> Type/Sort/Genre -> poster grid.
+- TV adaptation is limited to 10-foot sizing, neutral-white focus treatment and deterministic D-pad behavior.
+- Poster results remain 2:3 artwork with title and metadata below; do not regress to landscape developer cards.
+- Search returns from Detail with query, filters, grid position and exact focus restored where possible.

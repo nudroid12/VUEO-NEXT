@@ -32,6 +32,7 @@ import com.vueo.tv.library.TvLibraryScreen
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.search.TvSearchScreen
+import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
@@ -66,6 +67,7 @@ fun VueoTvApp() {
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
+    val searchSession = remember { TvSearchSession() }
 
     LaunchedEffect(runtime) {
         TvDesign.applyTheme(runtime.settingsStore.appTheme())
@@ -167,6 +169,8 @@ fun VueoTvApp() {
                 TvRoute.SEARCH -> {
                     TvSearchScreen(
                         runtime = runtime,
+                        contentVersion = refreshToken,
+                        session = searchSession,
                         onNavigate = ::navigate,
                         onProfile = { openProfile(TvRoute.SEARCH) },
                         onOpenMedia = { openDetail(it, TvRoute.SEARCH) },

@@ -92,3 +92,9 @@ Do not shrink the hero back to the 29A-R prototype proportions or restore persis
 
 ## 29B.2 Settings parity lock
 The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hierarchy adapted to D-pad TV. Legacy TV Settings must not return. Settings that imply behavior must have a real TV consumer. One focused navigation/settings item requires one OK activation only.
+
+## 29C Search parity lock
+- TV Search follows Mobile Search capability and information architecture: Discover, Title/Actor search, All/Movies/Series/Anime, Popular/Trending/Newest and dynamic Genre.
+- Reuse Shared Core discovery/search/TMDB behavior; do not build a separate TV search engine.
+- D-pad movement changes focus; OK commits once.
+- Returning from Detail must preserve Search session state and focused result.
