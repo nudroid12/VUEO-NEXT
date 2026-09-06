@@ -90,3 +90,6 @@ Mobile provides proven behaviour contracts through Shared Core; TV does not copy
 - Content -> UP -> contextual top navigation.
 - Top navigation -> DOWN -> exact last focused content/settings target.
 - Settings rows use Up/Down to move, Left/Right to adjust, OK to commit/toggle/open.
+
+## Settings interaction grammar
+Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/Right changes inline values, OK commits/opens once, and Back returns one level. The contextual top navigation remains the same global navigation plane used by Home; Down restores the exact last Settings row. Disabled informational rows are never used as the only focus target.

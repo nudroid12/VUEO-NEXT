@@ -35,6 +35,7 @@ import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.update.TvUpdateManager
 import kotlinx.coroutines.launch
 
 private enum class TvRoute {
@@ -67,6 +68,8 @@ fun VueoTvApp() {
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
 
     LaunchedEffect(runtime) {
+        TvDesign.applyTheme(runtime.settingsStore.appTheme())
+        TvDesign.applyAccent(runtime.settingsStore.appAccent())
         runtime.boot()
         route =
             if (runtime.profileStore.shouldShowPickerOnStartup()) {
@@ -77,6 +80,9 @@ fun VueoTvApp() {
         profileReturnRoute = TvRoute.HOME
 
         launch { runtime.prepareProvidersInBackground() }
+        if (runtime.settingsStore.automaticUpdateChecksEnabled()) {
+            launch { TvUpdateManager.check(context.applicationContext, force = false) }
+        }
     }
 
     fun navigate(label: String) {
@@ -186,6 +192,7 @@ fun VueoTvApp() {
                         onNavigate = ::navigate,
                         onProfile = { openProfile(TvRoute.SETTINGS) },
                         onBack = { route = TvRoute.HOME },
+                        onDataChanged = { refreshToken++ },
                     )
                 }
 
@@ -221,6 +228,11 @@ fun VueoTvApp() {
                                 initialPositionMs = 0L
                                 sourceReturnRoute = TvRoute.DETAIL
                                 route = TvRoute.SOURCE
+                            },
+                            onOpenRelated = { related ->
+                                selectedMedia = related
+                                selectedEpisode = null
+                                initialPositionMs = 0L
                             },
                             onLibraryChanged = { refreshToken++ },
                         )
@@ -262,6 +274,12 @@ fun VueoTvApp() {
                             initialPositionMs = initialPositionMs,
                             onBack = { route = TvRoute.SOURCE },
                             onLibraryChanged = { refreshToken++ },
+                            onPlayNextEpisode = { nextEpisode ->
+                                selectedEpisode = nextEpisode
+                                initialPositionMs = 0L
+                                sourceReturnRoute = TvRoute.DETAIL
+                                route = TvRoute.SOURCE
+                            },
                         )
                     }
                 }

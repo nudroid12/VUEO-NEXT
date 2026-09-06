@@ -630,3 +630,6 @@ TV owns its own 10-foot Compose UI, D-pad focus, navigation and motion. Read `TV
 - Home row title-to-card spacing increased without moving the whole first rail lower.
 - Activated a new TV-native Settings screen backed by Shared Core profile/playback/subtitle/source preferences.
 - Navigation contract: focus moves with D-pad; OK commits; Down from nav restores the last setting/content target where supported.
+
+## TV 29B.2 — Complete Settings (2026-09-06)
+TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad interaction. The temporary flat 29B.1 panel is superseded. Runtime consumers are wired for Personalization, enhancements, playback, subtitles, sources, appearance, backup/restore/data maintenance and updates. Do not reintroduce preference rows that are not consumed by TV behavior.

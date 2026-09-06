@@ -89,3 +89,6 @@ Do not shrink the hero back to the 29A-R prototype proportions or restore persis
 - Focus movement alone must never auto-open a destination.
 - TV Settings is a clean TV-native surface backed by Shared Core; do not restore the legacy TV Settings implementation.
 - The first TV Settings activation covers profile/startup, playback, subtitle and source preferences whose behavior already exists in Shared Core.
+
+## 29B.2 Settings parity lock
+The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hierarchy adapted to D-pad TV. Legacy TV Settings must not return. Settings that imply behavior must have a real TV consumer. One focused navigation/settings item requires one OK activation only.

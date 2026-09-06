@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
@@ -51,6 +52,7 @@ fun TvDetailScreen(
     initial: MediaItem,
     onBack: () -> Unit,
     onWatch: (MediaItem, EpisodeItem?) -> Unit,
+    onOpenRelated: (MediaItem) -> Unit = {},
     onLibraryChanged: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -60,13 +62,22 @@ fun TvDetailScreen(
     var watchlisted by remember(initial.id, initial.type) {
         mutableStateOf(runtime.libraryStore.isWatchlisted(initial))
     }
+    var ratings by remember(initial.id, initial.type) { mutableStateOf<List<MediaRating>>(emptyList()) }
+    var related by remember(initial.id, initial.type) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var insight by remember(initial.id, initial.type) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(initial.id, initial.type) {
         loading = true
-        item = runCatching { runtime.loadMeta(initial) }.getOrDefault(initial)
-        watchlisted = runtime.libraryStore.isWatchlisted(item)
+        val enriched = runCatching { runtime.loadMeta(initial) }.getOrDefault(initial)
+        item = enriched
+        watchlisted = runtime.libraryStore.isWatchlisted(enriched)
+        ratings = runCatching { runtime.ratings(enriched) }.getOrDefault(emptyList())
+        related = runCatching { runtime.relatedTitles(enriched) }.getOrDefault(emptyList())
+        insight = runCatching { runtime.geminiInsight(enriched) }.getOrNull()
         loading = false
     }
+
+    val dnaMatch = remember(item, watchlisted) { runtime.dnaMatch(item) }
 
     Box(
         Modifier
@@ -120,7 +131,7 @@ fun TvDetailScreen(
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                text = detailMeta(item),
+                text = detailMeta(item, dnaMatch, ratings),
                 color = TvDesign.White.copy(alpha = .72f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -132,7 +143,18 @@ fun TvDetailScreen(
                     color = TvDesign.Muted,
                     fontSize = 15.sp,
                     lineHeight = 21.sp,
-                    maxLines = 5,
+                    maxLines = if (insight.isNullOrBlank()) 5 else 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            insight?.takeIf(String::isNotBlank)?.let { text ->
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = text,
+                    color = TvDesign.White.copy(alpha = .76f),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -183,6 +205,25 @@ fun TvDetailScreen(
                         EpisodeCard(
                             episode = episode,
                             onClick = { onWatch(item, episode) },
+                        )
+                    }
+                }
+            }
+
+            if (related.isNotEmpty()) {
+                Spacer(Modifier.height(28.dp))
+                Text(
+                    text = "More Like This",
+                    color = TvDesign.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    items(related, key = { "related:${it.type}:${it.id}" }) { relatedItem ->
+                        RelatedCard(
+                            item = relatedItem,
+                            onClick = { onOpenRelated(relatedItem) },
                         )
                     }
                 }
@@ -278,12 +319,68 @@ private fun EpisodeCard(
     }
 }
 
-private fun detailMeta(item: MediaItem): String =
-    listOfNotNull(
+private fun detailMeta(
+    item: MediaItem,
+    dnaMatch: Int?,
+    ratings: List<MediaRating>,
+): String {
+    val externalRatings = ratings
+        .filterNot { it.source == "imdb" || it.source == "tmdb" }
+        .take(3)
+        .map { "${it.compactLabel} ${it.displayValue()}" }
+
+    return listOfNotNull(
         item.releaseInfo?.takeIf(String::isNotBlank),
         item.displayType,
         item.certification?.takeIf(String::isNotBlank),
+        dnaMatch?.let { "DNA $it%" },
         item.imdbRating?.let { "IMDb %.1f".format(it) },
+        item.tmdbRating?.let { "TMDB %.1f".format(it) },
+        externalRatings.takeIf { it.isNotEmpty() }?.joinToString(" / "),
         item.runtimeMinutes?.takeIf { it > 0 }?.let { "${it}m" },
         item.genres.take(2).takeIf { it.isNotEmpty() }?.joinToString(" / "),
     ).joinToString("  •  ")
+}
+
+@Composable
+private fun RelatedCard(
+    item: MediaItem,
+    onClick: () -> Unit,
+) {
+    var focused by remember(item.id, item.type) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .width(220.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(TvDesign.SurfaceRaised)
+                .border(
+                    width = if (focused) 2.dp else 0.dp,
+                    color = if (focused) TvDesign.Accent else Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                ),
+        ) {
+            TvNetworkImage(
+                url = item.background ?: item.poster,
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(
+            text = item.name,
+            color = if (focused) TvDesign.White else TvDesign.Muted,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}

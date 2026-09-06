@@ -5,6 +5,14 @@ import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.SourceCleaner
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
+import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
+import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
+import com.vueo.shared.core.enrichment.MediaRating
+import com.vueo.shared.core.enrichment.MdblistClient
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
+import com.vueo.shared.core.enrichment.GeminiClient
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
@@ -12,6 +20,8 @@ import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.plugin.PluginRepositoryClient
+import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
 import com.vueo.shared.core.plugin.TmdbResolver
 import com.vueo.shared.core.source.SourceCandidate
@@ -48,6 +58,8 @@ class TvRuntime(context: Context) {
         context = appContext,
         profileStore = profileStore,
     )
+    val dnaPreferences = UserDnaPreferences(appContext)
+    val dnaEngine = UserDnaEngine(libraryStore)
     val pluginStore = PluginStore(appContext)
     val pluginEngine = PluginSourceEngine(appContext, pluginStore)
     private val providerSync = ProviderCodeSyncManager(appContext)
@@ -87,6 +99,7 @@ class TvRuntime(context: Context) {
             CatalogDiscoveryCache.home(allowStale = true)
                 .orEmpty()
                 .let(::applyCatalogPreferences)
+                .let(::applyPersonalization)
 
         if (!forceRefresh && cached.isNotEmpty()) return cached
 
@@ -101,13 +114,83 @@ class TvRuntime(context: Context) {
             CatalogDiscoveryCache.persistHome(appContext, fresh)
         }
         return applyCatalogPreferences(fresh.ifEmpty { cached })
+            .let(::applyPersonalization)
     }
 
     suspend fun search(query: String): List<MediaItem> =
         engine.search(query = query, maxResults = 80)
 
-    suspend fun loadMeta(item: MediaItem): MediaItem =
-        engine.loadMeta(item)
+    suspend fun loadMeta(item: MediaItem): MediaItem {
+        val core = engine.loadMeta(item)
+        val result = MetadataEnhancementEngine.enrich(
+            media = core,
+            options = MetadataEnhancementOptions(
+                tmdbApiKey = pluginStore.tmdbApiKey(),
+                mdblistApiKey = settingsStore.mdblistApiKey(),
+                tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
+                tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
+                richDetailsEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
+                ratingsEnabled = settingsStore.mdblistRatingsEnabled(),
+            ),
+        )
+
+        val imdb = result.ratings.firstOrNull { it.source == "imdb" }?.value
+            ?.takeIf { settingsStore.mdblistImdbEnabled() }
+        val tmdb = result.ratings.firstOrNull { it.source == "tmdb" }?.value
+            ?.takeIf { settingsStore.mdblistTmdbRatingEnabled() }
+
+        return result.media.copy(
+            imdbRating = imdb ?: result.media.imdbRating,
+            tmdbRating = tmdb ?: result.media.tmdbRating,
+        )
+    }
+
+    suspend fun refreshAddons() {
+        engine.installed().map { it.descriptor.id }.forEach(engine::uninstall)
+        content.manifestUrls().forEach { manifestUrl ->
+            runCatching {
+                require(manifestUrl.startsWith("https://"))
+                StremioAddonExtension.fromManifestUrl(manifestUrl)
+            }.onSuccess { extension ->
+                engine.install(extension)
+                engine.setExtensionEnabled(
+                    id = extension.descriptor.id,
+                    enabled = content.isAddonEnabled(manifestUrl),
+                )
+            }
+        }
+        CatalogDiscoveryCache.clearAll(appContext)
+    }
+
+    suspend fun addAddon(manifestUrl: String) {
+        require(manifestUrl.trim().startsWith("https://")) {
+            "VUEO requires an HTTPS addon manifest URL."
+        }
+        content.add(manifestUrl)
+        refreshAddons()
+    }
+
+    suspend fun removeAddon(manifestUrl: String) {
+        content.remove(manifestUrl)
+        refreshAddons()
+    }
+
+    suspend fun setAddonEnabled(manifestUrl: String, enabled: Boolean) {
+        content.setAddonEnabled(manifestUrl, enabled)
+        refreshAddons()
+    }
+
+    suspend fun addPluginRepository(inputUrl: String): PluginRepositoryDescriptor {
+        val repository = PluginRepositoryClient.fetch(inputUrl)
+        pluginStore.upsert(repository)
+        pluginStore.setRepositoryEnabled(repository, true)
+        providerSync.syncRepository(repository, force = true)
+        return repository
+    }
+
+    suspend fun removePluginRepository(repository: PluginRepositoryDescriptor) {
+        pluginStore.remove(repository.manifestUrl)
+    }
 
     suspend fun discover(
         item: MediaItem,
@@ -208,6 +291,72 @@ class TvRuntime(context: Context) {
             sources = ranked,
             subtitles = subtitles,
         )
+    }
+
+    suspend fun relatedTitles(item: MediaItem): List<MediaItem> =
+        TmdbEnhancementClient.moreLikeThis(
+            item = item,
+            apiKey = pluginStore.tmdbApiKey(),
+            recommendationsEnabled = settingsStore.tmdbRecommendationsEnabled(),
+            similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),
+            limit = 18,
+        )
+
+    suspend fun ratings(item: MediaItem): List<MediaRating> {
+        if (!settingsStore.mdblistRatingsEnabled() || settingsStore.mdblistApiKey().isBlank()) {
+            return emptyList()
+        }
+        return MdblistClient.ratings(item, settingsStore.mdblistApiKey())
+            .filter { rating ->
+                when (rating.source) {
+                    "imdb" -> settingsStore.mdblistImdbEnabled()
+                    "tomatoes" -> settingsStore.mdblistRottenTomatoesEnabled()
+                    "metacritic" -> settingsStore.mdblistMetacriticEnabled()
+                    "tmdb" -> settingsStore.mdblistTmdbRatingEnabled()
+                    "trakt" -> settingsStore.mdblistTraktEnabled()
+                    else -> false
+                }
+            }
+    }
+
+    suspend fun geminiInsight(item: MediaItem): String? {
+        val apiKey = settingsStore.geminiApiKey()
+        if (!settingsStore.geminiInsightsEnabled() || apiKey.isBlank()) return null
+        val profileId = profileStore.activeProfileId()
+        val dna = dnaEngine.build().takeIf { dnaPreferences.userDnaEnabled(profileId) }
+        val match = dna?.let { dnaEngine.matchPercent(item, it) }
+        return runCatching {
+            GeminiClient.titleInsight(
+                media = item,
+                dna = dna,
+                dnaMatchPercent = match,
+                apiKey = apiKey,
+            )
+        }.getOrNull()
+    }
+
+    fun dnaMatch(item: MediaItem): Int? {
+        val profileId = profileStore.activeProfileId()
+        if (!dnaPreferences.shouldShowDnaMatch(profileId)) return null
+        return dnaEngine.matchPercent(item)
+    }
+
+    private fun applyPersonalization(rows: List<CatalogRow>): List<CatalogRow> {
+        val profileId = profileStore.activeProfileId()
+        if (!dnaPreferences.shouldPersonalizeRecommendations(profileId)) return rows
+        val dna = dnaEngine.build()
+        return rows.map { row ->
+            row.copy(
+                items = row.items
+                    .withIndex()
+                    .sortedWith(
+                        compareByDescending<IndexedValue<MediaItem>> { indexed ->
+                            dnaEngine.matchPercent(indexed.value, dna) ?: -1
+                        }.thenBy { it.index }
+                    )
+                    .map { it.value }
+            )
+        }
     }
 
     private fun applyCatalogPreferences(rows: List<CatalogRow>): List<CatalogRow> {

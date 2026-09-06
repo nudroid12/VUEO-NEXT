@@ -20,18 +20,73 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.vueo.shared.core.storage.AppAccent
+import com.vueo.shared.core.storage.AppTheme
+
+private data class TvThemePalette(
+    val background: Color,
+    val surface: Color,
+    val surfaceRaised: Color,
+    val muted: Color,
+    val dim: Color,
+)
 
 object TvDesign {
-    val Black = Color(0xFF050607)
-    val Surface = Color(0xFF111315)
-    val SurfaceRaised = Color(0xFF181B1F)
+    private val charcoal =
+        TvThemePalette(
+            background = Color(0xFF070A0D),
+            surface = Color(0xFF101419),
+            surfaceRaised = Color(0xFF1D2329),
+            muted = Color(0xFFA2AAB3),
+            dim = Color(0xFF737B84),
+        )
+    private val midnight =
+        TvThemePalette(
+            background = Color(0xFF060A12),
+            surface = Color(0xFF101927),
+            surfaceRaised = Color(0xFF213047),
+            muted = Color(0xFFA7B0C0),
+            dim = Color(0xFF748096),
+        )
+    private val deepTeal =
+        TvThemePalette(
+            background = Color(0xFF061011),
+            surface = Color(0xFF0D1B1C),
+            surfaceRaised = Color(0xFF1B3031),
+            muted = Color(0xFFA4B5B5),
+            dim = Color(0xFF718383),
+        )
+
+    private var themeState by mutableStateOf(AppTheme.CHARCOAL)
+    private var accentState by mutableStateOf(Color(AppAccent.WHITE.argb))
+
+    private val palette: TvThemePalette
+        get() = when (themeState) {
+            AppTheme.CHARCOAL -> charcoal
+            AppTheme.MIDNIGHT -> midnight
+            AppTheme.DEEP_TEAL -> deepTeal
+        }
+
+    val Black: Color get() = palette.background
+    val Surface: Color get() = palette.surface
+    val SurfaceRaised: Color get() = palette.surfaceRaised
     val White = Color(0xFFF4F5F7)
-    val Muted = Color(0xFFA9ADB4)
-    val Dim = Color(0xFF737780)
-    val Focus = Color(0xFFF7F8FA)
+    val Muted: Color get() = palette.muted
+    val Dim: Color get() = palette.dim
+    val Accent: Color get() = accentState
+    val Focus: Color get() = accentState
 
     val ScreenPadding = PaddingValues(horizontal = 52.dp, vertical = 32.dp)
     val CardShape = RoundedCornerShape(12.dp)
+
+    fun applyTheme(theme: AppTheme) {
+        if (themeState != theme) themeState = theme
+    }
+
+    fun applyAccent(accent: AppAccent) {
+        val next = Color(accent.argb)
+        if (accentState != next) accentState = next
+    }
 }
 
 @Composable
@@ -76,7 +131,7 @@ fun TvFocusSurface(
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .92f)
+                color = if (focused) TvDesign.Accent.copy(alpha = .92f)
                 else TvDesign.White.copy(alpha = .10f),
                 shape = TvDesign.CardShape,
             )

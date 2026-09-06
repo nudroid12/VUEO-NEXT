@@ -138,6 +138,7 @@ fun TvSourceScreen(
                         ) { source ->
                             SourceRow(
                                 source = source,
+                                showTechnicalDetails = runtime.settingsStore.showSourceTechnicalDetails(),
                                 onClick = { bundle?.let { onPlay(it, source) } },
                             )
                         }
@@ -151,6 +152,7 @@ fun TvSourceScreen(
 @Composable
 private fun SourceRow(
     source: StreamSource,
+    showTechnicalDetails: Boolean,
     onClick: () -> Unit,
 ) {
     var focused by remember(source.url, source.name) { mutableStateOf(false) }
@@ -192,10 +194,28 @@ private fun SourceRow(
         }
         Spacer(Modifier.width(18.dp))
         Text(
-            text = listOfNotNull(source.quality, source.codec, source.hdr).joinToString("  •  ").ifBlank { "Auto" },
+            text = if (showTechnicalDetails) {
+                listOfNotNull(
+                    source.quality,
+                    source.codec,
+                    source.hdr,
+                    source.audio,
+                    source.sizeBytes?.let(::formatBytes),
+                ).joinToString("  •  ").ifBlank { "Auto" }
+            } else {
+                source.quality?.takeIf(String::isNotBlank) ?: "Auto"
+            },
             color = if (focused) TvDesign.White else TvDesign.Muted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
     }
+}
+
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return ""
+    val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    return if (gib >= 1.0) "%.1f GB".format(gib)
+    else "%.0f MB".format(bytes.toDouble() / (1024.0 * 1024.0))
 }

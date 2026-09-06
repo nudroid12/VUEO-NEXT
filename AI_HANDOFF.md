@@ -53,3 +53,10 @@ Current Mobile stabilisation rules:
 
 ## TV 29B.1 lock
 Top navigation now commits with a single OK/Enter press; never reintroduce stacked `focusable + clickable` focus targets for one nav control. TV Settings is active as a clean TV-native Shared-Core-backed surface. Home rail title-to-card spacing is 19dp while the 29B rail vertical anchor remains unchanged.
+
+### TV 29B.2 Settings lock
+- Settings hierarchy: Personalization, Content Manager, Enhancements, Playback, Subtitles, Sources, Appearance, Data & Storage, Updates, About VUEO.
+- Keep TV UI remote-native; reuse Shared Core/Mobile behavior rather than legacy TV Settings code.
+- Settings row grammar: Up/Down focus, Left/Right adjust, one OK to activate, Back to parent; Up from first enabled row enters contextual nav and Down restores last row.
+- Do not expose a toggle/value unless TV has a real runtime consumer or it is explicitly informational.
+- Playback/subtitle/source/appearance/data/update consumers introduced by 29B.2 are regression-protected.
