@@ -70,7 +70,7 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.TvPrimaryDestinations
-import com.vueo.tv.ui.TvTopBar
+import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -132,6 +132,7 @@ internal fun TvSearchScreen(
     var discovering by remember { mutableStateOf(session.discoverRows.isEmpty()) }
     var requestId by remember { mutableStateOf(0L) }
     var navExpanded by remember { mutableStateOf(false) }
+    var lastContentTarget by remember { mutableStateOf("field") }
     var choiceDialog by remember { mutableStateOf<SearchChoice?>(null) }
     var dialogReturnFocus by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -441,10 +442,10 @@ internal fun TvSearchScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 88.dp),
+                .padding(top = 46.dp),
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 52.dp),
+                modifier = Modifier.padding(start = 92.dp, end = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -459,7 +460,10 @@ internal fun TvSearchScreen(
                         value = session.query,
                         mode = session.mode,
                         requester = fieldRequester,
-                        onFocused = { navExpanded = false },
+                        onFocused = {
+                            navExpanded = false
+                            lastContentTarget = "field"
+                        },
                         onValueChange = {
                             session.query = it
                             session.restoreResultsFocus = false
@@ -467,10 +471,11 @@ internal fun TvSearchScreen(
                             session.firstVisibleItemIndex = 0
                             session.firstVisibleItemScrollOffset = 0
                         },
-                        onUp = {
+                        onLeftWhenEmpty = {
                             navExpanded = true
                             runCatching { navRequesters.getValue("Search").requestFocus() }
                         },
+                        onUp = {},
                         onDown = { runCatching { typeRequester.requestFocus() } },
                     )
                 }
@@ -495,7 +500,10 @@ internal fun TvSearchScreen(
                     TvSearchFilterButton(
                         label = session.typeFilter.label,
                         requester = typeRequester,
-                        onFocused = { navExpanded = false },
+                        onFocused = {
+                            navExpanded = false
+                            lastContentTarget = "type"
+                        },
                         onClick = {
                             dialogReturnFocus = { runCatching { typeRequester.requestFocus() } }
                             choiceDialog = SearchChoice(
@@ -512,7 +520,10 @@ internal fun TvSearchScreen(
                                 },
                             )
                         },
-                        onLeft = null,
+                        onLeft = {
+                            navExpanded = true
+                            runCatching { navRequesters.getValue("Search").requestFocus() }
+                        },
                         onRight = { runCatching { sortRequester.requestFocus() } },
                         onUp = { runCatching { fieldRequester.requestFocus() } },
                         onDown = ::focusFirstResult,
@@ -520,7 +531,10 @@ internal fun TvSearchScreen(
                     TvSearchFilterButton(
                         label = session.sortMode.label,
                         requester = sortRequester,
-                        onFocused = { navExpanded = false },
+                        onFocused = {
+                            navExpanded = false
+                            lastContentTarget = "sort"
+                        },
                         onClick = {
                             dialogReturnFocus = { runCatching { sortRequester.requestFocus() } }
                             choiceDialog = SearchChoice(
@@ -545,7 +559,10 @@ internal fun TvSearchScreen(
                     TvSearchFilterButton(
                         label = session.genre ?: "All Genres",
                         requester = genreRequester,
-                        onFocused = { navExpanded = false },
+                        onFocused = {
+                            navExpanded = false
+                            lastContentTarget = "genre"
+                        },
                         onClick = {
                             dialogReturnFocus = { runCatching { genreRequester.requestFocus() } }
                             choiceDialog = SearchChoice(
@@ -577,7 +594,10 @@ internal fun TvSearchScreen(
                     TvSearchModeToggle(
                         mode = session.mode,
                         requester = modeRequester,
-                        onFocused = { navExpanded = false },
+                        onFocused = {
+                            navExpanded = false
+                            lastContentTarget = "mode"
+                        },
                         onModeChange = { next ->
                             if (next != session.mode) {
                                 session.mode = next
@@ -652,7 +672,7 @@ internal fun TvSearchScreen(
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            start = 52.dp,
+                            start = 92.dp,
                             end = 52.dp,
                             top = 2.dp,
                             bottom = 36.dp,
@@ -671,6 +691,7 @@ internal fun TvSearchScreen(
                                 requester = resultRequesters.getValue(key),
                                 onFocused = {
                                     navExpanded = false
+                                    lastContentTarget = "result:$key"
                                     session.focusedMediaKey = key
                                 },
                                 onClick = {
@@ -683,7 +704,12 @@ internal fun TvSearchScreen(
                                 onUpFromFirstRow = if (index < SEARCH_COLUMNS) {
                                     { runCatching { typeRequester.requestFocus() } }
                                 } else null,
-                                blockLeft = index % SEARCH_COLUMNS == 0,
+                                onLeftFromFirstColumn = if (index % SEARCH_COLUMNS == 0) {
+                                    {
+                                        navExpanded = true
+                                        runCatching { navRequesters.getValue("Search").requestFocus() }
+                                    }
+                                } else null,
                                 blockRight =
                                     index % SEARCH_COLUMNS == SEARCH_COLUMNS - 1 || index == filteredItems.lastIndex,
                             )
@@ -703,7 +729,7 @@ internal fun TvSearchScreen(
             }
         }
 
-        TvTopBar(
+        TvSidebar(
             selected = "Search",
             expanded = navExpanded,
             navRequesters = navRequesters,
@@ -711,13 +737,23 @@ internal fun TvSearchScreen(
             onFocused = { navExpanded = true },
             onNavigate = onNavigate,
             onProfile = onProfile,
-            onDownFromNav = {
+            onReturnToContent = {
                 navExpanded = false
-                runCatching { fieldRequester.requestFocus() }
-                true
+                runCatching {
+                    when {
+                        lastContentTarget == "type" -> typeRequester.requestFocus()
+                        lastContentTarget == "sort" -> sortRequester.requestFocus()
+                        lastContentTarget == "genre" -> genreRequester.requestFocus()
+                        lastContentTarget == "mode" -> modeRequester.requestFocus()
+                        lastContentTarget.startsWith("result:") -> {
+                            val key = lastContentTarget.removePrefix("result:")
+                            resultRequesters[key]?.requestFocus() ?: fieldRequester.requestFocus()
+                        }
+                        else -> fieldRequester.requestFocus()
+                    }
+                }.isSuccess
             },
-            modifier = Modifier.align(Alignment.TopCenter),
-            cinematicCollapsed = true,
+            modifier = Modifier.align(Alignment.CenterStart),
         )
 
         choiceDialog?.let { dialog ->
@@ -733,6 +769,7 @@ private fun TvMobileSearchField(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onValueChange: (String) -> Unit,
+    onLeftWhenEmpty: () -> Unit,
     onUp: () -> Unit,
     onDown: () -> Unit,
 ) {
@@ -781,6 +818,12 @@ private fun TvMobileSearchField(
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                if (value.isBlank()) {
+                                    onLeftWhenEmpty()
+                                    true
+                                } else false
+                            }
                             KeyEvent.KEYCODE_DPAD_UP -> {
                                 onUp()
                                 true
@@ -994,7 +1037,7 @@ private fun TvSearchPosterTile(
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onUpFromFirstRow: (() -> Unit)?,
-    blockLeft: Boolean,
+    onLeftFromFirstColumn: (() -> Unit)?,
     blockRight: Boolean,
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
@@ -1025,7 +1068,12 @@ private fun TvSearchPosterTile(
                         onUpFromFirstRow()
                         true
                     }
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_LEFT && blockLeft -> true
+                    event.type == KeyEventType.KeyDown &&
+                        code == KeyEvent.KEYCODE_DPAD_LEFT &&
+                        onLeftFromFirstColumn != null -> {
+                        onLeftFromFirstColumn()
+                        true
+                    }
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT && blockRight -> true
                     event.isTvActivationKey() -> {
                         if (event.type == KeyEventType.KeyUp) onClick()

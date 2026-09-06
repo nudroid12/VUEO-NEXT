@@ -120,3 +120,14 @@ Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/
 - Navigation motion stays short and functional (roughly 95–145ms), with no bounce, glow, or ornamental transitions.
 - Focus movement does not route. OK/Enter commits once. Down returns to the screen's existing content target.
 - Home/Search may collapse labels while content owns focus, preserving the 29B contextual-navigation lock.
+
+## 29C.3 collapsible sidebar navigation — supersedes earlier top-nav locks
+- The 29B/29C.1/29C.2 top-navigation rules above are historical and are superseded for the current TV shell.
+- Global post-profile navigation is now a **slim collapsible left sidebar**.
+- Collapsed rail: 66dp. Focused/expanded rail: 202dp.
+- Order: Home / Search / Library / Settings, with Profile at the bottom.
+- LEFT from the first logical content column enters the current destination. RIGHT restores exact last content focus where available.
+- UP/DOWN explores the rail; OK/Enter commits once; focus movement alone never routes.
+- Search preserves normal cursor-left behavior while query text exists; an empty search field may enter the sidebar directly with LEFT.
+- The rail overlays the cinematic canvas and uses a quiet translucent charcoal surface with a subtle neutral edge. No live blur, glow, bounce, or decorative motion.
+- Normal app pages remain free of the VUEO wordmark.

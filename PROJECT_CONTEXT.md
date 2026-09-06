@@ -658,3 +658,7 @@ TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad inte
 
 ### TV 29C.2a — startup update prompt
 The clean rebuild had retained `TvUpdateManager` but discarded its automatic-check result at app startup. 29C.2a restores the visible update-available prompt using the existing TV manifest/download/verification/install flow. Prompt is modal and D-pad-contained with Later / Update. Exact legacy popup UI source is not present in the available clean-rebuild repository; `VueoTvUpdateManager.kt` is a tombstone.
+
+### TV 29C.3 navigation shell
+
+TV primary navigation now uses a premium collapsible left sidebar instead of the centered floating top capsule. Collapsed width is 66dp; focused/expanded width is 202dp. The global order is Home, Search, Library, Settings, with Profile at the bottom. LEFT from a logical first content column enters the current sidebar destination; RIGHT restores the last content focus; UP/DOWN explores; OK commits. Search preserves cursor-left while query text exists. The sidebar overlays content and normal app pages remain free of the VUEO wordmark.

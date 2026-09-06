@@ -1,5 +1,6 @@
 package com.vueo.tv.library
 
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,10 +17,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,9 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,7 +48,8 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.TvPrimaryDestinations
-import com.vueo.tv.ui.TvTopBar
+import com.vueo.tv.ui.TvSidebar
+import kotlinx.coroutines.delay
 
 @Composable
 fun TvLibraryScreen(
@@ -62,14 +69,46 @@ fun TvLibraryScreen(
 
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
+    val contentRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    fun contentRequester(key: String): FocusRequester =
+        contentRequesters.getOrPut(key) { FocusRequester() }
+
+    var navExpanded by remember { mutableStateOf(false) }
+    var lastFocusedKey by remember { mutableStateOf<String?>(null) }
+
+    val firstContentKey =
+        continueWatching.firstOrNull()?.let { "continue:${it.mediaKey}" }
+            ?: watchlist.firstOrNull()?.let { "list:${it.type}:${it.id}" }
+            ?: history.firstOrNull()?.media?.let { "history:${it.type}:${it.id}" }
+
+    LaunchedEffect(firstContentKey) {
+        val key = firstContentKey ?: return@LaunchedEffect
+        if (lastFocusedKey == null) lastFocusedKey = key
+        delay(90)
+        runCatching { contentRequester(lastFocusedKey ?: key).requestFocus() }
+    }
+
+    fun focusSidebar() {
+        navExpanded = true
+        runCatching { navRequesters.getValue("Library").requestFocus() }
+    }
+
+    fun restoreContentFocus(): Boolean {
+        navExpanded = false
+        val key = lastFocusedKey ?: firstContentKey ?: return false
+        return runCatching {
+            contentRequester(key).requestFocus()
+            true
+        }.getOrDefault(false)
+    }
 
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 52.dp,
+                start = 92.dp,
                 end = 52.dp,
-                top = 112.dp,
+                top = 54.dp,
                 bottom = 48.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(26.dp),
@@ -88,6 +127,12 @@ fun TvLibraryScreen(
                     LibrarySection(
                         title = "Continue Watching",
                         entries = continueWatching,
+                        requester = ::contentRequester,
+                        onFocused = { key ->
+                            navExpanded = false
+                            lastFocusedKey = key
+                        },
+                        onLeftFromFirst = ::focusSidebar,
                         onClick = onResume,
                     )
                 }
@@ -97,7 +142,14 @@ fun TvLibraryScreen(
                 item {
                     MediaSection(
                         title = "My List",
+                        sectionKey = "list",
                         items = watchlist,
+                        requester = ::contentRequester,
+                        onFocused = { key ->
+                            navExpanded = false
+                            lastFocusedKey = key
+                        },
+                        onLeftFromFirst = ::focusSidebar,
                         onClick = onOpenMedia,
                     )
                 }
@@ -107,7 +159,14 @@ fun TvLibraryScreen(
                 item {
                     MediaSection(
                         title = "Recently Watched",
+                        sectionKey = "history",
                         items = history.map { it.media }.distinctBy { "${it.type}:${it.id}" },
+                        requester = ::contentRequester,
+                        onFocused = { key ->
+                            navExpanded = false
+                            lastFocusedKey = key
+                        },
+                        onLeftFromFirst = ::focusSidebar,
                         onClick = onOpenMedia,
                     )
                 }
@@ -124,16 +183,16 @@ fun TvLibraryScreen(
             }
         }
 
-        TvTopBar(
+        TvSidebar(
             selected = "Library",
-            expanded = true,
+            expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = {},
+            onFocused = { navExpanded = true },
             onNavigate = onNavigate,
             onProfile = onProfile,
-            onDownFromNav = { false },
-            modifier = Modifier.align(Alignment.TopCenter),
+            onReturnToContent = ::restoreContentFocus,
+            modifier = Modifier.align(Alignment.CenterStart),
         )
     }
 }
@@ -142,15 +201,22 @@ fun TvLibraryScreen(
 private fun LibrarySection(
     title: String,
     entries: List<LibraryPlaybackEntry>,
+    requester: (String) -> FocusRequester,
+    onFocused: (String) -> Unit,
+    onLeftFromFirst: () -> Unit,
     onClick: (LibraryPlaybackEntry) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionTitle(title)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(entries, key = { it.mediaKey }) { entry ->
+            itemsIndexed(entries, key = { _, item -> item.mediaKey }) { index, entry ->
+                val key = "continue:${entry.mediaKey}"
                 LibraryCard(
                     media = entry.media,
                     progress = entry.progressFraction,
+                    requester = requester(key),
+                    onFocused = { onFocused(key) },
+                    onLeft = if (index == 0) onLeftFromFirst else null,
                     onClick = { onClick(entry) },
                 )
             }
@@ -161,14 +227,26 @@ private fun LibrarySection(
 @Composable
 private fun MediaSection(
     title: String,
+    sectionKey: String,
     items: List<MediaItem>,
+    requester: (String) -> FocusRequester,
+    onFocused: (String) -> Unit,
+    onLeftFromFirst: () -> Unit,
     onClick: (MediaItem) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionTitle(title)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(items, key = { "${it.type}:${it.id}:${it.name}" }) { media ->
-                LibraryCard(media = media, progress = null, onClick = { onClick(media) })
+            itemsIndexed(items, key = { _, item -> "${item.type}:${item.id}:${item.name}" }) { index, media ->
+                val key = "$sectionKey:${media.type}:${media.id}"
+                LibraryCard(
+                    media = media,
+                    progress = null,
+                    requester = requester(key),
+                    onFocused = { onFocused(key) },
+                    onLeft = if (index == 0) onLeftFromFirst else null,
+                    onClick = { onClick(media) },
+                )
             }
         }
     }
@@ -188,6 +266,9 @@ private fun SectionTitle(title: String) {
 private fun LibraryCard(
     media: MediaItem,
     progress: Float?,
+    requester: FocusRequester,
+    onFocused: () -> Unit,
+    onLeft: (() -> Unit)?,
     onClick: () -> Unit,
 ) {
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
@@ -202,7 +283,21 @@ private fun LibraryCard(
                 color = if (focused) TvDesign.White else Color.Transparent,
                 shape = RoundedCornerShape(11.dp),
             )
-            .onFocusChanged { focused = it.isFocused }
+            .focusRequester(requester)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused()
+            }
+            .onPreviewKeyEvent { event ->
+                if (
+                    event.type == KeyEventType.KeyDown &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT &&
+                    onLeft != null
+                ) {
+                    onLeft()
+                    true
+                } else false
+            }
             .focusable()
             .clickable(onClick = onClick),
     ) {

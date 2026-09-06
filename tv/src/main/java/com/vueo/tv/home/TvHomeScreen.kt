@@ -60,7 +60,7 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.TvPrimaryDestinations
-import com.vueo.tv.ui.TvTopBar
+import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
 
 private const val HERO_SETTLE_MS = 180L
@@ -251,7 +251,7 @@ fun TvHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 54.dp),
+                    .padding(start = 92.dp, end = 54.dp),
             ) {
                 Spacer(Modifier.height(viewportHeight * .205f))
 
@@ -324,23 +324,22 @@ fun TvHomeScreen(
                         .fillMaxSize()
                         .padding(top = maxHeight * .62f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 54.dp,
+                        start = 92.dp,
                         end = 54.dp,
                         bottom = 58.dp,
                     ),
                     verticalArrangement = Arrangement.spacedBy(32.dp),
                 ) {
-                    itemsIndexed(rows, key = { _, row -> row.id }) { rowIndex, row ->
+                    itemsIndexed(rows, key = { _, row -> row.id }) { _, row ->
                         HomeMediaRow(
                             row = row,
-                            rowIndex = rowIndex,
                             requester = ::requester,
                             onFocused = { entry ->
                                 lastFocusedKey = entry.key
                                 pendingHero = entry.media
                                 navExpanded = false
                             },
-                            onUpFromFirstRow = {
+                            onLeftFromRow = {
                                 navExpanded = true
                                 navRequesters.getValue("Home").requestFocus()
                             },
@@ -356,7 +355,7 @@ fun TvHomeScreen(
             }
         }
 
-        TvTopBar(
+        TvSidebar(
             selected = "Home",
             expanded = navExpanded,
             navRequesters = navRequesters,
@@ -364,14 +363,13 @@ fun TvHomeScreen(
             onFocused = { navExpanded = true },
             onNavigate = onNavigate,
             onProfile = onProfile,
-            onDownFromNav = {
+            onReturnToContent = {
                 navExpanded = false
                 val target = lastFocusedKey
                 if (target != null) runCatching { requester(target).requestFocus() }
                 target != null
             },
-            cinematicCollapsed = true,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.CenterStart),
         )
     }
 }
@@ -379,10 +377,9 @@ fun TvHomeScreen(
 @Composable
 private fun HomeMediaRow(
     row: HomeRow,
-    rowIndex: Int,
     requester: (String) -> FocusRequester,
     onFocused: (HomeEntry) -> Unit,
-    onUpFromFirstRow: () -> Unit,
+    onLeftFromRow: () -> Unit,
     onOpen: (HomeEntry) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
@@ -400,7 +397,7 @@ private fun HomeMediaRow(
                 bottom = 9.dp,
             ),
         ) {
-            itemsIndexed(row.entries, key = { _, entry -> entry.key }) { _, entry ->
+            itemsIndexed(row.entries, key = { _, entry -> entry.key }) { index, entry ->
                 var focused by remember(entry.key) { mutableStateOf(false) }
                 val focusScale by animateFloatAsState(
                     targetValue = if (focused) 1.045f else 1f,
@@ -437,11 +434,11 @@ private fun HomeMediaRow(
                             }
                             .onPreviewKeyEvent { event ->
                                 if (
-                                    rowIndex == 0 &&
+                                    index == 0 &&
                                     event.type == KeyEventType.KeyDown &&
-                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
                                 ) {
-                                    onUpFromFirstRow()
+                                    onLeftFromRow()
                                     true
                                 } else false
                             }

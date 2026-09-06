@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvPrimaryDestinations
-import com.vueo.tv.ui.TvTopBar
+import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
 
 internal data class TvSettingsEntry(
@@ -79,6 +79,7 @@ internal fun TvSettingsListScreen(
     var lastFocusedId by remember(entries.map { it.id }) {
         mutableStateOf(firstFocusable?.id.orEmpty())
     }
+    var navExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(firstFocusable?.id) {
         val first = firstFocusable ?: return@LaunchedEffect
@@ -87,10 +88,12 @@ internal fun TvSettingsListScreen(
     }
 
     fun focusSettingsNav() {
+        navExpanded = true
         runCatching { navRequesters.getValue("Settings").requestFocus() }
     }
 
     fun restoreContentFocus(): Boolean {
+        navExpanded = false
         val requester = rowRequesters[lastFocusedId] ?: rowRequesters.values.firstOrNull() ?: return false
         return runCatching {
             requester.requestFocus()
@@ -106,7 +109,7 @@ internal fun TvSettingsListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 58.dp, end = 58.dp, top = 102.dp, bottom = 32.dp),
+                .padding(start = 92.dp, end = 58.dp, top = 54.dp, bottom = 32.dp),
         ) {
             if (!topLabel.isNullOrBlank()) {
                 Text(
@@ -148,7 +151,11 @@ internal fun TvSettingsListScreen(
                         requester = rowRequesters.getValue(entry.id),
                         first = entry.id == firstFocusable?.id,
                         onUpFromFirst = ::focusSettingsNav,
-                        onFocused = { lastFocusedId = entry.id },
+                        onLeftToSidebar = ::focusSettingsNav,
+                        onFocused = {
+                            navExpanded = false
+                            lastFocusedId = entry.id
+                        },
                     )
                 }
 
@@ -168,16 +175,16 @@ internal fun TvSettingsListScreen(
             }
         }
 
-        TvTopBar(
+        TvSidebar(
             selected = "Settings",
-            expanded = true,
+            expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = {},
+            onFocused = { navExpanded = true },
             onNavigate = onNavigate,
             onProfile = onProfile,
-            onDownFromNav = ::restoreContentFocus,
-            modifier = Modifier.align(Alignment.TopCenter),
+            onReturnToContent = ::restoreContentFocus,
+            modifier = Modifier.align(Alignment.CenterStart),
         )
     }
 }
@@ -188,6 +195,7 @@ private fun TvSettingsRow(
     requester: FocusRequester,
     first: Boolean,
     onUpFromFirst: () -> Unit,
+    onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
     var focused by remember(entry.id) { mutableStateOf(false) }
@@ -209,6 +217,12 @@ private fun TvSettingsRow(
                         event.type == KeyEventType.KeyDown &&
                         keyCode == KeyEvent.KEYCODE_DPAD_UP -> {
                         onUpFromFirst()
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown &&
+                        keyCode == KeyEvent.KEYCODE_DPAD_LEFT &&
+                        entry.onPrevious == null -> {
+                        onLeftToSidebar()
                         true
                     }
                     event.type == KeyEventType.KeyDown &&

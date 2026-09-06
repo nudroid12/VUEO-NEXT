@@ -73,3 +73,7 @@ Global TV navigation now uses a centered floating capsule: Home / Search / Libra
 
 ## TV 29C.2a update popup lock
 Startup automatic update checks now surface the existing TV updater result through `TvUpdatePrompt`. Preserve the single `TvUpdateManager` engine and modal D-pad behavior. The exact pre-rebuild prompt source is not available in the current repo (legacy updater UI is tombstoned), so do not claim pixel-identical restoration; behavior is restored on the surviving updater engine.
+
+## 29C.3 current TV navigation
+
+The centered 29C.2 top navigation capsule is superseded. Use `TvSidebar` from `tv/ui/TvTopBar.kt`: 66dp collapsed / 202dp expanded, Home → Search → Library → Settings, Profile at bottom. LEFT from first logical content column enters current destination; RIGHT restores exact last content focus when possible; UP/DOWN explores; OK commits once; focus never routes. Keep Search 8-up poster density and 29C.2a update popup restore intact.

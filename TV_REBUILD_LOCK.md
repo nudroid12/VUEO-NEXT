@@ -123,3 +123,7 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 - The update prompt is modal and D-pad-contained: Later / Update, one OK activation, Back behaves as Later when not downloading.
 - `Later` dismisses only the current session; it must not erase cached release metadata or disable automatic checks.
 - Do not force installation. Android retains final installer confirmation and unknown-source permission handling.
+
+## 29C.3 sidebar navigation lock
+
+The 29C.2 centered top capsule is superseded by the 29C.3 slim collapsible left sidebar. Normal TV destinations use Home / Search / Library / Settings with Profile at the bottom of the rail. The rail is collapsed while content owns focus and expands only when the rail owns focus. DPAD_LEFT from a logical first content column enters the current destination; DPAD_RIGHT returns to the exact last content focus where available. UP/DOWN explores the rail; OK commits once; focus alone never routes. Do not restore persistent top navigation, VUEO page wordmarks, auto-route-on-focus, or stacked focus targets.
