@@ -41,3 +41,8 @@ This patch deliberately avoids exposing fake preferences. Settings now have TV c
 ## Preservation rule
 
 No legacy TV Settings implementation is restored. Shared Core owns preference/data behavior; TV owns the 10-foot interaction and presentation.
+
+
+## Build configuration
+
+The TV application explicitly enables Android `BuildConfig` generation because Settings/About/Updates use the signed TV version name and version code at runtime.
