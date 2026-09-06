@@ -1,45 +1,29 @@
 package com.vueo.tv.home
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
-
-internal sealed interface VueoHomeTile {
-    val key: String
-    val media: MediaItem
-
-    data class Media(
-        override val key: String,
-        override val media: MediaItem,
-    ) : VueoHomeTile
-
-    data class Resume(
-        override val key: String,
-        override val media: MediaItem,
-        val playback: LibraryPlaybackEntry,
-    ) : VueoHomeTile
-}
-
-internal data class VueoHomeRow(
-    val id: String,
-    val title: String,
-    val tiles: List<VueoHomeTile>,
-    val landscape: Boolean,
-)
+import com.vueo.tv.ui.TvPrimaryDestinations
+import com.vueo.tv.ui.TvSidebar
 
 /**
- * Home data boundary.
+ * Home's VUEO boundary.
  *
- * Presentation intentionally lives outside this file so the 32A rebuild does
- * not inherit the old Home Compose hierarchy. Only VUEO's existing data and
- * navigation contracts are retained here.
+ * Runtime/data/routing stay VUEO. Everything below this boundary is the new
+ * Home presentation and focus system. The shared sidebar is intentionally
+ * left untouched in 32B because sidebar redesign is being handled separately.
  */
 @Composable
 fun TvHomeScreen(
@@ -58,49 +42,34 @@ fun TvHomeScreen(
         loading = catalogRows.isEmpty()
         error = null
 
-        val cached = runCatching {
-            runtime.homeRows(forceRefresh = false)
-        }.getOrDefault(emptyList())
+        val cached = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
+        if (cached.isNotEmpty()) catalogRows = cached
 
-        if (cached.isNotEmpty()) {
-            catalogRows = cached
-        }
-
-        runCatching {
-            runtime.homeRows(forceRefresh = true)
-        }.onSuccess { fresh ->
-            if (fresh.isNotEmpty()) {
-                catalogRows = fresh
+        runCatching { runtime.homeRows(forceRefresh = true) }
+            .onSuccess { fresh -> if (fresh.isNotEmpty()) catalogRows = fresh }
+            .onFailure { failure ->
+                if (catalogRows.isEmpty()) error = failure.message ?: "Unable to load Home"
             }
-        }.onFailure { failure ->
-            if (catalogRows.isEmpty()) {
-                error = failure.message ?: "Unable to load Home"
-            }
-        }
 
         loading = false
     }
 
-    val continueWatching = remember(refreshToken) {
-        runtime.libraryStore.continueWatching()
-    }
-    val watchlist = remember(refreshToken) {
-        runtime.libraryStore.watchlist()
-    }
+    val continueWatching = remember(refreshToken) { runtime.libraryStore.continueWatching() }
+    val watchlist = remember(refreshToken) { runtime.libraryStore.watchlist() }
 
     val rows = remember(catalogRows, continueWatching, watchlist) {
         buildList {
             if (continueWatching.isNotEmpty()) {
                 add(
-                    VueoHomeRow(
-                        id = "continue",
+                    TvHomeRow(
+                        key = "continue-watching",
                         title = "Continue Watching",
-                        landscape = true,
-                        tiles = continueWatching.map { entry ->
-                            VueoHomeTile.Resume(
-                                key = "continue:${entry.mediaKey}",
-                                media = entry.media,
-                                playback = entry,
+                        kind = TvHomeRowKind.CONTINUE_WATCHING,
+                        entries = continueWatching.map { playback ->
+                            TvHomeEntry.Resume(
+                                key = "continue:${playback.mediaKey}",
+                                media = playback.media,
+                                playback = playback,
                             )
                         },
                     )
@@ -109,12 +78,12 @@ fun TvHomeScreen(
 
             if (watchlist.isNotEmpty()) {
                 add(
-                    VueoHomeRow(
-                        id = "my-list",
+                    TvHomeRow(
+                        key = "my-list",
                         title = "My List",
-                        landscape = false,
-                        tiles = watchlist.map { media ->
-                            VueoHomeTile.Media(
+                        kind = TvHomeRowKind.POSTERS,
+                        entries = watchlist.map { media ->
+                            TvHomeEntry.Media(
                                 key = "my-list:${media.type}:${media.id}",
                                 media = media,
                             )
@@ -126,12 +95,12 @@ fun TvHomeScreen(
             catalogRows.forEach { row ->
                 if (row.items.isNotEmpty()) {
                     add(
-                        VueoHomeRow(
-                            id = "catalog:${row.id}",
+                        TvHomeRow(
+                            key = "catalog:${row.id}",
                             title = row.title,
-                            landscape = false,
-                            tiles = row.items.mapIndexed { index, media ->
-                                VueoHomeTile.Media(
+                            kind = TvHomeRowKind.POSTERS,
+                            entries = row.items.mapIndexed { index, media ->
+                                TvHomeEntry.Media(
                                     key = "${row.id}:$index:${media.type}:${media.id}",
                                     media = media,
                                 )
@@ -143,17 +112,38 @@ fun TvHomeScreen(
         }
     }
 
-    VueoHomePresentation(
-        rows = rows,
-        loading = loading,
-        error = error,
-        onNavigate = onNavigate,
-        onOpenTile = { tile ->
-            when (tile) {
-                is VueoHomeTile.Resume -> onResume(tile.playback)
-                is VueoHomeTile.Media -> onOpenMedia(tile.media)
-            }
-        },
-        onProfile = onProfile,
-    )
+    val contentFocusRequester = remember { FocusRequester() }
+
+    // Sidebar is held as-is for now. New Home content only interacts with it
+    // through this one focus boundary.
+    val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
+    val profileRequester = remember { FocusRequester() }
+    var navExpanded by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        TvHomePresentation(
+            rows = rows,
+            loading = loading,
+            error = error,
+            contentFocusRequester = contentFocusRequester,
+            onContentFocused = { navExpanded = false },
+            onOpen = { entry -> entry.open(onOpenMedia, onResume) },
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        TvSidebar(
+            selected = "Home",
+            expanded = navExpanded,
+            navRequesters = navRequesters,
+            profileRequester = profileRequester,
+            onFocused = { navExpanded = true },
+            onNavigate = onNavigate,
+            onProfile = onProfile,
+            onReturnToContent = {
+                navExpanded = false
+                runCatching { contentFocusRequester.requestFocus() }.isSuccess
+            },
+            modifier = Modifier.align(Alignment.CenterStart),
+        )
+    }
 }
