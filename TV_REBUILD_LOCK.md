@@ -83,3 +83,9 @@ Validated against the first real-TV Home screenshot after the clean rebuild:
 - Hero fade-through: 420ms in / 220ms out after the locked 180ms focus settle.
 
 Do not shrink the hero back to the 29A-R prototype proportions or restore persistent top-nav labels.
+
+## 29B.1 Settings + D-pad lock
+- Top navigation must require only one OK press to open the focused destination.
+- Focus movement alone must never auto-open a destination.
+- TV Settings is a clean TV-native surface backed by Shared Core; do not restore the legacy TV Settings implementation.
+- The first TV Settings activation covers profile/startup, playback, subtitle and source preferences whose behavior already exists in Shared Core.

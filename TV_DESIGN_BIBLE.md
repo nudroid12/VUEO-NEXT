@@ -82,3 +82,11 @@ Mobile provides proven behaviour contracts through Shared Core; TV does not copy
 - Landscape cards are larger (244dp), with titles below artwork instead of heavy text painted over every image.
 - Focus is shallow scale + soft shadow + a 1dp neutral edge. No thick white frame.
 - Hero still settles after 180ms and fades through; remote focus itself remains immediate.
+
+## 29B.1 Remote Navigation Contract
+- D-pad movement changes focus only; it never commits navigation.
+- DPAD_CENTER / ENTER performs one action for the focused target.
+- Do not stack independent focus targets for one visible control.
+- Content -> UP -> contextual top navigation.
+- Top navigation -> DOWN -> exact last focused content/settings target.
+- Settings rows use Up/Down to move, Left/Right to adjust, OK to commit/toggle/open.

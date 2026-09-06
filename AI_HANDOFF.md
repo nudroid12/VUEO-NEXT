@@ -50,3 +50,6 @@ Current Mobile stabilisation rules:
 - Home only: larger hero breathing area, first rail at ~62% viewport, fully contextual nav labels, layered cinematic scrims, 244dp landscape cards, external captions, shallow neutral focus depth.
 - Preserves 180ms card-driven hero settle and all clean-rebuild runtime/data contracts.
 - Profile flow, Search, Library, Settings, Details, Source and Player behaviour are intentionally unchanged by 29B.
+
+## TV 29B.1 lock
+Top navigation now commits with a single OK/Enter press; never reintroduce stacked `focusable + clickable` focus targets for one nav control. TV Settings is active as a clean TV-native Shared-Core-backed surface. Home rail title-to-card spacing is 19dp while the 29B rail vertical anchor remains unchanged.

@@ -4,19 +4,19 @@ import android.view.KeyEvent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,19 +27,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Text
-import androidx.compose.ui.input.key.Key
 
 val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
 
+/**
+ * Shared TV top navigation grammar.
+ *
+ * D-pad focus movement never activates a route. DPAD_CENTER/ENTER commits the
+ * currently focused destination exactly once. We intentionally rely on
+ * clickable's single focus target instead of stacking focusable + clickable,
+ * which previously created a two-step activation path on some Android TV
+ * devices.
+ */
 @Composable
 fun TvTopBar(
     selected: String,
@@ -136,17 +141,21 @@ private fun TvNavItem(
                 focused = it.isFocused
                 if (it.isFocused) onFocused()
             }
-            .onPreviewKeyEvent {
-                if (
-                    it.type == KeyEventType.KeyDown &&
-                    it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                ) {
-                    onDown()
-                } else {
-                    false
+            .onPreviewKeyEvent { event ->
+                when {
+                    event.type == KeyEventType.KeyDown &&
+                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        onDown()
+                    }
+
+                    event.isTvActivationKey() -> {
+                        if (event.type == KeyEventType.KeyUp) onClick()
+                        true
+                    }
+
+                    else -> false
                 }
             }
-            .focusable()
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     )
@@ -169,13 +178,20 @@ private fun TvProfileAnchor(
                 focused = it.isFocused
                 if (it.isFocused) onFocused()
             }
-            .onPreviewKeyEvent {
-                if (
-                    it.type == KeyEventType.KeyDown &&
-                    it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                ) {
-                    onDown()
-                } else false
+            .onPreviewKeyEvent { event ->
+                when {
+                    event.type == KeyEventType.KeyDown &&
+                        event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        onDown()
+                    }
+
+                    event.isTvActivationKey() -> {
+                        if (event.type == KeyEventType.KeyUp) onClick()
+                        true
+                    }
+
+                    else -> false
+                }
             }
             .background(
                 color = if (focused) TvDesign.White.copy(alpha = .20f)
@@ -187,7 +203,6 @@ private fun TvProfileAnchor(
                 color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = if (compact) .14f else .18f),
                 shape = CircleShape,
             )
-            .focusable()
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -199,3 +214,8 @@ private fun TvProfileAnchor(
         )
     }
 }
+
+private fun androidx.compose.ui.input.key.KeyEvent.isTvActivationKey(): Boolean =
+    nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+        nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
+        nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER

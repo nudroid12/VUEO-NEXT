@@ -385,7 +385,7 @@ private fun HomeMediaRow(
     onUpFromFirstRow: () -> Unit,
     onOpen: (HomeEntry) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
         Text(
             text = row.title,
             color = TvDesign.White.copy(alpha = .92f),

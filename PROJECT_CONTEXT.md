@@ -624,3 +624,9 @@ TV owns its own 10-foot Compose UI, D-pad focus, navigation and motion. Read `TV
 - Home only: larger hero breathing area, first rail at ~62% viewport, fully contextual nav labels, layered cinematic scrims, 244dp landscape cards, external captions, shallow neutral focus depth.
 - Preserves 180ms card-driven hero settle and all clean-rebuild runtime/data contracts.
 - Profile flow, Search, Library, Settings, Details, Source and Player behaviour are intentionally unchanged by 29B.
+
+### TV 29B.1 — Navigation + Settings Activation
+- Fixed top-nav two-step activation: one focused control = one focus target = one OK action.
+- Home row title-to-card spacing increased without moving the whole first rail lower.
+- Activated a new TV-native Settings screen backed by Shared Core profile/playback/subtitle/source preferences.
+- Navigation contract: focus moves with D-pad; OK commits; Down from nav restores the last setting/content target where supported.
