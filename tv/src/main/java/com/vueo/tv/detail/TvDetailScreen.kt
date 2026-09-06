@@ -11,15 +11,15 @@ import androidx.compose.runtime.setValue
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import kotlinx.coroutines.launch
 
 /**
- * TV 36A Details boundary.
+ * TV 38A Details runtime boundary.
  *
- * Data, library semantics, playback history and routes remain VUEO-owned.
- * All Details presentation/focus/layout lives in the 36A presentation files.
+ * Only data loading, library state and navigation callbacks live here.
+ * Layout, focus, styling and section composition are owned by the new 38A UI
+ * files and do not reuse the 34A/36A presentation tree.
  */
 @Composable
 fun TvDetailScreen(
@@ -35,9 +35,7 @@ fun TvDetailScreen(
     val mediaKey = "${initial.type}:${initial.id}"
     var item by remember(mediaKey) { mutableStateOf(initial) }
     var loading by remember(mediaKey) { mutableStateOf(true) }
-    var watchlisted by remember(mediaKey) {
-        mutableStateOf(runtime.libraryStore.isWatchlisted(initial))
-    }
+    var watchlisted by remember(mediaKey) { mutableStateOf(runtime.libraryStore.isWatchlisted(initial)) }
     var ratings by remember(mediaKey) { mutableStateOf<List<MediaRating>>(emptyList()) }
     var related by remember(mediaKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
     var selectedSeason by remember(mediaKey) { mutableStateOf<Int?>(null) }
@@ -48,20 +46,23 @@ fun TvDetailScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(mediaKey) {
-        val isSameMemory = TvDetailFocusMemory.mediaKey == mediaKey
-        if (!isSameMemory) TvDetailFocusMemory.resetFor(mediaKey)
+        val restoringSameTitle = TvDetailSessionMemory.mediaKey == mediaKey
+        if (!restoringSameTitle) TvDetailSessionMemory.reset(mediaKey)
 
         loading = true
         val enriched = runCatching { runtime.loadMeta(initial) }.getOrDefault(initial)
         item = enriched
         watchlisted = runtime.libraryStore.isWatchlisted(enriched)
-        ratings = (detailBaseRatings(enriched) + runCatching { runtime.ratings(enriched) }.getOrDefault(emptyList()))
+        ratings = (
+            detailBaseRatings(enriched) +
+                runCatching { runtime.ratings(enriched) }.getOrDefault(emptyList())
+            )
             .associateBy(MediaRating::source)
             .values
             .toList()
         related = runCatching { runtime.relatedTitles(enriched) }.getOrDefault(emptyList())
 
-        if (enriched.isDetailSeries()) {
+        if (enriched.isTvSeries()) {
             val history = runtime.libraryStore.history()
             val resumeEntry = history.firstOrNull { entry ->
                 entry.media.id == enriched.id &&
@@ -75,40 +76,35 @@ fun TvDetailScreen(
                     episode.season == entry.season && episode.episode == entry.episode
                 }
             }
-            val availableSeasons = detailSeasons(enriched)
-            val rememberedSeason = TvDetailFocusMemory.selectedSeason
-                ?.takeIf { isSameMemory && it in availableSeasons }
-            val firstSeason = rememberedSeason
-                ?: resumeEpisode?.season
-                ?: availableSeasons.firstOrNull()
+            val seasons = detailSeasonNumbers(enriched)
+            val rememberedSeason = TvDetailSessionMemory.selectedSeason
+                ?.takeIf { restoringSameTitle && it in seasons }
+            val initialSeason = rememberedSeason ?: resumeEpisode?.season ?: seasons.firstOrNull()
 
-            selectedSeason = firstSeason
-            val rememberedEpisode = TvDetailFocusMemory.episodeId
-                ?.takeIf { isSameMemory }
-                ?.let { id ->
-                    enriched.episodes.firstOrNull { it.id == id && it.season == firstSeason }
-                }
-            selectedEpisode = rememberedEpisode
-                ?: resumeEpisode?.takeIf { it.season == firstSeason }
-                ?: enriched.episodes.firstOrNull { it.season == firstSeason }
+            selectedSeason = initialSeason
+            selectedEpisode = TvDetailSessionMemory.episodeId
+                ?.takeIf { restoringSameTitle }
+                ?.let { id -> enriched.episodes.firstOrNull { it.id == id && it.season == initialSeason } }
+                ?: resumeEpisode?.takeIf { it.season == initialSeason }
+                ?: enriched.episodes.firstOrNull { it.season == initialSeason }
 
-            TvDetailFocusMemory.selectedSeason = selectedSeason
+            TvDetailSessionMemory.selectedSeason = initialSeason
         } else {
             selectedSeason = null
             selectedEpisode = null
-            TvDetailFocusMemory.selectedSeason = null
-            TvDetailFocusMemory.episodeId = null
+            TvDetailSessionMemory.selectedSeason = null
+            TvDetailSessionMemory.episodeId = null
         }
         loading = false
     }
 
-    val history = remember(item.id, item.type, selectedEpisode, loading) {
+    val history = remember(item.id, item.type, selectedEpisode?.id, loading) {
         runtime.libraryStore.history()
     }
     val playbackEntry = remember(item.id, item.type, selectedEpisode?.id, history) {
         detailPlaybackEntry(item, selectedEpisode, history)
     }
-    val seasons = remember(item.episodes) { detailSeasons(item) }
+    val seasons = remember(item.episodes) { detailSeasonNumbers(item) }
     val episodesForSeason = remember(item.episodes, selectedSeason) {
         item.episodes
             .filter { it.season == selectedSeason }
@@ -118,12 +114,7 @@ fun TvDetailScreen(
         if (loading) null else runtime.dnaMatch(item)
     }
     val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry, loading) {
-        detailPrimaryActionLabel(
-            item = item,
-            episode = selectedEpisode,
-            playbackEntry = playbackEntry,
-            loading = loading,
-        )
+        detailPrimaryActionLabel(item, selectedEpisode, playbackEntry, loading)
     }
     val insightAvailable = remember(loading) {
         !loading &&
@@ -131,8 +122,8 @@ fun TvDetailScreen(
             runtime.settingsStore.geminiApiKey().isNotBlank()
     }
 
-    TvDetailPresentation(
-        state = TvDetailPresentationState(
+    TvDetailView(
+        state = TvDetailUiState(
             item = item,
             loading = loading,
             watchlisted = watchlisted,
@@ -152,7 +143,7 @@ fun TvDetailScreen(
             insightError = insightError,
         ),
         onPlay = {
-            if (!loading && (!item.isDetailSeries() || selectedEpisode != null)) {
+            if (!loading && (!item.isTvSeries() || selectedEpisode != null)) {
                 onWatch(item, selectedEpisode)
             }
         },
@@ -165,20 +156,20 @@ fun TvDetailScreen(
             selectedEpisode = item.episodes
                 .filter { it.season == season }
                 .minByOrNull { it.episode }
-            TvDetailFocusMemory.selectedSeason = season
-            TvDetailFocusMemory.episodeId = null
+            TvDetailSessionMemory.selectedSeason = season
+            TvDetailSessionMemory.episodeId = null
         },
         onEpisodeFocused = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
-            TvDetailFocusMemory.selectedSeason = episode.season
-            TvDetailFocusMemory.episodeId = episode.id
+            TvDetailSessionMemory.selectedSeason = episode.season
+            TvDetailSessionMemory.episodeId = episode.id
         },
         onEpisodeSelected = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
-            TvDetailFocusMemory.selectedSeason = episode.season
-            TvDetailFocusMemory.episodeId = episode.id
+            TvDetailSessionMemory.selectedSeason = episode.season
+            TvDetailSessionMemory.episodeId = episode.id
             onWatch(item, episode)
         },
         onOpenRelated = onOpenRelated,
@@ -201,100 +192,3 @@ fun TvDetailScreen(
         },
     )
 }
-
-internal data class TvDetailPresentationState(
-    val item: MediaItem,
-    val loading: Boolean,
-    val watchlisted: Boolean,
-    val ratings: List<MediaRating>,
-    val dnaMatch: Int?,
-    val seasons: List<Int>,
-    val selectedSeason: Int?,
-    val episodes: List<EpisodeItem>,
-    val selectedEpisode: EpisodeItem?,
-    val history: List<LibraryPlaybackEntry>,
-    val playbackEntry: LibraryPlaybackEntry?,
-    val related: List<MediaItem>,
-    val primaryActionLabel: String,
-    val insightAvailable: Boolean,
-    val insight: String?,
-    val insightLoading: Boolean,
-    val insightError: String?,
-)
-
-internal object TvDetailFocusMemory {
-    var mediaKey: String? = null
-    var selectedSeason: Int? = null
-    var episodeId: String? = null
-    var relatedIndex: Int = 0
-
-    fun resetFor(key: String) {
-        mediaKey = key
-        selectedSeason = null
-        episodeId = null
-        relatedIndex = 0
-    }
-}
-
-internal fun detailPlaybackEntry(
-    media: MediaItem,
-    episode: EpisodeItem?,
-    entries: List<LibraryPlaybackEntry>,
-): LibraryPlaybackEntry? =
-    entries.firstOrNull { entry ->
-        entry.media.id == media.id &&
-            entry.media.type == media.type &&
-            if (media.isDetailSeries() && episode != null) {
-                entry.season == episode.season && entry.episode == episode.episode
-            } else {
-                !media.isDetailSeries()
-            }
-    }
-
-internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean =
-    entry.positionMs > 15_000L &&
-        (entry.durationMs <= 0L || entry.positionMs < (entry.durationMs * .95f).toLong())
-
-internal fun detailRemainingLabel(entry: LibraryPlaybackEntry): String {
-    if (entry.durationMs <= 0L) return "Resume"
-    val remainingMs = (entry.durationMs - entry.positionMs).coerceAtLeast(0L)
-    val minutes = (remainingMs / 60_000L).coerceAtLeast(0L)
-    return if (minutes > 0L) "$minutes min left" else "Almost done"
-}
-
-internal fun MediaItem.isDetailSeries(): Boolean =
-    type.lowercase() in setOf("series", "tv")
-
-private fun detailSeasons(item: MediaItem): List<Int> {
-    val all = item.episodes.map(EpisodeItem::season).distinct()
-    val regular = all.filter { it > 0 }.sorted()
-    val specials = all.filter { it == 0 }
-    return regular + specials
-}
-
-private fun detailPrimaryActionLabel(
-    item: MediaItem,
-    episode: EpisodeItem?,
-    playbackEntry: LibraryPlaybackEntry?,
-    loading: Boolean,
-): String {
-    val canResume = playbackEntry?.let(::detailCanResume) == true
-    return when {
-        loading -> "Loading…"
-        item.isDetailSeries() && episode != null && canResume ->
-            "Resume S${episode.season} E${episode.episode}"
-        item.isDetailSeries() && episode != null ->
-            "Play S${episode.season} E${episode.episode}"
-        item.isDetailSeries() -> "Select an Episode"
-        canResume -> "Resume"
-        else -> "Play"
-    }
-}
-
-private fun detailBaseRatings(media: MediaItem): List<MediaRating> =
-    buildList {
-        media.imdbRating?.takeIf { it.isFinite() && it > 0.0 }
-            ?.let { add(MediaRating(source = "imdb", value = it)) }
-        media.tmdbRating?.takeIf { it.isFinite() && it > 0.0 }
-            ?.let { add(MediaRating(source = "tmdb", value = it)) }
-    }
