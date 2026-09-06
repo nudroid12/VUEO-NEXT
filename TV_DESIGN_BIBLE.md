@@ -111,3 +111,12 @@ Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/
 - Type / Sort / Genre / Title-Actor live on a single calm control line.
 - Results are 2:3 poster cards with **8 columns** visible per row, title + quiet metadata below.
 - Focus motion is purposeful only: ~1.035 scale, short 110-145ms timing, low shadow, 1dp neutral edge.
+
+## 29C.2 centered floating navigation
+- Global post-profile navigation is a **centered floating capsule**, not a full-width toolbar and not a sidebar.
+- Capsule contents: Home / Search / Library / Settings. Profile remains outside the capsule at top-right.
+- Use a quiet translucent charcoal/glass-like surface with a subtle 1dp neutral edge; do not use expensive live blur.
+- Selected route gets a restrained filled pill. Focus gets a slightly stronger fill/edge and only ~1.025 scale.
+- Navigation motion stays short and functional (roughly 95–145ms), with no bounce, glow, or ornamental transitions.
+- Focus movement does not route. OK/Enter commits once. Down returns to the screen's existing content target.
+- Home/Search may collapse labels while content owns focus, preserving the 29B contextual-navigation lock.

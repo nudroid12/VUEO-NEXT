@@ -108,3 +108,11 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 - Search/Discover poster grid is fixed at **8 visible 2:3 posters per row** for the TV viewport.
 - Search focus motion stays shallow (~1.035 scale), neutral-white and low-shadow; no bounce, glow or decorative motion.
 - 29C Search logic, Shared Core behavior, return-state restoration and Home hero/focus logic remain unchanged.
+
+## 29C.2 floating navigation lock
+- Use the centered floating capsule for Home / Search / Library / Settings across normal post-profile TV pages.
+- Keep Profile as a separate top-right circular anchor and keep the VUEO wordmark absent from normal page chrome.
+- Do not add a sidebar or restore a left-aligned full-width nav strip.
+- Selected destination may use a soft filled pill; focused destination uses shallow neutral-white depth only.
+- D-pad focus movement never changes route; one OK/Enter activation commits once.
+- Preserve Home/Search contextual nav collapse/reveal, exact Down-to-content restore behavior, and all existing route logic.

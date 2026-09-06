@@ -10,11 +10,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,9 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -36,13 +38,15 @@ import androidx.compose.ui.unit.sp
 val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
 
 /**
- * Shared TV top navigation grammar.
+ * Shared floating TV navigation island.
  *
- * D-pad focus movement never activates a route. DPAD_CENTER/ENTER commits the
- * currently focused destination exactly once. We intentionally rely on
- * clickable's single focus target instead of stacking focusable + clickable,
- * which previously created a two-step activation path on some Android TV
- * devices.
+ * The visual shell is centered like a premium media control rather than a full
+ * Android-style toolbar. Profile remains a separate top-right anchor. Focus
+ * movement never activates a destination; DPAD_CENTER/ENTER commits once.
+ *
+ * Home/Search may still collapse the labels while content owns focus. This
+ * preserves the contextual 29B navigation grammar while keeping the capsule as
+ * a very quiet spatial anchor.
  */
 @Composable
 fun TvTopBar(
@@ -59,18 +63,38 @@ fun TvTopBar(
 ) {
     val navAlpha by animateFloatAsState(
         targetValue = if (expanded) 1f else if (cinematicCollapsed) 0f else .18f,
-        animationSpec = tween(150),
+        animationSpec = tween(145),
         label = "topNavAlpha",
     )
+    val shellAlpha by animateFloatAsState(
+        targetValue = when {
+            expanded -> .92f
+            cinematicCollapsed -> .10f
+            else -> .58f
+        },
+        animationSpec = tween(145),
+        label = "topNavShellAlpha",
+    )
 
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 52.dp, vertical = 26.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 52.dp, vertical = 20.dp),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .background(
+                    color = TvDesign.SurfaceRaised.copy(alpha = shellAlpha * .74f),
+                    shape = NavCapsuleShape,
+                )
+                .border(
+                    width = 1.dp,
+                    color = TvDesign.White.copy(alpha = shellAlpha * .13f),
+                    shape = NavCapsuleShape,
+                )
+                .padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TvPrimaryDestinations.forEach { label ->
@@ -86,17 +110,19 @@ fun TvTopBar(
             }
         }
 
-        Spacer(Modifier.weight(1f))
-
         TvProfileAnchor(
             requester = profileRequester,
             onFocused = onFocused,
             onClick = onProfile,
             onDown = onDownFromNav,
             compact = cinematicCollapsed,
+            modifier = Modifier.align(Alignment.CenterEnd),
         )
     }
 }
+
+private val NavCapsuleShape = RoundedCornerShape(28.dp)
+private val NavItemShape = RoundedCornerShape(20.dp)
 
 @Composable
 private fun TvNavItem(
@@ -109,14 +135,33 @@ private fun TvNavItem(
     onDown: () -> Boolean,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusScale by animateFloatAsState(
+        targetValue = if (focused) 1.025f else 1f,
+        animationSpec = tween(if (focused) 120 else 95),
+        label = "navFocusScale",
+    )
     val textColor by animateColorAsState(
         targetValue = when {
             focused -> TvDesign.White
-            selected -> TvDesign.White.copy(alpha = .92f * contentAlpha)
+            selected -> TvDesign.White.copy(alpha = .94f * contentAlpha)
             else -> TvDesign.Muted.copy(alpha = contentAlpha)
         },
-        animationSpec = tween(120),
+        animationSpec = tween(110),
         label = "navTextColor",
+    )
+    val fillColor by animateColorAsState(
+        targetValue = when {
+            focused -> TvDesign.White.copy(alpha = .18f)
+            selected && contentAlpha > .01f -> TvDesign.White.copy(alpha = .105f * contentAlpha)
+            else -> Color.Transparent
+        },
+        animationSpec = tween(115),
+        label = "navFillColor",
+    )
+    val edgeColor by animateColorAsState(
+        targetValue = if (focused) TvDesign.White.copy(alpha = .48f) else Color.Transparent,
+        animationSpec = tween(110),
+        label = "navEdgeColor",
     )
 
     Text(
@@ -145,8 +190,11 @@ private fun TvNavItem(
                     else -> false
                 }
             }
+            .scale(focusScale)
+            .background(fillColor, NavItemShape)
+            .border(1.dp, edgeColor, NavItemShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 17.dp, vertical = 9.dp),
     )
 }
 
@@ -157,10 +205,11 @@ private fun TvProfileAnchor(
     onClick: () -> Unit,
     onDown: () -> Boolean,
     compact: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(if (compact) 30.dp else 34.dp)
             .focusRequester(requester)
             .onFocusChanged {

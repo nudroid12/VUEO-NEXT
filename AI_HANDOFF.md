@@ -67,3 +67,6 @@ TV Search is now Mobile Search parity adapted only for TV scale/focus/D-pad. Pre
 
 ## TV 29C.1 calibration lock
 Latest TV Search calibration removes the persistent VUEO wordmark from post-profile page chrome and compacts Search to the approved cinematic TV composition. Search uses an 8-column 2:3 poster grid, a ~76% width search field, one compact filter/mode row and shallow 1.035 focus scale. Keep 29C search logic/return-state behavior and 29B Home hero logic unchanged. Startup/profile branding remains.
+
+## TV 29C.2 floating navigation lock
+Global TV navigation now uses a centered floating capsule: Home / Search / Library / Settings. Profile stays separate at top-right; no VUEO wordmark returns to normal app pages. The capsule is a translucent charcoal surface with a restrained selected pill and shallow focus treatment. D-pad movement remains focus-only, OK commits once, and Home/Search keep the contextual collapse/reveal grammar from 29B.

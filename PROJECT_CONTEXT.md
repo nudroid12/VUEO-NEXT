@@ -647,3 +647,11 @@ TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad inte
 - Search composition now follows the approved compact cinematic mockup while retaining VUEO's contextual top navigation (no new sidebar).
 - Search field is ~76% content width, filters and Title/Actor share one row, and result density is locked to 8 visible 2:3 posters per row.
 - Focus scale is reduced to ~1.035 with restrained shadow; no Search logic, Shared Core source, return-state behavior, or Home hero logic changes.
+
+### TV 29C.2 — Centered Floating Navigation
+- Replaces the left-aligned text strip with one centered floating navigation capsule shared by Home, Search, Library and Settings.
+- Destinations remain Home / Search / Library / Settings; Profile remains a separate top-right anchor.
+- Current destination uses a soft filled pill. Focus uses neutral white, ~1.025 scale and short 95–120ms motion.
+- No route is committed by focus movement; OK/Enter still activates exactly once.
+- Home/Search retain the contextual collapse/reveal behavior so content and hero remain visually dominant.
+- This is presentation-only; routing, screen behavior, Search logic, Home hero logic, Mobile and Shared Core are unchanged.
