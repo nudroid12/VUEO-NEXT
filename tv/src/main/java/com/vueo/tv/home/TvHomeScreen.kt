@@ -11,39 +11,36 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 
-internal sealed interface TvHomeEntry {
+internal sealed interface VueoHomeTile {
     val key: String
     val media: MediaItem
 
     data class Media(
         override val key: String,
         override val media: MediaItem,
-    ) : TvHomeEntry
+    ) : VueoHomeTile
 
     data class Resume(
         override val key: String,
         override val media: MediaItem,
         val playback: LibraryPlaybackEntry,
-    ) : TvHomeEntry
+    ) : VueoHomeTile
 }
 
-internal data class TvHomeRow(
-    val key: String,
+internal data class VueoHomeRow(
+    val id: String,
     val title: String,
-    val entries: List<TvHomeEntry>,
-    val style: TvHomeRowStyle,
+    val tiles: List<VueoHomeTile>,
+    val landscape: Boolean,
 )
 
-internal enum class TvHomeRowStyle {
-    CONTINUE,
-    POSTER,
-}
-
-internal object TvHomeMemory {
-    var activeRowKey: String? = null
-    val itemIndexByRow = mutableMapOf<String, Int>()
-}
-
+/**
+ * Home data boundary.
+ *
+ * Presentation intentionally lives outside this file so the 32A rebuild does
+ * not inherit the old Home Compose hierarchy. Only VUEO's existing data and
+ * navigation contracts are retained here.
+ */
 @Composable
 fun TvHomeScreen(
     runtime: TvRuntime,
@@ -72,7 +69,9 @@ fun TvHomeScreen(
         runCatching {
             runtime.homeRows(forceRefresh = true)
         }.onSuccess { fresh ->
-            if (fresh.isNotEmpty()) catalogRows = fresh
+            if (fresh.isNotEmpty()) {
+                catalogRows = fresh
+            }
         }.onFailure { failure ->
             if (catalogRows.isEmpty()) {
                 error = failure.message ?: "Unable to load Home"
@@ -93,15 +92,15 @@ fun TvHomeScreen(
         buildList {
             if (continueWatching.isNotEmpty()) {
                 add(
-                    TvHomeRow(
-                        key = "continue",
+                    VueoHomeRow(
+                        id = "continue",
                         title = "Continue Watching",
-                        style = TvHomeRowStyle.CONTINUE,
-                        entries = continueWatching.map { playback ->
-                            TvHomeEntry.Resume(
-                                key = "continue:${playback.mediaKey}",
-                                media = playback.media,
-                                playback = playback,
+                        landscape = true,
+                        tiles = continueWatching.map { entry ->
+                            VueoHomeTile.Resume(
+                                key = "continue:${entry.mediaKey}",
+                                media = entry.media,
+                                playback = entry,
                             )
                         },
                     )
@@ -110,12 +109,12 @@ fun TvHomeScreen(
 
             if (watchlist.isNotEmpty()) {
                 add(
-                    TvHomeRow(
-                        key = "my-list",
+                    VueoHomeRow(
+                        id = "my-list",
                         title = "My List",
-                        style = TvHomeRowStyle.POSTER,
-                        entries = watchlist.map { media ->
-                            TvHomeEntry.Media(
+                        landscape = false,
+                        tiles = watchlist.map { media ->
+                            VueoHomeTile.Media(
                                 key = "my-list:${media.type}:${media.id}",
                                 media = media,
                             )
@@ -124,36 +123,37 @@ fun TvHomeScreen(
                 )
             }
 
-            catalogRows.forEach { catalog ->
-                if (catalog.items.isEmpty()) return@forEach
-                add(
-                    TvHomeRow(
-                        key = "catalog:${catalog.id}",
-                        title = catalog.title,
-                        style = TvHomeRowStyle.POSTER,
-                        entries = catalog.items.mapIndexed { index, media ->
-                            TvHomeEntry.Media(
-                                key = "catalog:${catalog.id}:$index:${media.type}:${media.id}",
-                                media = media,
-                            )
-                        },
+            catalogRows.forEach { row ->
+                if (row.items.isNotEmpty()) {
+                    add(
+                        VueoHomeRow(
+                            id = "catalog:${row.id}",
+                            title = row.title,
+                            landscape = false,
+                            tiles = row.items.mapIndexed { index, media ->
+                                VueoHomeTile.Media(
+                                    key = "${row.id}:$index:${media.type}:${media.id}",
+                                    media = media,
+                                )
+                            },
+                        )
                     )
-                )
+                }
             }
         }
     }
 
-    TvHomePresentation(
+    VueoHomePresentation(
         rows = rows,
         loading = loading,
         error = error,
         onNavigate = onNavigate,
-        onProfile = onProfile,
-        onOpenEntry = { entry ->
-            when (entry) {
-                is TvHomeEntry.Resume -> onResume(entry.playback)
-                is TvHomeEntry.Media -> onOpenMedia(entry.media)
+        onOpenTile = { tile ->
+            when (tile) {
+                is VueoHomeTile.Resume -> onResume(tile.playback)
+                is VueoHomeTile.Media -> onOpenMedia(tile.media)
             }
         },
+        onProfile = onProfile,
     )
 }
