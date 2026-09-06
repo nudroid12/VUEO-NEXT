@@ -265,7 +265,7 @@ private fun TvPersonalizationSettings(
         onNavigate,
         onProfile,
         onBack,
-        topLabel = "VUEO",
+        topLabel = null,
     )
 }
 
@@ -294,7 +294,7 @@ private fun TvContentManagerHub(
             onActivate = { onOpen(TvSettingsPage.CONTENT_CATALOGS) },
         ),
     )
-    TvSettingsListScreen("Content Manager", "Manage content sources without restoring legacy TV UI.", entries, onNavigate, onProfile, onBack, topLabel = "VUEO")
+    TvSettingsListScreen("Content Manager", "Manage content sources without restoring legacy TV UI.", entries, onNavigate, onProfile, onBack, topLabel = null)
 }
 
 @Composable
@@ -609,7 +609,7 @@ private fun TvEnhancementSettings(
         toggleEntry("gemini-insights", "Gemini Insights", "Allow optional title insight surfaces when configured.", gemini, enabled = geminiKey.isNotBlank()) { gemini = it; store.setGeminiInsightsEnabled(it) },
     )
 
-    TvSettingsListScreen("Enhancements", "Optional metadata, ratings and external services. Core playback works without them.", entries, onNavigate, onProfile, onBack, topLabel = "VUEO")
+    TvSettingsListScreen("Enhancements", "Optional metadata, ratings and external services. Core playback works without them.", entries, onNavigate, onProfile, onBack, topLabel = null)
 }
 
 @Composable

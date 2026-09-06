@@ -639,3 +639,11 @@ TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad inte
 - Added Discover, Title/Actor search, Type/Sort/Genre filters, Mobile relevance/dedupe behavior and poster-first results.
 - Search session is hoisted to `VueoTvApp` so Detail return restores query, filters, scroll and exact result focus where available.
 - All new Search behavior consumes existing Shared Core APIs; Mobile and Shared Core source remain untouched.
+
+
+### TV 29C.1 — Search TV Calibration
+- Real-TV validation showed the first 29C Search pass was oversized and too close to a mobile layout enlarged for TV.
+- Post-profile page chrome no longer carries a persistent VUEO wordmark; startup/profile branding remains intact.
+- Search composition now follows the approved compact cinematic mockup while retaining VUEO's contextual top navigation (no new sidebar).
+- Search field is ~76% content width, filters and Title/Actor share one row, and result density is locked to 8 visible 2:3 posters per row.
+- Focus scale is reduced to ~1.035 with restrained shadow; no Search logic, Shared Core source, return-state behavior, or Home hero logic changes.

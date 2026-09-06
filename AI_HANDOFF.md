@@ -63,3 +63,7 @@ Top navigation now commits with a single OK/Enter press; never reintroduce stack
 
 ## TV 29C Search lock
 TV Search is now Mobile Search parity adapted only for TV scale/focus/D-pad. Preserve Discover + Title/Actor + Type/Sort/Genre + poster grid and the root-owned `TvSearchSession` return-state behavior. Do not restore the old minimal title-only TV Search.
+
+
+## TV 29C.1 calibration lock
+Latest TV Search calibration removes the persistent VUEO wordmark from post-profile page chrome and compacts Search to the approved cinematic TV composition. Search uses an 8-column 2:3 poster grid, a ~76% width search field, one compact filter/mode row and shallow 1.035 focus scale. Keep 29C search logic/return-state behavior and 29B Home hero logic unchanged. Startup/profile branding remains.

@@ -17,7 +17,7 @@ Performance rule: **60 FPS first.** Any visual effect that causes unstable frame
 Locked composition: **Hero + Peeking Row**.
 
 - Full-canvas cinematic artwork.
-- Small persistent VUEO brand anchor at the top-left.
+- No persistent VUEO wordmark in post-profile page chrome; branding stays in startup/profile surfaces.
 - Profile anchor at the top-right.
 - Hero is presentation only and never receives focus.
 - The first content rail is visible in the initial viewport.
@@ -76,7 +76,7 @@ Mobile provides proven behaviour contracts through Shared Core; TV does not copy
 29B is calibrated from the first real-TV screenshot of the clean rebuild. Home presentation now follows these concrete rules:
 
 - First rail begins at roughly 62% of the viewport so the hero owns the upper canvas while the first row still peeks into view.
-- Home navigation labels fully disappear while browsing content; VUEO and the profile anchor remain quiet anchors.
+- Home navigation labels fully disappear while browsing content; the profile anchor remains the quiet persistent anchor.
 - Hero copy uses a wider breathing field, stronger title hierarchy and restrained three-line synopsis.
 - Layered horizontal + vertical scrims merge artwork, copy and rails into one cinematic canvas.
 - Landscape cards are larger (244dp), with titles below artwork instead of heavy text painted over every image.
@@ -100,3 +100,14 @@ Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/
 - TV adaptation is limited to 10-foot sizing, neutral-white focus treatment and deterministic D-pad behavior.
 - Poster results remain 2:3 artwork with title and metadata below; do not regress to landscape developer cards.
 - Search returns from Detail with query, filters, grid position and exact focus restored where possible.
+
+
+## 29C.1 compact Search composition
+- Search uses the approved mockup as a composition/density reference, not as a new navigation architecture.
+- Keep contextual top navigation; do not introduce the mockup's permanent left sidebar.
+- Remove the VUEO wordmark from regular post-profile page chrome.
+- Search title, field and controls are deliberately smaller than the first 29C real-TV pass.
+- Search field occupies roughly three quarters of the content width rather than spanning edge-to-edge.
+- Type / Sort / Genre / Title-Actor live on a single calm control line.
+- Results are 2:3 poster cards with **8 columns** visible per row, title + quiet metadata below.
+- Focus motion is purposeful only: ~1.035 scale, short 110-145ms timing, low shadow, 1dp neutral edge.

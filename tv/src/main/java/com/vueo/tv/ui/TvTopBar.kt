@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,16 +69,6 @@ fun TvTopBar(
             .padding(horizontal = 52.dp, vertical = 26.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "VUEO",
-            color = TvDesign.White,
-            fontSize = if (cinematicCollapsed) 18.sp else 20.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.5.sp,
-        )
-
-        Spacer(Modifier.width(34.dp))
-
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,

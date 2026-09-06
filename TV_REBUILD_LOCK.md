@@ -33,7 +33,7 @@ Everything after profile selection belongs to the rebuilt TV runtime.
 ## Home lock
 
 - Top contextual navigation: Home / Search / Library / Settings.
-- Small persistent VUEO brand anchor.
+- No persistent VUEO wordmark in post-profile page chrome.
 - Hero + Peeking Row composition.
 - Hero is presentation-only and never receives focus.
 - Initial focus: first Continue Watching item; fallback first item in the first available row.
@@ -77,7 +77,7 @@ Validated against the first real-TV Home screenshot after the clean rebuild:
 
 - Home rail origin: ~62% viewport height.
 - Contextual nav labels: alpha 0 while content has focus, reveal on UP.
-- Home brand anchor: compact 18sp; profile anchor: compact 30dp.
+- Home wordmark is removed from page chrome; profile anchor remains compact at 30dp.
 - Home landscape card width: 244dp, 16:9, title outside artwork.
 - Focus: ~1.045 scale, soft shadow, 1dp neutral edge.
 - Hero fade-through: 420ms in / 220ms out after the locked 180ms focus settle.
@@ -98,3 +98,13 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 - Reuse Shared Core discovery/search/TMDB behavior; do not build a separate TV search engine.
 - D-pad movement changes focus; OK commits once.
 - Returning from Detail must preserve Search session state and focused result.
+
+
+## 29C.1 Search TV calibration lock
+- Remove the persistent VUEO wordmark from post-profile application page chrome, including Home, Search, Library and Settings. Startup/profile-selection branding is not part of this change.
+- Search follows the approved compact cinematic mockup composition while retaining the existing contextual top-navigation architecture; do not add a persistent sidebar.
+- Search field is compact and intentionally narrower than the viewport.
+- Type / Sort / Genre / Title-Actor controls share one compact control row.
+- Search/Discover poster grid is fixed at **8 visible 2:3 posters per row** for the TV viewport.
+- Search focus motion stays shallow (~1.035 scale), neutral-white and low-shadow; no bounce, glow or decorative motion.
+- 29C Search logic, Shared Core behavior, return-state restoration and Home hero/focus logic remain unchanged.
