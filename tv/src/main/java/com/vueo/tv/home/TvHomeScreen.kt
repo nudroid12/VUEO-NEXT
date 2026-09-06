@@ -226,21 +226,21 @@ fun TvHomeScreen(
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .98f),
-                            TvDesign.Black.copy(alpha = .84f),
-                            TvDesign.Black.copy(alpha = .43f),
-                            TvDesign.Black.copy(alpha = .08f),
+                            TvDesign.Black.copy(alpha = .94f),
+                            TvDesign.Black.copy(alpha = .72f),
+                            TvDesign.Black.copy(alpha = .30f),
+                            TvDesign.Black.copy(alpha = .04f),
                         )
                     )
                 )
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .48f),
+                            TvDesign.Black.copy(alpha = .24f),
                             Color.Transparent,
                             Color.Transparent,
-                            TvDesign.Black.copy(alpha = .70f),
-                            TvDesign.Black.copy(alpha = .98f),
+                            TvDesign.Black.copy(alpha = .58f),
+                            TvDesign.Black.copy(alpha = .96f),
                         )
                     )
                 )
@@ -253,17 +253,17 @@ fun TvHomeScreen(
                     .fillMaxSize()
                     .padding(horizontal = 54.dp),
             ) {
-                Spacer(Modifier.height(viewportHeight * .205f))
+                Spacer(Modifier.height(viewportHeight * .135f))
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(.46f),
+                    modifier = Modifier.fillMaxWidth(.43f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
                         text = hero?.name.orEmpty(),
                         color = TvDesign.White,
-                        fontSize = 39.sp,
-                        lineHeight = 43.sp,
+                        fontSize = 36.sp,
+                        lineHeight = 40.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -285,15 +285,15 @@ fun TvHomeScreen(
                         Text(
                             text = description,
                             color = TvDesign.White.copy(alpha = .68f),
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            maxLines = 3,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
 
-                Spacer(Modifier.height(viewportHeight * .11f))
+                Spacer(Modifier.height(viewportHeight * .07f))
 
                 if (loading && rows.isEmpty()) {
                     Row(
@@ -322,13 +322,13 @@ fun TvHomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = maxHeight * .62f),
+                        .padding(top = maxHeight * .505f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                         start = 54.dp,
                         end = 54.dp,
                         bottom = 58.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(32.dp),
+                    verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
                     itemsIndexed(rows, key = { _, row -> row.id }) { _, row ->
                         HomeMediaRow(
@@ -382,7 +382,12 @@ private fun HomeMediaRow(
     onLeftFromRow: () -> Unit,
     onOpen: (HomeEntry) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(19.dp)) {
+    val isContinueWatching = row.id == "continue"
+    val cardWidth = if (isContinueWatching) 224.dp else 128.dp
+    val cardRatio = if (isContinueWatching) 16f / 9f else 2f / 3f
+    val cardGap = if (isContinueWatching) 16.dp else 14.dp
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(
             text = row.title,
             color = TvDesign.White.copy(alpha = .92f),
@@ -391,40 +396,45 @@ private fun HomeMediaRow(
         )
 
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(cardGap),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 9.dp,
-                bottom = 9.dp,
+                top = 8.dp,
+                bottom = 8.dp,
             ),
         ) {
             itemsIndexed(row.entries, key = { _, entry -> entry.key }) { index, entry ->
                 var focused by remember(entry.key) { mutableStateOf(false) }
                 val focusScale by animateFloatAsState(
-                    targetValue = if (focused) 1.045f else 1f,
-                    animationSpec = tween(if (focused) 145 else 110),
+                    targetValue = if (focused) 1.028f else 1f,
+                    animationSpec = tween(if (focused) 165 else 125),
                     label = "homeCardScale",
                 )
-                val progress = (entry as? HomeEntry.Resume)?.playback?.progressFraction
+                val resume = entry as? HomeEntry.Resume
+                val progress = resume?.playback?.progressFraction
 
                 Column(
-                    modifier = Modifier.width(244.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.width(cardWidth),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
+                            .aspectRatio(cardRatio)
                             .scale(focusScale)
                             .shadow(
-                                elevation = if (focused) 14.dp else 0.dp,
+                                elevation = if (focused) 10.dp else 0.dp,
                                 shape = HomeCardShape,
                                 clip = false,
                             )
                             .clip(HomeCardShape)
                             .background(TvDesign.SurfaceRaised)
                             .border(
-                                width = if (focused) 1.dp else 0.dp,
-                                color = if (focused) TvDesign.White.copy(alpha = .82f) else Color.Transparent,
+                                width = if (focused) 2.dp else 1.dp,
+                                color = if (focused) {
+                                    TvDesign.White.copy(alpha = .82f)
+                                } else {
+                                    TvDesign.White.copy(alpha = .06f)
+                                },
                                 shape = HomeCardShape,
                             )
                             .focusRequester(requester(entry.key))
@@ -446,13 +456,57 @@ private fun HomeMediaRow(
                             .focusable(),
                     ) {
                         TvNetworkImage(
-                            url = entry.media.background ?: entry.media.poster,
+                            url = if (isContinueWatching) {
+                                entry.media.background ?: entry.media.poster
+                            } else {
+                                entry.media.poster ?: entry.media.background
+                            },
                             contentDescription = entry.media.name,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
 
-                        if (focused) {
+                        if (isContinueWatching) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.Transparent,
+                                                Color.Transparent,
+                                                TvDesign.Black.copy(alpha = .82f),
+                                            )
+                                        )
+                                    )
+                            )
+
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = entry.media.name,
+                                    color = TvDesign.White,
+                                    fontSize = 12.sp,
+                                    lineHeight = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                resume?.let {
+                                    Text(
+                                        text = continueMeta(it.playback),
+                                        color = TvDesign.White.copy(alpha = .68f),
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        } else if (focused) {
                             Box(
                                 Modifier
                                     .fillMaxSize()
@@ -472,34 +526,49 @@ private fun HomeMediaRow(
                                 Modifier
                                     .align(Alignment.BottomStart)
                                     .fillMaxWidth()
-                                    .height(4.dp)
-                                    .background(Color.Black.copy(alpha = .52f))
+                                    .height(3.dp)
+                                    .background(Color.Black.copy(alpha = .48f))
                             ) {
                                 Box(
                                     Modifier
                                         .fillMaxWidth(progress.coerceIn(0f, 1f))
-                                        .height(4.dp)
-                                        .background(TvDesign.White.copy(alpha = .96f))
+                                        .height(3.dp)
+                                        .background(TvDesign.White.copy(alpha = .94f))
                                 )
                             }
                         }
                     }
 
-                    Text(
-                        text = entry.media.name,
-                        color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .68f),
-                        fontSize = 13.sp,
-                        lineHeight = 16.sp,
-                        fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                    )
+                    if (!isContinueWatching) {
+                        Text(
+                            text = entry.media.name,
+                            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .66f),
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 2.dp),
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private fun continueMeta(playback: LibraryPlaybackEntry): String =
+    buildList {
+        if (playback.season != null && playback.episode != null) {
+            add("S${playback.season.toString().padStart(2, '0')} E${playback.episode.toString().padStart(2, '0')}")
+        }
+        if (playback.durationMs > playback.positionMs && playback.durationMs > 0L) {
+            val minutes = ((playback.durationMs - playback.positionMs) / 60_000L).coerceAtLeast(1L)
+            add("${minutes} min left")
+        } else {
+            add("${(playback.progressFraction * 100).toInt().coerceIn(1, 99)}% watched")
+        }
+    }.joinToString("  •  ")
 
 private fun heroMeta(media: MediaItem?): String {
     if (media == null) return ""

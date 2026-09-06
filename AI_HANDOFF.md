@@ -98,3 +98,6 @@ Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonica
 `TvSourceScreen.kt` is now the functional Source baseline. VUEO Mobile's Source Picker is canonical for ranking/filtering/recommendation/diagnostic behavior; supplied Nuvio `StreamScreen.kt` is the TV composition/focus reference. TV now shows shared cached results immediately, publishes addon/plugin results progressively, preserves provider order, exposes Engine Details, marks the VUEO-recommended source, obeys `showSourceTechnicalDetails`, and restores the last source/provider when returning from Player where possible.
 
 `TvRuntime.discover(...)` gained an optional `onUpdate(TvSourceDiscoverySnapshot)` callback but still returns the same final `TvSourceBundle`. Do not replace Shared Core discovery/ranking/cache with TV-only logic. Source is still a functional baseline; exact visual calibration waits for the final whole-TV polish after Player.
+
+## TV 30A Home polish
+Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Preserve the ~50% hero reading zone, medium 224dp Continue Watching landscape cards, 128dp 2:3 My List/catalog posters, restrained ~1.028 focus scale and the existing exact sidebar return-to-content behavior unless a later explicit product decision supersedes it.
