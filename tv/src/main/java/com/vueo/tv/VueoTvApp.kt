@@ -37,6 +37,8 @@ import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.update.TvUpdateManager
+import com.vueo.tv.update.TvUpdatePrompt
+import com.vueo.tv.update.TvUpdateRelease
 import kotlinx.coroutines.launch
 
 private enum class TvRoute {
@@ -63,6 +65,7 @@ fun VueoTvApp() {
     var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
     var initialPositionMs by remember { mutableLongStateOf(0L) }
+    var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
@@ -83,7 +86,10 @@ fun VueoTvApp() {
 
         launch { runtime.prepareProvidersInBackground() }
         if (runtime.settingsStore.automaticUpdateChecksEnabled()) {
-            launch { TvUpdateManager.check(context.applicationContext, force = false) }
+            launch {
+                val result = TvUpdateManager.check(context.applicationContext, force = false)
+                updatePromptRelease = result.release?.takeIf { it.isNewerThanCurrent() }
+            }
         }
     }
 
@@ -287,6 +293,13 @@ fun VueoTvApp() {
                         )
                     }
                 }
+            }
+
+            updatePromptRelease?.let { release ->
+                TvUpdatePrompt(
+                    release = release,
+                    onLater = { updatePromptRelease = null },
+                )
             }
         }
     }

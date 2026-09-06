@@ -655,3 +655,6 @@ TV Settings now follows the canonical Mobile hierarchy with TV-native D-pad inte
 - No route is committed by focus movement; OK/Enter still activates exactly once.
 - Home/Search retain the contextual collapse/reveal behavior so content and hero remain visually dominant.
 - This is presentation-only; routing, screen behavior, Search logic, Home hero logic, Mobile and Shared Core are unchanged.
+
+### TV 29C.2a — startup update prompt
+The clean rebuild had retained `TvUpdateManager` but discarded its automatic-check result at app startup. 29C.2a restores the visible update-available prompt using the existing TV manifest/download/verification/install flow. Prompt is modal and D-pad-contained with Later / Update. Exact legacy popup UI source is not present in the available clean-rebuild repository; `VueoTvUpdateManager.kt` is a tombstone.

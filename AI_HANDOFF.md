@@ -70,3 +70,6 @@ Latest TV Search calibration removes the persistent VUEO wordmark from post-prof
 
 ## TV 29C.2 floating navigation lock
 Global TV navigation now uses a centered floating capsule: Home / Search / Library / Settings. Profile stays separate at top-right; no VUEO wordmark returns to normal app pages. The capsule is a translucent charcoal surface with a restrained selected pill and shallow focus treatment. D-pad movement remains focus-only, OK commits once, and Home/Search keep the contextual collapse/reveal grammar from 29B.
+
+## TV 29C.2a update popup lock
+Startup automatic update checks now surface the existing TV updater result through `TvUpdatePrompt`. Preserve the single `TvUpdateManager` engine and modal D-pad behavior. The exact pre-rebuild prompt source is not available in the current repo (legacy updater UI is tombstoned), so do not claim pixel-identical restoration; behavior is restored on the surviving updater engine.

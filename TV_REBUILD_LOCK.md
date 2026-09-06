@@ -116,3 +116,10 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 - Selected destination may use a soft filled pill; focused destination uses shallow neutral-white depth only.
 - D-pad focus movement never changes route; one OK/Enter activation commits once.
 - Preserve Home/Search contextual nav collapse/reveal, exact Down-to-content restore behavior, and all existing route logic.
+
+## 29C.2a startup update popup lock
+- Automatic TV update checks must surface a newer `TvUpdateRelease` instead of discarding the check result.
+- Keep the existing `TvUpdateManager` feed/download/SHA/package validation/installer flow; do not create a second updater.
+- The update prompt is modal and D-pad-contained: Later / Update, one OK activation, Back behaves as Later when not downloading.
+- `Later` dismisses only the current session; it must not erase cached release metadata or disable automatic checks.
+- Do not force installation. Android retains final installer confirmation and unknown-source permission handling.
