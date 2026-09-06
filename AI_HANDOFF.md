@@ -82,3 +82,9 @@ The centered 29C.2 top navigation capsule is superseded. Use `TvSidebar` from `t
 The maintainer explicitly chose the supplied `NuvioTV-0.8.6-beta` source as the UI reference for subsequent TV rebuild work. Before designing a TV screen/chrome from scratch, inspect the relevant Nuvio source first. Treat Nuvio as the presentation/D-pad reference only; VUEO still owns its routes, data/runtime, Shared Core contracts, profile behavior and theme.
 
 The first implementation is the global sidebar: `TvSidebar` now follows Nuvio's modern floating-sidebar pattern rather than 29C.3's permanent slim rail. Collapsed state is a floating current-route pill (hidden on Search, label can collapse after idle); expanded state is an inset rounded overlay panel with Profile at top and Home/Search/Library/Settings centered. LEFT enters navigation, RIGHT restores last content focus, focus never routes, one OK commits once.
+
+## TV 29D Library current direction
+
+Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonical for Library feature/data behavior; the supplied Nuvio project is the TV visual/focus reference only. Current Mobile Library = `LibraryStore.watchlist()` / My List, Cloud placeholder, Grid/List toggle persisted under `vueo_library_ui` → `grid_view`. Continue Watching and History are not visible Library sections, though their Shared Core data remains valid elsewhere.
+
+`TvLibraryScreen.kt` now follows that contract with a responsive poster canvas (target width, not fixed 8 columns), compact list mode, Nuvio-proportioned 1.02 focus scale / 180ms motion, 29C.4 sidebar entry/return, and TV-only ephemeral last-item/scroll restoration after Detail. Do not create a second Library data store. Do not treat Search's old 8-up density as a global rule.

@@ -149,3 +149,14 @@ VUEO adaptation rules:
 - Expanded panel target is roughly 262dp wide with ~30dp corner radius, inset from overscan edges.
 - Navigation row target is roughly 52dp high with a ~34dp circular leading visual and rounded-full selected/focus surface.
 - Keep neutral white, low-noise focus and no bounce/neon treatment.
+
+## 29D Library composition — Mobile parity, Nuvio TV grammar
+- Library feature/data behavior follows VUEO Mobile; Nuvio is a TV presentation/focus reference only.
+- Visible Library structure: **Library title → My List / Cloud controls + Grid/List control → content**.
+- Continue Watching and History are not dedicated Library sections.
+- Grid/List view is a real user preference and must remain remembered using the Mobile preference contract.
+- Poster density is target-width responsive; fixed 8-up is not a global TV design rule.
+- Poster proportions remain 2:3. Nuvio reference proportions guide the current target width (~126dp), 12dp radius, 2dp focused edge, ~1.02 scale and ~180ms focus motion.
+- List mode is compact and content-first: poster thumbnail, title, release/type metadata, restrained focus surface.
+- Preserve exact last-item/scroll focus return after Detail where possible.
+- Keep Library header below the 29C.4 collapsed route pill rather than adding a permanent left rail gutter.

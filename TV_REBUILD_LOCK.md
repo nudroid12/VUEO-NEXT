@@ -137,3 +137,9 @@ The 29C.2 centered top capsule is superseded by the 29C.3 slim collapsible left 
 - LEFT from logical content edge opens the current destination, RIGHT restores exact last content focus where supported, UP/DOWN explores navigation, OK commits once, and focus alone never routes.
 - Search may hide the collapsed route pill to keep its header clear, matching the supplied Nuvio modern-sidebar pattern.
 - No post-profile VUEO wordmark returns to normal page chrome.
+
+## 29D Library parity lock — supersedes old TV Library composition
+
+Library behavior is sourced from canonical VUEO Mobile, while Nuvio is only the TV presentation/focus reference. The visible Library screen is **My List + Cloud placeholder + Grid/List view**. Continue Watching and History must not be reintroduced as dedicated Library sections unless Mobile changes first. Their Shared Core data remains valid for other surfaces.
+
+Grid/List uses the same `vueo_library_ui` / `grid_view` preference contract as Mobile. Library poster density is responsive to a target card width and is **not** locked to 8 columns. LEFT from the first logical content edge enters the current 29C.4 sidebar; sidebar RIGHT restores the last Library control/item where practical; OK/Enter commits once on KeyUp; focus movement never routes. Returning from Detail should restore the last Library item/scroll position without creating a second library-data store.
