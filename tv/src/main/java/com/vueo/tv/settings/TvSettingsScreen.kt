@@ -15,6 +15,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
+import com.vueo.shared.core.plugin.PluginHealthStore
+import com.vueo.shared.core.plugin.PluginProviderDescriptor
+import com.vueo.shared.core.plugin.ProviderCodeStore
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.AppTheme
@@ -391,6 +394,10 @@ private fun TvProviderSettings(
     var removeRepo by remember { mutableStateOf<PluginRepositoryDescriptor?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     val repositories = remember(revision) { runtime.pluginStore.repositories() }
+    val context = LocalContext.current
+    val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
+    val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
+    var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
 
     if (showAdd) {
         TvTextEntryDialog(
@@ -430,6 +437,17 @@ private fun TvProviderSettings(
         )
     }
 
+    diagnosticTarget?.let { (repository, provider) ->
+        TvProviderDiagnosticDialog(
+            repository = repository,
+            provider = provider,
+            health = healthStore.record(repository.manifestUrl, provider.id),
+            currentlyEnabled = runtime.pluginStore.isProviderEnabled(repository, provider),
+            providerCodeReady = providerCodeStore.isReady(repository, provider),
+            onDismiss = { diagnosticTarget = null },
+        )
+    }
+
     val entries = buildList {
         add(toggleEntry("plugins-master", "Provider Plugins", "Master switch for plugin provider discovery.", pluginsEnabled) {
             pluginsEnabled = it
@@ -461,11 +479,16 @@ private fun TvProviderSettings(
             )
             repository.providers.forEach { provider ->
                 val enabled = runtime.pluginStore.isProviderEnabled(repository, provider)
+                val health = healthStore.record(repository.manifestUrl, provider.id)
                 add(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
                         title = "  ${provider.name}",
-                        subtitle = provider.description ?: "Provider from ${repository.name}",
+                        subtitle = buildString {
+                            append(health?.status?.label ?: "No diagnostic yet")
+                            provider.description?.takeIf { it.isNotBlank() }?.let { append(" • ").append(it) }
+                            append(" • ←/→ enable • OK diagnostics")
+                        },
                         value = if (enabled) "On" else "Off",
                         enabled = repoEnabled && pluginsEnabled,
                         onPrevious = {
@@ -478,11 +501,7 @@ private fun TvProviderSettings(
                             revision++
                             onDataChanged()
                         },
-                        onActivate = {
-                            runtime.pluginStore.setProviderEnabled(repository, provider, !enabled)
-                            revision++
-                            onDataChanged()
-                        },
+                        onActivate = { diagnosticTarget = repository to provider },
                     )
                 )
             }
