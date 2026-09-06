@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -240,7 +239,6 @@ fun TvDetailScreen(
             item(key = "detail-hero") {
                 DetailHero(
                     item = item,
-                    ratings = ratings,
                     dnaMatch = dnaMatch,
                     primaryActionLabel = primaryActionLabel,
                     canPlay = !loadingMeta && (!item.isSeries() || selectedEpisode != null),
@@ -261,9 +259,15 @@ fun TvDetailScreen(
                 ?.takeIf(String::isNotBlank)
                 ?.let { description ->
                     item(key = "detail-overview") {
-                        OverviewCard(description)
+                        OverviewSection(description)
                     }
                 }
+
+            if (ratings.isNotEmpty()) {
+                item(key = "detail-ratings") {
+                    RatingsSection(ratings = ratings)
+                }
+            }
 
             if (item.isSeries() && seasons.isNotEmpty()) {
                 item(key = "detail-seasons") {
@@ -283,13 +287,13 @@ fun TvDetailScreen(
 
             if (item.isSeries() && episodesForSeason.isNotEmpty()) {
                 item(key = "detail-episodes:${selectedSeason ?: 0}") {
-                    DetailEpisodesRow(
+                    DetailEpisodesList(
                         media = item,
                         episodes = episodesForSeason,
                         selectedEpisode = selectedEpisode,
                         playbackEntries = playbackEntries,
                         requesters = episodeRequesters,
-                        upRequester = selectedSeasonRequester ?: playRequester,
+                        firstUpRequester = selectedSeasonRequester ?: playRequester,
                         onEpisodeFocused = { selectedEpisode = it },
                         onEpisodeClick = { episode ->
                             selectedSeason = episode.season
@@ -382,7 +386,6 @@ fun TvDetailScreen(
 @Composable
 private fun DetailHero(
     item: MediaItem,
-    ratings: List<MediaRating>,
     dnaMatch: Int?,
     primaryActionLabel: String,
     canPlay: Boolean,
@@ -395,27 +398,74 @@ private fun DetailHero(
     onToggleList: () -> Unit,
 ) {
     val facts = detailFacts(item)
-    val creditLines = detailCreditLines(item)
+    val creditLine = detailCreditLines(item).firstOrNull()
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(520.dp)
+            .height(470.dp)
             .padding(start = 58.dp, end = 54.dp, bottom = 42.dp),
         verticalArrangement = Arrangement.Bottom,
     ) {
         Text(
             text = item.name,
             color = TvDesign.White,
-            fontSize = 42.sp,
-            lineHeight = 45.sp,
+            fontSize = 46.sp,
+            lineHeight = 49.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(.62f),
         )
 
-        Spacer(Modifier.height(15.dp))
+        if (facts.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = facts.joinToString("  •  "),
+                color = TvDesign.White.copy(alpha = .82f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(.66f),
+            )
+        }
+
+        if (item.genres.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = item.genres.take(4).joinToString("  •  "),
+                color = TvDesign.Muted,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(.66f),
+            )
+        }
+
+        creditLine?.let { line ->
+            Spacer(Modifier.height(7.dp))
+            Text(
+                text = line,
+                color = TvDesign.Dim,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(.66f),
+            )
+        }
+
+        dnaMatch?.let { score ->
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "VUEO DNA Match  •  $score%",
+                color = TvDesign.White.copy(alpha = .82f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -447,7 +497,7 @@ private fun DetailHero(
             ?.let { entry ->
                 Spacer(Modifier.height(13.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(.55f),
+                    modifier = Modifier.fillMaxWidth(.52f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -468,68 +518,6 @@ private fun DetailHero(
                     )
                 }
             }
-
-        if (creditLines.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            creditLines.forEachIndexed { index, line ->
-                if (index > 0) Spacer(Modifier.height(3.dp))
-                Text(
-                    text = line,
-                    color = TvDesign.Muted,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(.60f),
-                )
-            }
-        }
-
-        if (ratings.isNotEmpty() || dnaMatch != null) {
-            Spacer(Modifier.height(11.dp))
-            RatingsRow(
-                ratings = ratings,
-                dnaMatch = dnaMatch,
-            )
-        }
-
-        item.description?.takeIf(String::isNotBlank)?.let { description ->
-            Spacer(Modifier.height(13.dp))
-            Text(
-                text = description,
-                color = TvDesign.White.copy(alpha = .80f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(.60f),
-            )
-        }
-
-        if (facts.isNotEmpty()) {
-            Spacer(Modifier.height(13.dp))
-            Text(
-                text = facts.joinToString("  •  "),
-                color = TvDesign.White.copy(alpha = .62f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(.72f),
-            )
-        }
-
-        if (item.genres.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = item.genres.take(4).joinToString("  •  "),
-                color = TvDesign.Dim,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(.72f),
-            )
-        }
     }
 }
 
@@ -610,9 +598,21 @@ private fun DetailActionButton(
 }
 
 @Composable
+private fun RatingsSection(
+    ratings: List<MediaRating>,
+) {
+    Column {
+        DetailSectionTitle("Ratings")
+        Spacer(Modifier.height(9.dp))
+        Box(modifier = Modifier.padding(horizontal = 58.dp)) {
+            RatingsRow(ratings = ratings)
+        }
+    }
+}
+
+@Composable
 private fun RatingsRow(
     ratings: List<MediaRating>,
-    dnaMatch: Int?,
 ) {
     val visibleRatings = ratings
         .distinctBy { it.source }
@@ -622,9 +622,6 @@ private fun RatingsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        dnaMatch?.let {
-            DetailInfoChip("VUEO $it%")
-        }
         visibleRatings.forEach { rating ->
             DetailInfoChip("${rating.compactLabel} ${rating.displayValue()}")
         }
@@ -664,7 +661,7 @@ private fun SeasonTabs(
     downRequester: FocusRequester?,
     onSelect: (Int) -> Unit,
 ) {
-    DetailSectionTitle("Episodes")
+    DetailSectionTitle("Season")
     Spacer(Modifier.height(10.dp))
 
     LazyRow(
@@ -739,32 +736,29 @@ private fun DetailSeasonPill(
 }
 
 @Composable
-private fun DetailEpisodesRow(
+private fun DetailEpisodesList(
     media: MediaItem,
     episodes: List<EpisodeItem>,
     selectedEpisode: EpisodeItem?,
     playbackEntries: List<LibraryPlaybackEntry>,
     requesters: MutableMap<String, FocusRequester>,
-    upRequester: FocusRequester,
+    firstUpRequester: FocusRequester,
     onEpisodeFocused: (EpisodeItem) -> Unit,
     onEpisodeClick: (EpisodeItem) -> Unit,
 ) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 58.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        itemsIndexed(
-            items = episodes,
-            key = { _, episode -> episode.id },
-        ) { _, episode ->
+    Column {
+        DetailSectionTitle("Episodes")
+        Spacer(Modifier.height(8.dp))
+
+        episodes.forEachIndexed { index, episode ->
             val requester = requesters.getOrPut(episode.id) { FocusRequester() }
             val entry = detailPlaybackEntry(media, episode, playbackEntries)
-            EpisodeCard(
+            EpisodeRow(
                 episode = episode,
                 selected = selectedEpisode?.id == episode.id,
                 playbackEntry = entry,
                 requester = requester,
-                upRequester = upRequester,
+                upRequester = if (index == 0) firstUpRequester else null,
                 onFocused = { onEpisodeFocused(episode) },
                 onClick = { onEpisodeClick(episode) },
             )
@@ -773,32 +767,35 @@ private fun DetailEpisodesRow(
 }
 
 @Composable
-private fun EpisodeCard(
+private fun EpisodeRow(
     episode: EpisodeItem,
     selected: Boolean,
     playbackEntry: LibraryPlaybackEntry?,
     requester: FocusRequester,
-    upRequester: FocusRequester,
+    upRequester: FocusRequester?,
     onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(180),
+        targetValue = if (focused) 1.012f else 1f,
+        animationSpec = tween(160),
         label = "detailEpisodeScale",
     )
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(11.dp)
 
-    Column(
+    Row(
         modifier = Modifier
-            .width(250.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 58.dp, vertical = 6.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             .focusRequester(requester)
-            .focusProperties { up = upRequester }
+            .focusProperties {
+                upRequester?.let { up = it }
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocused()
@@ -809,45 +806,35 @@ private fun EpisodeCard(
                     true
                 } else false
             }
-            .clickable(onClick = onClick),
+            .background(
+                color = when {
+                    focused -> TvDesign.White.copy(alpha = .13f)
+                    selected -> TvDesign.White.copy(alpha = .07f)
+                    else -> TvDesign.Surface.copy(alpha = .78f)
+                },
+                shape = shape,
+            )
+            .border(
+                width = if (focused) 1.dp else 0.dp,
+                color = if (focused) TvDesign.White.copy(alpha = .55f) else Color.Transparent,
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .width(200.dp)
                 .aspectRatio(16f / 9f)
-                .clip(shape)
-                .background(TvDesign.SurfaceRaised)
-                .border(
-                    width = if (focused || selected) 2.dp else 0.dp,
-                    color = if (focused) TvDesign.White
-                    else if (selected) TvDesign.White.copy(alpha = .36f)
-                    else Color.Transparent,
-                    shape = shape,
-                ),
+                .clip(RoundedCornerShape(8.dp))
+                .background(TvDesign.SurfaceRaised),
         ) {
             TvNetworkImage(
                 url = episode.thumbnail,
                 contentDescription = episode.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = .72f))
-                        )
-                    )
-            )
-            Text(
-                text = "S${episode.season}  E${episode.episode}",
-                color = TvDesign.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(10.dp),
             )
 
             playbackEntry?.takeIf { it.positionMs > 5_000L }?.let { entry ->
@@ -863,26 +850,53 @@ private fun EpisodeCard(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = episode.title,
-            color = if (focused) TvDesign.White else TvDesign.Muted,
-            fontSize = 12.sp,
-            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        episode.overview?.takeIf(String::isNotBlank)?.let { overview ->
-            Spacer(Modifier.height(3.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 18.dp, end = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             Text(
-                text = overview,
-                color = TvDesign.Dim,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                maxLines = 2,
+                text = if (episode.episode > 0) {
+                    "${episode.episode}. ${episode.title}"
+                } else {
+                    episode.title
+                },
+                color = TvDesign.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            episode.overview?.takeIf(String::isNotBlank)?.let { overview ->
+                Text(
+                    text = overview,
+                    color = TvDesign.Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            playbackEntry?.takeIf(::canResumeEntry)?.let { entry ->
+                Text(
+                    text = remainingTimeLabel(entry),
+                    color = TvDesign.Dim,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                )
+            }
         }
+
+        Text(
+            text = "S${episode.season} E${episode.episode}",
+            color = if (focused) TvDesign.White else TvDesign.Dim,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(end = 8.dp),
+        )
     }
 }
 
@@ -1130,53 +1144,27 @@ private fun InsightCard(
 }
 
 @Composable
-private fun OverviewCard(description: String) {
-    var expanded by remember(description) { mutableStateOf(false) }
-    var focused by remember(description) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
-
+private fun OverviewSection(description: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 58.dp)
-            .onFocusChanged { focused = it.isFocused }
-            .onPreviewKeyEvent { event ->
-                if (event.isTvActivationKey()) {
-                    if (event.type == KeyEventType.KeyUp) expanded = !expanded
-                    true
-                } else false
-            }
-            .background(
-                if (focused) TvDesign.White.copy(alpha = .10f) else TvDesign.Surface.copy(alpha = .66f),
-                shape,
-            )
-            .border(
-                if (focused) 1.dp else 0.dp,
-                if (focused) TvDesign.White.copy(alpha = .38f) else Color.Transparent,
-                shape,
-            )
-            .clickable { expanded = !expanded }
-            .padding(horizontal = 18.dp, vertical = 15.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+            .padding(horizontal = 58.dp),
     ) {
         Text(
             text = "Overview",
             color = TvDesign.White,
-            fontSize = 18.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
         )
+        Spacer(Modifier.height(8.dp))
         Text(
             text = description,
-            color = TvDesign.White.copy(alpha = .72f),
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            maxLines = if (expanded) Int.MAX_VALUE else 4,
-            overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
-        )
-        Text(
-            text = if (expanded) "Press OK to collapse" else "Press OK to read more",
-            color = if (focused) TvDesign.White.copy(alpha = .78f) else TvDesign.Dim,
-            fontSize = 9.sp,
+            color = TvDesign.Muted,
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            maxLines = 6,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(.78f),
         )
     }
 }
