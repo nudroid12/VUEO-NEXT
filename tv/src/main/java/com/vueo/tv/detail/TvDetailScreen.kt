@@ -16,12 +16,10 @@ import com.vueo.tv.core.TvRuntime
 import kotlinx.coroutines.launch
 
 /**
- * TV 34A Detail boundary.
+ * TV 36A Details boundary.
  *
- * This file intentionally owns only VUEO data/state/routing semantics. The old
- * 29E Compose presentation was removed. All visuals/focus/layout now live in
- * TvDetailPresentation.kt and are rebuilt from a blank TV presentation layer
- * with the supplied Nuvio source used only as an interaction/layout reference.
+ * Data, library semantics, playback history and routes remain VUEO-owned.
+ * All Details presentation/focus/layout lives in the 36A presentation files.
  */
 @Composable
 fun TvDetailScreen(
@@ -34,25 +32,25 @@ fun TvDetailScreen(
 ) {
     BackHandler(onBack = onBack)
 
-    var item by remember(initial.id, initial.type) { mutableStateOf(initial) }
-    var loading by remember(initial.id, initial.type) { mutableStateOf(true) }
-    var watchlisted by remember(initial.id, initial.type) {
+    val mediaKey = "${initial.type}:${initial.id}"
+    var item by remember(mediaKey) { mutableStateOf(initial) }
+    var loading by remember(mediaKey) { mutableStateOf(true) }
+    var watchlisted by remember(mediaKey) {
         mutableStateOf(runtime.libraryStore.isWatchlisted(initial))
     }
-    var ratings by remember(initial.id, initial.type) {
-        mutableStateOf<List<MediaRating>>(emptyList())
-    }
-    var related by remember(initial.id, initial.type) {
-        mutableStateOf<List<MediaItem>>(emptyList())
-    }
-    var selectedSeason by remember(initial.id, initial.type) { mutableStateOf<Int?>(null) }
-    var selectedEpisode by remember(initial.id, initial.type) { mutableStateOf<EpisodeItem?>(null) }
-    var insight by remember(initial.id, initial.type) { mutableStateOf<String?>(null) }
-    var insightLoading by remember(initial.id, initial.type) { mutableStateOf(false) }
-    var insightError by remember(initial.id, initial.type) { mutableStateOf<String?>(null) }
+    var ratings by remember(mediaKey) { mutableStateOf<List<MediaRating>>(emptyList()) }
+    var related by remember(mediaKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var selectedSeason by remember(mediaKey) { mutableStateOf<Int?>(null) }
+    var selectedEpisode by remember(mediaKey) { mutableStateOf<EpisodeItem?>(null) }
+    var insight by remember(mediaKey) { mutableStateOf<String?>(null) }
+    var insightLoading by remember(mediaKey) { mutableStateOf(false) }
+    var insightError by remember(mediaKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(initial.id, initial.type) {
+    LaunchedEffect(mediaKey) {
+        val isSameMemory = TvDetailFocusMemory.mediaKey == mediaKey
+        if (!isSameMemory) TvDetailFocusMemory.resetFor(mediaKey)
+
         loading = true
         val enriched = runCatching { runtime.loadMeta(initial) }.getOrDefault(initial)
         item = enriched
@@ -77,16 +75,29 @@ fun TvDetailScreen(
                     episode.season == entry.season && episode.episode == entry.episode
                 }
             }
-            val firstSeason = resumeEpisode?.season
-                ?: enriched.episodes.map(EpisodeItem::season).distinct().sorted().firstOrNull { it > 0 }
-                ?: enriched.episodes.map(EpisodeItem::season).distinct().sorted().firstOrNull()
+            val availableSeasons = detailSeasons(enriched)
+            val rememberedSeason = TvDetailFocusMemory.selectedSeason
+                ?.takeIf { isSameMemory && it in availableSeasons }
+            val firstSeason = rememberedSeason
+                ?: resumeEpisode?.season
+                ?: availableSeasons.firstOrNull()
 
             selectedSeason = firstSeason
-            selectedEpisode = resumeEpisode
+            val rememberedEpisode = TvDetailFocusMemory.episodeId
+                ?.takeIf { isSameMemory }
+                ?.let { id ->
+                    enriched.episodes.firstOrNull { it.id == id && it.season == firstSeason }
+                }
+            selectedEpisode = rememberedEpisode
+                ?: resumeEpisode?.takeIf { it.season == firstSeason }
                 ?: enriched.episodes.firstOrNull { it.season == firstSeason }
+
+            TvDetailFocusMemory.selectedSeason = selectedSeason
         } else {
             selectedSeason = null
             selectedEpisode = null
+            TvDetailFocusMemory.selectedSeason = null
+            TvDetailFocusMemory.episodeId = null
         }
         loading = false
     }
@@ -97,13 +108,11 @@ fun TvDetailScreen(
     val playbackEntry = remember(item.id, item.type, selectedEpisode?.id, history) {
         detailPlaybackEntry(item, selectedEpisode, history)
     }
-    val seasons = remember(item.episodes) {
-        val regular = item.episodes.map(EpisodeItem::season).distinct().filter { it > 0 }.sorted()
-        val specials = item.episodes.map(EpisodeItem::season).distinct().filter { it == 0 }
-        regular + specials
-    }
+    val seasons = remember(item.episodes) { detailSeasons(item) }
     val episodesForSeason = remember(item.episodes, selectedSeason) {
-        item.episodes.filter { it.season == selectedSeason }
+        item.episodes
+            .filter { it.season == selectedSeason }
+            .sortedBy { it.episode }
     }
     val dnaMatch = remember(item, loading) {
         if (loading) null else runtime.dnaMatch(item)
@@ -153,15 +162,23 @@ fun TvDetailScreen(
         },
         onSeasonSelected = { season ->
             selectedSeason = season
-            selectedEpisode = item.episodes.firstOrNull { it.season == season }
+            selectedEpisode = item.episodes
+                .filter { it.season == season }
+                .minByOrNull { it.episode }
+            TvDetailFocusMemory.selectedSeason = season
+            TvDetailFocusMemory.episodeId = null
         },
         onEpisodeFocused = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
+            TvDetailFocusMemory.selectedSeason = episode.season
+            TvDetailFocusMemory.episodeId = episode.id
         },
         onEpisodeSelected = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
+            TvDetailFocusMemory.selectedSeason = episode.season
+            TvDetailFocusMemory.episodeId = episode.id
             onWatch(item, episode)
         },
         onOpenRelated = onOpenRelated,
@@ -205,6 +222,20 @@ internal data class TvDetailPresentationState(
     val insightError: String?,
 )
 
+internal object TvDetailFocusMemory {
+    var mediaKey: String? = null
+    var selectedSeason: Int? = null
+    var episodeId: String? = null
+    var relatedIndex: Int = 0
+
+    fun resetFor(key: String) {
+        mediaKey = key
+        selectedSeason = null
+        episodeId = null
+        relatedIndex = 0
+    }
+}
+
 internal fun detailPlaybackEntry(
     media: MediaItem,
     episode: EpisodeItem?,
@@ -233,6 +264,13 @@ internal fun detailRemainingLabel(entry: LibraryPlaybackEntry): String {
 
 internal fun MediaItem.isDetailSeries(): Boolean =
     type.lowercase() in setOf("series", "tv")
+
+private fun detailSeasons(item: MediaItem): List<Int> {
+    val all = item.episodes.map(EpisodeItem::season).distinct()
+    val regular = all.filter { it > 0 }.sorted()
+    val specials = all.filter { it == 0 }
+    return regular + specials
+}
 
 private fun detailPrimaryActionLabel(
     item: MediaItem,
