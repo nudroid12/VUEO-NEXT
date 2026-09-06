@@ -222,25 +222,25 @@ fun TvHomeScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(TvDesign.Black.copy(alpha = .08f))
+                .background(TvDesign.Black.copy(alpha = .11f))
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .94f),
-                            TvDesign.Black.copy(alpha = .72f),
-                            TvDesign.Black.copy(alpha = .30f),
-                            TvDesign.Black.copy(alpha = .04f),
+                            TvDesign.Black.copy(alpha = .95f),
+                            TvDesign.Black.copy(alpha = .76f),
+                            TvDesign.Black.copy(alpha = .36f),
+                            TvDesign.Black.copy(alpha = .06f),
                         )
                     )
                 )
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            TvDesign.Black.copy(alpha = .24f),
+                            TvDesign.Black.copy(alpha = .20f),
                             Color.Transparent,
                             Color.Transparent,
-                            TvDesign.Black.copy(alpha = .58f),
-                            TvDesign.Black.copy(alpha = .96f),
+                            TvDesign.Black.copy(alpha = .64f),
+                            TvDesign.Black.copy(alpha = .97f),
                         )
                     )
                 )
@@ -251,19 +251,19 @@ fun TvHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 54.dp),
+                    .padding(horizontal = 58.dp),
             ) {
-                Spacer(Modifier.height(viewportHeight * .135f))
+                Spacer(Modifier.height(viewportHeight * .125f))
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(.43f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(.49f),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     Text(
                         text = hero?.name.orEmpty(),
                         color = TvDesign.White,
-                        fontSize = 36.sp,
-                        lineHeight = 40.sp,
+                        fontSize = 40.sp,
+                        lineHeight = 44.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -274,7 +274,7 @@ fun TvHomeScreen(
                         Text(
                             text = meta,
                             color = TvDesign.White.copy(alpha = .72f),
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -285,15 +285,15 @@ fun TvHomeScreen(
                         Text(
                             text = description,
                             color = TvDesign.White.copy(alpha = .68f),
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
 
-                Spacer(Modifier.height(viewportHeight * .07f))
+                Spacer(Modifier.height(viewportHeight * .045f))
 
                 if (loading && rows.isEmpty()) {
                     Row(
@@ -322,13 +322,13 @@ fun TvHomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = maxHeight * .505f),
+                        .padding(top = maxHeight * .465f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 54.dp,
-                        end = 54.dp,
+                        start = 58.dp,
+                        end = 58.dp,
                         bottom = 58.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(26.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     itemsIndexed(rows, key = { _, row -> row.id }) { _, row ->
                         HomeMediaRow(
@@ -383,15 +383,15 @@ private fun HomeMediaRow(
     onOpen: (HomeEntry) -> Unit,
 ) {
     val isContinueWatching = row.id == "continue"
-    val cardWidth = if (isContinueWatching) 224.dp else 128.dp
+    val cardWidth = if (isContinueWatching) 238.dp else 148.dp
     val cardRatio = if (isContinueWatching) 16f / 9f else 2f / 3f
-    val cardGap = if (isContinueWatching) 16.dp else 14.dp
+    val cardGap = if (isContinueWatching) 15.dp else 14.dp
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = row.title,
             color = TvDesign.White.copy(alpha = .92f),
-            fontSize = 17.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
         )
 
@@ -490,8 +490,8 @@ private fun HomeMediaRow(
                                 Text(
                                     text = entry.media.name,
                                     color = TvDesign.White,
-                                    fontSize = 12.sp,
-                                    lineHeight = 14.sp,
+                                    fontSize = 13.sp,
+                                    lineHeight = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -500,7 +500,7 @@ private fun HomeMediaRow(
                                     Text(
                                         text = continueMeta(it.playback),
                                         color = TvDesign.White.copy(alpha = .68f),
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -543,8 +543,8 @@ private fun HomeMediaRow(
                         Text(
                             text = entry.media.name,
                             color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .66f),
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp,
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
                             fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

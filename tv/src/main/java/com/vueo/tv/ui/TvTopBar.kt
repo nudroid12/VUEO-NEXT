@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -120,10 +119,15 @@ fun TvSidebar(
     LaunchedEffect(expanded, selected) {
         if (expanded) {
             pillIconOnly = false
+            // The expanded panel is intentionally not kept alive at rest anymore.
+            // Give Compose one frame to materialize its focus targets, then enter
+            // the current destination deterministically.
+            delay(16L)
+            runCatching { navRequesters.getValue(selected).requestFocus() }
         } else {
             pillIconOnly = false
             if (selected != "Settings") {
-                delay(4000L)
+                delay(3200L)
                 pillIconOnly = true
             }
         }
@@ -134,46 +138,46 @@ fun TvSidebar(
             .fillMaxHeight()
             .width(286.dp),
     ) {
-        // Keep the expanded focus targets composed even while visually closed.
-        // This lets DPAD_LEFT request the current destination immediately and
-        // the focus callback then reveals the panel without a dead frame.
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(panelWidth)
-                .padding(start = 16.dp, top = 24.dp, end = 8.dp, bottom = 16.dp)
-                .offset(
-                    x = (-10f * (1f - panelProgress)).dp,
-                    y = (-8f * (1f - panelProgress)).dp,
-                )
-                .graphicsLayer {
-                    alpha = panelProgress
-                    val scale = .90f + (.10f * panelProgress)
-                    scaleX = scale
-                    scaleY = scale
-                    transformOrigin = TransformOrigin(0f, 0f)
-                }
-                .background(
-                    brush = Brush.verticalGradient(
-                        listOf(
-                            TvDesign.SurfaceRaised.copy(alpha = .96f),
-                            TvDesign.Surface.copy(alpha = .94f),
-                            TvDesign.Black.copy(alpha = .97f),
-                        )
-                    ),
-                    shape = SidebarPanelShape,
-                )
-                .border(
-                    width = 1.dp,
-                    color = TvDesign.White.copy(alpha = .14f),
-                    shape = SidebarPanelShape,
-                )
-                .padding(horizontal = 12.dp, vertical = 16.dp),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxHeight(),
-                horizontalAlignment = Alignment.CenterHorizontally,
+        // Do not leave an invisible focusable sidebar sitting over Home.
+        // Keep it only while open or while its close animation is still visible.
+        if (expanded || panelProgress > .01f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(panelWidth)
+                    .padding(start = 18.dp, top = 28.dp, end = 8.dp, bottom = 20.dp)
+                    .offset(
+                        x = (-8f * (1f - panelProgress)).dp,
+                        y = (-4f * (1f - panelProgress)).dp,
+                    )
+                    .graphicsLayer {
+                        alpha = panelProgress
+                        val scale = .92f + (.08f * panelProgress)
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0f, .5f)
+                    }
+                    .background(
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                TvDesign.SurfaceRaised.copy(alpha = .965f),
+                                TvDesign.Surface.copy(alpha = .945f),
+                                TvDesign.Black.copy(alpha = .975f),
+                            )
+                        ),
+                        shape = SidebarPanelShape,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = TvDesign.White.copy(alpha = .13f),
+                        shape = SidebarPanelShape,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 16.dp),
             ) {
+                Column(
+                    modifier = Modifier.fillMaxHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                 TvSidebarItem(
                     label = "Profile",
                     icon = Icons.Default.Person,
@@ -237,7 +241,8 @@ fun TvSidebar(
                     }
                 }
 
-                Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
 
@@ -252,8 +257,8 @@ fun TvSidebar(
                     runCatching { navRequesters.getValue(selected).requestFocus() }
                 },
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 16.dp, top = 24.dp),
+                    .align(Alignment.CenterStart)
+                    .padding(start = 18.dp),
             )
         }
     }
@@ -363,7 +368,7 @@ private fun TvCollapsedRoutePill(
     modifier: Modifier = Modifier,
 ) {
     val width by animateDpAsState(
-        targetValue = if (iconOnly) 50.dp else 176.dp,
+        targetValue = if (iconOnly) 46.dp else 154.dp,
         animationSpec = tween(180, easing = FastOutSlowInEasing),
         label = "sidebarPillWidth",
     )
@@ -378,21 +383,12 @@ private fun TvCollapsedRoutePill(
                 transformOrigin = TransformOrigin(0f, 0f)
             },
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        if (!iconOnly) {
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowLeft,
-                contentDescription = null,
-                tint = TvDesign.White.copy(alpha = .76f),
-                modifier = Modifier.size(14.dp),
-            )
-        }
-
         Row(
             modifier = Modifier
                 .width(width)
-                .height(44.dp)
+                .height(46.dp)
                 .background(
                     brush = Brush.verticalGradient(
                         listOf(
@@ -409,7 +405,7 @@ private fun TvCollapsedRoutePill(
                 )
                 .clickable(onClick = onExpand)
                 .focusProperties { canFocus = false }
-                .padding(horizontal = 5.dp),
+                .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
