@@ -155,3 +155,13 @@ Use the Nuvio-style sticky cinematic backdrop + hero actions + season tabs/lands
 Source behavior/data is sourced from VUEO Mobile + Shared Core; supplied Nuvio `StreamScreen.kt` is only the TV composition/D-pad reference. Preserve shared `SourceCleaner`/`PlayerSourcePolicy` ranking, preferred-quality/original-language context, direct-play gating, provider filters, recommendation, source technical-details preference, provider diagnostics and the short-lived shared source-discovery cache behavior. Do not create a TV-only resolver/ranker/store.
 
 The current TV composition is backdrop + left identity/engine context + right provider-chip/source-list workspace. Cached/fresh results may appear progressively. Focus alone never plays a source; OK/Enter commits once on KeyUp. First result receives initial focus only if the user has not already interacted; UP from the first result returns to the active provider chip; LEFT/RIGHT on a source row may cycle provider filters. Returning from Player should restore the last provider/source when available. This is not the final visual polish lock.
+
+## 29G Player D-pad native functional baseline
+
+Player remains VUEO/Shared Core owned for playback behavior, storage and source state. The TV presentation is remote-first: controls are bottom anchored, there are no on-screen Back or Lock buttons, and the top area is informational only.
+
+When controls are hidden, OK/Enter reveals controls, Left/Right performs a 10 second seek and Up/Down reveals controls. When controls are visible, Left/Right navigates the bottom control row and OK/Enter activates the focused control on KeyUp. Hardware media keys remain supported. Remote Back closes the active side panel first, then hides controls, then saves progress and exits.
+
+The bottom row is Play/Pause, Rewind 10s, Forward 10s, Next, Subs, Audio, Sources, Episodes and More. Subs/Audio/Sources/Episodes/More use D-pad side panels that trap horizontal focus and restore focus to the originating button on close. Skip Intro/Recap/Ending and auto-next remain contextual remote-focusable actions. Do not restore the previous whole-screen OK = Play/Pause interaction while controls are visible, do not centre the main controls over video, and do not add touch-only gestures as required TV interactions.
+
+29G is a functional baseline pending real-TV calibration and the later whole-TV polish pass.
