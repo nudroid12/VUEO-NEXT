@@ -675,3 +675,9 @@ For future TV UI work, inspect the Nuvio sources first, especially `MainActivity
 Library was re-audited against the supplied VUEO Mobile source before rebuilding. Canonical Mobile Library currently reads `LibraryStore.watchlist()` and exposes **My List / Cloud** plus a persisted **Grid/List** presentation toggle (`vueo_library_ui`, `grid_view`). It does not present Continue Watching or History as Library sections. TV 29D now follows that contract while keeping Nuvio as the TV composition/D-pad reference.
 
 TV Library uses one vertical responsive content canvas, My List/Cloud controls, persisted Grid/List mode, responsive poster density based on a target poster width, and last-item/scroll focus restoration. Shared Core history/progress data is untouched and remains available to Home, Detail, Player and other behavior. The earlier fixed 8-up Search density is no longer a global TV poster-density rule; Search can be redesigned separately.
+
+## TV 29E — Detail functional rebuild
+
+Detail now follows the project-wide rule: Mobile VUEO is canonical for feature/data behaviour, while supplied Nuvio TV is the composition/D-pad reference. The Detail screen is rebuilt around a sticky cinematic backdrop and hero action area, followed by season tabs/episode cards and supporting content. Existing Shared Core/TvRuntime contracts remain authoritative for metadata, My List, playback/history, ratings, DNA, recommendations and Gemini insight. No Nuvio runtime code is imported.
+
+29E is deliberately a functional baseline. Final cross-screen typography, density, spacing, focus motion and sidebar calibration will happen after Detail → Source → Player are functionally rebuilt.

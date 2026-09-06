@@ -143,3 +143,9 @@ The 29C.2 centered top capsule is superseded by the 29C.3 slim collapsible left 
 Library behavior is sourced from canonical VUEO Mobile, while Nuvio is only the TV presentation/focus reference. The visible Library screen is **My List + Cloud placeholder + Grid/List view**. Continue Watching and History must not be reintroduced as dedicated Library sections unless Mobile changes first. Their Shared Core data remains valid for other surfaces.
 
 Grid/List uses the same `vueo_library_ui` / `grid_view` preference contract as Mobile. Library poster density is responsive to a target card width and is **not** locked to 8 columns. LEFT from the first logical content edge enters the current 29C.4 sidebar; sidebar RIGHT restores the last Library control/item where practical; OK/Enter commits once on KeyUp; focus movement never routes. Returning from Detail should restore the last Library item/scroll position without creating a second library-data store.
+
+## 29E Detail functional baseline — Mobile behaviour + Nuvio TV composition
+
+Detail is now a functional rebuild, not a final visual lock. VUEO Mobile/Shared Core remain canonical for Detail data/actions; supplied Nuvio Detail sources are the TV composition/focus reference only. Preserve My List, resume-aware primary action state, season/episode selection, episode progress, facts/ratings/DNA, credits, Overview, Cast, Network/Production, More Like This and optional manual VUEO Insight where supported by current Mobile/runtime behaviour. Do not create TV-only cast/company routes or duplicate playback/library stores.
+
+Use the Nuvio-style sticky cinematic backdrop + hero actions + season tabs/landscape episode row + supporting horizontal sections, with shallow neutral focus and KeyUp-only activation. This 29E screen is intentionally subject to the later whole-TV final polish pass.

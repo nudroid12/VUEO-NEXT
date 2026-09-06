@@ -160,3 +160,9 @@ VUEO adaptation rules:
 - List mode is compact and content-first: poster thumbnail, title, release/type metadata, restrained focus surface.
 - Preserve exact last-item/scroll focus return after Detail where possible.
 - Keep Library header below the 29C.4 collapsed route pill rather than adding a permanent left rail gutter.
+
+## 29E Detail baseline — Nuvio-reference composition, Mobile behaviour
+
+Detail uses a sticky full-screen backdrop with strong left and bottom scrims, a bottom-weighted hero text/action block, then TV-native horizontal sections. Primary action receives initial focus; custom controls activate on KeyUp once; focus motion remains shallow (~1.02–1.025) with neutral white treatment. Series uses season tabs plus 16:9 episode cards with playback progress. More Like This uses restrained landscape cards. Overview must remain accessible even when hero copy is clamped.
+
+This is not a final visual lock. Preserve the functional composition and Mobile parity, then calibrate exact density/spacing/type/motion during the final whole-TV polish pass.
