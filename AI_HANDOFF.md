@@ -101,3 +101,12 @@ Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonica
 
 ## TV 30A Home polish
 Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Preserve the ~50% hero reading zone, medium 224dp Continue Watching landscape cards, 128dp 2:3 My List/catalog posters, restrained ~1.028 focus scale and the existing exact sidebar return-to-content behavior unless a later explicit product decision supersedes it.
+
+## TV 30C Home source-referenced rebuild
+
+- Home/sidebar were rewritten after reviewing the user-supplied NuvioTV 0.8.6-beta source.
+- VUEO keeps its own data/routes; only layout and focus principles were adapted.
+- Collapsed TV navigation is now a stable icon-only rail; no floating route pill.
+- Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
+- Per-row focus memory and deterministic UP/DOWN row transfer are part of the Home contract.
+- See `TV_30C_HOME_SOURCE_REBUILD.md`.

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -63,8 +64,14 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
 
-private const val HERO_SETTLE_MS = 180L
-private val HomeCardShape = RoundedCornerShape(11.dp)
+private const val HERO_SETTLE_MS = 160L
+private const val HOME_ROWS_TOP_FRACTION = .49f
+private const val HOME_HERO_TEXT_FRACTION = .42f
+private val HomeContentStart = 92.dp
+private val HomeContentEnd = 48.dp
+private val ContinueWatchingWidth = 252.dp
+private val PosterWidth = 144.dp
+private val HomeCardShape = RoundedCornerShape(12.dp)
 
 private sealed interface HomeEntry {
     val key: String
@@ -104,11 +111,14 @@ fun TvHomeScreen(
     LaunchedEffect(runtime, refreshToken) {
         loading = catalogRows.isEmpty()
         error = null
+
         val cached = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
         if (cached.isNotEmpty()) catalogRows = cached
+
         val fresh = runCatching { runtime.homeRows(forceRefresh = true) }
         fresh.onSuccess { if (it.isNotEmpty()) catalogRows = it }
             .onFailure { if (catalogRows.isEmpty()) error = it.message ?: "Unable to load Home" }
+
         loading = false
     }
 
@@ -132,6 +142,7 @@ fun TvHomeScreen(
                     )
                 )
             }
+
             if (watchlist.isNotEmpty()) {
                 add(
                     HomeRow(
@@ -146,6 +157,7 @@ fun TvHomeScreen(
                     )
                 )
             }
+
             catalogRows.forEach { row ->
                 if (row.items.isNotEmpty()) {
                     add(
@@ -168,10 +180,9 @@ fun TvHomeScreen(
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
     fun requester(key: String): FocusRequester = requesters.getOrPut(key) { FocusRequester() }
 
-    val navRequesters = remember {
-        TvPrimaryDestinations.associateWith { FocusRequester() }
-    }
+    val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
+    val lastIndexByRow = remember { mutableMapOf<String, Int>() }
 
     var lastFocusedKey by remember { mutableStateOf<String?>(null) }
     var navExpanded by remember { mutableStateOf(false) }
@@ -184,7 +195,7 @@ fun TvHomeScreen(
         if (pendingHero == null) pendingHero = first?.media
         if (lastFocusedKey == null && first != null) {
             lastFocusedKey = first.key
-            delay(110)
+            delay(100L)
             runCatching { requester(first.key).requestFocus() }
         }
     }
@@ -203,8 +214,7 @@ fun TvHomeScreen(
         AnimatedContent(
             targetState = hero?.background ?: hero?.poster,
             transitionSpec = {
-                fadeIn(animationSpec = tween(durationMillis = 420)) togetherWith
-                    fadeOut(animationSpec = tween(durationMillis = 220))
+                fadeIn(animationSpec = tween(360)) togetherWith fadeOut(animationSpec = tween(190))
             },
             label = "homeHeroBackdrop",
             modifier = Modifier.fillMaxSize(),
@@ -218,52 +228,55 @@ fun TvHomeScreen(
             )
         }
 
-        // 29B: layered scrims keep artwork cinematic while giving copy and rows a calm reading field.
+        // VUEO 30C: keep the art alive on the right while making the left reading field calm.
         Box(
             Modifier
                 .fillMaxSize()
-                .background(TvDesign.Black.copy(alpha = .11f))
+                .background(TvDesign.Black.copy(alpha = .08f))
                 .background(
                     Brush.horizontalGradient(
-                        listOf(
-                            TvDesign.Black.copy(alpha = .95f),
-                            TvDesign.Black.copy(alpha = .76f),
-                            TvDesign.Black.copy(alpha = .36f),
-                            TvDesign.Black.copy(alpha = .06f),
+                        colorStops = arrayOf(
+                            0.00f to TvDesign.Black.copy(alpha = .96f),
+                            0.24f to TvDesign.Black.copy(alpha = .82f),
+                            0.48f to TvDesign.Black.copy(alpha = .42f),
+                            0.70f to TvDesign.Black.copy(alpha = .10f),
+                            1.00f to Color.Transparent,
                         )
                     )
                 )
                 .background(
                     Brush.verticalGradient(
-                        listOf(
-                            TvDesign.Black.copy(alpha = .20f),
-                            Color.Transparent,
-                            Color.Transparent,
-                            TvDesign.Black.copy(alpha = .64f),
-                            TvDesign.Black.copy(alpha = .97f),
+                        colorStops = arrayOf(
+                            0.00f to TvDesign.Black.copy(alpha = .16f),
+                            0.40f to Color.Transparent,
+                            0.58f to Color.Transparent,
+                            0.78f to TvDesign.Black.copy(alpha = .58f),
+                            1.00f to TvDesign.Black.copy(alpha = .97f),
                         )
                     )
                 )
         )
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val viewportHeight = maxHeight
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 58.dp),
-            ) {
-                Spacer(Modifier.height(viewportHeight * .125f))
+            val rowsTop = maxHeight * HOME_ROWS_TOP_FRACTION
 
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(rowsTop),
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(.49f),
-                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = HomeContentStart, end = HomeContentEnd, bottom = 24.dp)
+                        .fillMaxWidth(HOME_HERO_TEXT_FRACTION),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = hero?.name.orEmpty(),
                         color = TvDesign.White,
-                        fontSize = 40.sp,
-                        lineHeight = 44.sp,
+                        fontSize = 38.sp,
+                        lineHeight = 41.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -273,7 +286,7 @@ fun TvHomeScreen(
                     if (meta.isNotBlank()) {
                         Text(
                             text = meta,
-                            color = TvDesign.White.copy(alpha = .72f),
+                            color = TvDesign.White.copy(alpha = .74f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
@@ -284,19 +297,22 @@ fun TvHomeScreen(
                     hero?.description?.takeIf { it.isNotBlank() }?.let { description ->
                         Text(
                             text = description,
-                            color = TvDesign.White.copy(alpha = .68f),
+                            color = TvDesign.White.copy(alpha = .72f),
                             fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            maxLines = 2,
+                            lineHeight = 19.sp,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
+            }
 
-                Spacer(Modifier.height(viewportHeight * .045f))
-
-                if (loading && rows.isEmpty()) {
+            when {
+                loading && rows.isEmpty() -> {
                     Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = HomeContentStart, bottom = 44.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -307,11 +323,16 @@ fun TvHomeScreen(
                         )
                         Text("Loading your library", color = TvDesign.Muted, fontSize = 14.sp)
                     }
-                } else if (error != null && rows.isEmpty()) {
+                }
+
+                error != null && rows.isEmpty() -> {
                     Text(
                         text = error ?: "Unable to load Home",
                         color = TvDesign.Muted,
                         fontSize = 15.sp,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = HomeContentStart, bottom = 44.dp),
                     )
                 }
             }
@@ -322,26 +343,36 @@ fun TvHomeScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(top = maxHeight * .465f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 58.dp,
-                        end = 58.dp,
-                        bottom = 58.dp,
+                        .padding(top = maxHeight * HOME_ROWS_TOP_FRACTION),
+                    contentPadding = PaddingValues(
+                        start = HomeContentStart,
+                        end = HomeContentEnd,
+                        bottom = 64.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(22.dp),
                 ) {
-                    itemsIndexed(rows, key = { _, row -> row.id }) { _, row ->
+                    itemsIndexed(rows, key = { _, row -> row.id }) { rowIndex, row ->
                         HomeMediaRow(
                             row = row,
                             requester = ::requester,
-                            onFocused = { entry ->
+                            onFocused = { index, entry ->
+                                lastIndexByRow[row.id] = index
                                 lastFocusedKey = entry.key
                                 pendingHero = entry.media
                                 navExpanded = false
                             },
                             onLeftFromRow = {
                                 navExpanded = true
-                                navRequesters.getValue("Home").requestFocus()
+                                runCatching { navRequesters.getValue("Home").requestFocus() }
+                            },
+                            onVerticalMove = { currentIndex, direction ->
+                                val targetRowIndex = rowIndex + direction
+                                val targetRow = rows.getOrNull(targetRowIndex) ?: return@HomeMediaRow false
+                                val rememberedIndex = lastIndexByRow[targetRow.id] ?: currentIndex
+                                val targetIndex = rememberedIndex.coerceIn(0, targetRow.entries.lastIndex)
+                                val target = targetRow.entries.getOrNull(targetIndex) ?: return@HomeMediaRow false
+                                lastIndexByRow[targetRow.id] = targetIndex
+                                runCatching { requester(target.key).requestFocus() }.isSuccess
                             },
                             onOpen = { entry ->
                                 when (entry) {
@@ -378,16 +409,17 @@ fun TvHomeScreen(
 private fun HomeMediaRow(
     row: HomeRow,
     requester: (String) -> FocusRequester,
-    onFocused: (HomeEntry) -> Unit,
+    onFocused: (Int, HomeEntry) -> Unit,
     onLeftFromRow: () -> Unit,
+    onVerticalMove: (Int, Int) -> Boolean,
     onOpen: (HomeEntry) -> Unit,
 ) {
     val isContinueWatching = row.id == "continue"
-    val cardWidth = if (isContinueWatching) 238.dp else 148.dp
+    val cardWidth = if (isContinueWatching) ContinueWatchingWidth else PosterWidth
     val cardRatio = if (isContinueWatching) 16f / 9f else 2f / 3f
-    val cardGap = if (isContinueWatching) 15.dp else 14.dp
+    val cardGap = if (isContinueWatching) 12.dp else 13.dp
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
         Text(
             text = row.title,
             color = TvDesign.White.copy(alpha = .92f),
@@ -397,16 +429,13 @@ private fun HomeMediaRow(
 
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(cardGap),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 8.dp,
-                bottom = 8.dp,
-            ),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 7.dp),
         ) {
             itemsIndexed(row.entries, key = { _, entry -> entry.key }) { index, entry ->
                 var focused by remember(entry.key) { mutableStateOf(false) }
                 val focusScale by animateFloatAsState(
-                    targetValue = if (focused) 1.028f else 1f,
-                    animationSpec = tween(if (focused) 165 else 125),
+                    targetValue = if (focused) 1.02f else 1f,
+                    animationSpec = tween(if (focused) 150 else 110),
                     label = "homeCardScale",
                 )
                 val resume = entry as? HomeEntry.Resume
@@ -414,7 +443,7 @@ private fun HomeMediaRow(
 
                 Column(
                     modifier = Modifier.width(cardWidth),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Box(
                         modifier = Modifier
@@ -422,7 +451,7 @@ private fun HomeMediaRow(
                             .aspectRatio(cardRatio)
                             .scale(focusScale)
                             .shadow(
-                                elevation = if (focused) 10.dp else 0.dp,
+                                elevation = if (focused) 8.dp else 0.dp,
                                 shape = HomeCardShape,
                                 clip = false,
                             )
@@ -431,26 +460,30 @@ private fun HomeMediaRow(
                             .border(
                                 width = if (focused) 2.dp else 1.dp,
                                 color = if (focused) {
-                                    TvDesign.White.copy(alpha = .82f)
+                                    TvDesign.White.copy(alpha = .88f)
                                 } else {
-                                    TvDesign.White.copy(alpha = .06f)
+                                    TvDesign.White.copy(alpha = .055f)
                                 },
                                 shape = HomeCardShape,
                             )
                             .focusRequester(requester(entry.key))
                             .onFocusChanged {
                                 focused = it.isFocused
-                                if (it.isFocused) onFocused(entry)
+                                if (it.isFocused) onFocused(index, entry)
                             }
                             .onPreviewKeyEvent { event ->
-                                if (
-                                    index == 0 &&
-                                    event.type == KeyEventType.KeyDown &&
-                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
-                                ) {
-                                    onLeftFromRow()
-                                    true
-                                } else false
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                when (event.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (index == 0) {
+                                            onLeftFromRow()
+                                            true
+                                        } else false
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_UP -> onVerticalMove(index, -1)
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> onVerticalMove(index, 1)
+                                    else -> false
+                                }
                             }
                             .clickable { onOpen(entry) }
                             .focusable(),
@@ -475,7 +508,7 @@ private fun HomeMediaRow(
                                             listOf(
                                                 Color.Transparent,
                                                 Color.Transparent,
-                                                TvDesign.Black.copy(alpha = .82f),
+                                                TvDesign.Black.copy(alpha = .84f),
                                             )
                                         )
                                     )
@@ -484,7 +517,7 @@ private fun HomeMediaRow(
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.BottomStart)
-                                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                                    .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 Text(
@@ -499,26 +532,13 @@ private fun HomeMediaRow(
                                 resume?.let {
                                     Text(
                                         text = continueMeta(it.playback),
-                                        color = TvDesign.White.copy(alpha = .68f),
+                                        color = TvDesign.White.copy(alpha = .70f),
                                         fontSize = 11.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
-                        } else if (focused) {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.Transparent,
-                                                TvDesign.White.copy(alpha = .035f),
-                                            )
-                                        )
-                                    )
-                            )
                         }
 
                         if (progress != null && progress > 0f) {
@@ -527,7 +547,7 @@ private fun HomeMediaRow(
                                     .align(Alignment.BottomStart)
                                     .fillMaxWidth()
                                     .height(3.dp)
-                                    .background(Color.Black.copy(alpha = .48f))
+                                    .background(Color.Black.copy(alpha = .50f))
                             ) {
                                 Box(
                                     Modifier
@@ -542,7 +562,7 @@ private fun HomeMediaRow(
                     if (!isContinueWatching) {
                         Text(
                             text = entry.media.name,
-                            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .66f),
+                            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .62f),
                             fontSize = 13.sp,
                             lineHeight = 16.sp,
                             fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
@@ -573,8 +593,9 @@ private fun continueMeta(playback: LibraryPlaybackEntry): String =
 private fun heroMeta(media: MediaItem?): String {
     if (media == null) return ""
     return listOfNotNull(
-        media.releaseInfo?.takeIf(String::isNotBlank),
         media.displayType.takeIf(String::isNotBlank),
+        media.genres.firstOrNull()?.takeIf(String::isNotBlank),
+        media.releaseInfo?.takeIf(String::isNotBlank),
         media.imdbRating?.let { "IMDb %.1f".format(it) },
         media.runtimeMinutes?.takeIf { it > 0 }?.let { "${it}m" },
     ).joinToString("  •  ")

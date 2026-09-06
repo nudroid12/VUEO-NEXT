@@ -698,3 +698,12 @@ The bottom row now exposes Play/Pause, 10 second rewind/forward, Next, Subtitles
 
 ### TV 30A — Premium Home density
 Home presentation is now calibrated around the current 29C.4 floating sidebar. The hero reading zone occupies roughly the upper half of the viewport; Continue Watching remains medium landscape while My List/catalog rails use medium 2:3 posters (~128dp) for about 5–6 visible titles on a common TV viewport. Focus motion is restrained (~1.028), rail density is tighter, and backdrop scrims are lighter. No Home data, route or sidebar interaction contract changed.
+
+## TV 30C Home source-referenced rebuild
+
+- Home/sidebar were rewritten after reviewing the user-supplied NuvioTV 0.8.6-beta source.
+- VUEO keeps its own data/routes; only layout and focus principles were adapted.
+- Collapsed TV navigation is now a stable icon-only rail; no floating route pill.
+- Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
+- Per-row focus memory and deterministic UP/DOWN row transfer are part of the Home contract.
+- See `TV_30C_HOME_SOURCE_REBUILD.md`.
