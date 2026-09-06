@@ -26,12 +26,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.FastForward
-import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -125,9 +121,6 @@ fun TvPlayerScreen(
 ) {
     val context = LocalContext.current
     val rootRequester = remember { FocusRequester() }
-    val playRequester = remember { FocusRequester() }
-    val rewindRequester = remember { FocusRequester() }
-    val forwardRequester = remember { FocusRequester() }
     val nextRequester = remember { FocusRequester() }
     val subtitlesRequester = remember { FocusRequester() }
     val audioRequester = remember { FocusRequester() }
@@ -200,7 +193,7 @@ fun TvPlayerScreen(
         interactionToken += 1
     }
 
-    fun requestControlFocus(requester: FocusRequester = playRequester) {
+    fun requestControlFocus(requester: FocusRequester = subtitlesRequester) {
         controlsVisible = true
         noteInteraction()
         runCatching { requester.requestFocus() }
@@ -246,7 +239,7 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> sourcesRequester
             TvPlayerPanel.EPISODES -> episodesRequester
             TvPlayerPanel.MORE -> moreRequester
-            TvPlayerPanel.NONE -> playRequester
+            TvPlayerPanel.NONE -> subtitlesRequester
         }
         activePanel = TvPlayerPanel.NONE
         noteInteraction()
@@ -315,7 +308,7 @@ fun TvPlayerScreen(
                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
                 recoveryAttempts += 1
                 activeSource = alternative
-                requestControlFocus(playRequester)
+                requestControlFocus(subtitlesRequester)
             }
         }
         player.addListener(listener)
@@ -343,7 +336,7 @@ fun TvPlayerScreen(
     }
 
     LaunchedEffect(player) {
-        runCatching { playRequester.requestFocus() }
+        runCatching { subtitlesRequester.requestFocus() }
         while (true) {
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
@@ -431,7 +424,7 @@ fun TvPlayerScreen(
                             when (code) {
                                 KeyEvent.KEYCODE_DPAD_CENTER,
                                 KeyEvent.KEYCODE_ENTER -> {
-                                    requestControlFocus(playRequester)
+                                    togglePlayback()
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -445,11 +438,12 @@ fun TvPlayerScreen(
                                 KeyEvent.KEYCODE_DPAD_UP -> {
                                     if (activeSkip != null) requestControlFocus(skipRequester)
                                     else if (nextCountdown > 0 && nextEpisode != null) requestControlFocus(nextContextRequester)
-                                    else requestControlFocus(playRequester)
+                                    else if (nextEpisode != null) requestControlFocus(nextRequester)
+                                    else requestControlFocus(moreRequester)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    requestControlFocus(playRequester)
+                                    requestControlFocus(subtitlesRequester)
                                     true
                                 }
                                 else -> false
@@ -516,113 +510,44 @@ fun TvPlayerScreen(
         }
 
         if (controlsVisible) {
-            Column(
+            Row(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth(.70f)
-                    .padding(start = 44.dp, top = 32.dp),
-            ) {
-                Text(
-                    text = playbackTitle(media, episode),
-                    color = TvDesign.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = buildString {
-                        append(activeSource.providerName)
-                        sourceTechnicalLine(activeSource)?.let { append("  •  $it") }
-                        if (recoveryAttempts > 0) append("  •  Recovery $recoveryAttempts/2")
-                    },
-                    color = TvDesign.Muted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 44.dp, vertical = 30.dp),
+                    .padding(start = 32.dp, end = 28.dp, top = 26.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = timeLabel(positionMs),
+                        text = playbackTitle(media, episode),
                         color = TvDesign.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(5.dp)
-                            .background(TvDesign.White.copy(alpha = .22f), RoundedCornerShape(3.dp))
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth(progress)
-                                .height(5.dp)
-                                .background(TvDesign.Accent, RoundedCornerShape(3.dp))
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
                     Text(
-                        text = timeLabel(durationMs),
+                        text = sourceTechnicalLine(activeSource)?.let { "${activeSource.providerName}  •  $it" }
+                            ?: activeSource.providerName,
                         color = TvDesign.Muted,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(top = 3.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
-
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TvPlayerControl(
-                        icon = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        label = if (playing) "Pause" else "Play",
-                        requester = playRequester,
-                        left = moreRequester,
-                        right = rewindRequester,
-                        up = if (activeSkip != null) skipRequester else if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
-                        onInteraction = ::noteInteraction,
-                        onClick = ::togglePlayback,
-                    )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.FastRewind,
-                        label = "10s",
-                        requester = rewindRequester,
-                        left = playRequester,
-                        right = forwardRequester,
-                        onInteraction = ::noteInteraction,
-                        onClick = { seekBy(-10_000L) },
-                    )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.FastForward,
-                        label = "10s",
-                        requester = forwardRequester,
-                        left = rewindRequester,
-                        right = nextRequester,
-                        onInteraction = ::noteInteraction,
-                        onClick = { seekBy(10_000L) },
-                    )
-                    TvPlayerControl(
+                    TvPlayerTopAction(
                         icon = Icons.Rounded.SkipNext,
                         label = "Next",
                         requester = nextRequester,
-                        left = forwardRequester,
-                        right = subtitlesRequester,
+                        left = FocusRequester.Cancel,
+                        right = moreRequester,
+                        down = subtitlesRequester,
                         enabled = nextEpisode != null,
                         onInteraction = ::noteInteraction,
                         onClick = {
@@ -632,53 +557,122 @@ fun TvPlayerScreen(
                             }
                         },
                     )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.Subtitles,
-                        label = "Subs",
-                        requester = subtitlesRequester,
-                        left = nextRequester,
-                        right = audioRequester,
-                        onInteraction = ::noteInteraction,
-                        onClick = { activePanel = TvPlayerPanel.SUBTITLES },
-                    )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.VolumeUp,
-                        label = "Audio",
-                        requester = audioRequester,
-                        left = subtitlesRequester,
-                        right = sourcesRequester,
-                        onInteraction = ::noteInteraction,
-                        onClick = { activePanel = TvPlayerPanel.AUDIO },
-                    )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.List,
-                        label = "Sources",
-                        requester = sourcesRequester,
-                        left = audioRequester,
-                        right = episodesRequester,
-                        enabled = playableSources.isNotEmpty(),
-                        onInteraction = ::noteInteraction,
-                        onClick = { activePanel = TvPlayerPanel.SOURCES },
-                    )
-                    TvPlayerControl(
-                        icon = Icons.Rounded.List,
-                        label = "Episodes",
-                        requester = episodesRequester,
-                        left = sourcesRequester,
-                        right = moreRequester,
-                        enabled = media.episodes.isNotEmpty(),
-                        onInteraction = ::noteInteraction,
-                        onClick = { activePanel = TvPlayerPanel.EPISODES },
-                    )
-                    TvPlayerControl(
+                    TvPlayerTopAction(
                         icon = Icons.Rounded.MoreHoriz,
                         label = "More",
                         requester = moreRequester,
-                        left = episodesRequester,
-                        right = playRequester,
+                        left = nextRequester,
+                        right = FocusRequester.Cancel,
+                        down = episodesRequester,
                         onInteraction = ::noteInteraction,
                         onClick = { activePanel = TvPlayerPanel.MORE },
                     )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+            ) {
+                val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(TvDesign.White.copy(alpha = .26f), RoundedCornerShape(2.dp)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress)
+                            .height(4.dp)
+                            .background(TvDesign.Accent, RoundedCornerShape(2.dp))
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = timeLabel(positionMs),
+                        color = TvDesign.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = timeLabel(durationMs),
+                        color = TvDesign.Muted,
+                        fontSize = 10.sp,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .background(Color(0xD9161719), RoundedCornerShape(28.dp))
+                            .border(
+                                width = 1.dp,
+                                color = TvDesign.White.copy(alpha = .15f),
+                                shape = RoundedCornerShape(28.dp),
+                            )
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TvPlayerCapsuleAction(
+                            icon = Icons.Rounded.Subtitles,
+                            label = "Subs",
+                            requester = subtitlesRequester,
+                            left = episodesRequester,
+                            right = audioRequester,
+                            up = nextRequester,
+                            onInteraction = ::noteInteraction,
+                            onClick = { activePanel = TvPlayerPanel.SUBTITLES },
+                        )
+                        TvPlayerCapsuleAction(
+                            icon = Icons.Rounded.VolumeUp,
+                            label = "Audio",
+                            requester = audioRequester,
+                            left = subtitlesRequester,
+                            right = sourcesRequester,
+                            up = nextRequester,
+                            onInteraction = ::noteInteraction,
+                            onClick = { activePanel = TvPlayerPanel.AUDIO },
+                        )
+                        TvPlayerCapsuleAction(
+                            icon = Icons.Rounded.List,
+                            label = "Sources",
+                            requester = sourcesRequester,
+                            left = audioRequester,
+                            right = episodesRequester,
+                            up = moreRequester,
+                            enabled = playableSources.isNotEmpty(),
+                            onInteraction = ::noteInteraction,
+                            onClick = { activePanel = TvPlayerPanel.SOURCES },
+                        )
+                        TvPlayerCapsuleAction(
+                            icon = Icons.Rounded.List,
+                            label = "Episodes",
+                            requester = episodesRequester,
+                            left = sourcesRequester,
+                            right = subtitlesRequester,
+                            up = moreRequester,
+                            enabled = media.episodes.isNotEmpty(),
+                            onInteraction = ::noteInteraction,
+                            onClick = { activePanel = TvPlayerPanel.EPISODES },
+                        )
+                    }
                 }
             }
         }
@@ -691,7 +685,7 @@ fun TvPlayerScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 32.dp, end = 44.dp)
+                    .padding(top = 82.dp, end = 32.dp)
                     .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(9.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
@@ -701,7 +695,7 @@ fun TvPlayerScreen(
             TvPlayerContextAction(
                 label = skipLabel(segment.kind),
                 requester = skipRequester,
-                down = playRequester,
+                down = subtitlesRequester,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 44.dp, bottom = 112.dp),
@@ -717,7 +711,7 @@ fun TvPlayerScreen(
             TvPlayerContextAction(
                 label = "Next in $nextCountdown  •  ${nextEpisode.title}",
                 requester = nextContextRequester,
-                down = playRequester,
+                down = subtitlesRequester,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 44.dp, bottom = if (activeSkip != null) 164.dp else 112.dp),
@@ -962,23 +956,22 @@ fun TvPlayerScreen(
 }
 
 @Composable
-private fun TvPlayerControl(
+private fun TvPlayerCapsuleAction(
     icon: ImageVector,
     label: String,
     requester: FocusRequester,
     left: FocusRequester,
     right: FocusRequester,
-    up: FocusRequester = FocusRequester.Cancel,
+    up: FocusRequester,
     enabled: Boolean = true,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(20.dp)
 
-    Column(
+    Row(
         modifier = Modifier
-            .width(92.dp)
             .focusRequester(requester)
             .focusProperties {
                 this.left = left
@@ -998,20 +991,12 @@ private fun TvPlayerControl(
             }
             .focusable()
             .background(
-                when {
-                    focused -> TvDesign.White.copy(alpha = .18f)
-                    else -> Color.Black.copy(alpha = .36f)
-                },
+                if (focused) TvDesign.White.copy(alpha = .16f) else Color.Transparent,
                 shape,
             )
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Accent.copy(alpha = .92f) else TvDesign.White.copy(alpha = .10f),
-                shape = shape,
-            )
-            .padding(vertical = 9.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(horizontal = 13.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(
             imageVector = icon,
@@ -1019,20 +1004,75 @@ private fun TvPlayerControl(
             tint = when {
                 !enabled -> TvDesign.Dim
                 focused -> TvDesign.White
-                else -> TvDesign.White.copy(alpha = .86f)
+                else -> TvDesign.White.copy(alpha = .90f)
             },
-            modifier = Modifier.size(21.dp),
+            modifier = Modifier.size(18.dp),
         )
         Text(
             text = label,
             color = when {
                 !enabled -> TvDesign.Dim
                 focused -> TvDesign.White
-                else -> TvDesign.Muted
+                else -> TvDesign.White.copy(alpha = .84f)
             },
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun TvPlayerTopAction(
+    icon: ImageVector,
+    label: String,
+    requester: FocusRequester,
+    left: FocusRequester,
+    right: FocusRequester,
+    down: FocusRequester,
+    enabled: Boolean = true,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+
+    Box(
+        modifier = Modifier
+            .size(42.dp)
+            .focusRequester(requester)
+            .focusProperties {
+                this.left = left
+                this.right = right
+                this.down = down
+                this.up = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp && enabled) onClick()
+                true
+            }
+            .focusable()
+            .background(
+                if (focused) TvDesign.White.copy(alpha = .16f) else Color.Transparent,
+                shape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = when {
+                !enabled -> TvDesign.Dim
+                focused -> TvDesign.White
+                else -> TvDesign.White.copy(alpha = .90f)
+            },
+            modifier = Modifier.size(24.dp),
         )
     }
 }
