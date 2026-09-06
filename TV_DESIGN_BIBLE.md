@@ -131,3 +131,21 @@ Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/
 - Search preserves normal cursor-left behavior while query text exists; an empty search field may enter the sidebar directly with LEFT.
 - The rail overlays the cinematic canvas and uses a quiet translucent charcoal surface with a subtle neutral edge. No live blur, glow, bounce, or decorative motion.
 - Normal app pages remain free of the VUEO wordmark.
+
+## 29C.4 Nuvio-reference visual system
+The supplied Nuvio TV source is the current design reference for the VUEO TV rebuild. Use it as a visual and interaction benchmark, not as a code/runtime architecture dependency.
+
+Relevant source references in the supplied project:
+- `app/src/main/java/com/nuvio/tv/MainActivity.kt` — `ModernSidebarScaffold`, collapsed route pill, focus transfer and expand/collapse choreography.
+- `app/src/main/java/com/nuvio/tv/ModernSidebarBlurPanel.kt` — rounded floating panel, Profile-at-top composition, centered primary destinations, circular icon wells and pill navigation rows.
+- `app/src/main/java/com/nuvio/tv/ui/components/SidebarNavigation.kt` — selected/focused item treatment.
+- `app/src/main/java/com/nuvio/tv/ui/theme/ComponentTokens.kt` and `MotionFocusTokens.kt` — sidebar sizing/motion proportions.
+
+VUEO adaptation rules:
+- Keep VUEO routes, Shared Core behavior and current theme system.
+- Prefer floating/inset overlays over a persistent full-height rail that permanently steals canvas width.
+- Normal content should return to its pre-29C.3 horizontal breathing space; the navigation panel overlays the cinematic canvas when open.
+- Collapsed navigation is a current-route pill rather than a visible vertical rail. It may reduce to icon-only after idle; Settings may retain its label; Search may omit the pill.
+- Expanded panel target is roughly 262dp wide with ~30dp corner radius, inset from overscan edges.
+- Navigation row target is roughly 52dp high with a ~34dp circular leading visual and rounded-full selected/focus surface.
+- Keep neutral white, low-noise focus and no bounce/neon treatment.

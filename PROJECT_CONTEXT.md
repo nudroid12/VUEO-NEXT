@@ -662,3 +662,10 @@ The clean rebuild had retained `TvUpdateManager` but discarded its automatic-che
 ### TV 29C.3 navigation shell
 
 TV primary navigation now uses a premium collapsible left sidebar instead of the centered floating top capsule. Collapsed width is 66dp; focused/expanded width is 202dp. The global order is Home, Search, Library, Settings, with Profile at the bottom. LEFT from a logical first content column enters the current sidebar destination; RIGHT restores the last content focus; UP/DOWN explores; OK commits. Search preserves cursor-left while query text exists. The sidebar overlays content and normal app pages remain free of the VUEO wordmark.
+
+### TV 29C.4 — Nuvio-reference sidebar rebuild
+The maintainer selected the supplied `NuvioTV-0.8.6-beta` project as the presentation/interaction reference for ongoing TV UI rebuild work. This does **not** change architecture: VUEO still uses Shared Core and Mobile-proven behavior, and TV remains independent of Nuvio code/runtime.
+
+The 29C.3 permanent 66dp/202dp sidebar rail visual is superseded. The current sidebar adapts Nuvio's modern floating pattern: a collapsed current-route pill, then an inset rounded ~262dp overlay panel when navigation owns focus. Profile sits at the top; Home / Search / Library / Settings are vertically centered; items use circular icon wells and rounded-full selected/focus surfaces. Search hides the collapsed pill to protect its header. The Home/Search/Library/Settings content left padding introduced only to clear the 29C.3 rail is removed so content regains the pre-rail canvas width. D-pad behavior remains VUEO's locked contract: LEFT enters current nav destination, RIGHT restores exact content focus where possible, UP/DOWN explores, focus does not route, one OK commits.
+
+For future TV UI work, inspect the Nuvio sources first, especially `MainActivity.kt` (`ModernSidebarScaffold` / `CollapsedSidebarPill`), `ModernSidebarBlurPanel.kt`, `ui/components/SidebarNavigation.kt`, and the theme component/motion tokens. Use those as visual/remote references while preserving VUEO behavior and branding.

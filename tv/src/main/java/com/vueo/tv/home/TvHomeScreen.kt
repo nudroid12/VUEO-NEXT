@@ -251,7 +251,7 @@ fun TvHomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 92.dp, end = 54.dp),
+                    .padding(horizontal = 54.dp),
             ) {
                 Spacer(Modifier.height(viewportHeight * .205f))
 
@@ -324,7 +324,7 @@ fun TvHomeScreen(
                         .fillMaxSize()
                         .padding(top = maxHeight * .62f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 92.dp,
+                        start = 54.dp,
                         end = 54.dp,
                         bottom = 58.dp,
                     ),

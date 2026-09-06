@@ -1,9 +1,11 @@
 package com.vueo.tv.ui
 
 import android.view.KeyEvent
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -30,6 +34,7 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,10 +42,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -49,17 +57,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
 
 /**
- * 29C.3 global TV navigation shell.
+ * 29C.4 global TV sidebar shell.
  *
- * The rail stays quiet and narrow while content owns focus. DPAD_LEFT from a
- * content edge enters the current destination. Once the rail owns focus it
- * expands just enough to reveal labels. DPAD_UP/DOWN explores destinations,
- * DPAD_RIGHT returns to the exact last content focus, and OK commits once.
- * Focus movement never changes route.
+ * Interaction and composition are intentionally referenced from the Nuvio TV
+ * source supplied with the project: a quiet floating route pill while content
+ * owns focus, then a rounded overlay panel with profile at the top and the
+ * primary destinations vertically centered. VUEO keeps its own routes,
+ * palette, focus contract and one-OK activation rule.
  */
 @Composable
 fun TvSidebar(
@@ -73,113 +82,185 @@ fun TvSidebar(
     onReturnToContent: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val railWidth by animateDpAsState(
-        targetValue = if (expanded) 202.dp else 66.dp,
-        animationSpec = tween(170),
-        label = "sidebarWidth",
+    val panelWidth by animateDpAsState(
+        targetValue = if (expanded) 262.dp else 184.dp,
+        animationSpec = if (expanded) {
+            keyframes {
+                durationMillis = 365
+                274.dp at 175
+            }
+        } else {
+            tween(durationMillis = 385, easing = LinearOutSlowInEasing)
+        },
+        label = "sidebarPanelWidth",
+    )
+    val panelProgress by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (expanded) 345 else 385,
+            easing = if (expanded) FastOutSlowInEasing else LinearOutSlowInEasing,
+        ),
+        label = "sidebarPanelProgress",
     )
     val labelAlpha by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(if (expanded) 145 else 95),
+        animationSpec = tween(
+            durationMillis = if (expanded) 125 else 145,
+            easing = if (expanded) FastOutSlowInEasing else LinearOutSlowInEasing,
+        ),
         label = "sidebarLabelAlpha",
     )
-    val shellAlpha by animateFloatAsState(
-        targetValue = if (expanded) .94f else .68f,
-        animationSpec = tween(150),
-        label = "sidebarShellAlpha",
+    val iconScale by animateFloatAsState(
+        targetValue = if (expanded) 1f else .92f,
+        animationSpec = tween(145, easing = FastOutSlowInEasing),
+        label = "sidebarIconScale",
     )
+
+    var pillIconOnly by remember(selected) { mutableStateOf(false) }
+    LaunchedEffect(expanded, selected) {
+        if (expanded) {
+            pillIconOnly = false
+        } else {
+            pillIconOnly = false
+            if (selected != "Settings") {
+                delay(4000L)
+                pillIconOnly = true
+            }
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .width(railWidth)
-            .padding(start = 14.dp, top = 18.dp, bottom = 18.dp)
-            .background(
-                brush = Brush.horizontalGradient(
-                    listOf(
-                        TvDesign.Black.copy(alpha = shellAlpha),
-                        TvDesign.SurfaceRaised.copy(alpha = shellAlpha * .84f),
-                    )
-                ),
-                shape = SidebarShape,
-            )
-            .border(
-                width = 1.dp,
-                color = TvDesign.White.copy(alpha = if (expanded) .12f else .075f),
-                shape = SidebarShape,
-            )
-            .padding(horizontal = 7.dp, vertical = 10.dp),
+            .width(286.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxHeight(),
-            verticalArrangement = Arrangement.Center,
+        // Keep the expanded focus targets composed even while visually closed.
+        // This lets DPAD_LEFT request the current destination immediately and
+        // the focus callback then reveals the panel without a dead frame.
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(panelWidth)
+                .padding(start = 16.dp, top = 24.dp, end = 8.dp, bottom = 16.dp)
+                .offset(
+                    x = (-10f * (1f - panelProgress)).dp,
+                    y = (-8f * (1f - panelProgress)).dp,
+                )
+                .graphicsLayer {
+                    alpha = panelProgress
+                    val scale = .90f + (.10f * panelProgress)
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
+                .background(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            TvDesign.SurfaceRaised.copy(alpha = .96f),
+                            TvDesign.Surface.copy(alpha = .94f),
+                            TvDesign.Black.copy(alpha = .97f),
+                        )
+                    ),
+                    shape = SidebarPanelShape,
+                )
+                .border(
+                    width = 1.dp,
+                    color = TvDesign.White.copy(alpha = .14f),
+                    shape = SidebarPanelShape,
+                )
+                .padding(horizontal = 12.dp, vertical = 16.dp),
         ) {
-            Spacer(Modifier.weight(.72f))
-
-            TvPrimaryDestinations.forEachIndexed { index, label ->
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 TvSidebarItem(
-                    label = label,
-                    icon = destinationIcon(label),
-                    selected = selected == label,
+                    label = "Profile",
+                    icon = Icons.Default.Person,
+                    selected = false,
                     labelAlpha = labelAlpha,
-                    requester = navRequesters.getValue(label),
+                    iconScale = iconScale,
+                    requester = profileRequester,
                     onFocused = onFocused,
-                    onClick = { onNavigate(label) },
-                    onUp = {
-                        if (index > 0) {
-                            runCatching {
-                                navRequesters.getValue(TvPrimaryDestinations[index - 1]).requestFocus()
-                            }
-                        }
-                        true
-                    },
+                    onClick = onProfile,
+                    onUp = { true },
                     onDown = {
-                        if (index < TvPrimaryDestinations.lastIndex) {
-                            runCatching {
-                                navRequesters.getValue(TvPrimaryDestinations[index + 1]).requestFocus()
-                            }
-                        } else {
-                            runCatching { profileRequester.requestFocus() }
-                        }
+                        runCatching { navRequesters.getValue("Home").requestFocus() }
                         true
                     },
                     onRight = onReturnToContent,
+                    profile = true,
+                    modifier = Modifier.fillMaxWidth(.92f),
                 )
-                if (index != TvPrimaryDestinations.lastIndex) Spacer(Modifier.height(3.dp))
+
+                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.weight(1f))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = (-12).dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    TvPrimaryDestinations.forEachIndexed { index, label ->
+                        TvSidebarItem(
+                            label = label,
+                            icon = destinationIcon(label),
+                            selected = selected == label,
+                            labelAlpha = labelAlpha,
+                            iconScale = iconScale,
+                            requester = navRequesters.getValue(label),
+                            onFocused = onFocused,
+                            onClick = { onNavigate(label) },
+                            onUp = {
+                                if (index == 0) {
+                                    runCatching { profileRequester.requestFocus() }
+                                } else {
+                                    runCatching {
+                                        navRequesters.getValue(TvPrimaryDestinations[index - 1]).requestFocus()
+                                    }
+                                }
+                                true
+                            },
+                            onDown = {
+                                if (index < TvPrimaryDestinations.lastIndex) {
+                                    runCatching {
+                                        navRequesters.getValue(TvPrimaryDestinations[index + 1]).requestFocus()
+                                    }
+                                }
+                                true
+                            },
+                            onRight = onReturnToContent,
+                            modifier = Modifier.fillMaxWidth(.92f),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
             }
+        }
 
-            Spacer(Modifier.weight(1f))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(TvDesign.White.copy(alpha = .07f)),
-            )
-            Spacer(Modifier.height(8.dp))
-
-            TvSidebarItem(
-                label = "Profile",
-                icon = Icons.Default.Person,
-                selected = false,
-                labelAlpha = labelAlpha,
-                requester = profileRequester,
-                onFocused = onFocused,
-                onClick = onProfile,
-                onUp = {
-                    runCatching { navRequesters.getValue("Settings").requestFocus() }
-                    true
+        if (!expanded && selected != "Search") {
+            TvCollapsedRoutePill(
+                label = selected,
+                icon = destinationIcon(selected),
+                iconOnly = pillIconOnly,
+                progress = 1f - panelProgress,
+                onExpand = {
+                    onFocused()
+                    runCatching { navRequesters.getValue(selected).requestFocus() }
                 },
-                onDown = { true },
-                onRight = onReturnToContent,
-                profile = true,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 16.dp, top = 24.dp),
             )
         }
     }
 }
 
-private val SidebarShape = RoundedCornerShape(24.dp)
-private val SidebarItemShape = RoundedCornerShape(14.dp)
+private val SidebarPanelShape = RoundedCornerShape(30.dp)
+private val SidebarItemShape = RoundedCornerShape(999.dp)
 
 @Composable
 private fun TvSidebarItem(
@@ -187,43 +268,36 @@ private fun TvSidebarItem(
     icon: ImageVector,
     selected: Boolean,
     labelAlpha: Float,
+    iconScale: Float,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onUp: () -> Boolean,
     onDown: () -> Boolean,
     onRight: () -> Boolean,
+    modifier: Modifier = Modifier,
     profile: Boolean = false,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val fill by animateColorAsState(
-        targetValue = when {
-            focused -> TvDesign.White.copy(alpha = .15f)
-            selected -> TvDesign.White.copy(alpha = .085f)
-            else -> Color.Transparent
-        },
-        animationSpec = tween(110),
-        label = "sidebarItemFill",
-    )
-    val edge by animateColorAsState(
-        targetValue = if (focused) TvDesign.White.copy(alpha = .42f) else Color.Transparent,
-        animationSpec = tween(100),
-        label = "sidebarItemEdge",
-    )
-    val iconTint by animateColorAsState(
-        targetValue = when {
-            focused -> TvDesign.White
-            selected -> TvDesign.White.copy(alpha = .94f)
-            else -> TvDesign.Muted.copy(alpha = .88f)
-        },
-        animationSpec = tween(100),
-        label = "sidebarIconTint",
-    )
+    val fillAlpha = when {
+        selected -> .13f
+        focused -> .18f
+        else -> 0f
+    }
+    val edgeAlpha = if (focused) .38f else 0f
+    val contentColor = when {
+        focused || selected -> TvDesign.White
+        else -> TvDesign.White.copy(alpha = .82f)
+    }
+    val iconWell = when {
+        selected -> TvDesign.White.copy(alpha = .13f)
+        focused -> TvDesign.White.copy(alpha = .11f)
+        else -> TvDesign.SurfaceRaised.copy(alpha = .90f)
+    }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(46.dp)
+        modifier = modifier
+            .height(52.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -243,58 +317,126 @@ private fun TvSidebarItem(
                     else -> false
                 }
             }
-            .background(fill, SidebarItemShape)
-            .border(1.dp, edge, SidebarItemShape)
+            .background(TvDesign.White.copy(alpha = fillAlpha), SidebarItemShape)
+            .border(1.dp, TvDesign.White.copy(alpha = edgeAlpha), SidebarItemShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(30.dp),
+            modifier = Modifier
+                .size(34.dp)
+                .background(iconWell, CircleShape)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                },
             contentAlignment = Alignment.Center,
         ) {
-            if (profile) {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .background(
-                            color = TvDesign.White.copy(alpha = if (focused) .18f else .09f),
-                            shape = CircleShape,
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = if (focused) TvDesign.White.copy(alpha = .62f)
-                            else TvDesign.White.copy(alpha = .15f),
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconTint,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(if (profile) 18.dp else 20.dp),
+            )
         }
 
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(if (profile) 16.dp else 14.dp))
         Text(
             text = label,
-            color = TvDesign.White.copy(alpha = labelAlpha),
-            fontSize = 13.sp,
-            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = contentColor.copy(alpha = labelAlpha),
+            fontSize = 15.sp,
+            fontWeight = if (profile || focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Clip,
         )
+    }
+}
+
+@Composable
+private fun TvCollapsedRoutePill(
+    label: String,
+    icon: ImageVector,
+    iconOnly: Boolean,
+    progress: Float,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val width by animateDpAsState(
+        targetValue = if (iconOnly) 50.dp else 176.dp,
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "sidebarPillWidth",
+    )
+
+    Row(
+        modifier = modifier
+            .graphicsLayer {
+                alpha = progress
+                val scale = .90f + (.10f * progress)
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0f, 0f)
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (!iconOnly) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowLeft,
+                contentDescription = null,
+                tint = TvDesign.White.copy(alpha = .76f),
+                modifier = Modifier.size(14.dp),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .width(width)
+                .height(44.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            TvDesign.SurfaceRaised.copy(alpha = .95f),
+                            TvDesign.Surface.copy(alpha = .92f),
+                        )
+                    ),
+                    shape = SidebarItemShape,
+                )
+                .border(
+                    width = 1.dp,
+                    color = TvDesign.White.copy(alpha = .14f),
+                    shape = SidebarItemShape,
+                )
+                .clickable(onClick = onExpand)
+                .focusProperties { canFocus = false }
+                .padding(horizontal = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(TvDesign.SurfaceRaised.copy(alpha = .92f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = TvDesign.White.copy(alpha = .92f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            if (!iconOnly) {
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    text = label,
+                    color = TvDesign.White.copy(alpha = .92f),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 

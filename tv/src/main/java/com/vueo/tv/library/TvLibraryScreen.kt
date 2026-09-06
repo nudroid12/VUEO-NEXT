@@ -106,7 +106,7 @@ fun TvLibraryScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 92.dp,
+                start = 52.dp,
                 end = 52.dp,
                 top = 54.dp,
                 bottom = 48.dp,

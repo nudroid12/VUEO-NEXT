@@ -127,3 +127,13 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 ## 29C.3 sidebar navigation lock
 
 The 29C.2 centered top capsule is superseded by the 29C.3 slim collapsible left sidebar. Normal TV destinations use Home / Search / Library / Settings with Profile at the bottom of the rail. The rail is collapsed while content owns focus and expands only when the rail owns focus. DPAD_LEFT from a logical first content column enters the current destination; DPAD_RIGHT returns to the exact last content focus where available. UP/DOWN explores the rail; OK commits once; focus alone never routes. Do not restore persistent top navigation, VUEO page wordmarks, auto-route-on-focus, or stacked focus targets.
+
+## 29C.4 Nuvio-reference TV UI direction — supersedes 29C.3 sidebar visuals
+- The supplied `NuvioTV-0.8.6-beta` source is now the primary **TV presentation and remote-interaction reference** for rebuild work after the profile gate.
+- Reference Nuvio composition, density, focus grammar, overlay/panel treatment and motion before inventing new TV chrome. Do not copy Nuvio runtime/data architecture into VUEO.
+- VUEO behavior remains owned by Shared Core/Mobile-proven semantics, and VUEO branding/routes/theme remain VUEO-specific.
+- For the global sidebar specifically, use the Nuvio modern pattern: a quiet floating current-route pill while content owns focus; a rounded floating overlay panel when navigation owns focus; Profile at the top; Home / Search / Library / Settings centered vertically; circular icon wells; full-pill selected/focused rows.
+- The previous permanent 66dp collapsed rail / 202dp expanded rail visual is retired.
+- LEFT from logical content edge opens the current destination, RIGHT restores exact last content focus where supported, UP/DOWN explores navigation, OK commits once, and focus alone never routes.
+- Search may hide the collapsed route pill to keep its header clear, matching the supplied Nuvio modern-sidebar pattern.
+- No post-profile VUEO wordmark returns to normal page chrome.

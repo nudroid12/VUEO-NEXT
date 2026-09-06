@@ -77,3 +77,8 @@ Startup automatic update checks now surface the existing TV updater result throu
 ## 29C.3 current TV navigation
 
 The centered 29C.2 top navigation capsule is superseded. Use `TvSidebar` from `tv/ui/TvTopBar.kt`: 66dp collapsed / 202dp expanded, Home → Search → Library → Settings, Profile at bottom. LEFT from first logical content column enters current destination; RIGHT restores exact last content focus when possible; UP/DOWN explores; OK commits once; focus never routes. Keep Search 8-up poster density and 29C.2a update popup restore intact.
+
+## TV 29C.4 — Nuvio-reference direction
+The maintainer explicitly chose the supplied `NuvioTV-0.8.6-beta` source as the UI reference for subsequent TV rebuild work. Before designing a TV screen/chrome from scratch, inspect the relevant Nuvio source first. Treat Nuvio as the presentation/D-pad reference only; VUEO still owns its routes, data/runtime, Shared Core contracts, profile behavior and theme.
+
+The first implementation is the global sidebar: `TvSidebar` now follows Nuvio's modern floating-sidebar pattern rather than 29C.3's permanent slim rail. Collapsed state is a floating current-route pill (hidden on Search, label can collapse after idle); expanded state is an inset rounded overlay panel with Profile at top and Home/Search/Library/Settings centered. LEFT enters navigation, RIGHT restores last content focus, focus never routes, one OK commits once.

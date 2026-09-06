@@ -445,7 +445,7 @@ internal fun TvSearchScreen(
                 .padding(top = 46.dp),
         ) {
             Column(
-                modifier = Modifier.padding(start = 92.dp, end = 52.dp),
+                modifier = Modifier.padding(horizontal = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -672,7 +672,7 @@ internal fun TvSearchScreen(
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            start = 92.dp,
+                            start = 52.dp,
                             end = 52.dp,
                             top = 2.dp,
                             bottom = 36.dp,
