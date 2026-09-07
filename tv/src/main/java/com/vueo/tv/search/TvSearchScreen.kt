@@ -77,7 +77,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-private const val SEARCH_COLUMNS = 8
+private const val SEARCH_COLUMNS = 6
 
 internal enum class TvSearchTypeFilter(val label: String) {
     ALL("All"),
@@ -509,6 +509,14 @@ internal fun TvSearchScreen(
                     Spacer(Modifier.height(1.dp))
                 }
 
+                Text(
+                    text = if (searchingMode) "Search Results" else "Discover",
+                    color = TvDesign.White.copy(alpha = .94f),
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -617,17 +625,9 @@ internal fun TvSearchScreen(
                         )
                     }
                 }
-
-                Text(
-                    text = if (searchingMode) "Search Results" else "Discover",
-                    color = TvDesign.White.copy(alpha = .94f),
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
 
             when {
                 !searchingMode && session.discoverRows.isEmpty() && !discovering -> {
@@ -663,8 +663,8 @@ internal fun TvSearchScreen(
                             top = 2.dp,
                             bottom = 36.dp,
                         ),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
                         gridItemsIndexed(
                             items = filteredItems,
@@ -1114,7 +1114,7 @@ private fun TvSearchPosterTile(
         Text(
             text = item.name,
             color = TvDesign.White,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1127,7 +1127,7 @@ private fun TvSearchPosterTile(
                 listOf(searchTypeLabel(item), catalogLabel).joinToString(" • ")
             },
             color = TvDesign.Muted,
-            fontSize = 8.sp,
+            fontSize = 9.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

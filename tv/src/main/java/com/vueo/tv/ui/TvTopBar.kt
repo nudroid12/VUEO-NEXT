@@ -62,6 +62,7 @@ val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
 
 private val SidebarCollapsedWidth = 72.dp
 private val SidebarExpandedWidth = 238.dp
+private val SidebarExpandedItemWidth = 172.dp
 private val SidebarIconSize = 24.dp
 
 /**
@@ -119,63 +120,59 @@ fun TvSidebar(
             .clipToBounds()
             .background(panelBrush),
     ) {
+        // Keep the primary destinations geometrically centred on the TV.
+        // The profile is an independent top action and must never push the nav stack.
+        SidebarProfileItem(
+            profileName = activeProfile.name,
+            avatarId = activeProfile.avatar,
+            expanded = expanded,
+            labelAlpha = labelAlpha,
+            requester = profileRequester,
+            onFocused = onFocused,
+            onClick = onProfile,
+            onLeft = { true },
+            onRight = onReturnToContent,
+            onUp = { true },
+            onDown = { request(navRequesters.getValue(TvPrimaryDestinations.first())) },
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 28.dp),
+        )
+
         Column(
             modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth()
-                .padding(top = 28.dp, bottom = 24.dp),
+                .align(Alignment.CenterStart)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            SidebarProfileItem(
-                profileName = activeProfile.name,
-                avatarId = activeProfile.avatar,
-                expanded = expanded,
-                labelAlpha = labelAlpha,
-                requester = profileRequester,
-                onFocused = onFocused,
-                onClick = onProfile,
-                onLeft = { true },
-                onRight = onReturnToContent,
-                onUp = { true },
-                onDown = { request(navRequesters.getValue(TvPrimaryDestinations.first())) },
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                TvPrimaryDestinations.forEachIndexed { index, label ->
-                    SidebarNavigationItem(
-                        label = label,
-                        icon = destinationIcon(label),
-                        selected = selected == label,
-                        expanded = expanded,
-                        labelAlpha = labelAlpha,
-                        requester = navRequesters.getValue(label),
-                        onFocused = onFocused,
-                        onClick = { onNavigate(label) },
-                        onLeft = { true },
-                        onRight = onReturnToContent,
-                        onUp = {
-                            if (index > 0) {
-                                request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
-                            } else {
-                                request(profileRequester)
-                            }
-                        },
-                        onDown = {
-                            if (index < TvPrimaryDestinations.lastIndex) {
-                                request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
-                            } else {
-                                true
-                            }
-                        },
-                    )
-                }
+            TvPrimaryDestinations.forEachIndexed { index, label ->
+                SidebarNavigationItem(
+                    label = label,
+                    icon = destinationIcon(label),
+                    selected = selected == label,
+                    expanded = expanded,
+                    labelAlpha = labelAlpha,
+                    requester = navRequesters.getValue(label),
+                    onFocused = onFocused,
+                    onClick = { onNavigate(label) },
+                    onLeft = { true },
+                    onRight = onReturnToContent,
+                    onUp = {
+                        if (index > 0) {
+                            request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
+                        } else {
+                            request(profileRequester)
+                        }
+                    },
+                    onDown = {
+                        if (index < TvPrimaryDestinations.lastIndex) {
+                            request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
+                        } else {
+                            true
+                        }
+                    },
+                )
             }
-
-            Spacer(Modifier.weight(1f))
         }
     }
 }
@@ -206,20 +203,28 @@ private fun SidebarNavigationItem(
         animationSpec = tween(durationMillis = if (focused) 120 else 90),
         label = "vueoSidebarIconScale:$label",
     )
+    val itemBrush = when {
+        expanded && selected -> Brush.horizontalGradient(
+            0f to TvDesign.White,
+            .52f to TvDesign.White.copy(alpha = .92f),
+            .82f to TvDesign.White.copy(alpha = .46f),
+            1f to Color.Transparent,
+        )
+        expanded && focused -> Brush.horizontalGradient(
+            0f to TvDesign.White.copy(alpha = .18f),
+            .58f to TvDesign.White.copy(alpha = .11f),
+            1f to Color.Transparent,
+        )
+        else -> Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+    }
 
     Row(
         modifier = Modifier
             .padding(start = if (expanded) 10.dp else 0.dp)
-            .width(if (expanded) 180.dp else SidebarCollapsedWidth)
+            .width(if (expanded) SidebarExpandedItemWidth else SidebarCollapsedWidth)
             .height(46.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(
-                when {
-                    expanded && selected -> TvDesign.White
-                    expanded && focused -> TvDesign.White.copy(alpha = .12f)
-                    else -> Color.Transparent
-                },
-            )
+            .background(itemBrush)
             .focusRequester(requester)
             .focusProperties {
                 // While collapsed only the current destination participates in
@@ -300,6 +305,7 @@ private fun SidebarProfileItem(
     onRight: () -> Boolean,
     onUp: () -> Boolean,
     onDown: () -> Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember(profileName, avatarId) { mutableStateOf(false) }
     val avatarDrawable = ProfileAvatarCatalog.drawableRes(avatarId)
@@ -308,14 +314,23 @@ private fun SidebarProfileItem(
         animationSpec = tween(durationMillis = if (focused) 120 else 90),
         label = "vueoSidebarProfileScale",
     )
+    val focusBrush = if (expanded && focused) {
+        Brush.horizontalGradient(
+            0f to TvDesign.White.copy(alpha = .18f),
+            .58f to TvDesign.White.copy(alpha = .11f),
+            1f to Color.Transparent,
+        )
+    } else {
+        Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+    }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .padding(start = if (expanded) 10.dp else 0.dp)
-            .width(if (expanded) 180.dp else SidebarCollapsedWidth)
+            .width(if (expanded) SidebarExpandedItemWidth else SidebarCollapsedWidth)
             .height(46.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (expanded && focused) TvDesign.White.copy(alpha = .12f) else Color.Transparent)
+            .background(focusBrush)
             .focusRequester(requester)
             .focusProperties { canFocus = expanded }
             .onFocusChanged { state ->
