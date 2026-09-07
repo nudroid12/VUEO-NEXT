@@ -12,6 +12,8 @@ import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SourceResolveResult
 import com.vueo.shared.core.source.SourceResolver
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -20,6 +22,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -73,6 +76,7 @@ class PluginSourceEngine(
     private val store: PluginStore,
 ) {
     private val concurrency = Semaphore(5)
+    private val heavyProviderConcurrency = Semaphore(2)
 
     private val webViewResolver =
         PluginWebViewResolver(
@@ -263,41 +267,51 @@ suspend fun discoverProgressive(
                 async {
                     val run =
                         concurrency.withPermit {
-                            val providerDiagnosticToken =
-                                RuntimeDiagnostics.beginProvider(
-                                    scanId = runtimeDiagnosticScanId,
-                                    providerName = provider.name,
-                                )
-                            try {
-                                runProvider(
-                                    repository =
-                                        repository,
-                                    provider =
-                                        provider,
-                                    tmdbId =
-                                        tmdbId,
-                                    mediaType =
-                                        mediaType,
-                                    season =
-                                        season,
-                                    episode =
-                                        episode,
-                                ).also { providerRun ->
-                                    RuntimeDiagnostics.finishProvider(
-                                        token = providerDiagnosticToken,
-                                        status = providerRun.diagnostic.status.name,
-                                        streamCount = providerRun.diagnostic.streamCount,
-                                        errorType = providerRun.diagnostic.errorType,
-                                    )
+                            val execute: suspend () -> ProviderRun = {
+                                withContext(Dispatchers.Default) {
+                                    val providerDiagnosticToken =
+                                        RuntimeDiagnostics.beginProvider(
+                                            scanId = runtimeDiagnosticScanId,
+                                            providerName = provider.name,
+                                        )
+                                    try {
+                                        runProvider(
+                                            repository =
+                                                repository,
+                                            provider =
+                                                provider,
+                                            tmdbId =
+                                                tmdbId,
+                                            mediaType =
+                                                mediaType,
+                                            season =
+                                                season,
+                                            episode =
+                                                episode,
+                                        ).also { providerRun ->
+                                            RuntimeDiagnostics.finishProvider(
+                                                token = providerDiagnosticToken,
+                                                status = providerRun.diagnostic.status.name,
+                                                streamCount = providerRun.diagnostic.streamCount,
+                                                errorType = providerRun.diagnostic.errorType,
+                                            )
+                                        }
+                                    } catch (error: Throwable) {
+                                        RuntimeDiagnostics.finishProvider(
+                                            token = providerDiagnosticToken,
+                                            status = "THREW",
+                                            streamCount = 0,
+                                            errorType = error::class.java.simpleName,
+                                        )
+                                        throw error
+                                    }
                                 }
-                            } catch (error: Throwable) {
-                                RuntimeDiagnostics.finishProvider(
-                                    token = providerDiagnosticToken,
-                                    status = "THREW",
-                                    streamCount = 0,
-                                    errorType = error::class.java.simpleName,
-                                )
-                                throw error
+                            }
+
+                            if (providerRuntimeTimeoutMs(provider) > HEAVY_PROVIDER_THRESHOLD_MS) {
+                                heavyProviderConcurrency.withPermit { execute() }
+                            } else {
+                                execute()
                             }
                         }
 
@@ -553,7 +567,7 @@ private fun providerPriority(
             withTimeoutOrNull(
                 providerTimeoutMs
             ) {
-                runCatching {
+                try {
                     executeProvider(
                         repository =
                             repository,
@@ -568,7 +582,10 @@ private fun providerPriority(
                         episode =
                             episode,
                     )
-                }.getOrElse { error ->
+                } catch (error: CancellationException) {
+                    // Preserve timeout/caller cancellation so WebView and provider work can stop.
+                    throw error
+                } catch (error: Throwable) {
                     ProviderExecution(
                         streams =
                             emptyList(),
@@ -922,6 +939,8 @@ private fun providerPriority(
                 logs =
                     logs.toList(),
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             ProviderExecution(
                 streams =
@@ -3046,6 +3065,12 @@ private fun providerPriority(
 
         private const val MAX_PROVIDER_TIMEOUT_MS =
             20_000L
+
+        // Providers asking for long budgets are the ones most likely to combine
+        // expensive QuickJS work and WebView fallbacks. Keep normal providers at
+        // the existing throughput while limiting only these heavy runs.
+        private const val HEAVY_PROVIDER_THRESHOLD_MS =
+            12_000L
 
         private const val SLOW_THRESHOLD_MS =
             3_000L

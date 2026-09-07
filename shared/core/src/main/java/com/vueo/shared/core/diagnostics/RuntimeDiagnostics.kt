@@ -101,12 +101,6 @@ object RuntimeDiagnostics {
                 "activeScans=$scans thread=${threadLabel()} ${memoryLabel()}"
         )
 
-        if (state.startedOnMainThread && elapsedMs >= STALL_THRESHOLD_MS) {
-            record(
-                "UI_STALL_RISK scan=$scanId sourceScanRanOnMainThread=true elapsed=${elapsedMs}ms " +
-                    "note=provider_execution_may_block_frames"
-            )
-        }
     }
 
     fun failSourceScan(scanId: Long, error: Throwable, completedProviders: Int) {

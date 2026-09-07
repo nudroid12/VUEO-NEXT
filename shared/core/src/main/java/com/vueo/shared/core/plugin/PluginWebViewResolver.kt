@@ -17,6 +17,8 @@ import android.webkit.WebViewClient
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -60,9 +62,11 @@ internal class PluginWebViewResolver(
     context: Context,
 ) {
     private val appContext = context.applicationContext
+    private val webViewConcurrency = Semaphore(1)
 
     suspend fun resolveJson(requestJson: String): String =
-        withContext(Dispatchers.Main.immediate) {
+        webViewConcurrency.withPermit {
+            withContext(Dispatchers.Main.immediate) {
             val request = runCatching {
                 ResolveRequest.parse(requestJson)
             }.getOrElse { error ->
@@ -88,6 +92,7 @@ internal class PluginWebViewResolver(
                     },
                 )
             }.toString()
+            }
         }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -1060,9 +1065,9 @@ internal class PluginWebViewResolver(
 
     companion object {
         private const val BRIDGE_NAME = "vueoCapture"
-        private const val DEFAULT_WEBVIEW_TIMEOUT_MS = 14_000L
+        private const val DEFAULT_WEBVIEW_TIMEOUT_MS = 10_000L
         private const val MIN_WEBVIEW_TIMEOUT_MS = 1_000L
-        private const val MAX_WEBVIEW_TIMEOUT_MS = 18_000L
+        private const val MAX_WEBVIEW_TIMEOUT_MS = 12_000L
 
         private const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 " +
