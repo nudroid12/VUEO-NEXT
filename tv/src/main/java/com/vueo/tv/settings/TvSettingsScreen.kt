@@ -136,104 +136,125 @@ private fun TvSettingsHub(
     val repoCount = runtime.pluginStore.repositories().size
     val providerCount = runtime.pluginStore.enabledProviderCount()
 
-    val entries = listOf(
-        TvSettingsEntry(
-            id = "profile",
-            title = activeProfile.name,
-            subtitle = "Switch or manage the active profile.",
-            value = "Profile",
-            onActivate = onProfile,
-            section = "Profile",
+    val categories = listOf(
+        TvSettingsCategory(
+            id = "profiles",
+            title = "Profiles",
+            subtitle = "Manage the active profile and personalization.",
+            entries = listOf(
+                TvSettingsEntry(
+                    id = "profile",
+                    title = activeProfile.name,
+                    subtitle = "Switch or manage the active profile.",
+                    value = "Profile",
+                    onActivate = onProfile,
+                ),
+                TvSettingsEntry(
+                    id = "personalization",
+                    title = "Personalization",
+                    subtitle = "User DNA, DNA Match and recommendations.",
+                    onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) },
+                ),
+            ),
         ),
-        TvSettingsEntry(
-            id = "personalization",
-            title = "Personalization",
-            subtitle = "User DNA, DNA Match and recommendations.",
-            onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) },
-            section = "Profile",
-        ),
-        TvSettingsEntry(
+        TvSettingsCategory(
             id = "content",
-            title = "Content Manager",
-            subtitle = "Addons, providers and catalog order.",
-            value = "$addonCount addons • $repoCount repos • $providerCount providers",
-            onActivate = { onOpen(TvSettingsPage.CONTENT_MANAGER) },
-            section = "Content",
+            title = "Content",
+            subtitle = "Control discovery, addons, providers and metadata services.",
+            entries = listOf(
+                TvSettingsEntry(
+                    id = "content-manager",
+                    title = "Content Manager",
+                    subtitle = "Addons, providers and catalog order.",
+                    value = "$addonCount addons • $repoCount repos • $providerCount providers",
+                    onActivate = { onOpen(TvSettingsPage.CONTENT_MANAGER) },
+                ),
+                TvSettingsEntry(
+                    id = "enhancements",
+                    title = "Enhancements",
+                    subtitle = "Metadata, ratings and optional services.",
+                    value = enhancementSummary(runtime),
+                    onActivate = { onOpen(TvSettingsPage.ENHANCEMENTS) },
+                ),
+            ),
         ),
-        TvSettingsEntry(
-            id = "enhancements",
-            title = "Enhancements",
-            subtitle = "Metadata, ratings and optional services.",
-            value = enhancementSummary(runtime),
-            onActivate = { onOpen(TvSettingsPage.ENHANCEMENTS) },
-            section = "Content",
-        ),
-        TvSettingsEntry(
+        TvSettingsCategory(
             id = "playback",
             title = "Playback",
-            subtitle = "Player behavior, quality and recovery.",
-            value = "${if (runtime.settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • ${runtime.settingsStore.preferredQuality().label}",
-            onActivate = { onOpen(TvSettingsPage.PLAYBACK) },
-            section = "Playback",
+            subtitle = "Player behaviour, subtitles and source selection.",
+            entries = listOf(
+                TvSettingsEntry(
+                    id = "playback-settings",
+                    title = "Playback",
+                    subtitle = "Player behaviour, quality and recovery.",
+                    value = "${if (runtime.settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • ${runtime.settingsStore.preferredQuality().label}",
+                    onActivate = { onOpen(TvSettingsPage.PLAYBACK) },
+                ),
+                TvSettingsEntry(
+                    id = "subtitles",
+                    title = "Subtitles",
+                    subtitle = "Language and display preferences.",
+                    value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${runtime.settingsStore.subtitleSize().label}",
+                    onActivate = { onOpen(TvSettingsPage.SUBTITLES) },
+                ),
+                TvSettingsEntry(
+                    id = "sources",
+                    title = "Sources",
+                    subtitle = "Smart ranking and source information.",
+                    value = if (runtime.settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Technical details off",
+                    onActivate = { onOpen(TvSettingsPage.SOURCES) },
+                ),
+            ),
         ),
-        TvSettingsEntry(
-            id = "subtitles",
-            title = "Subtitles",
-            subtitle = "Language and display preferences.",
-            value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${runtime.settingsStore.subtitleSize().label}",
-            onActivate = { onOpen(TvSettingsPage.SUBTITLES) },
-            section = "Playback",
-        ),
-        TvSettingsEntry(
-            id = "sources",
-            title = "Sources",
-            subtitle = "Smart ranking and source information.",
-            value = if (runtime.settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Technical details off",
-            onActivate = { onOpen(TvSettingsPage.SOURCES) },
-            section = "Playback",
-        ),
-        TvSettingsEntry(
+        TvSettingsCategory(
             id = "appearance",
             title = "Appearance",
-            subtitle = "Theme and interactive accent.",
-            value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label}",
-            onActivate = { onOpen(TvSettingsPage.APPEARANCE) },
-            section = "Experience",
+            subtitle = "Tune the TV interface without changing VUEO behaviour.",
+            entries = listOf(
+                TvSettingsEntry(
+                    id = "appearance-settings",
+                    title = "Appearance",
+                    subtitle = "Theme and interactive accent.",
+                    value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label}",
+                    onActivate = { onOpen(TvSettingsPage.APPEARANCE) },
+                ),
+            ),
         ),
-        TvSettingsEntry(
-            id = "storage",
-            title = "Data & Storage",
-            subtitle = "Backup, restore, history, cache and app data.",
-            value = "Local device data",
-            onActivate = { onOpen(TvSettingsPage.DATA_STORAGE) },
-            section = "System",
-        ),
-        TvSettingsEntry(
-            id = "updates",
-            title = "Updates",
-            subtitle = "Version and automatic update checks.",
-            value = if (runtime.settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Automatic checks off",
-            onActivate = { onOpen(TvSettingsPage.UPDATES) },
-            section = "System",
-        ),
-        TvSettingsEntry(
-            id = "about",
-            title = "About VUEO",
-            subtitle = "Privacy, architecture and build information.",
-            value = "VUEO ${BuildConfig.VERSION_NAME}",
-            onActivate = { onOpen(TvSettingsPage.ABOUT) },
-            section = "System",
+        TvSettingsCategory(
+            id = "system",
+            title = "System",
+            subtitle = "Local data, updates and application information.",
+            entries = listOf(
+                TvSettingsEntry(
+                    id = "storage",
+                    title = "Data & Storage",
+                    subtitle = "Backup, restore, history, cache and app data.",
+                    value = "Local device data",
+                    onActivate = { onOpen(TvSettingsPage.DATA_STORAGE) },
+                ),
+                TvSettingsEntry(
+                    id = "updates",
+                    title = "Updates",
+                    subtitle = "Version and automatic update checks.",
+                    value = if (runtime.settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Automatic checks off",
+                    onActivate = { onOpen(TvSettingsPage.UPDATES) },
+                ),
+                TvSettingsEntry(
+                    id = "about",
+                    title = "About VUEO",
+                    subtitle = "Privacy, architecture and build information.",
+                    value = "VUEO ${BuildConfig.VERSION_NAME}",
+                    onActivate = { onOpen(TvSettingsPage.ABOUT) },
+                ),
+            ),
         ),
     )
 
-    TvSettingsListScreen(
-        title = "Settings",
-        subtitle = "TV controls with the same behavior and storage model as VUEO Mobile.",
-        entries = entries,
+    TvSettingsCategoryHub(
+        categories = categories,
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
-        footer = "VUEO ${BuildConfig.VERSION_NAME} • Settings are stored locally on this device.",
     )
 }
 

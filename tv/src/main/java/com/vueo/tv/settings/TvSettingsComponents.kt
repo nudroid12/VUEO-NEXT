@@ -59,6 +59,255 @@ internal data class TvSettingsEntry(
     val section: String? = null,
 )
 
+internal data class TvSettingsCategory(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val entries: List<TvSettingsEntry>,
+)
+
+@Composable
+internal fun TvSettingsCategoryHub(
+    categories: List<TvSettingsCategory>,
+    onNavigate: (String) -> Unit,
+    onProfile: () -> Unit,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    if (categories.isEmpty()) return
+
+    val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
+    val profileRequester = remember { FocusRequester() }
+    val categoryRequesters = remember(categories.map { it.id }) {
+        categories.associate { it.id to FocusRequester() }
+    }
+
+    var selectedCategoryId by remember { mutableStateOf(categories.first().id) }
+    val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId } ?: categories.first()
+    val rowRequesters = remember(selectedCategory.entries.map { it.id }) {
+        selectedCategory.entries.associate { it.id to FocusRequester() }
+    }
+    var lastRowId by remember(selectedCategoryId) {
+        mutableStateOf(selectedCategory.entries.firstOrNull { it.enabled }?.id.orEmpty())
+    }
+    var lastPane by remember { mutableStateOf("category") }
+    var navExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(90)
+        runCatching { categoryRequesters.getValue(selectedCategoryId).requestFocus() }
+    }
+
+    fun focusGlobalNav() {
+        navExpanded = true
+        runCatching { navRequesters.getValue("Settings").requestFocus() }
+    }
+
+    fun focusSelectedCategory(): Boolean {
+        navExpanded = false
+        lastPane = "category"
+        return runCatching {
+            categoryRequesters.getValue(selectedCategoryId).requestFocus()
+            true
+        }.getOrDefault(false)
+    }
+
+    fun focusFirstRow(): Boolean {
+        val target = selectedCategory.entries.firstOrNull { it.enabled } ?: return false
+        lastRowId = target.id
+        lastPane = "row"
+        return runCatching {
+            rowRequesters.getValue(target.id).requestFocus()
+            true
+        }.getOrDefault(false)
+    }
+
+    fun restoreContentFocus(): Boolean {
+        navExpanded = false
+        if (lastPane == "row") {
+            val requester = rowRequesters[lastRowId]
+            if (requester != null) {
+                return runCatching { requester.requestFocus(); true }.getOrDefault(false)
+            }
+        }
+        return focusSelectedCategory()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TvDesign.Black),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 100.dp, end = 42.dp, top = 34.dp, bottom = 28.dp)
+                .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(22.dp))
+                .border(1.dp, TvDesign.White.copy(alpha = .12f), RoundedCornerShape(22.dp))
+                .padding(20.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(230.dp)
+                    .fillMaxHeight(),
+            ) {
+                Text(
+                    text = "SETTINGS",
+                    color = TvDesign.Dim,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    modifier = Modifier.padding(start = 10.dp, bottom = 12.dp),
+                )
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    categories.forEachIndexed { index, category ->
+                        item(key = category.id) {
+                            var focused by remember(category.id) { mutableStateOf(false) }
+                            val selected = category.id == selectedCategoryId
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(54.dp)
+                                    .focusRequester(categoryRequesters.getValue(category.id))
+                                    .onFocusChanged {
+                                        focused = it.isFocused
+                                        if (it.isFocused) {
+                                            navExpanded = false
+                                            lastPane = "category"
+                                            selectedCategoryId = category.id
+                                        }
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                        when (event.nativeKeyEvent.keyCode) {
+                                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                focusGlobalNav()
+                                                true
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_RIGHT,
+                                            KeyEvent.KEYCODE_DPAD_CENTER,
+                                            KeyEvent.KEYCODE_ENTER,
+                                            KeyEvent.KEYCODE_NUMPAD_ENTER -> focusFirstRow()
+                                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                                if (index == 0) true else {
+                                                    runCatching { categoryRequesters.getValue(categories[index - 1].id).requestFocus() }
+                                                    true
+                                                }
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                if (index == categories.lastIndex) true else {
+                                                    runCatching { categoryRequesters.getValue(categories[index + 1].id).requestFocus() }
+                                                    true
+                                                }
+                                            }
+                                            else -> false
+                                        }
+                                    }
+                                    .background(
+                                        when {
+                                            focused -> TvDesign.White.copy(alpha = .13f)
+                                            selected -> TvDesign.SurfaceRaised.copy(alpha = .58f)
+                                            else -> TvDesign.Surface.copy(alpha = .44f)
+                                        },
+                                        RoundedCornerShape(14.dp),
+                                    )
+                                    .border(
+                                        if (focused) 2.dp else 1.dp,
+                                        if (focused) TvDesign.White.copy(alpha = .94f) else TvDesign.White.copy(alpha = .05f),
+                                        RoundedCornerShape(14.dp),
+                                    )
+                                    .focusable()
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = category.title,
+                                    color = if (focused || selected) TvDesign.White else TvDesign.Muted,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "›",
+                                    color = if (focused) TvDesign.White else TvDesign.Dim,
+                                    fontSize = 18.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(26.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
+                Text(
+                    text = selectedCategory.title,
+                    color = TvDesign.White,
+                    fontSize = 27.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = selectedCategory.subtitle,
+                    color = TvDesign.Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(TvDesign.Black.copy(alpha = .16f), RoundedCornerShape(18.dp))
+                        .border(1.dp, TvDesign.White.copy(alpha = .10f), RoundedCornerShape(18.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    selectedCategory.entries.forEachIndexed { index, entry ->
+                        item(key = entry.id) {
+                            TvSettingsRow(
+                                entry = entry,
+                                requester = rowRequesters.getValue(entry.id),
+                                first = index == 0,
+                                onLeftToSidebar = { focusSelectedCategory() },
+                                onFocused = {
+                                    navExpanded = false
+                                    lastPane = "row"
+                                    lastRowId = entry.id
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        TvSidebar(
+            selected = "Settings",
+            expanded = navExpanded,
+            navRequesters = navRequesters,
+            profileRequester = profileRequester,
+            onFocused = { navExpanded = true },
+            onNavigate = onNavigate,
+            onProfile = onProfile,
+            onReturnToContent = ::restoreContentFocus,
+            modifier = Modifier.align(Alignment.CenterStart),
+        )
+    }
+}
+
 @Composable
 internal fun TvSettingsListScreen(
     title: String,
@@ -83,8 +332,6 @@ internal fun TvSettingsListScreen(
     }
     var navExpanded by remember { mutableStateOf(false) }
 
-    val selectedEntry = entries.firstOrNull { it.id == lastFocusedId } ?: firstFocusable
-
     LaunchedEffect(firstFocusable?.id) {
         val first = firstFocusable ?: return@LaunchedEffect
         delay(90)
@@ -99,10 +346,7 @@ internal fun TvSettingsListScreen(
     fun restoreContentFocus(): Boolean {
         navExpanded = false
         val requester = rowRequesters[lastFocusedId] ?: rowRequesters.values.firstOrNull() ?: return false
-        return runCatching {
-            requester.requestFocus()
-            true
-        }.getOrDefault(false)
+        return runCatching { requester.requestFocus(); true }.getOrDefault(false)
     }
 
     Box(
@@ -110,29 +354,44 @@ internal fun TvSettingsListScreen(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 100.dp, end = 48.dp, top = 44.dp, bottom = 30.dp),
+                .padding(start = 112.dp, end = 48.dp, top = 38.dp, bottom = 28.dp),
         ) {
-            TvSettingsContextPane(
-                title = title,
-                subtitle = subtitle,
-                topLabel = topLabel,
-                selectedEntry = selectedEntry,
-                footer = footer,
-                modifier = Modifier
-                    .width(238.dp)
-                    .fillMaxHeight(),
-            )
+            if (!topLabel.isNullOrBlank()) {
+                Text(
+                    text = topLabel.uppercase(),
+                    color = TvDesign.Dim,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                )
+                Spacer(Modifier.height(5.dp))
+            }
 
-            Spacer(Modifier.width(30.dp))
+            Text(
+                text = title,
+                color = TvDesign.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = subtitle,
+                color = TvDesign.Muted,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
+            )
 
             LazyColumn(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                    .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(18.dp))
+                    .border(1.dp, TvDesign.White.copy(alpha = .10f), RoundedCornerShape(18.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 var previousSection: String? = null
                 entries.forEachIndexed { index, entry ->
@@ -144,8 +403,8 @@ internal fun TvSettingsListScreen(
                                 color = TvDesign.Dim,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.15.sp,
-                                modifier = Modifier.padding(start = 14.dp, top = if (index == 0) 2.dp else 12.dp, bottom = 4.dp),
+                                letterSpacing = 1.1.sp,
+                                modifier = Modifier.padding(start = 8.dp, top = if (index == 0) 2.dp else 8.dp, bottom = 2.dp),
                             )
                         }
                         previousSection = section
@@ -164,8 +423,17 @@ internal fun TvSettingsListScreen(
                         )
                     }
                 }
-
-                item(key = "settings-bottom-space") { Spacer(Modifier.height(18.dp)) }
+                if (!footer.isNullOrBlank()) {
+                    item(key = "settings-footer") {
+                        Text(
+                            text = footer,
+                            color = TvDesign.Dim,
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        )
+                    }
+                }
             }
         }
 
