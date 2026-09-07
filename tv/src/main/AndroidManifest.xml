@@ -13,9 +13,10 @@
     <application
         android:allowBackup="true"
         android:banner="@drawable/vueo_tv_banner_art"
-        android:icon="@drawable/vueo_tv_launcher_icon"
-        android:label="@string/app_name"
-        android:logo="@drawable/vueo_tv_launcher_icon"
+        android:icon="@mipmap/vueo_tv_launcher_icon"
+        android:label="Vueo"
+        android:logo="@mipmap/vueo_tv_launcher_icon"
+        android:roundIcon="@mipmap/vueo_tv_launcher_icon"
         android:supportsRtl="true"
         android:theme="@style/Theme.VUEOTV">
         <activity
