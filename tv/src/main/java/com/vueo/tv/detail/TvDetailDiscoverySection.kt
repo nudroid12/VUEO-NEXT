@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,14 +53,113 @@ import com.vueo.shared.core.media.MediaPerson
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
-private val Detail38RelatedWidth = 260.dp
-private val Detail38RelatedHeight = 146.dp
-private val Detail38RelatedShape = RoundedCornerShape(12.dp)
+private val Detail39RelatedWidth = 260.dp
+private val Detail39RelatedHeight = 146.dp
+private val Detail39RelatedShape = RoundedCornerShape(12.dp)
+
+/** Actual Nuvio pattern: Cast | More Like This text tabs, content switches on focus. */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+internal fun TvDetail39PeopleTabs(
+    activeCast: Boolean,
+    castRequester: FocusRequester,
+    relatedRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
+    onCastFocused: () -> Unit,
+    onRelatedFocused: () -> Unit,
+) {
+    val restoreRequester = if (activeCast) castRequester else relatedRequester
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = Detail39HorizontalPadding,
+                end = Detail39HorizontalPadding,
+                top = 20.dp,
+                bottom = 6.dp,
+            )
+            .focusRestorer { restoreRequester },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Detail39PeopleTabButton(
+                label = "Cast",
+                selected = activeCast,
+                requester = castRequester,
+                upRequester = upRequester,
+                downRequester = downRequester,
+                onFocused = onCastFocused,
+            )
+            Text(
+                text = "|",
+                color = TvDesign.White.copy(alpha = .45f),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 10.dp),
+            )
+            Detail39PeopleTabButton(
+                label = "More Like This",
+                selected = !activeCast,
+                requester = relatedRequester,
+                upRequester = upRequester,
+                downRequester = downRequester,
+                onFocused = onRelatedFocused,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Detail39PeopleTabButton(
+    label: String,
+    selected: Boolean,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
+    onFocused: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.03f else 1f,
+        animationSpec = tween(100),
+        label = "detail39PeopleTabScale",
+    )
+
+    Text(
+        text = label,
+        color = when {
+            focused -> TvDesign.White
+            selected -> TvDesign.White.copy(alpha = .92f)
+            else -> TvDesign.White.copy(alpha = .55f)
+        },
+        fontSize = 19.sp,
+        lineHeight = 23.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .focusRequester(requester)
+            .focusProperties {
+                up = upRequester
+                down = downRequester
+            }
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (state.isFocused) onFocused()
+            }
+            .clickable(onClick = onFocused)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+    )
+}
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-internal fun TvDetail38CastRail(
+internal fun TvDetail39CastRow(
     cast: List<MediaPerson>,
+    title: String?,
     rowRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
@@ -70,17 +170,19 @@ internal fun TvDetail38CastRail(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = if (title == null) 4.dp else 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TvDetail38SectionTitle("Cast")
+        title?.let { TvDetail39SectionTitle(it) }
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRestorer { rowRequester }
                 .focusGroup(),
-            contentPadding = PaddingValues(horizontal = Detail38HorizontalPadding, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = Detail39HorizontalPadding, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(visible, key = { index, person -> "$index:${person.name}:${person.character.orEmpty()}" }) { index, person ->
                 var focused by remember(index, person.name) { mutableStateOf(false) }
@@ -120,7 +222,7 @@ internal fun TvDetail38CastRail(
                     }
                     Text(
                         text = person.name,
-                        color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .84f),
+                        color = TvDesign.White.copy(alpha = if (focused) 1f else .86f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -129,7 +231,7 @@ internal fun TvDetail38CastRail(
                     role?.let {
                         Text(
                             text = it,
-                            color = TvDesign.White.copy(alpha = .44f),
+                            color = TvDesign.White.copy(alpha = .46f),
                             fontSize = 9.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -143,83 +245,9 @@ internal fun TvDetail38CastRail(
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-internal fun TvDetail38CompanyRail(
-    title: String,
-    companies: List<MediaCompany>,
-    rowRequester: FocusRequester,
-    upRequester: FocusRequester,
-    downRequester: FocusRequester?,
-) {
-    val visible = remember(companies) { companies.take(12) }
-    val requesters = remember(visible.map(MediaCompany::name)) {
-        visible.indices.associateWith { index -> if (index == 0) rowRequester else FocusRequester() }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TvDetail38SectionTitle(title)
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRestorer { rowRequester }
-                .focusGroup(),
-            contentPadding = PaddingValues(horizontal = Detail38HorizontalPadding, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            itemsIndexed(visible, key = { index, company -> "$index:${company.name}" }) { index, company ->
-                var focused by remember(index, company.name) { mutableStateOf(false) }
-                Box(
-                    modifier = Modifier
-                        .width(170.dp)
-                        .height(70.dp)
-                        .focusRequester(requesters.getValue(index))
-                        .focusProperties {
-                            up = upRequester
-                            downRequester?.let { down = it }
-                        }
-                        .onFocusChanged { focused = it.isFocused }
-                        .focusable()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(TvDesign.White.copy(alpha = .92f))
-                        .border(
-                            width = if (focused) 2.dp else 0.dp,
-                            color = if (focused) TvDesign.Focus else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp),
-                        )
-                        .padding(13.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (!company.logo.isNullOrBlank()) {
-                        TvNetworkImage(
-                            url = company.logo,
-                            contentDescription = company.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                            fallback = Color.Transparent,
-                        )
-                    } else {
-                        Text(
-                            text = company.name,
-                            color = Color.Black.copy(alpha = .76f),
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
-@Composable
-internal fun TvDetail38RelatedRail(
+internal fun TvDetail39RelatedRow(
     items: List<MediaItem>,
+    title: String?,
     rowRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
@@ -233,24 +261,28 @@ internal fun TvDetail38RelatedRail(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = if (title == null) 4.dp else 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TvDetail38SectionTitle("More Like This")
+        title?.let { TvDetail39SectionTitle(it) }
         LazyRow(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRestorer { requesters[TvDetailSessionMemory.relatedIndex.coerceIn(0, visible.lastIndex)] ?: rowRequester }
+                .focusRestorer {
+                    requesters[TvDetailSessionMemory.relatedIndex.coerceIn(0, visible.lastIndex)] ?: rowRequester
+                }
                 .focusGroup(),
-            contentPadding = PaddingValues(horizontal = Detail38HorizontalPadding, vertical = 8.dp),
+            contentPadding = PaddingValues(horizontal = Detail39HorizontalPadding, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(
                 items = visible,
                 key = { _, item -> "${item.type}:${item.id}" },
             ) { index, item ->
-                TvDetail38RelatedCard(
+                Detail39RelatedCard(
                     item = item,
                     requester = requesters.getValue(index),
                     upRequester = upRequester,
@@ -264,7 +296,7 @@ internal fun TvDetail38RelatedRail(
 }
 
 @Composable
-private fun TvDetail38RelatedCard(
+private fun Detail39RelatedCard(
     item: MediaItem,
     requester: FocusRequester,
     upRequester: FocusRequester,
@@ -276,12 +308,12 @@ private fun TvDetail38RelatedCard(
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.02f else 1f,
         animationSpec = tween(if (focused) 120 else 90),
-        label = "detail38RelatedScale",
+        label = "detail39RelatedScale",
     )
 
     Column(
         modifier = Modifier
-            .width(Detail38RelatedWidth)
+            .width(Detail39RelatedWidth)
             .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
                 scaleX = scale
@@ -302,14 +334,14 @@ private fun TvDetail38RelatedCard(
     ) {
         Box(
             modifier = Modifier
-                .width(Detail38RelatedWidth)
-                .height(Detail38RelatedHeight)
-                .clip(Detail38RelatedShape)
+                .width(Detail39RelatedWidth)
+                .height(Detail39RelatedHeight)
+                .clip(Detail39RelatedShape)
                 .background(TvDesign.SurfaceRaised)
                 .border(
                     width = if (focused) 2.dp else 0.dp,
                     color = if (focused) TvDesign.Focus else Color.Transparent,
-                    shape = Detail38RelatedShape,
+                    shape = Detail39RelatedShape,
                 ),
         ) {
             TvNetworkImage(
@@ -322,7 +354,7 @@ private fun TvDetail38RelatedCard(
         }
         Text(
             text = item.name,
-            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .84f),
+            color = TvDesign.White.copy(alpha = if (focused) 1f else .86f),
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -331,7 +363,7 @@ private fun TvDetail38RelatedCard(
         item.releaseInfo?.takeIf(String::isNotBlank)?.let {
             Text(
                 text = it,
-                color = TvDesign.White.copy(alpha = .42f),
+                color = TvDesign.White.copy(alpha = .44f),
                 fontSize = 9.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -340,8 +372,85 @@ private fun TvDetail38RelatedCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-internal fun TvDetail38Insight(
+internal fun TvDetail39CompanyRow(
+    title: String,
+    companies: List<MediaCompany>,
+    rowRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester?,
+) {
+    val visible = remember(companies) { companies.take(12) }
+    val requesters = remember(visible.map(MediaCompany::name)) {
+        visible.indices.associateWith { index -> if (index == 0) rowRequester else FocusRequester() }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TvDetail39SectionTitle(title)
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRestorer { rowRequester }
+                .focusGroup(),
+            contentPadding = PaddingValues(horizontal = Detail39HorizontalPadding, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            itemsIndexed(visible, key = { index, company -> "$index:${company.name}" }) { index, company ->
+                var focused by remember(index, company.name) { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .width(170.dp)
+                        .height(70.dp)
+                        .focusRequester(requesters.getValue(index))
+                        .focusProperties {
+                            up = upRequester
+                            downRequester?.let { down = it }
+                        }
+                        .onFocusChanged { focused = it.isFocused }
+                        .focusable()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(TvDesign.White.copy(alpha = .94f))
+                        .border(
+                            width = if (focused) 2.dp else 0.dp,
+                            color = if (focused) TvDesign.Focus else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .padding(13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (!company.logo.isNullOrBlank()) {
+                        TvNetworkImage(
+                            url = company.logo,
+                            contentDescription = company.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                            fallback = Color.Transparent,
+                        )
+                    } else {
+                        Text(
+                            text = company.name,
+                            color = Color.Black.copy(alpha = .78f),
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TvDetail39Insight(
     insight: String?,
     loading: Boolean,
     error: String?,
@@ -355,7 +464,7 @@ internal fun TvDetail38Insight(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Detail38HorizontalPadding, vertical = 8.dp)
+            .padding(horizontal = Detail39HorizontalPadding, vertical = 14.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -401,7 +510,7 @@ internal fun TvDetail38Insight(
 }
 
 @Composable
-internal fun TvDetail38SectionTitle(title: String) {
+internal fun TvDetail39SectionTitle(title: String) {
     Text(
         text = title,
         color = TvDesign.White.copy(alpha = .94f),
@@ -410,22 +519,20 @@ internal fun TvDetail38SectionTitle(title: String) {
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(horizontal = Detail38HorizontalPadding),
+        modifier = Modifier.padding(horizontal = Detail39HorizontalPadding),
     )
 }
 
 @Composable
-internal fun TvDetail38Message(message: String) {
+internal fun TvDetail39Message(message: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = Detail38HorizontalPadding)
-            .background(TvDesign.Surface.copy(alpha = .82f), RoundedCornerShape(12.dp))
-            .padding(16.dp),
+            .padding(horizontal = Detail39HorizontalPadding, vertical = 24.dp),
     ) {
         Text(
             text = message,
-            color = TvDesign.White.copy(alpha = .58f),
+            color = TvDesign.White.copy(alpha = .52f),
             fontSize = 12.sp,
         )
     }

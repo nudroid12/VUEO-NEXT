@@ -15,10 +15,10 @@ import com.vueo.tv.core.TvRuntime
 import kotlinx.coroutines.launch
 
 /**
- * TV 38A Details runtime boundary.
+ * TV 39A Details runtime boundary.
  *
  * Only data loading, library state and navigation callbacks live here.
- * Layout, focus, styling and section composition are owned by the new 38A UI
+ * Layout, focus, styling and section composition are owned by the 39A Nuvio-first UI
  * files and do not reuse the 34A/36A presentation tree.
  */
 @Composable

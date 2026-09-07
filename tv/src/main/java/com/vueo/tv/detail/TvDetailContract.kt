@@ -6,10 +6,10 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 
 /**
- * TV 38A Details UI contract.
+ * TV 39A Details UI contract.
  *
  * This file is deliberately presentation-agnostic. It is the only contract
- * between the VUEO runtime boundary and the brand-new Details UI tree.
+ * between the VUEO runtime boundary and the 39A Details UI tree.
  */
 internal data class TvDetailUiState(
     val item: MediaItem,

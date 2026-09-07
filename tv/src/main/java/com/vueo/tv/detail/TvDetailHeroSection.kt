@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,11 +49,13 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
-private const val Detail38TextWidthFraction = .60f
-private val Detail38ActionHeight = 46.dp
+private const val Detail39TextWidthFraction = .60f
+private val Detail39ActionHeight = 48.dp
+private val Detail39PlayShape = RoundedCornerShape(28.dp)
 
+/** Nuvio-style sticky backdrop: long left fade + bottom fade beginning around 38%. */
 @Composable
-internal fun TvDetail38Backdrop(
+internal fun TvDetail39Backdrop(
     item: MediaItem,
     imageAlpha: Float,
     scrimAlpha: Float,
@@ -64,8 +65,8 @@ internal fun TvDetail38Backdrop(
     Box(Modifier.fillMaxSize()) {
         Crossfade(
             targetState = backdrop,
-            animationSpec = tween(320),
-            label = "detail38Backdrop",
+            animationSpec = tween(400),
+            label = "detail39Backdrop",
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = imageAlpha },
@@ -85,181 +86,182 @@ internal fun TvDetail38Backdrop(
                 .graphicsLayer { alpha = scrimAlpha }
                 .background(
                     Brush.horizontalGradient(
-                        0f to TvDesign.Black,
-                        .16f to TvDesign.Black.copy(alpha = .97f),
-                        .42f to TvDesign.Black.copy(alpha = .76f),
-                        .70f to TvDesign.Black.copy(alpha = .20f),
-                        1f to Color.Transparent,
+                        // Nuvio's shader reaches transparent at ~78% of screen width.
+                        0.000f to TvDesign.Black,
+                        0.078f to TvDesign.Black.copy(alpha = .95f),
+                        0.172f to TvDesign.Black.copy(alpha = .84f),
+                        0.281f to TvDesign.Black.copy(alpha = .70f),
+                        0.406f to TvDesign.Black.copy(alpha = .52f),
+                        0.515f to TvDesign.Black.copy(alpha = .34f),
+                        0.608f to TvDesign.Black.copy(alpha = .18f),
+                        0.702f to TvDesign.Black.copy(alpha = .07f),
+                        0.780f to Color.Transparent,
+                        1.000f to Color.Transparent,
                     )
                 )
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        .58f to Color.Transparent,
-                        .82f to TvDesign.Black.copy(alpha = .66f),
-                        1f to TvDesign.Black,
+                        // Nuvio bottom shader starts at 38% and ramps across the remaining height.
+                        0.000f to Color.Transparent,
+                        0.380f to Color.Transparent,
+                        0.442f to TvDesign.Black.copy(alpha = .05f),
+                        0.516f to TvDesign.Black.copy(alpha = .18f),
+                        0.603f to TvDesign.Black.copy(alpha = .38f),
+                        0.702f to TvDesign.Black.copy(alpha = .60f),
+                        0.789f to TvDesign.Black.copy(alpha = .78f),
+                        0.864f to TvDesign.Black.copy(alpha = .91f),
+                        0.938f to TvDesign.Black.copy(alpha = .97f),
+                        1.000f to TvDesign.Black,
                     )
                 ),
         )
     }
 }
 
+/**
+ * Mirrors Nuvio HeroContentSection order instead of the old VUEO Details order:
+ * title -> actions -> credit -> ratings -> synopsis -> meta row.
+ */
 @Composable
-internal fun TvDetail38Hero(
+internal fun TvDetail39Hero(
     state: TvDetailUiState,
     playRequester: FocusRequester,
-    listRequester: FocusRequester,
+    libraryRequester: FocusRequester,
     downRequester: FocusRequester?,
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
 ) {
-    val facts = remember(state.item) { detail38Facts(state.item) }
-    val credits = remember(state.item) { detail38Credits(state.item) }
+    val creditLine = remember(state.item) { detail39CreditLine(state.item) }
+    val metaFacts = remember(state.item, state.dnaMatch) { detail39MetaFacts(state.item, state.dnaMatch) }
     val canPlay = !state.loading && (!state.item.isTvSeries() || state.selectedEpisode != null)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(Detail38HeroHeight)
-            .padding(
-                start = Detail38HorizontalPadding,
-                end = Detail38HorizontalPadding,
-                bottom = 28.dp,
-            ),
+            .height(Detail39HeroHeight),
         verticalArrangement = Arrangement.Bottom,
     ) {
-        Text(
-            text = state.item.name,
-            color = TvDesign.White,
-            fontSize = 44.sp,
-            lineHeight = 48.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(.58f),
-        )
-
-        if (facts.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = facts.joinToString("  •  "),
-                color = TvDesign.White.copy(alpha = .90f),
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(Detail38TextWidthFraction),
-            )
-        }
-
-        if (state.item.genres.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = state.item.genres.take(4).joinToString("  •  "),
-                color = TvDesign.White.copy(alpha = .62f),
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(Detail38TextWidthFraction),
-            )
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = Detail39HorizontalPadding,
+                    end = Detail39HorizontalPadding,
+                    bottom = 28.dp,
+                ),
+            verticalArrangement = Arrangement.Bottom,
         ) {
-            Detail38PlayAction(
-                label = state.primaryActionLabel,
-                enabled = canPlay,
-                requester = playRequester,
-                rightRequester = listRequester,
-                downRequester = downRequester,
-                onClick = onPlay,
+            Text(
+                text = state.item.name,
+                color = TvDesign.White,
+                fontSize = 46.sp,
+                lineHeight = 50.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(.58f),
             )
-            Detail38ListAction(
-                watchlisted = state.watchlisted,
-                requester = listRequester,
-                leftRequester = playRequester,
-                downRequester = downRequester,
-                onClick = onToggleList,
-            )
-        }
 
-        state.playbackEntry?.takeIf(::detailCanResume)?.let { entry ->
-            Spacer(Modifier.height(13.dp))
+            Spacer(Modifier.height(14.dp))
+
             Row(
-                modifier = Modifier.fillMaxWidth(.48f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                LinearProgressIndicator(
-                    progress = { entry.progressFraction.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(3.dp)
-                        .clip(CircleShape),
-                    color = TvDesign.White,
-                    trackColor = TvDesign.White.copy(alpha = .17f),
+                Detail39PlayButton(
+                    label = state.primaryActionLabel,
+                    enabled = canPlay,
+                    requester = playRequester,
+                    rightRequester = libraryRequester,
+                    downRequester = downRequester,
+                    onClick = onPlay,
                 )
-                Text(
-                    text = detailRemainingLabel(entry),
-                    color = TvDesign.White.copy(alpha = .58f),
-                    fontSize = 10.sp,
-                    maxLines = 1,
+                Detail39LibraryButton(
+                    watchlisted = state.watchlisted,
+                    requester = libraryRequester,
+                    leftRequester = playRequester,
+                    downRequester = downRequester,
+                    onClick = onToggleList,
                 )
             }
-        }
 
-        Spacer(Modifier.height(18.dp))
+            state.playbackEntry?.takeIf(::detailCanResume)?.let { entry ->
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(.46f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    LinearProgressIndicator(
+                        progress = { entry.progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(3.dp)
+                            .clip(CircleShape),
+                        color = TvDesign.White,
+                        trackColor = TvDesign.White.copy(alpha = .18f),
+                    )
+                    Text(
+                        text = detailRemainingLabel(entry),
+                        color = TvDesign.White.copy(alpha = .60f),
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
 
-        if (!credits.isNullOrBlank()) {
-            Text(
-                text = credits,
-                color = TvDesign.White.copy(alpha = .64f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(Detail38TextWidthFraction),
-            )
-            Spacer(Modifier.height(10.dp))
-        }
+            Spacer(Modifier.height(20.dp))
 
-        if (state.ratings.isNotEmpty()) {
-            Detail38Ratings(state.ratings)
-            Spacer(Modifier.height(12.dp))
-        }
+            if (!creditLine.isNullOrBlank()) {
+                Text(
+                    text = creditLine,
+                    color = TvDesign.White.copy(alpha = .66f),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(Detail39TextWidthFraction),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
 
-        state.item.description?.takeIf(String::isNotBlank)?.let { description ->
-            Text(
-                text = description,
-                color = TvDesign.White.copy(alpha = .78f),
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(Detail38TextWidthFraction),
-            )
-        }
+            if (state.ratings.isNotEmpty()) {
+                Detail39Ratings(state.ratings)
+                Spacer(Modifier.height(14.dp))
+            }
 
-        state.dnaMatch?.let { score ->
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "VUEO DNA Match  •  $score%",
-                color = TvDesign.White.copy(alpha = .48f),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            state.item.description?.takeIf(String::isNotBlank)?.let { description ->
+                Text(
+                    text = description,
+                    color = TvDesign.White.copy(alpha = .84f),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(Detail39TextWidthFraction),
+                )
+                Spacer(Modifier.height(14.dp))
+            }
+
+            if (metaFacts.isNotEmpty()) {
+                Text(
+                    text = metaFacts.joinToString("  •  "),
+                    color = TvDesign.White.copy(alpha = .60f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(Detail39TextWidthFraction),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun Detail38PlayAction(
+private fun Detail39PlayButton(
     label: String,
     enabled: Boolean,
     requester: FocusRequester,
@@ -268,11 +270,10 @@ private fun Detail38PlayAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
 
     Row(
         modifier = Modifier
-            .height(Detail38ActionHeight)
+            .height(Detail39ActionHeight)
             .focusRequester(requester)
             .focusProperties {
                 right = rightRequester
@@ -280,33 +281,29 @@ private fun Detail38PlayAction(
                 downRequester?.let { down = it }
             }
             .onFocusChanged { focused = it.isFocused }
-            .clip(shape)
+            .clip(Detail39PlayShape)
             .background(
-                when {
-                    !enabled -> TvDesign.White.copy(alpha = .18f)
-                    focused -> TvDesign.White
-                    else -> TvDesign.White.copy(alpha = .90f)
-                }
+                if (enabled) TvDesign.White else TvDesign.White.copy(alpha = .20f)
             )
             .border(
                 width = if (focused) 2.dp else 0.dp,
                 color = if (focused) TvDesign.Focus else Color.Transparent,
-                shape = shape,
+                shape = Detail39PlayShape,
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 22.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Default.PlayArrow,
             contentDescription = null,
-            tint = if (enabled) Color.Black else TvDesign.White.copy(alpha = .45f),
-            modifier = Modifier.size(22.dp),
+            tint = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
+            modifier = Modifier.size(20.dp),
         )
         Text(
             text = label,
-            color = if (enabled) Color.Black else TvDesign.White.copy(alpha = .45f),
+            color = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -315,7 +312,7 @@ private fun Detail38PlayAction(
 }
 
 @Composable
-private fun Detail38ListAction(
+private fun Detail39LibraryButton(
     watchlisted: Boolean,
     requester: FocusRequester,
     leftRequester: FocusRequester,
@@ -323,11 +320,10 @@ private fun Detail38ListAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(watchlisted) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
 
     Box(
         modifier = Modifier
-            .size(Detail38ActionHeight)
+            .size(Detail39ActionHeight)
             .focusRequester(requester)
             .focusProperties {
                 left = leftRequester
@@ -336,15 +332,14 @@ private fun Detail38ListAction(
                 downRequester?.let { down = it }
             }
             .onFocusChanged { focused = it.isFocused }
-            .clip(shape)
+            .clip(CircleShape)
             .background(
-                if (focused) TvDesign.White.copy(alpha = .18f)
-                else TvDesign.Black.copy(alpha = .58f)
+                if (focused) TvDesign.White else TvDesign.Surface.copy(alpha = .88f)
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Focus else TvDesign.White.copy(alpha = .18f),
-                shape = shape,
+                color = if (focused) TvDesign.Focus else TvDesign.White.copy(alpha = .14f),
+                shape = CircleShape,
             )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -352,22 +347,22 @@ private fun Detail38ListAction(
         Icon(
             imageVector = if (watchlisted) Icons.Default.Check else Icons.Default.Add,
             contentDescription = if (watchlisted) "Remove from My List" else "Add to My List",
-            tint = TvDesign.White,
-            modifier = Modifier.size(20.dp),
+            tint = if (focused) Color.Black else TvDesign.White,
+            modifier = Modifier.size(21.dp),
         )
     }
 }
 
 @Composable
-private fun Detail38Ratings(ratings: List<MediaRating>) {
+private fun Detail39Ratings(ratings: List<MediaRating>) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ratings.take(4).forEach { rating ->
             Text(
                 text = "${rating.compactLabel} ${rating.displayValue()}",
-                color = TvDesign.White.copy(alpha = .72f),
+                color = TvDesign.White.copy(alpha = .78f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -376,25 +371,25 @@ private fun Detail38Ratings(ratings: List<MediaRating>) {
     }
 }
 
-private fun detail38Facts(item: MediaItem): List<String> =
+private fun detail39MetaFacts(item: MediaItem, dnaMatch: Int?): List<String> =
     buildList {
         item.releaseInfo?.takeIf(String::isNotBlank)?.let(::add)
         add(item.displayType)
-        item.runtimeMinutes?.takeIf { it > 0 }?.let { add(detail38RuntimeLabel(it)) }
+        item.runtimeMinutes?.takeIf { it > 0 }?.let { add(detail39RuntimeLabel(it)) }
         item.certification?.takeIf(String::isNotBlank)?.let(::add)
+        item.genres.take(3).takeIf { it.isNotEmpty() }?.joinToString(" / ")?.let(::add)
+        dnaMatch?.let { add("VUEO DNA $it%") }
     }
 
-private fun detail38Credits(item: MediaItem): String? {
-    val names = when {
+private fun detail39CreditLine(item: MediaItem): String? =
+    when {
         item.isTvSeries() && item.creators.isNotEmpty() -> "Creator: ${item.creators.take(3).joinToString(", ")}"
         item.directors.isNotEmpty() -> "Director: ${item.directors.take(3).joinToString(", ")}"
         item.writers.isNotEmpty() -> "Writer: ${item.writers.take(3).joinToString(", ")}"
         else -> null
     }
-    return names
-}
 
-private fun detail38RuntimeLabel(minutes: Int): String {
+private fun detail39RuntimeLabel(minutes: Int): String {
     val hours = minutes / 60
     val mins = minutes % 60
     return when {

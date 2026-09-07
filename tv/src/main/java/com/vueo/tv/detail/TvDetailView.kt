@@ -1,5 +1,6 @@
 package com.vueo.tv.detail
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -16,7 +17,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -25,10 +28,19 @@ import androidx.compose.ui.unit.dp
 import com.vueo.tv.ui.TvDesign
 import kotlinx.coroutines.delay
 
-internal val Detail38HorizontalPadding = 52.dp
-internal val Detail38HeroHeight = 540.dp
+internal val Detail39HorizontalPadding = 52.dp
+internal val Detail39HeroHeight = 540.dp
 
-/** Fresh 38A Details composition root. */
+private enum class Detail39PeopleTab {
+    CAST,
+    MORE_LIKE_THIS,
+}
+
+/**
+ * 39A composition is sourced from Nuvio's MetaDetailsScreen structure:
+ * sticky backdrop -> hero -> season tabs -> episodes -> Cast/More Like This tabs
+ * -> networks/production. VUEO remains only the data/action boundary.
+ */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvDetailView(
@@ -45,93 +57,120 @@ internal fun TvDetailView(
     val listState = rememberLazyListState()
 
     val playRequester = remember(mediaKey) { FocusRequester() }
-    val listRequester = remember(mediaKey) { FocusRequester() }
+    val libraryRequester = remember(mediaKey) { FocusRequester() }
     val seasonRequester = remember(mediaKey) { FocusRequester() }
     val episodeRequester = remember(mediaKey) { FocusRequester() }
+    val castTabRequester = remember(mediaKey) { FocusRequester() }
+    val relatedTabRequester = remember(mediaKey) { FocusRequester() }
     val castRequester = remember(mediaKey) { FocusRequester() }
-    val companyRequester = remember(mediaKey) { FocusRequester() }
     val relatedRequester = remember(mediaKey) { FocusRequester() }
+    val networkRequester = remember(mediaKey) { FocusRequester() }
+    val productionRequester = remember(mediaKey) { FocusRequester() }
     val insightRequester = remember(mediaKey) { FocusRequester() }
 
-    val companies = if (state.item.isTvSeries()) state.item.networks else state.item.productionCompanies
     val hasSeasons = state.item.isTvSeries() && state.seasons.isNotEmpty()
     val hasEpisodes = state.item.isTvSeries() && state.episodes.isNotEmpty()
     val hasCast = state.item.cast.isNotEmpty()
-    val hasCompanies = companies.isNotEmpty()
     val hasRelated = state.related.isNotEmpty()
+    val hasPeopleTabs = hasCast && hasRelated
+    val hasNetworks = state.item.networks.isNotEmpty()
+    val hasProduction = state.item.productionCompanies.isNotEmpty()
     val hasInsight = state.insightAvailable
+
+    var activePeopleTab by remember(mediaKey) {
+        mutableStateOf(if (hasCast) Detail39PeopleTab.CAST else Detail39PeopleTab.MORE_LIKE_THIS)
+    }
+
+    LaunchedEffect(hasCast, hasRelated) {
+        if (!hasCast && hasRelated) activePeopleTab = Detail39PeopleTab.MORE_LIKE_THIS
+        if (hasCast && !hasRelated) activePeopleTab = Detail39PeopleTab.CAST
+    }
+
+    val activePeopleContentRequester = when (activePeopleTab) {
+        Detail39PeopleTab.CAST -> castRequester
+        Detail39PeopleTab.MORE_LIKE_THIS -> relatedRequester
+    }
+    val activePeopleTabRequester = when (activePeopleTab) {
+        Detail39PeopleTab.CAST -> castTabRequester
+        Detail39PeopleTab.MORE_LIKE_THIS -> relatedTabRequester
+    }
 
     fun firstOf(vararg candidates: Pair<Boolean, FocusRequester>): FocusRequester? =
         candidates.firstOrNull { it.first }?.second
 
-    val afterHero = firstOf(
+    val firstAfterHero = firstOf(
         hasSeasons to seasonRequester,
         hasEpisodes to episodeRequester,
+        hasPeopleTabs to activePeopleTabRequester,
         hasCast to castRequester,
-        hasCompanies to companyRequester,
         hasRelated to relatedRequester,
+        hasNetworks to networkRequester,
+        hasProduction to productionRequester,
         hasInsight to insightRequester,
     )
-    val afterSeasons = firstOf(
+    val firstAfterSeasons = firstOf(
         hasEpisodes to episodeRequester,
+        hasPeopleTabs to activePeopleTabRequester,
         hasCast to castRequester,
-        hasCompanies to companyRequester,
         hasRelated to relatedRequester,
+        hasNetworks to networkRequester,
+        hasProduction to productionRequester,
         hasInsight to insightRequester,
     )
-    val afterEpisodes = firstOf(
+    val firstAfterEpisodes = firstOf(
+        hasPeopleTabs to activePeopleTabRequester,
         hasCast to castRequester,
-        hasCompanies to companyRequester,
         hasRelated to relatedRequester,
+        hasNetworks to networkRequester,
+        hasProduction to productionRequester,
         hasInsight to insightRequester,
     )
-    val afterCast = firstOf(
-        hasCompanies to companyRequester,
-        hasRelated to relatedRequester,
+    val firstAfterPeople = firstOf(
+        hasNetworks to networkRequester,
+        hasProduction to productionRequester,
         hasInsight to insightRequester,
     )
-    val afterCompanies = firstOf(
-        hasRelated to relatedRequester,
+    val firstAfterNetworks = firstOf(
+        hasProduction to productionRequester,
         hasInsight to insightRequester,
     )
+    val firstAfterProduction = firstOf(hasInsight to insightRequester)
 
-    val beforeCast = when {
+    val peopleUpRequester = when {
         hasEpisodes -> episodeRequester
         hasSeasons -> seasonRequester
         else -> playRequester
     }
-    val beforeCompanies = when {
+    val networkUpRequester = when {
+        hasPeopleTabs -> activePeopleContentRequester
         hasCast -> castRequester
-        hasEpisodes -> episodeRequester
-        hasSeasons -> seasonRequester
-        else -> playRequester
-    }
-    val beforeRelated = when {
-        hasCompanies -> companyRequester
-        hasCast -> castRequester
-        hasEpisodes -> episodeRequester
-        hasSeasons -> seasonRequester
-        else -> playRequester
-    }
-    val beforeInsight = when {
         hasRelated -> relatedRequester
-        hasCompanies -> companyRequester
+        hasEpisodes -> episodeRequester
+        hasSeasons -> seasonRequester
+        else -> playRequester
+    }
+    val productionUpRequester = if (hasNetworks) networkRequester else networkUpRequester
+    val insightUpRequester = when {
+        hasProduction -> productionRequester
+        hasNetworks -> networkRequester
+        hasPeopleTabs -> activePeopleContentRequester
         hasCast -> castRequester
+        hasRelated -> relatedRequester
         hasEpisodes -> episodeRequester
         hasSeasons -> seasonRequester
         else -> playRequester
     }
 
-    val backdropDimmed = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 210
-    val imageAlpha by animateFloatAsState(
-        targetValue = if (backdropDimmed) .14f else 1f,
-        animationSpec = tween(if (backdropDimmed) 240 else 500),
-        label = "detail38BackdropAlpha",
+    val scrolledPastHero = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 260
+    val backdropAlpha by animateFloatAsState(
+        targetValue = if (scrolledPastHero) .15f else 1f,
+        animationSpec = tween(if (scrolledPastHero) 300 else 800),
+        label = "detail39BackdropAlpha",
     )
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (backdropDimmed) 0f else 1f,
-        animationSpec = tween(if (backdropDimmed) 210 else 440),
-        label = "detail38ScrimAlpha",
+    val heroScrimAlpha by animateFloatAsState(
+        targetValue = if (scrolledPastHero) 0f else 1f,
+        animationSpec = tween(if (scrolledPastHero) 300 else 800),
+        label = "detail39HeroScrimAlpha",
     )
 
     LaunchedEffect(mediaKey, state.loading, state.episodes) {
@@ -149,109 +188,155 @@ internal fun TvDetailView(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        TvDetail38Backdrop(
+        TvDetail39Backdrop(
             item = state.item,
-            imageAlpha = imageAlpha,
-            scrimAlpha = scrimAlpha,
+            imageAlpha = backdropAlpha,
+            scrimAlpha = heroScrimAlpha,
         )
 
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 84.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            item(key = "hero:$mediaKey") {
-                TvDetail38Hero(
+            item(key = "hero:$mediaKey", contentType = "hero") {
+                TvDetail39Hero(
                     state = state,
                     playRequester = playRequester,
-                    listRequester = listRequester,
-                    downRequester = afterHero,
+                    libraryRequester = libraryRequester,
+                    downRequester = firstAfterHero,
                     onPlay = onPlay,
                     onToggleList = onToggleList,
                 )
             }
 
             if (hasSeasons) {
-                item(key = "seasons:$mediaKey") {
-                    TvDetail38SeasonTabs(
+                item(key = "season-tabs:$mediaKey", contentType = "season-tabs") {
+                    TvDetail39SeasonTabs(
                         seasons = state.seasons,
                         selectedSeason = state.selectedSeason,
-                        rowRequester = seasonRequester,
+                        selectedRequester = seasonRequester,
                         upRequester = playRequester,
-                        downRequester = afterSeasons,
+                        downRequester = firstAfterSeasons,
                         onSelect = onSeasonSelected,
                     )
                 }
             }
 
             if (hasEpisodes) {
-                item(key = "episodes:$mediaKey:${state.selectedSeason}") {
-                    TvDetail38EpisodeRail(
+                item(key = "episodes:$mediaKey:${state.selectedSeason}", contentType = "episodes") {
+                    TvDetail39EpisodeRow(
                         media = state.item,
                         episodes = state.episodes,
                         selectedEpisode = state.selectedEpisode,
                         history = state.history,
                         rowRequester = episodeRequester,
                         upRequester = if (hasSeasons) seasonRequester else playRequester,
-                        downRequester = afterEpisodes,
+                        downRequester = firstAfterEpisodes,
                         onFocused = onEpisodeFocused,
                         onOpen = onEpisodeSelected,
                     )
                 }
             } else if (state.item.isTvSeries() && !state.loading && state.item.episodes.isEmpty()) {
-                item(key = "episodes-empty:$mediaKey") {
-                    TvDetail38Message("Episodes are not available for this title yet.")
+                item(key = "episodes-empty:$mediaKey", contentType = "message") {
+                    TvDetail39Message("Episodes are not available for this title yet.")
                 }
             }
 
-            if (hasCast) {
-                item(key = "cast:$mediaKey") {
-                    TvDetail38CastRail(
+            if (hasPeopleTabs) {
+                item(key = "people-tabs:$mediaKey", contentType = "people-tabs") {
+                    TvDetail39PeopleTabs(
+                        activeCast = activePeopleTab == Detail39PeopleTab.CAST,
+                        castRequester = castTabRequester,
+                        relatedRequester = relatedTabRequester,
+                        upRequester = peopleUpRequester,
+                        downRequester = activePeopleContentRequester,
+                        onCastFocused = { activePeopleTab = Detail39PeopleTab.CAST },
+                        onRelatedFocused = { activePeopleTab = Detail39PeopleTab.MORE_LIKE_THIS },
+                    )
+                }
+
+                item(key = "people-content:$mediaKey", contentType = "horizontal-row") {
+                    Crossfade(
+                        targetState = activePeopleTab,
+                        animationSpec = tween(160),
+                        label = "detail39PeopleSwitch",
+                    ) { tab ->
+                        when (tab) {
+                            Detail39PeopleTab.CAST -> TvDetail39CastRow(
+                                cast = state.item.cast,
+                                title = null,
+                                rowRequester = castRequester,
+                                upRequester = castTabRequester,
+                                downRequester = firstAfterPeople,
+                            )
+                            Detail39PeopleTab.MORE_LIKE_THIS -> TvDetail39RelatedRow(
+                                items = state.related,
+                                title = null,
+                                rowRequester = relatedRequester,
+                                upRequester = relatedTabRequester,
+                                downRequester = firstAfterPeople,
+                                onOpen = onOpenRelated,
+                            )
+                        }
+                    }
+                }
+            } else if (hasCast) {
+                item(key = "cast:$mediaKey", contentType = "horizontal-row") {
+                    TvDetail39CastRow(
                         cast = state.item.cast,
+                        title = "Cast",
                         rowRequester = castRequester,
-                        upRequester = beforeCast,
-                        downRequester = afterCast,
+                        upRequester = peopleUpRequester,
+                        downRequester = firstAfterPeople,
                     )
                 }
-            }
-
-            if (hasCompanies) {
-                item(key = "companies:$mediaKey") {
-                    TvDetail38CompanyRail(
-                        title = if (state.item.isTvSeries()) {
-                            if (companies.size == 1) "Network" else "Networks"
-                        } else {
-                            "Production"
-                        },
-                        companies = companies,
-                        rowRequester = companyRequester,
-                        upRequester = beforeCompanies,
-                        downRequester = afterCompanies,
-                    )
-                }
-            }
-
-            if (hasRelated) {
-                item(key = "related:$mediaKey") {
-                    TvDetail38RelatedRail(
+            } else if (hasRelated) {
+                item(key = "related:$mediaKey", contentType = "horizontal-row") {
+                    TvDetail39RelatedRow(
                         items = state.related,
+                        title = "More Like This",
                         rowRequester = relatedRequester,
-                        upRequester = beforeRelated,
-                        downRequester = if (hasInsight) insightRequester else null,
+                        upRequester = peopleUpRequester,
+                        downRequester = firstAfterPeople,
                         onOpen = onOpenRelated,
                     )
                 }
             }
 
+            if (hasNetworks) {
+                item(key = "networks:$mediaKey", contentType = "horizontal-row") {
+                    TvDetail39CompanyRow(
+                        title = if (state.item.networks.size == 1) "Network" else "Networks",
+                        companies = state.item.networks,
+                        rowRequester = networkRequester,
+                        upRequester = networkUpRequester,
+                        downRequester = firstAfterNetworks,
+                    )
+                }
+            }
+
+            if (hasProduction) {
+                item(key = "production:$mediaKey", contentType = "horizontal-row") {
+                    TvDetail39CompanyRow(
+                        title = "Production",
+                        companies = state.item.productionCompanies,
+                        rowRequester = productionRequester,
+                        upRequester = productionUpRequester,
+                        downRequester = firstAfterProduction,
+                    )
+                }
+            }
+
             if (hasInsight) {
-                item(key = "insight:$mediaKey") {
-                    TvDetail38Insight(
+                item(key = "insight:$mediaKey", contentType = "insight") {
+                    TvDetail39Insight(
                         insight = state.insight,
                         loading = state.insightLoading,
                         error = state.insightError,
                         requester = insightRequester,
-                        upRequester = beforeInsight,
+                        upRequester = insightUpRequester,
                         onGenerate = onGenerateInsight,
                     )
                 }
