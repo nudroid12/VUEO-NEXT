@@ -22,6 +22,8 @@ object StremioManifestParser {
             .takeIf(String::isNotBlank)
             ?: error("Manifest is missing addon name.")
 
+        val behaviorHints = json.optJSONObject("behaviorHints")
+
         return StremioManifest(
             id = id,
             name = name,
@@ -36,6 +38,8 @@ object StremioManifestParser {
                 .takeIf(String::isNotBlank),
             resources = parseResources(json.optJSONArray("resources")),
             types = json.optJSONArray("types").toStringSet(),
+            configurable = behaviorHints?.optBoolean("configurable", false) == true,
+            configurationRequired = behaviorHints?.optBoolean("configurationRequired", false) == true,
         )
     }
 

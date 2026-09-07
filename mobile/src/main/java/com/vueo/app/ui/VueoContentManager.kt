@@ -3,6 +3,7 @@ package com.vueo.app.ui
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
+import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.ActivityInfo
@@ -654,6 +655,7 @@ internal fun AddonsScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     var installed by remember(contentVersion) {
         mutableStateOf(engine.stremioAddons())
@@ -787,6 +789,13 @@ internal fun AddonsScreen(
                                 addon.descriptor.baseUrl
                             ),
                             refreshing = refreshingId == addon.descriptor.id,
+                            onConfigure = if (
+                                addon.descriptor.configurable || addon.descriptor.configurationRequired
+                            ) {
+                                { openAddonConfiguration(context, addon.descriptor.baseUrl) }
+                            } else {
+                                null
+                            },
                             onRefresh = {
                                 scope.launch {
                                     refreshingId = addon.descriptor.id
@@ -922,6 +931,47 @@ internal fun AddonsScreen(
     }
 }
 
+private fun addonConfigurationUrl(manifestUrl: String): String? {
+    val manifestUri = runCatching { Uri.parse(manifestUrl.trim()) }.getOrNull() ?: return null
+    if (!manifestUri.scheme.equals("https", ignoreCase = true) || manifestUri.host.isNullOrBlank()) {
+        return null
+    }
+
+    val manifestPath = manifestUri.path.orEmpty()
+    val addonBasePath = when {
+        manifestPath.endsWith("/manifest.json", ignoreCase = true) ->
+            manifestPath.dropLast("/manifest.json".length)
+        manifestPath.endsWith("manifest.json", ignoreCase = true) ->
+            manifestPath.dropLast("manifest.json".length).trimEnd('/')
+        else -> manifestPath.substringBeforeLast('/', "")
+    }
+
+    val configurePath = addonBasePath.trimEnd('/') + "/configure"
+    return manifestUri.buildUpon()
+        .clearQuery()
+        .fragment(null)
+        .path(configurePath)
+        .build()
+        .toString()
+}
+
+private fun openAddonConfiguration(
+    context: Context,
+    manifestUrl: String,
+) {
+    val configureUrl = addonConfigurationUrl(manifestUrl)
+    if (configureUrl == null) {
+        Toast.makeText(context, "Configuration URL unavailable", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(configureUrl))
+    runCatching { context.startActivity(intent) }
+        .onFailure {
+            Toast.makeText(context, "No browser available", Toast.LENGTH_SHORT).show()
+        }
+}
+
 private fun neutralizePlatformCopy(value: String): String =
     value
         .replace(Regex("(?i)\\bfor\\s+stremio\\b"), "")
@@ -940,6 +990,7 @@ private fun AddonCard(
     onEnabledChanged: (Boolean) -> Unit,
     isDevelopmentDefault: Boolean,
     refreshing: Boolean,
+    onConfigure: (() -> Unit)?,
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -1029,6 +1080,26 @@ private fun AddonCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+
+                if (onConfigure != null) {
+                    TextButton(
+                        onClick = onConfigure,
+                        modifier = Modifier.height(34.dp),
+                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "Configure",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
 
                 IconButton(
                     onClick = onRefresh,

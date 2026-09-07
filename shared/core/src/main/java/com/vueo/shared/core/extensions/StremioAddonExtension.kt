@@ -41,6 +41,8 @@ class StremioAddonExtension private constructor(
             description = descriptor.description,
             resources = descriptor.resources,
             types = descriptor.types,
+            configurable = descriptor.configurable,
+            configurationRequired = descriptor.configurationRequired,
         ),
         httpClient = httpClient,
     )
@@ -138,6 +140,7 @@ class StremioAddonExtension private constructor(
                 .trim()
                 .takeIf(String::isNotBlank)
                 ?: error("Manifest is missing addon name.")
+            val behaviorHints = json.optJSONObject("behaviorHints")
 
             return StremioAddonExtension(
                 descriptor = ExtensionDescriptor(
@@ -152,6 +155,8 @@ class StremioAddonExtension private constructor(
                     resources = parseResources(json.optJSONArray("resources")),
                     types = json.optJSONArray("types").toStringSet(),
                     catalogs = parseCatalogs(json.optJSONArray("catalogs")),
+                    configurable = behaviorHints?.optBoolean("configurable", false) == true,
+                    configurationRequired = behaviorHints?.optBoolean("configurationRequired", false) == true,
                 ),
                 httpClient = httpClient,
             )

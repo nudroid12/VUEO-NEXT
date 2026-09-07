@@ -75,5 +75,7 @@ data class ExtensionDescriptor(
     val resources: Set<String> = emptySet(),
     val types: Set<String> = emptySet(),
     val catalogs: List<CatalogDescriptor> = emptyList(),
+    val configurable: Boolean = false,
+    val configurationRequired: Boolean = false,
     val health: ExtensionHealth = ExtensionHealth.UNKNOWN,
 )

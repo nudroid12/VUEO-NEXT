@@ -13,6 +13,8 @@ data class StremioManifest(
     val description: String? = null,
     val resources: Set<String> = emptySet(),
     val types: Set<String> = emptySet(),
+    val configurable: Boolean = false,
+    val configurationRequired: Boolean = false,
 ) {
     fun supportsResource(resource: String): Boolean =
         resources.isEmpty() || resource in resources
