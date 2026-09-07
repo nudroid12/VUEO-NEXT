@@ -74,7 +74,7 @@ object TvDesign {
     val Muted: Color get() = palette.muted
     val Dim: Color get() = palette.dim
     val Accent: Color get() = accentState
-    val Focus: Color get() = accentState
+    val Focus: Color get() = White
 
     val ScreenPadding = PaddingValues(horizontal = 52.dp, vertical = 32.dp)
     val CardShape = RoundedCornerShape(12.dp)
@@ -92,7 +92,7 @@ object TvDesign {
 @Composable
 fun Modifier.tvPremiumFocus(
     onFocused: (() -> Unit)? = null,
-    scale: Float = 1.055f,
+    scale: Float = 1.025f,
 ): Modifier {
     var focused by remember { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(

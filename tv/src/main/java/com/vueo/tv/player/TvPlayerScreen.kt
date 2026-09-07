@@ -6,9 +6,35 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.List
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,14 +44,23 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -42,11 +77,13 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
+import com.vueo.tv.ui.TvDesign
 import kotlinx.coroutines.delay
 
 internal enum class TvPlayerPanel {
@@ -58,6 +95,10 @@ internal enum class TvPlayerPanel {
     MORE,
 }
 
+internal enum class TvPlayerPanelPlacement {
+    LEFT_OVERLAY,
+    RIGHT_PANEL,
+}
 
 internal data class TvPlayerOption(
     val key: String,
@@ -481,7 +522,7 @@ fun TvPlayerScreen(
                                     .filter { it.isNotBlank() }
                                     .distinct()
                                     .joinToString("  •  "),
-                                selected = selectedSubtitleKey == track.id.ifBlank { track.url },
+                                selected = selectedSubtitleKey == track.id.ifBlank { it.url },
                             )
                         )
                     }
@@ -606,9 +647,8 @@ fun TvPlayerScreen(
                 val isCurrent = episode?.let { current ->
                     current.id == target.id || (current.season == target.season && current.episode == target.episode)
                 } == true
-                if (isCurrent) {
-                    closePanel()
-                } else {
+                if (isCurrent) closePanel()
+                else {
                     saveProgress()
                     onPlayNextEpisode(target)
                 }
@@ -617,11 +657,9 @@ fun TvPlayerScreen(
                 when (activePanel) {
                     TvPlayerPanel.SUBTITLES -> {
                         when (option.key) {
-                            "off" -> {
-                                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                    .build()
-                            }
+                            "off" -> player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .build()
                             "auto" -> {
                                 val languages = listOfNotNull(
                                     settings.preferredSubtitleLanguage().languageCode,
@@ -629,9 +667,7 @@ fun TvPlayerScreen(
                                 ).distinct()
                                 var params = player.trackSelectionParameters.buildUpon()
                                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                if (languages.isNotEmpty()) {
-                                    params = params.setPreferredTextLanguages(*languages.toTypedArray())
-                                }
+                                if (languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
                                 player.trackSelectionParameters = params.build()
                             }
                             else -> {
@@ -681,20 +717,16 @@ fun TvPlayerScreen(
                     }
                     TvPlayerPanel.MORE -> {
                         when {
-                            option.key.startsWith("speed:") -> {
-                                val speed = option.key.substringAfter(':').toFloatOrNull()
-                                if (speed != null) {
-                                    playbackSpeed = speed
-                                    player.setPlaybackSpeed(speed)
-                                    settings.setPlayerPlaybackSpeed(speed)
-                                }
+                            option.key.startsWith("speed:") -> option.key.substringAfter(':').toFloatOrNull()?.let { speed ->
+                                playbackSpeed = speed
+                                player.setPlaybackSpeed(speed)
+                                settings.setPlayerPlaybackSpeed(speed)
                             }
-                            option.key.startsWith("fit:") -> {
-                                val fit = runCatching { PlayerVideoFit.valueOf(option.key.substringAfter(':')) }.getOrNull()
-                                if (fit != null) {
-                                    videoFit = fit
-                                    settings.setPlayerVideoFit(fit)
-                                }
+                            option.key.startsWith("fit:") -> runCatching {
+                                PlayerVideoFit.valueOf(option.key.substringAfter(':'))
+                            }.getOrNull()?.let { fit ->
+                                videoFit = fit
+                                settings.setPlayerVideoFit(fit)
                             }
                         }
                         noteInteraction()
@@ -771,6 +803,11 @@ private fun nextEpisode(episodes: List<EpisodeItem>, current: EpisodeItem?): Epi
     return ordered.getOrNull(index + 1)
 }
 
+private fun skipLabel(kind: PlayerSkipKind): String = when (kind) {
+    PlayerSkipKind.INTRO -> "Skip Intro"
+    PlayerSkipKind.RECAP -> "Skip Recap"
+    PlayerSkipKind.ENDING -> "Skip Ending"
+}
 
 private fun withAlpha(argb: Int, percent: Int): Int {
     val alpha = (255 * percent.coerceIn(0, 100) / 100) shl 24

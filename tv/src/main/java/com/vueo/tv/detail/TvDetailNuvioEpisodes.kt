@@ -49,6 +49,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 private val NuvioEpisodeWidth = 360.dp
 private val NuvioEpisodeHeight = 235.dp
@@ -295,9 +296,9 @@ private fun NuvioEpisodeCard(
             }
         }
 
-        episode.released?.trim()?.takeIf(String::isNotBlank)?.let { released ->
+        nuvioDetailFormatReleaseDate(episode.released)?.let { released ->
             Text(
-                text = formatDetailEpisodeDate(released),
+                text = released,
                 color = TvDesign.White.copy(alpha = .44f),
                 fontSize = 9.sp,
                 maxLines = 1,
@@ -307,13 +308,22 @@ private fun NuvioEpisodeCard(
     }
 }
 
-private fun formatDetailEpisodeDate(raw: String): String {
-    val trimmed = raw.trim()
-    val datePart = trimmed.take(10)
-    if (!Regex("""\d{4}-\d{2}-\d{2}""").matches(datePart)) return trimmed
-    return runCatching {
-        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
-        val date = requireNotNull(parser.parse(datePart))
-        SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).format(date)
-    }.getOrDefault(datePart)
+
+private fun nuvioDetailFormatReleaseDate(raw: String?): String? {
+    val input = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd",
+    )
+    for (pattern in patterns) {
+        val parsed = runCatching {
+            SimpleDateFormat(pattern, Locale.US).apply {
+                isLenient = false
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(input)
+        }.getOrNull() ?: continue
+        return SimpleDateFormat("MMM d, yyyy", Locale.ENGLISH).format(parsed)
+    }
+    return input.substringBefore('T').takeIf { it != input } ?: input
 }
