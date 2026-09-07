@@ -62,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -383,15 +384,15 @@ internal fun VueoSettingsHub(
             else ->
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().background(VueoPalette.Background),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 116.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 132.dp),
+                    verticalArrangement = Arrangement.spacedBy(13.dp),
                 ) {
                     item(key = "settings-header") {
-                        Text("Settings", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                        Text("Settings", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
                     }
 
                     item(key = "settings-profile") {
-                        val profileShape = RoundedCornerShape(22.dp)
+                        val profileShape = RoundedCornerShape(20.dp)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -413,12 +414,12 @@ internal fun VueoSettingsHub(
                                         .clickable {
                                             if (dnaEnabled) showUserDna = true else showPersonalization = true
                                         }
-                                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 7.dp),
+                                        .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(56.dp)
+                                            .size(52.dp)
                                             .clip(RoundedCornerShape(50))
                                             .background(Color.Black.copy(alpha = .20f)),
                                         contentAlignment = Alignment.Center,
@@ -439,9 +440,9 @@ internal fun VueoSettingsHub(
                                             )
                                         }
                                     }
-                                    Spacer(Modifier.width(14.dp))
+                                    Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        Text(activeProfile.name, color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                                        Text(activeProfile.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
                                         Text(
                                             "$vueoClass • $dnaClass",
                                             color = Color.White.copy(alpha = .62f),
@@ -453,7 +454,7 @@ internal fun VueoSettingsHub(
                                 }
 
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     VueoProfileStat(Modifier.weight(1f), "My List", myListCount.toString())
@@ -468,7 +469,7 @@ internal fun VueoSettingsHub(
                                 Text(
                                     text = dnaTastePreview.takeIf { it.isNotBlank() }
                                         ?: if (dnaEnabled) "Keep watching to shape your DNA class." else "Enable User DNA in Personalization.",
-                                    modifier = Modifier.fillMaxWidth().padding(start = 17.dp, end = 17.dp, top = 2.dp, bottom = 7.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 1.dp, bottom = 6.dp),
                                     color = Color.White.copy(alpha = .60f),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium,
@@ -476,12 +477,12 @@ internal fun VueoSettingsHub(
                                 )
 
                                 Surface(
-                                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 13.dp).clickable(onClick = onProfiles),
+                                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 11.dp).clickable(onClick = onProfiles),
                                     shape = RoundedCornerShape(13.dp),
                                     color = Color.Black.copy(alpha = .23f),
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 8.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
@@ -577,7 +578,7 @@ internal fun VueoSettingsHubGroup(
     label: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             label,
             color = VueoPalette.Muted,
@@ -588,7 +589,7 @@ internal fun VueoSettingsHubGroup(
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(16.dp),
             color = VueoPalette.SurfaceElevated,
         ) {
             Column(Modifier.fillMaxWidth(), content = content)
@@ -601,7 +602,7 @@ internal fun VueoSettingsHubDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 62.dp, end = 14.dp)
+            .padding(start = 58.dp, end = 12.dp)
             .height(1.dp)
             .background(VueoPalette.Stroke.copy(alpha = .55f))
     )
@@ -616,25 +617,25 @@ internal fun VueoSettingsHubRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(VueoPalette.SurfaceStrong.copy(alpha = .78f)),
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(VueoPalette.SurfaceStrong.copy(alpha = .78f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = Color.White.copy(alpha = .92f), modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = Color.White.copy(alpha = .92f), modifier = Modifier.size(19.dp))
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = VueoPalette.Muted, fontSize = 10.5.sp, maxLines = 1)
+            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = VueoPalette.Muted, fontSize = 10.sp, maxLines = 1)
             if (status.isNotBlank()) {
-                Text(status, color = Color.White.copy(alpha = .72f), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(status, color = Color.White.copy(alpha = .72f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text("›", color = VueoPalette.Muted, fontSize = 24.sp, fontWeight = FontWeight.Medium)
+        Text("›", color = VueoPalette.Muted, fontSize = 22.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -1130,14 +1131,14 @@ internal fun TmdbEnhancementSettingsScreen(
 
         item {
             Card(
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = VueoPalette.Surface,
                 ),
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         "API Key",
@@ -1346,14 +1347,14 @@ internal fun MdblistEnhancementSettingsScreen(
 
         item {
             Card(
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = VueoPalette.Surface,
                 ),
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         "API Key",
@@ -2070,7 +2071,8 @@ internal fun AppearanceSettingsScreen(
                 Text(
                     text = "All three themes stay dark and cinematic. Only the surface temperature changes.",
                     color = VueoPalette.Muted,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
+                    maxLines = 3,
                 )
 
                 LazyRow(
@@ -2117,7 +2119,8 @@ internal fun AppearanceSettingsScreen(
                 Text(
                     text = "Accent changes buttons, focus, progress and interactive highlights. VUEO brand lime remains fixed.",
                     color = VueoPalette.Muted,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
+                    maxLines = 3,
                 )
 
                 LazyRow(
@@ -3194,7 +3197,7 @@ private fun VueoSettingsToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -3215,11 +3218,12 @@ private fun VueoSettingsToggleRow(
                 maxLines = 2,
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Switch(
             checked = checked,
             enabled = enabled,
             onCheckedChange = onCheckedChange,
+            modifier = Modifier.scale(0.88f),
         )
     }
 }
@@ -3272,12 +3276,12 @@ private fun VueoSettingsPage(
             .fillMaxSize()
             .background(VueoPalette.Background),
         contentPadding = PaddingValues(
-            start = 20.dp,
-            end = 20.dp,
-            top = 16.dp,
-            bottom = 116.dp,
+            start = 18.dp,
+            end = 18.dp,
+            top = 12.dp,
+            bottom = 132.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         item {
             Row(
@@ -3319,7 +3323,7 @@ internal fun VueoSettingsTitle(
     subtitle: String,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text(
             "VUEO",
@@ -3332,14 +3336,15 @@ internal fun VueoSettingsTitle(
         Text(
             title,
             color = Color.White,
-            fontSize = 29.sp,
+            fontSize = 27.sp,
             fontWeight = FontWeight.Black,
         )
 
         Text(
             subtitle,
             color = VueoPalette.Muted,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
+            maxLines = 2,
         )
     }
 }
@@ -3356,7 +3361,7 @@ private fun VueoProfileStat(
         color = Color.Black.copy(alpha = .20f),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -3732,18 +3737,18 @@ private fun VueoSettingsToggleCard(
     enabled: Boolean = true,
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = VueoPalette.Surface,
         ),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
                     title,
@@ -3755,7 +3760,7 @@ private fun VueoSettingsToggleCard(
                                 alpha = .45f
                             )
                         },
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                 )
 
@@ -3769,16 +3774,18 @@ private fun VueoSettingsToggleCard(
                                 alpha = .55f
                             )
                         },
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
+                    maxLines = 3,
                 )
             }
 
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
 
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 enabled = enabled,
+                modifier = Modifier.scale(0.88f),
             )
         }
     }
@@ -3795,34 +3802,35 @@ private fun VueoSettingsValueCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = VueoPalette.Surface,
         ),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
                     title,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                 )
 
                 Text(
                     subtitle,
                     color = VueoPalette.Muted,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
+                    maxLines = 3,
                 )
             }
 
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
 
             Surface(
                 shape = RoundedCornerShape(50),
@@ -3831,11 +3839,11 @@ private fun VueoSettingsValueCard(
                 Text(
                     value,
                     modifier = Modifier.padding(
-                        horizontal = 10.dp,
-                        vertical = 6.dp,
+                        horizontal = 9.dp,
+                        vertical = 5.dp,
                     ),
                     color = VueoPalette.Accent,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -3851,34 +3859,35 @@ private fun VueoSettingsActionCard(
     onClick: () -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = VueoPalette.Surface,
         ),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
                     title,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                 )
 
                 Text(
                     subtitle,
                     color = VueoPalette.Muted,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
+                    maxLines = 3,
                 )
             }
 
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
 
             TextButton(onClick = onClick) {
                 Text(
@@ -3897,26 +3906,27 @@ private fun VueoInfoCard(
     text: String,
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(15.dp),
         colors = CardDefaults.cardColors(
             containerColor = VueoPalette.Surface,
         ),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 title,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = 13.5.sp,
             )
 
             Text(
                 text,
                 color = VueoPalette.Muted,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
+                maxLines = 4,
             )
         }
     }
@@ -3929,14 +3939,14 @@ private fun VueoStatusCard(
     text: String,
 ) {
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = VueoPalette.Surface,
         ),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3947,21 +3957,28 @@ private fun VueoStatusCard(
                     modifier = Modifier.weight(1f),
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                 )
 
-                Text(
-                    value,
-                    color = VueoPalette.Accent,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                )
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = VueoPalette.Accent.copy(alpha = .10f),
+                ) {
+                    Text(
+                        value,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = VueoPalette.Accent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 9.5.sp,
+                    )
+                }
             }
 
             Text(
                 text,
                 color = VueoPalette.Muted,
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
+                maxLines = 4,
             )
         }
     }
