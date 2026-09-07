@@ -109,7 +109,7 @@ internal fun TvSettingsListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 58.dp, end = 58.dp, top = 54.dp, bottom = 32.dp),
+                .padding(start = 96.dp, end = 58.dp, top = 54.dp, bottom = 32.dp),
         ) {
             if (!topLabel.isNullOrBlank()) {
                 Text(

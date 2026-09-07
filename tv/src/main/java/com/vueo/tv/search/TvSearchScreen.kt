@@ -445,7 +445,7 @@ internal fun TvSearchScreen(
                 .padding(top = 46.dp),
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 52.dp),
+                modifier = Modifier.padding(start = 96.dp, end = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -460,9 +460,25 @@ internal fun TvSearchScreen(
                         value = session.query,
                         mode = session.mode,
                         requester = fieldRequester,
+                        modeRequester = modeRequester,
                         onFocused = {
                             navExpanded = false
                             lastContentTarget = "field"
+                        },
+                        onModeFocused = {
+                            navExpanded = false
+                            lastContentTarget = "mode"
+                        },
+                        onModeChange = { next ->
+                            if (next != session.mode) {
+                                session.mode = next
+                                session.searchResults = emptyList()
+                                session.genre = null
+                                session.focusedMediaKey = null
+                                session.restoreResultsFocus = false
+                                session.firstVisibleItemIndex = 0
+                                session.firstVisibleItemScrollOffset = 0
+                            }
                         },
                         onValueChange = {
                             session.query = it
@@ -475,6 +491,7 @@ internal fun TvSearchScreen(
                             navExpanded = true
                             runCatching { navRequesters.getValue("Search").requestFocus() }
                         },
+                        onRight = { runCatching { modeRequester.requestFocus() } },
                         onUp = {},
                         onDown = { runCatching { typeRequester.requestFocus() } },
                     )
@@ -578,40 +595,9 @@ internal fun TvSearchScreen(
                             )
                         },
                         onLeft = { runCatching { sortRequester.requestFocus() } },
-                        onRight = { runCatching { modeRequester.requestFocus() } },
+                        onRight = { true },
                         onUp = { runCatching { fieldRequester.requestFocus() } },
                         onDown = ::focusFirstResult,
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 6.dp)
-                            .width(1.dp)
-                            .height(28.dp)
-                            .background(TvDesign.White.copy(alpha = .16f)),
-                    )
-
-                    TvSearchModeToggle(
-                        mode = session.mode,
-                        requester = modeRequester,
-                        onFocused = {
-                            navExpanded = false
-                            lastContentTarget = "mode"
-                        },
-                        onModeChange = { next ->
-                            if (next != session.mode) {
-                                session.mode = next
-                                session.searchResults = emptyList()
-                                session.genre = null
-                                session.focusedMediaKey = null
-                                session.restoreResultsFocus = false
-                                session.firstVisibleItemIndex = 0
-                                session.firstVisibleItemScrollOffset = 0
-                            }
-                        },
-                        onLeft = { runCatching { genreRequester.requestFocus() } },
-                        onUp = { runCatching { fieldRequester.requestFocus() } },
-                        onDown = { focusFirstResult() },
                     )
 
                     Spacer(Modifier.weight(1f))
@@ -672,7 +658,7 @@ internal fun TvSearchScreen(
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            start = 52.dp,
+                            start = 96.dp,
                             end = 52.dp,
                             top = 2.dp,
                             bottom = 36.dp,
@@ -767,9 +753,13 @@ private fun TvMobileSearchField(
     value: String,
     mode: TvSearchMode,
     requester: FocusRequester,
+    modeRequester: FocusRequester,
     onFocused: () -> Unit,
+    onModeFocused: () -> Unit,
+    onModeChange: (TvSearchMode) -> Unit,
     onValueChange: (String) -> Unit,
     onLeftWhenEmpty: () -> Unit,
+    onRight: () -> Unit,
     onUp: () -> Unit,
     onDown: () -> Unit,
 ) {
@@ -824,6 +814,10 @@ private fun TvMobileSearchField(
                                     true
                                 } else false
                             }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                onRight()
+                                true
+                            }
                             KeyEvent.KEYCODE_DPAD_UP -> {
                                 onUp()
                                 true
@@ -851,6 +845,24 @@ private fun TvMobileSearchField(
                 },
             )
         }
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 10.dp)
+                .width(1.dp)
+                .height(24.dp)
+                .background(TvDesign.White.copy(alpha = .14f)),
+        )
+
+        TvSearchModeToggle(
+            mode = mode,
+            requester = modeRequester,
+            onFocused = onModeFocused,
+            onModeChange = onModeChange,
+            onLeft = { runCatching { requester.requestFocus() } },
+            onUp = { runCatching { requester.requestFocus() } },
+            onDown = onDown,
+        )
     }
 }
 

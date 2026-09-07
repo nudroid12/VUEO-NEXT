@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -64,7 +65,6 @@ private val SidebarCollapsedWidth = 72.dp
 private val SidebarExpandedWidth = 238.dp
 private val SidebarItemHeight = 50.dp
 private val SidebarIconSize = 24.dp
-private val SidebarIndicatorWidth = 3.dp
 
 /**
  * 33A root sidebar.
@@ -253,16 +253,20 @@ private fun SidebarNavigationItem(
         animationSpec = tween(durationMillis = if (focused) 120 else 90),
         label = "vueoSidebarIconScale:$label",
     )
-    val indicatorAlpha by animateFloatAsState(
-        targetValue = if (focused || selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 100),
-        label = "vueoSidebarIndicator:$label",
-    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(SidebarItemHeight)
+            .padding(horizontal = if (expanded) 10.dp else 0.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                when {
+                    expanded && selected -> TvDesign.White
+                    expanded && focused -> TvDesign.White.copy(alpha = .12f)
+                    else -> Color.Transparent
+                },
+            )
             .focusRequester(requester)
             .focusProperties {
                 // While collapsed only the current destination participates in
@@ -291,24 +295,16 @@ private fun SidebarNavigationItem(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier
-                .width(SidebarIndicatorWidth)
-                .height(24.dp)
-                .graphicsLayer { alpha = indicatorAlpha }
-                .background(TvDesign.Accent),
-        )
-
-        Box(
-            modifier = Modifier.width(57.dp),
+            modifier = Modifier.width(if (expanded) 47.dp else SidebarCollapsedWidth),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
                 tint = when {
+                    expanded && selected -> TvDesign.Black
                     focused -> TvDesign.White
                     selected && !expanded -> TvDesign.White
-                    selected -> TvDesign.White.copy(alpha = .94f)
                     else -> TvDesign.White.copy(alpha = .46f)
                 },
                 modifier = Modifier
@@ -323,8 +319,8 @@ private fun SidebarNavigationItem(
         Text(
             text = label,
             color = when {
+                expanded && selected -> TvDesign.Black
                 focused -> TvDesign.White
-                selected -> TvDesign.White.copy(alpha = .94f)
                 else -> TvDesign.White.copy(alpha = .68f)
             },
             fontSize = 15.sp,
@@ -384,7 +380,7 @@ private fun SidebarProfileItem(
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(Modifier.width(SidebarIndicatorWidth))
+        Spacer(Modifier.width(10.dp))
 
         Box(
             modifier = Modifier.width(57.dp),

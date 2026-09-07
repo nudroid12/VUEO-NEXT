@@ -240,7 +240,7 @@ fun TvLibraryScreen(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        val availableWidthDp = (maxWidth.value - 104f).coerceAtLeast(420f)
+        val availableWidthDp = (maxWidth.value - 148f).coerceAtLeast(420f)
         val gridColumns =
             ((availableWidthDp + LIBRARY_GRID_GAP_DP) /
                 (LIBRARY_TARGET_POSTER_WIDTH_DP + LIBRARY_GRID_GAP_DP))
@@ -252,7 +252,7 @@ fun TvLibraryScreen(
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 52.dp,
+                start = 96.dp,
                 end = 52.dp,
                 top = 82.dp,
                 bottom = 48.dp,
