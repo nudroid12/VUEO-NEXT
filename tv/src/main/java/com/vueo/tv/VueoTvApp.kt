@@ -37,6 +37,7 @@ import com.vueo.tv.home.TvHomeScreen
 import com.vueo.tv.library.TvLibraryScreen
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.profile.TvProfilePickerScreen
+import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.settings.TvConfirmDialog
@@ -54,6 +55,7 @@ private enum class TvRoute {
     SEARCH,
     LIBRARY,
     SETTINGS,
+    DNA,
     PROFILE,
     DETAIL,
     SOURCE,
@@ -77,6 +79,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
+    var dnaReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
     val searchSession = remember { TvSearchSession() }
@@ -112,7 +115,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         }
     }
 
-    fun openProfile(from: TvRoute) {
+    fun openDna(from: TvRoute) {
+        dnaReturnRoute = from
+        route = TvRoute.DNA
+    }
+
+    fun openProfilePicker(from: TvRoute) {
         profileReturnRoute = from
         route = TvRoute.PROFILE
     }
@@ -195,7 +203,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onNavigate = ::navigate,
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },
                         onResume = { resume(it, TvRoute.HOME) },
-                        onProfile = { openProfile(TvRoute.HOME) },
+                        onProfile = { openDna(TvRoute.HOME) },
                     )
                 }
 
@@ -205,7 +213,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         contentVersion = refreshToken,
                         session = searchSession,
                         onNavigate = ::navigate,
-                        onProfile = { openProfile(TvRoute.SEARCH) },
+                        onProfile = { openDna(TvRoute.SEARCH) },
                         onOpenMedia = { openDetail(it, TvRoute.SEARCH) },
                         onBack = { route = TvRoute.HOME },
                     )
@@ -216,7 +224,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         runtime = runtime,
                         refreshToken = refreshToken,
                         onNavigate = ::navigate,
-                        onProfile = { openProfile(TvRoute.LIBRARY) },
+                        onProfile = { openDna(TvRoute.LIBRARY) },
                         onOpenMedia = { openDetail(it, TvRoute.LIBRARY) },
                         onResume = { resume(it, TvRoute.LIBRARY) },
                         onBack = { route = TvRoute.HOME },
@@ -227,9 +235,18 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     TvSettingsScreen(
                         runtime = runtime,
                         onNavigate = ::navigate,
-                        onProfile = { openProfile(TvRoute.SETTINGS) },
+                        onProfile = { openDna(TvRoute.SETTINGS) },
                         onBack = { route = TvRoute.HOME },
                         onDataChanged = { refreshToken++ },
+                    )
+                }
+
+                TvRoute.DNA -> {
+                    TvUserDnaScreen(
+                        runtime = runtime,
+                        dataVersion = refreshToken,
+                        onSwitchProfiles = { openProfilePicker(TvRoute.DNA) },
+                        onBack = { route = dnaReturnRoute },
                     )
                 }
 

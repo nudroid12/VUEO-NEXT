@@ -54,7 +54,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.R as SharedR
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.storage.ProfileStore
 
@@ -63,7 +62,6 @@ val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
 
 private val SidebarCollapsedWidth = 72.dp
 private val SidebarExpandedWidth = 238.dp
-private val SidebarItemHeight = 50.dp
 private val SidebarIconSize = 24.dp
 
 /**
@@ -127,12 +125,21 @@ fun TvSidebar(
                 .fillMaxWidth()
                 .padding(top = 28.dp, bottom = 24.dp),
         ) {
-            SidebarBrand(
+            SidebarProfileItem(
+                profileName = activeProfile.name,
+                avatarId = activeProfile.avatar,
                 expanded = expanded,
                 labelAlpha = labelAlpha,
+                requester = profileRequester,
+                onFocused = onFocused,
+                onClick = onProfile,
+                onLeft = { true },
+                onRight = onReturnToContent,
+                onUp = { true },
+                onDown = { request(navRequesters.getValue(TvPrimaryDestinations.first())) },
             )
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(28.dp))
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -151,16 +158,15 @@ fun TvSidebar(
                         onLeft = { true },
                         onRight = onReturnToContent,
                         onUp = {
-                            when {
-                                index > 0 -> request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
-                                else -> true
+                            if (index > 0) {
+                                request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
+                            } else {
+                                request(profileRequester)
                             }
                         },
                         onDown = {
                             if (index < TvPrimaryDestinations.lastIndex) {
                                 request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
-                            } else if (expanded) {
-                                request(profileRequester)
                             } else {
                                 true
                             }
@@ -170,60 +176,7 @@ fun TvSidebar(
             }
 
             Spacer(Modifier.weight(1f))
-
-            SidebarProfileItem(
-                profileName = activeProfile.name,
-                avatarId = activeProfile.avatar,
-                expanded = expanded,
-                labelAlpha = labelAlpha,
-                requester = profileRequester,
-                onFocused = onFocused,
-                onClick = onProfile,
-                onLeft = { true },
-                onRight = onReturnToContent,
-                onUp = { request(navRequesters.getValue(TvPrimaryDestinations.last())) },
-                onDown = { true },
-            )
         }
-    }
-}
-
-@Composable
-private fun SidebarBrand(
-    expanded: Boolean,
-    labelAlpha: Float,
-) {
-    val logoSize by animateDpAsState(
-        targetValue = if (expanded) 42.dp else 32.dp,
-        animationSpec = tween(durationMillis = 150),
-        label = "vueoSidebarBrandSize",
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(46.dp)
-            .padding(start = if (expanded) 15.dp else 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(
-            painter = painterResource(SharedR.drawable.vueo_logo_mark),
-            contentDescription = "Vueo",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(logoSize),
-        )
-
-        Text(
-            text = "Vueo",
-            color = TvDesign.White,
-            fontSize = 27.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 3.5.sp,
-            maxLines = 1,
-            modifier = Modifier
-                .padding(start = 13.dp)
-                .graphicsLayer { alpha = if (expanded) labelAlpha else 0f },
-        )
     }
 }
 
@@ -256,9 +209,9 @@ private fun SidebarNavigationItem(
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(SidebarItemHeight)
-            .padding(horizontal = if (expanded) 10.dp else 0.dp)
+            .padding(start = if (expanded) 10.dp else 0.dp)
+            .width(if (expanded) 180.dp else SidebarCollapsedWidth)
+            .height(46.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(
                 when {
@@ -358,8 +311,11 @@ private fun SidebarProfileItem(
 
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(SidebarItemHeight)
+            .padding(start = if (expanded) 10.dp else 0.dp)
+            .width(if (expanded) 180.dp else SidebarCollapsedWidth)
+            .height(46.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (expanded && focused) TvDesign.White.copy(alpha = .12f) else Color.Transparent)
             .focusRequester(requester)
             .focusProperties { canFocus = expanded }
             .onFocusChanged { state ->
