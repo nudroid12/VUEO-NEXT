@@ -99,7 +99,7 @@ internal fun NuvioPlayerPresentation(
             )
         }
 
-        if (controlsVisible) {
+        if (controlsVisible && (activePanel == TvPlayerPanel.NONE || activePanel == TvPlayerPanel.MORE)) {
             NuvioPlayerControls(
                 title = media.name,
                 releaseInfo = media.releaseInfo,
