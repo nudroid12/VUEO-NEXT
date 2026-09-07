@@ -88,9 +88,21 @@ class PluginSourceEngine(
         activityManager?.memoryClass
             ?: DEFAULT_MEMORY_CLASS_MB
 
+    /*
+     * Some devices report ActivityManager.memoryClass above the process'
+     * actual Java heap growth limit. Runtime.maxMemory() is the limit that
+     * matters to QuickJS/OkHttp allocations.
+     */
+    private val heapLimitMb =
+        (
+            Runtime.getRuntime().maxMemory() /
+                (1024L * 1024L)
+        ).toInt()
+
     private val lowMemoryDevice =
         activityManager?.isLowRamDevice == true ||
-            memoryClassMb <= LOW_MEMORY_CLASS_MB
+            memoryClassMb <= LOW_MEMORY_CLASS_MB ||
+            heapLimitMb <= LOW_MEMORY_HEAP_LIMIT_MB
 
     /*
      * QuickJS instances are memory-heavy. Five simultaneous providers could
@@ -3245,6 +3257,9 @@ private fun providerPriority(
 
         private const val LOW_MEMORY_CLASS_MB =
             256
+
+        private const val LOW_MEMORY_HEAP_LIMIT_MB =
+            320
 
         private const val LOW_MEMORY_SCAN_BUDGET_MS =
             135_000L
