@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -107,11 +108,19 @@ fun TvSidebar(
         label = "vueoSidebarPanelAlpha",
     )
 
-    val panelBrush = Brush.horizontalGradient(
-        0f to TvDesign.Black.copy(alpha = panelAlpha),
-        .72f to TvDesign.Black.copy(alpha = if (expanded) panelAlpha * .97f else panelAlpha * .82f),
-        1f to Color.Transparent,
-    )
+    val panelBrush = if (expanded) {
+        Brush.horizontalGradient(
+            0f to TvDesign.Black.copy(alpha = panelAlpha),
+            .72f to TvDesign.Black.copy(alpha = panelAlpha * .97f),
+            1f to Color.Transparent,
+        )
+    } else {
+        // The collapsed rail is opaque so hero/poster artwork never bleeds
+        // through behind the navigation icons.
+        Brush.horizontalGradient(
+            listOf(TvDesign.Black, TvDesign.Black),
+        )
+    }
 
     Box(
         modifier = modifier
@@ -142,6 +151,7 @@ fun TvSidebar(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
+                .offset(y = 10.dp)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
