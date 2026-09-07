@@ -7,6 +7,7 @@ import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SourceResolveResult
@@ -93,6 +94,9 @@ class PluginSourceEngine(
             context.applicationContext
         )
 
+    init {
+        RuntimeDiagnostics.install(context.applicationContext)
+    }
 
 suspend fun discover(
     tmdbId: String,
@@ -227,6 +231,23 @@ suspend fun discoverProgressive(
             return@coroutineScope joined
         }
 
+        val runtimeDiagnosticScanId =
+            RuntimeDiagnostics.beginSourceScan(
+                requestLabel = buildString {
+                    append(mediaType.lowercase())
+                    append(" • TMDB ")
+                    append(tmdbId)
+                    if (season != null && episode != null) {
+                        append(" • S")
+                        append(season.toString().padStart(2, '0'))
+                        append(" E")
+                        append(episode.toString().padStart(2, '0'))
+                    }
+                },
+                targetProviders = targets.size,
+            )
+        val runtimeDiagnosticCompletedProviders = java.util.concurrent.atomic.AtomicInteger(0)
+
         try {
             val preparation =
                 preflight.prepare(targets)
@@ -242,23 +263,46 @@ suspend fun discoverProgressive(
                 async {
                     val run =
                         concurrency.withPermit {
-                            runProvider(
-                                repository =
-                                    repository,
-                                provider =
-                                    provider,
-                                tmdbId =
-                                    tmdbId,
-                                mediaType =
-                                    mediaType,
-                                season =
-                                    season,
-                                episode =
-                                    episode,
-                            )
+                            val providerDiagnosticToken =
+                                RuntimeDiagnostics.beginProvider(
+                                    scanId = runtimeDiagnosticScanId,
+                                    providerName = provider.name,
+                                )
+                            try {
+                                runProvider(
+                                    repository =
+                                        repository,
+                                    provider =
+                                        provider,
+                                    tmdbId =
+                                        tmdbId,
+                                    mediaType =
+                                        mediaType,
+                                    season =
+                                        season,
+                                    episode =
+                                        episode,
+                                ).also { providerRun ->
+                                    RuntimeDiagnostics.finishProvider(
+                                        token = providerDiagnosticToken,
+                                        status = providerRun.diagnostic.status.name,
+                                        streamCount = providerRun.diagnostic.streamCount,
+                                        errorType = providerRun.diagnostic.errorType,
+                                    )
+                                }
+                            } catch (error: Throwable) {
+                                RuntimeDiagnostics.finishProvider(
+                                    token = providerDiagnosticToken,
+                                    status = "THREW",
+                                    streamCount = 0,
+                                    errorType = error::class.java.simpleName,
+                                )
+                                throw error
+                            }
                         }
 
                     saveHealth(run)
+                    runtimeDiagnosticCompletedProviders.incrementAndGet()
 
                     val snapshot =
                         mutex.withLock {
@@ -313,8 +357,19 @@ suspend fun discoverProgressive(
                 result = result,
             )
 
+            RuntimeDiagnostics.finishSourceScan(
+                scanId = runtimeDiagnosticScanId,
+                streams = result.streams.size,
+                completedProviders = result.attemptedProviders,
+            )
+
             result
         } catch (error: Throwable) {
+            RuntimeDiagnostics.failSourceScan(
+                scanId = runtimeDiagnosticScanId,
+                error = error,
+                completedProviders = runtimeDiagnosticCompletedProviders.get(),
+            )
             PluginRuntimeCache.failFlight(
                 key = cacheKey,
                 error = error,

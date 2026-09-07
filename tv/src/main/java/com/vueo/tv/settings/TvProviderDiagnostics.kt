@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderHealthRecord
@@ -149,6 +150,70 @@ internal fun TvProviderDiagnosticDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+
+@Composable
+internal fun TvRuntimeDiagnosticsDialog(
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var diagnosticText by remember {
+        mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Performance & Crash Diagnostics") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Run source discovery until the lag/crash happens, then copy this log. It records provider timing, concurrency, main-thread stalls and memory.",
+                    color = TvDesign.Muted,
+                    fontSize = 11.sp,
+                )
+                Text(
+                    text = diagnosticText.takeLast(24_000),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.5.sp,
+                    color = TvDesign.Muted,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    clipboard?.setPrimaryClip(
+                        ClipData.newPlainText("VUEO performance diagnostic", diagnosticText)
+                    )
+                    Toast.makeText(context, "Diagnostic log copied", Toast.LENGTH_SHORT).show()
+                },
+            ) {
+                Text("Copy Log")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(
+                    onClick = {
+                        RuntimeDiagnostics.clear(context.applicationContext)
+                        diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                    },
+                ) {
+                    Text("Clear")
+                }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
         },
     )
 }

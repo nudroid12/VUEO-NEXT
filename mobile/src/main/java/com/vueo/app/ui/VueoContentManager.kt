@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -189,6 +191,7 @@ import com.vueo.app.core.enrichment.MdblistClient
 import com.vueo.app.core.enrichment.MediaRating
 import com.vueo.app.core.enrichment.RichDetailsClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.app.core.dna.UserDnaEngine
@@ -1204,6 +1207,10 @@ internal fun PluginsScreen(
         )
     }
 
+    var showRuntimeDiagnostics by remember {
+        mutableStateOf(false)
+    }
+
     fun refreshRepositories() {
         repositories =
             store.repositories()
@@ -1352,6 +1359,43 @@ internal fun PluginsScreen(
                                 modifier = Modifier.size(19.dp),
                             )
                         }
+                    }
+                }
+            }
+
+            item(key = "plugins-runtime-diagnostics") {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showRuntimeDiagnostics = true },
+                    shape = RoundedCornerShape(17.dp),
+                    color = VueoPalette.SurfaceElevated,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Performance & Crash Diagnostics",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "Source scan timing, UI stalls, memory and crash evidence.",
+                                color = VueoPalette.Muted,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = .82f),
+                            modifier = Modifier.size(19.dp),
+                        )
                     }
                 }
             }
@@ -1681,6 +1725,78 @@ internal fun PluginsScreen(
             },
         )
     }
+
+    if (showRuntimeDiagnostics) {
+        RuntimeDiagnosticsDialog(
+            onDismiss = { showRuntimeDiagnostics = false },
+        )
+    }
+}
+
+@Composable
+private fun RuntimeDiagnosticsDialog(
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var diagnosticText by remember {
+        mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Performance & Crash Diagnostics") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Run source discovery until the lag/crash happens, then copy this log. It records provider timing, concurrency, main-thread stalls and memory without provider secrets.",
+                    color = VueoPalette.Muted,
+                    fontSize = 11.sp,
+                )
+                Text(
+                    text = diagnosticText.takeLast(24_000),
+                    color = Color.White.copy(alpha = .82f),
+                    fontSize = 9.5.sp,
+                    lineHeight = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    clipboard?.setPrimaryClip(
+                        ClipData.newPlainText("VUEO performance diagnostic", diagnosticText)
+                    )
+                    Toast.makeText(context, "Diagnostic log copied", Toast.LENGTH_SHORT).show()
+                },
+            ) {
+                Text("Copy Log")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(
+                    onClick = {
+                        RuntimeDiagnostics.clear(context.applicationContext)
+                        diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                    },
+                ) {
+                    Text("Clear")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        },
+    )
 }
 
 @Composable

@@ -398,6 +398,7 @@ private fun TvProviderSettings(
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
     var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
+    var showRuntimeDiagnostics by remember { mutableStateOf(false) }
 
     if (showAdd) {
         TvTextEntryDialog(
@@ -448,6 +449,12 @@ private fun TvProviderSettings(
         )
     }
 
+    if (showRuntimeDiagnostics) {
+        TvRuntimeDiagnosticsDialog(
+            onDismiss = { showRuntimeDiagnostics = false },
+        )
+    }
+
     val entries = buildList {
         add(toggleEntry("plugins-master", "Provider Plugins", "Master switch for plugin provider discovery.", pluginsEnabled) {
             pluginsEnabled = it
@@ -456,6 +463,15 @@ private fun TvProviderSettings(
             onDataChanged()
         })
         add(TvSettingsEntry("add-repo", "Add Repository", "Install an HTTPS provider repository manifest.", onActivate = { showAdd = true }))
+        add(
+            TvSettingsEntry(
+                id = "runtime-diagnostics",
+                title = "Performance & Crash Diagnostics",
+                subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
+                value = "Open",
+                onActivate = { showRuntimeDiagnostics = true },
+            )
+        )
         repositories.forEach { repository ->
             val repoEnabled = runtime.pluginStore.isRepositoryEnabled(repository)
             add(
