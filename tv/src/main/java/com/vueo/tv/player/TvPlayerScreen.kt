@@ -549,7 +549,7 @@ fun TvPlayerScreen(
                 add(TvPlayerOption("auto", "Auto", "Preferred subtitle languages", selectedSubtitleKey == "auto"))
                 bundle.subtitles
                     .filter { it.url.startsWith("https://") }
-                    .distinctBy { it.id.ifBlank { it.url } }
+                    .distinctBy { track -> track.id.ifBlank { track.url } }
                     .forEach { track ->
                         add(
                             TvPlayerOption(
@@ -559,7 +559,7 @@ fun TvPlayerScreen(
                                     .filter { it.isNotBlank() }
                                     .distinct()
                                     .joinToString("  •  "),
-                                selected = selectedSubtitleKey == track.id.ifBlank { it.url },
+                                selected = selectedSubtitleKey == track.id.ifBlank { track.url },
                             )
                         )
                     }
@@ -710,7 +710,7 @@ fun TvPlayerScreen(
                                 player.trackSelectionParameters = params.build()
                             }
                             else -> {
-                                val track = bundle.subtitles.firstOrNull { it.id.ifBlank { it.url } == option.key }
+                                val track = bundle.subtitles.firstOrNull { track -> track.id.ifBlank { track.url } == option.key }
                                 if (track != null) {
                                     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
