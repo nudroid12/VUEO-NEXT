@@ -2,7 +2,6 @@ package com.vueo.tv.player
 
 import android.graphics.Typeface
 import android.net.Uri
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -118,19 +117,6 @@ internal data class TvAudioLanguageOption(
     val selected: Boolean,
 )
 
-internal enum class TvSleepTimerOption(
-    val label: String,
-    val minutes: Int? = null,
-    val endOfEpisode: Boolean = false,
-) {
-    OFF("Off"),
-    MINUTES_15("15 min", minutes = 15),
-    MINUTES_30("30 min", minutes = 30),
-    MINUTES_45("45 min", minutes = 45),
-    MINUTES_60("60 min", minutes = 60),
-    END_OF_EPISODE("End of episode", endOfEpisode = true),
-}
-
 @Composable
 fun TvPlayerScreen(
     runtime: TvRuntime,
@@ -153,7 +139,6 @@ fun TvPlayerScreen(
     val sourcesRequester = remember { FocusRequester() }
     val episodesRequester = remember { FocusRequester() }
     val moreRequester = remember { FocusRequester() }
-    val unlockRequester = remember { FocusRequester() }
     val skipRequester = remember { FocusRequester() }
     val nextContextRequester = remember { FocusRequester() }
 
@@ -161,15 +146,10 @@ fun TvPlayerScreen(
     val settings = runtime.settingsStore
 
     val savedPosition = remember(mediaKey) { runtime.playbackStore.positionMs(mediaKey) }
-    val shouldPromptResume = remember(mediaKey, initialPositionMs, savedPosition) {
-        initialPositionMs <= 5_000L &&
-            settings.resumePlaybackEnabled() &&
-            savedPosition > 5_000L
-    }
-    val startPosition = remember(mediaKey, initialPositionMs, shouldPromptResume) {
+    val startPosition = remember(mediaKey, initialPositionMs) {
         when {
             initialPositionMs > 5_000L -> initialPositionMs
-            !shouldPromptResume && settings.resumePlaybackEnabled() -> savedPosition
+            settings.resumePlaybackEnabled() && savedPosition > 5_000L -> savedPosition
             else -> 0L
         }
     }
@@ -196,10 +176,6 @@ fun TvPlayerScreen(
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
-    var controlsLocked by remember { mutableStateOf(false) }
-    var resumePromptVisible by remember(mediaKey, source.url, initialPositionMs) {
-        mutableStateOf(shouldPromptResume)
-    }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
     var interactionToken by remember { mutableIntStateOf(0) }
     var positionMs by remember { mutableLongStateOf(startPosition) }
@@ -217,12 +193,6 @@ fun TvPlayerScreen(
     }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
-    var autoPlayNextEpisode by remember { mutableStateOf(settings.autoPlayNextEpisodeEnabled()) }
-    var skipSegmentsEnabled by remember { mutableStateOf(settings.skipSegmentsEnabled()) }
-    var contentWarningsEnabled by remember { mutableStateOf(settings.contentWarningsEnabled()) }
-    var sleepTimerOption by remember { mutableStateOf(TvSleepTimerOption.OFF) }
-    var sleepTimerDeadlineMs by remember { mutableStateOf<Long?>(null) }
-    var sleepTimerRemainingSeconds by remember { mutableStateOf<Long?>(null) }
     var audioLanguages by remember(bundle.videoId) { mutableStateOf<List<TvAudioLanguageOption>>(emptyList()) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
@@ -260,7 +230,6 @@ fun TvPlayerScreen(
     }
 
     fun saveProgress() {
-        if (resumePromptVisible && player.currentPosition <= 5_000L) return
         val position = player.currentPosition.coerceAtLeast(0L)
         val duration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
         runtime.playbackStore.savePositionMs(mediaKey = mediaKey, positionMs = position, durationMs = duration)
@@ -297,12 +266,7 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
-            resumePromptVisible -> exitPlayer()
             activePanel != TvPlayerPanel.NONE -> closePanel()
-            controlsLocked -> {
-                controlsLocked = false
-                requestControlFocus(playPauseRequester)
-            }
             controlsVisible -> {
                 controlsVisible = false
                 runCatching { rootRequester.requestFocus() }
@@ -337,7 +301,7 @@ fun TvPlayerScreen(
         player.trackSelectionParameters = params.build()
         player.setPlaybackSpeed(playbackSpeed)
         player.prepare()
-        player.playWhenReady = !resumePromptVisible
+        player.playWhenReady = true
     }
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -381,32 +345,32 @@ fun TvPlayerScreen(
         resolvedImdbId,
         episode?.season,
         episode?.episode,
-        skipSegmentsEnabled,
+        settings.skipSegmentsEnabled(),
     ) {
         skipSegments = emptyList()
         val imdbId = resolvedImdbId
-        if (skipSegmentsEnabled && episode != null && imdbId != null) {
+        if (settings.skipSegmentsEnabled() && episode != null && imdbId != null) {
             skipSegments = runCatching {
                 PlayerSkipRepository.segments(imdbId, episode.season, episode.episode)
             }.getOrDefault(emptyList())
         }
     }
 
-    LaunchedEffect(resolvedImdbId, contentWarningsEnabled) {
+    LaunchedEffect(resolvedImdbId, settings.contentWarningsEnabled()) {
         contentWarnings = emptyList()
         warningVisible = false
         warningShown = false
 
         val imdbId = resolvedImdbId
-        if (contentWarningsEnabled && imdbId != null) {
+        if (settings.contentWarningsEnabled() && imdbId != null) {
             contentWarnings = runCatching {
                 ContentWarningRepository.get(imdbId)
             }.getOrDefault(emptyList())
         }
     }
 
-    LaunchedEffect(playing, contentWarnings, contentWarningsEnabled) {
-        if (!playing || !contentWarningsEnabled) {
+    LaunchedEffect(playing, contentWarnings, settings.contentWarningsEnabled()) {
+        if (!playing || !settings.contentWarningsEnabled()) {
             warningVisible = false
             return@LaunchedEffect
         }
@@ -417,8 +381,8 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(player, resumePromptVisible) {
-        if (!resumePromptVisible) runCatching { playPauseRequester.requestFocus() }
+    LaunchedEffect(player) {
+        runCatching { playPauseRequester.requestFocus() }
         while (true) {
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
@@ -429,15 +393,8 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, sleepTimerOption) {
-        if (ended && sleepTimerOption == TvSleepTimerOption.END_OF_EPISODE) {
-            sleepTimerOption = TvSleepTimerOption.OFF
-            sleepTimerDeadlineMs = null
-            sleepTimerRemainingSeconds = null
-            nextCountdown = 0
-            return@LaunchedEffect
-        }
-        if (!ended || nextEpisode == null || !autoPlayNextEpisode) {
+    LaunchedEffect(ended, nextEpisode?.id, settings.autoPlayNextEpisodeEnabled()) {
+        if (!ended || nextEpisode == null || !settings.autoPlayNextEpisodeEnabled()) {
             nextCountdown = 0
             return@LaunchedEffect
         }
@@ -454,39 +411,11 @@ fun TvPlayerScreen(
         onPlayNextEpisode(nextEpisode)
     }
 
-    LaunchedEffect(controlsLocked) {
-        if (controlsLocked) {
-            delay(45L)
-            runCatching { unlockRequester.requestFocus() }
-        }
-    }
-
-    LaunchedEffect(sleepTimerDeadlineMs) {
-        val deadline = sleepTimerDeadlineMs ?: return@LaunchedEffect
-        while (true) {
-            val remainingMs = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-            sleepTimerRemainingSeconds = (remainingMs + 999L) / 1_000L
-            if (remainingMs <= 0L) {
-                player.pause()
-                sleepTimerOption = TvSleepTimerOption.OFF
-                sleepTimerDeadlineMs = null
-                sleepTimerRemainingSeconds = null
-                requestControlFocus(playPauseRequester)
-                break
-            }
-            delay(minOf(1_000L, remainingMs))
-        }
-    }
-
-    LaunchedEffect(controlsVisible, controlsLocked, resumePromptVisible, activePanel, interactionToken, playing) {
-        if (controlsVisible && !controlsLocked && !resumePromptVisible && activePanel == TvPlayerPanel.NONE && playing) {
+    LaunchedEffect(controlsVisible, activePanel, interactionToken, playing) {
+        if (controlsVisible && activePanel == TvPlayerPanel.NONE && playing) {
             val token = interactionToken
-            delay(3_000)
-            if (
-                token == interactionToken &&
-                !controlsLocked &&
-                activePanel == TvPlayerPanel.NONE
-            ) {
+            delay(4_500)
+            if (token == interactionToken && activePanel == TvPlayerPanel.NONE) {
                 controlsVisible = false
                 runCatching { rootRequester.requestFocus() }
             }
@@ -535,50 +464,35 @@ fun TvPlayerScreen(
                         true
                     }
                     else -> {
-                        when {
-                            resumePromptVisible -> false
-                            activePanel != TvPlayerPanel.NONE || controlsVisible -> false
-                            controlsLocked -> {
-                                when (code) {
-                                    KeyEvent.KEYCODE_DPAD_CENTER,
-                                    KeyEvent.KEYCODE_ENTER -> {
-                                        controlsLocked = false
-                                        requestControlFocus(playPauseRequester)
-                                        true
-                                    }
-                                    else -> false
+                        if (activePanel != TvPlayerPanel.NONE || controlsVisible) {
+                            false
+                        } else {
+                            when (code) {
+                                KeyEvent.KEYCODE_DPAD_CENTER,
+                                KeyEvent.KEYCODE_ENTER -> {
+                                    togglePlayback()
+                                    true
                                 }
-                            }
-                            else -> {
-                                when (code) {
-                                    KeyEvent.KEYCODE_DPAD_CENTER,
-                                    KeyEvent.KEYCODE_ENTER -> {
-                                        requestControlFocus(playPauseRequester)
-                                        true
-                                    }
-                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                        seekBy(-10_000L)
-                                        requestControlFocus(playPauseRequester)
-                                        true
-                                    }
-                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                        seekBy(10_000L)
-                                        requestControlFocus(playPauseRequester)
-                                        true
-                                    }
-                                    KeyEvent.KEYCODE_DPAD_UP -> {
-                                        if (activeSkip != null) requestControlFocus(skipRequester)
-                                        else if (nextCountdown > 0 && nextEpisode != null) requestControlFocus(nextContextRequester)
-                                        else if (nextEpisode != null) requestControlFocus(nextRequester)
-                                        else requestControlFocus(moreRequester)
-                                        true
-                                    }
-                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                        requestControlFocus(playPauseRequester)
-                                        true
-                                    }
-                                    else -> false
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    seekBy(-10_000L)
+                                    true
                                 }
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    seekBy(10_000L)
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_UP -> {
+                                    if (activeSkip != null) requestControlFocus(skipRequester)
+                                    else if (nextCountdown > 0 && nextEpisode != null) requestControlFocus(nextContextRequester)
+                                    else if (nextEpisode != null) requestControlFocus(nextRequester)
+                                    else requestControlFocus(moreRequester)
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    requestControlFocus(playPauseRequester)
+                                    true
+                                }
+                                else -> false
                             }
                         }
                     }
@@ -709,57 +623,6 @@ fun TvPlayerScreen(
                         )
                     )
                 }
-                TvSleepTimerOption.entries.forEach { option ->
-                    val remaining = sleepTimerRemainingSeconds
-                    val status = if (
-                        option == sleepTimerOption &&
-                        remaining != null &&
-                        option.minutes != null
-                    ) {
-                        val minutes = remaining / 60L
-                        val seconds = remaining % 60L
-                        "%d:%02d remaining".format(minutes, seconds)
-                    } else option.label
-                    add(
-                        TvPlayerOption(
-                            key = "sleep:${option.name}",
-                            title = "Sleep timer",
-                            meta = status,
-                            selected = sleepTimerOption == option,
-                        )
-                    )
-                }
-                add(
-                    TvPlayerOption(
-                        key = "toggle:autoplay",
-                        title = "Auto-play next episode",
-                        meta = if (autoPlayNextEpisode) "On" else "Off",
-                        selected = autoPlayNextEpisode,
-                    )
-                )
-                add(
-                    TvPlayerOption(
-                        key = "toggle:skip",
-                        title = "Skip intro and ending",
-                        meta = if (skipSegmentsEnabled) "On" else "Off",
-                        selected = skipSegmentsEnabled,
-                    )
-                )
-                add(
-                    TvPlayerOption(
-                        key = "toggle:warnings",
-                        title = "Content warnings",
-                        meta = if (contentWarningsEnabled) "On" else "Off",
-                        selected = contentWarningsEnabled,
-                    )
-                )
-                add(
-                    TvPlayerOption(
-                        key = "reset",
-                        title = "Reset player controls",
-                        meta = "Restore mobile defaults",
-                    )
-                )
             }
             TvPlayerPanel.NONE -> emptyList()
         }
@@ -769,9 +632,6 @@ fun TvPlayerScreen(
             episode = episode,
             activeSource = activeSource,
             controlsVisible = controlsVisible,
-            controlsLocked = controlsLocked,
-            resumePromptVisible = resumePromptVisible,
-            resumePositionMs = savedPosition,
             activePanel = activePanel,
             playing = playing,
             positionMs = positionMs,
@@ -797,45 +657,21 @@ fun TvPlayerScreen(
             sourcesRequester = sourcesRequester,
             episodesRequester = episodesRequester,
             moreRequester = moreRequester,
-            unlockRequester = unlockRequester,
             skipRequester = skipRequester,
             nextContextRequester = nextContextRequester,
             onInteraction = ::noteInteraction,
             onPlayPause = ::togglePlayback,
             onSeekBy = ::seekBy,
+            onHideControls = {
+                controlsVisible = false
+                runCatching { rootRequester.requestFocus() }
+            },
             onNext = {
                 nextEpisode?.let {
                     saveProgress()
                     onPlayNextEpisode(it)
                 }
             },
-            onResume = {
-                player.seekTo(savedPosition)
-                positionMs = savedPosition
-                player.play()
-                resumePromptVisible = false
-                requestControlFocus(playPauseRequester)
-            },
-            onStartOver = {
-                runtime.playbackStore.clearPosition(mediaKey)
-                player.seekTo(0L)
-                positionMs = 0L
-                player.play()
-                resumePromptVisible = false
-                requestControlFocus(playPauseRequester)
-            },
-            onLock = {
-                controlsLocked = true
-                controlsVisible = false
-                activePanel = TvPlayerPanel.NONE
-                noteInteraction()
-                runCatching { rootRequester.requestFocus() }
-            },
-            onUnlock = {
-                controlsLocked = false
-                requestControlFocus(playPauseRequester)
-            },
-            onBack = ::exitPlayer,
             onOpenPanel = { panel ->
                 activePanel = panel
                 noteInteraction()
@@ -930,45 +766,6 @@ fun TvPlayerScreen(
                             }.getOrNull()?.let { fit ->
                                 videoFit = fit
                                 settings.setPlayerVideoFit(fit)
-                            }
-                            option.key.startsWith("sleep:") -> runCatching {
-                                TvSleepTimerOption.valueOf(option.key.substringAfter(':'))
-                            }.getOrNull()?.let { timer ->
-                                sleepTimerOption = timer
-                                sleepTimerDeadlineMs = timer.minutes?.let { minutes ->
-                                    SystemClock.elapsedRealtime() + minutes * 60_000L
-                                }
-                                sleepTimerRemainingSeconds = timer.minutes?.let { it * 60L }
-                            }
-                            option.key == "toggle:autoplay" -> {
-                                autoPlayNextEpisode = !autoPlayNextEpisode
-                                settings.setAutoPlayNextEpisodeEnabled(autoPlayNextEpisode)
-                                if (!autoPlayNextEpisode) nextCountdown = 0
-                            }
-                            option.key == "toggle:skip" -> {
-                                skipSegmentsEnabled = !skipSegmentsEnabled
-                                settings.setSkipSegmentsEnabled(skipSegmentsEnabled)
-                            }
-                            option.key == "toggle:warnings" -> {
-                                contentWarningsEnabled = !contentWarningsEnabled
-                                settings.setContentWarningsEnabled(contentWarningsEnabled)
-                                if (!contentWarningsEnabled) warningVisible = false
-                            }
-                            option.key == "reset" -> {
-                                playbackSpeed = 1f
-                                player.setPlaybackSpeed(1f)
-                                settings.setPlayerPlaybackSpeed(1f)
-                                videoFit = PlayerVideoFit.FIT
-                                settings.setPlayerVideoFit(PlayerVideoFit.FIT)
-                                sleepTimerOption = TvSleepTimerOption.OFF
-                                sleepTimerDeadlineMs = null
-                                sleepTimerRemainingSeconds = null
-                                autoPlayNextEpisode = true
-                                settings.setAutoPlayNextEpisodeEnabled(true)
-                                skipSegmentsEnabled = true
-                                settings.setSkipSegmentsEnabled(true)
-                                contentWarningsEnabled = true
-                                settings.setContentWarningsEnabled(true)
                             }
                         }
                         noteInteraction()
