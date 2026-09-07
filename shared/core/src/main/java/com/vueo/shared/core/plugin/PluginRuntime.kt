@@ -1,6 +1,5 @@
 package com.vueo.shared.core.plugin
 
-import android.app.ActivityManager
 import android.content.Context
 import android.util.Base64
 import com.dokar.quickjs.binding.asyncFunction
@@ -17,7 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -76,85 +75,31 @@ class PluginSourceEngine(
     context: Context,
     private val store: PluginStore,
 ) {
-    private val appContext =
-        context.applicationContext
-
-    private val activityManager =
-        appContext.getSystemService(
-            Context.ACTIVITY_SERVICE
-        ) as? ActivityManager
-
-    private val memoryClassMb =
-        activityManager?.memoryClass
-            ?: DEFAULT_MEMORY_CLASS_MB
-
-    /*
-     * Some devices report ActivityManager.memoryClass above the process'
-     * actual Java heap growth limit. Runtime.maxMemory() is the limit that
-     * matters to QuickJS/OkHttp allocations.
-     */
-    private val heapLimitMb =
-        (
-            Runtime.getRuntime().maxMemory() /
-                (1024L * 1024L)
-        ).toInt()
-
-    private val lowMemoryDevice =
-        activityManager?.isLowRamDevice == true ||
-            memoryClassMb <= LOW_MEMORY_CLASS_MB ||
-            heapLimitMb <= LOW_MEMORY_HEAP_LIMIT_MB
-
-    /*
-     * QuickJS instances are memory-heavy. Five simultaneous providers could
-     * push a 256 MB heap close to OOM. Use a fast-lane queue on low-memory phones: up to three providers may
-     * run, but only one long-running/heavy provider may occupy the queue.
-     * That leaves two slots available for lighter/direct providers so first
-     * results can arrive quickly without allowing several heavy QuickJS/WebView
-     * jobs to spike the heap together.
-     *
-     * Higher-memory devices get four total slots, still below the old five.
-     */
-    private val providerConcurrencyLimit =
-        if (lowMemoryDevice) 3 else 4
-
-    private val webViewConcurrencyLimit =
-        if (lowMemoryDevice) 1 else 2
-
-    private val sourceScanBudgetMs =
-        if (lowMemoryDevice) {
-            LOW_MEMORY_SCAN_BUDGET_MS
-        } else {
-            DEFAULT_SCAN_BUDGET_MS
-        }
-
-    private val concurrency =
-        Semaphore(providerConcurrencyLimit)
-
-    private val webViewConcurrency =
-        Semaphore(webViewConcurrencyLimit)
+    private val concurrency = Semaphore(5)
+    private val heavyProviderConcurrency = Semaphore(2)
 
     private val webViewResolver =
         PluginWebViewResolver(
-            appContext
+            context.applicationContext
         )
 
     private val healthStore =
         PluginHealthStore(
-            appContext
+            context.applicationContext
         )
 
     private val codeStore =
         ProviderCodeStore(
-            appContext
+            context.applicationContext
         )
 
     private val preflight =
         PluginRuntimePreflight(
-            appContext
+            context.applicationContext
         )
 
     init {
-        RuntimeDiagnostics.install(appContext)
+        RuntimeDiagnostics.install(context.applicationContext)
     }
 
 suspend fun discover(
@@ -178,10 +123,10 @@ suspend fun discoverProgressive(
     episode: Int?,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
-    supervisorScope {
+    coroutineScope {
 
         if (!store.pluginsEnabled()) {
-            return@supervisorScope emptyDiscoveryResult()
+            return@coroutineScope emptyDiscoveryResult()
         }
 
         val knownHealth =
@@ -242,7 +187,7 @@ suspend fun discoverProgressive(
                 )
 
         if (targets.isEmpty()) {
-            return@supervisorScope emptyDiscoveryResult()
+            return@coroutineScope emptyDiscoveryResult()
         }
 
         val cacheKey =
@@ -263,7 +208,7 @@ suspend fun discoverProgressive(
                         totalProviders = targets.size,
                     )
                 )
-                return@supervisorScope cached
+                return@coroutineScope cached
             }
 
         val flight =
@@ -287,7 +232,7 @@ suspend fun discoverProgressive(
                 )
             )
 
-            return@supervisorScope joined
+            return@coroutineScope joined
         }
 
         val runtimeDiagnosticScanId =
@@ -316,152 +261,90 @@ suspend fun discoverProgressive(
 
             val mutex = Mutex()
 
-            val providerJobs =
-                targets.map {
-                    (repository, provider) ->
+            targets.map {
+                (repository, provider) ->
 
-                    async {
-                        val providerStartedNs =
-                            System.nanoTime()
-
-                        val run =
-                            try {
-                                val execute: suspend () -> ProviderRun = {
-                                    concurrency.withPermit {
-                                        withContext(Dispatchers.Default) {
-                                            val providerDiagnosticToken =
-                                                RuntimeDiagnostics.beginProvider(
-                                                    scanId = runtimeDiagnosticScanId,
-                                                    providerName = provider.name,
-                                                )
-                                            try {
-                                                runProvider(
-                                                    repository =
-                                                        repository,
-                                                    provider =
-                                                        provider,
-                                                    tmdbId =
-                                                        tmdbId,
-                                                    mediaType =
-                                                        mediaType,
-                                                    season =
-                                                        season,
-                                                    episode =
-                                                        episode,
-                                                ).also { providerRun ->
-                                                    RuntimeDiagnostics.finishProvider(
-                                                        token = providerDiagnosticToken,
-                                                        status = providerRun.diagnostic.status.name,
-                                                        streamCount = providerRun.diagnostic.streamCount,
-                                                        errorType = providerRun.diagnostic.errorType,
-                                                    )
-                                                }
-                                            } catch (error: CancellationException) {
-                                                RuntimeDiagnostics.finishProvider(
-                                                    token = providerDiagnosticToken,
-                                                    status = "CANCELLED",
-                                                    streamCount = 0,
-                                                    errorType = error::class.java.simpleName,
-                                                )
-                                                throw error
-                                            } catch (error: Throwable) {
-                                                RuntimeDiagnostics.finishProvider(
-                                                    token = providerDiagnosticToken,
-                                                    status = "THREW",
-                                                    streamCount = 0,
-                                                    errorType = error::class.java.simpleName,
-                                                )
-                                                throw error
-                                            }
+                async {
+                    val run =
+                        concurrency.withPermit {
+                            val execute: suspend () -> ProviderRun = {
+                                withContext(Dispatchers.Default) {
+                                    val providerDiagnosticToken =
+                                        RuntimeDiagnostics.beginProvider(
+                                            scanId = runtimeDiagnosticScanId,
+                                            providerName = provider.name,
+                                        )
+                                    try {
+                                        runProvider(
+                                            repository =
+                                                repository,
+                                            provider =
+                                                provider,
+                                            tmdbId =
+                                                tmdbId,
+                                            mediaType =
+                                                mediaType,
+                                            season =
+                                                season,
+                                            episode =
+                                                episode,
+                                        ).also { providerRun ->
+                                            RuntimeDiagnostics.finishProvider(
+                                                token = providerDiagnosticToken,
+                                                status = providerRun.diagnostic.status.name,
+                                                streamCount = providerRun.diagnostic.streamCount,
+                                                errorType = providerRun.diagnostic.errorType,
+                                            )
                                         }
+                                    } catch (error: Throwable) {
+                                        RuntimeDiagnostics.finishProvider(
+                                            token = providerDiagnosticToken,
+                                            status = "THREW",
+                                            streamCount = 0,
+                                            errorType = error::class.java.simpleName,
+                                        )
+                                        throw error
                                     }
                                 }
+                            }
 
-                                /*
-                                 * Keep direct/API phases concurrent. Only the
-                                 * actual WebView resolver is serialized on
-                                 * low-memory devices.
-                                 */
+                            if (providerRuntimeTimeoutMs(provider) > HEAVY_PROVIDER_THRESHOLD_MS) {
+                                heavyProviderConcurrency.withPermit { execute() }
+                            } else {
                                 execute()
-                            } catch (error: CancellationException) {
-                                // Caller cancellation or the overall source-scan budget.
-                                throw error
-                            } catch (error: Throwable) {
-                                failedProviderRun(
-                                    repository = repository,
-                                    provider = provider,
-                                    tmdbId = tmdbId,
-                                    mediaType = mediaType,
-                                    season = season,
-                                    episode = episode,
-                                    elapsedMs =
-                                        (
-                                            System.nanoTime() -
-                                                providerStartedNs
-                                        ) / 1_000_000L,
-                                    error = error,
-                                )
                             }
+                        }
 
-                        saveHealth(run)
-                        runtimeDiagnosticCompletedProviders.incrementAndGet()
+                    saveHealth(run)
+                    runtimeDiagnosticCompletedProviders.incrementAndGet()
 
-                        val snapshot =
-                            mutex.withLock {
-                                runs += run
+                    val snapshot =
+                        mutex.withLock {
+                            runs += run
 
-                                PluginDiscoveryProgress(
-                                    result =
-                                        buildDiscoveryResult(
-                                            runs
-                                        ).copy(
-                                            readyProviders =
-                                                preparation.alreadyReadyProviders +
-                                                    preparation.repairedProviders,
-                                            repairedProviders =
+                            PluginDiscoveryProgress(
+                                result =
+                                    buildDiscoveryResult(
+                                        runs
+                                    ).copy(
+                                        readyProviders =
+                                            preparation.alreadyReadyProviders +
                                                 preparation.repairedProviders,
-                                            preflightErrors =
-                                                preparation.errors,
-                                        ),
-                                    completedProviders =
-                                        runs.size,
-                                    totalProviders =
-                                        targets.size,
-                                )
-                            }
-
-                        onProgress(snapshot)
-                    }
-                }
-
-            val completedWithinBudget =
-                withTimeoutOrNull(
-                    sourceScanBudgetMs
-                ) {
-                    providerJobs.awaitAll()
-                    true
-                } ?: false
-
-            if (!completedWithinBudget) {
-                providerJobs
-                    .filter { it.isActive }
-                    .forEach { job ->
-                        job.cancel(
-                            CancellationException(
-                                "Plugin source scan budget reached"
+                                        repairedProviders =
+                                            preparation.repairedProviders,
+                                        preflightErrors =
+                                            preparation.errors,
+                                    ),
+                                completedProviders =
+                                    runs.size,
+                                totalProviders =
+                                    targets.size,
                             )
-                        )
-                    }
+                        }
 
-                /*
-                 * supervisorScope waits for children before returning anyway;
-                 * joining here makes the cancellation point explicit and keeps
-                 * native fetch/WebView cleanup deterministic.
-                 */
-                providerJobs.forEach { job ->
-                    job.join()
+                    onProgress(snapshot)
                 }
-            }
+            }.awaitAll()
 
             val result =
                 mutex.withLock {
@@ -478,19 +361,11 @@ suspend fun discoverProgressive(
                     )
                 }
 
-            if (completedWithinBudget) {
-                PluginRuntimeCache.put(
-                    key = cacheKey,
-                    result = result,
-                )
-            }
+            PluginRuntimeCache.put(
+                key = cacheKey,
+                result = result,
+            )
 
-            /*
-             * Coalesced callers still receive useful partial results when the
-             * scan budget is reached, but partial runs are not stored in the
-             * normal runtime cache so a later refresh can try remaining
-             * providers.
-             */
             PluginRuntimeCache.completeFlight(
                 key = cacheKey,
                 result = result,
@@ -500,12 +375,6 @@ suspend fun discoverProgressive(
                 scanId = runtimeDiagnosticScanId,
                 streams = result.streams.size,
                 completedProviders = result.attemptedProviders,
-                outcome =
-                    if (completedWithinBudget) {
-                        "complete"
-                    } else {
-                        "budget"
-                    },
             )
 
             result
@@ -523,52 +392,6 @@ suspend fun discoverProgressive(
         }
 
     }
-
-
-private fun failedProviderRun(
-    repository: PluginRepositoryDescriptor,
-    provider: PluginProviderDescriptor,
-    tmdbId: String,
-    mediaType: String,
-    season: Int?,
-    episode: Int?,
-    elapsedMs: Long,
-    error: Throwable,
-): ProviderRun =
-    ProviderRun(
-        streams = emptyList(),
-        diagnostic =
-            ProviderDiagnostic(
-                repositoryManifestUrl =
-                    repository.manifestUrl,
-                repositoryName =
-                    repository.name,
-                providerId =
-                    provider.id,
-                providerName =
-                    provider.name,
-                status =
-                    ProviderHealthStatus.FAILED,
-                responseMs =
-                    elapsedMs.coerceAtLeast(0L),
-                streamCount = 0,
-                requestTmdbId = tmdbId,
-                requestMediaType = mediaType,
-                requestSeason = season,
-                requestEpisode = episode,
-                timeoutMs =
-                    providerRuntimeTimeoutMs(
-                        provider
-                    ),
-                errorType =
-                    error::class.java.simpleName,
-                error =
-                    error.message
-                        ?: error::class.java.simpleName,
-                logs = emptyList(),
-            ),
-    )
-
 
 private fun saveHealth(
     run: ProviderRun,
@@ -976,11 +799,9 @@ private fun providerPriority(
                     asyncFunction<String, String>(
                         "__vueoWebViewResolve"
                     ) { requestJson ->
-                        webViewConcurrency.withPermit {
-                            webViewResolver.resolveJson(
-                                requestJson
-                            )
-                        }
+                        webViewResolver.resolveJson(
+                            requestJson
+                        )
                     }
 
                     val htmlBridge =
@@ -3245,20 +3066,11 @@ private fun providerPriority(
         private const val MAX_PROVIDER_TIMEOUT_MS =
             20_000L
 
-        private const val DEFAULT_MEMORY_CLASS_MB =
-            256
-
-        private const val LOW_MEMORY_CLASS_MB =
-            256
-
-        private const val LOW_MEMORY_HEAP_LIMIT_MB =
-            320
-
-        private const val LOW_MEMORY_SCAN_BUDGET_MS =
-            135_000L
-
-        private const val DEFAULT_SCAN_BUDGET_MS =
-            120_000L
+        // Providers asking for long budgets are the ones most likely to combine
+        // expensive QuickJS work and WebView fallbacks. Keep normal providers at
+        // the existing throughput while limiting only these heavy runs.
+        private const val HEAVY_PROVIDER_THRESHOLD_MS =
+            12_000L
 
         private const val SLOW_THRESHOLD_MS =
             3_000L
