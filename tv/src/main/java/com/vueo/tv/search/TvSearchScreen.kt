@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.extensions.MediaBrowseKind
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
@@ -110,6 +112,8 @@ internal class TvSearchSession {
 
     var searchResults by mutableStateOf<List<MediaItem>>(emptyList())
     var discoverRows by mutableStateOf<List<CatalogRow>>(emptyList())
+    var browseResults by mutableStateOf<Map<TvSearchTypeFilter, List<MediaItem>>>(emptyMap())
+    var browseContentVersion by mutableStateOf<Int?>(null)
     var actorSourceAvailable by mutableStateOf(true)
 
     var focusedMediaKey by mutableStateOf<String?>(null)
@@ -130,6 +134,7 @@ internal fun TvSearchScreen(
 ) {
     var searching by remember { mutableStateOf(false) }
     var discovering by remember { mutableStateOf(session.discoverRows.isEmpty()) }
+    var browsingType by remember { mutableStateOf(false) }
     var requestId by remember { mutableStateOf(0L) }
     var navExpanded by remember { mutableStateOf(false) }
     var lastContentTarget by remember { mutableStateOf("field") }
@@ -143,6 +148,7 @@ internal fun TvSearchScreen(
     val genreRequester = remember { FocusRequester() }
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         delay(120)
@@ -152,6 +158,10 @@ internal fun TvSearchScreen(
     }
 
     LaunchedEffect(contentVersion) {
+        if (session.browseContentVersion != contentVersion) {
+            session.browseResults = emptyMap()
+            session.browseContentVersion = contentVersion
+        }
         discovering = session.discoverRows.isEmpty()
         val current = runCatching { runtime.homeRows(forceRefresh = false) }
             .getOrDefault(emptyList())
@@ -323,13 +333,51 @@ internal fun TvSearchScreen(
     val normalizedQuery = session.query.trim()
     val searchingMode = normalizedQuery.isNotBlank()
 
-    val animeCatalogKeys = remember(session.discoverRows) {
-        session.discoverRows
-            .filter { row ->
-                listOf(row.id, row.title, row.providerName)
-                    .any { it.contains("anime", ignoreCase = true) }
-            }
-            .flatMap { it.items }
+    LaunchedEffect(session.typeFilter, contentVersion, searchingMode) {
+        if (searchingMode || session.typeFilter == TvSearchTypeFilter.ALL) {
+            browsingType = false
+            return@LaunchedEffect
+        }
+
+        val filter = session.typeFilter
+        if (session.browseResults.containsKey(filter)) {
+            browsingType = false
+            return@LaunchedEffect
+        }
+
+        val kind = when (filter) {
+            TvSearchTypeFilter.MOVIES -> MediaBrowseKind.MOVIE
+            TvSearchTypeFilter.SERIES -> MediaBrowseKind.SERIES
+            TvSearchTypeFilter.ANIME -> MediaBrowseKind.ANIME
+            TvSearchTypeFilter.ALL -> return@LaunchedEffect
+        }
+
+        browsingType = true
+        val loaded = try {
+            runtime.engine.browse(
+                kind = kind,
+                maxCatalogs = 16,
+                maxResults = 120,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        session.browseResults = session.browseResults + (filter to loaded)
+        browsingType = false
+    }
+
+    val animeCatalogKeys = remember(session.discoverRows, session.browseResults) {
+        (
+            session.discoverRows
+                .filter { row ->
+                    listOf(row.id, row.title, row.providerName)
+                        .any { it.contains("anime", ignoreCase = true) }
+                }
+                .flatMap { it.items } +
+                session.browseResults[TvSearchTypeFilter.ANIME].orEmpty()
+            )
             .map { mediaKey(it) }
             .toSet()
     }
@@ -341,7 +389,13 @@ internal fun TvSearchScreen(
             .distinctBy(::mediaKey)
     }
 
-    val sourceItems = if (searchingMode) session.searchResults else discoverBaseItems
+    val typedBrowseItems = session.browseResults[session.typeFilter]
+    val sourceItems = when {
+        searchingMode -> session.searchResults
+        session.typeFilter != TvSearchTypeFilter.ALL && typedBrowseItems != null ->
+            typedBrowseItems.ifEmpty { discoverBaseItems }
+        else -> discoverBaseItems
+    }
 
     val availableGenres = remember(sourceItems, session.typeFilter, animeCatalogKeys) {
         sourceItems
@@ -383,10 +437,8 @@ internal fun TvSearchScreen(
             searchingMode ->
                 searchSortItems(filtered, session.sortMode, normalizedQuery)
 
-            session.sortMode == TvSearchSortMode.NEWEST ->
+            else ->
                 searchSortItems(filtered, session.sortMode)
-
-            else -> filtered
         }
     }
 
@@ -396,6 +448,22 @@ internal fun TvSearchScreen(
     )
     val resultKeys = remember(filteredItems) { filteredItems.map(::mediaKey) }
     val resultRequesters = remember(resultKeys) { resultKeys.associateWith { FocusRequester() } }
+
+    fun resetGridForFilterChange() {
+        session.focusedMediaKey = null
+        session.restoreResultsFocus = false
+        session.firstVisibleItemIndex = 0
+        session.firstVisibleItemScrollOffset = 0
+        scope.launch {
+            try {
+                gridState.scrollToItem(0)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // Keep the current focus if the grid is being disposed.
+            }
+        }
+    }
 
     LaunchedEffect(gridState) {
         snapshotFlow {
@@ -497,7 +565,7 @@ internal fun TvSearchScreen(
                     )
                 }
 
-                if (searching || discovering) {
+                if (searching || discovering || browsingType) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth(.76f)
@@ -538,7 +606,13 @@ internal fun TvSearchScreen(
                                 onSelected = { label ->
                                     TvSearchTypeFilter.entries
                                         .firstOrNull { it.label == label }
-                                        ?.let { session.typeFilter = it }
+                                        ?.let { next ->
+                                            if (next != session.typeFilter) {
+                                                session.typeFilter = next
+                                                session.genre = null
+                                                resetGridForFilterChange()
+                                            }
+                                        }
                                     dialogReturnFocus?.invoke()
                                     choiceDialog = null
                                     dialogReturnFocus = null
@@ -569,7 +643,12 @@ internal fun TvSearchScreen(
                                 onSelected = { label ->
                                     TvSearchSortMode.entries
                                         .firstOrNull { it.label == label }
-                                        ?.let { session.sortMode = it }
+                                        ?.let { next ->
+                                            if (next != session.sortMode) {
+                                                session.sortMode = next
+                                                resetGridForFilterChange()
+                                            }
+                                        }
                                     dialogReturnFocus?.invoke()
                                     choiceDialog = null
                                     dialogReturnFocus = null
@@ -595,7 +674,11 @@ internal fun TvSearchScreen(
                                 options = listOf("All Genres") + availableGenres,
                                 selected = session.genre ?: "All Genres",
                                 onSelected = { label ->
-                                    session.genre = label.takeUnless { it == "All Genres" }
+                                    val next = label.takeUnless { it == "All Genres" }
+                                    if (next != session.genre) {
+                                        session.genre = next
+                                        resetGridForFilterChange()
+                                    }
                                     dialogReturnFocus?.invoke()
                                     choiceDialog = null
                                     dialogReturnFocus = null
@@ -634,6 +717,17 @@ internal fun TvSearchScreen(
                     SearchEmptyState(
                         title = "Nothing to discover yet",
                         body = "Enable a catalog in Content Manager to populate Discover.",
+                    )
+                }
+
+                !searchingMode && filteredItems.isEmpty() && !discovering && !browsingType -> {
+                    SearchEmptyState(
+                        title = "No ${session.typeFilter.label} titles",
+                        body = if (session.typeFilter == TvSearchTypeFilter.ANIME) {
+                            "No enabled catalog currently exposes Anime browsing."
+                        } else {
+                            "Try another type, sort or genre filter."
+                        },
                     )
                 }
 
@@ -890,10 +984,13 @@ private fun TvSearchModeToggle(
                 val code = event.nativeKeyEvent.keyCode
                 when {
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        onLeft()
+                        if (mode == TvSearchMode.TITLE) onLeft() else onModeChange(TvSearchMode.TITLE)
                         true
                     }
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        onModeChange(TvSearchMode.ACTOR)
+                        true
+                    }
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_UP -> {
                         onUp()
                         true
