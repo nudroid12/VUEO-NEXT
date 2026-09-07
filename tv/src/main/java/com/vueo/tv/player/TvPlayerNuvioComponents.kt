@@ -91,6 +91,8 @@ internal fun MobileTvPlayerProgressRail(
             .focusable(),
         contentAlignment = Alignment.CenterStart,
     ) {
+        val railWidth = maxWidth
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,7 +105,7 @@ internal fun MobileTvPlayerProgressRail(
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(maxWidth * progress)
+                    .width(railWidth * progress)
                     .background(VueoTvPlayerAccent, RoundedCornerShape(50)),
             )
         }
@@ -112,7 +114,7 @@ internal fun MobileTvPlayerProgressRail(
                 .width(12.dp)
                 .height(12.dp)
                 .align(Alignment.CenterStart)
-                .offset(x = (maxWidth - 12.dp) * progress)
+                .offset(x = (railWidth - 12.dp) * progress)
                 .background(VueoTvPlayerAccent, CircleShape)
                 .then(
                     if (focused) Modifier.border(2.dp, Color.White, CircleShape) else Modifier
