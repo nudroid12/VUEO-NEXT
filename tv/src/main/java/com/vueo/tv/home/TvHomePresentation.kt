@@ -95,7 +95,7 @@ internal fun TvHomePresentation(
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = 52.dp, bottom = rowsViewportHeight * .18f),
+                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -115,7 +115,7 @@ internal fun TvHomePresentation(
                     fontSize = 14.sp,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = 52.dp, bottom = rowsViewportHeight * .18f),
+                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
                 )
             }
         }

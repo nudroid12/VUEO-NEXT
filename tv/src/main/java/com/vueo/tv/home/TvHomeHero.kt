@@ -78,7 +78,7 @@ internal fun TvModernHomeHero(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
-                    start = 52.dp,
+                    start = MODERN_HOME_CONTENT_START_PADDING,
                     end = 48.dp,
                     bottom = rowsViewportHeight + 16.dp,
                 )

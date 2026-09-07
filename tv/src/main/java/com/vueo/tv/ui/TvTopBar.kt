@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,9 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -41,6 +43,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -48,6 +53,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.R as SharedR
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
+import com.vueo.shared.core.storage.ProfileStore
 
 /** Root destinations stay VUEO-owned. Only their TV presentation is rebuilt. */
 val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
@@ -80,6 +88,10 @@ fun TvSidebar(
     onReturnToContent: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val profileStore = remember(context.applicationContext) { ProfileStore(context.applicationContext) }
+    val activeProfile = remember(profileStore) { profileStore.activeProfile() }
+
     val width by animateDpAsState(
         targetValue = if (expanded) SidebarExpandedWidth else SidebarCollapsedWidth,
         animationSpec = tween(durationMillis = if (expanded) 190 else 145),
@@ -159,14 +171,12 @@ fun TvSidebar(
 
             Spacer(Modifier.weight(1f))
 
-            SidebarNavigationItem(
-                label = "Profile",
-                icon = Icons.Default.Person,
-                selected = false,
+            SidebarProfileItem(
+                profileName = activeProfile.name,
+                avatarId = activeProfile.avatar,
                 expanded = expanded,
                 labelAlpha = labelAlpha,
                 requester = profileRequester,
-                canFocusWhenCollapsed = false,
                 onFocused = onFocused,
                 onClick = onProfile,
                 onLeft = { true },
@@ -183,27 +193,35 @@ private fun SidebarBrand(
     expanded: Boolean,
     labelAlpha: Float,
 ) {
+    val logoSize by animateDpAsState(
+        targetValue = if (expanded) 42.dp else 32.dp,
+        animationSpec = tween(durationMillis = 150),
+        label = "vueoSidebarBrandSize",
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(34.dp)
-            .padding(start = 24.dp),
+            .height(46.dp)
+            .padding(start = if (expanded) 15.dp else 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(TvDesign.Accent),
+        Image(
+            painter = painterResource(SharedR.drawable.vueo_logo_mark),
+            contentDescription = "Vueo",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(logoSize),
         )
 
         Text(
-            text = "VUEO",
+            text = "Vueo",
             color = TvDesign.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 27.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 3.5.sp,
             maxLines = 1,
             modifier = Modifier
-                .padding(start = 14.dp)
+                .padding(start = 13.dp)
                 .graphicsLayer { alpha = if (expanded) labelAlpha else 0f },
         )
     }
@@ -227,7 +245,11 @@ private fun SidebarNavigationItem(
 ) {
     var focused by remember(label) { mutableStateOf(false) }
     val iconScale by animateFloatAsState(
-        targetValue = if (focused) 1.10f else 1f,
+        targetValue = when {
+            focused -> 1.10f
+            selected && !expanded -> 1.07f
+            else -> 1f
+        },
         animationSpec = tween(durationMillis = if (focused) 120 else 90),
         label = "vueoSidebarIconScale:$label",
     )
@@ -285,8 +307,9 @@ private fun SidebarNavigationItem(
                 contentDescription = label,
                 tint = when {
                     focused -> TvDesign.White
-                    selected -> TvDesign.Accent
-                    else -> TvDesign.White.copy(alpha = .70f)
+                    selected && !expanded -> TvDesign.White
+                    selected -> TvDesign.White.copy(alpha = .94f)
+                    else -> TvDesign.White.copy(alpha = .46f)
                 },
                 modifier = Modifier
                     .size(SidebarIconSize)
@@ -306,6 +329,103 @@ private fun SidebarNavigationItem(
             },
             fontSize = 15.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(start = 4.dp, end = 20.dp)
+                .graphicsLayer { alpha = labelAlpha },
+        )
+    }
+}
+
+@Composable
+private fun SidebarProfileItem(
+    profileName: String,
+    avatarId: String,
+    expanded: Boolean,
+    labelAlpha: Float,
+    requester: FocusRequester,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+    onLeft: () -> Boolean,
+    onRight: () -> Boolean,
+    onUp: () -> Boolean,
+    onDown: () -> Boolean,
+) {
+    var focused by remember(profileName, avatarId) { mutableStateOf(false) }
+    val avatarDrawable = ProfileAvatarCatalog.drawableRes(avatarId)
+    val avatarScale by animateFloatAsState(
+        targetValue = if (focused) 1.10f else 1f,
+        animationSpec = tween(durationMillis = if (focused) 120 else 90),
+        label = "vueoSidebarProfileScale",
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SidebarItemHeight)
+            .focusRequester(requester)
+            .focusProperties { canFocus = expanded }
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (state.isFocused) onFocused()
+            }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> onLeft()
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> onRight()
+                    KeyEvent.KEYCODE_DPAD_UP -> onUp()
+                    KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
+                    KeyEvent.KEYCODE_BACK -> onRight()
+                    else -> false
+                }
+            }
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(Modifier.width(SidebarIndicatorWidth))
+
+        Box(
+            modifier = Modifier.width(57.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (avatarDrawable != null) {
+                Image(
+                    painter = painterResource(avatarDrawable),
+                    contentDescription = profileName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .graphicsLayer {
+                            scaleX = avatarScale
+                            scaleY = avatarScale
+                        }
+                        .clip(CircleShape),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(TvDesign.White.copy(alpha = .14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = profileName.trim().firstOrNull()?.uppercase() ?: "V",
+                        color = TvDesign.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = profileName,
+            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .78f),
+            fontSize = 15.sp,
+            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier

@@ -66,7 +66,7 @@ private val PosterWidth = 114.dp
 private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
-private val RowHorizontalPadding = 52.dp
+private val RowHorizontalPadding = MODERN_HOME_CONTENT_START_PADDING
 private val RowHeaderFocusInset = 40.dp
 private const val FocusedCardScale = 1.022f
 
