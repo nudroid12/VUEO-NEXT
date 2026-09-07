@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,20 +40,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipSegment
-import com.vueo.tv.ui.TvDesign
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
+internal val VueoTvPlayerAccent = Color(0xFFB9FF3A)
+
 @Composable
-internal fun NuvioPlayerProgressRail(
+internal fun MobileTvPlayerProgressRail(
     positionMs: Long,
     durationMs: Long,
     requester: FocusRequester,
-    downRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester?,
     onInteraction: () -> Unit,
     onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val progress = if (durationMs > 0L) {
@@ -62,9 +64,12 @@ internal fun NuvioPlayerProgressRail(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (focused) 12.dp else 8.dp)
+            .height(16.dp)
             .focusRequester(requester)
-            .focusProperties { down = downRequester }
+            .focusProperties {
+                up = upRequester
+                downRequester?.let { down = it }
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()
@@ -72,69 +77,245 @@ internal fun NuvioPlayerProgressRail(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { onSeekBy(-10_000L); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { onSeekBy(10_000L); true }
-                    KeyEvent.KEYCODE_DPAD_UP -> { onHideControls(); true }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        onSeekBy(-10_000L)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        onSeekBy(10_000L)
+                        true
+                    }
                     else -> false
                 }
             }
-            .focusable()
-            .background(Color.White.copy(alpha = if (focused) .44f else .27f), RoundedCornerShape(4.dp)),
+            .focusable(),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .width(maxWidth * progress)
-                .background(TvDesign.Accent, RoundedCornerShape(4.dp)),
+                .fillMaxWidth()
+                .height(if (focused) 4.dp else 3.dp)
+                .background(
+                    Color.White.copy(alpha = if (focused) .42f else .30f),
+                    RoundedCornerShape(50),
+                ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(maxWidth * progress)
+                    .background(VueoTvPlayerAccent, RoundedCornerShape(50)),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(12.dp)
+                .height(12.dp)
+                .align(Alignment.CenterStart)
+                .offset(x = (maxWidth - 12.dp) * progress)
+                .background(VueoTvPlayerAccent, CircleShape)
+                .then(
+                    if (focused) Modifier.border(2.dp, Color.White, CircleShape) else Modifier
+                ),
         )
     }
 }
 
 @Composable
-internal fun NuvioPlayerControlButton(
+internal fun MobileTvPlayerRoundAction(
     icon: ImageVector,
     label: String,
     requester: FocusRequester,
-    upRequester: FocusRequester,
-    onDown: () -> Unit,
+    leftRequester: FocusRequester? = null,
+    rightRequester: FocusRequester? = null,
+    upRequester: FocusRequester? = null,
+    downRequester: FocusRequester? = null,
+    primary: Boolean = false,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
-    enabled: Boolean = true,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val size = if (primary) 78.dp else 62.dp
+    val iconSize = if (primary) 52.dp else 42.dp
+
     Box(
         modifier = Modifier
-            .size(50.dp)
+            .size(size)
             .focusRequester(requester)
-            .focusProperties { up = upRequester }
+            .focusProperties {
+                leftRequester?.let { left = it }
+                rightRequester?.let { right = it }
+                upRequester?.let { up = it }
+                downRequester?.let { down = it }
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    onDown(); return@onPreviewKeyEvent true
-                }
-                if (!event.isNuvioActivationKey()) return@onPreviewKeyEvent false
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
-                if (event.type == KeyEventType.KeyUp && enabled) onClick()
+                if (event.type == KeyEventType.KeyUp) onClick()
                 true
             }
-            .focusable(enabled)
-            .background(if (focused && enabled) Color.White else Color.Transparent, CircleShape),
+            .focusable()
+            .background(
+                if (focused) Color.White else Color.Transparent,
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = when {
-                !enabled -> Color.White.copy(alpha = .30f)
-                focused -> Color.Black
-                else -> Color.White
-            },
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(iconSize),
+            tint = if (focused) Color.Black else Color.White,
         )
     }
+}
+
+@Composable
+internal fun MobileTvPlayerTopAction(
+    icon: ImageVector,
+    label: String,
+    requester: FocusRequester,
+    leftRequester: FocusRequester? = null,
+    rightRequester: FocusRequester? = null,
+    downRequester: FocusRequester? = null,
+    enabled: Boolean = true,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .focusRequester(requester)
+            .focusProperties {
+                leftRequester?.let { left = it }
+                rightRequester?.let { right = it }
+                downRequester?.let { down = it }
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp && enabled) onClick()
+                true
+            }
+            .focusable(enabled)
+            .background(
+                if (focused && enabled) Color.White else Color.Black.copy(alpha = .42f),
+                CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(22.dp),
+            tint = when {
+                !enabled -> Color.White.copy(alpha = .38f)
+                focused -> Color.Black
+                else -> Color.White.copy(alpha = .94f)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun MobileTvPlayerPanelAction(
+    icon: ImageVector,
+    label: String,
+    requester: FocusRequester,
+    leftRequester: FocusRequester? = null,
+    rightRequester: FocusRequester? = null,
+    upRequester: FocusRequester,
+    enabled: Boolean = true,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .focusRequester(requester)
+            .focusProperties {
+                leftRequester?.let { left = it }
+                rightRequester?.let { right = it }
+                up = upRequester
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp && enabled) onClick()
+                true
+            }
+            .focusable(enabled)
+            .background(if (focused && enabled) Color.White else Color.Transparent, shape)
+            .padding(horizontal = 9.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(18.dp),
+            tint = when {
+                !enabled -> Color.White.copy(alpha = .38f)
+                focused -> Color.Black
+                else -> Color.White.copy(alpha = .94f)
+            },
+        )
+        Text(
+            text = label,
+            modifier = Modifier.padding(start = 5.dp),
+            maxLines = 1,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = when {
+                !enabled -> Color.White.copy(alpha = .38f)
+                focused -> Color.Black
+                else -> Color.White.copy(alpha = .88f)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun MobileTvPlayerUnlockAction(
+    requester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    Text(
+        text = "Unlock",
+        modifier = Modifier
+            .focusRequester(requester)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(if (focused) Color.White else Color.Black.copy(alpha = .62f), shape)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        color = if (focused) Color.Black else Color.White,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable
@@ -147,7 +328,7 @@ internal fun NuvioPlayerPromptButton(
     onClick: () -> Unit,
 ) {
     var focused by remember(text) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(50)
     Row(
         modifier = modifier
             .focusRequester(requester)
@@ -157,21 +338,21 @@ internal fun NuvioPlayerPromptButton(
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
-                if (!event.isNuvioActivationKey()) return@onPreviewKeyEvent false
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onClick()
                 true
             }
             .focusable()
-            .background(if (focused) Color.White else Color.Black.copy(alpha = .80f), shape)
-            .border(1.dp, Color.White.copy(alpha = if (focused) .92f else .18f), shape)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .background(if (focused) Color.White else Color(0xE6161719), shape)
+            .border(1.dp, Color.White.copy(alpha = if (focused) .95f else .22f), shape)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -189,9 +370,9 @@ internal fun nuvioPlayerTime(milliseconds: Long): String {
 }
 
 internal fun nuvioSkipLabel(segment: PlayerSkipSegment): String = when (segment.kind) {
-    PlayerSkipKind.INTRO -> "Skip intro"
-    PlayerSkipKind.RECAP -> "Skip recap"
-    PlayerSkipKind.ENDING -> "Skip credits"
+    PlayerSkipKind.INTRO -> "Skip Intro"
+    PlayerSkipKind.RECAP -> "Skip Recap"
+    PlayerSkipKind.ENDING -> "Skip Ending"
     else -> "Skip"
 }
 
@@ -214,7 +395,70 @@ internal fun nuvioPlayerFormatReleaseDate(raw: String?): String? {
     return input.substringBefore('T').takeIf { it != input } ?: input
 }
 
-private fun androidx.compose.ui.input.key.KeyEvent.isNuvioActivationKey(): Boolean =
+private fun androidx.compose.ui.input.key.KeyEvent.isVueoActivationKey(): Boolean =
     nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+@Composable
+internal fun MobileTvPlayerChoiceAction(
+    label: String,
+    requester: FocusRequester,
+    upRequester: FocusRequester? = null,
+    downRequester: FocusRequester? = null,
+    primary: Boolean = false,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .focusProperties {
+                upRequester?.let { up = it }
+                downRequester?.let { down = it }
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(
+                when {
+                    focused -> Color.White
+                    primary -> VueoTvPlayerAccent.copy(alpha = .14f)
+                    else -> Color.White.copy(alpha = .035f)
+                },
+                shape,
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                when {
+                    focused -> Color.White
+                    primary -> VueoTvPlayerAccent.copy(alpha = .58f)
+                    else -> Color.White.copy(alpha = .18f)
+                },
+                shape,
+            )
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.fillMaxWidth(),
+            color = if (focused) Color.Black else Color.White,
+            fontWeight = if (primary) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
