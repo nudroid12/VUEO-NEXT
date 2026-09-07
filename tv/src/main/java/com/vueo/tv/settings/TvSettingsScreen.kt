@@ -734,7 +734,7 @@ private fun TvAppearanceSettings(
         }, {
             theme = cycle(AppTheme.entries, theme, 1); store.setAppTheme(theme); TvDesign.applyTheme(theme)
         }),
-        choiceEntry("accent", "Accent", "Interactive focus edge and selected controls.", accent.label, {
+        choiceEntry("accent", "Accent", "Selection, progress and semantic accents.", accent.label, {
             accent = cycle(AppAccent.entries, accent, -1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
         }, {
             accent = cycle(AppAccent.entries, accent, 1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
@@ -769,7 +769,11 @@ private fun TvDataStorageSettings(
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            runCatching { VueoBackupManager.restoreFromUri(context, uri) }
+            runCatching {
+                val result = VueoBackupManager.restoreFromUri(context, uri)
+                runtime.reloadPersistentConfiguration()
+                result
+            }
                 .onSuccess {
                     TvDesign.applyTheme(runtime.settingsStore.appTheme())
                     TvDesign.applyAccent(runtime.settingsStore.appAccent())
@@ -804,8 +808,9 @@ private fun TvDataStorageSettings(
                         }
                         "reset" -> {
                             VueoBackupManager.resetUserData(context.applicationContext)
-                            TvDesign.applyTheme(AppTheme.CHARCOAL)
-                            TvDesign.applyAccent(AppAccent.WHITE)
+                            runtime.reloadPersistentConfiguration()
+                            TvDesign.applyTheme(runtime.settingsStore.appTheme())
+                            TvDesign.applyAccent(runtime.settingsStore.appAccent())
                         }
                     }
                     status = when (action) {

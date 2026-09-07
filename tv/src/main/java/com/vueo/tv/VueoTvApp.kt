@@ -1,5 +1,6 @@
 package com.vueo.tv
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
+import com.vueo.tv.settings.TvConfirmDialog
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
@@ -54,7 +56,7 @@ private enum class TvRoute {
 }
 
 @Composable
-fun VueoTvApp() {
+fun VueoTvApp(onExit: () -> Unit = {}) {
     val context = LocalContext.current
     val runtime = remember { TvRuntime(context.applicationContext) }
 
@@ -66,6 +68,8 @@ fun VueoTvApp() {
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
     var initialPositionMs by remember { mutableLongStateOf(0L) }
     var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
+    var showExitConfirm by remember { mutableStateOf(false) }
+    var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
@@ -112,8 +116,21 @@ fun VueoTvApp() {
         selectedMedia = media
         selectedEpisode = null
         initialPositionMs = 0L
+        detailBackStack = emptyList()
         detailReturnRoute = from
         route = TvRoute.DETAIL
+    }
+
+    fun closeDetail() {
+        val previous = detailBackStack.lastOrNull()
+        if (previous != null) {
+            detailBackStack = detailBackStack.dropLast(1)
+            selectedMedia = previous
+            selectedEpisode = null
+            initialPositionMs = 0L
+        } else {
+            route = detailReturnRoute
+        }
     }
 
     fun resume(entry: LibraryPlaybackEntry, from: TvRoute) {
@@ -136,6 +153,12 @@ fun VueoTvApp() {
         initialPositionMs = entry.positionMs
         sourceReturnRoute = from
         route = TvRoute.SOURCE
+    }
+
+    BackHandler(
+        enabled = route == TvRoute.HOME && updatePromptRelease == null && !showExitConfirm,
+    ) {
+        showExitConfirm = true
     }
 
     MaterialTheme(
@@ -231,7 +254,7 @@ fun VueoTvApp() {
                         TvDetailScreen(
                             runtime = runtime,
                             initial = media,
-                            onBack = { route = detailReturnRoute },
+                            onBack = ::closeDetail,
                             onWatch = { enriched, episode ->
                                 selectedMedia = enriched
                                 selectedEpisode = episode
@@ -240,6 +263,9 @@ fun VueoTvApp() {
                                 route = TvRoute.SOURCE
                             },
                             onOpenRelated = { related ->
+                                selectedMedia?.let { current ->
+                                    detailBackStack = detailBackStack + current
+                                }
                                 selectedMedia = related
                                 selectedEpisode = null
                                 initialPositionMs = 0L
@@ -299,6 +325,19 @@ fun VueoTvApp() {
                 TvUpdatePrompt(
                     release = release,
                     onLater = { updatePromptRelease = null },
+                )
+            }
+
+            if (showExitConfirm) {
+                TvConfirmDialog(
+                    title = "Exit VUEO?",
+                    message = "Close VUEO on this TV?",
+                    confirmLabel = "Exit",
+                    onDismiss = { showExitConfirm = false },
+                    onConfirm = {
+                        showExitConfirm = false
+                        onExit()
+                    },
                 )
             }
         }

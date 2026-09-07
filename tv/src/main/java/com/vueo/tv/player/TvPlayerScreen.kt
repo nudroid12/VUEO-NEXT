@@ -73,6 +73,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.vueo.shared.core.enrichment.ContentWarning
+import com.vueo.shared.core.enrichment.ContentWarningRepository
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -177,13 +180,14 @@ fun TvPlayerScreen(
     var interactionToken by remember { mutableIntStateOf(0) }
     var positionMs by remember { mutableLongStateOf(startPosition) }
     var durationMs by remember { mutableLongStateOf(0L) }
-    var playing by remember { mutableStateOf(true) }
+    var playing by remember { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
     var nextCountdown by remember { mutableIntStateOf(0) }
-    var skipSegments by remember(media.id, episode?.id) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
-    var warningVisible by remember(media.id) {
-        mutableStateOf(settings.contentWarningsEnabled() && !media.certification.isNullOrBlank())
-    }
+    var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
+    var skipSegments by remember(mediaKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
+    var contentWarnings by remember(mediaKey) { mutableStateOf<List<ContentWarning>>(emptyList()) }
+    var warningVisible by remember(mediaKey) { mutableStateOf(false) }
+    var warningShown by remember(mediaKey) { mutableStateOf(false) }
     var selectedSubtitleKey by remember(bundle.videoId) {
         mutableStateOf(if (settings.subtitlesOnByDefault()) "auto" else "off")
     }
@@ -324,23 +328,56 @@ fun TvPlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(media.id, episode?.season, episode?.episode, settings.skipSegmentsEnabled()) {
+    LaunchedEffect(media.id, bundle.videoId, episode?.id, runtime.pluginStore.tmdbApiKey()) {
+        resolvedImdbId =
+            ContentWarningRepository.extractImdbId(media.id)
+                ?: ContentWarningRepository.extractImdbId(bundle.videoId)
+                ?: ContentWarningRepository.extractImdbId(episode?.id)
+                ?: runCatching {
+                    TmdbEnhancementClient.prepareForCore(
+                        item = media,
+                        apiKey = runtime.pluginStore.tmdbApiKey(),
+                    ).id
+                }.getOrNull()?.let(ContentWarningRepository::extractImdbId)
+    }
+
+    LaunchedEffect(
+        resolvedImdbId,
+        episode?.season,
+        episode?.episode,
+        settings.skipSegmentsEnabled(),
+    ) {
         skipSegments = emptyList()
-        if (
-            settings.skipSegmentsEnabled() &&
-            episode != null &&
-            media.id.startsWith("tt", ignoreCase = true)
-        ) {
+        val imdbId = resolvedImdbId
+        if (settings.skipSegmentsEnabled() && episode != null && imdbId != null) {
             skipSegments = runCatching {
-                PlayerSkipRepository.segments(media.id, episode.season, episode.episode)
+                PlayerSkipRepository.segments(imdbId, episode.season, episode.episode)
             }.getOrDefault(emptyList())
         }
     }
 
-    LaunchedEffect(warningVisible) {
-        if (warningVisible) {
-            delay(5_000)
+    LaunchedEffect(resolvedImdbId, settings.contentWarningsEnabled()) {
+        contentWarnings = emptyList()
+        warningVisible = false
+        warningShown = false
+
+        val imdbId = resolvedImdbId
+        if (settings.contentWarningsEnabled() && imdbId != null) {
+            contentWarnings = runCatching {
+                ContentWarningRepository.get(imdbId)
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    LaunchedEffect(playing, contentWarnings, settings.contentWarningsEnabled()) {
+        if (!playing || !settings.contentWarningsEnabled()) {
             warningVisible = false
+            return@LaunchedEffect
+        }
+
+        if (contentWarnings.isNotEmpty() && !warningShown) {
+            warningShown = true
+            warningVisible = true
         }
     }
 
@@ -602,7 +639,9 @@ fun TvPlayerScreen(
             nextEpisode = nextEpisode,
             activeSkip = activeSkip,
             nextCountdown = nextCountdown,
+            contentWarnings = contentWarnings,
             warningVisible = warningVisible,
+            onWarningComplete = { warningVisible = false },
             playbackError = playbackError,
             panelOptions = panelOptions,
             episodes = orderedEpisodes,

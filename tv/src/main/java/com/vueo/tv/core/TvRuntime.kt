@@ -96,13 +96,18 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun homeRows(forceRefresh: Boolean = false): List<CatalogRow> {
-        val cached =
+        val freshCached =
+            CatalogDiscoveryCache.home(allowStale = false)
+                .orEmpty()
+
+        if (!forceRefresh && freshCached.isNotEmpty()) {
+            return applyCatalogPreferences(freshCached)
+                .let(::applyPersonalization)
+        }
+
+        val staleCached =
             CatalogDiscoveryCache.home(allowStale = true)
                 .orEmpty()
-                .let(::applyCatalogPreferences)
-                .let(::applyPersonalization)
-
-        if (!forceRefresh && cached.isNotEmpty()) return cached
 
         val fresh =
             engine.loadCatalogRows(
@@ -114,7 +119,7 @@ class TvRuntime(context: Context) {
             content.reconcileCatalogOrder(fresh.map { it.id })
             CatalogDiscoveryCache.persistHome(appContext, fresh)
         }
-        return applyCatalogPreferences(fresh.ifEmpty { cached })
+        return applyCatalogPreferences(fresh.ifEmpty { staleCached })
             .let(::applyPersonalization)
     }
 
@@ -161,6 +166,15 @@ class TvRuntime(context: Context) {
             }
         }
         CatalogDiscoveryCache.clearAll(appContext)
+    }
+
+    suspend fun reloadPersistentConfiguration() {
+        content.seedDevelopmentDefaultsIfNeeded()
+        pluginStore.seedDevelopmentDefaultsIfNeeded()
+        refreshAddons()
+        providerSync.syncMissing(pluginStore.repositories())
+        profileStore.ensureDefaultProfile()
+        SourceDiscoveryCache.clearAll()
     }
 
     suspend fun addAddon(manifestUrl: String) {

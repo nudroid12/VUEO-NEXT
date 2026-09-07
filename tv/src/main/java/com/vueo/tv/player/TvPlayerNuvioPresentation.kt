@@ -1,5 +1,8 @@
 package com.vueo.tv.player
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
@@ -24,9 +29,12 @@ import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,11 +42,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun NuvioPlayerPresentation(
@@ -53,7 +63,9 @@ internal fun NuvioPlayerPresentation(
     nextEpisode: EpisodeItem?,
     activeSkip: PlayerSkipSegment?,
     nextCountdown: Int,
+    contentWarnings: List<ContentWarning>,
     warningVisible: Boolean,
+    onWarningComplete: () -> Unit,
     playbackError: String?,
     panelOptions: List<TvPlayerOption>,
     episodes: List<EpisodeItem>,
@@ -84,7 +96,7 @@ internal fun NuvioPlayerPresentation(
 ) {
     Box(Modifier.fillMaxSize()) {
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
-        if (showChrome || activePanel != TvPlayerPanel.NONE || playbackError != null || activeSkip != null || nextCountdown > 0 || warningVisible) {
+        if (showChrome || activePanel != TvPlayerPanel.NONE || playbackError != null || activeSkip != null || nextCountdown > 0) {
             NuvioPlayerCinematicScrim(strong = activePanel != TvPlayerPanel.NONE || playbackError != null)
         }
 
@@ -118,13 +130,17 @@ internal fun NuvioPlayerPresentation(
             )
         }
 
-        if (warningVisible) {
-            Text(
-                text = "Content guidance  •  ${media.certification}",
-                color = Color.White,
-                fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 38.dp, end = 48.dp),
-            )
+        if (warningVisible && contentWarnings.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 48.dp, top = 38.dp),
+            ) {
+                NuvioContentWarningsOverlay(
+                    warnings = contentWarnings,
+                    onAnimationComplete = onWarningComplete,
+                )
+            }
         }
 
         activeSkip?.let { segment ->
@@ -178,6 +194,93 @@ internal fun NuvioPlayerPresentation(
                 onSelected = onPlayEpisode,
             )
             TvPlayerPanel.NONE -> Unit
+        }
+    }
+}
+
+@Composable
+private fun NuvioContentWarningsOverlay(
+    warnings: List<ContentWarning>,
+    onAnimationComplete: () -> Unit,
+) {
+    val count = warnings.size
+    if (count == 0) return
+
+    val totalLineHeight = (count * 14) + ((count - 1) * 2)
+    val containerAlpha = remember { Animatable(0f) }
+    val lineHeightFraction = remember { Animatable(0f) }
+    val itemAlphas = remember(count) { List(count) { Animatable(0f) } }
+
+    LaunchedEffect(warnings) {
+        containerAlpha.snapTo(0f)
+        lineHeightFraction.snapTo(0f)
+        itemAlphas.forEach { it.snapTo(0f) }
+
+        containerAlpha.animateTo(1f, tween(300))
+        lineHeightFraction.animateTo(
+            1f,
+            tween(400, easing = FastOutSlowInEasing),
+        )
+
+        for (index in 0 until count) {
+            delay(80L)
+            itemAlphas[index].animateTo(1f, tween(200))
+        }
+
+        delay(5_000L)
+
+        for (index in (count - 1) downTo 0) {
+            delay(60L)
+            itemAlphas[index].animateTo(0f, tween(150))
+        }
+
+        delay(100L)
+        lineHeightFraction.animateTo(
+            0f,
+            tween(300, easing = FastOutSlowInEasing),
+        )
+        delay(200L)
+        containerAlpha.animateTo(0f, tween(200))
+        onAnimationComplete()
+    }
+
+    if (containerAlpha.value <= 0f) return
+
+    Row(
+        modifier = Modifier.alpha(containerAlpha.value),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height((totalLineHeight * lineHeightFraction.value).dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color(0xFFB9FF3A)),
+        )
+        Column(
+            modifier = Modifier.padding(start = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            warnings.forEachIndexed { index, warning ->
+                Row(
+                    modifier = Modifier.alpha(itemAlphas.getOrNull(index)?.value ?: 0f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = warning.label,
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = " • ${warning.severity}",
+                        color = Color.White.copy(alpha = .56f),
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                    )
+                }
+            }
         }
     }
 }

@@ -256,7 +256,7 @@ private fun TvSettingsRow(
                 width = 1.dp,
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .04f)
-                    focused -> TvDesign.Accent.copy(alpha = .90f)
+                    focused -> TvDesign.White.copy(alpha = .90f)
                     else -> TvDesign.White.copy(alpha = .075f)
                 },
                 shape = RoundedCornerShape(12.dp),

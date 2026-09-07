@@ -42,11 +42,8 @@ fun TvHomeScreen(
         loading = catalogRows.isEmpty()
         error = null
 
-        val cached = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
-        if (cached.isNotEmpty()) catalogRows = cached
-
-        runCatching { runtime.homeRows(forceRefresh = true) }
-            .onSuccess { fresh -> if (fresh.isNotEmpty()) catalogRows = fresh }
+        runCatching { runtime.homeRows(forceRefresh = false) }
+            .onSuccess { rows -> if (rows.isNotEmpty()) catalogRows = rows }
             .onFailure { failure ->
                 if (catalogRows.isEmpty()) error = failure.message ?: "Unable to load Home"
             }

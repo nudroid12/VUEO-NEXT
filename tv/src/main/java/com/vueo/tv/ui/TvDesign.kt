@@ -131,7 +131,7 @@ fun TvFocusSurface(
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Accent.copy(alpha = .92f)
+                color = if (focused) TvDesign.White.copy(alpha = .92f)
                 else TvDesign.White.copy(alpha = .10f),
                 shape = TvDesign.CardShape,
             )
