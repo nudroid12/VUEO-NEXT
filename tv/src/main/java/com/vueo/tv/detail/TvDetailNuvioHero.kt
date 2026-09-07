@@ -1,8 +1,5 @@
 package com.vueo.tv.detail
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,7 +38,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,11 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.plugin.PluginHttp
 import com.vueo.tv.ui.TvDesign
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.Request
+import com.vueo.tv.ui.TvNetworkImage
 
 private val NuvioHeroContentWidth = .61f
 private val NuvioHeroActionSize = 52.dp
@@ -248,45 +240,26 @@ private fun NuvioHeroTitle(
     title: String,
     logoUrl: String?,
 ) {
-    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = logoUrl) {
-        value = if (logoUrl.isNullOrBlank()) {
-            null
-        } else {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    val request = Request.Builder()
-                        .url(logoUrl)
-                        .header("User-Agent", "VUEO/0.9.6")
-                        .build()
-                    PluginHttp.client.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful) return@use null
-                        response.body.byteStream().use(BitmapFactory::decodeStream)
-                    }
-                }.getOrNull()
-            }
-        }
-    }
-
-    if (bitmap != null) {
-        Image(
-            bitmap = requireNotNull(bitmap).asImageBitmap(),
+    if (!logoUrl.isNullOrBlank()) {
+        TvNetworkImage(
+            url = logoUrl,
             contentDescription = title,
             modifier = Modifier
                 .height(100.dp)
                 .fillMaxWidth(.40f),
             contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
+            fallback = Color.Transparent,
         )
     } else {
         Text(
-            text = title,
+            text = title.uppercase(),
             color = TvDesign.White,
-            fontSize = 62.sp,
-            lineHeight = 66.sp,
+            fontSize = 50.sp,
+            lineHeight = 54.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(.53f),
+            modifier = Modifier.fillMaxWidth(.58f),
         )
     }
 }
