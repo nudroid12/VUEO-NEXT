@@ -10,14 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.List
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -44,11 +41,12 @@ import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
 
 /**
- * TV 40A presentation root.
+ * TV 41A final player presentation polish.
  *
- * This screen is intentionally Nuvio-first: the player surface is supplied by
- * VUEO, while all visible player chrome, focus geometry, gradients and panels
- * live in this presentation tree rather than in the playback controller.
+ * The full transport chrome is intentionally hidden whenever a modal player
+ * panel is open. This prevents the subtitle/episode panel from competing with
+ * the progress rail and control row, and matches the quieter Nuvio overlay
+ * hierarchy on a real TV.
  */
 @Composable
 internal fun NuvioPlayerPresentation(
@@ -92,14 +90,24 @@ internal fun NuvioPlayerPresentation(
     onPlayEpisode: (EpisodeItem) -> Unit,
     onPanelSelected: (TvPlayerOption) -> Unit,
 ) {
+    val transportVisible = controlsVisible &&
+        (activePanel == TvPlayerPanel.NONE || activePanel == TvPlayerPanel.MORE)
+    val contextualPromptsVisible = activePanel == TvPlayerPanel.NONE
+
     Box(Modifier.fillMaxSize()) {
-        if (controlsVisible || activePanel != TvPlayerPanel.NONE || playbackError != null || activeSkip != null || nextCountdown > 0 || warningVisible) {
+        if (
+            transportVisible ||
+            activePanel != TvPlayerPanel.NONE ||
+            playbackError != null ||
+            (contextualPromptsVisible && (activeSkip != null || nextCountdown > 0)) ||
+            warningVisible
+        ) {
             NuvioPlayerCinematicScrim(
                 strong = activePanel != TvPlayerPanel.NONE || playbackError != null,
             )
         }
 
-        if (controlsVisible && (activePanel == TvPlayerPanel.NONE || activePanel == TvPlayerPanel.MORE)) {
+        if (transportVisible) {
             NuvioPlayerControls(
                 title = media.name,
                 releaseInfo = media.releaseInfo,
@@ -134,51 +142,56 @@ internal fun NuvioPlayerPresentation(
             )
         }
 
-        if (warningVisible) {
+        if (warningVisible && activePanel == TvPlayerPanel.NONE) {
             Text(
                 text = "Content guidance  •  ${media.certification}",
                 color = TvDesign.White,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 42.dp, end = 48.dp)
-                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(7.dp))
+                    .background(Color.Black.copy(alpha = .72f), androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             )
         }
 
-        activeSkip?.let { segment ->
-            NuvioPlayerPromptButton(
-                text = nuvioSkipLabel(segment),
-                requester = skipRequester,
-                downRequester = playPauseRequester,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 48.dp, bottom = 126.dp),
-                onInteraction = onInteraction,
-                onClick = { onSkip(segment) },
-            )
-        }
+        if (contextualPromptsVisible) {
+            activeSkip?.let { segment ->
+                NuvioPlayerPromptButton(
+                    text = nuvioSkipLabel(segment),
+                    requester = skipRequester,
+                    downRequester = playPauseRequester,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 48.dp, bottom = 126.dp),
+                    onInteraction = onInteraction,
+                    onClick = { onSkip(segment) },
+                )
+            }
 
-        if (nextCountdown > 0 && nextEpisode != null) {
-            NuvioPlayerPromptButton(
-                text = "Next in $nextCountdown  •  ${nextEpisode.title}",
-                requester = nextContextRequester,
-                downRequester = playPauseRequester,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 48.dp, bottom = if (activeSkip != null) 176.dp else 126.dp),
-                onInteraction = onInteraction,
-                onClick = onNext,
-            )
+            if (nextCountdown > 0 && nextEpisode != null) {
+                NuvioPlayerPromptButton(
+                    text = "Next in $nextCountdown  •  ${nextEpisode.title}",
+                    requester = nextContextRequester,
+                    downRequester = playPauseRequester,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 48.dp, bottom = if (activeSkip != null) 176.dp else 126.dp),
+                    onInteraction = onInteraction,
+                    onClick = onNext,
+                )
+            }
         }
 
         playbackError?.let { message ->
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = .86f), RoundedCornerShape(10.dp))
+                    .background(
+                        Color.Black.copy(alpha = .88f),
+                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    )
                     .padding(horizontal = 22.dp, vertical = 16.dp),
             ) {
                 Text(
@@ -236,11 +249,11 @@ private fun NuvioPlayerCinematicScrim(strong: Boolean) {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .height(150.dp)
+                .height(140.dp)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = if (strong) .80f else .68f),
+                            Color.Black.copy(alpha = if (strong) .74f else .62f),
                             Color.Transparent,
                         )
                     )
@@ -250,12 +263,12 @@ private fun NuvioPlayerCinematicScrim(strong: Boolean) {
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(220.dp)
+                .height(205.dp)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.Black.copy(alpha = if (strong) .93f else .82f),
+                            Color.Black.copy(alpha = if (strong) .90f else .80f),
                         )
                     )
                 ),
@@ -302,14 +315,14 @@ private fun NuvioPlayerControls(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 48.dp, vertical = 34.dp),
+            .padding(horizontal = 48.dp, vertical = 32.dp),
         verticalArrangement = Arrangement.Bottom,
     ) {
         Text(
             text = title,
             color = Color.White,
-            fontSize = 27.sp,
-            lineHeight = 31.sp,
+            fontSize = 25.sp,
+            lineHeight = 29.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -319,9 +332,9 @@ private fun NuvioPlayerControls(
             Spacer(Modifier.height(3.dp))
             Text(
                 text = "S${it.season}E${it.episode} • ${it.title}",
-                color = Color.White.copy(alpha = .90f),
-                fontSize = 16.sp,
-                lineHeight = 20.sp,
+                color = Color.White.copy(alpha = .88f),
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -329,29 +342,30 @@ private fun NuvioPlayerControls(
         }
 
         val sourceLine = if (!playing) {
-            "Via ${activeSource.providerName}" + activeSource.quality?.takeIf { it.isNotBlank() }?.let { "  •  $it" }.orEmpty()
+            "Via ${activeSource.providerName}" +
+                activeSource.quality?.takeIf { it.isNotBlank() }?.let { "  •  $it" }.orEmpty()
         } else null
         if (!releaseInfo.isNullOrBlank() || sourceLine != null) {
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(4.dp))
             releaseInfo?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
-                    color = Color.White.copy(alpha = .66f),
-                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = .58f),
+                    fontSize = 11.sp,
                 )
             }
             sourceLine?.let {
                 Text(
                     text = it,
-                    color = Color.White.copy(alpha = .66f),
-                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = .58f),
+                    fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        Spacer(Modifier.height(15.dp))
+        Spacer(Modifier.height(13.dp))
 
         NuvioPlayerProgressRail(
             positionMs = positionMs,
@@ -363,7 +377,7 @@ private fun NuvioPlayerControls(
             onHideControls = onHideControls,
         )
 
-        Spacer(Modifier.height(15.dp))
+        Spacer(Modifier.height(13.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -371,7 +385,7 @@ private fun NuvioPlayerControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 NuvioPlayerControlButton(
@@ -450,7 +464,8 @@ private fun NuvioPlayerControls(
                         onInteraction = onInteraction,
                         onClick = {
                             val current = speedOptions.indexOfFirst { it.selected }.coerceAtLeast(0)
-                            speedOptions.getOrNull((current + 1) % speedOptions.size.coerceAtLeast(1))
+                            speedOptions
+                                .getOrNull((current + 1) % speedOptions.size.coerceAtLeast(1))
                                 ?.let(onMoreOptionSelected)
                         },
                     )
@@ -463,7 +478,8 @@ private fun NuvioPlayerControls(
                         onInteraction = onInteraction,
                         onClick = {
                             val current = fitOptions.indexOfFirst { it.selected }.coerceAtLeast(0)
-                            fitOptions.getOrNull((current + 1) % fitOptions.size.coerceAtLeast(1))
+                            fitOptions
+                                .getOrNull((current + 1) % fitOptions.size.coerceAtLeast(1))
                                 ?.let(onMoreOptionSelected)
                         },
                     )
@@ -483,8 +499,8 @@ private fun NuvioPlayerControls(
 
             Text(
                 text = "${nuvioPlayerTime(positionMs)} / ${nuvioPlayerTime(durationMs)}",
-                color = Color.White.copy(alpha = .90f),
-                fontSize = 13.sp,
+                color = Color.White.copy(alpha = .82f),
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
             )
         }

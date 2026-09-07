@@ -24,9 +24,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,18 +50,14 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.delay
 
-/**
- * TV 40A1 overlay correction.
- *
- * These overlays now follow the supplied Nuvio 0.8.6 player geometry directly:
- * transient subtitle/audio rails are bottom-left and compact; Sources/Episodes
- * are fixed 520dp right side panels. No playback, track, source or routing logic
- * lives here.
- */
+private val FinalLeftOverlayWidth = 370.dp
+private val FinalRightPanelWidth = 400.dp
+private val FinalPanelShape = RoundedCornerShape(14.dp)
+
 @Composable
 internal fun NuvioPlayerLeftOptionsOverlay(
     panel: TvPlayerPanel,
@@ -77,27 +70,26 @@ internal fun NuvioPlayerLeftOptionsOverlay(
         TvPlayerPanel.AUDIO -> "Audio"
         else -> "Options"
     }
-    val railWidth = if (panel == TvPlayerPanel.AUDIO) 444.dp else 320.dp
 
     NuvioPlayerOverlayScaffold(leftWeighted = true) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 52.dp, end = 52.dp, bottom = 76.dp),
+                .width(FinalLeftOverlayWidth)
+                .padding(start = 48.dp, bottom = 70.dp),
             verticalArrangement = Arrangement.Bottom,
         ) {
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 26.sp,
-                lineHeight = 30.sp,
+                fontSize = 23.sp,
+                lineHeight = 27.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            Spacer(Modifier.height(14.dp))
-            NuvioPlayerOptionRail(
+            Spacer(Modifier.height(16.dp))
+            NuvioPlayerOptionList(
                 options = options,
-                width = railWidth,
-                maxHeight = 430.dp,
+                maxHeight = 360.dp,
                 onInteraction = onInteraction,
                 onSelected = onSelected,
             )
@@ -117,38 +109,23 @@ internal fun NuvioPlayerSourcesPanel(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
+                .padding(top = 18.dp, bottom = 18.dp, end = 18.dp)
                 .fillMaxHeight()
-                .width(520.dp)
-                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
-                .background(Color(0xFF101419).copy(alpha = .99f))
-                .padding(32.dp),
+                .width(FinalRightPanelWidth)
+                .clip(FinalPanelShape)
+                .background(Color(0xFF111418).copy(alpha = .98f))
+                .border(1.dp, Color.White.copy(alpha = .07f), FinalPanelShape)
+                .padding(horizontal = 22.dp, vertical = 22.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Sources",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                NuvioPanelTextAction("Close", onDismiss)
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = title,
-                color = Color.White.copy(alpha = .62f),
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            NuvioPanelHeader(
+                title = "Sources",
+                subtitle = title,
+                onDismiss = onDismiss,
             )
-            Spacer(Modifier.height(22.dp))
-            NuvioPlayerOptionRail(
+            Spacer(Modifier.height(16.dp))
+            NuvioPlayerOptionList(
                 options = options,
-                width = 456.dp,
-                maxHeight = 720.dp,
+                maxHeight = 620.dp,
                 onInteraction = onInteraction,
                 onSelected = onSelected,
             )
@@ -166,9 +143,10 @@ internal fun NuvioPlayerEpisodesPanel(
     onSelected: (EpisodeItem) -> Unit,
 ) {
     val seasons = remember(episodes) {
-        val regular = episodes.map { it.season }.distinct().filter { it > 0 }.sorted()
-        val specials = episodes.map { it.season }.distinct().filter { it == 0 }
-        regular + specials
+        episodes
+            .map { it.season }
+            .distinct()
+            .sortedWith(compareBy<Int> { if (it == 0) 1 else 0 }.thenBy { it })
     }
     var selectedSeason by remember(episodes, currentEpisode?.season) {
         mutableIntStateOf(currentEpisode?.season?.takeIf { it in seasons } ?: seasons.firstOrNull() ?: 1)
@@ -181,41 +159,25 @@ internal fun NuvioPlayerEpisodesPanel(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
+                .padding(top = 18.dp, bottom = 18.dp, end = 18.dp)
                 .fillMaxHeight()
-                .width(520.dp)
-                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
-                .background(Color(0xFF101419).copy(alpha = .99f))
-                .padding(32.dp),
+                .width(FinalRightPanelWidth)
+                .clip(FinalPanelShape)
+                .background(Color(0xFF111418).copy(alpha = .985f))
+                .border(1.dp, Color.White.copy(alpha = .07f), FinalPanelShape)
+                .padding(horizontal = 22.dp, vertical = 22.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "Episodes",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        text = mediaTitle,
-                        color = Color.White.copy(alpha = .58f),
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                NuvioPanelTextAction("Close", onDismiss)
-            }
+            NuvioPanelHeader(
+                title = "Episodes",
+                subtitle = mediaTitle,
+                onDismiss = onDismiss,
+            )
 
             if (seasons.size > 1) {
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     itemsIndexed(seasons, key = { _, season -> season }) { _, season ->
                         NuvioSeasonChip(
@@ -227,7 +189,7 @@ internal fun NuvioPlayerEpisodesPanel(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
             NuvioEpisodeList(
                 episodes = seasonEpisodes,
                 currentEpisode = currentEpisode,
@@ -243,31 +205,23 @@ private fun NuvioPlayerOverlayScaffold(
     leftWeighted: Boolean,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = if (leftWeighted) .34f else .45f)),
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = .22f)),
+    ) {
         if (leftWeighted) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .width(500.dp)
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
-                                Color.Black.copy(alpha = .88f),
-                                Color.Black.copy(alpha = .48f),
+                                Color.Black.copy(alpha = .92f),
+                                Color.Black.copy(alpha = .68f),
                                 Color.Transparent,
-                            )
-                        )
-                    )
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = .18f),
-                                Color.Transparent,
-                                Color.Black.copy(alpha = .20f),
                             )
                         )
                     ),
@@ -278,9 +232,8 @@ private fun NuvioPlayerOverlayScaffold(
 }
 
 @Composable
-private fun NuvioPlayerOptionRail(
+private fun NuvioPlayerOptionList(
     options: List<TvPlayerOption>,
-    width: Dp,
     maxHeight: Dp,
     onInteraction: () -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
@@ -297,16 +250,15 @@ private fun NuvioPlayerOptionRail(
             ?: options.indexOfFirst { it.enabled }.takeIf { it >= 0 }
             ?: 0
         listState.scrollToItem(index)
-        delay(80)
+        delay(45)
         runCatching { requesters[index].requestFocus() }
     }
 
     if (options.isEmpty()) {
         Text(
             text = "Nothing available for this stream.",
-            color = Color.White.copy(alpha = .58f),
-            fontSize = 13.sp,
-            modifier = Modifier.width(width),
+            color = Color.White.copy(alpha = .56f),
+            fontSize = 12.sp,
         )
         return
     }
@@ -314,10 +266,10 @@ private fun NuvioPlayerOptionRail(
     LazyColumn(
         state = listState,
         modifier = Modifier
-            .width(width)
+            .fillMaxWidth()
             .heightIn(max = maxHeight),
         verticalArrangement = Arrangement.spacedBy(6.dp),
-        contentPadding = PaddingValues(vertical = 4.dp),
+        contentPadding = PaddingValues(bottom = 4.dp),
     ) {
         itemsIndexed(options, key = { index, option -> "${option.key}:$index" }) { index, option ->
             NuvioPlayerOptionRow(
@@ -338,7 +290,8 @@ private fun NuvioPlayerOptionRow(
     onSelected: () -> Unit,
 ) {
     var focused by remember(option.key) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(8.dp)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -355,9 +308,8 @@ private fun NuvioPlayerOptionRow(
             .clickable(enabled = option.enabled, onClick = onSelected)
             .background(
                 when {
-                    option.selected && focused -> Color.White.copy(alpha = .18f)
-                    option.selected -> Color.White.copy(alpha = .11f)
                     focused -> Color.White.copy(alpha = .12f)
+                    option.selected -> Color.White.copy(alpha = .055f)
                     else -> Color.Transparent
                 },
                 shape,
@@ -365,9 +317,9 @@ private fun NuvioPlayerOptionRow(
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
-                    focused -> TvDesign.Focus
-                    option.selected -> Color.White.copy(alpha = .24f)
-                    else -> Color.White.copy(alpha = .08f)
+                    focused -> Color.White.copy(alpha = .90f)
+                    option.selected -> Color.White.copy(alpha = .13f)
+                    else -> Color.White.copy(alpha = .06f)
                 },
                 shape,
             )
@@ -377,30 +329,31 @@ private fun NuvioPlayerOptionRow(
         Column(Modifier.weight(1f)) {
             Text(
                 text = option.title,
-                color = if (option.enabled) Color.White else Color.White.copy(alpha = .34f),
-                fontSize = 13.sp,
+                color = if (option.enabled) Color.White else Color.White.copy(alpha = .32f),
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
                 fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             option.meta?.takeIf { it.isNotBlank() }?.let { meta ->
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = meta,
-                    color = Color.White.copy(alpha = if (option.enabled) .52f else .26f),
-                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = if (option.enabled) .48f else .24f),
+                    fontSize = 9.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+
         if (option.selected) {
             Spacer(Modifier.width(10.dp))
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
-                tint = Color.White,
-                modifier = Modifier.size(18.dp),
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .background(TvDesign.Accent, CircleShape),
             )
         }
     }
@@ -413,7 +366,7 @@ private fun NuvioSeasonChip(
     onClick: () -> Unit,
 ) {
     var focused by remember(season) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(20.dp)
     Box(
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
@@ -421,24 +374,23 @@ private fun NuvioSeasonChip(
             .clickable(onClick = onClick)
             .background(
                 when {
-                    focused && selected -> Color.White
-                    selected -> Color(0xFFF5F5F5)
-                    focused -> Color.White.copy(alpha = .14f)
+                    focused -> Color.White
+                    selected -> Color.White.copy(alpha = .13f)
                     else -> Color.Transparent
                 },
                 shape,
             )
             .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Focus else if (selected) Color.Transparent else Color.White.copy(alpha = .14f),
-                shape = shape,
+                1.dp,
+                if (focused) Color.White else Color.White.copy(alpha = .11f),
+                shape,
             )
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
     ) {
         Text(
             text = if (season == 0) "Specials" else "Season $season",
-            color = if (selected) Color.Black else Color.White.copy(alpha = if (focused) .96f else .72f),
-            fontSize = 12.sp,
+            color = if (focused) Color.Black else Color.White.copy(alpha = if (selected) .95f else .72f),
+            fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -454,7 +406,8 @@ private fun NuvioEpisodeList(
     val listState = rememberLazyListState()
     val currentIndex = episodes.indexOfFirst { candidate ->
         currentEpisode?.let { current ->
-            current.id == candidate.id || (current.season == candidate.season && current.episode == candidate.episode)
+            current.id == candidate.id ||
+                (current.season == candidate.season && current.episode == candidate.episode)
         } == true
     }.coerceAtLeast(0)
     val requesters = remember(episodes.map { it.id }) {
@@ -464,19 +417,20 @@ private fun NuvioEpisodeList(
     LaunchedEffect(episodes, currentEpisode?.id) {
         if (episodes.isEmpty()) return@LaunchedEffect
         listState.scrollToItem(currentIndex)
-        delay(80)
+        delay(45)
         runCatching { requesters[currentIndex].requestFocus() }
     }
 
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxHeight(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
     ) {
         itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
             val selected = currentEpisode?.let { current ->
-                current.id == episode.id || (current.season == episode.season && current.episode == episode.episode)
+                current.id == episode.id ||
+                    (current.season == episode.season && current.episode == episode.episode)
             } == true
             NuvioEpisodePanelRow(
                 episode = episode,
@@ -498,7 +452,8 @@ private fun NuvioEpisodePanelRow(
     onSelected: () -> Unit,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(9.dp)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -509,32 +464,24 @@ private fun NuvioEpisodePanelRow(
             }
             .focusable()
             .clickable(onClick = onSelected)
-            .background(
-                when {
-                    focused -> Color.White.copy(alpha = .13f)
-                    selected -> Color.White.copy(alpha = .05f)
-                    else -> Color.Transparent
-                },
-                shape,
-            )
+            .background(if (focused) Color.White.copy(alpha = .10f) else Color.Transparent, shape)
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
-                    focused -> TvDesign.Focus
-                    selected -> Color.White.copy(alpha = .20f)
-                    else -> Color.White.copy(alpha = .07f)
+                    focused -> Color.White.copy(alpha = .90f)
+                    selected -> TvDesign.Accent.copy(alpha = .45f)
+                    else -> Color.White.copy(alpha = .055f)
                 },
                 shape,
             )
-            .padding(10.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(130.dp)
-                .height(90.dp)
-                .clip(RoundedCornerShape(9.dp))
+                .width(106.dp)
+                .height(60.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(TvDesign.SurfaceRaised),
         ) {
             TvNetworkImage(
@@ -544,64 +491,84 @@ private fun NuvioEpisodePanelRow(
                 contentScale = ContentScale.Crop,
                 fallback = TvDesign.SurfaceRaised,
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(7.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = .76f))
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = "S${episode.season}E${episode.episode}",
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
             if (selected) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(TvDesign.Accent),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Current episode",
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
+                        .padding(5.dp)
+                        .size(7.dp)
+                        .background(TvDesign.Accent, CircleShape),
+                )
             }
         }
 
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "S${episode.season}E${episode.episode}",
+                color = Color.White.copy(alpha = .46f),
+                fontSize = 8.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = episode.title.ifBlank { "Episode ${episode.episode}" },
                 color = Color.White,
-                fontSize = 13.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            formatEpisodeReleaseDate(episode.released)?.let { released ->
+            episode.released
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::formatPlayerEpisodeDate)
+                ?.let { released ->
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = released,
+                        color = Color.White.copy(alpha = .38f),
+                        fontSize = 8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+        }
+    }
+}
+
+@Composable
+private fun NuvioPanelHeader(
+    title: String,
+    subtitle: String,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 21.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    text = released,
-                    color = Color.White.copy(alpha = .45f),
+                    text = subtitle,
+                    color = Color.White.copy(alpha = .50f),
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        Spacer(Modifier.width(12.dp))
+        NuvioPanelTextAction("Close", onDismiss)
     }
 }
 
@@ -611,29 +578,26 @@ private fun NuvioPanelTextAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(7.dp)
     Text(
         text = label,
-        color = if (focused) Color.Black else Color.White.copy(alpha = .82f),
-        fontSize = 11.sp,
+        color = if (focused) Color.Black else Color.White.copy(alpha = .66f),
+        fontSize = 10.sp,
         fontWeight = FontWeight.Medium,
         modifier = Modifier
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White else Color.White.copy(alpha = .07f), shape)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Focus else Color.White.copy(alpha = .12f),
-                shape = shape,
-            )
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .background(if (focused) Color.White else Color.White.copy(alpha = .055f), shape)
+            .border(1.dp, Color.White.copy(alpha = .08f), shape)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
     )
 }
 
-private fun formatEpisodeReleaseDate(raw: String?): String? {
-    val value = raw?.trim()?.takeIf(String::isNotBlank) ?: return null
-    val datePart = Regex("""\\d{4}-\\d{2}-\\d{2}""").find(value)?.value ?: return value
+private fun formatPlayerEpisodeDate(raw: String): String {
+    val trimmed = raw.trim()
+    val datePart = trimmed.take(10)
+    if (!Regex("""\d{4}-\d{2}-\d{2}""").matches(datePart)) return trimmed
     return runCatching {
         val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
         val date = requireNotNull(parser.parse(datePart))

@@ -59,7 +59,7 @@ internal fun NuvioPlayerProgressRail(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (focused) 12.dp else 8.dp)
+            .height(if (focused) 10.dp else 6.dp)
             .focusRequester(requester)
             .focusProperties { down = downRequester }
             .onFocusChanged {
@@ -86,15 +86,15 @@ internal fun NuvioPlayerProgressRail(
             }
             .focusable()
             .background(
-                Color.White.copy(alpha = if (focused) .45f else .28f),
-                RoundedCornerShape(4.dp),
+                Color.White.copy(alpha = if (focused) .40f else .24f),
+                RoundedCornerShape(3.dp),
             ),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(maxWidth * progress)
-                .background(TvDesign.Accent, RoundedCornerShape(4.dp)),
+                .background(TvDesign.Accent, RoundedCornerShape(3.dp)),
         )
     }
 }
@@ -113,7 +113,7 @@ internal fun NuvioPlayerControlButton(
     var focused by remember(label) { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            .size(52.dp)
+            .size(48.dp)
             .focusRequester(requester)
             .focusProperties { up = upRequester }
             .onFocusChanged {
@@ -145,11 +145,11 @@ internal fun NuvioPlayerControlButton(
             imageVector = icon,
             contentDescription = label,
             tint = when {
-                !enabled -> Color.White.copy(alpha = .32f)
+                !enabled -> Color.White.copy(alpha = .30f)
                 focused -> Color.Black
-                else -> Color.White
+                else -> Color.White.copy(alpha = .92f)
             },
-            modifier = Modifier.size(27.dp),
+            modifier = Modifier.size(25.dp),
         )
     }
 }
@@ -183,16 +183,16 @@ internal fun NuvioPlayerPromptButton(
             .background(if (focused) Color.White else Color.Black.copy(alpha = .82f), shape)
             .border(
                 1.dp,
-                if (focused) Color.White else Color.White.copy(alpha = .20f),
+                if (focused) Color.White else Color.White.copy(alpha = .18f),
                 shape,
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 15.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -201,7 +201,7 @@ internal fun NuvioPlayerPromptButton(
 }
 
 internal fun nuvioPlayerTime(milliseconds: Long): String {
-    val totalSeconds = (milliseconds.coerceAtLeast(0L) / 1000L)
+    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1000L
     val hours = totalSeconds / 3600L
     val minutes = (totalSeconds % 3600L) / 60L
     val seconds = totalSeconds % 60L
