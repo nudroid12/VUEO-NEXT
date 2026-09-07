@@ -65,7 +65,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.R as SharedR
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.profile.ProfileAvatarSpec
 import com.vueo.shared.core.storage.ProfileStore
@@ -742,27 +741,12 @@ private fun TvProfileBackground(content: @Composable () -> Unit) {
 
 @Composable
 private fun TvProfileBrand() {
-    // Same official lockup used by Mobile: lime V/play mark + white VUEO wordmark.
-    // Only the physical size is increased for 10-foot viewing.
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
-    ) {
-        Image(
-            painter = painterResource(SharedR.drawable.vueo_logo_mark),
-            contentDescription = "VUEO",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(42.dp),
-        )
-        Spacer(Modifier.width(13.dp))
-        Text(
-            text = "VUEO",
-            color = Color.White,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 27.sp,
-            letterSpacing = 3.5.sp,
-        )
-    }
+    Image(
+        painter = painterResource(R.drawable.vueo_tv_banner_art),
+        contentDescription = "Vueo",
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.width(170.dp),
+    )
 }
 
 @Composable

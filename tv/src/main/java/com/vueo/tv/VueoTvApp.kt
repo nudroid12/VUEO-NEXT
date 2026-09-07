@@ -1,9 +1,11 @@
 package com.vueo.tv
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -18,8 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
@@ -174,12 +179,11 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             when (route) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "VUEO",
-                            color = TvDesign.White,
-                            fontSize = 34.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
+                        Image(
+                            painter = painterResource(R.drawable.vueo_tv_banner_art),
+                            contentDescription = "Vueo",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.width(220.dp),
                         )
                     }
                 }
