@@ -143,12 +143,14 @@ private fun TvSettingsHub(
             subtitle = "Switch or manage the active profile.",
             value = "Profile",
             onActivate = onProfile,
+            section = "Profile",
         ),
         TvSettingsEntry(
             id = "personalization",
             title = "Personalization",
             subtitle = "User DNA, DNA Match and recommendations.",
             onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) },
+            section = "Profile",
         ),
         TvSettingsEntry(
             id = "content",
@@ -156,6 +158,7 @@ private fun TvSettingsHub(
             subtitle = "Addons, providers and catalog order.",
             value = "$addonCount addons • $repoCount repos • $providerCount providers",
             onActivate = { onOpen(TvSettingsPage.CONTENT_MANAGER) },
+            section = "Content",
         ),
         TvSettingsEntry(
             id = "enhancements",
@@ -163,6 +166,7 @@ private fun TvSettingsHub(
             subtitle = "Metadata, ratings and optional services.",
             value = enhancementSummary(runtime),
             onActivate = { onOpen(TvSettingsPage.ENHANCEMENTS) },
+            section = "Content",
         ),
         TvSettingsEntry(
             id = "playback",
@@ -170,6 +174,7 @@ private fun TvSettingsHub(
             subtitle = "Player behavior, quality and recovery.",
             value = "${if (runtime.settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • ${runtime.settingsStore.preferredQuality().label}",
             onActivate = { onOpen(TvSettingsPage.PLAYBACK) },
+            section = "Playback",
         ),
         TvSettingsEntry(
             id = "subtitles",
@@ -177,6 +182,7 @@ private fun TvSettingsHub(
             subtitle = "Language and display preferences.",
             value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${runtime.settingsStore.subtitleSize().label}",
             onActivate = { onOpen(TvSettingsPage.SUBTITLES) },
+            section = "Playback",
         ),
         TvSettingsEntry(
             id = "sources",
@@ -184,6 +190,7 @@ private fun TvSettingsHub(
             subtitle = "Smart ranking and source information.",
             value = if (runtime.settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Technical details off",
             onActivate = { onOpen(TvSettingsPage.SOURCES) },
+            section = "Playback",
         ),
         TvSettingsEntry(
             id = "appearance",
@@ -191,6 +198,7 @@ private fun TvSettingsHub(
             subtitle = "Theme and interactive accent.",
             value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label}",
             onActivate = { onOpen(TvSettingsPage.APPEARANCE) },
+            section = "Experience",
         ),
         TvSettingsEntry(
             id = "storage",
@@ -198,6 +206,7 @@ private fun TvSettingsHub(
             subtitle = "Backup, restore, history, cache and app data.",
             value = "Local device data",
             onActivate = { onOpen(TvSettingsPage.DATA_STORAGE) },
+            section = "System",
         ),
         TvSettingsEntry(
             id = "updates",
@@ -205,6 +214,7 @@ private fun TvSettingsHub(
             subtitle = "Version and automatic update checks.",
             value = if (runtime.settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Automatic checks off",
             onActivate = { onOpen(TvSettingsPage.UPDATES) },
+            section = "System",
         ),
         TvSettingsEntry(
             id = "about",
@@ -212,6 +222,7 @@ private fun TvSettingsHub(
             subtitle = "Privacy, architecture and build information.",
             value = "VUEO ${BuildConfig.VERSION_NAME}",
             onActivate = { onOpen(TvSettingsPage.ABOUT) },
+            section = "System",
         ),
     )
 

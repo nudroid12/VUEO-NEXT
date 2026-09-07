@@ -10,13 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +56,7 @@ internal data class TvSettingsEntry(
     val onActivate: (() -> Unit)? = null,
     val onPrevious: (() -> Unit)? = null,
     val onNext: (() -> Unit)? = null,
+    val section: String? = null,
 )
 
 @Composable
@@ -81,6 +83,8 @@ internal fun TvSettingsListScreen(
     }
     var navExpanded by remember { mutableStateOf(false) }
 
+    val selectedEntry = entries.firstOrNull { it.id == lastFocusedId } ?: firstFocusable
+
     LaunchedEffect(firstFocusable?.id) {
         val first = firstFocusable ?: return@LaunchedEffect
         delay(90)
@@ -106,72 +110,62 @@ internal fun TvSettingsListScreen(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 96.dp, end = 58.dp, top = 54.dp, bottom = 32.dp),
+                .padding(start = 100.dp, end = 48.dp, top = 44.dp, bottom = 30.dp),
         ) {
-            if (!topLabel.isNullOrBlank()) {
-                Text(
-                    text = topLabel.uppercase(),
-                    color = TvDesign.Accent.copy(alpha = .86f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                )
-                Spacer(Modifier.height(5.dp))
-            }
-            Text(
-                text = title,
-                color = TvDesign.White,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = subtitle,
-                color = TvDesign.Muted,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 6.dp),
+            TvSettingsContextPane(
+                title = title,
+                subtitle = subtitle,
+                topLabel = topLabel,
+                selectedEntry = selectedEntry,
+                footer = footer,
+                modifier = Modifier
+                    .width(238.dp)
+                    .fillMaxHeight(),
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.width(30.dp))
 
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth(.78f)
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(9.dp),
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                itemsIndexed(
-                    items = entries,
-                    key = { _, item -> item.id },
-                ) { _, entry ->
-                    TvSettingsRow(
-                        entry = entry,
-                        requester = rowRequesters.getValue(entry.id),
-                        first = entry.id == firstFocusable?.id,
-                        onUpFromFirst = ::focusSettingsNav,
-                        onLeftToSidebar = ::focusSettingsNav,
-                        onFocused = {
-                            navExpanded = false
-                            lastFocusedId = entry.id
-                        },
-                    )
-                }
+                var previousSection: String? = null
+                entries.forEachIndexed { index, entry ->
+                    val section = entry.section?.takeIf { it.isNotBlank() }
+                    if (section != null && section != previousSection) {
+                        item(key = "section-$index-$section") {
+                            Text(
+                                text = section.uppercase(),
+                                color = TvDesign.Dim,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.15.sp,
+                                modifier = Modifier.padding(start = 14.dp, top = if (index == 0) 2.dp else 12.dp, bottom = 4.dp),
+                            )
+                        }
+                        previousSection = section
+                    }
 
-                if (!footer.isNullOrBlank()) {
-                    item(key = "settings-footer") {
-                        Text(
-                            text = footer,
-                            color = TvDesign.Dim,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 16.dp),
+                    item(key = entry.id) {
+                        TvSettingsRow(
+                            entry = entry,
+                            requester = rowRequesters.getValue(entry.id),
+                            first = entry.id == firstFocusable?.id,
+                            onLeftToSidebar = ::focusSettingsNav,
+                            onFocused = {
+                                navExpanded = false
+                                lastFocusedId = entry.id
+                            },
                         )
                     }
-                } else {
-                    item(key = "settings-bottom-space") { Spacer(Modifier.height(18.dp)) }
                 }
+
+                item(key = "settings-bottom-space") { Spacer(Modifier.height(18.dp)) }
             }
         }
 
@@ -190,11 +184,110 @@ internal fun TvSettingsListScreen(
 }
 
 @Composable
+private fun TvSettingsContextPane(
+    title: String,
+    subtitle: String,
+    topLabel: String?,
+    selectedEntry: TvSettingsEntry?,
+    footer: String?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        if (!topLabel.isNullOrBlank()) {
+            Text(
+                text = topLabel.uppercase(),
+                color = TvDesign.Accent.copy(alpha = .88f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.25.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+
+        Text(
+            text = title,
+            color = TvDesign.White,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 34.sp,
+        )
+        Text(
+            text = subtitle,
+            color = TvDesign.Muted,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+
+        Spacer(Modifier.height(30.dp))
+
+        selectedEntry?.let { entry ->
+            Text(
+                text = "SELECTED",
+                color = TvDesign.Dim,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.15.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = entry.title,
+                color = if (entry.enabled) TvDesign.White else TvDesign.Dim,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = entry.subtitle,
+                color = TvDesign.Muted,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 7.dp),
+            )
+            if (entry.value.isNotBlank()) {
+                Text(
+                    text = entry.value,
+                    color = TvDesign.White.copy(alpha = .88f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .background(TvDesign.White.copy(alpha = .07f), RoundedCornerShape(50))
+                        .padding(horizontal = 11.dp, vertical = 6.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        if (!footer.isNullOrBlank()) {
+            Text(
+                text = footer,
+                color = TvDesign.Dim,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                text = "OK  Select    ◀ ▶  Adjust",
+                color = TvDesign.Dim.copy(alpha = .82f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
 private fun TvSettingsRow(
     entry: TvSettingsEntry,
     requester: FocusRequester,
     first: Boolean,
-    onUpFromFirst: () -> Unit,
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
@@ -204,6 +297,7 @@ private fun TvSettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 64.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -215,10 +309,7 @@ private fun TvSettingsRow(
                 when {
                     first &&
                         event.type == KeyEventType.KeyDown &&
-                        keyCode == KeyEvent.KEYCODE_DPAD_UP -> {
-                        onUpFromFirst()
-                        true
-                    }
+                        keyCode == KeyEvent.KEYCODE_DPAD_UP -> true
                     event.type == KeyEventType.KeyDown &&
                         keyCode == KeyEvent.KEYCODE_DPAD_LEFT &&
                         entry.onPrevious == null -> {
@@ -246,23 +337,23 @@ private fun TvSettingsRow(
             }
             .background(
                 color = when {
-                    !entry.enabled -> TvDesign.Surface.copy(alpha = .34f)
-                    focused -> TvDesign.SurfaceRaised.copy(alpha = .98f)
-                    else -> TvDesign.Surface.copy(alpha = .78f)
+                    !entry.enabled -> TvDesign.Surface.copy(alpha = .18f)
+                    focused -> TvDesign.White.copy(alpha = .10f)
+                    else -> TvDesign.Surface.copy(alpha = .36f)
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(11.dp),
             )
             .border(
-                width = 1.dp,
+                width = if (focused) 1.5.dp else 1.dp,
                 color = when {
-                    !entry.enabled -> TvDesign.White.copy(alpha = .04f)
-                    focused -> TvDesign.White.copy(alpha = .90f)
-                    else -> TvDesign.White.copy(alpha = .075f)
+                    !entry.enabled -> TvDesign.White.copy(alpha = .025f)
+                    focused -> TvDesign.White.copy(alpha = .88f)
+                    else -> TvDesign.White.copy(alpha = .045f)
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(11.dp),
             )
             .focusable(enabled = entry.enabled)
-            .padding(horizontal = 18.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
@@ -280,14 +371,16 @@ private fun TvSettingsRow(
             Text(
                 text = entry.subtitle,
                 color = if (entry.enabled) TvDesign.Muted else TvDesign.Dim.copy(alpha = .65f),
-                fontSize = 11.sp,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
 
+        Spacer(Modifier.width(14.dp))
+
         if (entry.value.isNotBlank()) {
-            Spacer(Modifier.width(16.dp))
             Text(
                 text = buildString {
                     if (canAdjust && focused) append("‹  ")
@@ -295,16 +388,22 @@ private fun TvSettingsRow(
                     if (canAdjust && focused) append("  ›")
                 },
                 color = if (focused) TvDesign.White else TvDesign.Muted,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .background(
+                        color = if (focused) TvDesign.White.copy(alpha = .10f) else TvDesign.White.copy(alpha = .045f),
+                        shape = RoundedCornerShape(50),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         } else if (entry.onActivate != null) {
             Text(
                 text = "›",
                 color = if (focused) TvDesign.White else TvDesign.Dim,
-                fontSize = 20.sp,
+                fontSize = 19.sp,
                 fontWeight = FontWeight.Light,
             )
         }
