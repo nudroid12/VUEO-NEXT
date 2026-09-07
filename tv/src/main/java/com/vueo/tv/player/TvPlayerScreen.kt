@@ -6,35 +6,9 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.List
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.VolumeUp
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,23 +18,14 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -77,16 +42,14 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
-import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
-import com.vueo.tv.ui.TvDesign
 import kotlinx.coroutines.delay
 
-private enum class TvPlayerPanel {
+internal enum class TvPlayerPanel {
     NONE,
     SUBTITLES,
     AUDIO,
@@ -95,12 +58,8 @@ private enum class TvPlayerPanel {
     MORE,
 }
 
-private enum class TvPlayerPanelPlacement {
-    LEFT_OVERLAY,
-    RIGHT_PANEL,
-}
 
-private data class TvPlayerOption(
+internal data class TvPlayerOption(
     val key: String,
     val title: String,
     val meta: String? = null,
@@ -108,7 +67,7 @@ private data class TvPlayerOption(
     val enabled: Boolean = true,
 )
 
-private data class TvAudioLanguageOption(
+internal data class TvAudioLanguageOption(
     val code: String,
     val label: String,
     val selected: Boolean,
@@ -503,144 +462,160 @@ fun TvPlayerScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (controlsVisible || activePanel != TvPlayerPanel.NONE || playbackError != null || activeSkip != null || nextCountdown > 0 || warningVisible) {
-            TvPlayerCinematicScrim(
-                stronger = activePanel != TvPlayerPanel.NONE || playbackError != null,
-            )
+        val orderedEpisodes = remember(media.episodes) {
+            media.episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
         }
-
-        if (controlsVisible) {
-            TvPlayerControlsOverlay(
-                title = media.name,
-                episodeLine = episode?.let { "S${it.season}E${it.episode}  •  ${it.title}" },
-                sourceLine = if (!playing) {
-                    sourceTechnicalLine(activeSource)?.let { "Via ${activeSource.providerName}  •  $it" }
-                        ?: "Via ${activeSource.providerName}"
-                } else null,
-                playing = playing,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                hasNextEpisode = nextEpisode != null,
-                hasSubtitles = bundle.subtitles.isNotEmpty(),
-                hasAudio = audioLanguages.isNotEmpty() || !activeSource.audio.isNullOrBlank(),
-                hasSources = playableSources.isNotEmpty(),
-                hasEpisodes = media.episodes.isNotEmpty(),
-                playPauseRequester = playPauseRequester,
-                progressRequester = progressRequester,
-                nextRequester = nextRequester,
-                subtitlesRequester = subtitlesRequester,
-                audioRequester = audioRequester,
-                sourcesRequester = sourcesRequester,
-                episodesRequester = episodesRequester,
-                moreRequester = moreRequester,
-                onInteraction = ::noteInteraction,
-                onPlayPause = ::togglePlayback,
-                onSeekBy = ::seekBy,
-                onHideControls = {
-                    controlsVisible = false
-                    runCatching { rootRequester.requestFocus() }
-                },
-                onNext = {
-                    nextEpisode?.let {
-                        saveProgress()
-                        onPlayNextEpisode(it)
-                    }
-                },
-                onSubtitles = { activePanel = TvPlayerPanel.SUBTITLES },
-                onAudio = { activePanel = TvPlayerPanel.AUDIO },
-                onSources = { activePanel = TvPlayerPanel.SOURCES },
-                onEpisodes = { activePanel = TvPlayerPanel.EPISODES },
-                onMore = { activePanel = TvPlayerPanel.MORE },
-            )
-        }
-
-        if (warningVisible) {
-            Text(
-                text = "Content guidance  •  ${media.certification}",
-                color = TvDesign.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 82.dp, end = 32.dp)
-                    .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(9.dp))
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-            )
-        }
-
-        activeSkip?.let { segment ->
-            TvPlayerPromptAction(
-                label = skipLabel(segment.kind),
-                requester = skipRequester,
-                down = playPauseRequester,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 44.dp, bottom = 112.dp),
-                onInteraction = ::noteInteraction,
-                onClick = {
-                    player.seekTo(segment.endMs)
-                    positionMs = segment.endMs
-                },
-            )
-        }
-
-        if (nextCountdown > 0 && nextEpisode != null) {
-            TvPlayerPromptAction(
-                label = "Next in $nextCountdown  •  ${nextEpisode.title}",
-                requester = nextContextRequester,
-                down = playPauseRequester,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 44.dp, bottom = if (activeSkip != null) 164.dp else 112.dp),
-                onInteraction = ::noteInteraction,
-                onClick = {
-                    saveProgress()
-                    onPlayNextEpisode(nextEpisode)
-                },
-            )
-        }
-
-        playbackError?.let { error ->
-            Text(
-                text = error,
-                color = Color(0xFFFFA0A0),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = .84f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-            )
-        }
-
-        when (activePanel) {
-            TvPlayerPanel.SUBTITLES -> {
-                val subtitleOptions = buildList {
-                    add(TvPlayerOption("off", "Off", "Disable subtitles", selectedSubtitleKey == "off"))
-                    add(TvPlayerOption("auto", "Auto", "Use your preferred subtitle languages", selectedSubtitleKey == "auto"))
-                    bundle.subtitles
-                        .filter { it.url.startsWith("https://") }
-                        .distinctBy { it.id.ifBlank { it.url } }
-                        .forEach { track ->
-                            add(
-                                TvPlayerOption(
-                                    key = track.id.ifBlank { track.url },
-                                    title = track.name?.takeIf { it.isNotBlank() } ?: friendlyLanguage(track.language),
-                                    meta = listOf(friendlyLanguage(track.language), track.providerName)
-                                        .distinct()
-                                        .joinToString("  •  "),
-                                    selected = selectedSubtitleKey == track.id.ifBlank { track.url },
-                                )
+        val panelOptions = when (activePanel) {
+            TvPlayerPanel.SUBTITLES -> buildList {
+                add(TvPlayerOption("off", "Off", "Disable subtitles", selectedSubtitleKey == "off"))
+                add(TvPlayerOption("auto", "Auto", "Preferred subtitle languages", selectedSubtitleKey == "auto"))
+                bundle.subtitles
+                    .filter { it.url.startsWith("https://") }
+                    .distinctBy { it.id.ifBlank { it.url } }
+                    .forEach { track ->
+                        add(
+                            TvPlayerOption(
+                                key = track.id.ifBlank { track.url },
+                                title = track.name?.takeIf { it.isNotBlank() } ?: friendlyLanguage(track.language),
+                                meta = listOf(friendlyLanguage(track.language), track.providerName)
+                                    .filter { it.isNotBlank() }
+                                    .distinct()
+                                    .joinToString("  •  "),
+                                selected = selectedSubtitleKey == track.id.ifBlank { track.url },
                             )
-                        }
+                        )
+                    }
+            }
+            TvPlayerPanel.AUDIO -> if (audioLanguages.isEmpty()) {
+                listOf(
+                    TvPlayerOption(
+                        key = "stream-default",
+                        title = "Stream default",
+                        meta = activeSource.audio ?: "No alternate audio tracks exposed",
+                        selected = true,
+                        enabled = false,
+                    )
+                )
+            } else {
+                audioLanguages.map { audio ->
+                    TvPlayerOption(
+                        key = audio.code,
+                        title = audio.label,
+                        meta = "Audio language",
+                        selected = audio.selected,
+                    )
                 }
-                TvPlayerOverlayPanel(
-                    title = "Subtitles",
-                    placement = TvPlayerPanelPlacement.LEFT_OVERLAY,
-                    subtitle = "D-pad to choose. Back returns to player controls.",
-                    options = subtitleOptions,
-                    onInteraction = ::noteInteraction,
-                    onSelected = { option ->
+            }
+            TvPlayerPanel.SOURCES -> playableSources.map { item ->
+                TvPlayerOption(
+                    key = item.url.orEmpty(),
+                    title = item.providerName,
+                    meta = sourceTechnicalLine(item) ?: item.name,
+                    selected = item.url == activeSource.url,
+                )
+            }
+            TvPlayerPanel.EPISODES -> orderedEpisodes.map { item ->
+                TvPlayerOption(
+                    key = item.id,
+                    title = item.title.ifBlank { "Episode ${item.episode}" },
+                    meta = "S${item.season}E${item.episode}" + item.released?.takeIf { it.isNotBlank() }?.let { "  •  $it" }.orEmpty(),
+                    selected = episode?.let { current ->
+                        current.id == item.id || (current.season == item.season && current.episode == item.episode)
+                    } == true,
+                )
+            }
+            TvPlayerPanel.MORE -> buildList {
+                listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                    add(
+                        TvPlayerOption(
+                            key = "speed:$speed",
+                            title = "Playback speed",
+                            meta = "${formatSpeed(speed)}x",
+                            selected = playbackSpeed == speed,
+                        )
+                    )
+                }
+                PlayerVideoFit.entries.forEach { fit ->
+                    add(
+                        TvPlayerOption(
+                            key = "fit:${fit.name}",
+                            title = "Video fit",
+                            meta = fit.name.lowercase().replaceFirstChar { it.uppercase() },
+                            selected = videoFit == fit,
+                        )
+                    )
+                }
+            }
+            TvPlayerPanel.NONE -> emptyList()
+        }
+
+        NuvioPlayerPresentation(
+            media = media,
+            episode = episode,
+            activeSource = activeSource,
+            controlsVisible = controlsVisible,
+            activePanel = activePanel,
+            playing = playing,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            nextEpisode = nextEpisode,
+            activeSkip = activeSkip,
+            nextCountdown = nextCountdown,
+            warningVisible = warningVisible,
+            playbackError = playbackError,
+            panelOptions = panelOptions,
+            episodes = orderedEpisodes,
+            hasSubtitles = bundle.subtitles.isNotEmpty(),
+            hasAudio = audioLanguages.isNotEmpty() || !activeSource.audio.isNullOrBlank(),
+            hasSources = playableSources.isNotEmpty(),
+            hasEpisodes = media.episodes.isNotEmpty(),
+            playPauseRequester = playPauseRequester,
+            progressRequester = progressRequester,
+            nextRequester = nextRequester,
+            subtitlesRequester = subtitlesRequester,
+            audioRequester = audioRequester,
+            sourcesRequester = sourcesRequester,
+            episodesRequester = episodesRequester,
+            moreRequester = moreRequester,
+            skipRequester = skipRequester,
+            nextContextRequester = nextContextRequester,
+            onInteraction = ::noteInteraction,
+            onPlayPause = ::togglePlayback,
+            onSeekBy = ::seekBy,
+            onHideControls = {
+                controlsVisible = false
+                runCatching { rootRequester.requestFocus() }
+            },
+            onNext = {
+                nextEpisode?.let {
+                    saveProgress()
+                    onPlayNextEpisode(it)
+                }
+            },
+            onOpenPanel = { panel ->
+                activePanel = panel
+                noteInteraction()
+            },
+            onDismissPanel = { closePanel() },
+            onSkip = { segment ->
+                player.seekTo(segment.endMs)
+                positionMs = segment.endMs
+                noteInteraction()
+            },
+            onPlayEpisode = { target ->
+                val isCurrent = episode?.let { current ->
+                    current.id == target.id || (current.season == target.season && current.episode == target.episode)
+                } == true
+                if (isCurrent) {
+                    closePanel()
+                } else {
+                    saveProgress()
+                    onPlayNextEpisode(target)
+                }
+            },
+            onPanelSelected = { option ->
+                when (activePanel) {
+                    TvPlayerPanel.SUBTITLES -> {
                         when (option.key) {
                             "off" -> {
                                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -671,64 +646,16 @@ fun TvPlayerScreen(
                         }
                         selectedSubtitleKey = option.key
                         closePanel()
-                    },
-                )
-            }
-
-            TvPlayerPanel.AUDIO -> {
-                val options = if (audioLanguages.isEmpty()) {
-                    listOf(
-                        TvPlayerOption(
-                            key = "stream-default",
-                            title = "Stream default",
-                            meta = activeSource.audio ?: "No alternate audio tracks exposed by this stream",
-                            selected = true,
-                            enabled = false,
-                        )
-                    )
-                } else {
-                    audioLanguages.map { audio ->
-                        TvPlayerOption(
-                            key = audio.code,
-                            title = audio.label,
-                            meta = "Audio language",
-                            selected = audio.selected,
-                        )
                     }
-                }
-                TvPlayerOverlayPanel(
-                    title = "Audio",
-                    placement = TvPlayerPanelPlacement.LEFT_OVERLAY,
-                    subtitle = "Choose an audio language exposed by the current stream.",
-                    options = options,
-                    onInteraction = ::noteInteraction,
-                    onSelected = { option ->
+                    TvPlayerPanel.AUDIO -> {
                         if (option.enabled) {
                             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                                 .setPreferredAudioLanguage(option.key)
                                 .build()
                             closePanel()
                         }
-                    },
-                )
-            }
-
-            TvPlayerPanel.SOURCES -> {
-                val options = playableSources.map { item ->
-                    TvPlayerOption(
-                        key = item.url.orEmpty(),
-                        title = item.providerName,
-                        meta = sourceTechnicalLine(item) ?: item.name,
-                        selected = item.url == activeSource.url,
-                    )
-                }
-                TvPlayerOverlayPanel(
-                    title = "Sources",
-                    placement = TvPlayerPanelPlacement.RIGHT_PANEL,
-                    subtitle = "Switch source and continue from your current position.",
-                    options = options,
-                    onInteraction = ::noteInteraction,
-                    onSelected = { option ->
+                    }
+                    TvPlayerPanel.SOURCES -> {
                         val target = playableSources.firstOrNull { it.url == option.key }
                         if (target != null) {
                             if (target.url != activeSource.url) {
@@ -738,78 +665,21 @@ fun TvPlayerScreen(
                             }
                             closePanel()
                         }
-                    },
-                )
-            }
-
-            TvPlayerPanel.EPISODES -> {
-                val orderedEpisodes = remember(media.episodes) {
-                    media.episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
-                }
-                val options = orderedEpisodes.map { item ->
-                    TvPlayerOption(
-                        key = item.id,
-                        title = "S${item.season}E${item.episode}  ${item.title}",
-                        meta = item.released,
-                        selected = episode?.let { current ->
-                            current.id == item.id || (current.season == item.season && current.episode == item.episode)
-                        } == true,
-                    )
-                }
-                TvPlayerOverlayPanel(
-                    title = "Episodes",
-                    placement = TvPlayerPanelPlacement.RIGHT_PANEL,
-                    subtitle = media.name,
-                    options = options,
-                    onInteraction = ::noteInteraction,
-                    onSelected = { option ->
+                    }
+                    TvPlayerPanel.EPISODES -> {
                         val target = orderedEpisodes.firstOrNull { it.id == option.key }
                         if (target != null) {
                             val isCurrent = episode?.let { current ->
                                 current.id == target.id || (current.season == target.season && current.episode == target.episode)
                             } == true
-                            if (isCurrent) {
-                                closePanel()
-                            } else {
+                            if (isCurrent) closePanel()
+                            else {
                                 saveProgress()
                                 onPlayNextEpisode(target)
                             }
                         }
-                    },
-                )
-            }
-
-            TvPlayerPanel.MORE -> {
-                val speedValues = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)
-                val options = buildList {
-                    speedValues.forEach { speed ->
-                        add(
-                            TvPlayerOption(
-                                key = "speed:$speed",
-                                title = "Playback speed",
-                                meta = "${formatSpeed(speed)}x",
-                                selected = playbackSpeed == speed,
-                            )
-                        )
                     }
-                    PlayerVideoFit.entries.forEach { fit ->
-                        add(
-                            TvPlayerOption(
-                                key = "fit:${fit.name}",
-                                title = "Video fit",
-                                meta = fit.name.lowercase().replaceFirstChar { it.uppercase() },
-                                selected = videoFit == fit,
-                            )
-                        )
-                    }
-                }
-                TvPlayerOverlayPanel(
-                    title = "More",
-                    placement = TvPlayerPanelPlacement.LEFT_OVERLAY,
-                    subtitle = "Playback and picture options.",
-                    options = options,
-                    onInteraction = ::noteInteraction,
-                    onSelected = { option ->
+                    TvPlayerPanel.MORE -> {
                         when {
                             option.key.startsWith("speed:") -> {
                                 val speed = option.key.substringAfter(':').toFloatOrNull()
@@ -828,626 +698,11 @@ fun TvPlayerScreen(
                             }
                         }
                         noteInteraction()
-                    },
-                )
-            }
-
-            TvPlayerPanel.NONE -> Unit
-        }
-    }
-}
-
-@Composable
-private fun TvPlayerCinematicScrim(
-    stronger: Boolean,
-) {
-    Box(Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(150.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Black.copy(alpha = if (stronger) .72f else .62f),
-                            Color.Transparent,
-                        )
-                    )
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(250.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = if (stronger) .94f else .84f),
-                        )
-                    )
-                ),
-        )
-        if (stronger) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = .18f)),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvPlayerControlsOverlay(
-    title: String,
-    episodeLine: String?,
-    sourceLine: String?,
-    playing: Boolean,
-    positionMs: Long,
-    durationMs: Long,
-    hasNextEpisode: Boolean,
-    hasSubtitles: Boolean,
-    hasAudio: Boolean,
-    hasSources: Boolean,
-    hasEpisodes: Boolean,
-    playPauseRequester: FocusRequester,
-    progressRequester: FocusRequester,
-    nextRequester: FocusRequester,
-    subtitlesRequester: FocusRequester,
-    audioRequester: FocusRequester,
-    sourcesRequester: FocusRequester,
-    episodesRequester: FocusRequester,
-    moreRequester: FocusRequester,
-    onInteraction: () -> Unit,
-    onPlayPause: () -> Unit,
-    onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
-    onNext: () -> Unit,
-    onSubtitles: () -> Unit,
-    onAudio: () -> Unit,
-    onSources: () -> Unit,
-    onEpisodes: () -> Unit,
-    onMore: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 40.dp, vertical = 28.dp),
-    ) {
-        Spacer(Modifier.weight(1f))
-
-        Text(
-            text = title,
-            color = TvDesign.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        episodeLine?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = TvDesign.White.copy(alpha = .90f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(top = 2.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        sourceLine?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                color = TvDesign.Muted,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 4.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        TvPlayerSeekBar(
-            positionMs = positionMs,
-            durationMs = durationMs,
-            requester = progressRequester,
-            down = playPauseRequester,
-            onInteraction = onInteraction,
-            onSeekBy = onSeekBy,
-            onHideControls = onHideControls,
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = timeLabel(positionMs),
-                color = TvDesign.White.copy(alpha = .92f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = timeLabel(durationMs),
-                color = TvDesign.White.copy(alpha = .68f),
-                fontSize = 11.sp,
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TvPlayerControlButton(
-                    icon = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    label = if (playing) "Pause" else "Play",
-                    requester = playPauseRequester,
-                    up = progressRequester,
-                    onDown = onHideControls,
-                    onInteraction = onInteraction,
-                    onClick = onPlayPause,
-                )
-                if (hasNextEpisode) {
-                    TvPlayerControlButton(
-                        icon = Icons.Rounded.SkipNext,
-                        label = "Next episode",
-                        requester = nextRequester,
-                        up = progressRequester,
-                        onDown = onHideControls,
-                        onInteraction = onInteraction,
-                        onClick = onNext,
-                    )
-                }
-                if (hasSubtitles) {
-                    TvPlayerControlButton(
-                        icon = Icons.Rounded.Subtitles,
-                        label = "Subtitles",
-                        requester = subtitlesRequester,
-                        up = progressRequester,
-                        onDown = onHideControls,
-                        onInteraction = onInteraction,
-                        onClick = onSubtitles,
-                    )
-                }
-                if (hasAudio) {
-                    TvPlayerControlButton(
-                        icon = Icons.Rounded.VolumeUp,
-                        label = "Audio",
-                        requester = audioRequester,
-                        up = progressRequester,
-                        onDown = onHideControls,
-                        onInteraction = onInteraction,
-                        onClick = onAudio,
-                    )
-                }
-                if (hasSources) {
-                    TvPlayerControlButton(
-                        icon = Icons.Rounded.List,
-                        label = "Sources",
-                        requester = sourcesRequester,
-                        up = progressRequester,
-                        onDown = onHideControls,
-                        onInteraction = onInteraction,
-                        onClick = onSources,
-                    )
-                }
-                if (hasEpisodes) {
-                    TvPlayerControlButton(
-                        icon = Icons.Rounded.List,
-                        label = "Episodes",
-                        requester = episodesRequester,
-                        up = progressRequester,
-                        onDown = onHideControls,
-                        onInteraction = onInteraction,
-                        onClick = onEpisodes,
-                    )
-                }
-            }
-
-            TvPlayerControlButton(
-                icon = Icons.Rounded.MoreHoriz,
-                label = "More",
-                requester = moreRequester,
-                up = progressRequester,
-                onDown = onHideControls,
-                onInteraction = onInteraction,
-                onClick = onMore,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvPlayerSeekBar(
-    positionMs: Long,
-    durationMs: Long,
-    requester: FocusRequester,
-    down: FocusRequester,
-    onInteraction: () -> Unit,
-    onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val progress = if (durationMs > 0L) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
-    val height = if (focused) 8.dp else 5.dp
-    val shape = RoundedCornerShape(4.dp)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(18.dp)
-            .focusRequester(requester)
-            .focusProperties { this.down = down }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        onSeekBy(-10_000L)
-                        true
                     }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        onSeekBy(10_000L)
-                        true
-                    }
-                    KeyEvent.KEYCODE_DPAD_UP -> {
-                        onHideControls()
-                        true
-                    }
-                    else -> false
+                    TvPlayerPanel.NONE -> Unit
                 }
-            }
-            .focusable(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(height)
-                .background(
-                    if (focused) TvDesign.White.copy(alpha = .42f)
-                    else TvDesign.White.copy(alpha = .26f),
-                    shape,
-                ),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .fillMaxHeight()
-                    .background(TvDesign.Accent, shape),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvPlayerControlButton(
-    icon: ImageVector,
-    label: String,
-    requester: FocusRequester,
-    up: FocusRequester,
-    enabled: Boolean = true,
-    onDown: () -> Unit,
-    onInteraction: () -> Unit,
-    onClick: () -> Unit,
-) {
-    var focused by remember(label) { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .focusRequester(requester)
-            .focusProperties { this.up = up }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    onDown()
-                    return@onPreviewKeyEvent true
-                }
-                if (!event.isTvActivationKey()) return@onPreviewKeyEvent false
-                onInteraction()
-                if (event.type == KeyEventType.KeyUp && enabled) onClick()
-                true
-            }
-            .focusable()
-            .background(
-                if (focused) TvDesign.White else Color.Transparent,
-                CircleShape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = when {
-                !enabled -> TvDesign.Dim
-                focused -> Color.Black
-                else -> TvDesign.White
             },
-            modifier = Modifier.size(25.dp),
         )
-    }
-}
-
-@Composable
-private fun TvPlayerPromptAction(
-    label: String,
-    requester: FocusRequester,
-    down: FocusRequester,
-    modifier: Modifier = Modifier,
-    onInteraction: () -> Unit,
-    onClick: () -> Unit,
-) {
-    var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
-
-    Row(
-        modifier = modifier
-            .focusRequester(requester)
-            .focusProperties { this.down = down }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                if (!event.isTvActivationKey()) return@onPreviewKeyEvent false
-                onInteraction()
-                if (event.type == KeyEventType.KeyUp) onClick()
-                true
-            }
-            .focusable()
-            .background(
-                if (focused) TvDesign.White else Color.Black.copy(alpha = .78f),
-                shape,
-            )
-            .border(
-                width = if (focused) 0.dp else 1.dp,
-                color = if (focused) Color.Transparent else TvDesign.White.copy(alpha = .15f),
-                shape = shape,
-            )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            color = if (focused) Color.Black else TvDesign.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun TvPlayerOverlayPanel(
-    title: String,
-    placement: TvPlayerPanelPlacement,
-    subtitle: String,
-    options: List<TvPlayerOption>,
-    onInteraction: () -> Unit,
-    onSelected: (TvPlayerOption) -> Unit,
-) {
-    val listState = rememberLazyListState()
-    val requesters = remember(options.map { it.key }) {
-        List(options.size.coerceAtLeast(1)) { FocusRequester() }
-    }
-
-    LaunchedEffect(options) {
-        val targetIndex = options.indexOfFirst { it.selected && it.enabled }
-            .takeIf { it >= 0 }
-            ?: options.indexOfFirst { it.enabled }.coerceAtLeast(0)
-        if (options.isNotEmpty()) {
-            listState.scrollToItem(targetIndex)
-            delay(32)
-            runCatching { requesters[targetIndex].requestFocus() }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = .24f)),
-    ) {
-        if (placement == TvPlayerPanelPlacement.LEFT_OVERLAY) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxHeight()
-                    .width(620.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = .96f),
-                                Color.Black.copy(alpha = .82f),
-                                Color.Transparent,
-                            )
-                        )
-                    ),
-            )
-        }
-
-        Column(
-            modifier = when (placement) {
-                TvPlayerPanelPlacement.LEFT_OVERLAY -> Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxHeight()
-                    .width(500.dp)
-                    .padding(start = 44.dp, end = 28.dp, top = 34.dp, bottom = 36.dp)
-                TvPlayerPanelPlacement.RIGHT_PANEL -> Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(520.dp)
-                    .background(
-                        TvDesign.Surface.copy(alpha = .98f),
-                        RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = TvDesign.White.copy(alpha = .09f),
-                        shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
-                    )
-                    .padding(start = 28.dp, end = 26.dp, top = 34.dp, bottom = 30.dp)
-            },
-        ) {
-            if (placement == TvPlayerPanelPlacement.LEFT_OVERLAY) {
-                Spacer(Modifier.weight(1f))
-            }
-            Text(
-                text = title,
-                color = TvDesign.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = subtitle,
-                color = TvDesign.Muted,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 5.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(18.dp))
-
-            if (options.isEmpty()) {
-                Text(
-                    text = "Nothing available for this stream.",
-                    color = TvDesign.Muted,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 18.dp),
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxHeight(.72f),
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    itemsIndexed(
-                        items = options,
-                        key = { index, option -> "${option.key}:$index" },
-                    ) { index, option ->
-                        TvPlayerOptionCard(
-                            option = option,
-                            requester = requesters[index],
-                            onInteraction = onInteraction,
-                            onClick = { onSelected(option) },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvPlayerOptionCard(
-    option: TvPlayerOption,
-    requester: FocusRequester,
-    onInteraction: () -> Unit,
-    onClick: () -> Unit,
-) {
-    var focused by remember(option.key) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .focusRequester(requester)
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                if (!event.isTvActivationKey()) return@onPreviewKeyEvent false
-                onInteraction()
-                if (event.type == KeyEventType.KeyUp && option.enabled) onClick()
-                true
-            }
-            .focusProperties {
-                left = FocusRequester.Cancel
-                right = FocusRequester.Cancel
-            }
-            .focusable()
-            .background(
-                when {
-                    focused -> TvDesign.White.copy(alpha = .13f)
-                    option.selected -> TvDesign.Accent.copy(alpha = .09f)
-                    else -> Color.Transparent
-                },
-                shape,
-            )
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = when {
-                    focused -> TvDesign.White.copy(alpha = .86f)
-                    option.selected -> TvDesign.Accent.copy(alpha = .36f)
-                    else -> TvDesign.White.copy(alpha = .08f)
-                },
-                shape,
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(30.dp)
-                .background(
-                    if (option.selected) TvDesign.Accent else Color.Transparent,
-                    RoundedCornerShape(2.dp),
-                ),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = option.title,
-                color = if (option.enabled) TvDesign.White else TvDesign.Dim,
-                fontSize = 13.sp,
-                fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            option.meta?.takeIf { it.isNotBlank() }?.let { meta ->
-                Text(
-                    text = meta,
-                    color = if (option.enabled) TvDesign.Muted else TvDesign.Dim,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(top = 3.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (option.selected) {
-            Text(
-                text = "Active",
-                color = TvDesign.Accent,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
     }
 }
 
@@ -1516,11 +771,6 @@ private fun nextEpisode(episodes: List<EpisodeItem>, current: EpisodeItem?): Epi
     return ordered.getOrNull(index + 1)
 }
 
-private fun skipLabel(kind: PlayerSkipKind): String = when (kind) {
-    PlayerSkipKind.INTRO -> "Skip Intro"
-    PlayerSkipKind.RECAP -> "Skip Recap"
-    PlayerSkipKind.ENDING -> "Skip Ending"
-}
 
 private fun withAlpha(argb: Int, percent: Int): Int {
     val alpha = (255 * percent.coerceIn(0, 100) / 100) shl 24
