@@ -77,6 +77,11 @@ internal data class TvSettingsNavItem(
     val section: String? = null,
 )
 
+internal data class TvSettingsMetric(
+    val value: String,
+    val label: String,
+)
+
 private data class TvSettingsEmbeddedHost(
     val firstRowRequester: FocusRequester,
     val onLeftToCategory: () -> Unit,
@@ -167,13 +172,13 @@ internal fun TvSettingsMasterDetailShell(
         ) {
             Column(
                 modifier = Modifier
-                    .width(230.dp)
+                    .width(242.dp)
                     .fillMaxHeight(),
             ) {
                 Text(
                     text = "SETTINGS",
                     color = TvDesign.Dim,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.25.sp,
                     modifier = Modifier.padding(start = 10.dp, bottom = 10.dp),
@@ -183,111 +188,54 @@ internal fun TvSettingsMasterDetailShell(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    var index = 0
-                    while (index < categories.size) {
-                        val category = categories[index]
+                    var previousSection: String? = null
+                    categories.forEachIndexed { index, category ->
                         val section = category.section?.takeIf { it.isNotBlank() }
-
-                        if (section == null) {
-                            val flatIndex = index
-                            item(key = category.id) {
-                                TvSettingsCategoryRow(
-                                    category = category,
-                                    selected = category.id == selectedCategoryId,
-                                    grouped = false,
-                                    requester = categoryRequesters.getValue(category.id),
-                                    onFocused = {
-                                        navExpanded = false
-                                        lastPane = "category"
-                                        onCategorySelected(category.id)
-                                    },
-                                    onLeft = ::focusGlobalNav,
-                                    onRight = { focusPanel() },
-                                    onUp = {
-                                        if (flatIndex <= 0) true else runCatching {
-                                            categoryRequesters.getValue(categories[flatIndex - 1].id).requestFocus()
-                                            true
-                                        }.getOrDefault(false)
-                                    },
-                                    onDown = {
-                                        if (flatIndex >= categories.lastIndex) true else runCatching {
-                                            categoryRequesters.getValue(categories[flatIndex + 1].id).requestFocus()
-                                            true
-                                        }.getOrDefault(false)
-                                    },
+                        if (section != null && section != previousSection) {
+                            item(key = "category-section-$section") {
+                                Text(
+                                    text = section.uppercase(),
+                                    color = TvDesign.Dim,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.15.sp,
+                                    modifier = Modifier.padding(
+                                        start = 10.dp,
+                                        top = if (index == 0) 2.dp else 9.dp,
+                                        bottom = 1.dp,
+                                    ),
                                 )
                             }
-                            index += 1
-                            continue
                         }
+                        previousSection = section
 
-                        val groupStart = index
-                        var groupEnd = groupStart + 1
-                        while (groupEnd < categories.size && categories[groupEnd].section == section) {
-                            groupEnd += 1
-                        }
-                        val groupItems = categories.subList(groupStart, groupEnd)
-
-                        item(key = "category-section-$section") {
-                            Text(
-                                text = section.uppercase(),
-                                color = TvDesign.Dim,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.15.sp,
-                                modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 1.dp),
+                        item(key = category.id) {
+                            TvSettingsCategoryRow(
+                                category = category,
+                                selected = category.id == selectedCategoryId,
+                                grouped = false,
+                                requester = categoryRequesters.getValue(category.id),
+                                onFocused = {
+                                    navExpanded = false
+                                    lastPane = "category"
+                                    onCategorySelected(category.id)
+                                },
+                                onLeft = ::focusGlobalNav,
+                                onRight = { focusPanel() },
+                                onUp = {
+                                    if (index <= 0) true else runCatching {
+                                        categoryRequesters.getValue(categories[index - 1].id).requestFocus()
+                                        true
+                                    }.getOrDefault(false)
+                                },
+                                onDown = {
+                                    if (index >= categories.lastIndex) true else runCatching {
+                                        categoryRequesters.getValue(categories[index + 1].id).requestFocus()
+                                        true
+                                    }.getOrDefault(false)
+                                },
                             )
                         }
-
-                        item(key = "category-group-$section") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(TvDesign.Surface.copy(alpha = .44f), RoundedCornerShape(15.dp))
-                                    .border(1.dp, TvDesign.White.copy(alpha = .055f), RoundedCornerShape(15.dp))
-                                    .padding(vertical = 3.dp),
-                            ) {
-                                groupItems.forEachIndexed { groupIndex, groupCategory ->
-                                    val flatIndex = groupStart + groupIndex
-                                    TvSettingsCategoryRow(
-                                        category = groupCategory,
-                                        selected = groupCategory.id == selectedCategoryId,
-                                        grouped = true,
-                                        requester = categoryRequesters.getValue(groupCategory.id),
-                                        onFocused = {
-                                            navExpanded = false
-                                            lastPane = "category"
-                                            onCategorySelected(groupCategory.id)
-                                        },
-                                        onLeft = ::focusGlobalNav,
-                                        onRight = { focusPanel() },
-                                        onUp = {
-                                            if (flatIndex <= 0) true else runCatching {
-                                                categoryRequesters.getValue(categories[flatIndex - 1].id).requestFocus()
-                                                true
-                                            }.getOrDefault(false)
-                                        },
-                                        onDown = {
-                                            if (flatIndex >= categories.lastIndex) true else runCatching {
-                                                categoryRequesters.getValue(categories[flatIndex + 1].id).requestFocus()
-                                                true
-                                            }.getOrDefault(false)
-                                        },
-                                    )
-                                    if (groupIndex != groupItems.lastIndex) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 12.dp)
-                                                .height(1.dp)
-                                                .background(TvDesign.White.copy(alpha = .055f)),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        index = groupEnd
                     }
                 }
             }
@@ -344,7 +292,7 @@ private fun TvSettingsCategoryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (grouped) 44.dp else 48.dp)
+            .height(if (grouped) 46.dp else 50.dp)
             .focusRequester(requester)
             .onFocusChanged { state ->
                 focused = state.isFocused
@@ -389,7 +337,7 @@ private fun TvSettingsCategoryRow(
         Text(
             text = category.title,
             color = if (focused || selected) TvDesign.White else TvDesign.Muted,
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.weight(1f),
             maxLines = 1,
@@ -398,7 +346,7 @@ private fun TvSettingsCategoryRow(
         Text(
             text = "›",
             color = if (focused) TvDesign.White else TvDesign.Dim,
-            fontSize = 19.sp,
+            fontSize = 20.sp,
         )
     }
 }
@@ -614,6 +562,43 @@ private fun TvProfileStat(
 }
 
 @Composable
+private fun TvSettingsMetricsRow(
+    metrics: List<TvSettingsMetric>,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TvDesign.Surface.copy(alpha = .54f), RoundedCornerShape(16.dp))
+            .border(1.dp, TvDesign.White.copy(alpha = .08f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        metrics.forEach { metric ->
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = metric.value,
+                    color = TvDesign.Accent,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = metric.label,
+                    color = TvDesign.Muted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun TvSettingsListScreen(
     title: String,
     subtitle: String,
@@ -623,6 +608,7 @@ internal fun TvSettingsListScreen(
     onBack: () -> Unit,
     topLabel: String? = null,
     footer: String? = null,
+    metrics: List<TvSettingsMetric> = emptyList(),
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -633,6 +619,7 @@ internal fun TvSettingsListScreen(
             host = embeddedHost,
             topLabel = topLabel,
             footer = footer,
+            metrics = metrics,
         )
         return
     }
@@ -702,14 +689,16 @@ internal fun TvSettingsListScreen(
                 modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
             )
 
+            if (metrics.isNotEmpty()) {
+                TvSettingsMetricsRow(metrics = metrics)
+                Spacer(Modifier.height(12.dp))
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(18.dp))
-                    .border(1.dp, TvDesign.White.copy(alpha = .10f), RoundedCornerShape(18.dp))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 var previousSection: String? = null
                 entries.forEachIndexed { index, entry ->
@@ -719,10 +708,10 @@ internal fun TvSettingsListScreen(
                             Text(
                                 text = section.uppercase(),
                                 color = TvDesign.Dim,
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.1.sp,
-                                modifier = Modifier.padding(start = 8.dp, top = if (index == 0) 2.dp else 8.dp, bottom = 2.dp),
+                                modifier = Modifier.padding(start = 8.dp, top = if (index == 0) 2.dp else 10.dp, bottom = 1.dp),
                             )
                         }
                         previousSection = section
@@ -777,6 +766,7 @@ private fun TvSettingsEmbeddedPanel(
     host: TvSettingsEmbeddedHost,
     topLabel: String?,
     footer: String?,
+    metrics: List<TvSettingsMetric>,
 ) {
     val firstFocusable = entries.firstOrNull { it.enabled } ?: entries.firstOrNull()
     val rowRequesters = remember(entries.map { it.id }) {
@@ -800,25 +790,27 @@ private fun TvSettingsEmbeddedPanel(
         Text(
             text = title,
             color = TvDesign.White,
-            fontSize = 27.sp,
+            fontSize = 29.sp,
             fontWeight = FontWeight.Bold,
         )
         Text(
             text = subtitle,
             color = TvDesign.Muted,
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
             modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
         )
+
+        if (metrics.isNotEmpty()) {
+            TvSettingsMetricsRow(metrics = metrics)
+            Spacer(Modifier.height(12.dp))
+        }
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
-                .background(TvDesign.Surface.copy(alpha = .48f), RoundedCornerShape(18.dp))
-                .border(1.dp, TvDesign.White.copy(alpha = .10f), RoundedCornerShape(18.dp))
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             var previousSection: String? = null
             entries.forEachIndexed { index, entry ->
@@ -828,10 +820,10 @@ private fun TvSettingsEmbeddedPanel(
                         Text(
                             text = section.uppercase(),
                             color = TvDesign.Dim,
-                            fontSize = 9.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.1.sp,
-                            modifier = Modifier.padding(start = 12.dp, top = if (index == 0) 5.dp else 11.dp, bottom = 4.dp),
+                            modifier = Modifier.padding(start = 8.dp, top = if (index == 0) 2.dp else 10.dp, bottom = 1.dp),
                         )
                     }
                     previousSection = section
@@ -847,22 +839,10 @@ private fun TvSettingsEmbeddedPanel(
                         entry = entry,
                         requester = requester,
                         first = entry.id == firstFocusable?.id,
-                        grouped = true,
+                        grouped = false,
                         onLeftToSidebar = host.onLeftToCategory,
                         onFocused = host.onRowFocused,
                     )
-                }
-
-                if (index != entries.lastIndex) {
-                    item(key = "embedded-divider-${entry.id}") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = if (entry.icon != null) 72.dp else 16.dp, end = 14.dp)
-                                .height(1.dp)
-                                .background(TvDesign.White.copy(alpha = .07f)),
-                        )
-                    }
                 }
             }
 
@@ -996,7 +976,7 @@ private fun TvSettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
+            .heightIn(min = 70.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1084,7 +1064,7 @@ private fun TvSettingsRow(
             Text(
                 text = entry.title,
                 color = if (entry.enabled) TvDesign.White else TvDesign.Dim,
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1092,8 +1072,8 @@ private fun TvSettingsRow(
             Text(
                 text = entry.subtitle,
                 color = if (entry.enabled) TvDesign.Muted else TvDesign.Dim.copy(alpha = .65f),
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1109,7 +1089,7 @@ private fun TvSettingsRow(
                     if (canAdjust && focused) append("  ›")
                 },
                 color = if (focused) TvDesign.White else TvDesign.Muted,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

@@ -4,6 +4,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsInputComponent
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +26,7 @@ import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeStore
+import com.vueo.shared.core.plugin.ProviderHealthStatus
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.storage.AppAccent
@@ -49,6 +56,9 @@ private enum class TvSettingsPage {
     CONTENT_PROVIDERS,
     CONTENT_CATALOGS,
     ENHANCEMENTS,
+    ENHANCEMENT_TMDB,
+    ENHANCEMENT_MDBLIST,
+    ENHANCEMENT_GEMINI,
     PLAYBACK,
     SUBTITLES,
     SOURCES,
@@ -66,7 +76,7 @@ private data class TvSettingsRootDestination(
 )
 
 private val TvSettingsRootDestinations = listOf(
-    TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile"),
+    TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.ENHANCEMENTS, "enhancements", "Enhancements", "VUEO"),
@@ -84,6 +94,9 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
+    TvSettingsPage.ENHANCEMENT_TMDB,
+    TvSettingsPage.ENHANCEMENT_MDBLIST,
+    TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
     else -> this
 }
 
@@ -91,7 +104,10 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.PROFILE_CHOOSER,
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
-    TvSettingsPage.CONTENT_CATALOGS -> true
+    TvSettingsPage.CONTENT_CATALOGS,
+    TvSettingsPage.ENHANCEMENT_TMDB,
+    TvSettingsPage.ENHANCEMENT_MDBLIST,
+    TvSettingsPage.ENHANCEMENT_GEMINI -> true
     else -> false
 }
 
@@ -121,6 +137,9 @@ fun TvSettingsScreen(
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
+            TvSettingsPage.ENHANCEMENT_TMDB,
+            TvSettingsPage.ENHANCEMENT_MDBLIST,
+            TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
             else -> page
         }
         panelAutoFocusToken += 1
@@ -172,7 +191,16 @@ fun TvSettingsScreen(
                 runtime, onNavigate, onProfile, onDataChanged, ::backPanel
             )
             TvSettingsPage.ENHANCEMENTS -> TvEnhancementSettings(
-                runtime, onNavigate, onProfile, onBack
+                runtime, onNavigate, onProfile, ::openPanel, onBack
+            )
+            TvSettingsPage.ENHANCEMENT_TMDB -> TvTmdbEnhancementSettings(
+                runtime, onNavigate, onProfile, ::backPanel
+            )
+            TvSettingsPage.ENHANCEMENT_MDBLIST -> TvMdblistEnhancementSettings(
+                runtime, onNavigate, onProfile, ::backPanel
+            )
+            TvSettingsPage.ENHANCEMENT_GEMINI -> TvGeminiEnhancementSettings(
+                runtime, onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.PLAYBACK -> TvPlaybackSettings(
                 runtime, onNavigate, onProfile, onBack
@@ -305,6 +333,7 @@ private fun TvProfileChooserSettings(
     var revision by remember { mutableIntStateOf(0) }
     val profiles = remember(revision) { runtime.profileStore.profiles() }
     val activeProfileId = remember(revision) { runtime.profileStore.activeProfileId() }
+    var askStartup by remember { mutableStateOf(runtime.profileStore.askWhoIsWatchingOnStartup()) }
     var lockedProfileId by remember { mutableStateOf<String?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
@@ -338,31 +367,47 @@ private fun TvProfileChooserSettings(
         }
     }
 
-    val entries = profiles.map { profile ->
-        val active = profile.id == activeProfileId
-        val locked = runtime.profileStore.hasProfilePin(profile.id)
-        TvSettingsEntry(
-            id = "profile-${profile.id}",
-            title = profile.name,
-            subtitle = buildString {
-                append(if (profile.isKids) "Kids profile" else "Standard profile")
-                if (locked) append(" • PIN protected")
-            },
-            value = if (active) "Active" else "Switch",
-            onActivate = {
-                if (active) {
-                    onProfileSelected()
-                } else if (locked) {
-                    pinError = null
-                    lockedProfileId = profile.id
-                } else if (runtime.profileStore.setActiveProfile(profile.id)) {
-                    revision += 1
-                    onDataChanged()
-                    onProfileSelected()
-                }
-            },
-            icon = Icons.Default.AccountCircle,
+    val entries = buildList {
+        add(
+            toggleEntry(
+                id = "startup-picker",
+                title = "Ask who’s watching on startup",
+                subtitle = "Show profile selection before Home opens.",
+                checked = askStartup,
+            ) {
+                askStartup = it
+                runtime.profileStore.setAskWhoIsWatchingOnStartup(it)
+            }.copy(section = "PROFILE STARTUP", icon = Icons.Default.AccountCircle)
         )
+        profiles.forEach { profile ->
+            val active = profile.id == activeProfileId
+            val locked = runtime.profileStore.hasProfilePin(profile.id)
+            add(
+                TvSettingsEntry(
+                    id = "profile-${profile.id}",
+                    title = profile.name,
+                    subtitle = buildString {
+                        append(if (profile.isKids) "Kids profile" else "Standard profile")
+                        if (locked) append(" • PIN protected")
+                    },
+                    value = if (active) "Active" else "Switch",
+                    onActivate = {
+                        if (active) {
+                            onProfileSelected()
+                        } else if (locked) {
+                            pinError = null
+                            lockedProfileId = profile.id
+                        } else if (runtime.profileStore.setActiveProfile(profile.id)) {
+                            revision += 1
+                            onDataChanged()
+                            onProfileSelected()
+                        }
+                    },
+                    section = "PROFILES",
+                    icon = Icons.Default.AccountCircle,
+                )
+            )
+        }
     }
 
     TvSettingsListScreen(
@@ -389,31 +434,24 @@ private fun TvPersonalizationSettings(
     var dnaEnabled by remember(profile.id) { mutableStateOf(dna.userDnaEnabled(profile.id)) }
     var showMatch by remember(profile.id) { mutableStateOf(dna.showDnaMatchEnabled(profile.id)) }
     var recommendations by remember(profile.id) { mutableStateOf(dna.personalizedRecommendationsEnabled(profile.id)) }
-    var askStartup by remember { mutableStateOf(runtime.profileStore.askWhoIsWatchingOnStartup()) }
-
     val entries = listOf(
-        TvSettingsEntry("profile-context", "Profile", "These controls apply only to this local profile.", profile.name, onActivate = onProfile),
-        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback and My List.", dnaEnabled) {
+        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and My List.", dnaEnabled) {
             dnaEnabled = it
             dna.setUserDnaEnabled(profile.id, it)
-        },
+        }.copy(section = "USER DNA"),
         toggleEntry("dna-match", "Show DNA Match", "Show local taste-match information on supported titles.", showMatch, enabled = dnaEnabled) {
             showMatch = it
             dna.setShowDnaMatchEnabled(profile.id, it)
-        },
-        toggleEntry("dna-recs", "Personalized Recommendations", "Use User DNA when recommendation surfaces are available.", recommendations, enabled = dnaEnabled) {
+        }.copy(section = "USER DNA"),
+        toggleEntry("dna-recs", "Personalized Recommendations", "Use User DNA for For You and Because You Watched recommendations.", recommendations, enabled = dnaEnabled) {
             recommendations = it
             dna.setPersonalizedRecommendationsEnabled(profile.id, it)
-        },
-        toggleEntry("startup-picker", "Ask who’s watching on startup", "Show profile selection before Home opens.", askStartup) {
-            askStartup = it
-            runtime.profileStore.setAskWhoIsWatchingOnStartup(it)
-        },
+        }.copy(section = "USER DNA"),
     )
 
     TvSettingsListScreen(
         "Personalization",
-        "Local, per-profile controls for how VUEO adapts to you.",
+        "Local, per-profile controls for how VUEO adapts to you. These settings stay on this device.",
         entries,
         onNavigate,
         onProfile,
@@ -430,24 +468,67 @@ private fun TvContentManagerHub(
     onOpen: (TvSettingsPage) -> Unit,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
+    val health = healthStore.records()
+    val onlineCount = health.count {
+        it.status == ProviderHealthStatus.ONLINE || it.status == ProviderHealthStatus.SLOW
+    }
+    val slowCount = health.count {
+        it.status == ProviderHealthStatus.SLOW || it.status == ProviderHealthStatus.TIMEOUT
+    }
+    val failedCount = health.count {
+        it.status == ProviderHealthStatus.FAILED ||
+            it.status == ProviderHealthStatus.BLOCKED ||
+            it.status == ProviderHealthStatus.UNAVAILABLE
+    }
+    val addons = runtime.engine.stremioAddons()
+    val installedAddons = addons.size
+    val repositoryCount = runtime.pluginStore.repositories().size
+    val providerCount = runtime.pluginStore.totalProviderCount()
+    val catalogCount = addons.sumOf { extension ->
+        extension.descriptor.catalogs.count { it.canLoadWithoutExtras }
+    }
+
     val entries = listOf(
         TvSettingsEntry(
             "addons", "Addons", "Catalogs, metadata, streams and subtitles.",
-            "${runtime.content.manifestUrls().size} installed",
+            "$installedAddons installed",
             onActivate = { onOpen(TvSettingsPage.CONTENT_ADDONS) },
+            section = "CONTENT",
+            icon = Icons.Default.Extension,
         ),
         TvSettingsEntry(
-            "providers", "Providers", "Plugin repositories and provider enable state.",
-            "${runtime.pluginStore.enabledProviderCount()}/${runtime.pluginStore.totalProviderCount()} enabled",
+            "providers", "Plugins & Providers", "Repositories, runtime providers, health and diagnostics.",
+            "$repositoryCount repos • $providerCount providers",
             onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDERS) },
+            section = "CONTENT",
+            icon = Icons.Default.SettingsInputComponent,
         ),
         TvSettingsEntry(
-            "catalogs", "Catalog Order", "Choose visible Home catalogs and their order.",
-            "${runtime.content.catalogOrder().size} known",
+            "catalogs", "Catalog Order", "Choose the order catalogs appear on Home.",
+            "$catalogCount catalogs",
             onActivate = { onOpen(TvSettingsPage.CONTENT_CATALOGS) },
+            section = "CONTENT",
+            icon = Icons.Default.VideoLibrary,
         ),
     )
-    TvSettingsListScreen("Content Manager", "Manage content sources without restoring legacy TV UI.", entries, onNavigate, onProfile, onBack, topLabel = null)
+    TvSettingsListScreen(
+        title = "Content Manager",
+        subtitle = "Manage addons, providers and catalogs.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = null,
+        metrics = listOf(
+            TvSettingsMetric(installedAddons.toString(), "Installed"),
+            TvSettingsMetric(onlineCount.toString(), "Online"),
+            TvSettingsMetric(slowCount.toString(), "Slow"),
+            TvSettingsMetric(failedCount.toString(), "Failed"),
+        ),
+        footer = "Provider health feeds Smart Source ranking, so slower or unavailable providers do not need to block faster sources.",
+    )
 }
 
 @Composable
@@ -504,7 +585,7 @@ private fun TvAddonSettings(
     }
 
     val entries = buildList {
-        add(TvSettingsEntry("add", "Add Addon", "Install an HTTPS addon manifest URL.", onActivate = { showAdd = true }))
+        add(TvSettingsEntry("add", "Add Addon", "Install an HTTPS addon manifest URL.", onActivate = { showAdd = true }, section = "ADDONS", icon = Icons.Default.Extension))
         manifests.forEachIndexed { index, url ->
             val enabled = runtime.content.isAddonEnabled(url)
             add(
@@ -520,10 +601,12 @@ private fun TvAddonSettings(
                         scope.launch { runtime.setAddonEnabled(url, true); revision++; onDataChanged() }
                     },
                     onActivate = { removeUrl = url },
+                    section = "INSTALLED ADDONS",
+                    icon = Icons.Default.Extension,
                 )
             )
         }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
+        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
     TvSettingsListScreen("Addons", "Install, disable or remove open content addons.", entries, onNavigate, onProfile, onBack, topLabel = "Content Manager")
@@ -611,8 +694,8 @@ private fun TvProviderSettings(
             runtime.pluginStore.setPluginsEnabled(it)
             revision++
             onDataChanged()
-        })
-        add(TvSettingsEntry("add-repo", "Add Repository", "Install an HTTPS provider repository manifest.", onActivate = { showAdd = true }))
+        }.copy(section = "PROVIDER SYSTEM", icon = Icons.Default.SettingsInputComponent))
+        add(TvSettingsEntry("add-repo", "Add Repository", "Install an HTTPS provider repository manifest.", onActivate = { showAdd = true }, section = "PROVIDER SYSTEM"))
         add(
             TvSettingsEntry(
                 id = "runtime-diagnostics",
@@ -620,6 +703,7 @@ private fun TvProviderSettings(
                 subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
                 value = "Open",
                 onActivate = { showRuntimeDiagnostics = true },
+                section = "PROVIDER SYSTEM",
             )
         )
         repositories.forEach { repository ->
@@ -641,6 +725,8 @@ private fun TvProviderSettings(
                         onDataChanged()
                     },
                     onActivate = { removeRepo = repository },
+                    section = "REPOSITORIES",
+                    icon = Icons.Default.SettingsInputComponent,
                 )
             )
             repository.providers.forEach { provider ->
@@ -649,7 +735,7 @@ private fun TvProviderSettings(
                 add(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
-                        title = "  ${provider.name}",
+                        title = provider.name,
                         subtitle = buildString {
                             append(health?.status?.label ?: "No diagnostic yet")
                             provider.description?.takeIf { it.isNotBlank() }?.let { append(" • ").append(it) }
@@ -668,14 +754,23 @@ private fun TvProviderSettings(
                             onDataChanged()
                         },
                         onActivate = { diagnosticTarget = repository to provider },
+                        section = "PROVIDERS",
                     )
                 )
             }
         }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
+        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
-    TvSettingsListScreen("Providers", "Repositories and provider switches used by progressive source discovery.", entries, onNavigate, onProfile, onBack, topLabel = "Content Manager")
+    TvSettingsListScreen(
+        "Plugins & Providers",
+        "Repositories, runtime providers, health and diagnostics.",
+        entries,
+        onNavigate,
+        onProfile,
+        onBack,
+        topLabel = "Content Manager",
+    )
 }
 
 @Composable
@@ -724,6 +819,8 @@ private fun TvCatalogSettings(
                 revision++
                 onDataChanged()
             },
+            section = "HOME CATALOGS",
+            icon = Icons.Default.VideoLibrary,
         )
     }
 
@@ -740,61 +837,243 @@ private fun TvEnhancementSettings(
     runtime: TvRuntime,
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
+    onOpen: (TvSettingsPage) -> Unit,
     onBack: () -> Unit,
 ) {
     val store = runtime.settingsStore
-    var tmdbKey by remember { mutableStateOf(runtime.pluginStore.tmdbApiKey()) }
-    var mdblistKey by remember { mutableStateOf(store.mdblistApiKey()) }
-    var geminiKey by remember { mutableStateOf(store.geminiApiKey()) }
-    var editing by remember { mutableStateOf<String?>(null) }
-    var tmdbMetadata by remember { mutableStateOf(store.tmdbMetadataEnrichmentEnabled()) }
-    var tmdbArtwork by remember { mutableStateOf(store.tmdbArtworkEnrichmentEnabled()) }
-    var tmdbRecs by remember { mutableStateOf(store.tmdbRecommendationsEnabled()) }
-    var tmdbSimilar by remember { mutableStateOf(store.tmdbSimilarTitlesEnabled()) }
-    var ratings by remember { mutableStateOf(store.mdblistRatingsEnabled()) }
-    var imdb by remember { mutableStateOf(store.mdblistImdbEnabled()) }
-    var rt by remember { mutableStateOf(store.mdblistRottenTomatoesEnabled()) }
-    var meta by remember { mutableStateOf(store.mdblistMetacriticEnabled()) }
-    var tmdbRating by remember { mutableStateOf(store.mdblistTmdbRatingEnabled()) }
-    var trakt by remember { mutableStateOf(store.mdblistTraktEnabled()) }
-    var gemini by remember { mutableStateOf(store.geminiInsightsEnabled()) }
+    val entries = listOf(
+        TvSettingsEntry(
+            id = "tmdb",
+            title = "TMDB",
+            subtitle = "Metadata, discovery, recommendations, similar titles and artwork.",
+            value = configuredLabel(runtime.pluginStore.tmdbApiKey()),
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_TMDB) },
+            section = "METADATA & RATINGS",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        TvSettingsEntry(
+            id = "mdblist",
+            title = "MDBList",
+            subtitle = "Ratings and score enrichment for title details.",
+            value = configuredLabel(store.mdblistApiKey()),
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_MDBLIST) },
+            section = "METADATA & RATINGS",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        TvSettingsEntry(
+            id = "gemini",
+            title = "Gemini",
+            subtitle = "Optional AI insights for movie and series details.",
+            value = if (store.geminiApiKey().isNotBlank()) {
+                if (store.geminiInsightsEnabled()) "Configured • Insights on" else "Configured • Insights off"
+            } else {
+                "Not configured"
+            },
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_GEMINI) },
+            section = "AI",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+    )
 
-    editing?.let { target ->
-        val current = when (target) { "tmdb" -> tmdbKey; "mdblist" -> mdblistKey; else -> geminiKey }
+    TvSettingsListScreen(
+        title = "Enhancements",
+        subtitle = "Optional services for richer metadata, ratings and AI features.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        footer = "VUEO core playback, Library and local Personalization continue to work without these services.",
+    )
+}
+
+@Composable
+private fun TvTmdbEnhancementSettings(
+    runtime: TvRuntime,
+    onNavigate: (String) -> Unit,
+    onProfile: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val store = runtime.settingsStore
+    var apiKey by remember { mutableStateOf(runtime.pluginStore.tmdbApiKey()) }
+    var editing by remember { mutableStateOf(false) }
+    var metadata by remember { mutableStateOf(store.tmdbMetadataEnrichmentEnabled()) }
+    var artwork by remember { mutableStateOf(store.tmdbArtworkEnrichmentEnabled()) }
+    var recommendations by remember { mutableStateOf(store.tmdbRecommendationsEnabled()) }
+    var similar by remember { mutableStateOf(store.tmdbSimilarTitlesEnabled()) }
+
+    if (editing) {
         TvTextEntryDialog(
-            title = when (target) { "tmdb" -> "TMDB API Key"; "mdblist" -> "MDBList API Key"; else -> "Gemini API Key" },
-            initialValue = current,
+            title = "TMDB API Key",
+            initialValue = apiKey,
             secret = true,
-            onDismiss = { editing = null },
+            onDismiss = { editing = false },
             onSave = { value ->
-                when (target) {
-                    "tmdb" -> { tmdbKey = value; runtime.pluginStore.setTmdbApiKey(value) }
-                    "mdblist" -> { mdblistKey = value; store.setMdblistApiKey(value) }
-                    else -> { geminiKey = value; store.setGeminiApiKey(value) }
-                }
-                editing = null
+                apiKey = value
+                runtime.pluginStore.setTmdbApiKey(value)
+                editing = false
             },
         )
     }
 
     val entries = listOf(
-        TvSettingsEntry("tmdb-key", "TMDB", "Metadata and artwork enrichment API key.", configuredLabel(tmdbKey), onActivate = { editing = "tmdb" }),
-        toggleEntry("tmdb-meta", "TMDB Metadata", "Enrich details with runtime, cast, genres and production metadata.", tmdbMetadata) { tmdbMetadata = it; store.setTmdbMetadataEnrichmentEnabled(it) },
-        toggleEntry("tmdb-art", "TMDB Artwork", "Use richer backdrop and poster artwork when available.", tmdbArtwork) { tmdbArtwork = it; store.setTmdbArtworkEnrichmentEnabled(it) },
-        toggleEntry("tmdb-recs", "TMDB Recommendations", "Allow recommendation surfaces to use TMDB recommendations.", tmdbRecs) { tmdbRecs = it; store.setTmdbRecommendationsEnabled(it) },
-        toggleEntry("tmdb-similar", "TMDB Similar Titles", "Allow recommendation surfaces to use similar-title results.", tmdbSimilar) { tmdbSimilar = it; store.setTmdbSimilarTitlesEnabled(it) },
-        TvSettingsEntry("mdblist-key", "MDBList", "Ratings service API key.", configuredLabel(mdblistKey), onActivate = { editing = "mdblist" }),
-        toggleEntry("ratings", "MDBList Ratings", "Fetch supported rating sources when title details load.", ratings) { ratings = it; store.setMdblistRatingsEnabled(it) },
-        toggleEntry("rating-imdb", "IMDb Rating", "Allow IMDb rating from MDBList.", imdb, enabled = ratings) { imdb = it; store.setMdblistImdbEnabled(it) },
-        toggleEntry("rating-rt", "Rotten Tomatoes", "Allow Rotten Tomatoes rating from MDBList.", rt, enabled = ratings) { rt = it; store.setMdblistRottenTomatoesEnabled(it) },
-        toggleEntry("rating-meta", "Metacritic", "Allow Metacritic rating from MDBList.", meta, enabled = ratings) { meta = it; store.setMdblistMetacriticEnabled(it) },
-        toggleEntry("rating-tmdb", "TMDB Rating", "Allow TMDB rating from MDBList.", tmdbRating, enabled = ratings) { tmdbRating = it; store.setMdblistTmdbRatingEnabled(it) },
-        toggleEntry("rating-trakt", "Trakt Rating", "Allow Trakt rating from MDBList.", trakt, enabled = ratings) { trakt = it; store.setMdblistTraktEnabled(it) },
-        TvSettingsEntry("gemini-key", "Gemini", "Optional AI insight API key.", configuredLabel(geminiKey), onActivate = { editing = "gemini" }),
-        toggleEntry("gemini-insights", "Gemini Insights", "Allow optional title insight surfaces when configured.", gemini, enabled = geminiKey.isNotBlank()) { gemini = it; store.setGeminiInsightsEnabled(it) },
+        TvSettingsEntry(
+            id = "api-key",
+            title = "API Key",
+            subtitle = "Stored locally on this TV and used only for TMDB requests.",
+            value = configuredLabel(apiKey),
+            onActivate = { editing = true },
+            section = "CONNECTION",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        toggleEntry(
+            "metadata", "Metadata", "Enrich details with runtime, cast, genres and production metadata.", metadata,
+        ) { metadata = it; store.setTmdbMetadataEnrichmentEnabled(it) }.copy(section = "FEATURES"),
+        toggleEntry(
+            "artwork", "Artwork", "Use richer backdrop and poster artwork when available.", artwork,
+        ) { artwork = it; store.setTmdbArtworkEnrichmentEnabled(it) }.copy(section = "FEATURES"),
+        toggleEntry(
+            "recommendations", "Recommendations", "Allow recommendation surfaces to use TMDB recommendations.", recommendations,
+        ) { recommendations = it; store.setTmdbRecommendationsEnabled(it) }.copy(section = "FEATURES"),
+        toggleEntry(
+            "similar", "Similar Titles", "Allow recommendation surfaces to use similar-title results.", similar,
+        ) { similar = it; store.setTmdbSimilarTitlesEnabled(it) }.copy(section = "FEATURES"),
     )
 
-    TvSettingsListScreen("Enhancements", "Optional metadata, ratings and external services. Core playback works without them.", entries, onNavigate, onProfile, onBack, topLabel = null)
+    TvSettingsListScreen(
+        title = "TMDB",
+        subtitle = "Metadata, discovery, recommendations, similar titles and artwork.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Enhancements",
+    )
+}
+
+@Composable
+private fun TvMdblistEnhancementSettings(
+    runtime: TvRuntime,
+    onNavigate: (String) -> Unit,
+    onProfile: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val store = runtime.settingsStore
+    var apiKey by remember { mutableStateOf(store.mdblistApiKey()) }
+    var editing by remember { mutableStateOf(false) }
+    var ratings by remember { mutableStateOf(store.mdblistRatingsEnabled()) }
+    var imdb by remember { mutableStateOf(store.mdblistImdbEnabled()) }
+    var rt by remember { mutableStateOf(store.mdblistRottenTomatoesEnabled()) }
+    var metacritic by remember { mutableStateOf(store.mdblistMetacriticEnabled()) }
+    var tmdb by remember { mutableStateOf(store.mdblistTmdbRatingEnabled()) }
+    var trakt by remember { mutableStateOf(store.mdblistTraktEnabled()) }
+
+    if (editing) {
+        TvTextEntryDialog(
+            title = "MDBList API Key",
+            initialValue = apiKey,
+            secret = true,
+            onDismiss = { editing = false },
+            onSave = { value ->
+                apiKey = value
+                store.setMdblistApiKey(value)
+                editing = false
+            },
+        )
+    }
+
+    val entries = listOf(
+        TvSettingsEntry(
+            id = "api-key",
+            title = "API Key",
+            subtitle = "Stored locally on this TV and used only for MDBList requests.",
+            value = configuredLabel(apiKey),
+            onActivate = { editing = true },
+            section = "CONNECTION",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        toggleEntry(
+            "ratings", "Ratings", "Fetch supported rating sources when title details load.", ratings,
+        ) { ratings = it; store.setMdblistRatingsEnabled(it) }.copy(section = "RATINGS"),
+        toggleEntry(
+            "imdb", "IMDb Rating", "Allow IMDb rating from MDBList.", imdb, enabled = ratings,
+        ) { imdb = it; store.setMdblistImdbEnabled(it) }.copy(section = "RATINGS"),
+        toggleEntry(
+            "rt", "Rotten Tomatoes", "Allow Rotten Tomatoes rating from MDBList.", rt, enabled = ratings,
+        ) { rt = it; store.setMdblistRottenTomatoesEnabled(it) }.copy(section = "RATINGS"),
+        toggleEntry(
+            "metacritic", "Metacritic", "Allow Metacritic rating from MDBList.", metacritic, enabled = ratings,
+        ) { metacritic = it; store.setMdblistMetacriticEnabled(it) }.copy(section = "RATINGS"),
+        toggleEntry(
+            "tmdb", "TMDB Rating", "Allow TMDB rating from MDBList.", tmdb, enabled = ratings,
+        ) { tmdb = it; store.setMdblistTmdbRatingEnabled(it) }.copy(section = "RATINGS"),
+        toggleEntry(
+            "trakt", "Trakt Rating", "Allow Trakt rating from MDBList.", trakt, enabled = ratings,
+        ) { trakt = it; store.setMdblistTraktEnabled(it) }.copy(section = "RATINGS"),
+    )
+
+    TvSettingsListScreen(
+        title = "MDBList",
+        subtitle = "Ratings and score enrichment for title details.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Enhancements",
+    )
+}
+
+@Composable
+private fun TvGeminiEnhancementSettings(
+    runtime: TvRuntime,
+    onNavigate: (String) -> Unit,
+    onProfile: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val store = runtime.settingsStore
+    var apiKey by remember { mutableStateOf(store.geminiApiKey()) }
+    var editing by remember { mutableStateOf(false) }
+    var insights by remember { mutableStateOf(store.geminiInsightsEnabled()) }
+
+    if (editing) {
+        TvTextEntryDialog(
+            title = "Gemini API Key",
+            initialValue = apiKey,
+            secret = true,
+            onDismiss = { editing = false },
+            onSave = { value ->
+                apiKey = value
+                store.setGeminiApiKey(value)
+                editing = false
+            },
+        )
+    }
+
+    val entries = listOf(
+        TvSettingsEntry(
+            id = "api-key",
+            title = "API Key",
+            subtitle = "Stored locally on this TV. Gemini is used only after an explicit VUEO action.",
+            value = configuredLabel(apiKey),
+            onActivate = { editing = true },
+            section = "CONNECTION",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        toggleEntry(
+            "insights", "Gemini Insights", "Allow optional AI insight surfaces when Gemini is configured.", insights,
+            enabled = apiKey.isNotBlank(),
+        ) { insights = it; store.setGeminiInsightsEnabled(it) }.copy(section = "AI"),
+    )
+
+    TvSettingsListScreen(
+        title = "Gemini",
+        subtitle = "Optional AI insights for movie and series details.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Enhancements",
+        footer = "The Gemini API key is stored locally on this device.",
+    )
 }
 
 @Composable
@@ -816,17 +1095,25 @@ private fun TvPlaybackSettings(
     val speeds = listOf(.75f, 1f, 1.25f, 1.5f, 2f)
 
     val entries = listOf(
-        toggleEntry("resume", "Resume Playback", "Continue from saved playback position when reopening a title.", resume) { resume = it; store.setResumePlaybackEnabled(it) },
-        choiceEntry("quality", "Preferred Quality", "Used by Smart Source Ranking.", quality.label, { quality = cycle(PreferredQuality.entries, quality, -1); store.setPreferredQuality(quality) }, { quality = cycle(PreferredQuality.entries, quality, 1); store.setPreferredQuality(quality) }),
-        choiceEntry("speed", "Playback Speed", "Default speed used by the TV player.", "${speed}×", { speed = cycle(speeds, speed, -1); store.setPlayerPlaybackSpeed(speed) }, { speed = cycle(speeds, speed, 1); store.setPlayerPlaybackSpeed(speed) }),
-        choiceEntry("fit", "Video Fit", "Choose how video fills the TV canvas.", fit.label, { fit = cycle(PlayerVideoFit.entries, fit, -1); store.setPlayerVideoFit(fit) }, { fit = cycle(PlayerVideoFit.entries, fit, 1); store.setPlayerVideoFit(fit) }),
-        toggleEntry("warnings", "Content Warnings", "Show available parental guidance briefly when playback starts.", warnings) { warnings = it; store.setContentWarningsEnabled(it) },
-        toggleEntry("skip", "Skip Intro & Ending", "Show contextual skip action when verified timestamps are available.", skip) { skip = it; store.setSkipSegmentsEnabled(it) },
-        toggleEntry("autoplay", "Auto-play Next Episode", "Start the next episode after an 8-second countdown when playback ends.", autoplay) { autoplay = it; store.setAutoPlayNextEpisodeEnabled(it) },
-        toggleEntry("recovery", "Auto Source Recovery", "Try up to two ranked alternatives after a playback error, keeping the timestamp.", recovery) { recovery = it; store.setAutoSourceRecoveryEnabled(it) },
+        toggleEntry("resume", "Resume Playback", "Ask to continue from a saved position when reopening a title.", resume) { resume = it; store.setResumePlaybackEnabled(it) }
+            .copy(section = "PLAYBACK", icon = Icons.Default.PlayArrow),
+        choiceEntry("quality", "Preferred Quality", "Prefer this resolution when Smart Source ranks playable streams.", quality.label, { quality = cycle(PreferredQuality.entries, quality, -1); store.setPreferredQuality(quality) }, { quality = cycle(PreferredQuality.entries, quality, 1); store.setPreferredQuality(quality) })
+            .copy(section = "PLAYBACK"),
+        choiceEntry("speed", "Playback Speed", "Default speed used by the TV player.", "${speed}×", { speed = cycle(speeds, speed, -1); store.setPlayerPlaybackSpeed(speed) }, { speed = cycle(speeds, speed, 1); store.setPlayerPlaybackSpeed(speed) })
+            .copy(section = "PLAYER"),
+        choiceEntry("fit", "Video Fit", "Choose how video fills the TV canvas.", fit.label, { fit = cycle(PlayerVideoFit.entries, fit, -1); store.setPlayerVideoFit(fit) }, { fit = cycle(PlayerVideoFit.entries, fit, 1); store.setPlayerVideoFit(fit) })
+            .copy(section = "PLAYER"),
+        toggleEntry("warnings", "Content Warnings", "Show available parental guidance briefly when playback starts.", warnings) { warnings = it; store.setContentWarningsEnabled(it) }
+            .copy(section = "BEHAVIOR"),
+        toggleEntry("skip", "Skip Intro & Ending", "Show contextual skip controls when verified timestamps are available.", skip) { skip = it; store.setSkipSegmentsEnabled(it) }
+            .copy(section = "BEHAVIOR"),
+        toggleEntry("autoplay", "Auto-play Next Episode", "Start the next episode after an 8-second countdown when playback ends.", autoplay) { autoplay = it; store.setAutoPlayNextEpisodeEnabled(it) }
+            .copy(section = "BEHAVIOR"),
+        toggleEntry("recovery", "Auto Source Recovery", "Try up to two ranked alternatives after an error or timeout while keeping the timestamp.", recovery) { recovery = it; store.setAutoSourceRecoveryEnabled(it) }
+            .copy(section = "BEHAVIOR"),
     )
 
-    TvSettingsListScreen("Playback", "TV-native player behavior and source preference.", entries, onNavigate, onProfile, onBack)
+    TvSettingsListScreen("Playback", "Player behavior and quality preference.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -849,16 +1136,26 @@ private fun TvSubtitleSettings(
     var opacity by remember { mutableIntStateOf(store.subtitleTextOpacityPercent()) }
 
     val entries = listOf(
-        choiceEntry("primary", "Preferred Language", "First subtitle language to prefer.", primary.label, { primary = cycle(SubtitleLanguage.entries, primary, -1); store.setPreferredSubtitleLanguage(primary) }, { primary = cycle(SubtitleLanguage.entries, primary, 1); store.setPreferredSubtitleLanguage(primary) }),
-        choiceEntry("secondary", "Secondary Language", "Fallback when the preferred language is unavailable.", secondary.label, { secondary = cycle(SubtitleLanguage.entries, secondary, -1); store.setSecondarySubtitleLanguage(secondary) }, { secondary = cycle(SubtitleLanguage.entries, secondary, 1); store.setSecondarySubtitleLanguage(secondary) }),
-        toggleEntry("default", "Subtitles On by Default", "Start playback with subtitles enabled when a suitable track exists.", defaultOn) { defaultOn = it; store.setSubtitlesOnByDefault(it) },
-        toggleEntry("auto", "Auto Select Preferred Language", "Prioritize preferred and secondary languages automatically.", autoSelect) { autoSelect = it; store.setAutoSelectPreferredSubtitle(it) },
-        toggleEntry("embedded", "Embedded Subtitle Priority", "Prefer subtitle tracks included in the stream before external tracks when possible.", embedded) { embedded = it; store.setEmbeddedSubtitlePriority(it) },
-        choiceEntry("size", "Subtitle Size", "Default subtitle text size.", size.label, { size = cycle(SubtitleSize.entries, size, -1); store.setSubtitleSize(size) }, { size = cycle(SubtitleSize.entries, size, 1); store.setSubtitleSize(size) }),
-        toggleEntry("bold", "Bold Subtitles", "Use heavier subtitle text.", bold) { bold = it; store.setSubtitleBold(it) },
-        toggleEntry("outline", "Subtitle Outline", "Draw an outline for contrast over bright video.", outline) { outline = it; store.setSubtitleOutlineEnabled(it) },
-        choiceEntry("padding", "Bottom Position", "Distance from the bottom edge of the screen.", "$bottomPadding%", { bottomPadding = (bottomPadding - 2).coerceAtLeast(5); store.setSubtitleBottomPaddingPercent(bottomPadding) }, { bottomPadding = (bottomPadding + 2).coerceAtMost(40); store.setSubtitleBottomPaddingPercent(bottomPadding) }),
-        choiceEntry("opacity", "Text Opacity", "Subtitle text opacity.", "$opacity%", { opacity = (opacity - 10).coerceAtLeast(20); store.setSubtitleTextOpacityPercent(opacity) }, { opacity = (opacity + 10).coerceAtMost(100); store.setSubtitleTextOpacityPercent(opacity) }),
+        choiceEntry("primary", "Preferred Language", "First language VUEO should prefer when subtitle tracks are available.", primary.label, { primary = cycle(SubtitleLanguage.entries, primary, -1); store.setPreferredSubtitleLanguage(primary) }, { primary = cycle(SubtitleLanguage.entries, primary, 1); store.setPreferredSubtitleLanguage(primary) })
+            .copy(section = "LANGUAGE & BEHAVIOR", icon = Icons.Default.VideoLibrary),
+        choiceEntry("secondary", "Secondary Language", "Fallback language when the preferred language is unavailable.", secondary.label, { secondary = cycle(SubtitleLanguage.entries, secondary, -1); store.setSecondarySubtitleLanguage(secondary) }, { secondary = cycle(SubtitleLanguage.entries, secondary, 1); store.setSecondarySubtitleLanguage(secondary) })
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        toggleEntry("default", "Subtitles On by Default", "Prefer showing subtitles automatically when a suitable track exists.", defaultOn) { defaultOn = it; store.setSubtitlesOnByDefault(it) }
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        toggleEntry("auto", "Auto Select Preferred Language", "Prioritize preferred and secondary languages automatically.", autoSelect) { autoSelect = it; store.setAutoSelectPreferredSubtitle(it) }
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        toggleEntry("embedded", "Embedded Subtitle Priority", "Prefer subtitle tracks already included in the stream before external tracks when possible.", embedded) { embedded = it; store.setEmbeddedSubtitlePriority(it) }
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        choiceEntry("size", "Subtitle Size", "Saved display size preference for the VUEO player.", size.label, { size = cycle(SubtitleSize.entries, size, -1); store.setSubtitleSize(size) }, { size = cycle(SubtitleSize.entries, size, 1); store.setSubtitleSize(size) })
+            .copy(section = "DISPLAY"),
+        toggleEntry("bold", "Bold Subtitles", "Use heavier subtitle text.", bold) { bold = it; store.setSubtitleBold(it) }
+            .copy(section = "DISPLAY"),
+        toggleEntry("outline", "Subtitle Outline", "Draw an outline for contrast over bright video.", outline) { outline = it; store.setSubtitleOutlineEnabled(it) }
+            .copy(section = "DISPLAY"),
+        choiceEntry("padding", "Bottom Position", "Distance from the bottom edge of the screen.", "$bottomPadding%", { bottomPadding = (bottomPadding - 2).coerceAtLeast(5); store.setSubtitleBottomPaddingPercent(bottomPadding) }, { bottomPadding = (bottomPadding + 2).coerceAtMost(40); store.setSubtitleBottomPaddingPercent(bottomPadding) })
+            .copy(section = "DISPLAY"),
+        choiceEntry("opacity", "Text Opacity", "Subtitle text opacity.", "$opacity%", { opacity = (opacity - 10).coerceAtLeast(20); store.setSubtitleTextOpacityPercent(opacity) }, { opacity = (opacity + 10).coerceAtMost(100); store.setSubtitleTextOpacityPercent(opacity) })
+            .copy(section = "DISPLAY"),
     )
 
     TvSettingsListScreen("Subtitles", "Subtitle behavior is separate from subtitle providers in Content Manager.", entries, onNavigate, onProfile, onBack)
@@ -873,12 +1170,12 @@ private fun TvSourceSettings(
 ) {
     var details by remember { mutableStateOf(runtime.settingsStore.showSourceTechnicalDetails()) }
     val entries = listOf(
-        TvSettingsEntry("ranking", "Smart Source Ranking", "Direct playability, preferred quality and provider signals are ranked before selection.", "Active", enabled = false),
-        TvSettingsEntry("progressive", "Progressive Discovery", "Fast providers can return results while slower providers continue searching.", "Active", enabled = false),
+        TvSettingsEntry("ranking", "Smart Source Ranking", "Direct playability, preferred quality and provider health are ranked before selection.", "Active", enabled = false, section = "DISCOVERY", icon = Icons.Default.SettingsInputComponent),
+        TvSettingsEntry("progressive", "Progressive Discovery", "Fast providers can return results while slower providers continue searching.", "Active", enabled = false, section = "DISCOVERY"),
         toggleEntry("details", "Technical Source Details", "Show codec, HDR, audio, size and provider information when available.", details) {
             details = it
             runtime.settingsStore.setShowSourceTechnicalDetails(it)
-        },
+        }.copy(section = "DISPLAY"),
     )
     TvSettingsListScreen("Sources", "Discovery and Smart Source behavior.", entries, onNavigate, onProfile, onBack)
 }
@@ -899,12 +1196,12 @@ private fun TvAppearanceSettings(
             theme = cycle(AppTheme.entries, theme, -1); store.setAppTheme(theme); TvDesign.applyTheme(theme)
         }, {
             theme = cycle(AppTheme.entries, theme, 1); store.setAppTheme(theme); TvDesign.applyTheme(theme)
-        }),
+        }).copy(section = "LOOK & FEEL", icon = Icons.Default.Settings),
         choiceEntry("accent", "Accent", "Selection, progress and semantic accents.", accent.label, {
             accent = cycle(AppAccent.entries, accent, -1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
         }, {
             accent = cycle(AppAccent.entries, accent, 1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
-        }),
+        }).copy(section = "LOOK & FEEL"),
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }
@@ -995,21 +1292,21 @@ private fun TvDataStorageSettings(
         add(toggleEntry("credentials", "Include API Keys in Backup", "Off by default. Enable only when you explicitly want credentials in the JSON backup.", includeCredentials) {
             includeCredentials = it
             store.setIncludeCredentialsInBackup(it)
-        })
-        add(TvSettingsEntry("export", "Export Backup", "Save profiles, Content Manager configuration, Settings, Library and playback progress.", "Export", onActivate = {
+        }.copy(section = "BACKUP & RESTORE", icon = Icons.Default.VideoLibrary))
+        add(TvSettingsEntry("export", "Create Backup", "Save profiles, Content Manager configuration, Settings, Library and playback progress.", "Export", onActivate = {
             exportLauncher.launch(backupFileName())
-        }))
+        }, section = "BACKUP & RESTORE"))
         add(TvSettingsEntry("restore", "Restore Backup", "Choose a VUEO JSON backup. Current local data will be replaced.", "Restore", onActivate = {
             restoreLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
-        }))
-        add(TvSettingsEntry("clear-history", "Clear Watch History", "Remove watched-history entries for the active profile.", "Clear", onActivate = { confirmAction = "history" }))
-        add(TvSettingsEntry("clear-continue", "Clear Continue Watching", "Remove in-progress entries for the active profile.", "Clear", onActivate = { confirmAction = "continue" }))
-        add(TvSettingsEntry("clear-cache", "Clear Cache", "Clear catalog and source-discovery caches; configuration is preserved.", "Clear", onActivate = { confirmAction = "cache" }))
-        add(TvSettingsEntry("reset", "Reset VUEO Data", "Erase local VUEO profiles, settings, content configuration and Library data.", "Reset", onActivate = { confirmAction = "reset" }))
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
+        }, section = "BACKUP & RESTORE"))
+        add(TvSettingsEntry("clear-cache", "Catalog & Source Cache", "Clear catalog and source-discovery caches; configuration is preserved.", "Clear", onActivate = { confirmAction = "cache" }, section = "LOCAL DATA", icon = Icons.Default.SettingsInputComponent))
+        add(TvSettingsEntry("clear-continue", "Continue Watching", "Remove unfinished playback entries for the active profile only.", "Clear", onActivate = { confirmAction = "continue" }, section = "LOCAL DATA"))
+        add(TvSettingsEntry("clear-history", "Watch History", "Clear playback history for the active profile without changing My List.", "Clear", onActivate = { confirmAction = "history" }, section = "LOCAL DATA"))
+        add(TvSettingsEntry("reset", "Reset VUEO Data", "Return local configuration and Library data to a fresh state without uninstalling the APK.", "Reset", onActivate = { confirmAction = "reset" }, section = "RESET"))
+        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
-    TvSettingsListScreen("Data & Storage", "Backup, restore and local data maintenance.", entries, onNavigate, onProfile, onBack)
+    TvSettingsListScreen("Data & Storage", "Backup, restore, cache, history and local data controls.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -1046,12 +1343,12 @@ private fun TvUpdatesSettings(
 
     val available = release?.takeIf { it.isNewerThanCurrent() }
     val entries = buildList {
-        add(TvSettingsEntry("version", "Installed Version", "Current TV build.", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", enabled = false))
+        add(TvSettingsEntry("version", "Current Version", "Build ${BuildConfig.VERSION_CODE}. Updates install over the existing app and keep local VUEO data.", BuildConfig.VERSION_NAME, enabled = false, section = "VERSION", icon = Icons.Default.Refresh))
         add(toggleEntry("auto", "Automatic Update Checks", "Check the VUEO Dev channel in the background with rate limiting.", autoChecks) {
             autoChecks = it
             runtime.settingsStore.setAutomaticUpdateChecksEnabled(it)
-        })
-        add(TvSettingsEntry("check", "Check for Updates", "Check the latest VUEO development release manifest.", if (checking) "Checking…" else "Check", enabled = !checking, onActivate = ::checkNow))
+        }.copy(section = "UPDATES"))
+        add(TvSettingsEntry("check", "Check for Updates", "Check the latest green VUEO development build.", if (checking) "Checking…" else "Check", enabled = !checking, onActivate = ::checkNow, section = "UPDATES"))
         if (available != null) {
             add(
                 TvSettingsEntry(
@@ -1076,13 +1373,14 @@ private fun TvUpdatesSettings(
                             }
                         }
                     },
+                    section = "UPDATES",
                 )
             )
         }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
+        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
-    TvSettingsListScreen("Updates", "Version and update preferences.", entries, onNavigate, onProfile, onBack, footer = "Android requires a final system confirmation before an APK update is installed.")
+    TvSettingsListScreen("Updates", "Fast VUEO development updates.", entries, onNavigate, onProfile, onBack, footer = "Android requires a final system confirmation before an APK update is installed.")
 }
 
 @Composable
@@ -1092,10 +1390,10 @@ private fun TvAboutSettings(
     onBack: () -> Unit,
 ) {
     val entries = listOf(
-        TvSettingsEntry("vueo", "VUEO", "Universal media frontend built around open content sources, progressive discovery and direct playback.", BuildConfig.VERSION_NAME),
-        TvSettingsEntry("architecture", "Architecture", "Shared Core owns data and behavior; TV owns the 10-foot experience.", "Shared Core + TV"),
-        TvSettingsEntry("privacy", "Privacy", "Profiles, settings and API keys are stored locally on the device. Credentials are excluded from backups by default.", "Local-first"),
-        TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB"),
+        TvSettingsEntry("vueo", "VUEO", "Universal media frontend built around open content sources, progressive discovery and direct playback.", BuildConfig.VERSION_NAME, enabled = false, section = "APP", icon = Icons.Default.Settings),
+        TvSettingsEntry("architecture", "Architecture", "Shared Core owns data and behavior; TV owns the 10-foot experience.", "Shared Core + TV", enabled = false, section = "APP"),
+        TvSettingsEntry("privacy", "Privacy", "Profiles, settings and API keys are stored locally on the device. Credentials are excluded from backups by default.", "Local-first", enabled = false, section = "PRIVACY"),
+        TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB", enabled = false, section = "ATTRIBUTION"),
     )
     TvSettingsListScreen("About VUEO", "App, privacy and architecture information.", entries, onNavigate, onProfile, onBack)
 }
