@@ -160,21 +160,43 @@ internal fun tvClearTrackOverride(
 }
 
 internal fun tvCanonicalLanguage(value: String?): String {
-    val code = value?.trim()?.lowercase().orEmpty().substringBefore('-').substringBefore('_')
-    return when (code) {
-        "may", "msa" -> "ms"
-        "ind" -> "id"
+    val normalized = value
+        ?.trim()
+        ?.lowercase()
+        ?.replace('_', '-')
+        ?.takeIf { it.isNotBlank() }
+        ?: return "und"
+
+    val words = normalized
+        .replace(Regex("[^a-z]+"), " ")
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+
+    if ("indonesian" in words || "indonesia" in words) return "id"
+    if ("malay" in words || "melayu" in words) return "ms"
+
+    val language = normalized.substringBefore('-')
+    return when (language) {
+        "id", "ind", "idn", "indonesian", "indonesia", "bahasa indonesia" -> "id"
+        "ms", "may", "msa", "zsm", "malay", "melayu", "bahasa melayu", "bahasa malaysia" -> "ms"
+        "eng" -> "en"
+        "spa" -> "es"
+        "por" -> "pt"
+        "fre", "fra" -> "fr"
+        "ger", "deu" -> "de"
+        "ita" -> "it"
+        "dut", "nld" -> "nl"
         "chi", "zho" -> "zh"
         "jpn" -> "ja"
         "kor" -> "ko"
         "tha" -> "th"
-        "spa" -> "es"
-        "fra", "fre" -> "fr"
-        "deu", "ger" -> "de"
         "ara" -> "ar"
         "hin" -> "hi"
-        "" -> "und"
-        else -> code
+        "tam" -> "ta"
+        "mac", "mkd" -> "mk"
+        "per", "fas" -> "fa"
+        else -> language.ifBlank { "und" }
     }
 }
 

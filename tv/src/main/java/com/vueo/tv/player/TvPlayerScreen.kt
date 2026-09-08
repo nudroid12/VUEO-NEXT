@@ -1036,21 +1036,23 @@ private fun buildMediaItem(
     preferredLanguages: List<String>,
     preferEmbedded: Boolean,
 ): MediaItem {
+    val normalizedPreferredLanguages = preferredLanguages
+        .map(::tvCanonicalLanguage)
+        .distinct()
+
     val ordered = subtitles
         .filter { it.url.startsWith("https://") }
         .distinctBy { it.url }
         .sortedBy { subtitle ->
-            val language = subtitle.language.lowercase()
-            preferredLanguages.indexOfFirst {
-                language == it.lowercase() || language.startsWith("${it.lowercase()}-")
-            }.let { if (it < 0) Int.MAX_VALUE else it }
+            normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language))
+                .let { if (it < 0) Int.MAX_VALUE else it }
         }
 
     val configurations = ordered.mapIndexed { index, subtitle ->
         val selectionId = tvExternalSubtitleSelectionId(subtitle)
         MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
             .setId(selectionId)
-            .setLanguage(subtitle.language)
+            .setLanguage(tvCanonicalLanguage(subtitle.language).takeUnless { it == "und" })
             .setLabel(tvExternalSubtitleLabel(subtitle))
             .setMimeType(subtitleMimeType(subtitle.url))
             .setSelectionFlags(if (!preferEmbedded && index == 0) C.SELECTION_FLAG_DEFAULT else 0)
