@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -309,3 +313,492 @@ private fun NuvioPanelTextAction(label: String, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 7.dp),
     )
 }
+
+
+@Composable
+internal fun NuvioPlayerSubtitleWorkspace(
+    tracks: List<TvPlayerTrackChoice>,
+    subtitlesDisabled: Boolean,
+    preferredLanguageCode: String?,
+    secondaryLanguageCode: String?,
+    subtitleDelayMs: Int,
+    fontSizeSp: Int,
+    bold: Boolean,
+    textColor: Int,
+    textOpacityPercent: Int,
+    outlineEnabled: Boolean,
+    outlineColor: Int,
+    bottomPaddingPercent: Int,
+    onInteraction: () -> Unit,
+    onDismiss: () -> Unit,
+    onDisable: () -> Unit,
+    onSelect: (TvPlayerTrackChoice) -> Unit,
+    onSubtitleDelayChange: (Int) -> Unit,
+    onFontSizeChange: (Int) -> Unit,
+    onBoldChange: (Boolean) -> Unit,
+    onTextColorChange: (Int) -> Unit,
+    onTextOpacityChange: (Int) -> Unit,
+    onOutlineChange: (Boolean) -> Unit,
+    onOutlineColorChange: (Int) -> Unit,
+    onBottomPaddingChange: (Int) -> Unit,
+) {
+    val groups = remember(tracks, preferredLanguageCode, secondaryLanguageCode) {
+        tvBuildSubtitleLanguageGroups(tracks, preferredLanguageCode, secondaryLanguageCode)
+    }
+    val selectedTrack = tracks.firstOrNull { it.selected }
+    val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
+    var activeLanguageCode by remember(groups, selectedLanguageCode, subtitlesDisabled) {
+        mutableStateOf(
+            if (subtitlesDisabled) null
+            else selectedLanguageCode ?: groups.firstOrNull()?.code
+        )
+    }
+    val visibleTracks = groups.firstOrNull { it.code == activeLanguageCode }?.tracks.orEmpty()
+    val languageRequesters = remember(groups.map { it.code }) {
+        List(groups.size + 1) { FocusRequester() }
+    }
+    val trackRequesters = remember(visibleTracks.map { it.key }) {
+        List(visibleTracks.size.coerceAtLeast(1)) { FocusRequester() }
+    }
+    val syncRequester = remember { FocusRequester() }
+    val activeLanguageRequester = languageRequesters.getOrNull(
+        groups.indexOfFirst { it.code == activeLanguageCode }.let { if (it < 0) 0 else it + 1 }
+    ) ?: languageRequesters.first()
+    val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else syncRequester
+
+    LaunchedEffect(groups, selectedLanguageCode, subtitlesDisabled) {
+        delay(40)
+        val index = when {
+            subtitlesDisabled -> 0
+            selectedLanguageCode != null -> groups.indexOfFirst { it.code == selectedLanguageCode }.let { if (it < 0) 0 else it + 1 }
+            else -> if (groups.isNotEmpty()) 1 else 0
+        }
+        runCatching { languageRequesters[index.coerceIn(languageRequesters.indices)].requestFocus() }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .34f))) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(940.dp)
+                .fillMaxHeight(.86f),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            NuvioSubtitleSectionCard(title = "Languages", modifier = Modifier.width(220.dp)) {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    item(key = "subtitle:off") {
+                        NuvioSubtitleChoiceRow(
+                            title = "Off",
+                            detail = "Disable subtitles",
+                            selected = subtitlesDisabled,
+                            requester = languageRequesters[0],
+                            rightRequester = firstTrackRequester,
+                            onInteraction = onInteraction,
+                        ) {
+                            activeLanguageCode = null
+                            onDisable()
+                        }
+                    }
+                    itemsIndexed(groups, key = { _, group -> group.code }) { index, group ->
+                        NuvioSubtitleChoiceRow(
+                            title = group.label,
+                            detail = "${group.tracks.size} track${if (group.tracks.size == 1) "" else "s"}",
+                            selected = !subtitlesDisabled && group.code == selectedLanguageCode,
+                            requester = languageRequesters[index + 1],
+                            rightRequester = firstTrackRequester,
+                            onInteraction = onInteraction,
+                        ) {
+                            activeLanguageCode = group.code
+                        }
+                    }
+                }
+            }
+
+            NuvioSubtitleSectionCard(title = "Subtitles", modifier = Modifier.width(360.dp)) {
+                when {
+                    activeLanguageCode == null -> NuvioSubtitleEmpty("Choose a language to view its tracks.")
+                    visibleTracks.isEmpty() -> NuvioSubtitleEmpty("No subtitle track is available for this language.")
+                    else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
+                            NuvioSubtitleChoiceRow(
+                                title = track.label,
+                                detail = listOfNotNull(
+                                    track.sourceLabel.takeIf { it.isNotBlank() },
+                                    track.metadata?.takeIf { it.isNotBlank() },
+                                ).distinct().joinToString(" • "),
+                                selected = !subtitlesDisabled && track.selected,
+                                requester = trackRequesters[index],
+                                leftRequester = activeLanguageRequester,
+                                rightRequester = syncRequester,
+                                onInteraction = onInteraction,
+                            ) {
+                                onSelect(track)
+                            }
+                        }
+                    }
+                }
+            }
+
+            NuvioSubtitleSectionCard(title = "Style & Sync", modifier = Modifier.width(336.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NuvioSubtitleAdjustRow(
+                        title = "Subtitle sync",
+                        value = formatSubtitleDelayTv(subtitleDelayMs),
+                        requester = syncRequester,
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onLeft = { onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000)) },
+                        onRight = { onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000)) },
+                    )
+                    NuvioSubtitleAdjustRow(
+                        title = "Text size",
+                        value = "$fontSizeSp sp",
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onLeft = { onFontSizeChange((fontSizeSp - 1).coerceAtLeast(12)) },
+                        onRight = { onFontSizeChange((fontSizeSp + 1).coerceAtMost(40)) },
+                    )
+                    NuvioSubtitleToggleRow(
+                        title = "Bold",
+                        enabled = bold,
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onToggle = { onBoldChange(!bold) },
+                    )
+                    val textColours = listOf(
+                        0xFFFFFFFF.toInt(),
+                        0xFFFFFF66.toInt(),
+                        0xFF66E7FF.toInt(),
+                        0xFFB9FF3A.toInt(),
+                        0xFFFF6577.toInt(),
+                    )
+                    NuvioSubtitleAdjustRow(
+                        title = "Text colour",
+                        value = subtitleColourName(textColor),
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onLeft = { onTextColorChange(cycleSubtitleColour(textColours, textColor, -1)) },
+                        onRight = { onTextColorChange(cycleSubtitleColour(textColours, textColor, 1)) },
+                    )
+                    NuvioSubtitleAdjustRow(
+                        title = "Text opacity",
+                        value = "$textOpacityPercent%",
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onLeft = { onTextOpacityChange((textOpacityPercent - 10).coerceAtLeast(20)) },
+                        onRight = { onTextOpacityChange((textOpacityPercent + 10).coerceAtMost(100)) },
+                    )
+                    NuvioSubtitleToggleRow(
+                        title = "Outline",
+                        enabled = outlineEnabled,
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onToggle = { onOutlineChange(!outlineEnabled) },
+                    )
+                    if (outlineEnabled) {
+                        val outlineColours = listOf(
+                            0xFF000000.toInt(),
+                            0xFFFFFFFF.toInt(),
+                            0xFF38E8F2.toInt(),
+                            0xFFFF6577.toInt(),
+                        )
+                        NuvioSubtitleAdjustRow(
+                            title = "Outline colour",
+                            value = subtitleColourName(outlineColor),
+                            leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                            onInteraction = onInteraction,
+                            onLeft = { onOutlineColorChange(cycleSubtitleColour(outlineColours, outlineColor, -1)) },
+                            onRight = { onOutlineColorChange(cycleSubtitleColour(outlineColours, outlineColor, 1)) },
+                        )
+                    }
+                    NuvioSubtitleAdjustRow(
+                        title = "Bottom position",
+                        value = "$bottomPaddingPercent%",
+                        leftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester,
+                        onInteraction = onInteraction,
+                        onLeft = { onBottomPaddingChange((bottomPaddingPercent - 2).coerceAtLeast(5)) },
+                        onRight = { onBottomPaddingChange((bottomPaddingPercent + 2).coerceAtMost(40)) },
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "Back closes subtitles",
+                        color = Color.White.copy(alpha = .40f),
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+
+        Text(
+            "Subtitles",
+            color = Color.White,
+            fontSize = 25.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 44.dp, top = 28.dp),
+        )
+        Text(
+            "Languages, exact tracks, sync and style",
+            color = Color.White.copy(alpha = .56f),
+            fontSize = 11.sp,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 44.dp, top = 61.dp),
+        )
+    }
+}
+
+@Composable
+internal fun NuvioPlayerAudioWorkspace(
+    tracks: List<TvPlayerTrackChoice>,
+    automaticSelected: Boolean,
+    activeSourceLabel: String?,
+    onInteraction: () -> Unit,
+    onDismiss: () -> Unit,
+    onAutomatic: () -> Unit,
+    onSelect: (TvPlayerTrackChoice) -> Unit,
+) {
+    val options = remember(tracks, automaticSelected, activeSourceLabel) {
+        buildList {
+            add(
+                TvPlayerOption(
+                    key = TV_AUDIO_AUTO,
+                    title = "Stream default",
+                    meta = activeSourceLabel?.takeIf { it.isNotBlank() } ?: "Select audio automatically",
+                    selected = automaticSelected,
+                )
+            )
+            tracks.forEach { track ->
+                add(
+                    TvPlayerOption(
+                        key = track.selectionId,
+                        title = track.label,
+                        meta = listOfNotNull(
+                            track.metadata?.takeIf { it.isNotBlank() },
+                            track.sourceLabel.takeIf { it.isNotBlank() },
+                        ).distinct().joinToString(" • "),
+                        selected = !automaticSelected && track.selected,
+                    )
+                )
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .30f))) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(520.dp)
+                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
+                .background(Color(0xFF111418).copy(alpha = .99f))
+                .padding(horizontal = 28.dp, vertical = 32.dp),
+        ) {
+            Text("Audio", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (tracks.isEmpty()) "No selectable alternate audio tracks" else "Choose an exact audio track",
+                color = Color.White.copy(alpha = .54f),
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(18.dp))
+            NuvioOptionList(options, .84f, onInteraction) { option ->
+                if (option.key == TV_AUDIO_AUTO) onAutomatic()
+                else tracks.firstOrNull { it.selectionId == option.key }?.let(onSelect)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NuvioSubtitleSectionCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(Color(0xFF15181C).copy(alpha = .97f), RoundedCornerShape(16.dp))
+            .border(1.dp, Color.White.copy(alpha = .10f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Text(title, color = Color.White.copy(alpha = .72f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(10.dp))
+        content()
+    }
+}
+
+@Composable
+private fun NuvioSubtitleChoiceRow(
+    title: String,
+    detail: String,
+    selected: Boolean,
+    requester: FocusRequester,
+    leftRequester: FocusRequester = FocusRequester.Cancel,
+    rightRequester: FocusRequester = FocusRequester.Cancel,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(title, detail) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .focusProperties { left = leftRequester; right = rightRequester }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(if (focused) Color.White else if (selected) Color.White.copy(alpha = .08f) else Color.Transparent, shape)
+            .border(
+                if (focused) 2.dp else 1.dp,
+                when {
+                    focused -> Color.White
+                    selected -> TvDesign.Accent.copy(alpha = .62f)
+                    else -> Color.White.copy(alpha = .08f)
+                },
+                shape,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = if (focused) Color.Black else Color.White,
+                fontSize = 12.sp,
+                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (detail.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    detail,
+                    color = if (focused) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .46f),
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (selected) {
+            Text("Active", color = if (focused) Color.Black else TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun NuvioSubtitleAdjustRow(
+    title: String,
+    value: String,
+    requester: FocusRequester? = null,
+    leftRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+) {
+    var focused by remember(title) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+            .focusProperties { left = leftRequester; right = FocusRequester.Cancel }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { onLeft(); onInteraction(); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { onRight(); onInteraction(); true }
+                    else -> false
+                }
+            }
+            .focusable()
+            .background(if (focused) Color.White else Color.White.copy(alpha = .04f), shape)
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .08f), shape)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = if (focused) Color.Black else Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        Text("‹  $value  ›", color = if (focused) Color.Black else Color.White.copy(alpha = .68f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun NuvioSubtitleToggleRow(
+    title: String,
+    enabled: Boolean,
+    leftRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onToggle: () -> Unit,
+) {
+    var focused by remember(title) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusProperties { left = leftRequester; right = FocusRequester.Cancel }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onToggle()
+                true
+            }
+            .focusable()
+            .background(if (focused) Color.White else Color.White.copy(alpha = .04f), shape)
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .08f), shape)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = if (focused) Color.Black else Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        Text(if (enabled) "On" else "Off", color = if (focused) Color.Black else if (enabled) TvDesign.Accent else Color.White.copy(alpha = .54f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun NuvioSubtitleEmpty(message: String) {
+    Text(
+        message,
+        color = Color.White.copy(alpha = .52f),
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+    )
+}
+
+private fun cycleSubtitleColour(colours: List<Int>, current: Int, direction: Int): Int {
+    if (colours.isEmpty()) return current
+    val rgb = current and 0x00FFFFFF
+    val index = colours.indexOfFirst { (it and 0x00FFFFFF) == rgb }.let { if (it < 0) 0 else it }
+    return colours[(index + direction).floorMod(colours.size)]
+}
+
+private fun Int.floorMod(size: Int): Int = ((this % size) + size) % size
+
+private fun subtitleColourName(value: Int): String = when (value and 0x00FFFFFF) {
+    0x00FFFFFF -> "White"
+    0x00FFFF66 -> "Yellow"
+    0x0066E7FF -> "Cyan"
+    0x00B9FF3A -> "Lime"
+    0x00FF6577 -> "Rose"
+    0x00000000 -> "Black"
+    0x0038E8F2 -> "Aqua"
+    else -> "Custom"
+}
+
+private fun formatSubtitleDelayTv(value: Int): String = when {
+    value == 0 -> "0 ms"
+    value > 0 -> "+${value} ms"
+    else -> "${value} ms"
+}
+
+private fun androidx.compose.ui.input.key.KeyEvent.isTvPanelActivationKey(): Boolean =
+    nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+        nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
+        nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER

@@ -169,13 +169,14 @@ internal fun NuvioPlayerPresentation(
         }
 
         when (activePanel) {
-            TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO, TvPlayerPanel.MORE ->
+            TvPlayerPanel.MORE ->
                 NuvioPlayerCompactOverlay(
                     panel = activePanel,
                     options = panelOptions,
                     onInteraction = onInteraction,
                     onSelected = onPanelSelected,
                 )
+            TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
             TvPlayerPanel.SOURCES -> NuvioPlayerSourcesPanel(
                 title = episode?.let { "S${it.season}E${it.episode} • ${it.title}" } ?: media.name,
                 options = panelOptions,
