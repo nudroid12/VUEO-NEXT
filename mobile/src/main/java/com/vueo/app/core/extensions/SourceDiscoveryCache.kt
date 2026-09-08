@@ -1,7 +1,8 @@
 package com.vueo.app.core.extensions
 
 import com.vueo.app.core.model.StreamSource
-import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.toSourceCandidate
+import com.vueo.shared.core.source.toStreamSource
 import com.vueo.shared.core.source.SourceDiscoveryCache as SharedSourceDiscoveryCache
 
 data class CachedSourceSession(
@@ -16,7 +17,7 @@ object SourceDiscoveryCache {
     fun get(key: String): CachedSourceSession? =
         SharedSourceDiscoveryCache.get(key)?.let { cached ->
             CachedSourceSession(
-                streams = cached.sources.map(SourceCandidate::toMobile),
+                streams = cached.sources.map { it.toStreamSource() },
                 rawCount = cached.rawCount,
                 notice = cached.notice,
                 cachedAtEpochMs = cached.cachedAtEpochMs,
@@ -39,7 +40,7 @@ object SourceDiscoveryCache {
     ) {
         SharedSourceDiscoveryCache.put(
             key = key,
-            sources = streams.map(StreamSource::toShared),
+            sources = streams.map { it.toSourceCandidate() },
             rawCount = rawCount,
             notice = notice,
         )
@@ -56,48 +57,3 @@ object SourceDiscoveryCache {
             videoId = videoId,
         )
 }
-
-private fun StreamSource.toShared(): SourceCandidate =
-    SourceCandidate(
-        id = buildString {
-            append(providerId ?: providerName ?: name)
-            append(':')
-            append(url ?: infoHash ?: name)
-            fileIndex?.let {
-                append(':')
-                append(it)
-            }
-        },
-        name = name,
-        url = url,
-        infoHash = infoHash,
-        fileIndex = fileIndex,
-        quality = quality,
-        codec = codec,
-        hdr = hdr,
-        audio = audio,
-        language = language,
-        sizeBytes = sizeBytes,
-        headers = headers,
-        rankBoost = rankBoost,
-        providerId = providerId ?: providerName ?: "unknown",
-        providerName = providerName ?: providerId ?: name,
-    )
-
-private fun SourceCandidate.toMobile(): StreamSource =
-    StreamSource(
-        name = name,
-        url = url,
-        infoHash = infoHash,
-        fileIndex = fileIndex,
-        quality = quality,
-        codec = codec,
-        hdr = hdr,
-        audio = audio,
-        language = language,
-        sizeBytes = sizeBytes,
-        headers = headers,
-        rankBoost = rankBoost,
-        providerId = providerId,
-        providerName = providerName,
-    )

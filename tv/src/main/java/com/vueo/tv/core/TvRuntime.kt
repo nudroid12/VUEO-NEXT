@@ -2,7 +2,6 @@ package com.vueo.tv.core
 
 import android.content.Context
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
-import com.vueo.shared.core.extensions.SourceCleaner
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
 import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
@@ -16,21 +15,18 @@ import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.media.StreamSource
-import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.PluginRepositoryClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
-import com.vueo.shared.core.plugin.TmdbResolver
-import com.vueo.shared.core.source.SourceCandidate
-import com.vueo.shared.core.source.SourceDiscoveryCache
+import com.vueo.shared.core.source.SourceDiscoveryEngine
+import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlaybackStore
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -64,6 +60,7 @@ class TvRuntime(context: Context) {
     val dnaEngine = UserDnaEngine(libraryStore)
     val pluginStore = PluginStore(appContext)
     val pluginEngine = PluginSourceEngine(appContext, pluginStore)
+    private val sourceDiscoveryEngine = SourceDiscoveryEngine(engine, pluginEngine, pluginStore)
     private val providerSync = ProviderCodeSyncManager(appContext)
 
     suspend fun boot() {
@@ -213,303 +210,23 @@ class TvRuntime(context: Context) {
         episode: EpisodeItem?,
         onProgress: (String) -> Unit = {},
         onUpdate: (TvSourceDiscoverySnapshot) -> Unit = {},
-    ): TvSourceBundle = coroutineScope {
-        val videoId = if (item.type.lowercase() in setOf("series", "tv")) {
+    ): TvSourceBundle {
+        val videoId = if (MediaTypePolicy.isSeries(item.type)) {
             episode?.id ?: item.id
         } else {
             item.id
         }
-        val preferredQuality = settingsStore.preferredQuality().rankKey
-        val cacheKey = SourceDiscoveryCache.key(
-            mediaType = item.type,
-            mediaId = item.id,
-            videoId = videoId,
-        )
-        val cached = SourceDiscoveryCache.get(cacheKey)
-        val cachedStreams = SourceCleaner.clean(
-            sources = cached?.sources.orEmpty().map { it.toStreamSource() },
-            preferredQuality = preferredQuality,
-            originalLanguage = item.originalLanguage,
-        )
-
-        val startedAtNs = System.nanoTime()
-        var subtitles = emptyList<SubtitleTrack>()
-        var freshAddonStreams = emptyList<StreamSource>()
-        var freshPluginStreams = emptyList<StreamSource>()
-        var addonRawCount = 0
-        var pluginRawCount = 0
-        var addonCompleted = 0
-        var addonTotal = 0
-        var pluginCompleted = 0
-        var pluginTotal = 0
-        var notice = cached?.notice
-        var firstResultMs: Long? = null
-        var searching = true
-        var latestProgress =
-            if (cached != null) {
-                "Recent sources loaded instantly • refreshing in background"
-            } else {
-                "Starting source discovery…"
-            }
-        var providerOrder =
-            cachedStreams
-                .asSequence()
-                .filter { it.isDirectPlayable }
-                .map(::sourceProviderKey)
-                .distinct()
-                .toList()
-
-        fun elapsedMs(): Long =
-            (System.nanoTime() - startedAtNs) / 1_000_000L
-
-        fun recordProviders(candidates: List<StreamSource>) {
-            val next = providerOrder.toMutableList()
-            candidates
-                .asSequence()
-                .filter { it.isDirectPlayable }
-                .map(::sourceProviderKey)
-                .distinct()
-                .forEach { provider ->
-                    if (provider !in next) next += provider
-                }
-            providerOrder = next
-        }
-
-        fun cleanFresh(): List<StreamSource> =
-            SourceCleaner.clean(
-                sources = freshAddonStreams + freshPluginStreams,
-                preferredQuality = preferredQuality,
-                originalLanguage = item.originalLanguage,
-            )
-
-        fun publish(
-            progress: String,
-            streams: List<StreamSource>? = null,
-        ) {
-            latestProgress = progress
-            val fresh = cleanFresh()
-            val display = streams ?: if (searching) {
-                SourceCleaner.clean(
-                    sources = cachedStreams + fresh,
-                    preferredQuality = preferredQuality,
-                    originalLanguage = item.originalLanguage,
-                )
-            } else {
-                fresh
-            }
-
-            recordProviders(display)
-            if (
-                firstResultMs == null &&
-                cachedStreams.isEmpty() &&
-                display.isNotEmpty()
-            ) {
-                firstResultMs = elapsedMs()
-            }
-
-            val rawCount = maxOf(
-                cached?.rawCount ?: 0,
-                addonRawCount + pluginRawCount,
-            )
-            val bundle = TvSourceBundle(
+        return sourceDiscoveryEngine.discover(
+            request = SourceDiscoveryRequest(
+                item = item,
+                episode = episode,
                 videoId = videoId,
-                sources = display,
-                subtitles = subtitles,
-            )
-            onProgress(progress)
-            onUpdate(
-                TvSourceDiscoverySnapshot(
-                    bundle = bundle,
-                    rawCount = rawCount,
-                    notice = notice,
-                    searching = searching,
-                    progress = progress,
-                    firstResultMs = firstResultMs,
-                    providerOrder = providerOrder,
-                    fromCache = cachedStreams.isNotEmpty(),
-                )
-            )
+                preferredQuality = settingsStore.preferredQuality().rankKey,
+            ),
+        ) { snapshot ->
+            onProgress(snapshot.progress)
+            onUpdate(snapshot)
         }
-
-        publish(
-            latestProgress,
-            streams = cachedStreams,
-        )
-
-        val subtitlesDeferred = async {
-            try {
-                engine.resolveSubtitles(item.type, videoId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                emptyList()
-            }
-        }
-
-        val subtitlesUpdateDeferred = async {
-            subtitles = subtitlesDeferred.await()
-            publish(latestProgress)
-        }
-
-        val addonsDeferred = async {
-            try {
-                engine.resolveStreamsProgressive(
-                    type = item.type,
-                    videoId = videoId,
-                ) { progress ->
-                    freshAddonStreams = progress.streams
-                    addonRawCount = progress.rawCount
-                    addonCompleted = progress.completedAddons
-                    addonTotal = progress.totalAddons
-                    publish(
-                        progressLabel(
-                            addonCompleted,
-                            addonTotal,
-                            pluginCompleted,
-                            pluginTotal,
-                            cleanFresh().size,
-                        )
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                emptyList()
-            }
-        }
-
-        val pluginsDeferred = async {
-            if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty()) {
-                return@async null
-            }
-
-            val tmdbId = try {
-                TmdbResolver.resolve(
-                    rawId = item.id,
-                    mediaType = item.type,
-                    apiKey = pluginStore.tmdbApiKey(),
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                null
-            }
-
-            if (tmdbId == null) {
-                notice =
-                    "Plugin providers skipped: VUEO could not resolve a TMDB ID. " +
-                        "Add your TMDB API key in Settings > Enhancements > TMDB."
-                publish(
-                    progressLabel(
-                        addonCompleted,
-                        addonTotal,
-                        pluginCompleted,
-                        pluginTotal,
-                        cleanFresh().size,
-                    )
-                )
-                return@async null
-            }
-
-            val mediaType =
-                if (item.type.lowercase() in setOf("series", "tv")) "tv" else "movie"
-
-            try {
-                pluginEngine.discoverProgressive(
-                    tmdbId = tmdbId,
-                    mediaType = mediaType,
-                    season = episode?.season,
-                    episode = episode?.episode,
-                    mediaTitle = item.name,
-                    mediaOriginalTitle = item.originalTitle,
-                    mediaAliases = item.aliases,
-                    mediaYear = item.releaseInfo,
-                    mediaExternalId = item.id,
-                    mediaOriginalLanguage = item.originalLanguage,
-                ) { progress ->
-                    freshPluginStreams = progress.result.streams.map { it.toStreamSource() }
-                    pluginRawCount = progress.result.streams.size
-                    pluginCompleted = progress.completedProviders
-                    pluginTotal = progress.totalProviders
-                    publish(
-                        progressLabel(
-                            addonCompleted,
-                            addonTotal,
-                            pluginCompleted,
-                            pluginTotal,
-                            cleanFresh().size,
-                        )
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                null
-            }
-        }
-
-        freshAddonStreams = addonsDeferred.await()
-        val pluginResult = pluginsDeferred.await()
-        subtitlesUpdateDeferred.await()
-
-        if (pluginResult != null) {
-            freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
-            pluginRawCount = pluginResult.streams.size
-            notice =
-                "Plugins: ${pluginResult.attemptedProviders} checked • " +
-                    "${pluginResult.successfulProviders} online • " +
-                    "${pluginResult.slowProviders} slow • " +
-                    "${pluginResult.noResultProviders} no results • " +
-                    "${pluginResult.needsSetupProviders} setup • " +
-                    "${pluginResult.unavailableProviders} unavailable • " +
-                    "${pluginResult.blockedProviders} blocked • " +
-                    "${pluginResult.timeoutProviders} timeout • " +
-                    "${pluginResult.failedProviders} failed."
-        }
-
-        val freshFinal = cleanFresh()
-        val finalStreams = freshFinal.ifEmpty { cachedStreams }
-        searching = false
-        recordProviders(finalStreams)
-
-        val rawCount = maxOf(
-            cached?.rawCount ?: 0,
-            addonRawCount + pluginRawCount,
-        )
-        val finalProgress = if (finalStreams.isEmpty()) {
-            "Search complete • no sources found"
-        } else {
-            "Search complete • ${finalStreams.size} unique sources"
-        }
-        val finalBundle = TvSourceBundle(
-            videoId = videoId,
-            sources = finalStreams,
-            subtitles = subtitles,
-        )
-
-        if (finalStreams.isNotEmpty()) {
-            SourceDiscoveryCache.put(
-                key = cacheKey,
-                sources = finalStreams.map { it.toSourceCandidate() },
-                rawCount = rawCount,
-                notice = notice,
-            )
-        }
-
-        onProgress(finalProgress)
-        onUpdate(
-            TvSourceDiscoverySnapshot(
-                bundle = finalBundle,
-                rawCount = rawCount,
-                notice = notice,
-                searching = false,
-                progress = finalProgress,
-                firstResultMs = firstResultMs,
-                providerOrder = providerOrder,
-                fromCache = cachedStreams.isNotEmpty(),
-            )
-        )
-        finalBundle
     }
 
     suspend fun relatedTitles(item: MediaItem): List<MediaItem> =
@@ -587,82 +304,7 @@ class TvRuntime(context: Context) {
             .sortedBy { order[it.id] ?: Int.MAX_VALUE }
     }
 
-    private fun progressLabel(
-        addonCompleted: Int,
-        addonTotal: Int,
-        pluginCompleted: Int,
-        pluginTotal: Int,
-        found: Int,
-    ): String =
-        buildString {
-            append("Searching")
-            if (addonTotal > 0) append(" • Addons $addonCompleted/$addonTotal")
-            if (pluginTotal > 0) append(" • Providers $pluginCompleted/$pluginTotal")
-            if (found > 0) append(" • $found found")
-        }
 }
 
-data class TvSourceDiscoverySnapshot(
-    val bundle: TvSourceBundle,
-    val rawCount: Int,
-    val notice: String?,
-    val searching: Boolean,
-    val progress: String,
-    val firstResultMs: Long?,
-    val providerOrder: List<String>,
-    val fromCache: Boolean,
-)
-
-data class TvSourceBundle(
-    val videoId: String,
-    val sources: List<StreamSource>,
-    val subtitles: List<SubtitleTrack>,
-)
-
-private fun SourceCandidate.toStreamSource(): StreamSource =
-    StreamSource(
-        name = name,
-        url = url,
-        infoHash = infoHash,
-        fileIndex = fileIndex,
-        quality = quality,
-        codec = codec,
-        hdr = hdr,
-        audio = audio,
-        language = language,
-        sizeBytes = sizeBytes,
-        headers = headers,
-        rankBoost = rankBoost,
-        providerId = providerId,
-        providerName = providerName,
-    )
-private fun StreamSource.toSourceCandidate(): SourceCandidate =
-    SourceCandidate(
-        id = buildString {
-            append(providerId)
-            append(':')
-            append(url ?: infoHash ?: name)
-            fileIndex?.let {
-                append(':')
-                append(it)
-            }
-        },
-        name = name,
-        url = url,
-        infoHash = infoHash,
-        fileIndex = fileIndex,
-        quality = quality,
-        codec = codec,
-        hdr = hdr,
-        audio = audio,
-        language = language,
-        sizeBytes = sizeBytes,
-        headers = headers,
-        rankBoost = rankBoost,
-        providerId = providerId,
-        providerName = providerName,
-    )
-
-private fun sourceProviderKey(source: StreamSource): String =
-    source.providerName.trim().ifBlank { "Other" }
-
+typealias TvSourceDiscoverySnapshot = com.vueo.shared.core.source.SourceDiscoverySnapshot
+typealias TvSourceBundle = com.vueo.shared.core.source.SourceDiscoveryBundle

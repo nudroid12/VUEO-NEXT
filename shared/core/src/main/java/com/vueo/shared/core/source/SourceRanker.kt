@@ -1,5 +1,7 @@
 package com.vueo.shared.core.source
 
+import com.vueo.shared.core.language.LanguagePolicy
+
 /**
  * Deterministic source ranking extracted from the current VUEO Mobile
  * PlayerSourcePolicy. It uses current source metadata only and does not learn
@@ -160,12 +162,7 @@ object SourceRanker : SourceRankingPolicy {
         val explicitLanguages = buildSet {
             addAll(detectLanguages(explicitText))
             canonicalLanguageCode(source.language)?.let(::add)
-            source.audio
-                ?.trim()
-                ?.lowercase()
-                ?.takeIf { it in LANGUAGE_ALIASES }
-                ?.let(::canonicalLanguageCode)
-                ?.let(::add)
+            LanguagePolicy.knownCode(source.audio)?.let(::add)
         }
         val detectedLanguages = explicitLanguages + detectLanguages(source.name)
         val multiAudio = AUDIO_MULTI_MARKERS.any {
@@ -223,21 +220,8 @@ object SourceRanker : SourceRankingPolicy {
         }
     }
 
-    fun canonicalLanguageCode(value: String?): String? {
-        val normalized = value
-            ?.trim()
-            ?.lowercase()
-            ?.replace('_', '-')
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val primary = normalized.substringBefore('-')
-
-        return LANGUAGE_ALIASES[normalized]
-            ?: LANGUAGE_ALIASES[primary]
-            ?: primary.takeIf {
-                it.length in 2..3 && it.all(Char::isLetter)
-            }
-    }
+    fun canonicalLanguageCode(value: String?): String? =
+        LanguagePolicy.canonicalCode(value)
 
     private fun buildSearchableText(source: SourceCandidate): String = listOf(
         source.quality,
@@ -247,32 +231,8 @@ object SourceRanker : SourceRankingPolicy {
     ).joinToString(" ")
         .lowercase()
 
-    private fun detectLanguages(value: String?): Set<String> {
-        val normalized = value
-            ?.trim()
-            ?.lowercase()
-            ?.replace('_', '-')
-            ?.takeIf { it.isNotBlank() }
-            ?: return emptySet()
-        val words = normalized
-            .replace(Regex("[^a-z-]+"), " ")
-            .split(Regex("\\s+"))
-            .filter(String::isNotBlank)
-
-        return buildSet {
-            words.forEach { word ->
-                LANGUAGE_ALIASES[word]?.let(::add)
-            }
-            LANGUAGE_ALIASES.forEach { (alias, code) ->
-                if (
-                    ' ' in alias &&
-                    Regex("\\b${Regex.escape(alias)}\\b").containsMatchIn(normalized)
-                ) {
-                    add(code)
-                }
-            }
-        }
-    }
+    private fun detectLanguages(value: String?): Set<String> =
+        LanguagePolicy.detectCodes(value)
 
     private val AUDIO_MULTI_MARKERS = listOf(
         Regex("\\bdual[ ._-]*audio\\b"),
@@ -291,82 +251,4 @@ object SourceRanker : SourceRankingPolicy {
         Regex("\\borg[ ._-]*audio\\b"),
     )
 
-    private val LANGUAGE_ALIASES = mapOf(
-        "en" to "en",
-        "eng" to "en",
-        "english" to "en",
-        "es" to "es",
-        "spa" to "es",
-        "spanish" to "es",
-        "espanol" to "es",
-        "hi" to "hi",
-        "hin" to "hi",
-        "hindi" to "hi",
-        "ta" to "ta",
-        "tam" to "ta",
-        "tamil" to "ta",
-        "te" to "te",
-        "tel" to "te",
-        "telugu" to "te",
-        "ml" to "ml",
-        "mal" to "ml",
-        "malayalam" to "ml",
-        "kn" to "kn",
-        "kan" to "kn",
-        "kannada" to "kn",
-        "bn" to "bn",
-        "ben" to "bn",
-        "bengali" to "bn",
-        "ur" to "ur",
-        "urd" to "ur",
-        "urdu" to "ur",
-        "pa" to "pa",
-        "pan" to "pa",
-        "punjabi" to "pa",
-        "mr" to "mr",
-        "mar" to "mr",
-        "marathi" to "mr",
-        "ar" to "ar",
-        "ara" to "ar",
-        "arabic" to "ar",
-        "fr" to "fr",
-        "fra" to "fr",
-        "fre" to "fr",
-        "french" to "fr",
-        "de" to "de",
-        "deu" to "de",
-        "ger" to "de",
-        "german" to "de",
-        "it" to "it",
-        "ita" to "it",
-        "italian" to "it",
-        "pt" to "pt",
-        "por" to "pt",
-        "portuguese" to "pt",
-        "ja" to "ja",
-        "jpn" to "ja",
-        "japanese" to "ja",
-        "ko" to "ko",
-        "kor" to "ko",
-        "korean" to "ko",
-        "zh" to "zh",
-        "zho" to "zh",
-        "chi" to "zh",
-        "chinese" to "zh",
-        "th" to "th",
-        "tha" to "th",
-        "thai" to "th",
-        "id" to "id",
-        "ind" to "id",
-        "indonesian" to "id",
-        "bahasa indonesia" to "id",
-        "ms" to "ms",
-        "may" to "ms",
-        "msa" to "ms",
-        "malay" to "ms",
-        "bahasa melayu" to "ms",
-        "ru" to "ru",
-        "rus" to "ru",
-        "russian" to "ru",
-    )
 }

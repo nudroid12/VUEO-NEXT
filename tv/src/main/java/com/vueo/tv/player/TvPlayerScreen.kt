@@ -80,6 +80,7 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
@@ -938,7 +939,7 @@ fun TvPlayerScreen(
                     subtitlesDisabled = false
                     settings.setSubtitleSelection(mediaKey, choice.selectionId)
                     settings.setLastSubtitleSelection(
-                        TV_SUBTITLE_LANGUAGE_PREFIX + tvCanonicalLanguage(choice.language)
+                        PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
                     )
                 },
                 onSubtitleDelayChange = { updated ->

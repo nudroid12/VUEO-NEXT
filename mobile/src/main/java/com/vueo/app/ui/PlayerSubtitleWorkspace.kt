@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import java.util.Locale
+import com.vueo.shared.core.language.LanguagePolicy
 import kotlin.math.roundToInt
 
 internal data class PlayerSubtitleStyleState(
@@ -1054,70 +1054,11 @@ private fun buildSubtitleLanguageGroups(
         )
 }
 
-internal fun canonicalSubtitleLanguage(value: String?): String {
-    val normalized = value
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.replace('_', '-')
-        ?.takeIf { it.isNotBlank() }
-        ?: return "und"
+internal fun canonicalSubtitleLanguage(value: String?): String =
+    LanguagePolicy.canonicalOrUnknown(value)
 
-    val words =
-        normalized
-            .replace(Regex("[^a-z]+"), " ")
-            .trim()
-            .split(Regex("\\s+"))
-            .filter { it.isNotBlank() }
-
-    if (
-        "indonesian" in words ||
-        "indonesia" in words
-    ) {
-        return "id"
-    }
-
-    if (
-        "malay" in words ||
-        "melayu" in words
-    ) {
-        return "ms"
-    }
-
-    val language = normalized.substringBefore('-')
-    return when (language) {
-        "id", "ind", "idn", "indonesian", "indonesia",
-        "bahasa indonesia" -> "id"
-        "ms", "may", "msa", "zsm", "malay", "melayu",
-        "bahasa melayu", "bahasa malaysia" -> "ms"
-        "eng" -> "en"
-        "spa" -> "es"
-        "por" -> "pt"
-        "fre", "fra" -> "fr"
-        "ger", "deu" -> "de"
-        "ita" -> "it"
-        "dut", "nld" -> "nl"
-        "chi", "zho" -> "zh"
-        "jpn" -> "ja"
-        "kor" -> "ko"
-        "ara" -> "ar"
-        "hin" -> "hi"
-        "tam" -> "ta"
-        "mac", "mkd" -> "mk"
-        "per", "fas" -> "fa"
-        else -> language.ifBlank { "und" }
-    }
-}
-
-internal fun friendlySubtitleLanguageName(value: String?): String {
-    val code = canonicalSubtitleLanguage(value)
-    if (code == "und") return "Unknown"
-
-    return Locale(code)
-        .getDisplayLanguage(Locale.ENGLISH)
-        .takeIf { it.isNotBlank() && !it.equals(code, true) }
-        ?.replaceFirstChar { it.titlecase(Locale.ENGLISH) }
-        ?: code.uppercase(Locale.ROOT)
-}
+internal fun friendlySubtitleLanguageName(value: String?): String =
+    LanguagePolicy.friendlyName(value)
 
 private fun withAlpha(colour: Int, opacityPercent: Int): Int {
     val alpha = opacityPercent.coerceIn(0, 100) * 255 / 100

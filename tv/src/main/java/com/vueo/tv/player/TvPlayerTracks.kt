@@ -9,12 +9,14 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.PlayerTrackPolicy
 
-internal const val TV_SUBTITLE_OFF = "subtitle:off"
-internal const val TV_SUBTITLE_LANGUAGE_PREFIX = "subtitle-language:"
-internal const val TV_AUDIO_AUTO = "audio:auto"
-private const val TV_SUBTITLE_LABEL_PREFIX = "vueo-subtitle:"
+internal const val TV_SUBTITLE_OFF = PlayerTrackPolicy.SUBTITLE_OFF
+internal const val TV_SUBTITLE_LANGUAGE_PREFIX = PlayerTrackPolicy.SUBTITLE_LANGUAGE_PREFIX
+internal const val TV_AUDIO_AUTO = PlayerTrackPolicy.AUDIO_AUTO
+private const val TV_SUBTITLE_LABEL_PREFIX = PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
 
 internal data class TvPlayerTrackChoice(
     val key: String,
@@ -34,10 +36,10 @@ internal data class TvSubtitleLanguageGroup(
 )
 
 internal fun tvExternalSubtitleSelectionId(track: SubtitleTrack): String =
-    "external:${track.providerId}:${track.id}:${track.url.hashCode()}"
+    PlayerTrackPolicy.externalSubtitleSelectionId(track)
 
 internal fun tvExternalSubtitleLabel(track: SubtitleTrack): String =
-    "$TV_SUBTITLE_LABEL_PREFIX${tvExternalSubtitleSelectionId(track)}"
+    PlayerTrackPolicy.externalSubtitleLabel(track)
 
 internal fun tvPlayerTrackChoices(
     tracks: Tracks,
@@ -71,7 +73,11 @@ internal fun tvPlayerTrackChoices(
                     sampleMimeType = format.sampleMimeType,
                     trackId = format.id,
                 )
-                else -> "builtin:${tvCanonicalLanguage(trackLanguage)}:${format.label.orEmpty()}:$trackIndex"
+                else -> PlayerTrackPolicy.builtinSubtitleSelectionId(
+                    language = trackLanguage,
+                    formatLabel = format.label,
+                    trackIndex = trackIndex,
+                )
             }
             val label = if (trackType == C.TRACK_TYPE_TEXT) {
                 externalSubtitle?.name?.takeIf { it.isNotBlank() }
@@ -159,105 +165,33 @@ internal fun tvClearTrackOverride(
         .build()
 }
 
-internal fun tvCanonicalLanguage(value: String?): String {
-    val normalized = value
-        ?.trim()
-        ?.lowercase()
-        ?.replace('_', '-')
-        ?.takeIf { it.isNotBlank() }
-        ?: return "und"
+internal fun tvCanonicalLanguage(value: String?): String =
+    LanguagePolicy.canonicalOrUnknown(value)
 
-    val words = normalized
-        .replace(Regex("[^a-z]+"), " ")
-        .trim()
-        .split(Regex("\\s+"))
-        .filter { it.isNotBlank() }
+internal fun tvFriendlyLanguage(value: String?): String =
+    LanguagePolicy.friendlyName(value)
 
-    if ("indonesian" in words || "indonesia" in words) return "id"
-    if ("malay" in words || "melayu" in words) return "ms"
+private fun tvBuildAudioTrackLabel(
+    formatLabel: String?,
+    language: String?,
+    fallbackIndex: Int,
+): String =
+    PlayerTrackPolicy.audioTrackLabel(
+        formatLabel = formatLabel,
+        language = language,
+        fallbackIndex = fallbackIndex,
+    )
 
-    val language = normalized.substringBefore('-')
-    return when (language) {
-        "id", "ind", "idn", "indonesian", "indonesia", "bahasa indonesia" -> "id"
-        "ms", "may", "msa", "zsm", "malay", "melayu", "bahasa melayu", "bahasa malaysia" -> "ms"
-        "eng" -> "en"
-        "spa" -> "es"
-        "por" -> "pt"
-        "fre", "fra" -> "fr"
-        "ger", "deu" -> "de"
-        "ita" -> "it"
-        "dut", "nld" -> "nl"
-        "chi", "zho" -> "zh"
-        "jpn" -> "ja"
-        "kor" -> "ko"
-        "tha" -> "th"
-        "ara" -> "ar"
-        "hin" -> "hi"
-        "tam" -> "ta"
-        "mac", "mkd" -> "mk"
-        "per", "fas" -> "fa"
-        else -> language.ifBlank { "und" }
-    }
-}
-
-internal fun tvFriendlyLanguage(value: String?): String = when (tvCanonicalLanguage(value)) {
-    "en" -> "English"
-    "ms" -> "Malay"
-    "id" -> "Indonesian"
-    "zh" -> "Chinese"
-    "ja" -> "Japanese"
-    "ko" -> "Korean"
-    "th" -> "Thai"
-    "es" -> "Spanish"
-    "fr" -> "French"
-    "de" -> "German"
-    "ar" -> "Arabic"
-    "hi" -> "Hindi"
-    "und" -> "Unknown"
-    else -> value?.replaceFirstChar { it.uppercase() } ?: "Unknown"
-}
-
-private fun tvBuildAudioTrackLabel(formatLabel: String?, language: String?, fallbackIndex: Int): String {
-    val languageName = tvFriendlyLanguage(language)
-    if (languageName != "Unknown") return languageName
-    val label = formatLabel?.trim().orEmpty()
-    val labelLanguage = tvFriendlyLanguage(label)
-    return when {
-        labelLanguage != "Unknown" && label.length in 2..3 -> labelLanguage
-        label.isNotBlank() -> label
-        else -> "Audio track $fallbackIndex"
-    }
-}
-
-private fun tvBuildAudioTrackMetadata(formatLabel: String?, channelCount: Int, sampleMimeType: String?): String = buildList {
-    when (channelCount) {
-        1 -> add("Mono")
-        2 -> add("Stereo")
-        6 -> add("5.1")
-        8 -> add("7.1")
-        in 3..Int.MAX_VALUE -> add("$channelCount channels")
-    }
-    when (sampleMimeType?.lowercase()) {
-        "audio/mp4a-latm" -> "AAC"
-        "audio/ac3" -> "Dolby Digital"
-        "audio/eac3" -> "Dolby Digital Plus"
-        "audio/eac3-joc" -> "Dolby Atmos"
-        "audio/true-hd" -> "Dolby TrueHD"
-        "audio/vnd.dts" -> "DTS"
-        "audio/vnd.dts.hd" -> "DTS-HD"
-        "audio/opus" -> "Opus"
-        "audio/flac" -> "FLAC"
-        "audio/mpeg" -> "MP3"
-        else -> sampleMimeType?.substringAfterLast('/')?.takeIf { it.isNotBlank() }?.uppercase()
-    }?.let(::add)
-    val lowerLabel = formatLabel?.lowercase().orEmpty()
-    when {
-        "commentary" in lowerLabel -> add("Commentary")
-        "original" in lowerLabel -> add("Original")
-        "dub" in lowerLabel -> add("Dub")
-        "descriptive" in lowerLabel || "description" in lowerLabel -> add("Audio description")
-    }
-}.distinct().joinToString(" • ")
+private fun tvBuildAudioTrackMetadata(
+    formatLabel: String?,
+    channelCount: Int,
+    sampleMimeType: String?,
+): String =
+    PlayerTrackPolicy.audioTrackMetadata(
+        formatLabel = formatLabel,
+        channelCount = channelCount,
+        sampleMimeType = sampleMimeType,
+    )
 
 private fun tvBuildAudioSelectionId(
     language: String?,
@@ -265,14 +199,14 @@ private fun tvBuildAudioSelectionId(
     channelCount: Int,
     sampleMimeType: String?,
     trackId: String?,
-): String = listOf(
-    "audio",
-    tvCanonicalLanguage(language),
-    formatLabel.orEmpty().trim().lowercase(),
-    channelCount.toString(),
-    sampleMimeType.orEmpty().lowercase(),
-    trackId.orEmpty().lowercase(),
-).joinToString(":")
+): String =
+    PlayerTrackPolicy.audioSelectionId(
+        language = language,
+        formatLabel = formatLabel,
+        channelCount = channelCount,
+        sampleMimeType = sampleMimeType,
+        trackId = trackId,
+    )
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class TvSubtitleOffsetRenderersFactory(

@@ -180,7 +180,6 @@ import com.vueo.app.core.extensions.ExtensionKind
 import com.vueo.app.core.extensions.MediaExtension
 import com.vueo.app.core.extensions.UnifiedMediaEngine
 import com.vueo.app.core.extensions.SourceRanker
-import com.vueo.app.core.extensions.SourceCleaner
 import com.vueo.app.core.extensions.SourceDiscoveryCache
 import com.vueo.app.core.extensions.CatalogDiscoveryCache
 import com.vueo.app.core.enrichment.GeminiClient
@@ -190,6 +189,9 @@ import com.vueo.app.core.enrichment.RichDetailsClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
+import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.source.SourceDiscoveryEngine
+import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.app.core.dna.UserDnaEngine
 import com.vueo.app.core.dna.UserDnaPreferences
 import com.vueo.app.core.model.CatalogRow
@@ -211,6 +213,7 @@ import com.vueo.app.core.player.PlayerPlaybackPhase
 import com.vueo.app.core.player.PlayerSourceAssessment
 import com.vueo.app.core.player.PlayerSourceAudioMatch
 import com.vueo.app.core.player.PlayerSourcePolicy
+import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.app.core.player.PlayerSourceRecoverySession
 import com.vueo.app.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.app.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -224,13 +227,13 @@ import com.vueo.app.core.plugin.ProviderCodeStore
 import com.vueo.app.core.plugin.ProviderHealthStatus
 import com.vueo.app.core.plugin.ProviderHealthRecord
 import com.vueo.app.core.plugin.PluginHealthStore
-import com.vueo.app.core.plugin.TmdbResolver
 import com.vueo.app.core.plugin.PluginSourceEngine
 import com.vueo.app.core.plugin.PluginRepositoryDescriptor
 import com.vueo.app.core.plugin.PluginRepositoryClient
 import com.vueo.app.core.model.EpisodeItem
 import com.vueo.app.core.model.MediaCompany
 import com.vueo.app.core.model.MediaItem
+import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.app.core.model.MediaPerson
 import com.vueo.app.core.model.StreamSource
 import com.vueo.app.core.storage.AddonStore
@@ -5395,363 +5398,29 @@ private fun searchRankAndDedupe(
         )
 }
 
-private fun searchIsRelevantEnough(
-    item: MediaItem,
-    query: String,
-): Boolean {
-    val normalizedQuery =
-        searchNormalizeText(query)
-    val titleQuery =
-        searchTitleQuery(
-            normalizedQuery
-        )
-    val title =
-        searchNormalizeText(
-            item.name
-        )
+private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =
+    SearchPolicy.isRelevantEnough(item, query)
 
-    if (
-        normalizedQuery.isBlank() ||
-        titleQuery.isBlank() ||
-        title.isBlank()
-    ) {
-        return false
-    }
+private fun searchCanonicalTitle(item: MediaItem): String =
+    SearchPolicy.canonicalTitle(item)
 
-    val score =
-        searchRelevanceScore(
-            item = item,
-            query = normalizedQuery,
-        )
+private fun searchCanonicalType(value: String): String =
+    SearchPolicy.canonicalType(value)
 
-    if (score >= 44_000) {
-        return true
-    }
+private fun searchRelevanceScore(item: MediaItem, query: String): Int =
+    SearchPolicy.relevanceScore(item, query)
 
-    val queryTokens =
-        titleQuery
-            .split(' ')
-            .filter {
-                it.length >= 2
-            }
-    val titleTokens =
-        title
-            .split(' ')
-            .filter {
-                it.isNotBlank()
-            }
+private fun searchMetadataScore(item: MediaItem): Int =
+    SearchPolicy.metadataScore(item)
 
-    if (queryTokens.isEmpty()) {
-        return score > 0
-    }
+private fun searchTitleQuery(normalizedQuery: String): String =
+    SearchPolicy.titleQuery(normalizedQuery)
 
-    val matched =
-        queryTokens.count {
-            token ->
-            titleTokens.any {
-                titleToken ->
-                titleToken == token ||
-                    titleToken
-                        .startsWith(
-                            token
-                        ) ||
-                    token.startsWith(
-                        titleToken
-                    )
-            }
-        }
+private fun searchNormalizeText(value: String): String =
+    SearchPolicy.normalizeText(value)
 
-    return if (
-        queryTokens.size == 1
-    ) {
-        matched == 1
-    } else {
-        matched ==
-            queryTokens.size
-    }
-}
-
-private fun searchCanonicalTitle(
-    item: MediaItem,
-): String {
-    var title =
-        searchNormalizeText(
-            item.name
-        )
-
-    title =
-        title.replace(
-            Regex(
-                """\s+(19|20)\d{2}$"""
-            ),
-            "",
-        )
-
-    if (
-        searchCanonicalType(
-            item.type
-        ) == "series"
-    ) {
-        title =
-            title
-                .replace(
-                    Regex(
-                        """\s+season\s+\d+.*$"""
-                    ),
-                    "",
-                )
-                .replace(
-                    Regex(
-                        """\s+(tv\s+)?series\s*$"""
-                    ),
-                    "",
-                )
-    }
-
-    return title.trim()
-}
-
-private fun searchCanonicalType(
-    value: String,
-): String =
-    when (
-        value
-            .trim()
-            .lowercase()
-    ) {
-        "tv",
-        "show",
-        "shows",
-        "series" ->
-            "series"
-
-        "film",
-        "films",
-        "movies",
-        "movie" ->
-            "movie"
-
-        else ->
-            value
-                .trim()
-                .lowercase()
-    }
-
-private fun searchRelevanceScore(
-    item: MediaItem,
-    query: String,
-): Int {
-    val normalizedQuery =
-        searchNormalizeText(query)
-    val titleQuery =
-        searchTitleQuery(
-            normalizedQuery
-        )
-    val title =
-        searchNormalizeText(
-            item.name
-        )
-
-    if (
-        normalizedQuery.isBlank() ||
-        titleQuery.isBlank() ||
-        title.isBlank()
-    ) {
-        return 0
-    }
-
-    val queryTokens =
-        titleQuery
-            .split(' ')
-            .filter {
-                it.isNotBlank()
-            }
-    val titleTokens =
-        title
-            .split(' ')
-            .filter {
-                it.isNotBlank()
-            }
-
-    val exactTokenMatches =
-        queryTokens.count {
-            it in titleTokens
-        }
-    val prefixTokenMatches =
-        queryTokens.count {
-            token ->
-            titleTokens.any {
-                titleToken ->
-                titleToken.startsWith(
-                    token
-                )
-            }
-        }
-
-    var score =
-        when {
-            title == titleQuery ->
-                120_000
-
-            title.startsWith(
-                "$titleQuery "
-            ) ->
-                96_000
-
-            title.contains(
-                " $titleQuery "
-            ) ||
-                title.endsWith(
-                    " $titleQuery"
-                ) ->
-                86_000
-
-            title.contains(
-                titleQuery
-            ) ->
-                76_000
-
-            queryTokens.isNotEmpty() &&
-                exactTokenMatches ==
-                    queryTokens.size ->
-                62_000
-
-            queryTokens.isNotEmpty() &&
-                prefixTokenMatches ==
-                    queryTokens.size ->
-                52_000
-
-            else ->
-                (
-                    exactTokenMatches *
-                        6_000
-                ) +
-                    (
-                        prefixTokenMatches *
-                            3_000
-                    )
-        }
-
-    if (
-        queryTokens.size > 1 &&
-        exactTokenMatches <
-            queryTokens.size
-    ) {
-        score -=
-            (
-                queryTokens.size -
-                    exactTokenMatches
-            ) * 4_000
-    }
-
-    val queryYear =
-        Regex(
-            """\b(19|20)\d{2}\b"""
-        )
-            .find(normalizedQuery)
-            ?.value
-            ?.toIntOrNull()
-
-    if (queryYear != null) {
-        score +=
-            if (
-                searchReleaseYear(item) ==
-                queryYear
-            ) {
-                12_000
-            } else {
-                -4_000
-            }
-    }
-
-    return score
-}
-
-private fun searchMetadataScore(
-    item: MediaItem,
-): Int {
-    var score = 0
-
-    if (!item.poster.isNullOrBlank()) {
-        score += 80
-    }
-    if (!item.background.isNullOrBlank()) {
-        score += 35
-    }
-    if (!item.description.isNullOrBlank()) {
-        score += 30
-    }
-    if (!item.releaseInfo.isNullOrBlank()) {
-        score += 20
-    }
-    if (item.genres.isNotEmpty()) {
-        score += 15
-    }
-    if (item.catalogSources.isNotEmpty()) {
-        score += 12
-    }
-
-    score +=
-        ((
-            item.imdbRating
-                ?: item.tmdbRating
-                ?: 0.0
-        ) * 10.0)
-            .toInt()
-
-    return score
-}
-
-private fun searchTitleQuery(
-    normalizedQuery: String,
-): String =
-    normalizedQuery
-        .replace(
-            Regex(
-                """\b(19|20)\d{2}\b"""
-            ),
-            " ",
-        )
-        .trim()
-        .replace(
-            Regex(
-                """\s+"""
-            ),
-            " ",
-        )
-
-private fun searchNormalizeText(
-    value: String,
-): String =
-    value
-        .lowercase()
-        .replace(
-            Regex(
-                """[^a-z0-9]+"""
-            ),
-            " ",
-        )
-        .trim()
-        .replace(
-            Regex(
-                """\s+"""
-            ),
-            " ",
-        )
-
-private fun searchReleaseYear(
-    item: MediaItem,
-): Int =
-    item.releaseInfo
-        ?.let {
-            Regex(
-                """\b(19|20)\d{2}\b"""
-            )
-                .find(it)
-                ?.value
-                ?.toIntOrNull()
-        }
-        ?: 0
+private fun searchReleaseYear(item: MediaItem): Int =
+    SearchPolicy.releaseYear(item)
 
 @Composable
 private fun SearchModeToggle(
@@ -7349,10 +7018,22 @@ private fun MediaDetailsScreen(
             }
         }
 
-        val pluginEngine = remember {
+    val pluginEngine = remember {
         PluginSourceEngine(
             context = context,
             store = pluginStore,
+        )
+    }
+
+    val sourceDiscoveryEngine = remember(
+        engine,
+        pluginEngine,
+        pluginStore,
+    ) {
+        SourceDiscoveryEngine(
+            mediaEngine = engine,
+            pluginEngine = pluginEngine,
+            pluginStore = pluginStore,
         )
     }
 
@@ -7945,61 +7626,28 @@ private fun MediaDetailsScreen(
         startPositionMs: Long = 0L,
         autoPlayFirst: Boolean = false,
     ) {
-    selectedPlaybackStartPositionMs =
-        startPositionMs
-            .coerceAtLeast(0L)
+        selectedPlaybackStartPositionMs = startPositionMs.coerceAtLeast(0L)
 
-    val targetVideoId =
-        selectedVideoId(
-            item,
-            targetEpisode,
+        val targetVideoId = selectedVideoId(
+            media = item,
+            episode = targetEpisode,
         ) ?: return
 
-    sourceDiscoveryJob
-        ?.cancel()
+        sourceDiscoveryJob?.cancel()
 
-    val cacheKey =
-        SourceDiscoveryCache.key(
-            mediaType =
-                item.type,
-            mediaId =
-                item.id,
-            videoId =
-                targetVideoId,
-        )
+        var autoPlayCommitted = false
+        var subtitlesResolved = false
+        var sourceDiscoveryCompleted = false
+        var latestAutoPlayCandidates = emptyList<StreamSource>()
 
-    val cached =
-        SourceDiscoveryCache
-            .get(cacheKey)
-
-    val rankedCachedStreams =
-        SourceCleaner.clean(
-            sources = cached?.streams.orEmpty(),
-            preferredQuality = preferredSourceQuality,
-        )
-
-    var autoPlayCommitted = false
-    var subtitlesResolved = false
-    var sourceDiscoveryCompleted = false
-    var latestAutoPlayCandidates =
-        rankedCachedStreams
-
-    fun commitAutoPlayIfReady(
-        candidates: List<StreamSource>,
-        allowLowQualityFallback: Boolean = false,
-    ) {
-        latestAutoPlayCandidates = candidates
-
-        if (
-            !autoPlayFirst ||
-            autoPlayCommitted ||
-            !subtitlesResolved
+        fun commitAutoPlayIfReady(
+            candidates: List<StreamSource>,
+            allowLowQualityFallback: Boolean = false,
         ) {
-            return
-        }
+            latestAutoPlayCandidates = candidates
+            if (!autoPlayFirst || autoPlayCommitted || !subtitlesResolved) return
 
-        val directCandidates =
-            candidates
+            val directCandidates = candidates
                 .filter { it.isDirectPlayable }
                 .sortedWith(
                     PlayerSourcePolicy.comparator(
@@ -8007,432 +7655,80 @@ private fun MediaDetailsScreen(
                         originalLanguage = item.originalLanguage,
                     )
                 )
-        val candidate =
-            directCandidates.firstOrNull {
-                PlayerSourcePolicy
-                    .assess(
-                        source = it,
-                        preferredQuality =
-                            preferredSourceQuality,
-                    )
-                    .let { assessment ->
-                        assessment.quality
-                            .automaticRecoveryEligible &&
-                            assessment.audioMatch
-                                .recommendationEligible
-                    }
+            val candidate = directCandidates.firstOrNull { source ->
+                PlayerSourcePolicy.assess(
+                    source = source,
+                    preferredQuality = preferredSourceQuality,
+                    originalLanguage = item.originalLanguage,
+                ).let { assessment ->
+                    assessment.quality.automaticRecoveryEligible &&
+                        assessment.audioMatch.recommendationEligible
+                }
             } ?: directCandidates
                 .firstOrNull()
                 ?.takeIf { allowLowQualityFallback }
-            ?: return
+                ?: return
 
-        autoPlayCommitted = true
-        selectedSeason = targetEpisode?.season
-            ?: selectedSeason
-        selectedEpisode = targetEpisode
-        selectedPlaybackVideoId = targetVideoId
-        selectedPlaybackSource = candidate
-    }
-
-    sourcePickerStreams =
-        rankedCachedStreams
-
-    sourcePickerProviderOrder =
-        rankedCachedStreams
-            .asSequence()
-            .filter { it.isDirectPlayable }
-            .map(::sourceProviderTabKey)
-            .distinct()
-            .toList()
-
-    sourcePickerSubtitles =
-        emptyList()
-
-    sourcePickerRawCount =
-        cached?.rawCount
-            ?: 0
-
-    sourcePickerNotice =
-        cached?.notice
-
-    sourcePickerSearching =
-        true
-
-    sourcePickerFirstResultMs =
-        null
-
-    sourcePickerProgress =
-        if (cached != null) {
-            "Recent sources loaded instantly • refreshing in background"
-        } else {
-            "Starting source discovery…"
+            autoPlayCommitted = true
+            selectedSeason = targetEpisode?.season ?: selectedSeason
+            selectedEpisode = targetEpisode
+            selectedPlaybackVideoId = targetVideoId
+            selectedPlaybackSource = candidate
         }
 
-    loadingStreams = true
-    sourceStatus = null
+        sourcePickerStreams = emptyList()
+        sourcePickerProviderOrder = emptyList()
+        sourcePickerSubtitles = emptyList()
+        sourcePickerRawCount = 0
+        sourcePickerNotice = null
+        sourcePickerSearching = true
+        sourcePickerFirstResultMs = null
+        sourcePickerProgress = "Starting source discovery…"
+        loadingStreams = true
+        sourceStatus = null
 
-    sourceDiscoveryJob =
-        scope.launch {
-            val startedAt =
-                System.nanoTime()
+        sourceDiscoveryJob = scope.launch {
+            try {
+                sourceDiscoveryEngine.discover(
+                    request = SourceDiscoveryRequest(
+                        item = item,
+                        episode = targetEpisode,
+                        videoId = targetVideoId,
+                        preferredQuality = preferredSourceQuality,
+                    ),
+                ) { snapshot ->
+                    sourcePickerStreams = snapshot.bundle.sources
+                    sourcePickerProviderOrder = snapshot.providerOrder
+                    sourcePickerSubtitles = snapshot.bundle.subtitles
+                    sourcePickerRawCount = snapshot.rawCount
+                    sourcePickerNotice = snapshot.notice
+                    sourcePickerSearching = snapshot.searching
+                    sourcePickerFirstResultMs = snapshot.firstResultMs
+                    sourcePickerProgress = snapshot.progress
+                    loadingStreams = snapshot.searching
 
-            val cachedStreams =
-                rankedCachedStreams
-
-            var freshAddonStreams =
-                emptyList<StreamSource>()
-
-            var freshPluginStreams =
-                emptyList<StreamSource>()
-
-            var addonRawCount = 0
-            var pluginRawCount = 0
-
-            var addonCompleted = 0
-            var addonTotal = 0
-
-            var pluginCompleted = 0
-            var pluginTotal = 0
-
-            fun elapsedMs(): Long =
-                (
-                    System.nanoTime() -
-                        startedAt
-                ) / 1_000_000L
-
-            fun recordPlayableProviders(
-                candidates: List<StreamSource>,
-            ) {
-                val discovered =
-                    candidates
-                        .asSequence()
-                        .filter { it.isDirectPlayable }
-                        .map(::sourceProviderTabKey)
-                        .distinct()
-                        .toList()
-
-                if (discovered.isEmpty()) return
-
-                val next =
-                    sourcePickerProviderOrder
-                        .toMutableList()
-
-                discovered.forEach { provider ->
-                    if (provider !in next) {
-                        next += provider
-                    }
-                }
-
-                if (next != sourcePickerProviderOrder) {
-                    sourcePickerProviderOrder = next
-                }
-            }
-
-            fun publish(
-                progress: String,
-            ) {
-                recordPlayableProviders(
-                    freshAddonStreams +
-                        freshPluginStreams
-                )
-
-                val fresh =
-                    SourceCleaner.clean(
-                        sources =
-                            freshAddonStreams +
-                                freshPluginStreams,
-                        preferredQuality =
-                            preferredSourceQuality,
+                    subtitlesResolved = snapshot.subtitlesResolved
+                    sourceDiscoveryCompleted = !snapshot.searching
+                    commitAutoPlayIfReady(
+                        candidates = snapshot.bundle.sources,
+                        allowLowQualityFallback = sourceDiscoveryCompleted,
                     )
-
-                val display =
-                    if (
-                        sourcePickerSearching
-                    ) {
-                        SourceCleaner.clean(
-                            sources =
-                                cachedStreams +
-                                    fresh,
-                            preferredQuality =
-                                preferredSourceQuality,
-                        )
-                    } else {
-                        fresh
-                    }
-
-                if (
-                    sourcePickerFirstResultMs ==
-                    null &&
-                    display.isNotEmpty() &&
-                    cachedStreams.isEmpty()
-                ) {
-                    sourcePickerFirstResultMs =
-                        elapsedMs()
                 }
-
-                sourcePickerStreams =
-                    display
-
-                commitAutoPlayIfReady(display)
-
-                sourcePickerRawCount =
-                    maxOf(
-                        cached?.rawCount
-                            ?: 0,
-                        addonRawCount +
-                            pluginRawCount,
-                    )
-
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                sourceDiscoveryCompleted = true
+                sourcePickerSearching = false
+                loadingStreams = false
                 sourcePickerProgress =
-                    progress
-            }
-
-            val subtitlesDeferred =
-                async {
-                    runCatching {
-                        engine.resolveSubtitles(
-                            type =
-                                item.type,
-                            videoId =
-                                targetVideoId,
-                        )
-                    }.getOrDefault(
-                        emptyList()
-                    )
-                }
-
-            launch {
-                sourcePickerSubtitles =
-                    subtitlesDeferred.await()
-                subtitlesResolved = true
+                    if (latestAutoPlayCandidates.isEmpty()) {
+                        "Search complete • no sources found"
+                    } else {
+                        "Search complete • ${latestAutoPlayCandidates.size} unique sources"
+                    }
                 commitAutoPlayIfReady(
                     candidates = latestAutoPlayCandidates,
-                    allowLowQualityFallback =
-                        sourceDiscoveryCompleted,
-                )
-            }
-
-            val addonDeferred =
-                async {
-                    runCatching {
-                        engine
-                            .resolveStreamsProgressive(
-                                type =
-                                    item.type,
-                                videoId =
-                                    targetVideoId,
-                            ) { progress ->
-                                freshAddonStreams =
-                                    progress.streams
-
-                                addonRawCount =
-                                    progress.rawCount
-
-                                addonCompleted =
-                                    progress.completedAddons
-
-                                addonTotal =
-                                    progress.totalAddons
-
-                                publish(
-                                    "Searching • Addons " +
-                                        "$addonCompleted/$addonTotal • " +
-                                        "Plugins $pluginCompleted/$pluginTotal"
-                                )
-                            }
-                    }.getOrElse {
-                        emptyList()
-                    }
-                }
-
-            val pluginDeferred =
-                async {
-                    if (
-                        !pluginStore
-                            .pluginsEnabled() ||
-                        pluginStore
-                            .repositories()
-                            .isEmpty()
-                    ) {
-                        return@async null
-                    }
-
-                    val tmdbId =
-                        runCatching {
-                            TmdbResolver.resolve(
-                                media =
-                                    item,
-                                apiKey =
-                                    pluginStore
-                                        .tmdbApiKey(),
-                            )
-                        }.getOrNull()
-
-                    if (tmdbId == null) {
-                        sourcePickerNotice =
-                            "Plugin providers skipped: VUEO could not resolve a TMDB ID. Add your TMDB API key in Settings > Enhancements > TMDB."
-
-                        return@async null
-                    }
-
-                    val mediaType =
-                        if (
-                            item.type ==
-                            "series"
-                        ) {
-                            "tv"
-                        } else {
-                            "movie"
-                        }
-
-                    runCatching {
-                        pluginEngine
-                            .discoverProgressive(
-                                tmdbId =
-                                    tmdbId,
-                                mediaType =
-                                    mediaType,
-                                season =
-                                    targetEpisode
-                                        ?.season,
-                                episode =
-                                    targetEpisode
-                                        ?.episode,
-                                mediaTitle = item.name,
-                                mediaOriginalTitle = item.originalTitle,
-                                mediaAliases = item.aliases,
-                                mediaYear = item.releaseInfo,
-                                mediaExternalId = item.id,
-                                mediaOriginalLanguage = item.originalLanguage,
-                            ) { progress ->
-                                freshPluginStreams =
-                                    progress
-                                        .result
-                                        .streams
-
-                                pluginRawCount =
-                                    freshPluginStreams
-                                        .size
-
-                                pluginCompleted =
-                                    progress
-                                        .completedProviders
-
-                                pluginTotal =
-                                    progress
-                                        .totalProviders
-
-                                publish(
-                                    "Searching • Addons " +
-                                        "$addonCompleted/$addonTotal • " +
-                                        "Plugins $pluginCompleted/$pluginTotal • " +
-                                        "${
-                                            SourceCleaner.clean(
-                                                sources =
-                                                    freshAddonStreams +
-                                                        freshPluginStreams,
-                                                preferredQuality =
-                                                    preferredSourceQuality,
-                                            ).size
-                                        } fresh sources"
-                                )
-                            }
-                    }.getOrNull()
-                }
-
-            val finalAddonStreams =
-                addonDeferred.await()
-
-            val pluginResult =
-                pluginDeferred.await()
-
-            freshAddonStreams =
-                finalAddonStreams
-
-            if (pluginResult != null) {
-                freshPluginStreams =
-                    pluginResult.streams
-
-                pluginRawCount =
-                    pluginResult.streams.size
-
-                sourcePickerNotice =
-                    "Plugins: ${pluginResult.attemptedProviders} checked • " +
-                        "${pluginResult.successfulProviders} online • " +
-                        "${pluginResult.slowProviders} slow • " +
-                        "${pluginResult.noResultProviders} no results • " +
-                        "${pluginResult.needsSetupProviders} setup • " +
-                        "${pluginResult.unavailableProviders} unavailable • " +
-                        "${pluginResult.blockedProviders} blocked • " +
-                        "${pluginResult.timeoutProviders} timeout • " +
-                        "${pluginResult.failedProviders} failed."
-            }
-
-            val freshFinal =
-                SourceCleaner.clean(
-                    sources =
-                        freshAddonStreams +
-                            freshPluginStreams,
-                    preferredQuality =
-                        preferredSourceQuality,
-                )
-
-            val finalStreams =
-                if (
-                    freshFinal.isNotEmpty()
-                ) {
-                    freshFinal
-                } else {
-                    cachedStreams
-                }
-
-            recordPlayableProviders(
-                finalStreams
-            )
-
-            sourcePickerStreams =
-                finalStreams
-
-            sourceDiscoveryCompleted = true
-            commitAutoPlayIfReady(
-                candidates = finalStreams,
-                allowLowQualityFallback = true,
-            )
-
-            sourcePickerRawCount =
-                maxOf(
-                    cached?.rawCount
-                        ?: 0,
-                    addonRawCount +
-                        pluginRawCount,
-                )
-
-            sourcePickerSearching =
-                false
-
-            loadingStreams = false
-
-            sourcePickerProgress =
-                if (
-                    finalStreams.isEmpty()
-                ) {
-                    "Search complete • no sources found"
-                } else {
-                    "Search complete • ${finalStreams.size} unique sources"
-                }
-
-            if (
-                finalStreams.isNotEmpty()
-            ) {
-                SourceDiscoveryCache.put(
-                    key =
-                        cacheKey,
-                    streams =
-                        finalStreams,
-                    rawCount =
-                        sourcePickerRawCount,
-                    notice =
-                        sourcePickerNotice,
+                    allowLowQualityFallback = true,
                 )
             }
         }
@@ -12550,10 +11846,9 @@ private fun PlayerScreen(
                 savedTrack != null -> {
                     if (globalSelection == null) {
                         settingsStore.setLastSubtitleSelection(
-                            PLAYER_SUBTITLE_LANGUAGE_PREFIX +
-                                canonicalSubtitleLanguage(
-                                    savedTrack.language
-                                )
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(
+                                savedTrack.language
+                            )
                         )
                     }
                     subtitlePreferenceRestored = true
@@ -13167,10 +12462,9 @@ private fun PlayerScreen(
                     selectionId = choice.selectionId,
                 )
                 settingsStore.setLastSubtitleSelection(
-                    PLAYER_SUBTITLE_LANGUAGE_PREFIX +
-                        canonicalSubtitleLanguage(
-                            choice.language
-                        )
+                    PlayerTrackPolicy.subtitleLanguageSelectionId(
+                        choice.language
+                    )
                 )
             },
             onSubtitleDelayChange = { delayMs ->
@@ -15069,16 +14363,16 @@ internal data class PlayerTrackChoice(
 )
 
 private const val PLAYER_SUBTITLE_LABEL_PREFIX =
-    "vueo-subtitle:"
+    PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
 
 private const val PLAYER_SUBTITLE_OFF =
-    "subtitle:off"
+    PlayerTrackPolicy.SUBTITLE_OFF
 
 private const val PLAYER_SUBTITLE_LANGUAGE_PREFIX =
-    "subtitle-language:"
+    PlayerTrackPolicy.SUBTITLE_LANGUAGE_PREFIX
 
 private const val PLAYER_AUDIO_AUTO =
-    "audio:auto"
+    PlayerTrackPolicy.AUDIO_AUTO
 
 private fun playerPreferredSubtitleLanguageCode(
     settingsStore: SettingsStore,
@@ -15184,9 +14478,7 @@ private fun playerTrackChoices(
             val selectionId = if (
                 externalSubtitle != null
             ) {
-                "external:${externalSubtitle.providerId}:" +
-                    "${externalSubtitle.id}:" +
-                    externalSubtitle.url.hashCode()
+                PlayerTrackPolicy.externalSubtitleSelectionId(externalSubtitle)
             } else if (trackType == C.TRACK_TYPE_AUDIO) {
                 buildAudioSelectionId(
                     language = trackLanguage,
@@ -15196,8 +14488,11 @@ private fun playerTrackChoices(
                     trackId = format.id,
                 )
             } else {
-                "builtin:${canonicalSubtitleLanguage(trackLanguage)}:" +
-                    "${format.label.orEmpty()}:$trackIndex"
+                PlayerTrackPolicy.builtinSubtitleSelectionId(
+                    language = trackLanguage,
+                    formatLabel = format.label,
+                    trackIndex = trackIndex,
+                )
             }
 
             result +=
@@ -15241,63 +14536,23 @@ private fun buildAudioTrackLabel(
     formatLabel: String?,
     language: String?,
     fallbackIndex: Int,
-): String {
-    val languageName = friendlySubtitleLanguageName(language)
-    if (languageName != "Unknown") return languageName
-
-    val label = formatLabel?.trim().orEmpty()
-    val labelLanguage = friendlySubtitleLanguageName(label)
-    return when {
-        labelLanguage != "Unknown" && label.length in 2..3 -> labelLanguage
-        label.isNotBlank() -> label
-        else -> "Audio track $fallbackIndex"
-    }
-}
+): String =
+    PlayerTrackPolicy.audioTrackLabel(
+        formatLabel = formatLabel,
+        language = language,
+        fallbackIndex = fallbackIndex,
+    )
 
 private fun buildAudioTrackMetadata(
     formatLabel: String?,
     channelCount: Int,
     sampleMimeType: String?,
-): String = buildList {
-    when (channelCount) {
-        1 -> add("Mono")
-        2 -> add("Stereo")
-        6 -> add("5.1")
-        8 -> add("7.1")
-        in 3..Int.MAX_VALUE -> add("$channelCount channels")
-    }
-    friendlyAudioCodec(sampleMimeType)?.let(::add)
-    friendlyAudioVariant(formatLabel)?.let(::add)
-}.distinct().joinToString(" • ")
-
-private fun friendlyAudioCodec(value: String?): String? =
-    when (value?.lowercase()) {
-        "audio/mp4a-latm" -> "AAC"
-        "audio/ac3" -> "Dolby Digital"
-        "audio/eac3" -> "Dolby Digital Plus"
-        "audio/eac3-joc" -> "Dolby Atmos"
-        "audio/true-hd" -> "Dolby TrueHD"
-        "audio/vnd.dts" -> "DTS"
-        "audio/vnd.dts.hd" -> "DTS-HD"
-        "audio/opus" -> "Opus"
-        "audio/flac" -> "FLAC"
-        "audio/mpeg" -> "MP3"
-        else -> value
-            ?.substringAfterLast('/')
-            ?.takeIf { it.isNotBlank() }
-            ?.uppercase()
-    }
-
-private fun friendlyAudioVariant(value: String?): String? {
-    val label = value?.lowercase().orEmpty()
-    return when {
-        "commentary" in label -> "Commentary"
-        "original" in label -> "Original"
-        "dub" in label -> "Dub"
-        "descriptive" in label || "description" in label -> "Audio description"
-        else -> null
-    }
-}
+): String =
+    PlayerTrackPolicy.audioTrackMetadata(
+        formatLabel = formatLabel,
+        channelCount = channelCount,
+        sampleMimeType = sampleMimeType,
+    )
 
 private fun buildAudioSelectionId(
     language: String?,
@@ -15305,14 +14560,14 @@ private fun buildAudioSelectionId(
     channelCount: Int,
     sampleMimeType: String?,
     trackId: String?,
-): String = listOf(
-    "audio",
-    canonicalSubtitleLanguage(language),
-    formatLabel.orEmpty().trim().lowercase(),
-    channelCount.toString(),
-    sampleMimeType.orEmpty().lowercase(),
-    trackId.orEmpty().lowercase(),
-).joinToString(":")
+): String =
+    PlayerTrackPolicy.audioSelectionId(
+        language = language,
+        formatLabel = formatLabel,
+        channelCount = channelCount,
+        sampleMimeType = sampleMimeType,
+        trackId = trackId,
+    )
 
 private fun findSavedAudioTrack(
     tracks: List<PlayerTrackChoice>,
@@ -15809,7 +15064,7 @@ private fun selectedVideoId(
     media: MediaItem,
     episode: EpisodeItem?,
 ): String? =
-    if (media.type == "series") {
+    if (MediaTypePolicy.isSeries(media.type)) {
         episode?.id
     } else {
         media.id
