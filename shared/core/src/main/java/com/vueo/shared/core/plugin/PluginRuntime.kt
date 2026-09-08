@@ -162,12 +162,18 @@ suspend fun discover(
     mediaType: String,
     season: Int?,
     episode: Int?,
+    mediaTitle: String? = null,
+    mediaYear: String? = null,
+    mediaExternalId: String? = null,
 ): PluginDiscoveryResult =
     discoverProgressive(
         tmdbId = tmdbId,
         mediaType = mediaType,
         season = season,
         episode = episode,
+        mediaTitle = mediaTitle,
+        mediaYear = mediaYear,
+        mediaExternalId = mediaExternalId,
         onProgress = {},
     )
 
@@ -176,6 +182,9 @@ suspend fun discoverProgressive(
     mediaType: String,
     season: Int?,
     episode: Int?,
+    mediaTitle: String? = null,
+    mediaYear: String? = null,
+    mediaExternalId: String? = null,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
     supervisorScope {
@@ -313,6 +322,9 @@ suspend fun discoverProgressive(
                 mediaType = mediaType,
                 season = season,
                 episode = episode,
+                seedTitle = mediaTitle,
+                seedYear = mediaYear,
+                seedExternalId = mediaExternalId,
             )
 
         RuntimeDiagnostics.recordDiscoveryTrace(

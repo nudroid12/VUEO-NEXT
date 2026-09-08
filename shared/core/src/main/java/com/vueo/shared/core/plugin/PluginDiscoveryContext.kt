@@ -6,14 +6,14 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
+// VUEO_METADATA_SEED_CONTEXT_V16
 /**
- * Scan-scoped TMDB discovery broker.
+ * Scan-scoped discovery broker.
  *
- * Providers historically fetched the same TMDB detail document independently.
- * This broker coalesces those requests into one native fetch per source scan,
- * then exposes one normalized discovery context to every QuickJS provider.
- * The provider still supplies its own TMDB URL/API key; VUEO core never stores
- * or hardcodes a provider credential.
+ * V16 rule: metadata already resolved by VUEO/addons is the source of truth.
+ * Core only normalizes/shares it with providers. A provider-owned TMDB fetch is
+ * retained solely as a compatibility fallback when no usable media title was
+ * supplied by the caller.
  */
 internal class PluginDiscoveryContextBroker(
     private val scanId: Long,
@@ -21,6 +21,9 @@ internal class PluginDiscoveryContextBroker(
     private val mediaType: String,
     private val season: Int?,
     private val episode: Int?,
+    private val seedTitle: String? = null,
+    private val seedYear: String? = null,
+    private val seedExternalId: String? = null,
 ) {
     private val lock = Mutex()
 
@@ -34,14 +37,32 @@ internal class PluginDiscoveryContextBroker(
         try {
             cachedContextJson?.let { return it }
 
+            buildSeedContextOrNull()?.let { seeded ->
+                val serialized = seeded.toString()
+                cachedContextJson = serialized
+                RuntimeDiagnostics.recordDiscoveryTrace(
+                    scanId = scanId,
+                    stage = "CONTEXT_READY",
+                    details = buildString {
+                        append("source=metadata-layer title=")
+                        append(seeded.optString("title").take(80))
+                        append(" year=")
+                        append(seeded.optString("year"))
+                        append(" imdb=")
+                        append(seeded.optString("imdbId"))
+                        append(" aliases=")
+                        append(seeded.optJSONArray("aliases")?.length() ?: 0)
+                    },
+                )
+                return serialized
+            }
+
             if (fetchAttempts >= MAX_FETCH_ATTEMPTS) {
-                return errorJson("Shared TMDB context is unavailable")
+                return errorJson("Shared discovery context is unavailable")
             }
 
             val request = runCatching { JSONObject(requestJson) }
-                .getOrElse {
-                    return errorJson("Invalid discovery-context request")
-                }
+                .getOrElse { return errorJson("Invalid discovery-context request") }
 
             val url = request.optString("url").trim()
             val validated = validateTmdbUrl(url)
@@ -90,7 +111,7 @@ internal class PluginDiscoveryContextBroker(
             val tmdb = runCatching { JSONObject(body) }.getOrNull()
                 ?: return errorJson("TMDB context body was not JSON")
 
-            val context = buildContext(tmdb, validated.endpoint)
+            val context = buildTmdbContext(tmdb, validated.endpoint)
             val serialized = context.toString()
             cachedContextJson = serialized
 
@@ -98,7 +119,7 @@ internal class PluginDiscoveryContextBroker(
                 scanId = scanId,
                 stage = "CONTEXT_READY",
                 details = buildString {
-                    append("source=tmdb-shared elapsed=")
+                    append("source=provider-tmdb-fallback elapsed=")
                     append(elapsedMs)
                     append("ms title=")
                     append(context.optString("title").take(80))
@@ -124,9 +145,7 @@ internal class PluginDiscoveryContextBroker(
         val url = request.optString("url").trim()
         val validated = validateTmdbUrl(url) ?: return null
 
-        val contextRaw = resolveFromProviderRequest(
-            JSONObject().put("url", url).toString()
-        )
+        val contextRaw = resolveFromProviderRequest(JSONObject().put("url", url).toString())
         val context = runCatching { JSONObject(contextRaw) }.getOrNull() ?: return null
         if (context.has("error")) return null
 
@@ -141,7 +160,44 @@ internal class PluginDiscoveryContextBroker(
             .toString()
     }
 
-    private fun buildContext(tmdb: JSONObject, endpoint: String): JSONObject {
+    private fun buildSeedContextOrNull(): JSONObject? {
+        val title = seedTitle.orEmpty().trim()
+        if (title.isBlank()) return null
+
+        val isTv = mediaType.lowercase() != "movie"
+        val normalizedYear = seedYear.orEmpty()
+            .let { YEAR_REGEX.find(it)?.value.orEmpty() }
+        val externalId = seedExternalId.orEmpty().trim()
+        val imdbId = externalId.takeIf { it.matches(IMDB_REGEX) }.orEmpty()
+
+        val tmdb = JSONObject()
+            .put("id", tmdbId.toLongOrNull() ?: tmdbId)
+            .put(if (isTv) "name" else "title", title)
+            .put(if (isTv) "original_name" else "original_title", title)
+            .put(
+                if (isTv) "first_air_date" else "release_date",
+                normalizedYear.takeIf { it.isNotBlank() }?.let { "$it-01-01" }.orEmpty(),
+            )
+            .put("external_ids", JSONObject().put("imdb_id", imdbId))
+            .put("alternative_titles", JSONObject().put(if (isTv) "results" else "titles", JSONArray()))
+            .put("translations", JSONObject().put("translations", JSONArray()))
+
+        return JSONObject()
+            .put("version", 2)
+            .put("tmdbId", tmdbId)
+            .put("mediaType", if (isTv) "tv" else "movie")
+            .put("season", season ?: JSONObject.NULL)
+            .put("episode", episode ?: JSONObject.NULL)
+            .put("title", title)
+            .put("originalTitle", title)
+            .put("year", normalizedYear)
+            .put("imdbId", imdbId)
+            .put("aliases", JSONArray().put(title))
+            .put("source", "metadata-layer")
+            .put("tmdb", tmdb)
+    }
+
+    private fun buildTmdbContext(tmdb: JSONObject, endpoint: String): JSONObject {
         val isTv = endpoint == "tv"
         val title = tmdb.optString(if (isTv) "name" else "title")
         val originalTitle = tmdb.optString(if (isTv) "original_name" else "original_title")
@@ -150,7 +206,7 @@ internal class PluginDiscoveryContextBroker(
         val imdbId = tmdb.optJSONObject("external_ids")?.optString("imdb_id").orEmpty()
 
         return JSONObject()
-            .put("version", 1)
+            .put("version", 2)
             .put("tmdbId", tmdbId)
             .put("mediaType", if (isTv) "tv" else "movie")
             .put("season", season ?: JSONObject.NULL)
@@ -160,6 +216,7 @@ internal class PluginDiscoveryContextBroker(
             .put("year", year)
             .put("imdbId", imdbId)
             .put("aliases", collectAliases(tmdb, isTv))
+            .put("source", "provider-tmdb-fallback")
             .put("tmdb", tmdb)
     }
 
@@ -179,8 +236,7 @@ internal class PluginDiscoveryContextBroker(
         add(tmdb.optString(if (isTv) "original_name" else "original_title"))
 
         val alternate = tmdb.optJSONObject("alternative_titles")
-        val alternateItems = alternate?.optJSONArray("results")
-            ?: alternate?.optJSONArray("titles")
+        val alternateItems = alternate?.optJSONArray("results") ?: alternate?.optJSONArray("titles")
         if (alternateItems != null) {
             for (index in 0 until alternateItems.length()) {
                 val item = alternateItems.optJSONObject(index) ?: continue
@@ -221,8 +277,7 @@ internal class PluginDiscoveryContextBroker(
         )
     }
 
-    private fun errorJson(message: String): String =
-        JSONObject().put("error", message).toString()
+    private fun errorJson(message: String): String = JSONObject().put("error", message).toString()
 
     private data class ValidatedTmdbUrl(
         val endpoint: String,
@@ -233,5 +288,7 @@ internal class PluginDiscoveryContextBroker(
         private const val TMDB_HOST = "api.themoviedb.org"
         private const val MAX_FETCH_ATTEMPTS = 2
         private const val MAX_ALIASES = 24
+        private val YEAR_REGEX = Regex("""\b(?:19|20)\d{2}\b""")
+        private val IMDB_REGEX = Regex("""tt\d{5,12}""", RegexOption.IGNORE_CASE)
     }
 }
