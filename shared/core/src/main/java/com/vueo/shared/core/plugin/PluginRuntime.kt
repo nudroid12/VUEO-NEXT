@@ -1061,7 +1061,7 @@ private fun providerPriority(
                             System.nanoTime()
                         val sharedTmdb =
                             discoveryContextBroker
-                                .maybeExecuteTmdbFetch(
+                                .interceptTmdbFetch(
                                     requestJson
                                 )
                         val responseJson =

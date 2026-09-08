@@ -2,18 +2,20 @@ package com.vueo.shared.core.plugin
 
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import kotlinx.coroutines.sync.Mutex
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
-// VUEO_METADATA_SEED_CONTEXT_V16
+// VUEO_METADATA_SEED_CONTEXT_V17
 /**
  * Scan-scoped discovery broker.
  *
- * V16 rule: metadata already resolved by VUEO/addons is the source of truth.
- * Core only normalizes/shares it with providers. A provider-owned TMDB fetch is
- * retained solely as a compatibility fallback when no usable media title was
- * supplied by the caller.
+ * V17 rule: addon/VUEO metadata is the only metadata source shared with plugins.
+ * Plugins must never fall back to TMDB when the addon did not provide usable
+ * metadata. TMDB-shaped responses are synthesized from addon metadata only so
+ * existing providers can keep their compatibility path without a network
+ * metadata fallback.
  */
 internal class PluginDiscoveryContextBroker(
     private val scanId: Long,
@@ -32,8 +34,6 @@ internal class PluginDiscoveryContextBroker(
 
     @Volatile
     private var cachedContextJson: String? = null
-
-    private var fetchAttempts = 0
 
     suspend fun resolveFromProviderRequest(requestJson: String): String {
         lock.lock()
@@ -60,82 +60,12 @@ internal class PluginDiscoveryContextBroker(
                 return serialized
             }
 
-            if (fetchAttempts >= MAX_FETCH_ATTEMPTS) {
-                return errorJson("Shared discovery context is unavailable")
-            }
-
-            val request = runCatching { JSONObject(requestJson) }
-                .getOrElse { return errorJson("Invalid discovery-context request") }
-
-            val url = request.optString("url").trim()
-            val validated = validateTmdbUrl(url)
-                ?: return errorJson("Unsupported discovery-context URL")
-
-            fetchAttempts += 1
-            val startedNs = System.nanoTime()
-
-            val nativeRequest = JSONObject()
-                .put("url", url)
-                .put("method", "GET")
-                .put(
-                    "headers",
-                    JSONObject()
-                        .put("Accept", "application/json")
-                        .put("User-Agent", "VUEO/0.9.6"),
-                )
-
-            val responseRaw = PluginHttp.executeJson(nativeRequest.toString())
-            val response = runCatching { JSONObject(responseRaw) }.getOrNull()
-            val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000L
-
-            if (response == null || response.has("error")) {
-                RuntimeDiagnostics.recordDiscoveryTrace(
-                    scanId = scanId,
-                    stage = "CONTEXT_FAILED",
-                    details = "attempt=$fetchAttempts elapsed=${elapsedMs}ms reason=native_fetch_error",
-                )
-                return errorJson(
-                    response?.optString("error")?.takeIf { it.isNotBlank() }
-                        ?: "TMDB context fetch failed",
-                )
-            }
-
-            val status = response.optInt("status", 0)
-            if (status !in 200..299) {
-                RuntimeDiagnostics.recordDiscoveryTrace(
-                    scanId = scanId,
-                    stage = "CONTEXT_FAILED",
-                    details = "attempt=$fetchAttempts elapsed=${elapsedMs}ms status=$status",
-                )
-                return errorJson("TMDB context HTTP $status")
-            }
-
-            val body = response.optString("body")
-            val tmdb = runCatching { JSONObject(body) }.getOrNull()
-                ?: return errorJson("TMDB context body was not JSON")
-
-            val context = buildTmdbContext(tmdb, validated.endpoint)
-            val serialized = context.toString()
-            cachedContextJson = serialized
-
             RuntimeDiagnostics.recordDiscoveryTrace(
                 scanId = scanId,
-                stage = "CONTEXT_READY",
-                details = buildString {
-                    append("source=provider-tmdb-fallback elapsed=")
-                    append(elapsedMs)
-                    append("ms title=")
-                    append(context.optString("title").take(80))
-                    append(" year=")
-                    append(context.optString("year"))
-                    append(" imdb=")
-                    append(context.optString("imdbId"))
-                    append(" aliases=")
-                    append(context.optJSONArray("aliases")?.length() ?: 0)
-                },
+                stage = "CONTEXT_UNAVAILABLE",
+                details = "source=metadata-layer reason=addon_metadata_missing tmdbFallback=false",
             )
-
-            return serialized
+            return errorJson("Addon metadata is unavailable")
         } finally {
             lock.unlock()
         }
@@ -143,20 +73,37 @@ internal class PluginDiscoveryContextBroker(
 
     fun cachedContextOrNull(): String? = cachedContextJson
 
-    suspend fun maybeExecuteTmdbFetch(requestJson: String): String? {
+    /**
+     * Intercepts TMDB requests before they can reach PluginHttp.
+     *
+     * Expected details requests receive a TMDB-shaped body synthesized solely
+     * from addon metadata. Any other TMDB request is blocked so providers cannot
+     * silently restore their own metadata fallback.
+     */
+    suspend fun interceptTmdbFetch(requestJson: String): String? {
         val request = runCatching { JSONObject(requestJson) }.getOrNull() ?: return null
         val url = request.optString("url").trim()
-        val validated = validateTmdbUrl(url) ?: return null
+        val parsed = url.toHttpUrlOrNull() ?: return null
+        if (!parsed.isHttps || parsed.host != TMDB_HOST) return null
 
-        val contextRaw = resolveFromProviderRequest(JSONObject().put("url", url).toString())
-        val context = runCatching { JSONObject(contextRaw) }.getOrNull() ?: return null
-        if (context.has("error")) return null
+        if (!isExpectedDetailsRequest(parsed)) {
+            return blockedTmdbResponse(url, "Plugin TMDB metadata fallback is disabled")
+        }
 
-        val tmdb = context.optJSONObject("tmdb") ?: return null
+        val contextRaw = resolveFromProviderRequest(requestJson)
+        val context = runCatching { JSONObject(contextRaw) }.getOrNull()
+            ?: return blockedTmdbResponse(url, "Addon metadata is unavailable")
+        if (context.has("error")) {
+            return blockedTmdbResponse(url, context.optString("error").ifBlank { "Addon metadata is unavailable" })
+        }
+
+        val tmdb = context.optJSONObject("tmdb")
+            ?: return blockedTmdbResponse(url, "Addon metadata is unavailable")
+
         return JSONObject()
             .put("status", 200)
             .put("statusText", "OK")
-            .put("url", validated.safeUrl)
+            .put("url", parsed.newBuilder().query(null).build().toString())
             .put("body", tmdb.toString())
             .put("bodyTruncated", false)
             .put("headers", JSONObject().put("Content-Type", "application/json"))
@@ -220,99 +167,33 @@ internal class PluginDiscoveryContextBroker(
             .put("tmdb", tmdb)
     }
 
-    private fun buildTmdbContext(tmdb: JSONObject, endpoint: String): JSONObject {
-        val isTv = endpoint == "tv"
-        val title = tmdb.optString(if (isTv) "name" else "title")
-        val originalTitle = tmdb.optString(if (isTv) "original_name" else "original_title")
-        val date = tmdb.optString(if (isTv) "first_air_date" else "release_date")
-        val year = date.substringBefore('-').takeIf { it.matches(Regex("""\d{4}""")) }.orEmpty()
-        val imdbId = tmdb.optJSONObject("external_ids")?.optString("imdb_id").orEmpty()
-        val originalLanguage = tmdb.optString("original_language")
-
-        return JSONObject()
-            .put("version", 3)
-            .put("tmdbId", tmdbId)
-            .put("mediaType", if (isTv) "tv" else "movie")
-            .put("season", season ?: JSONObject.NULL)
-            .put("episode", episode ?: JSONObject.NULL)
-            .put("title", title)
-            .put("originalTitle", originalTitle)
-            .put("year", year)
-            .put("imdbId", imdbId)
-            .put("externalId", imdbId)
-            .put("originalLanguage", originalLanguage)
-            .put("aliases", collectAliases(tmdb, isTv))
-            .put("source", "provider-tmdb-fallback")
-            .put("tmdb", tmdb)
-    }
-
-    private fun collectAliases(tmdb: JSONObject, isTv: Boolean): JSONArray {
-        val output = JSONArray()
-        val seen = linkedSetOf<String>()
-
-        fun add(raw: String?) {
-            val value = raw.orEmpty().trim()
-            val key = value.lowercase().replace(Regex("""\s+"""), " ")
-            if (value.isBlank() || key in seen) return
-            seen += key
-            output.put(value)
-        }
-
-        add(tmdb.optString(if (isTv) "name" else "title"))
-        add(tmdb.optString(if (isTv) "original_name" else "original_title"))
-
-        val alternate = tmdb.optJSONObject("alternative_titles")
-        val alternateItems = alternate?.optJSONArray("results") ?: alternate?.optJSONArray("titles")
-        if (alternateItems != null) {
-            for (index in 0 until alternateItems.length()) {
-                val item = alternateItems.optJSONObject(index) ?: continue
-                add(item.optString("title").ifBlank { item.optString("name") })
-                if (output.length() >= MAX_ALIASES) break
-            }
-        }
-
-        val translations = tmdb.optJSONObject("translations")?.optJSONArray("translations")
-        if (translations != null && output.length() < MAX_ALIASES) {
-            for (index in 0 until translations.length()) {
-                val data = translations.optJSONObject(index)?.optJSONObject("data") ?: continue
-                add(data.optString("title").ifBlank { data.optString("name") })
-                if (output.length() >= MAX_ALIASES) break
-            }
-        }
-
-        return output
-    }
-
-    private fun validateTmdbUrl(url: String): ValidatedTmdbUrl? {
-        val parsed = url.toHttpUrlOrNull() ?: return null
-        if (!parsed.isHttps || parsed.host != TMDB_HOST) return null
-
+    private fun isExpectedDetailsRequest(parsed: HttpUrl): Boolean {
         val segments = parsed.pathSegments
-        if (segments.size < 3 || segments[0] != "3") return null
+        if (segments.size < 3 || segments[0] != "3") return false
 
         val endpoint = segments[1]
-        if (endpoint != "movie" && endpoint != "tv") return null
-        if (segments[2] != tmdbId) return null
+        if (endpoint != "movie" && endpoint != "tv") return false
+        if (segments[2] != tmdbId) return false
 
         val expectedEndpoint = if (mediaType.lowercase() == "movie") "movie" else "tv"
-        if (endpoint != expectedEndpoint) return null
-
-        return ValidatedTmdbUrl(
-            endpoint = endpoint,
-            safeUrl = parsed.newBuilder().query(null).build().toString(),
-        )
+        return endpoint == expectedEndpoint
     }
+
+    private fun blockedTmdbResponse(url: String, reason: String): String =
+        JSONObject()
+            .put("error", reason)
+            .put("status", 424)
+            .put("statusText", "Failed Dependency")
+            .put("url", url)
+            .put("body", "")
+            .put("bodyTruncated", false)
+            .put("headers", JSONObject())
+            .toString()
 
     private fun errorJson(message: String): String = JSONObject().put("error", message).toString()
 
-    private data class ValidatedTmdbUrl(
-        val endpoint: String,
-        val safeUrl: String,
-    )
-
     companion object {
         private const val TMDB_HOST = "api.themoviedb.org"
-        private const val MAX_FETCH_ATTEMPTS = 2
         private const val MAX_ALIASES = 24
         private val YEAR_REGEX = Regex("""\b(?:19|20)\d{2}\b""")
         private val IMDB_REGEX = Regex("""tt\d{5,12}""", RegexOption.IGNORE_CASE)
