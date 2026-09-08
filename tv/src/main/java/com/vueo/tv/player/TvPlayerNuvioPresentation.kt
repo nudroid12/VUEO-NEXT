@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,13 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
-import androidx.compose.material.icons.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.List
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -73,7 +71,7 @@ internal fun NuvioPlayerPresentation(
     hasAudio: Boolean,
     hasSources: Boolean,
     hasEpisodes: Boolean,
-    playPauseRequester: FocusRequester,
+    restartRequester: FocusRequester,
     progressRequester: FocusRequester,
     nextRequester: FocusRequester,
     subtitlesRequester: FocusRequester,
@@ -85,8 +83,8 @@ internal fun NuvioPlayerPresentation(
     nextContextRequester: FocusRequester,
     onInteraction: () -> Unit,
     onPlayPause: () -> Unit,
+    onRestart: () -> Unit,
     onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
     onDismissPanel: () -> Unit,
@@ -113,7 +111,7 @@ internal fun NuvioPlayerPresentation(
                 hasAudio = hasAudio,
                 hasSources = hasSources,
                 hasEpisodes = hasEpisodes,
-                playPauseRequester = playPauseRequester,
+                restartRequester = restartRequester,
                 progressRequester = progressRequester,
                 nextRequester = nextRequester,
                 subtitlesRequester = subtitlesRequester,
@@ -123,8 +121,8 @@ internal fun NuvioPlayerPresentation(
                 moreRequester = moreRequester,
                 onInteraction = onInteraction,
                 onPlayPause = onPlayPause,
+                onRestart = onRestart,
                 onSeekBy = onSeekBy,
-                onHideControls = onHideControls,
                 onNext = onNext,
                 onOpenPanel = onOpenPanel,
             )
@@ -145,14 +143,14 @@ internal fun NuvioPlayerPresentation(
 
         activeSkip?.let { segment ->
             NuvioPlayerPromptButton(
-                text = nuvioSkipLabel(segment), requester = skipRequester, downRequester = playPauseRequester,
+                text = nuvioSkipLabel(segment), requester = skipRequester, downRequester = progressRequester,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 118.dp),
                 onInteraction = onInteraction, onClick = { onSkip(segment) },
             )
         }
         if (nextCountdown > 0 && nextEpisode != null) {
             NuvioPlayerPromptButton(
-                text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester, downRequester = playPauseRequester,
+                text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester, downRequester = progressRequester,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = if (activeSkip != null) 168.dp else 118.dp),
                 onInteraction = onInteraction, onClick = onNext,
             )
@@ -308,7 +306,7 @@ private fun NuvioPlayerControls(
     hasAudio: Boolean,
     hasSources: Boolean,
     hasEpisodes: Boolean,
-    playPauseRequester: FocusRequester,
+    restartRequester: FocusRequester,
     progressRequester: FocusRequester,
     nextRequester: FocusRequester,
     subtitlesRequester: FocusRequester,
@@ -318,35 +316,146 @@ private fun NuvioPlayerControls(
     moreRequester: FocusRequester,
     onInteraction: () -> Unit,
     onPlayPause: () -> Unit,
+    onRestart: () -> Unit,
     onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 32.dp), verticalArrangement = Arrangement.Bottom) {
-        Text(media.name, color = Color.White, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        episode?.let {
-            Spacer(Modifier.height(3.dp))
-            Text("S${it.season}E${it.episode} • ${it.title}", color = Color.White.copy(alpha = .88f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (!playing) {
-            Spacer(Modifier.height(4.dp))
-            Text("Via ${activeSource.providerName}", color = Color.White.copy(alpha = .56f), fontSize = 11.sp)
-        }
-        Spacer(Modifier.height(14.dp))
-        NuvioPlayerProgressRail(positionMs, durationMs, progressRequester, playPauseRequester, onInteraction, onSeekBy, onHideControls)
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                NuvioPlayerControlButton(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", playPauseRequester, progressRequester, onHideControls, onInteraction, onPlayPause)
-                if (nextEpisode != null) NuvioPlayerControlButton(Icons.Rounded.SkipNext, "Next episode", nextRequester, progressRequester, onHideControls, onInteraction, onNext)
-                if (hasSubtitles) NuvioPlayerControlButton(Icons.Rounded.Subtitles, "Subtitles", subtitlesRequester, progressRequester, onHideControls, onInteraction, onClick = { onOpenPanel(TvPlayerPanel.SUBTITLES) })
-                if (hasAudio) NuvioPlayerControlButton(Icons.Rounded.VolumeUp, "Audio", audioRequester, progressRequester, onHideControls, onInteraction, onClick = { onOpenPanel(TvPlayerPanel.AUDIO) })
-                if (hasSources) NuvioPlayerControlButton(Icons.Rounded.SwapHoriz, "Sources", sourcesRequester, progressRequester, onHideControls, onInteraction, onClick = { onOpenPanel(TvPlayerPanel.SOURCES) })
-                if (hasEpisodes) NuvioPlayerControlButton(Icons.Rounded.List, "Episodes", episodesRequester, progressRequester, onHideControls, onInteraction, onClick = { onOpenPanel(TvPlayerPanel.EPISODES) })
-                NuvioPlayerControlButton(Icons.Rounded.KeyboardArrowRight, "More", moreRequester, progressRequester, onHideControls, onInteraction, onClick = { onOpenPanel(TvPlayerPanel.MORE) })
+    val title = episode?.let {
+        "S${it.season} E${it.episode} • ${it.title.ifBlank { "Episode ${it.episode}" }}"
+    } ?: media.name
+
+    val bottomActions = buildList {
+        if (hasSubtitles) add(NuvioPlayerChromeAction(Icons.Rounded.Subtitles, "Subs", subtitlesRequester, TvPlayerPanel.SUBTITLES))
+        if (hasAudio) add(NuvioPlayerChromeAction(Icons.Rounded.VolumeUp, "Audio", audioRequester, TvPlayerPanel.AUDIO))
+        if (hasSources) add(NuvioPlayerChromeAction(Icons.Rounded.SwapHoriz, "Sources", sourcesRequester, TvPlayerPanel.SOURCES))
+        if (hasEpisodes) add(NuvioPlayerChromeAction(Icons.Rounded.List, "Episodes", episodesRequester, TvPlayerPanel.EPISODES))
+    }
+    val bottomDefaultRequester = bottomActions.firstOrNull()?.requester ?: FocusRequester.Cancel
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 30.dp, end = 30.dp, top = 28.dp, bottom = 28.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 24.dp),
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NuvioPlayerTopAction(
+                    icon = Icons.Rounded.Replay,
+                    label = "Restart",
+                    requester = restartRequester,
+                    downRequester = progressRequester,
+                    leftRequester = FocusRequester.Cancel,
+                    rightRequester = if (nextEpisode != null) nextRequester else moreRequester,
+                    onInteraction = onInteraction,
+                    onClick = onRestart,
+                )
+                if (nextEpisode != null) {
+                    NuvioPlayerTopAction(
+                        icon = Icons.Rounded.SkipNext,
+                        label = "Next episode",
+                        requester = nextRequester,
+                        downRequester = progressRequester,
+                        leftRequester = restartRequester,
+                        rightRequester = moreRequester,
+                        onInteraction = onInteraction,
+                        onClick = onNext,
+                    )
+                }
+                NuvioPlayerTopAction(
+                    icon = Icons.Rounded.MoreHoriz,
+                    label = "More",
+                    requester = moreRequester,
+                    downRequester = progressRequester,
+                    leftRequester = if (nextEpisode != null) nextRequester else restartRequester,
+                    rightRequester = FocusRequester.Cancel,
+                    onInteraction = onInteraction,
+                    onClick = { onOpenPanel(TvPlayerPanel.MORE) },
+                )
             }
-            Text("${nuvioPlayerTime(positionMs)} / ${nuvioPlayerTime(durationMs)}", color = Color.White.copy(alpha = .88f), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        NuvioPlayerProgressRail(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            requester = progressRequester,
+            upRequester = restartRequester,
+            downRequester = bottomDefaultRequester,
+            onInteraction = onInteraction,
+            onSeekBy = onSeekBy,
+            onTogglePlayback = onPlayPause,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                nuvioPlayerTime(positionMs),
+                color = Color.White.copy(alpha = .90f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                nuvioPlayerTime(durationMs),
+                color = Color.White.copy(alpha = .90f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+
+        if (bottomActions.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(RoundedCornerShape(30.dp))
+                    .background(Color(0xFF111316).copy(alpha = .88f))
+                    .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(30.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                bottomActions.forEachIndexed { index, action ->
+                    NuvioPlayerPillAction(
+                        icon = action.icon,
+                        label = action.label,
+                        requester = action.requester,
+                        upRequester = progressRequester,
+                        leftRequester = bottomActions.getOrNull(index - 1)?.requester ?: FocusRequester.Cancel,
+                        rightRequester = bottomActions.getOrNull(index + 1)?.requester ?: FocusRequester.Cancel,
+                        onInteraction = onInteraction,
+                        onClick = { onOpenPanel(action.panel) },
+                    )
+                }
+            }
         }
     }
 }
+
+private data class NuvioPlayerChromeAction(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val requester: FocusRequester,
+    val panel: TvPlayerPanel,
+)

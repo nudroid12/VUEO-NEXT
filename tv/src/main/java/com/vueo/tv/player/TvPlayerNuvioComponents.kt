@@ -49,54 +49,70 @@ internal fun NuvioPlayerProgressRail(
     positionMs: Long,
     durationMs: Long,
     requester: FocusRequester,
+    upRequester: FocusRequester,
     downRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSeekBy: (Long) -> Unit,
-    onHideControls: () -> Unit,
+    onTogglePlayback: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val progress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val shape = RoundedCornerShape(50)
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (focused) 12.dp else 8.dp)
             .focusRequester(requester)
-            .focusProperties { down = downRequester }
+            .focusProperties {
+                up = upRequester
+                down = downRequester
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { onSeekBy(-10_000L); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { onSeekBy(10_000L); true }
-                    KeyEvent.KEYCODE_DPAD_UP -> { onHideControls(); true }
+                when {
+                    event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        onSeekBy(-10_000L)
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        onSeekBy(10_000L)
+                        true
+                    }
+                    event.isNuvioActivationKey() -> {
+                        onInteraction()
+                        if (event.type == KeyEventType.KeyUp) onTogglePlayback()
+                        true
+                    }
                     else -> false
                 }
             }
             .focusable()
-            .background(Color.White.copy(alpha = if (focused) .44f else .27f), RoundedCornerShape(4.dp)),
+            .background(Color.White.copy(alpha = if (focused) .38f else .26f), shape)
+            .border(if (focused) 2.dp else 0.dp, Color.White, shape),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .width(maxWidth * progress)
-                .background(TvDesign.Accent, RoundedCornerShape(4.dp)),
+                .background(TvDesign.Accent, shape),
         )
     }
 }
 
 @Composable
-internal fun NuvioPlayerControlButton(
+internal fun NuvioPlayerTopAction(
     icon: ImageVector,
     label: String,
     requester: FocusRequester,
-    upRequester: FocusRequester,
-    onDown: () -> Unit,
+    downRequester: FocusRequester,
+    leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
     enabled: Boolean = true,
@@ -104,24 +120,29 @@ internal fun NuvioPlayerControlButton(
     var focused by remember(label) { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            .size(50.dp)
+            .size(48.dp)
             .focusRequester(requester)
-            .focusProperties { up = upRequester }
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = downRequester
+                left = leftRequester
+                right = rightRequester
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    onDown(); return@onPreviewKeyEvent true
-                }
                 if (!event.isNuvioActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp && enabled) onClick()
                 true
             }
             .focusable(enabled)
-            .background(if (focused && enabled) Color.White else Color.Transparent, CircleShape),
+            .background(
+                if (focused && enabled) Color.White else Color.Black.copy(alpha = .34f),
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -132,7 +153,61 @@ internal fun NuvioPlayerControlButton(
                 focused -> Color.Black
                 else -> Color.White
             },
-            modifier = Modifier.size(26.dp),
+            modifier = Modifier.size(25.dp),
+        )
+    }
+}
+
+@Composable
+internal fun NuvioPlayerPillAction(
+    icon: ImageVector,
+    label: String,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        modifier = Modifier
+            .focusRequester(requester)
+            .focusProperties {
+                up = upRequester
+                down = FocusRequester.Cancel
+                left = leftRequester
+                right = rightRequester
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isNuvioActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(if (focused) Color.White else Color.Transparent, shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (focused) Color.Black else Color.White,
+            modifier = Modifier.size(21.dp),
+        )
+        Text(
+            text = label,
+            color = if (focused) Color.Black else Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 8.dp),
+            maxLines = 1,
         )
     }
 }
@@ -151,7 +226,12 @@ internal fun NuvioPlayerPromptButton(
     Row(
         modifier = modifier
             .focusRequester(requester)
-            .focusProperties { down = downRequester }
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = downRequester
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()

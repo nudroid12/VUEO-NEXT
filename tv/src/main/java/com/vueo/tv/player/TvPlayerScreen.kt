@@ -131,7 +131,7 @@ fun TvPlayerScreen(
 ) {
     val context = LocalContext.current
     val rootRequester = remember { FocusRequester() }
-    val playPauseRequester = remember { FocusRequester() }
+    val restartRequester = remember { FocusRequester() }
     val progressRequester = remember { FocusRequester() }
     val nextRequester = remember { FocusRequester() }
     val subtitlesRequester = remember { FocusRequester() }
@@ -177,6 +177,7 @@ fun TvPlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
+    var restorePanelFocus by remember { mutableStateOf<TvPlayerPanel?>(null) }
     var interactionToken by remember { mutableIntStateOf(0) }
     var positionMs by remember { mutableLongStateOf(startPosition) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -206,7 +207,7 @@ fun TvPlayerScreen(
         interactionToken += 1
     }
 
-    fun requestControlFocus(requester: FocusRequester = playPauseRequester) {
+    fun requestControlFocus(requester: FocusRequester = progressRequester) {
         controlsVisible = true
         noteInteraction()
         runCatching { requester.requestFocus() }
@@ -246,17 +247,10 @@ fun TvPlayerScreen(
     }
 
     fun closePanel(restoreFocus: Boolean = true) {
-        val restoreRequester = when (activePanel) {
-            TvPlayerPanel.SUBTITLES -> subtitlesRequester
-            TvPlayerPanel.AUDIO -> audioRequester
-            TvPlayerPanel.SOURCES -> sourcesRequester
-            TvPlayerPanel.EPISODES -> episodesRequester
-            TvPlayerPanel.MORE -> moreRequester
-            TvPlayerPanel.NONE -> playPauseRequester
-        }
+        val closingPanel = activePanel
         activePanel = TvPlayerPanel.NONE
         noteInteraction()
-        if (restoreFocus) runCatching { restoreRequester.requestFocus() }
+        restorePanelFocus = closingPanel.takeIf { restoreFocus && it != TvPlayerPanel.NONE }
     }
 
     fun exitPlayer() {
@@ -321,7 +315,7 @@ fun TvPlayerScreen(
                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
                 recoveryAttempts += 1
                 activeSource = alternative
-                requestControlFocus(playPauseRequester)
+                requestControlFocus(progressRequester)
             }
         }
         player.addListener(listener)
@@ -382,7 +376,7 @@ fun TvPlayerScreen(
     }
 
     LaunchedEffect(player) {
-        runCatching { playPauseRequester.requestFocus() }
+        runCatching { progressRequester.requestFocus() }
         while (true) {
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
@@ -391,6 +385,22 @@ fun TvPlayerScreen(
             audioLanguages = currentAudioLanguages(player)
             delay(400)
         }
+    }
+
+    LaunchedEffect(activePanel, controlsVisible, restorePanelFocus) {
+        val panel = restorePanelFocus ?: return@LaunchedEffect
+        if (activePanel != TvPlayerPanel.NONE || !controlsVisible) return@LaunchedEffect
+        delay(16)
+        val requester = when (panel) {
+            TvPlayerPanel.SUBTITLES -> subtitlesRequester
+            TvPlayerPanel.AUDIO -> audioRequester
+            TvPlayerPanel.SOURCES -> sourcesRequester
+            TvPlayerPanel.EPISODES -> episodesRequester
+            TvPlayerPanel.MORE -> moreRequester
+            TvPlayerPanel.NONE -> progressRequester
+        }
+        runCatching { requester.requestFocus() }
+        restorePanelFocus = null
     }
 
     LaunchedEffect(ended, nextEpisode?.id, settings.autoPlayNextEpisodeEnabled()) {
@@ -470,7 +480,7 @@ fun TvPlayerScreen(
                             when (code) {
                                 KeyEvent.KEYCODE_DPAD_CENTER,
                                 KeyEvent.KEYCODE_ENTER -> {
-                                    togglePlayback()
+                                    requestControlFocus(progressRequester)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -484,12 +494,18 @@ fun TvPlayerScreen(
                                 KeyEvent.KEYCODE_DPAD_UP -> {
                                     if (activeSkip != null) requestControlFocus(skipRequester)
                                     else if (nextCountdown > 0 && nextEpisode != null) requestControlFocus(nextContextRequester)
-                                    else if (nextEpisode != null) requestControlFocus(nextRequester)
-                                    else requestControlFocus(moreRequester)
+                                    else requestControlFocus(restartRequester)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    requestControlFocus(playPauseRequester)
+                                    val bottomRequester = when {
+                                        bundle.subtitles.isNotEmpty() -> subtitlesRequester
+                                        audioLanguages.isNotEmpty() || !activeSource.audio.isNullOrBlank() -> audioRequester
+                                        playableSources.isNotEmpty() -> sourcesRequester
+                                        media.episodes.isNotEmpty() -> episodesRequester
+                                        else -> progressRequester
+                                    }
+                                    requestControlFocus(bottomRequester)
                                     true
                                 }
                                 else -> false
@@ -649,7 +665,7 @@ fun TvPlayerScreen(
             hasAudio = audioLanguages.isNotEmpty() || !activeSource.audio.isNullOrBlank(),
             hasSources = playableSources.isNotEmpty(),
             hasEpisodes = media.episodes.isNotEmpty(),
-            playPauseRequester = playPauseRequester,
+            restartRequester = restartRequester,
             progressRequester = progressRequester,
             nextRequester = nextRequester,
             subtitlesRequester = subtitlesRequester,
@@ -661,11 +677,14 @@ fun TvPlayerScreen(
             nextContextRequester = nextContextRequester,
             onInteraction = ::noteInteraction,
             onPlayPause = ::togglePlayback,
-            onSeekBy = ::seekBy,
-            onHideControls = {
-                controlsVisible = false
-                runCatching { rootRequester.requestFocus() }
+            onRestart = {
+                player.seekTo(0L)
+                positionMs = 0L
+                if (!player.isPlaying) player.play()
+                playing = true
+                noteInteraction()
             },
+            onSeekBy = ::seekBy,
             onNext = {
                 nextEpisode?.let {
                     saveProgress()
