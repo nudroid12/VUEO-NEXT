@@ -234,6 +234,27 @@ class StremioAddonExtension private constructor(
 private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
     val id = optString("id").trim().takeIf(String::isNotBlank) ?: return null
     val name = optString("name").trim().takeIf(String::isNotBlank) ?: return null
+    val originalTitle = listOf(
+        "originalTitle",
+        "original_title",
+        "originalName",
+        "original_name",
+    ).firstNotNullOfOrNull { field ->
+        optString(field).trim().takeIf(String::isNotBlank)
+    }
+    val aliases = buildList {
+        add(name)
+        originalTitle?.let(::add)
+        addAll(
+            optFlexibleStrings(
+                "aliases",
+                "alternativeTitles",
+                "alternative_titles",
+                "aka",
+                "akas",
+            )
+        )
+    }.distinctBy { it.lowercase() }
 
     return MediaItem(
         id = id,
@@ -243,6 +264,8 @@ private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
         background = optString("background").trim().takeIf { it.startsWith("https://", true) },
         description = optString("description").trim().takeIf(String::isNotBlank),
         releaseInfo = optString("releaseInfo").trim().takeIf(String::isNotBlank),
+        originalTitle = originalTitle,
+        aliases = aliases,
         originalLanguage = listOf(
             "originalLanguage",
             "original_language",
@@ -283,6 +306,7 @@ private fun JSONObject.optFlexibleStrings(vararg keys: String): List<String> =
                     for (index in 0 until raw.length()) {
                         when (val entry = raw.opt(index)) {
                             is JSONObject -> entry.optString("name")
+                                .ifBlank { entry.optString("title") }
                                 .trim()
                                 .takeIf(String::isNotBlank)
                                 ?.let(::add)

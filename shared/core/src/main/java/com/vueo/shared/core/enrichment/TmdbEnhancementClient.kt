@@ -402,6 +402,17 @@ object TmdbEnhancementClient {
                                                     ch.isDigit()
                                                 }
                                         },
+                                originalTitle =
+                                    credit.optNullableString(
+                                        if (type == "series") "original_name" else "original_title"
+                                    ),
+                                aliases =
+                                    listOfNotNull(
+                                        name,
+                                        credit.optNullableString(
+                                            if (type == "series") "original_name" else "original_title"
+                                        ),
+                                    ).distinctBy { it.lowercase() },
                                 originalLanguage =
                                     credit.optNullableString(
                                         "original_language"
@@ -1004,6 +1015,23 @@ object TmdbEnhancementClient {
                 } else {
                     item.background
                 },
+            originalTitle =
+                item.originalTitle
+                    ?: details.optNullableString(
+                        if (item.type.lowercase() in setOf("series", "tv")) "original_name" else "original_title"
+                    ),
+            aliases =
+                (
+                    item.aliases +
+                        listOfNotNull(
+                            item.name,
+                            details.optNullableString(
+                                if (item.type.lowercase() in setOf("series", "tv")) "original_name" else "original_title"
+                            ),
+                        )
+                )
+                    .filter(String::isNotBlank)
+                    .distinctBy { it.lowercase() },
             originalLanguage =
                 item.originalLanguage
                     ?: details.optNullableString(
@@ -1347,6 +1375,17 @@ private fun JSONArray?
                             ?.takeIf {
                                 it.all { ch -> ch.isDigit() }
                             },
+                    originalTitle =
+                        json.optNullableString(
+                            if (type == "series") "original_name" else "original_title"
+                        ),
+                    aliases =
+                        listOfNotNull(
+                            name,
+                            json.optNullableString(
+                                if (type == "series") "original_name" else "original_title"
+                            ),
+                        ).distinctBy { it.lowercase() },
                     originalLanguage =
                         json.optNullableString(
                             "original_language"

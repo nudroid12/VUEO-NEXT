@@ -163,8 +163,11 @@ suspend fun discover(
     season: Int?,
     episode: Int?,
     mediaTitle: String? = null,
+    mediaOriginalTitle: String? = null,
+    mediaAliases: List<String> = emptyList(),
     mediaYear: String? = null,
     mediaExternalId: String? = null,
+    mediaOriginalLanguage: String? = null,
 ): PluginDiscoveryResult =
     discoverProgressive(
         tmdbId = tmdbId,
@@ -172,8 +175,11 @@ suspend fun discover(
         season = season,
         episode = episode,
         mediaTitle = mediaTitle,
+        mediaOriginalTitle = mediaOriginalTitle,
+        mediaAliases = mediaAliases,
         mediaYear = mediaYear,
         mediaExternalId = mediaExternalId,
+        mediaOriginalLanguage = mediaOriginalLanguage,
         onProgress = {},
     )
 
@@ -183,8 +189,11 @@ suspend fun discoverProgressive(
     season: Int?,
     episode: Int?,
     mediaTitle: String? = null,
+    mediaOriginalTitle: String? = null,
+    mediaAliases: List<String> = emptyList(),
     mediaYear: String? = null,
     mediaExternalId: String? = null,
+    mediaOriginalLanguage: String? = null,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
     supervisorScope {
@@ -323,8 +332,11 @@ suspend fun discoverProgressive(
                 season = season,
                 episode = episode,
                 seedTitle = mediaTitle,
+                seedOriginalTitle = mediaOriginalTitle,
+                seedAliases = mediaAliases,
                 seedYear = mediaYear,
                 seedExternalId = mediaExternalId,
+                seedOriginalLanguage = mediaOriginalLanguage,
             )
 
         RuntimeDiagnostics.recordDiscoveryTrace(
@@ -1308,7 +1320,7 @@ private fun providerPriority(
             globalThis.SCRAPER_SETTINGS =
               globalThis.SCRAPER_SETTINGS || {};
             globalThis.VUEO_DISCOVERY_CONTEXT = {
-              version: 1,
+              version: 3,
               tmdbId: ${safeTmdbId},
               mediaType: ${safeMediaType},
               season: ${seasonValue},
@@ -1317,6 +1329,8 @@ private fun providerPriority(
               originalTitle: "",
               year: "",
               imdbId: "",
+              externalId: "",
+              originalLanguage: "",
               aliases: []
             };
 
@@ -3756,6 +3770,12 @@ class PluginSourceResolver(
             mediaType = request.mediaType,
             season = request.season,
             episode = request.episode,
+            mediaTitle = request.title,
+            mediaOriginalTitle = request.originalTitle,
+            mediaAliases = request.aliases,
+            mediaYear = request.releaseInfo,
+            mediaExternalId = request.externalId ?: request.videoId,
+            mediaOriginalLanguage = request.originalLanguage,
         )
         return SourceResolveResult(
             sources = result.streams,

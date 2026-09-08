@@ -71,8 +71,11 @@ class PluginSourceEngine(
         season: Int?,
         episode: Int?,
         mediaTitle: String? = null,
+        mediaOriginalTitle: String? = null,
+        mediaAliases: List<String> = emptyList(),
         mediaYear: String? = null,
         mediaExternalId: String? = null,
+        mediaOriginalLanguage: String? = null,
     ): PluginDiscoveryResult =
         delegate.discover(
             tmdbId = tmdbId,
@@ -80,8 +83,11 @@ class PluginSourceEngine(
             season = season,
             episode = episode,
             mediaTitle = mediaTitle,
+            mediaOriginalTitle = mediaOriginalTitle,
+            mediaAliases = mediaAliases,
             mediaYear = mediaYear,
             mediaExternalId = mediaExternalId,
+            mediaOriginalLanguage = mediaOriginalLanguage,
         ).toMobile()
 
     suspend fun discoverProgressive(
@@ -90,8 +96,11 @@ class PluginSourceEngine(
         season: Int?,
         episode: Int?,
         mediaTitle: String? = null,
+        mediaOriginalTitle: String? = null,
+        mediaAliases: List<String> = emptyList(),
         mediaYear: String? = null,
         mediaExternalId: String? = null,
+        mediaOriginalLanguage: String? = null,
         onProgress: suspend (PluginDiscoveryProgress) -> Unit,
     ): PluginDiscoveryResult =
         delegate.discoverProgressive(
@@ -100,8 +109,11 @@ class PluginSourceEngine(
             season = season,
             episode = episode,
             mediaTitle = mediaTitle,
+            mediaOriginalTitle = mediaOriginalTitle,
+            mediaAliases = mediaAliases,
             mediaYear = mediaYear,
             mediaExternalId = mediaExternalId,
+            mediaOriginalLanguage = mediaOriginalLanguage,
         ) { progress: SharedPluginDiscoveryProgress ->
             onProgress(
                 PluginDiscoveryProgress(

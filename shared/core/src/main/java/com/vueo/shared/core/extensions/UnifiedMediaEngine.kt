@@ -1809,6 +1809,16 @@ private fun mergeMediaMetadata(
             candidate.description,
         ),
         releaseInfo = current.releaseInfo ?: candidate.releaseInfo,
+        originalTitle = current.originalTitle ?: candidate.originalTitle,
+        aliases =
+            (
+                current.aliases +
+                    candidate.aliases +
+                    listOf(current.name, candidate.name) +
+                    listOfNotNull(current.originalTitle, candidate.originalTitle)
+            )
+                .filter(String::isNotBlank)
+                .distinctBy { it.lowercase() },
         originalLanguage =
             current.originalLanguage ?: candidate.originalLanguage,
         genres = (current.genres + candidate.genres).distinct(),

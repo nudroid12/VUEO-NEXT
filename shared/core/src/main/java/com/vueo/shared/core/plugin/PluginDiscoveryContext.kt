@@ -22,8 +22,11 @@ internal class PluginDiscoveryContextBroker(
     private val season: Int?,
     private val episode: Int?,
     private val seedTitle: String? = null,
+    private val seedOriginalTitle: String? = null,
+    private val seedAliases: List<String> = emptyList(),
     private val seedYear: String? = null,
     private val seedExternalId: String? = null,
+    private val seedOriginalLanguage: String? = null,
 ) {
     private val lock = Mutex()
 
@@ -169,30 +172,50 @@ internal class PluginDiscoveryContextBroker(
             .let { YEAR_REGEX.find(it)?.value.orEmpty() }
         val externalId = seedExternalId.orEmpty().trim()
         val imdbId = externalId.takeIf { it.matches(IMDB_REGEX) }.orEmpty()
+        val originalTitle = seedOriginalTitle.orEmpty().trim().ifBlank { title }
+        val originalLanguage = seedOriginalLanguage.orEmpty().trim()
+        val aliases = linkedSetOf<String>()
+        fun addAlias(raw: String?) {
+            raw.orEmpty().trim().takeIf(String::isNotBlank)?.let(aliases::add)
+        }
+        addAlias(title)
+        addAlias(originalTitle)
+        seedAliases.forEach(::addAlias)
+
+        val alternateTitles = JSONArray()
+        aliases
+            .filterNot { it.equals(title, ignoreCase = true) || it.equals(originalTitle, ignoreCase = true) }
+            .take(MAX_ALIASES)
+            .forEach { alias ->
+                alternateTitles.put(JSONObject().put("title", alias))
+            }
 
         val tmdb = JSONObject()
             .put("id", tmdbId.toLongOrNull() ?: tmdbId)
             .put(if (isTv) "name" else "title", title)
-            .put(if (isTv) "original_name" else "original_title", title)
+            .put(if (isTv) "original_name" else "original_title", originalTitle)
+            .put("original_language", originalLanguage)
             .put(
                 if (isTv) "first_air_date" else "release_date",
                 normalizedYear.takeIf { it.isNotBlank() }?.let { "$it-01-01" }.orEmpty(),
             )
             .put("external_ids", JSONObject().put("imdb_id", imdbId))
-            .put("alternative_titles", JSONObject().put(if (isTv) "results" else "titles", JSONArray()))
+            .put("alternative_titles", JSONObject().put(if (isTv) "results" else "titles", alternateTitles))
             .put("translations", JSONObject().put("translations", JSONArray()))
 
         return JSONObject()
-            .put("version", 2)
+            .put("version", 3)
             .put("tmdbId", tmdbId)
             .put("mediaType", if (isTv) "tv" else "movie")
             .put("season", season ?: JSONObject.NULL)
             .put("episode", episode ?: JSONObject.NULL)
             .put("title", title)
-            .put("originalTitle", title)
+            .put("originalTitle", originalTitle)
             .put("year", normalizedYear)
             .put("imdbId", imdbId)
-            .put("aliases", JSONArray().put(title))
+            .put("externalId", externalId)
+            .put("originalLanguage", originalLanguage)
+            .put("aliases", JSONArray(aliases.take(MAX_ALIASES)))
             .put("source", "metadata-layer")
             .put("tmdb", tmdb)
     }
@@ -204,9 +227,10 @@ internal class PluginDiscoveryContextBroker(
         val date = tmdb.optString(if (isTv) "first_air_date" else "release_date")
         val year = date.substringBefore('-').takeIf { it.matches(Regex("""\d{4}""")) }.orEmpty()
         val imdbId = tmdb.optJSONObject("external_ids")?.optString("imdb_id").orEmpty()
+        val originalLanguage = tmdb.optString("original_language")
 
         return JSONObject()
-            .put("version", 2)
+            .put("version", 3)
             .put("tmdbId", tmdbId)
             .put("mediaType", if (isTv) "tv" else "movie")
             .put("season", season ?: JSONObject.NULL)
@@ -215,6 +239,8 @@ internal class PluginDiscoveryContextBroker(
             .put("originalTitle", originalTitle)
             .put("year", year)
             .put("imdbId", imdbId)
+            .put("externalId", imdbId)
+            .put("originalLanguage", originalLanguage)
             .put("aliases", collectAliases(tmdb, isTv))
             .put("source", "provider-tmdb-fallback")
             .put("tmdb", tmdb)

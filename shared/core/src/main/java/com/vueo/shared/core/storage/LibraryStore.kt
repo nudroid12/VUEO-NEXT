@@ -658,6 +658,8 @@ class LibraryStore(
             .put("background", media.background)
             .put("description", media.description)
             .put("releaseInfo", media.releaseInfo)
+            .put("originalTitle", media.originalTitle)
+            .put("aliases", JSONArray(media.aliases))
             .put("originalLanguage", media.originalLanguage)
             .put("genres", JSONArray(media.genres))
             .put(
@@ -705,6 +707,8 @@ class LibraryStore(
             background = json.optNullableString("background"),
             description = json.optNullableString("description"),
             releaseInfo = json.optNullableString("releaseInfo"),
+            originalTitle = json.optNullableString("originalTitle"),
+            aliases = json.optJSONArray("aliases").toStringList(),
             originalLanguage = json.optNullableString("originalLanguage"),
             genres = json.optJSONArray("genres").toStringList(),
             episodes = json.optJSONArray("episodes").toEpisodes(),
