@@ -1,16 +1,9 @@
 package com.vueo.tv.settings
 
-import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SettingsInputComponent
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,7 +39,8 @@ import java.util.Date
 import java.util.Locale
 
 private enum class TvSettingsPage {
-    HUB,
+    PROFILE,
+    PROFILE_CHOOSER,
     PERSONALIZATION,
     CONTENT_MANAGER,
     CONTENT_ADDONS,
@@ -62,6 +56,42 @@ private enum class TvSettingsPage {
     ABOUT,
 }
 
+private data class TvSettingsRootDestination(
+    val page: TvSettingsPage,
+    val id: String,
+    val title: String,
+)
+
+private val TvSettingsRootDestinations = listOf(
+    TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile"),
+    TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization"),
+    TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager"),
+    TvSettingsRootDestination(TvSettingsPage.ENHANCEMENTS, "enhancements", "Enhancements"),
+    TvSettingsRootDestination(TvSettingsPage.PLAYBACK, "playback", "Playback"),
+    TvSettingsRootDestination(TvSettingsPage.SUBTITLES, "subtitles", "Subtitles"),
+    TvSettingsRootDestination(TvSettingsPage.SOURCES, "sources", "Sources"),
+    TvSettingsRootDestination(TvSettingsPage.APPEARANCE, "appearance", "Appearance"),
+    TvSettingsRootDestination(TvSettingsPage.DATA_STORAGE, "data-storage", "Data & Storage"),
+    TvSettingsRootDestination(TvSettingsPage.UPDATES, "updates", "Updates"),
+    TvSettingsRootDestination(TvSettingsPage.ABOUT, "about", "About VUEO"),
+)
+
+private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
+    TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
+    TvSettingsPage.CONTENT_ADDONS,
+    TvSettingsPage.CONTENT_PROVIDERS,
+    TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
+    else -> this
+}
+
+private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
+    TvSettingsPage.PROFILE_CHOOSER,
+    TvSettingsPage.CONTENT_ADDONS,
+    TvSettingsPage.CONTENT_PROVIDERS,
+    TvSettingsPage.CONTENT_CATALOGS -> true
+    else -> false
+}
+
 @Composable
 fun TvSettingsScreen(
     runtime: TvRuntime,
@@ -70,196 +100,215 @@ fun TvSettingsScreen(
     onBack: () -> Unit,
     onDataChanged: () -> Unit = {},
 ) {
-    var page by remember { mutableStateOf(TvSettingsPage.HUB) }
+    var page by remember { mutableStateOf(TvSettingsPage.PROFILE) }
+    var panelAutoFocusToken by remember { mutableIntStateOf(0) }
 
-    fun backFrom(child: TvSettingsPage) {
-        page = when (child) {
+    val rootPage = page.rootPage()
+    val selectedRoot = TvSettingsRootDestinations.firstOrNull { it.page == rootPage }
+        ?: TvSettingsRootDestinations.first()
+
+    fun openPanel(next: TvSettingsPage) {
+        page = next
+        panelAutoFocusToken += 1
+    }
+
+    fun backPanel() {
+        page = when (page) {
+            TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
-            else -> TvSettingsPage.HUB
+            else -> page
         }
+        panelAutoFocusToken += 1
     }
 
-    when (page) {
-        TvSettingsPage.HUB -> TvSettingsHub(
-            runtime = runtime,
-            onNavigate = onNavigate,
-            onProfile = onProfile,
-            onOpen = { page = it },
-            onBack = onBack,
-        )
-        TvSettingsPage.PERSONALIZATION -> TvPersonalizationSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.CONTENT_MANAGER -> TvContentManagerHub(
-            runtime, onNavigate, onProfile, { page = it }, { backFrom(page) }
-        )
-        TvSettingsPage.CONTENT_ADDONS -> TvAddonSettings(
-            runtime, onNavigate, onProfile, onDataChanged, { backFrom(page) }
-        )
-        TvSettingsPage.CONTENT_PROVIDERS -> TvProviderSettings(
-            runtime, onNavigate, onProfile, onDataChanged, { backFrom(page) }
-        )
-        TvSettingsPage.CONTENT_CATALOGS -> TvCatalogSettings(
-            runtime, onNavigate, onProfile, onDataChanged, { backFrom(page) }
-        )
-        TvSettingsPage.ENHANCEMENTS -> TvEnhancementSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.PLAYBACK -> TvPlaybackSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.SUBTITLES -> TvSubtitleSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.SOURCES -> TvSourceSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.APPEARANCE -> TvAppearanceSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.DATA_STORAGE -> TvDataStorageSettings(
-            runtime, onNavigate, onProfile, onDataChanged, { backFrom(page) }
-        )
-        TvSettingsPage.UPDATES -> TvUpdatesSettings(
-            runtime, onNavigate, onProfile, { backFrom(page) }
-        )
-        TvSettingsPage.ABOUT -> TvAboutSettings(
-            onNavigate, onProfile, { backFrom(page) }
-        )
+    TvSettingsMasterDetailShell(
+        categories = TvSettingsRootDestinations.map { TvSettingsNavItem(it.id, it.title) },
+        selectedCategoryId = selectedRoot.id,
+        panelKey = page.name,
+        panelAutoFocusToken = panelAutoFocusToken,
+        panelHasBack = page.hasPanelParent(),
+        onCategorySelected = { id ->
+            TvSettingsRootDestinations.firstOrNull { it.id == id }?.let { destination ->
+                if (page != destination.page) page = destination.page
+            }
+        },
+        onPanelBack = ::backPanel,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+    ) {
+        when (page) {
+            TvSettingsPage.PROFILE -> TvProfileSettings(
+                runtime = runtime,
+                onNavigate = onNavigate,
+                onProfile = onProfile,
+                onOpenProfiles = { openPanel(TvSettingsPage.PROFILE_CHOOSER) },
+                onBack = onBack,
+            )
+            TvSettingsPage.PROFILE_CHOOSER -> TvProfileChooserSettings(
+                runtime = runtime,
+                onNavigate = onNavigate,
+                onProfile = onProfile,
+                onDataChanged = onDataChanged,
+                onProfileSelected = { openPanel(TvSettingsPage.PROFILE) },
+                onBack = ::backPanel,
+            )
+            TvSettingsPage.PERSONALIZATION -> TvPersonalizationSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.CONTENT_MANAGER -> TvContentManagerHub(
+                runtime, onNavigate, onProfile, ::openPanel, onBack
+            )
+            TvSettingsPage.CONTENT_ADDONS -> TvAddonSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            TvSettingsPage.CONTENT_PROVIDERS -> TvProviderSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            TvSettingsPage.CONTENT_CATALOGS -> TvCatalogSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            TvSettingsPage.ENHANCEMENTS -> TvEnhancementSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.PLAYBACK -> TvPlaybackSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.SUBTITLES -> TvSubtitleSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.SOURCES -> TvSourceSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.APPEARANCE -> TvAppearanceSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.DATA_STORAGE -> TvDataStorageSettings(
+                runtime, onNavigate, onProfile, onDataChanged, onBack
+            )
+            TvSettingsPage.UPDATES -> TvUpdatesSettings(
+                runtime, onNavigate, onProfile, onBack
+            )
+            TvSettingsPage.ABOUT -> TvAboutSettings(
+                onNavigate, onProfile, onBack
+            )
+        }
     }
 }
 
 @Composable
-private fun TvSettingsHub(
+private fun TvProfileSettings(
     runtime: TvRuntime,
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
-    onOpen: (TvSettingsPage) -> Unit,
+    onOpenProfiles: () -> Unit,
     onBack: () -> Unit,
 ) {
-    val activeProfile = runtime.profileStore.activeProfile()
-    val addonCount = runtime.content.manifestUrls().size
-    val repoCount = runtime.pluginStore.repositories().size
-    val providerCount = runtime.pluginStore.totalProviderCount()
-
-    val categories = listOf(
-        TvSettingsCategory(
-            id = "vueo",
-            title = "VUEO",
-            subtitle = "Profile, personalization, content and enhancement services.",
-            entries = listOf(
-                TvSettingsEntry(
-                    id = "profile",
-                    title = activeProfile.name,
-                    subtitle = "Switch or manage the active profile.",
-                    value = "Profile",
-                    onActivate = onProfile,
-                    icon = Icons.Default.AccountCircle,
-                ),
-                TvSettingsEntry(
-                    id = "personalization",
-                    title = "Personalization",
-                    subtitle = "User DNA, DNA Match & recommendations.",
-                    onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) },
-                    icon = Icons.Default.Settings,
-                ),
-                TvSettingsEntry(
-                    id = "content-manager",
-                    title = "Content Manager",
-                    subtitle = "Addons, providers & catalogs.",
-                    value = "$addonCount addons • $repoCount repos • $providerCount providers",
-                    onActivate = { onOpen(TvSettingsPage.CONTENT_MANAGER) },
-                    icon = Icons.Default.Extension,
-                ),
-                TvSettingsEntry(
-                    id = "enhancements",
-                    title = "Enhancements",
-                    subtitle = "Metadata, ratings & external services.",
-                    value = enhancementSummary(runtime),
-                    onActivate = { onOpen(TvSettingsPage.ENHANCEMENTS) },
-                    icon = Icons.Default.SettingsInputComponent,
-                ),
-            ),
-        ),
-        TvSettingsCategory(
-            id = "playback",
-            title = "PLAYBACK",
-            subtitle = "Player, subtitle and source preferences.",
-            entries = listOf(
-                TvSettingsEntry(
-                    id = "playback-settings",
-                    title = "Playback",
-                    subtitle = "Player & streaming preferences.",
-                    value = "${if (runtime.settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • ${runtime.settingsStore.preferredQuality().label}",
-                    onActivate = { onOpen(TvSettingsPage.PLAYBACK) },
-                    icon = Icons.Default.PlayArrow,
-                ),
-                TvSettingsEntry(
-                    id = "subtitles",
-                    title = "Subtitles",
-                    subtitle = "Language & display preferences.",
-                    value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${if (runtime.settingsStore.subtitlesOnByDefault()) "Default on" else "Default off"}",
-                    onActivate = { onOpen(TvSettingsPage.SUBTITLES) },
-                    icon = Icons.Default.VideoLibrary,
-                ),
-                TvSettingsEntry(
-                    id = "sources",
-                    title = "Sources",
-                    subtitle = "Source ranking & information.",
-                    value = if (runtime.settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Technical details off",
-                    onActivate = { onOpen(TvSettingsPage.SOURCES) },
-                    icon = Icons.Default.SettingsInputComponent,
-                ),
-            ),
-        ),
-        TvSettingsCategory(
-            id = "app",
-            title = "APP",
-            subtitle = "Interface, local data, updates and application information.",
-            entries = listOf(
-                TvSettingsEntry(
-                    id = "appearance-settings",
-                    title = "Appearance",
-                    subtitle = "Interface preferences.",
-                    value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label} accent",
-                    onActivate = { onOpen(TvSettingsPage.APPEARANCE) },
-                    icon = Icons.Default.Settings,
-                ),
-                TvSettingsEntry(
-                    id = "storage",
-                    title = "Data & Storage",
-                    subtitle = "Backup, history, cache & app data.",
-                    value = "Local device data",
-                    onActivate = { onOpen(TvSettingsPage.DATA_STORAGE) },
-                    icon = Icons.Default.VideoLibrary,
-                ),
-                TvSettingsEntry(
-                    id = "updates",
-                    title = "Updates",
-                    subtitle = "Version & update preferences.",
-                    value = if (runtime.settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Automatic checks off",
-                    onActivate = { onOpen(TvSettingsPage.UPDATES) },
-                    icon = Icons.Default.Refresh,
-                ),
-                TvSettingsEntry(
-                    id = "about",
-                    title = "About VUEO",
-                    subtitle = "Privacy, architecture & build information.",
-                    value = "VUEO ${BuildConfig.VERSION_NAME}",
-                    onActivate = { onOpen(TvSettingsPage.ABOUT) },
-                    icon = Icons.Default.Settings,
-                ),
-            ),
+    val profile = runtime.profileStore.activeProfile()
+    val profileType = if (profile.isKids) "Kids profile" else "Standard profile"
+    val entries = listOf(
+        TvSettingsEntry(
+            id = "active-profile",
+            title = profile.name,
+            subtitle = "$profileType. Select to switch the active profile.",
+            value = "Active profile",
+            onActivate = onOpenProfiles,
+            icon = Icons.Default.AccountCircle,
         ),
     )
 
-    TvSettingsCategoryHub(
-        categories = categories,
+    TvSettingsListScreen(
+        title = "Profile",
+        subtitle = "Your active local VUEO profile.",
+        entries = entries,
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
+    )
+}
+
+@Composable
+private fun TvProfileChooserSettings(
+    runtime: TvRuntime,
+    onNavigate: (String) -> Unit,
+    onProfile: () -> Unit,
+    onDataChanged: () -> Unit,
+    onProfileSelected: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var revision by remember { mutableIntStateOf(0) }
+    val profiles = remember(revision) { runtime.profileStore.profiles() }
+    val activeProfileId = remember(revision) { runtime.profileStore.activeProfileId() }
+    var lockedProfileId by remember { mutableStateOf<String?>(null) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    var pinResetToken by remember { mutableIntStateOf(0) }
+
+    val lockedProfile = lockedProfileId?.let { id -> profiles.firstOrNull { it.id == id } }
+    if (lockedProfile != null) {
+        androidx.compose.runtime.key(lockedProfile.id, pinResetToken) {
+            com.vueo.tv.profile.TvPinEntryOverlay(
+                title = "Unlock ${lockedProfile.name}",
+                subtitle = "Enter the 4-digit profile PIN",
+                errorText = pinError,
+                onComplete = { pin ->
+                    if (runtime.profileStore.verifyProfilePin(lockedProfile.id, pin)) {
+                        pinError = null
+                        lockedProfileId = null
+                        if (runtime.profileStore.setActiveProfile(lockedProfile.id)) {
+                            revision += 1
+                            onDataChanged()
+                            onProfileSelected()
+                        }
+                    } else {
+                        pinError = "Incorrect PIN"
+                        pinResetToken += 1
+                    }
+                },
+                onCancel = {
+                    pinError = null
+                    lockedProfileId = null
+                },
+            )
+        }
+    }
+
+    val entries = profiles.map { profile ->
+        val active = profile.id == activeProfileId
+        val locked = runtime.profileStore.hasProfilePin(profile.id)
+        TvSettingsEntry(
+            id = "profile-${profile.id}",
+            title = profile.name,
+            subtitle = buildString {
+                append(if (profile.isKids) "Kids profile" else "Standard profile")
+                if (locked) append(" • PIN protected")
+            },
+            value = if (active) "Active" else "Switch",
+            onActivate = {
+                if (active) {
+                    onProfileSelected()
+                } else if (locked) {
+                    pinError = null
+                    lockedProfileId = profile.id
+                } else if (runtime.profileStore.setActiveProfile(profile.id)) {
+                    revision += 1
+                    onDataChanged()
+                    onProfileSelected()
+                }
+            },
+            icon = Icons.Default.AccountCircle,
+        )
+    }
+
+    TvSettingsListScreen(
+        title = "Profiles",
+        subtitle = "Switch the active profile without leaving Settings.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Profile",
     )
 }
 
@@ -713,7 +762,7 @@ private fun TvPlaybackSettings(
         toggleEntry("recovery", "Auto Source Recovery", "Try up to two ranked alternatives after a playback error, keeping the timestamp.", recovery) { recovery = it; store.setAutoSourceRecoveryEnabled(it) },
     )
 
-    TvSettingsListScreen("Playback", "TV-native player behavior and source preference.", entries, onNavigate, onProfile, onBack, topLabel = "PLAYBACK")
+    TvSettingsListScreen("Playback", "TV-native player behavior and source preference.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -748,7 +797,7 @@ private fun TvSubtitleSettings(
         choiceEntry("opacity", "Text Opacity", "Subtitle text opacity.", "$opacity%", { opacity = (opacity - 10).coerceAtLeast(20); store.setSubtitleTextOpacityPercent(opacity) }, { opacity = (opacity + 10).coerceAtMost(100); store.setSubtitleTextOpacityPercent(opacity) }),
     )
 
-    TvSettingsListScreen("Subtitles", "Subtitle behavior is separate from subtitle providers in Content Manager.", entries, onNavigate, onProfile, onBack, topLabel = "PLAYBACK")
+    TvSettingsListScreen("Subtitles", "Subtitle behavior is separate from subtitle providers in Content Manager.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -767,7 +816,7 @@ private fun TvSourceSettings(
             runtime.settingsStore.setShowSourceTechnicalDetails(it)
         },
     )
-    TvSettingsListScreen("Sources", "Discovery and Smart Source behavior.", entries, onNavigate, onProfile, onBack, topLabel = "PLAYBACK")
+    TvSettingsListScreen("Sources", "Discovery and Smart Source behavior.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -793,7 +842,7 @@ private fun TvAppearanceSettings(
             accent = cycle(AppAccent.entries, accent, 1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
         }),
     )
-    TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack, topLabel = "APP")
+    TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -896,7 +945,7 @@ private fun TvDataStorageSettings(
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
     }
 
-    TvSettingsListScreen("Data & Storage", "Backup, restore and local data maintenance.", entries, onNavigate, onProfile, onBack, topLabel = "APP")
+    TvSettingsListScreen("Data & Storage", "Backup, restore and local data maintenance.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
@@ -969,7 +1018,7 @@ private fun TvUpdatesSettings(
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false)) }
     }
 
-    TvSettingsListScreen("Updates", "Version and update preferences.", entries, onNavigate, onProfile, onBack, topLabel = "APP", footer = "Android requires a final system confirmation before an APK update is installed.")
+    TvSettingsListScreen("Updates", "Version and update preferences.", entries, onNavigate, onProfile, onBack, footer = "Android requires a final system confirmation before an APK update is installed.")
 }
 
 @Composable
@@ -984,7 +1033,7 @@ private fun TvAboutSettings(
         TvSettingsEntry("privacy", "Privacy", "Profiles, settings and API keys are stored locally on the device. Credentials are excluded from backups by default.", "Local-first"),
         TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB"),
     )
-    TvSettingsListScreen("About VUEO", "App, privacy and architecture information.", entries, onNavigate, onProfile, onBack, topLabel = "APP")
+    TvSettingsListScreen("About VUEO", "App, privacy and architecture information.", entries, onNavigate, onProfile, onBack)
 }
 
 private fun toggleEntry(
