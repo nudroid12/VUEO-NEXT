@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -57,6 +60,7 @@ internal data class TvSettingsEntry(
     val onPrevious: (() -> Unit)? = null,
     val onNext: (() -> Unit)? = null,
     val section: String? = null,
+    val icon: ImageVector? = null,
 )
 
 internal data class TvSettingsCategory(
@@ -270,10 +274,10 @@ internal fun TvSettingsCategoryHub(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(TvDesign.Black.copy(alpha = .16f), RoundedCornerShape(18.dp))
+                        .background(TvDesign.Surface.copy(alpha = .48f), RoundedCornerShape(18.dp))
                         .border(1.dp, TvDesign.White.copy(alpha = .10f), RoundedCornerShape(18.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     selectedCategory.entries.forEachIndexed { index, entry ->
                         item(key = entry.id) {
@@ -281,6 +285,7 @@ internal fun TvSettingsCategoryHub(
                                 entry = entry,
                                 requester = rowRequesters.getValue(entry.id),
                                 first = index == 0,
+                                grouped = true,
                                 onLeftToSidebar = { focusSelectedCategory() },
                                 onFocused = {
                                     navExpanded = false
@@ -288,6 +293,17 @@ internal fun TvSettingsCategoryHub(
                                     lastRowId = entry.id
                                 },
                             )
+                        }
+                        if (index != selectedCategory.entries.lastIndex) {
+                            item(key = "divider-${entry.id}") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = if (entry.icon != null) 72.dp else 16.dp, end = 14.dp)
+                                        .height(1.dp)
+                                        .background(TvDesign.White.copy(alpha = .07f)),
+                                )
+                            }
                         }
                     }
                 }
@@ -556,6 +572,7 @@ private fun TvSettingsRow(
     entry: TvSettingsEntry,
     requester: FocusRequester,
     first: Boolean,
+    grouped: Boolean = false,
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
@@ -605,25 +622,47 @@ private fun TvSettingsRow(
             }
             .background(
                 color = when {
-                    !entry.enabled -> TvDesign.Surface.copy(alpha = .18f)
+                    !entry.enabled -> TvDesign.Surface.copy(alpha = if (grouped) .10f else .18f)
                     focused -> TvDesign.White.copy(alpha = .10f)
+                    grouped -> TvDesign.White.copy(alpha = .015f)
                     else -> TvDesign.Surface.copy(alpha = .36f)
                 },
-                shape = RoundedCornerShape(11.dp),
+                shape = RoundedCornerShape(if (grouped) 14.dp else 11.dp),
             )
             .border(
-                width = if (focused) 1.5.dp else 1.dp,
+                width = if (focused) 1.5.dp else if (grouped) 0.dp else 1.dp,
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
                     focused -> TvDesign.White.copy(alpha = .88f)
+                    grouped -> TvDesign.White.copy(alpha = 0f)
                     else -> TvDesign.White.copy(alpha = .045f)
                 },
-                shape = RoundedCornerShape(11.dp),
+                shape = RoundedCornerShape(if (grouped) 14.dp else 11.dp),
             )
             .focusable(enabled = entry.enabled)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        entry.icon?.let { icon ->
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        color = if (focused) TvDesign.White.copy(alpha = .10f) else TvDesign.SurfaceRaised.copy(alpha = .62f),
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (entry.enabled) TvDesign.White.copy(alpha = .92f) else TvDesign.Dim,
+                    modifier = Modifier.size(23.dp),
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+        }
+
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(3.dp),

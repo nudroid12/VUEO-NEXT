@@ -254,27 +254,23 @@ Keep repository/data logic shared even when presentation is platform-specific.
 
 ### Settings
 
-Current direction after 17B:
+Current direction after 42A:
 
-**Mobile Settings UI hierarchy is canonical.**
+**Mobile Settings hierarchy and grouping are canonical.**
 
-The old 2-column TV Settings grid is superseded.
+The legacy TV root split of Profiles / Content / Playback / Appearance / System is superseded. The TV root now adapts the Mobile Settings groups into three D-pad categories:
 
-TV Settings should use:
+- VUEO
+- PLAYBACK
+- APP
 
-- Mobile-style one-column navigation cards
-- profile card at the top
-- icon box
-- title
-- subtitle/status
-- trailing arrow/value/toggle where appropriate
-- Mobile-style subpage hierarchy
-- larger typography/row height for 10-foot viewing
-- D-pad focus treatment
+The selected category opens a grouped Mobile-style row card on the right. The active profile remains the first VUEO row so profile switching is not lost. Rows use the Mobile icon-box / title / subtitle / status language, scaled for 10-foot viewing with neutral white TV focus.
 
-Settings still opens from the TV Profile icon.
+Subpages remain one-column TV screens and continue to follow the Mobile Settings hierarchy. Shared Core remains the source of truth for settings behavior and persistence.
 
-Do not rebuild a separate TV-only Settings information architecture unless a TV constraint genuinely requires it.
+Settings still opens through the TV Settings route and profile management remains available through the profile action.
+
+Do not create a second TV-only settings information architecture or duplicate Shared Core preference logic.
 
 ## 8. TV interaction rules
 
@@ -707,3 +703,7 @@ Home presentation is now calibrated around the current 29C.4 floating sidebar. T
 - Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
 - Per-row focus memory and deterministic UP/DOWN row transfer are part of the Home contract.
 - See `TV_30C_HOME_SOURCE_REBUILD.md`.
+
+## TV 42A - Settings Mobile Category Rebuild (2026-09-08)
+
+The TV Settings root now uses the current Mobile Settings groups as its category model. `VUEO` contains Profile, Personalization, Content Manager and Enhancements. `PLAYBACK` contains Playback, Subtitles and Sources. `APP` contains Appearance, Data & Storage, Updates and About VUEO. Root rows use Mobile-style icon wells, grouped separators and the same compact status summaries where the TV runtime exposes the same preference. Existing Settings subpages, runtime wiring, Shared Core behavior and global TV sidebar navigation are unchanged.

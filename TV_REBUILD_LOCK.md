@@ -165,3 +165,7 @@ When controls are hidden, OK/Enter reveals controls, Left/Right performs a 10 se
 The bottom row is Play/Pause, Rewind 10s, Forward 10s, Next, Subs, Audio, Sources, Episodes and More. Subs/Audio/Sources/Episodes/More use D-pad side panels that trap horizontal focus and restore focus to the originating button on close. Skip Intro/Recap/Ending and auto-next remain contextual remote-focusable actions. Do not restore the previous whole-screen OK = Play/Pause interaction while controls are visible, do not centre the main controls over video, and do not add touch-only gestures as required TV interactions.
 
 29G is a functional baseline pending real-TV calibration and the later whole-TV polish pass.
+
+## 42A Settings root category lock
+
+The Settings root adapts the canonical Mobile group structure into TV categories: `VUEO`, `PLAYBACK`, and `APP`. Do not restore the older `Profiles / Content / Playback / Appearance / System` root split. Keep the active profile reachable from the VUEO group, keep Mobile-style icon/title/subtitle/status rows, and preserve the existing one-column child settings screens. Shared Core owns preference behavior and persistence; TV owns D-pad focus and presentation.

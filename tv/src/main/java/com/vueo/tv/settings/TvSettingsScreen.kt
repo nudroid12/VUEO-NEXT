@@ -3,6 +3,14 @@ package com.vueo.tv.settings
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsInputComponent
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -134,13 +142,13 @@ private fun TvSettingsHub(
     val activeProfile = runtime.profileStore.activeProfile()
     val addonCount = runtime.content.manifestUrls().size
     val repoCount = runtime.pluginStore.repositories().size
-    val providerCount = runtime.pluginStore.enabledProviderCount()
+    val providerCount = runtime.pluginStore.totalProviderCount()
 
     val categories = listOf(
         TvSettingsCategory(
-            id = "profiles",
-            title = "Profiles",
-            subtitle = "Manage the active profile and personalization.",
+            id = "vueo",
+            title = "VUEO",
+            subtitle = "Profile, personalization, content and enhancement services.",
             entries = listOf(
                 TvSettingsEntry(
                     id = "profile",
@@ -148,103 +156,100 @@ private fun TvSettingsHub(
                     subtitle = "Switch or manage the active profile.",
                     value = "Profile",
                     onActivate = onProfile,
+                    icon = Icons.Default.AccountCircle,
                 ),
                 TvSettingsEntry(
                     id = "personalization",
                     title = "Personalization",
-                    subtitle = "User DNA, DNA Match and recommendations.",
+                    subtitle = "User DNA, DNA Match & recommendations.",
                     onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) },
+                    icon = Icons.Default.Settings,
                 ),
-            ),
-        ),
-        TvSettingsCategory(
-            id = "content",
-            title = "Content",
-            subtitle = "Control discovery, addons, providers and metadata services.",
-            entries = listOf(
                 TvSettingsEntry(
                     id = "content-manager",
                     title = "Content Manager",
-                    subtitle = "Addons, providers and catalog order.",
+                    subtitle = "Addons, providers & catalogs.",
                     value = "$addonCount addons • $repoCount repos • $providerCount providers",
                     onActivate = { onOpen(TvSettingsPage.CONTENT_MANAGER) },
+                    icon = Icons.Default.Extension,
                 ),
                 TvSettingsEntry(
                     id = "enhancements",
                     title = "Enhancements",
-                    subtitle = "Metadata, ratings and optional services.",
+                    subtitle = "Metadata, ratings & external services.",
                     value = enhancementSummary(runtime),
                     onActivate = { onOpen(TvSettingsPage.ENHANCEMENTS) },
+                    icon = Icons.Default.SettingsInputComponent,
                 ),
             ),
         ),
         TvSettingsCategory(
             id = "playback",
-            title = "Playback",
-            subtitle = "Player behaviour, subtitles and source selection.",
+            title = "PLAYBACK",
+            subtitle = "Player, subtitle and source preferences.",
             entries = listOf(
                 TvSettingsEntry(
                     id = "playback-settings",
                     title = "Playback",
-                    subtitle = "Player behaviour, quality and recovery.",
+                    subtitle = "Player & streaming preferences.",
                     value = "${if (runtime.settingsStore.resumePlaybackEnabled()) "Resume on" else "Resume off"} • ${runtime.settingsStore.preferredQuality().label}",
                     onActivate = { onOpen(TvSettingsPage.PLAYBACK) },
+                    icon = Icons.Default.PlayArrow,
                 ),
                 TvSettingsEntry(
                     id = "subtitles",
                     title = "Subtitles",
-                    subtitle = "Language and display preferences.",
-                    value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${runtime.settingsStore.subtitleSize().label}",
+                    subtitle = "Language & display preferences.",
+                    value = "${runtime.settingsStore.preferredSubtitleLanguage().label} • ${if (runtime.settingsStore.subtitlesOnByDefault()) "Default on" else "Default off"}",
                     onActivate = { onOpen(TvSettingsPage.SUBTITLES) },
+                    icon = Icons.Default.VideoLibrary,
                 ),
                 TvSettingsEntry(
                     id = "sources",
                     title = "Sources",
-                    subtitle = "Smart ranking and source information.",
+                    subtitle = "Source ranking & information.",
                     value = if (runtime.settingsStore.showSourceTechnicalDetails()) "Technical details on" else "Technical details off",
                     onActivate = { onOpen(TvSettingsPage.SOURCES) },
+                    icon = Icons.Default.SettingsInputComponent,
                 ),
             ),
         ),
         TvSettingsCategory(
-            id = "appearance",
-            title = "Appearance",
-            subtitle = "Tune the TV interface without changing VUEO behaviour.",
+            id = "app",
+            title = "APP",
+            subtitle = "Interface, local data, updates and application information.",
             entries = listOf(
                 TvSettingsEntry(
                     id = "appearance-settings",
                     title = "Appearance",
-                    subtitle = "Theme and interactive accent.",
-                    value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label}",
+                    subtitle = "Interface preferences.",
+                    value = "${runtime.settingsStore.appTheme().label} • ${runtime.settingsStore.appAccent().label} accent",
                     onActivate = { onOpen(TvSettingsPage.APPEARANCE) },
+                    icon = Icons.Default.Settings,
                 ),
-            ),
-        ),
-        TvSettingsCategory(
-            id = "system",
-            title = "System",
-            subtitle = "Local data, updates and application information.",
-            entries = listOf(
                 TvSettingsEntry(
                     id = "storage",
                     title = "Data & Storage",
-                    subtitle = "Backup, restore, history, cache and app data.",
+                    subtitle = "Backup, history, cache & app data.",
                     value = "Local device data",
                     onActivate = { onOpen(TvSettingsPage.DATA_STORAGE) },
+                    icon = Icons.Default.VideoLibrary,
                 ),
                 TvSettingsEntry(
                     id = "updates",
                     title = "Updates",
-                    subtitle = "Version and automatic update checks.",
+                    subtitle = "Version & update preferences.",
                     value = if (runtime.settingsStore.automaticUpdateChecksEnabled()) "Automatic checks on" else "Automatic checks off",
                     onActivate = { onOpen(TvSettingsPage.UPDATES) },
+                    icon = Icons.Default.Refresh,
                 ),
                 TvSettingsEntry(
                     id = "about",
                     title = "About VUEO",
-                    subtitle = "Privacy, architecture and build information.",
+                    subtitle = "Privacy, architecture & build information.",
                     value = "VUEO ${BuildConfig.VERSION_NAME}",
                     onActivate = { onOpen(TvSettingsPage.ABOUT) },
+                    icon = Icons.Default.Settings,
                 ),
             ),
         ),
