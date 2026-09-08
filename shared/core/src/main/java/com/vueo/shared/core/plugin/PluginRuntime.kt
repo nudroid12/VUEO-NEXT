@@ -306,6 +306,20 @@ suspend fun discoverProgressive(
                 targetProviders = targets.size,
             )
         val runtimeDiagnosticCompletedProviders = java.util.concurrent.atomic.AtomicInteger(0)
+        val discoveryContextBroker =
+            PluginDiscoveryContextBroker(
+                scanId = runtimeDiagnosticScanId,
+                tmdbId = tmdbId,
+                mediaType = mediaType,
+                season = season,
+                episode = episode,
+            )
+
+        RuntimeDiagnostics.recordDiscoveryTrace(
+            scanId = runtimeDiagnosticScanId,
+            stage = "CONTEXT_INIT",
+            details = "tmdb=$tmdbId type=${mediaType.lowercase()} season=${season ?: 0} episode=${episode ?: 0}",
+        )
 
         try {
             val preparation =
@@ -348,6 +362,10 @@ suspend fun discoverProgressive(
                                                         season,
                                                     episode =
                                                         episode,
+                                                    runtimeDiagnosticScanId =
+                                                        runtimeDiagnosticScanId,
+                                                    discoveryContextBroker =
+                                                        discoveryContextBroker,
                                                 ).also { providerRun ->
                                                     RuntimeDiagnostics.finishProvider(
                                                         token = providerDiagnosticToken,
@@ -733,6 +751,8 @@ private fun providerPriority(
         mediaType: String,
         season: Int?,
         episode: Int?,
+        runtimeDiagnosticScanId: Long,
+        discoveryContextBroker: PluginDiscoveryContextBroker,
     ): ProviderRun {
         val started =
             System.nanoTime()
@@ -758,6 +778,10 @@ private fun providerPriority(
                             season,
                         episode =
                             episode,
+                        runtimeDiagnosticScanId =
+                            runtimeDiagnosticScanId,
+                        discoveryContextBroker =
+                            discoveryContextBroker,
                     )
                 } catch (error: CancellationException) {
                     // Preserve timeout/caller cancellation so WebView and provider work can stop.
@@ -894,6 +918,8 @@ private fun providerPriority(
         mediaType: String,
         season: Int?,
         episode: Int?,
+        runtimeDiagnosticScanId: Long,
+        discoveryContextBroker: PluginDiscoveryContextBroker,
     ): ProviderExecution {
         val source =
             codeStore.read(
@@ -913,6 +939,11 @@ private fun providerPriority(
 
         val logs =
             CopyOnWriteArrayList<String>()
+
+        val httpTraceCount =
+            java.util.concurrent.atomic.AtomicInteger(0)
+        val webViewTraceCount =
+            java.util.concurrent.atomic.AtomicInteger(0)
 
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
@@ -966,21 +997,113 @@ private fun providerPriority(
                     }
 
                     asyncFunction<String, String>(
+                        "__vueoDiscoveryContext"
+                    ) { requestJson ->
+                        discoveryContextBroker
+                            .resolveFromProviderRequest(
+                                requestJson
+                            )
+                    }
+
+                    function<String, String>(
+                        "__vueoTrace"
+                    ) { traceJson ->
+                        val trace =
+                            runCatching {
+                                JSONObject(traceJson)
+                            }.getOrNull()
+
+                        RuntimeDiagnostics.recordDiscoveryTrace(
+                            scanId = runtimeDiagnosticScanId,
+                            providerName = provider.name,
+                            stage =
+                                trace
+                                    ?.optString("stage")
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?: "PROVIDER",
+                            details =
+                                trace
+                                    ?.opt("details")
+                                    ?.toString()
+                                    ?: traceJson,
+                        )
+                        "ok"
+                    }
+
+                    asyncFunction<String, String>(
                         "__vueoNativeFetch"
                     ) { requestJson ->
-                        PluginHttp.executeJson(
-                            requestJson
-                        )
+                        val startedNs =
+                            System.nanoTime()
+                        val sharedTmdb =
+                            discoveryContextBroker
+                                .maybeExecuteTmdbFetch(
+                                    requestJson
+                                )
+                        val responseJson =
+                            sharedTmdb
+                                ?: PluginHttp.executeJson(
+                                    requestJson
+                                )
+                        val traceIndex =
+                            httpTraceCount.incrementAndGet()
+
+                        if (traceIndex <= MAX_HTTP_TRACE_ENTRIES) {
+                            RuntimeDiagnostics.recordDiscoveryTrace(
+                                scanId = runtimeDiagnosticScanId,
+                                providerName = provider.name,
+                                stage = "HTTP",
+                                details =
+                                    summarizeHttpTrace(
+                                        requestJson = requestJson,
+                                        responseJson = responseJson,
+                                        elapsedMs =
+                                            (
+                                                System.nanoTime() -
+                                                    startedNs
+                                            ) / 1_000_000L,
+                                        sharedTmdb =
+                                            sharedTmdb != null,
+                                    ),
+                            )
+                        }
+
+                        responseJson
                     }
 
                     asyncFunction<String, String>(
                         "__vueoWebViewResolve"
                     ) { requestJson ->
-                        webViewConcurrency.withPermit {
-                            webViewResolver.resolveJson(
-                                requestJson
+                        val startedNs =
+                            System.nanoTime()
+                        val responseJson =
+                            webViewConcurrency.withPermit {
+                                webViewResolver.resolveJson(
+                                    requestJson
+                                )
+                            }
+                        val traceIndex =
+                            webViewTraceCount.incrementAndGet()
+
+                        if (traceIndex <= MAX_WEBVIEW_TRACE_ENTRIES) {
+                            RuntimeDiagnostics.recordDiscoveryTrace(
+                                scanId = runtimeDiagnosticScanId,
+                                providerName = provider.name,
+                                stage = "WEBVIEW",
+                                details =
+                                    summarizeWebViewTrace(
+                                        requestJson = requestJson,
+                                        responseJson = responseJson,
+                                        elapsedMs =
+                                            (
+                                                System.nanoTime() -
+                                                    startedNs
+                                            ) / 1_000_000L,
+                                    ),
                             )
                         }
+
+                        responseJson
                     }
 
                     val htmlBridge =
@@ -1172,6 +1295,50 @@ private fun providerPriority(
             globalThis.process = globalThis.process || { env: {} };
             globalThis.SCRAPER_SETTINGS =
               globalThis.SCRAPER_SETTINGS || {};
+            globalThis.VUEO_DISCOVERY_CONTEXT = {
+              version: 1,
+              tmdbId: ${safeTmdbId},
+              mediaType: ${safeMediaType},
+              season: ${seasonValue},
+              episode: ${episodeValue},
+              title: "",
+              originalTitle: "",
+              year: "",
+              imdbId: "",
+              aliases: []
+            };
+
+            globalThis.vueoDiscoveryContext =
+              async function (tmdbUrl) {
+                var raw = await __vueoDiscoveryContext(
+                  JSON.stringify({
+                    url: String(tmdbUrl || "")
+                  })
+                );
+                var context = JSON.parse(raw);
+                if (context && context.error) {
+                  throw new Error(context.error);
+                }
+                if (context && typeof context === "object") {
+                  globalThis.VUEO_DISCOVERY_CONTEXT = context;
+                }
+                return context;
+              };
+
+            globalThis.vueoTrace =
+              function (stage, details) {
+                try {
+                  __vueoTrace(
+                    JSON.stringify({
+                      stage: String(stage || "PROVIDER"),
+                      details:
+                        details == null
+                          ? ""
+                          : details
+                    })
+                  );
+                } catch (_) {}
+              };
 
             function __vueoString(value) {
               try {
@@ -3218,6 +3385,122 @@ private fun providerPriority(
         """.trimIndent()
     }
 
+    private fun summarizeHttpTrace(
+        requestJson: String,
+        responseJson: String,
+        elapsedMs: Long,
+        sharedTmdb: Boolean,
+    ): String {
+        val request =
+            runCatching { JSONObject(requestJson) }
+                .getOrNull()
+        val response =
+            runCatching { JSONObject(responseJson) }
+                .getOrNull()
+
+        val method =
+            request?.optString("method", "GET")
+                ?.uppercase()
+                ?: "GET"
+        val url =
+            compactTraceUrl(
+                request?.optString("url").orEmpty()
+            )
+        val status =
+            response?.optInt("status", 0)
+                ?: 0
+        val error =
+            response
+                ?.optString("error")
+                ?.takeIf { it.isNotBlank() }
+        val bodyChars =
+            response?.optString("body")?.length
+                ?: 0
+        val truncated =
+            response?.optBoolean(
+                "bodyTruncated",
+                false,
+            ) == true
+
+        return buildString {
+            append("request=")
+            append(method)
+            append(' ')
+            append(url)
+            append(" status=")
+            append(status)
+            append(" elapsed=")
+            append(elapsedMs)
+            append("ms bodyChars=")
+            append(bodyChars)
+            append(" truncated=")
+            append(truncated)
+            if (sharedTmdb) {
+                append(" sharedTmdb=true")
+            }
+            if (error != null) {
+                append(" error=")
+                append(error.take(120))
+            }
+        }
+    }
+
+    private fun summarizeWebViewTrace(
+        requestJson: String,
+        responseJson: String,
+        elapsedMs: Long,
+    ): String {
+        val request =
+            runCatching { JSONObject(requestJson) }
+                .getOrNull()
+        val response =
+            runCatching { JSONObject(responseJson) }
+                .getOrNull()
+        val url =
+            compactTraceUrl(
+                request?.optString("url").orEmpty()
+            )
+        val error =
+            response
+                ?.optString("error")
+                ?.takeIf { it.isNotBlank() }
+
+        return buildString {
+            append("url=")
+            append(url)
+            append(" elapsed=")
+            append(elapsedMs)
+            append("ms")
+            if (error != null) {
+                append(" error=")
+                append(error.take(120))
+            } else {
+                append(" result=ok")
+            }
+        }
+    }
+
+    private fun compactTraceUrl(raw: String): String {
+        if (raw.isBlank()) return "<empty>"
+
+        return runCatching {
+            val uri = java.net.URI(raw)
+            buildString {
+                append(uri.scheme ?: "https")
+                append("://")
+                append(uri.host ?: "unknown")
+                val path = uri.rawPath.orEmpty()
+                if (path.isNotBlank()) {
+                    append(path.take(180))
+                }
+            }
+        }.getOrElse {
+            raw.substringBefore('?')
+                .substringBefore('#')
+                .take(220)
+        }
+    }
+
     private data class ProviderExecution(
         val streams: List<SourceCandidate>,
         val error: String?,
@@ -3265,6 +3548,12 @@ private fun providerPriority(
 
         private const val MAX_STORED_LOGS =
             24
+
+        private const val MAX_HTTP_TRACE_ENTRIES =
+            14
+
+        private const val MAX_WEBVIEW_TRACE_ENTRIES =
+            4
 
         private const val MAX_LOG_LENGTH =
             1000
