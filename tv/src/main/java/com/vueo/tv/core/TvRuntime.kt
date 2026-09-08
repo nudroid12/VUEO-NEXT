@@ -30,6 +30,7 @@ import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlaybackStore
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -336,9 +337,13 @@ class TvRuntime(context: Context) {
         )
 
         val subtitlesDeferred = async {
-            runCatching {
+            try {
                 engine.resolveSubtitles(item.type, videoId)
-            }.getOrDefault(emptyList())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                emptyList()
+            }
         }
 
         val subtitlesUpdateDeferred = async {
@@ -347,7 +352,7 @@ class TvRuntime(context: Context) {
         }
 
         val addonsDeferred = async {
-            runCatching {
+            try {
                 engine.resolveStreamsProgressive(
                     type = item.type,
                     videoId = videoId,
@@ -366,7 +371,11 @@ class TvRuntime(context: Context) {
                         )
                     )
                 }
-            }.getOrDefault(emptyList())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                emptyList()
+            }
         }
 
         val pluginsDeferred = async {
@@ -374,13 +383,17 @@ class TvRuntime(context: Context) {
                 return@async null
             }
 
-            val tmdbId = runCatching {
+            val tmdbId = try {
                 TmdbResolver.resolve(
                     rawId = item.id,
                     mediaType = item.type,
                     apiKey = pluginStore.tmdbApiKey(),
                 )
-            }.getOrNull()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
 
             if (tmdbId == null) {
                 notice =
@@ -401,7 +414,7 @@ class TvRuntime(context: Context) {
             val mediaType =
                 if (item.type.lowercase() in setOf("series", "tv")) "tv" else "movie"
 
-            runCatching {
+            try {
                 pluginEngine.discoverProgressive(
                     tmdbId = tmdbId,
                     mediaType = mediaType,
@@ -428,7 +441,11 @@ class TvRuntime(context: Context) {
                         )
                     )
                 }
-            }.getOrNull()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                null
+            }
         }
 
         freshAddonStreams = addonsDeferred.await()

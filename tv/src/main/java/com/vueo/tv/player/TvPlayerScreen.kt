@@ -153,6 +153,7 @@ fun TvPlayerScreen(
             .filter { it.isDirectPlayable }
             .distinctBy { it.url }
     }
+    val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
     val externalSubtitlesBySelectionId = remember(bundle.subtitles) {
         bundle.subtitles.associateBy(::tvExternalSubtitleSelectionId)
     }
@@ -329,8 +330,9 @@ fun TvPlayerScreen(
                     playbackError = error.message ?: "Playback failed."
                     return
                 }
-                val currentIndex = playableSources.indexOfFirst { it.url == activeSource.url }
-                val alternative = playableSources.drop((currentIndex + 1).coerceAtLeast(0))
+                val recoverySources = latestPlayableSources.value
+                val currentIndex = recoverySources.indexOfFirst { it.url == activeSource.url }
+                val alternative = recoverySources.drop((currentIndex + 1).coerceAtLeast(0))
                     .firstOrNull { it.url != activeSource.url }
                 if (alternative == null) {
                     playbackError = error.message ?: "No recovery source available."

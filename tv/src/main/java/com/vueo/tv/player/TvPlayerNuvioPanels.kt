@@ -181,22 +181,28 @@ private fun NuvioOptionList(
     onSelected: (TvPlayerOption) -> Unit,
 ) {
     val state = rememberLazyListState()
-    val requesters = remember(options.map { it.key }) { List(options.size.coerceAtLeast(1)) { FocusRequester() } }
-    LaunchedEffect(options) {
-        if (options.isEmpty()) return@LaunchedEffect
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    var initialFocusAssigned by remember { mutableStateOf(false) }
+
+    fun requesterFor(option: TvPlayerOption): FocusRequester =
+        requesters.getOrPut(option.key) { FocusRequester() }
+
+    LaunchedEffect(options, initialFocusAssigned) {
+        if (initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
         val index = options.indexOfFirst { it.selected && it.enabled }.takeIf { it >= 0 }
             ?: options.indexOfFirst { it.enabled }.takeIf { it >= 0 } ?: 0
         state.scrollToItem(index)
         delay(45)
-        runCatching { requesters[index].requestFocus() }
+        runCatching { requesterFor(options[index]).requestFocus() }
+        initialFocusAssigned = true
     }
     if (options.isEmpty()) {
         Text("Nothing available for this stream.", color = Color.White.copy(alpha = .52f), fontSize = 12.sp)
         return
     }
     LazyColumn(state = state, modifier = Modifier.fillMaxHeight(maxHeightFraction), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        itemsIndexed(options, key = { index, option -> "${option.key}:$index" }) { index, option ->
-            NuvioOptionRow(option, requesters[index], onInteraction) { onSelected(option) }
+        itemsIndexed(options, key = { _, option -> option.key }) { _, option ->
+            NuvioOptionRow(option, requesterFor(option), onInteraction) { onSelected(option) }
         }
     }
 }

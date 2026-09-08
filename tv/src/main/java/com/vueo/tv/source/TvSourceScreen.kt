@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,7 +27,10 @@ fun TvSourceScreen(
     runtime: TvRuntime,
     media: MediaItem,
     episode: EpisodeItem?,
+    discovery: com.vueo.tv.core.TvSourceDiscoverySnapshot?,
+    discoveryError: String?,
     onBack: () -> Unit,
+    onRefresh: () -> Unit,
     onPlay: (TvSourceBundle, StreamSource) -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -38,16 +40,15 @@ fun TvSourceScreen(
     }
     val memory = remember(memoryKey) { TvSourceUiMemory.forKey(memoryKey) }
 
-    var bundle by remember(memoryKey) { mutableStateOf<TvSourceBundle?>(null) }
-    var searching by remember(memoryKey) { mutableStateOf(true) }
-    var progress by remember(memoryKey) { mutableStateOf("Starting source discovery…") }
-    var rawCount by remember(memoryKey) { mutableIntStateOf(0) }
-    var notice by remember(memoryKey) { mutableStateOf<String?>(null) }
-    var firstResultMs by remember(memoryKey) { mutableStateOf<Long?>(null) }
-    var providerOrder by remember(memoryKey) { mutableStateOf(emptyList<String>()) }
-    var fromCache by remember(memoryKey) { mutableStateOf(false) }
-    var error by remember(memoryKey) { mutableStateOf<String?>(null) }
-    var retryToken by remember(memoryKey) { mutableIntStateOf(0) }
+    val bundle = discovery?.bundle
+    val searching = discovery?.searching ?: discoveryError == null
+    val progress = discovery?.progress ?: "Starting source discovery…"
+    val rawCount = discovery?.rawCount ?: 0
+    val notice = discovery?.notice
+    val firstResultMs = discovery?.firstResultMs
+    val providerOrder = discovery?.providerOrder.orEmpty()
+    val fromCache = discovery?.fromCache ?: false
+    val error = discoveryError
     var selectedProvider by remember(memoryKey) {
         mutableStateOf(memory.selectedProvider ?: SOURCE_PROVIDER_ALL)
     }
@@ -57,43 +58,6 @@ fun TvSourceScreen(
 
     val showTechnicalDetails = runtime.settingsStore.showSourceTechnicalDetails()
     val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
-
-    LaunchedEffect(memoryKey, retryToken) {
-        searching = true
-        error = null
-        progress = "Starting source discovery…"
-        if (retryToken > 0) {
-            bundle = null
-            rawCount = 0
-            notice = null
-            firstResultMs = null
-            providerOrder = emptyList()
-            fromCache = false
-        }
-
-        runCatching {
-            runtime.discover(
-                item = media,
-                episode = episode,
-                onUpdate = { snapshot ->
-                    bundle = snapshot.bundle
-                    searching = snapshot.searching
-                    progress = snapshot.progress
-                    rawCount = snapshot.rawCount
-                    notice = snapshot.notice
-                    firstResultMs = snapshot.firstResultMs
-                    providerOrder = snapshot.providerOrder
-                    fromCache = snapshot.fromCache
-                },
-            )
-        }.onFailure { throwable ->
-            error = throwable.message ?: "Source discovery failed"
-            searching = false
-        }.onSuccess { finalBundle ->
-            bundle = finalBundle
-            searching = false
-        }
-    }
 
     val playable = bundle?.sources.orEmpty().filter(StreamSource::isDirectPlayable)
     val rankedSources = remember(playable, preferredQuality, media.originalLanguage) {
@@ -176,7 +140,7 @@ fun TvSourceScreen(
             showEngineDetails = !showEngineDetails
             memory.showEngineDetails = showEngineDetails
         },
-        onRefresh = { retryToken++ },
+        onRefresh = onRefresh,
         onSourceFocused = { source ->
             memory.focusedSourceKey = sourceStableKey(source)
             memory.selectedProvider = selectedProvider
