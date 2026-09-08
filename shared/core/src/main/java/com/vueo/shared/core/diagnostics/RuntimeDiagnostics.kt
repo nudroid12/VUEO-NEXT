@@ -103,6 +103,23 @@ object RuntimeDiagnostics {
 
     }
 
+    fun recordDiscoveryTrace(
+        scanId: Long,
+        stage: String,
+        details: String,
+        providerName: String? = null,
+    ) {
+        val providerPart = providerName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { " provider=${safeText(it, 80)}" }
+            .orEmpty()
+
+        record(
+            "DISCOVERY_TRACE scan=$scanId stage=${safeToken(stage)}$providerPart " +
+                safeText(details, 360)
+        )
+    }
+
     fun failSourceScan(scanId: Long, error: Throwable, completedProviders: Int) {
         record(
             "SCAN_ERROR id=$scanId type=${safeToken(error::class.java.simpleName)} " +
