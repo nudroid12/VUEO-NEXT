@@ -4,7 +4,6 @@ import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,9 +83,11 @@ internal data class TvSettingsMetric(
 )
 
 private data class TvSettingsEmbeddedHost(
-    val firstRowRequester: FocusRequester,
+    val panelKey: String,
+    val requesterFor: (String) -> FocusRequester,
+    val onFirstRowAvailable: (String) -> Unit,
     val onLeftToCategory: () -> Unit,
-    val onRowFocused: () -> Unit,
+    val onRowFocused: (String) -> Unit,
 )
 
 private val LocalTvSettingsEmbeddedHost = staticCompositionLocalOf<TvSettingsEmbeddedHost?> { null }
@@ -111,9 +113,14 @@ internal fun TvSettingsMasterDetailShell(
     val categoryRequesters = remember(categories.map { it.id }) {
         categories.associate { it.id to FocusRequester() }
     }
-    val panelFirstRequester = remember(panelKey) { FocusRequester() }
+    val panelRequesters = remember { mutableMapOf<String, MutableMap<String, FocusRequester>>() }
+    val panelFirstRowIds = remember { mutableMapOf<String, String>() }
+    val panelLastFocusedIds = remember { mutableMapOf<String, String>() }
     var lastPane by remember { mutableStateOf("category") }
     var navExpanded by remember { mutableStateOf(false) }
+
+    fun requesterForPanelRow(key: String, rowId: String): FocusRequester =
+        panelRequesters.getOrPut(key) { mutableMapOf() }.getOrPut(rowId) { FocusRequester() }
 
     fun focusGlobalNav() {
         navExpanded = true
@@ -131,9 +138,11 @@ internal fun TvSettingsMasterDetailShell(
 
     fun focusPanel(): Boolean {
         navExpanded = false
-        lastPane = "panel"
+        val rowId = panelLastFocusedIds[panelKey] ?: panelFirstRowIds[panelKey] ?: return false
+        val requester = panelRequesters[panelKey]?.get(rowId) ?: return false
         return runCatching {
-            panelFirstRequester.requestFocus()
+            requester.requestFocus()
+            lastPane = "panel"
             true
         }.getOrDefault(false)
     }
@@ -244,9 +253,12 @@ internal fun TvSettingsMasterDetailShell(
 
             CompositionLocalProvider(
                 LocalTvSettingsEmbeddedHost provides TvSettingsEmbeddedHost(
-                    firstRowRequester = panelFirstRequester,
+                    panelKey = panelKey,
+                    requesterFor = { rowId -> requesterForPanelRow(panelKey, rowId) },
+                    onFirstRowAvailable = { rowId -> panelFirstRowIds[panelKey] = rowId },
                     onLeftToCategory = { focusSelectedCategory() },
-                    onRowFocused = {
+                    onRowFocused = { rowId ->
+                        panelLastFocusedIds[panelKey] = rowId
                         navExpanded = false
                         lastPane = "panel"
                     },
@@ -299,15 +311,19 @@ private fun TvSettingsCategoryRow(
                 if (state.isFocused) onFocused()
             }
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { onLeft(); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT,
-                    KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_ENTER,
-                    KeyEvent.KEYCODE_NUMPAD_ENTER -> onRight()
-                    KeyEvent.KEYCODE_DPAD_UP -> onUp()
-                    KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
+                val keyCode = event.nativeKeyEvent.keyCode
+                when {
+                    event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        onLeft()
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> onRight()
+                    event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_UP -> onUp()
+                    event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
+                    event.isTvActivationKey() -> {
+                        if (event.type == KeyEventType.KeyUp) onRight()
+                        true
+                    }
                     else -> false
                 }
             }
@@ -364,7 +380,9 @@ internal fun TvSettingsProfilePanel(
     onSwitchProfiles: () -> Unit,
 ) {
     val host = LocalTvSettingsEmbeddedHost.current ?: return
-    val switchRequester = remember(profileName) { FocusRequester() }
+    val profileRequester = host.requesterFor("profile-card")
+    val switchRequester = host.requesterFor("switch-profiles")
+    SideEffect { host.onFirstRowAvailable("profile-card") }
     var profileFocused by remember(profileName) { mutableStateOf(false) }
     var switchFocused by remember(profileName) { mutableStateOf(false) }
 
@@ -394,18 +412,26 @@ internal fun TvSettingsProfilePanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(host.firstRowRequester)
+                    .focusRequester(profileRequester)
                     .onFocusChanged { state ->
                         profileFocused = state.isFocused
-                        if (state.isFocused) host.onRowFocused()
+                        if (state.isFocused) host.onRowFocused("profile-card")
                     }
                     .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (event.nativeKeyEvent.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_LEFT -> { host.onLeftToCategory(); true }
-                            KeyEvent.KEYCODE_DPAD_UP -> true
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        val keyCode = event.nativeKeyEvent.keyCode
+                        when {
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                host.onLeftToCategory()
+                                true
+                            }
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_UP -> true
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> {
                                 runCatching { switchRequester.requestFocus() }
+                                true
+                            }
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                            event.isTvActivationKey() -> {
+                                if (event.type == KeyEventType.KeyUp) onOpenDna()
                                 true
                             }
                             else -> false
@@ -418,7 +444,7 @@ internal fun TvSettingsProfilePanel(
                         if (profileFocused) TvDesign.White.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
                         RoundedCornerShape(15.dp),
                     )
-                    .clickable(onClick = onOpenDna)
+                    .focusable()
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -497,17 +523,25 @@ internal fun TvSettingsProfilePanel(
                     .focusRequester(switchRequester)
                     .onFocusChanged { state ->
                         switchFocused = state.isFocused
-                        if (state.isFocused) host.onRowFocused()
+                        if (state.isFocused) host.onRowFocused("switch-profiles")
                     }
                     .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (event.nativeKeyEvent.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_LEFT -> { host.onLeftToCategory(); true }
-                            KeyEvent.KEYCODE_DPAD_UP -> {
-                                runCatching { host.firstRowRequester.requestFocus() }
+                        val keyCode = event.nativeKeyEvent.keyCode
+                        when {
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                host.onLeftToCategory()
                                 true
                             }
-                            KeyEvent.KEYCODE_DPAD_DOWN -> true
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_UP -> {
+                                runCatching { profileRequester.requestFocus() }
+                                true
+                            }
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> true
+                            event.type == KeyEventType.KeyDown && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                            event.isTvActivationKey() -> {
+                                if (event.type == KeyEventType.KeyUp) onSwitchProfiles()
+                                true
+                            }
                             else -> false
                         }
                     }
@@ -518,7 +552,7 @@ internal fun TvSettingsProfilePanel(
                         if (switchFocused) TvDesign.White else TvDesign.White.copy(alpha = .06f),
                         RoundedCornerShape(14.dp),
                     )
-                    .clickable(onClick = onSwitchProfiles)
+                    .focusable()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -632,6 +666,7 @@ internal fun TvSettingsListScreen(
         entries.associate { it.id to FocusRequester() }
     }
     val firstFocusable = entries.firstOrNull { it.enabled } ?: entries.firstOrNull()
+    val lastFocusable = entries.lastOrNull { it.enabled } ?: entries.lastOrNull()
     var lastFocusedId by remember(entries.map { it.id }) {
         mutableStateOf(firstFocusable?.id.orEmpty())
     }
@@ -722,6 +757,7 @@ internal fun TvSettingsListScreen(
                             entry = entry,
                             requester = rowRequesters.getValue(entry.id),
                             first = entry.id == firstFocusable?.id,
+                            last = entry.id == lastFocusable?.id,
                             onLeftToSidebar = ::focusSettingsNav,
                             onFocused = {
                                 navExpanded = false
@@ -769,9 +805,8 @@ private fun TvSettingsEmbeddedPanel(
     metrics: List<TvSettingsMetric>,
 ) {
     val firstFocusable = entries.firstOrNull { it.enabled } ?: entries.firstOrNull()
-    val rowRequesters = remember(entries.map { it.id }) {
-        entries.associate { it.id to FocusRequester() }
-    }
+    val lastFocusable = entries.lastOrNull { it.enabled } ?: entries.lastOrNull()
+    SideEffect { firstFocusable?.let { host.onFirstRowAvailable(it.id) } }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -830,18 +865,14 @@ private fun TvSettingsEmbeddedPanel(
                 }
 
                 item(key = entry.id) {
-                    val requester = if (entry.id == firstFocusable?.id) {
-                        host.firstRowRequester
-                    } else {
-                        rowRequesters.getValue(entry.id)
-                    }
                     TvSettingsRow(
                         entry = entry,
-                        requester = requester,
+                        requester = host.requesterFor(entry.id),
                         first = entry.id == firstFocusable?.id,
+                        last = entry.id == lastFocusable?.id,
                         grouped = false,
                         onLeftToSidebar = host.onLeftToCategory,
-                        onFocused = host.onRowFocused,
+                        onFocused = { host.onRowFocused(entry.id) },
                     )
                 }
             }
@@ -966,6 +997,7 @@ private fun TvSettingsRow(
     entry: TvSettingsEntry,
     requester: FocusRequester,
     first: Boolean,
+    last: Boolean,
     grouped: Boolean = false,
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
@@ -989,6 +1021,9 @@ private fun TvSettingsRow(
                     first &&
                         event.type == KeyEventType.KeyDown &&
                         keyCode == KeyEvent.KEYCODE_DPAD_UP -> true
+                    last &&
+                        event.type == KeyEventType.KeyDown &&
+                        keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> true
                     event.type == KeyEventType.KeyDown &&
                         keyCode == KeyEvent.KEYCODE_DPAD_LEFT &&
                         entry.onPrevious == null -> {
@@ -1007,6 +1042,8 @@ private fun TvSettingsRow(
                         entry.onNext.invoke()
                         true
                     }
+                    event.type == KeyEventType.KeyDown &&
+                        keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> true
                     event.isTvActivationKey() -> {
                         if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
                         true
