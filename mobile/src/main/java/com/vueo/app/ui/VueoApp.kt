@@ -8298,9 +8298,6 @@ private fun MediaDetailsScreen(
                                 episode =
                                     targetEpisode
                                         ?.episode,
-                                mediaTitle = item.name,
-                                mediaYear = item.releaseInfo,
-                                mediaExternalId = item.id,
                             ) { progress ->
                                 freshPluginStreams =
                                     progress

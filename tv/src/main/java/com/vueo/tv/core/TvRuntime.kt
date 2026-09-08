@@ -407,9 +407,6 @@ class TvRuntime(context: Context) {
                     mediaType = mediaType,
                     season = episode?.season,
                     episode = episode?.episode,
-                    mediaTitle = item.name,
-                    mediaYear = item.releaseInfo,
-                    mediaExternalId = item.id,
                 ) { progress ->
                     freshPluginStreams = progress.result.streams.map { it.toStreamSource() }
                     pluginRawCount = progress.result.streams.size
