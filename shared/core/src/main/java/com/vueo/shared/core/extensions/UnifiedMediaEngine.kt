@@ -2001,16 +2001,52 @@ object SourceCleaner {
         preferredQuality: String? = null,
         originalLanguage: String? = null,
     ): List<StreamSource> {
-        val indexed = sources.associateBy { source ->
-            SourceSelector.identityKey(source.toSourceCandidate())
+        val indexed = linkedMapOf<String, StreamSource>()
+        sources.forEach { source ->
+            val key = SourceSelector.identityKey(source.toSourceCandidate())
+            indexed[key] = indexed[key]
+                ?.let { existing -> mergeDuplicate(existing, source) }
+                ?: source
         }
+        val unique = indexed.values.toList()
         return SourceSelector.orderAll(
-            sources = sources.map { it.toSourceCandidate() },
+            sources = unique.map { it.toSourceCandidate() },
             preferredQuality = preferredQuality,
             originalLanguage = originalLanguage,
         ).mapNotNull { candidate ->
             indexed[SourceSelector.identityKey(candidate)]
         }
+    }
+
+    private fun mergeDuplicate(
+        primary: StreamSource,
+        duplicate: StreamSource,
+    ): StreamSource =
+        primary.copy(
+            infoHash = primary.infoHash?.takeIf { it.isNotBlank() }
+                ?: duplicate.infoHash,
+            fileIndex = primary.fileIndex ?: duplicate.fileIndex,
+            quality = primary.quality?.takeIf { it.isNotBlank() }
+                ?: duplicate.quality,
+            codec = primary.codec?.takeIf { it.isNotBlank() }
+                ?: duplicate.codec,
+            hdr = primary.hdr?.takeIf { it.isNotBlank() }
+                ?: duplicate.hdr,
+            audio = primary.audio?.takeIf { it.isNotBlank() }
+                ?: duplicate.audio,
+            language = primary.language?.takeIf { it.isNotBlank() }
+                ?: duplicate.language,
+            sizeBytes = primary.sizeBytes ?: duplicate.sizeBytes,
+            headers = mergeHeaders(primary.headers, duplicate.headers),
+        )
+
+    private fun mergeHeaders(
+        primary: Map<String, String>,
+        duplicate: Map<String, String>,
+    ): Map<String, String> = when {
+        duplicate.isEmpty() -> primary
+        primary.isEmpty() -> duplicate
+        else -> duplicate + primary
     }
 
     fun qualityBucket(

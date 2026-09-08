@@ -83,6 +83,12 @@ import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
+import com.vueo.shared.core.source.SOURCE_RECOVERY_SOURCE_TIMEOUT_MS
+import com.vueo.shared.core.source.SOURCE_REBUFFER_TIMEOUT_MS
+import com.vueo.shared.core.source.SOURCE_STARTUP_TIMEOUT_MS
+import com.vueo.shared.core.source.SourceCandidate
+import com.vueo.shared.core.source.SourceRecoverySession
+import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
@@ -151,7 +157,7 @@ fun TvPlayerScreen(
     val playableSources = remember(bundle.sources, source.url) {
         (listOf(source) + bundle.sources)
             .filter { it.isDirectPlayable }
-            .distinctBy { it.url }
+            .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
     val externalSubtitlesBySelectionId = remember(bundle.subtitles) {
@@ -159,7 +165,10 @@ fun TvPlayerScreen(
     }
     var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
-    var recoveryAttempts by remember(bundle.videoId) { mutableIntStateOf(0) }
+    val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
+    var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }
+    var isBuffering by remember(bundle.videoId) { mutableStateOf(false) }
+    var recoveryInProgress by remember(bundle.videoId) { mutableStateOf(false) }
     var playbackError by remember(bundle.videoId) { mutableStateOf<String?>(null) }
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
@@ -281,6 +290,45 @@ fun TvPlayerScreen(
         onBack()
     }
 
+    fun handleSourceFailure(message: String) {
+        if (recoveryInProgress) return
+
+        sourceRecoverySession.markFailed(activeSource.toSourceCandidateForPlayer())
+        val latestSources = latestPlayableSources.value
+        val alternateCandidate = if (settings.autoSourceRecoveryEnabled()) {
+            sourceRecoverySession.next(
+                rankedSources = latestSources.map { it.toSourceCandidateForPlayer() },
+                originalLanguage = media.originalLanguage,
+            )
+        } else {
+            null
+        }
+        val alternateKey = alternateCandidate?.let(SourceSelector::identityKey)
+        val alternate = alternateKey?.let { key ->
+            latestSources.firstOrNull {
+                SourceSelector.identityKey(it.toSourceCandidateForPlayer()) == key
+            }
+        }
+
+        if (alternate != null) {
+            resumeTargetMs = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
+            recoveryInProgress = true
+            hasRenderedFirstFrame = false
+            isBuffering = false
+            playbackError = null
+            activeSource = alternate
+            requestControlFocus(progressRequester)
+        } else {
+            val failedCount = sourceRecoverySession.failedSourceCount()
+            playbackError = if (failedCount > 1) {
+                "$failedCount ranked sources failed. Choose Sources to try one manually."
+            } else {
+                "$message No other suitable automatic source was available."
+            }
+            requestControlFocus(progressRequester)
+        }
+    }
+
     BackHandler {
         when {
             activePanel != TvPlayerPanel.NONE -> closePanel()
@@ -294,6 +342,10 @@ fun TvPlayerScreen(
 
     LaunchedEffect(activeSource.url, bundle.videoId) {
         val url = activeSource.url ?: return@LaunchedEffect
+        sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
+        recoveryInProgress = false
+        hasRenderedFirstFrame = false
+        isBuffering = false
         httpFactory.setDefaultRequestProperties(activeSource.headers)
         playbackError = null
         textTracks = emptyList()
@@ -326,26 +378,58 @@ fun TvPlayerScreen(
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                if (!settings.autoSourceRecoveryEnabled() || recoveryAttempts >= 2) {
-                    playbackError = error.message ?: "Playback failed."
-                    return
+                isBuffering = false
+                handleSourceFailure(error.message ?: "Playback failed.")
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                isBuffering = playbackState == Player.STATE_BUFFERING
+                if (playbackState == Player.STATE_READY) {
+                    sourceRecoverySession.markReady()
+                    recoveryInProgress = false
+                    playbackError = null
                 }
-                val recoverySources = latestPlayableSources.value
-                val currentIndex = recoverySources.indexOfFirst { it.url == activeSource.url }
-                val alternative = recoverySources.drop((currentIndex + 1).coerceAtLeast(0))
-                    .firstOrNull { it.url != activeSource.url }
-                if (alternative == null) {
-                    playbackError = error.message ?: "No recovery source available."
-                    return
-                }
-                resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
-                recoveryAttempts += 1
-                activeSource = alternative
-                requestControlFocus(progressRequester)
+            }
+
+            override fun onRenderedFirstFrame() {
+                hasRenderedFirstFrame = true
+                isBuffering = false
+                sourceRecoverySession.markReady()
+                recoveryInProgress = false
+                playbackError = null
             }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
+    }
+
+    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError) {
+        if (hasRenderedFirstFrame || playbackError != null) return@LaunchedEffect
+
+        val timeoutMs = if (sourceRecoverySession.isAutomaticRecoveryActive()) {
+            SOURCE_RECOVERY_SOURCE_TIMEOUT_MS
+        } else {
+            SOURCE_STARTUP_TIMEOUT_MS
+        }
+        delay(timeoutMs)
+        if (!hasRenderedFirstFrame && playbackError == null && !recoveryInProgress) {
+            handleSourceFailure(
+                "This source did not start within ${timeoutMs / 1_000L} seconds."
+            )
+        }
+    }
+
+    LaunchedEffect(activeSource.url, isBuffering, hasRenderedFirstFrame, playbackError) {
+        if (!isBuffering || !hasRenderedFirstFrame || playbackError != null) {
+            return@LaunchedEffect
+        }
+
+        delay(SOURCE_REBUFFER_TIMEOUT_MS)
+        if (isBuffering && hasRenderedFirstFrame && playbackError == null && !recoveryInProgress) {
+            handleSourceFailure(
+                "Playback remained stuck buffering for ${SOURCE_REBUFFER_TIMEOUT_MS / 1_000L} seconds."
+            )
+        }
     }
 
     LaunchedEffect(media.id, bundle.videoId, episode?.id, runtime.pluginStore.tmdbApiKey()) {
@@ -787,7 +871,7 @@ fun TvPlayerScreen(
                         if (target != null) {
                             if (target.url != activeSource.url) {
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
-                                recoveryAttempts = 0
+                                sourceRecoverySession.allowRetry(target.toSourceCandidateForPlayer())
                                 activeSource = target
                             }
                             closePanel()
@@ -917,6 +1001,34 @@ fun TvPlayerScreen(
         }
     }
 }
+
+
+private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
+    SourceCandidate(
+        id = buildString {
+            append(providerId)
+            append(':')
+            append(url ?: infoHash ?: name)
+            fileIndex?.let {
+                append(':')
+                append(it)
+            }
+        },
+        name = name,
+        url = url,
+        infoHash = infoHash,
+        fileIndex = fileIndex,
+        quality = quality,
+        codec = codec,
+        hdr = hdr,
+        audio = audio,
+        language = language,
+        sizeBytes = sizeBytes,
+        headers = headers,
+        rankBoost = rankBoost,
+        providerId = providerId,
+        providerName = providerName,
+    )
 
 private fun buildMediaItem(
     sourceUrl: String,
