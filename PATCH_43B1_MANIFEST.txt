@@ -1,0 +1,13 @@
+VUEO NEXT 43B1 TV Player Compile Fix
+Base: 43B player functionality hardening
+
+Changed source:
+- tv/src/main/java/com/vueo/tv/player/TvPlayerTracks.kt
+
+Fix:
+- androidx.media3.exoplayer.ForwardingRenderer
+- androidx.media3.exoplayer.Renderer
+- androidx.media3.exoplayer.text.TextOutput
+
+Reason:
+43B imported these types from androidx.media3.common/common.text, but Media3 1.11.0 exposes them from the exoplayer artifact/package. The wrong imports caused the buildTextRenderers override and ForwardingRenderer render errors to cascade.

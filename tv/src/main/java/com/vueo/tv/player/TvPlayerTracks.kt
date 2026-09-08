@@ -3,11 +3,11 @@ package com.vueo.tv.player
 import android.content.Context
 import android.os.Looper
 import androidx.media3.common.C
-import androidx.media3.common.ForwardingRenderer
-import androidx.media3.common.Renderer
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
-import androidx.media3.common.text.TextOutput
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import com.vueo.shared.core.media.SubtitleTrack
 
