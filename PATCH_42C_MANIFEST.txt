@@ -1,0 +1,21 @@
+VUEO TV 42C patch-only manifest
+
+Expected baseline:
+42A full repository with 42B settings direct-panel patch already applied.
+42B patch archive SHA-256:
+9c0c249c2dce712d9b5a76625624b2f044cb1d6bd01581d3ab92ad3e4fc4ed15
+
+Files replaced by this patch:
+
+1) tv/src/main/java/com/vueo/tv/settings/TvSettingsScreen.kt
+   expected 42B SHA-256: 0f2d6f2bda19b9da75b0da272b4a72fa33eafa0272bc00fdbb0c071827070163
+   patched 42C SHA-256: f1d10472024dd27c339f4a9ba79963852ec53d9551b020601bb0e86c772cf172
+
+2) tv/src/main/java/com/vueo/tv/settings/TvSettingsComponents.kt
+   expected 42B SHA-256: e3c2028f10b9e86b461fe1cc380ade042fb70a0603eaa82f59b1e6710a068545
+   patched 42C SHA-256: 73420b2c765b38529bb5b594b425d2a4108894726169398029a045912046f2fc
+
+New documentation file:
+TV_42C_SETTINGS_GROUPS_PROFILE_CARD.md
+
+This is a patch-only package. No Mobile, Shared Core, Gradle, player, Home, Details, provider, or unrelated TV source files are included.

@@ -2,7 +2,9 @@ package com.vueo.tv.settings
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -38,10 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +74,7 @@ internal data class TvSettingsEntry(
 internal data class TvSettingsNavItem(
     val id: String,
     val title: String,
+    val section: String? = null,
 )
 
 private data class TvSettingsEmbeddedHost(
@@ -166,93 +173,121 @@ internal fun TvSettingsMasterDetailShell(
                 Text(
                     text = "SETTINGS",
                     color = TvDesign.Dim,
-                    fontSize = 9.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    modifier = Modifier.padding(start = 10.dp, bottom = 12.dp),
+                    letterSpacing = 1.25.sp,
+                    modifier = Modifier.padding(start = 10.dp, bottom = 10.dp),
                 )
 
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    categories.forEachIndexed { index, category ->
-                        item(key = category.id) {
-                            var focused by remember(category.id) { mutableStateOf(false) }
-                            val selected = category.id == selectedCategoryId
+                    var index = 0
+                    while (index < categories.size) {
+                        val category = categories[index]
+                        val section = category.section?.takeIf { it.isNotBlank() }
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp)
-                                    .focusRequester(categoryRequesters.getValue(category.id))
-                                    .onFocusChanged { state ->
-                                        focused = state.isFocused
-                                        if (state.isFocused) {
-                                            navExpanded = false
-                                            lastPane = "category"
-                                            onCategorySelected(category.id)
-                                        }
-                                    }
-                                    .onPreviewKeyEvent { event ->
-                                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                        when (event.nativeKeyEvent.keyCode) {
-                                            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                                focusGlobalNav()
-                                                true
-                                            }
-                                            KeyEvent.KEYCODE_DPAD_RIGHT,
-                                            KeyEvent.KEYCODE_DPAD_CENTER,
-                                            KeyEvent.KEYCODE_ENTER,
-                                            KeyEvent.KEYCODE_NUMPAD_ENTER -> focusPanel()
-                                            KeyEvent.KEYCODE_DPAD_UP -> {
-                                                if (index == 0) true else {
-                                                    runCatching { categoryRequesters.getValue(categories[index - 1].id).requestFocus() }
-                                                    true
-                                                }
-                                            }
-                                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                                if (index == categories.lastIndex) true else {
-                                                    runCatching { categoryRequesters.getValue(categories[index + 1].id).requestFocus() }
-                                                    true
-                                                }
-                                            }
-                                            else -> false
-                                        }
-                                    }
-                                    .background(
-                                        when {
-                                            focused -> TvDesign.White.copy(alpha = .13f)
-                                            selected -> TvDesign.SurfaceRaised.copy(alpha = .58f)
-                                            else -> TvDesign.Surface.copy(alpha = .44f)
-                                        },
-                                        RoundedCornerShape(13.dp),
-                                    )
-                                    .border(
-                                        if (focused) 2.dp else 1.dp,
-                                        if (focused) TvDesign.White.copy(alpha = .94f) else TvDesign.White.copy(alpha = .05f),
-                                        RoundedCornerShape(13.dp),
-                                    )
-                                    .focusable()
-                                    .padding(horizontal = 15.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = category.title,
-                                    color = if (focused || selected) TvDesign.White else TvDesign.Muted,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = "›",
-                                    color = if (focused) TvDesign.White else TvDesign.Dim,
-                                    fontSize = 17.sp,
+                        if (section == null) {
+                            val flatIndex = index
+                            item(key = category.id) {
+                                TvSettingsCategoryRow(
+                                    category = category,
+                                    selected = category.id == selectedCategoryId,
+                                    grouped = false,
+                                    requester = categoryRequesters.getValue(category.id),
+                                    onFocused = {
+                                        navExpanded = false
+                                        lastPane = "category"
+                                        onCategorySelected(category.id)
+                                    },
+                                    onLeft = ::focusGlobalNav,
+                                    onRight = { focusPanel() },
+                                    onUp = {
+                                        if (flatIndex <= 0) true else runCatching {
+                                            categoryRequesters.getValue(categories[flatIndex - 1].id).requestFocus()
+                                            true
+                                        }.getOrDefault(false)
+                                    },
+                                    onDown = {
+                                        if (flatIndex >= categories.lastIndex) true else runCatching {
+                                            categoryRequesters.getValue(categories[flatIndex + 1].id).requestFocus()
+                                            true
+                                        }.getOrDefault(false)
+                                    },
                                 )
                             }
+                            index += 1
+                            continue
                         }
+
+                        val groupStart = index
+                        var groupEnd = groupStart + 1
+                        while (groupEnd < categories.size && categories[groupEnd].section == section) {
+                            groupEnd += 1
+                        }
+                        val groupItems = categories.subList(groupStart, groupEnd)
+
+                        item(key = "category-section-$section") {
+                            Text(
+                                text = section.uppercase(),
+                                color = TvDesign.Dim,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.15.sp,
+                                modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 1.dp),
+                            )
+                        }
+
+                        item(key = "category-group-$section") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(TvDesign.Surface.copy(alpha = .44f), RoundedCornerShape(15.dp))
+                                    .border(1.dp, TvDesign.White.copy(alpha = .055f), RoundedCornerShape(15.dp))
+                                    .padding(vertical = 3.dp),
+                            ) {
+                                groupItems.forEachIndexed { groupIndex, groupCategory ->
+                                    val flatIndex = groupStart + groupIndex
+                                    TvSettingsCategoryRow(
+                                        category = groupCategory,
+                                        selected = groupCategory.id == selectedCategoryId,
+                                        grouped = true,
+                                        requester = categoryRequesters.getValue(groupCategory.id),
+                                        onFocused = {
+                                            navExpanded = false
+                                            lastPane = "category"
+                                            onCategorySelected(groupCategory.id)
+                                        },
+                                        onLeft = ::focusGlobalNav,
+                                        onRight = { focusPanel() },
+                                        onUp = {
+                                            if (flatIndex <= 0) true else runCatching {
+                                                categoryRequesters.getValue(categories[flatIndex - 1].id).requestFocus()
+                                                true
+                                            }.getOrDefault(false)
+                                        },
+                                        onDown = {
+                                            if (flatIndex >= categories.lastIndex) true else runCatching {
+                                                categoryRequesters.getValue(categories[flatIndex + 1].id).requestFocus()
+                                                true
+                                            }.getOrDefault(false)
+                                        },
+                                    )
+                                    if (groupIndex != groupItems.lastIndex) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp)
+                                                .height(1.dp)
+                                                .background(TvDesign.White.copy(alpha = .055f)),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        index = groupEnd
                     }
                 }
             }
@@ -290,6 +325,291 @@ internal fun TvSettingsMasterDetailShell(
             onReturnToContent = { focusSelectedCategory() },
             modifier = Modifier.align(Alignment.CenterStart),
         )
+    }
+}
+
+@Composable
+private fun TvSettingsCategoryRow(
+    category: TvSettingsNavItem,
+    selected: Boolean,
+    grouped: Boolean,
+    requester: FocusRequester,
+    onFocused: () -> Unit,
+    onLeft: () -> Unit,
+    onRight: () -> Boolean,
+    onUp: () -> Boolean,
+    onDown: () -> Boolean,
+) {
+    var focused by remember(category.id) { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (grouped) 44.dp else 48.dp)
+            .focusRequester(requester)
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (state.isFocused) onFocused()
+            }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { onLeft(); true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> onRight()
+                    KeyEvent.KEYCODE_DPAD_UP -> onUp()
+                    KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
+                    else -> false
+                }
+            }
+            .background(
+                when {
+                    focused -> TvDesign.White.copy(alpha = .13f)
+                    selected && grouped -> TvDesign.White.copy(alpha = .045f)
+                    selected -> TvDesign.SurfaceRaised.copy(alpha = .58f)
+                    grouped -> TvDesign.White.copy(alpha = 0f)
+                    else -> TvDesign.Surface.copy(alpha = .44f)
+                },
+                RoundedCornerShape(12.dp),
+            )
+            .border(
+                if (focused) 2.dp else if (grouped) 0.dp else 1.dp,
+                when {
+                    focused -> TvDesign.White.copy(alpha = .94f)
+                    grouped -> TvDesign.White.copy(alpha = 0f)
+                    else -> TvDesign.White.copy(alpha = .05f)
+                },
+                RoundedCornerShape(12.dp),
+            )
+            .focusable()
+            .padding(horizontal = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = category.title,
+            color = if (focused || selected) TvDesign.White else TvDesign.Muted,
+            fontSize = 15.sp,
+            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = "›",
+            color = if (focused) TvDesign.White else TvDesign.Dim,
+            fontSize = 19.sp,
+        )
+    }
+}
+
+@Composable
+internal fun TvSettingsProfilePanel(
+    profileName: String,
+    profileSubtitle: String,
+    avatarDrawableRes: Int?,
+    myListCount: Int,
+    watchedCount: Int,
+    dnaValue: String,
+    tastePreview: String,
+    onOpenDna: () -> Unit,
+    onSwitchProfiles: () -> Unit,
+) {
+    val host = LocalTvSettingsEmbeddedHost.current ?: return
+    val switchRequester = remember(profileName) { FocusRequester() }
+    var profileFocused by remember(profileName) { mutableStateOf(false) }
+    var switchFocused by remember(profileName) { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = "Profile",
+            color = TvDesign.White,
+            fontSize = 29.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "Your VUEO profile and local taste at a glance.",
+            color = TvDesign.Muted,
+            fontSize = 13.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(TvDesign.Surface.copy(alpha = .52f), RoundedCornerShape(20.dp))
+                .border(1.dp, TvDesign.White.copy(alpha = .11f), RoundedCornerShape(20.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(host.firstRowRequester)
+                    .onFocusChanged { state ->
+                        profileFocused = state.isFocused
+                        if (state.isFocused) host.onRowFocused()
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> { host.onLeftToCategory(); true }
+                            KeyEvent.KEYCODE_DPAD_UP -> true
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                runCatching { switchRequester.requestFocus() }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(if (profileFocused) TvDesign.White.copy(alpha = .10f) else TvDesign.White.copy(alpha = .02f))
+                    .border(
+                        if (profileFocused) 1.5.dp else 0.dp,
+                        if (profileFocused) TvDesign.White.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
+                        RoundedCornerShape(15.dp),
+                    )
+                    .clickable(onClick = onOpenDna)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .background(TvDesign.SurfaceRaised),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (avatarDrawableRes != null) {
+                        Image(
+                            painter = painterResource(avatarDrawableRes),
+                            contentDescription = profileName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text(
+                            text = profileName.trim().firstOrNull()?.uppercase() ?: "V",
+                            color = TvDesign.White,
+                            fontSize = 27.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = profileName,
+                        color = TvDesign.White,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = profileSubtitle,
+                        color = TvDesign.Muted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "›",
+                    color = if (profileFocused) TvDesign.White else TvDesign.Dim,
+                    fontSize = 31.sp,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TvProfileStat(Modifier.weight(1f), "My List", myListCount.toString())
+                TvProfileStat(Modifier.weight(1f), "Watched", watchedCount.toString())
+                TvProfileStat(Modifier.weight(1f), "DNA", dnaValue)
+            }
+
+            Text(
+                text = tastePreview,
+                color = TvDesign.Muted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(switchRequester)
+                    .onFocusChanged { state ->
+                        switchFocused = state.isFocused
+                        if (state.isFocused) host.onRowFocused()
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> { host.onLeftToCategory(); true }
+                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                runCatching { host.firstRowRequester.requestFocus() }
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_DOWN -> true
+                            else -> false
+                        }
+                    }
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (switchFocused) TvDesign.White else TvDesign.Black.copy(alpha = .28f))
+                    .border(
+                        if (switchFocused) 1.5.dp else 1.dp,
+                        if (switchFocused) TvDesign.White else TvDesign.White.copy(alpha = .06f),
+                        RoundedCornerShape(14.dp),
+                    )
+                    .clickable(onClick = onSwitchProfiles)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "⇄",
+                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    text = "Switch Profiles",
+                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvProfileStat(
+    modifier: Modifier,
+    label: String,
+    value: String,
+) {
+    Column(
+        modifier = modifier
+            .height(86.dp)
+            .background(TvDesign.Black.copy(alpha = .25f), RoundedCornerShape(13.dp))
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(value, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text(label, color = TvDesign.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

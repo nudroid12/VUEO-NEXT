@@ -14,11 +14,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.dna.UserDnaPreferences
+import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeStore
+import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.AppTheme
@@ -60,20 +62,21 @@ private data class TvSettingsRootDestination(
     val page: TvSettingsPage,
     val id: String,
     val title: String,
+    val section: String? = null,
 )
 
 private val TvSettingsRootDestinations = listOf(
     TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile"),
-    TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization"),
-    TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager"),
-    TvSettingsRootDestination(TvSettingsPage.ENHANCEMENTS, "enhancements", "Enhancements"),
-    TvSettingsRootDestination(TvSettingsPage.PLAYBACK, "playback", "Playback"),
-    TvSettingsRootDestination(TvSettingsPage.SUBTITLES, "subtitles", "Subtitles"),
-    TvSettingsRootDestination(TvSettingsPage.SOURCES, "sources", "Sources"),
-    TvSettingsRootDestination(TvSettingsPage.APPEARANCE, "appearance", "Appearance"),
-    TvSettingsRootDestination(TvSettingsPage.DATA_STORAGE, "data-storage", "Data & Storage"),
-    TvSettingsRootDestination(TvSettingsPage.UPDATES, "updates", "Updates"),
-    TvSettingsRootDestination(TvSettingsPage.ABOUT, "about", "About VUEO"),
+    TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization", "VUEO"),
+    TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager", "VUEO"),
+    TvSettingsRootDestination(TvSettingsPage.ENHANCEMENTS, "enhancements", "Enhancements", "VUEO"),
+    TvSettingsRootDestination(TvSettingsPage.PLAYBACK, "playback", "Playback", "PLAYBACK"),
+    TvSettingsRootDestination(TvSettingsPage.SUBTITLES, "subtitles", "Subtitles", "PLAYBACK"),
+    TvSettingsRootDestination(TvSettingsPage.SOURCES, "sources", "Sources", "PLAYBACK"),
+    TvSettingsRootDestination(TvSettingsPage.APPEARANCE, "appearance", "Appearance", "APP"),
+    TvSettingsRootDestination(TvSettingsPage.DATA_STORAGE, "data-storage", "Data & Storage", "APP"),
+    TvSettingsRootDestination(TvSettingsPage.UPDATES, "updates", "Updates", "APP"),
+    TvSettingsRootDestination(TvSettingsPage.ABOUT, "about", "About VUEO", "APP"),
 )
 
 private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
@@ -124,7 +127,7 @@ fun TvSettingsScreen(
     }
 
     TvSettingsMasterDetailShell(
-        categories = TvSettingsRootDestinations.map { TvSettingsNavItem(it.id, it.title) },
+        categories = TvSettingsRootDestinations.map { TvSettingsNavItem(it.id, it.title, it.section) },
         selectedCategoryId = selectedRoot.id,
         panelKey = page.name,
         panelAutoFocusToken = panelAutoFocusToken,
@@ -142,10 +145,8 @@ fun TvSettingsScreen(
         when (page) {
             TvSettingsPage.PROFILE -> TvProfileSettings(
                 runtime = runtime,
-                onNavigate = onNavigate,
-                onProfile = onProfile,
+                onOpenDna = onProfile,
                 onOpenProfiles = { openPanel(TvSettingsPage.PROFILE_CHOOSER) },
-                onBack = onBack,
             )
             TvSettingsPage.PROFILE_CHOOSER -> TvProfileChooserSettings(
                 runtime = runtime,
@@ -201,32 +202,95 @@ fun TvSettingsScreen(
 @Composable
 private fun TvProfileSettings(
     runtime: TvRuntime,
-    onNavigate: (String) -> Unit,
-    onProfile: () -> Unit,
+    onOpenDna: () -> Unit,
     onOpenProfiles: () -> Unit,
-    onBack: () -> Unit,
 ) {
     val profile = runtime.profileStore.activeProfile()
-    val profileType = if (profile.isKids) "Kids profile" else "Standard profile"
-    val entries = listOf(
-        TvSettingsEntry(
-            id = "active-profile",
-            title = profile.name,
-            subtitle = "$profileType. Select to switch the active profile.",
-            value = "Active profile",
-            onActivate = onOpenProfiles,
-            icon = Icons.Default.AccountCircle,
-        ),
-    )
+    val dnaEnabled = runtime.dnaPreferences.userDnaEnabled(profile.id)
+    val dnaSnapshot = if (dnaEnabled) runtime.dnaEngine.build() else null
+    val myListCount = runtime.libraryStore.watchlist().size
+    val watchedTitlesCount = runtime.libraryStore
+        .history()
+        .filter { it.positionMs > 5_000L }
+        .map { "${it.media.type}:${it.media.id}" }
+        .distinct()
+        .size
+    val viewingClass = tvViewingClass(watchedTitlesCount)
+    val dnaClass = when {
+        !dnaEnabled -> "DNA Off"
+        dnaSnapshot == null -> "Finding Your Taste"
+        else -> tvDnaClass(dnaSnapshot)
+    }
+    val tastePreview = dnaSnapshot
+        ?.topGenres
+        ?.take(3)
+        ?.joinToString(" • ") { "${it.name} ${it.percent}%" }
+        .orEmpty()
+        .ifBlank {
+            if (dnaEnabled) "Keep watching to shape your DNA class."
+            else "Enable User DNA in Personalization."
+        }
 
-    TvSettingsListScreen(
-        title = "Profile",
-        subtitle = "Your active local VUEO profile.",
-        entries = entries,
-        onNavigate = onNavigate,
-        onProfile = onProfile,
-        onBack = onBack,
+    TvSettingsProfilePanel(
+        profileName = profile.name,
+        profileSubtitle = "$viewingClass • $dnaClass",
+        avatarDrawableRes = ProfileAvatarCatalog.drawableRes(profile.avatar),
+        myListCount = myListCount,
+        watchedCount = watchedTitlesCount,
+        dnaValue = dnaSnapshot?.let { "${it.confidencePercent}%" } ?: "Off",
+        tastePreview = tastePreview,
+        onOpenDna = onOpenDna,
+        onSwitchProfiles = onOpenProfiles,
     )
+}
+
+private fun tvViewingClass(watchedTitles: Int): String = when {
+    watchedTitles < 10 -> "Baby VUEO"
+    watchedTitles < 30 -> "Explorer"
+    watchedTitles < 75 -> "Binger"
+    watchedTitles < 150 -> "Cinephile"
+    watchedTitles < 300 -> "Screen Veteran"
+    else -> "VUEO Legend"
+}
+
+private fun tvDnaClass(snapshot: UserDnaSnapshot): String {
+    if (snapshot.confidencePercent < 20 || snapshot.topGenres.isEmpty()) {
+        return "Finding Your Taste"
+    }
+
+    val genres = snapshot.topGenres.associate {
+        it.name.lowercase(Locale.US) to it.percent
+    }
+    fun score(vararg names: String): Int = names.sumOf {
+        genres[it.lowercase(Locale.US)] ?: 0
+    }
+
+    val topGenrePercent = snapshot.topGenres.firstOrNull()?.percent ?: 0
+    if (snapshot.topGenres.size >= 5 && topGenrePercent <= 30) {
+        return "The Explorer"
+    }
+
+    val classes = listOf(
+        "The Adventurer" to score("Action", "Adventure", "Fantasy"),
+        "The Detective" to score("Crime", "Mystery", "Thriller"),
+        "The Thrill Seeker" to score("Horror", "Thriller", "Action"),
+        "The Romantic" to score("Romance", "Drama"),
+        "The Dreamer" to score("Science Fiction", "Fantasy", "Animation"),
+        "The Mood Lifter" to score("Comedy", "Family", "Animation"),
+        "The Story Hunter" to score("Drama", "History", "Documentary"),
+    )
+    val best = classes.maxByOrNull { it.second }
+    if (best != null && best.second >= 20) return best.first
+
+    return when (snapshot.topGenres.firstOrNull()?.name?.lowercase(Locale.US)) {
+        "crime", "mystery" -> "The Detective"
+        "horror", "thriller" -> "The Thrill Seeker"
+        "romance" -> "The Romantic"
+        "science fiction", "fantasy" -> "The Dreamer"
+        "comedy" -> "The Mood Lifter"
+        "action", "adventure" -> "The Adventurer"
+        else -> "The Story Hunter"
+    }
 }
 
 @Composable
