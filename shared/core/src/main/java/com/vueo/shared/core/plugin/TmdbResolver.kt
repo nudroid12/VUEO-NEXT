@@ -6,6 +6,19 @@ import java.nio.charset.StandardCharsets
 
 /** Shared TMDB ID resolver used by provider discovery on Mobile and TV. */
 object TmdbResolver {
+    private const val MAX_CACHE_ENTRIES = 256
+
+    private val resolvedIdCache =
+        object : LinkedHashMap<String, String>(
+            MAX_CACHE_ENTRIES + 1,
+            0.75f,
+            true,
+        ) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, String>?,
+            ): Boolean = size > MAX_CACHE_ENTRIES
+        }
+
     suspend fun resolve(
         rawId: String,
         mediaType: String,
@@ -25,6 +38,15 @@ object TmdbResolver {
 
         if (!id.startsWith("tt") || apiKey.isBlank()) {
             return null
+        }
+
+        val cacheKey =
+            mediaType.lowercase() + "|" + id.lowercase()
+
+        synchronized(resolvedIdCache) {
+            resolvedIdCache[cacheKey]
+        }?.let { cached ->
+            return cached
         }
 
         val url =
@@ -47,7 +69,13 @@ object TmdbResolver {
         }
 
         val tmdbId = resultArray.optJSONObject(0)?.optLong("id", -1L) ?: -1L
-        return tmdbId.takeIf { it > 0L }?.toString()
+        val resolved = tmdbId.takeIf { it > 0L }?.toString() ?: return null
+
+        synchronized(resolvedIdCache) {
+            resolvedIdCache[cacheKey] = resolved
+        }
+
+        return resolved
     }
 
     private fun encode(value: String): String =

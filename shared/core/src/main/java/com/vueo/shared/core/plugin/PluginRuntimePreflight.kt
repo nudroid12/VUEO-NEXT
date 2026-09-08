@@ -48,16 +48,24 @@ internal class PluginRuntimePreflight(
             )
         }
 
-        val ready =
-            targets.count { (repository, provider) ->
+        // Snapshot readiness once. Provider scripts can be sizeable, and
+        // isReady() validates the cached file contents. Re-reading every ready
+        // script again just to build the missing list delays discovery without
+        // changing the result.
+        val readiness =
+            targets.associateWith { (repository, provider) ->
                 codeStore.isReady(repository, provider)
             }
 
+        val ready = readiness.values.count { it }
+
+        val missingTargets =
+            targets.filterNot { target ->
+                readiness[target] == true
+            }
+
         val missingByRepository =
-            targets
-                .filterNot { (repository, provider) ->
-                    codeStore.isReady(repository, provider)
-                }
+            missingTargets
                 .groupBy(
                     keySelector = { it.first.manifestUrl },
                     valueTransform = { it },
@@ -82,9 +90,9 @@ internal class PluginRuntimePreflight(
                 .awaitAll()
 
         val repaired =
-            targets.count { (repository, provider) ->
+            missingTargets.count { (repository, provider) ->
                 codeStore.isReady(repository, provider)
-            } - ready
+            }
 
         PluginRuntimePreparation(
             targetProviders = targets.size,
