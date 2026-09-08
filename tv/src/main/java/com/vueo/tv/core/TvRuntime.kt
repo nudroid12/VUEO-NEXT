@@ -21,6 +21,7 @@ import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.PluginRepositoryClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
+import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.shared.core.storage.LibraryStore
