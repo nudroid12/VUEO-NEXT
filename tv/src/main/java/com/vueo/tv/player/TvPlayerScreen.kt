@@ -174,13 +174,19 @@ fun TvPlayerScreen(
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
     val latestSubtitleDelayMs = androidx.compose.runtime.rememberUpdatedState(subtitleDelayMs)
-    var subtitleFontSizeSp by remember { mutableIntStateOf(settings.subtitleFontSizeSp()) }
+    val storedSubtitleFontSizeSp = remember { settings.subtitleFontSizeSp() }
+    val storedSubtitleBottomPaddingPercent = remember { settings.subtitleBottomPaddingPercent() }
+    var subtitleFontSizeSp by remember {
+        mutableIntStateOf(if (storedSubtitleFontSizeSp == 20) 18 else storedSubtitleFontSizeSp)
+    }
     var subtitleBold by remember { mutableStateOf(settings.subtitleBold()) }
     var subtitleTextColor by remember { mutableIntStateOf(settings.subtitleTextColor()) }
     var subtitleTextOpacityPercent by remember { mutableIntStateOf(settings.subtitleTextOpacityPercent()) }
     var subtitleOutlineEnabled by remember { mutableStateOf(settings.subtitleOutlineEnabled()) }
     var subtitleOutlineColor by remember { mutableIntStateOf(settings.subtitleOutlineColor()) }
-    var subtitleBottomPaddingPercent by remember { mutableIntStateOf(settings.subtitleBottomPaddingPercent()) }
+    var subtitleBottomPaddingPercent by remember {
+        mutableIntStateOf(if (storedSubtitleBottomPaddingPercent == 22) 8 else storedSubtitleBottomPaddingPercent)
+    }
 
     val httpFactory = remember(bundle.videoId) {
         DefaultHttpDataSource.Factory()
@@ -228,6 +234,12 @@ fun TvPlayerScreen(
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
+
+    LaunchedEffect(Unit) {
+        // Migrate the old TV defaults to a more conventional living-room subtitle presentation.
+        if (storedSubtitleFontSizeSp == 20) settings.setSubtitleFontSizeSp(18)
+        if (storedSubtitleBottomPaddingPercent == 22) settings.setSubtitleBottomPaddingPercent(8)
+    }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     val activeSkip = remember(positionMs, skipSegments) {
@@ -722,8 +734,16 @@ fun TvPlayerScreen(
         )
         val resizeMode = when (videoFit) {
             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            // A TV-style Fill should crop while preserving the source aspect ratio.
+            // Media3 RESIZE_MODE_FILL stretches the picture, so use ZOOM instead.
+            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        }
+        val baseSubtitleBottomPaddingFraction = subtitleBottomPaddingPercent / 100f
+        val subtitleBottomPaddingFraction = if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
+            maxOf(baseSubtitleBottomPaddingFraction, 0.18f)
+        } else {
+            baseSubtitleBottomPaddingFraction
         }
 
         AndroidView(
@@ -734,16 +754,18 @@ fun TvPlayerScreen(
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     this.resizeMode = resizeMode
                     subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleFontSize)
+                    subtitleView?.setApplyEmbeddedFontSizes(false)
                     subtitleView?.setStyle(subtitleStyle)
-                    subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingPercent / 100f)
+                    subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
                 }
             },
             update = {
                 it.player = exoPlayer
                 it.resizeMode = resizeMode
                 it.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleFontSize)
+                it.subtitleView?.setApplyEmbeddedFontSizes(false)
                 it.subtitleView?.setStyle(subtitleStyle)
-                it.subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingPercent / 100f)
+                it.subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
             },
             modifier = Modifier.fillMaxSize(),
         )

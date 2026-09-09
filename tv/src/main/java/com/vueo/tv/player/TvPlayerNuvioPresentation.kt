@@ -337,7 +337,7 @@ private fun NuvioPlayerControls(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 30.dp, end = 30.dp, top = 28.dp, bottom = 28.dp),
+            .padding(start = 30.dp, end = 30.dp, top = 28.dp, bottom = 22.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -407,7 +407,7 @@ private fun NuvioPlayerControls(
             onTogglePlayback = onPlayPause,
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -426,14 +426,14 @@ private fun NuvioPlayerControls(
         }
 
         if (bottomActions.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .clip(RoundedCornerShape(30.dp))
+                    .clip(RoundedCornerShape(26.dp))
                     .background(Color(0xFF111316).copy(alpha = .88f))
-                    .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(30.dp))
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                    .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(26.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

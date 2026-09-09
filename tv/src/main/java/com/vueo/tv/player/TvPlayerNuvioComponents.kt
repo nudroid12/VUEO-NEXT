@@ -64,7 +64,7 @@ internal fun NuvioPlayerProgressRail(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (focused) 12.dp else 8.dp)
+            .height(if (focused) 5.dp else 3.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -94,7 +94,7 @@ internal fun NuvioPlayerProgressRail(
             }
             .focusable()
             .background(Color.White.copy(alpha = if (focused) .38f else .26f), shape)
-            .border(if (focused) 2.dp else 0.dp, Color.White, shape),
+            .border(if (focused) 1.dp else 0.dp, Color.White, shape),
     ) {
         Box(
             modifier = Modifier
@@ -170,7 +170,7 @@ internal fun NuvioPlayerPillAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(20.dp)
     Row(
         modifier = Modifier
             .focusRequester(requester)
@@ -192,21 +192,21 @@ internal fun NuvioPlayerPillAction(
             }
             .focusable()
             .background(if (focused) Color.White else Color.Transparent, shape)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 11.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = if (focused) Color.Black else Color.White,
-            modifier = Modifier.size(21.dp),
+            modifier = Modifier.size(18.dp),
         )
         Text(
             text = label,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 8.dp),
+            modifier = Modifier.padding(start = 6.dp),
             maxLines = 1,
         )
     }
