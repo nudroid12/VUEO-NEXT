@@ -740,11 +740,11 @@ private fun TvProviderSettings(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
                         title = provider.name,
                         subtitle = buildString {
+                            append(health?.status?.label ?: "No diagnostic yet")
                             provider.description?.takeIf { it.isNotBlank() }?.let {
-                                append(it)
-                                append(" • ")
+                                append(" • ").append(it)
                             }
-                            append("OK enable or disable • → diagnostics")
+                            append(" • OK enable or disable • → diagnostics")
                         },
                         value = if (enabled) "On" else "Off",
                         enabled = repoEnabled && pluginsEnabled,

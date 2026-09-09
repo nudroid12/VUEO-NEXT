@@ -2271,6 +2271,11 @@ private fun ProviderHealthRow(
         mutableStateOf(false)
     }
 
+    val effectiveStatus = if (!enabled) {
+        "Disabled"
+    } else {
+        health?.status?.label ?: ProviderHealthStatus.UNKNOWN.label
+    }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -2308,6 +2313,24 @@ private fun ProviderHealthRow(
                 }
             }
 
+            Column(
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text(
+                    effectiveStatus,
+                    color = providerStatusColor(enabled, health),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+
+                health?.responseMs?.let { responseMs ->
+                    Text(
+                        "${responseMs} ms",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .45f),
+                        fontSize = 10.sp,
+                    )
+                }
+            }
 
             if (health != null) {
                 IconButton(
