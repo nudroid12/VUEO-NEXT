@@ -592,17 +592,14 @@ private fun TvAddonSettings(
                 TvSettingsEntry(
                     id = "addon-$index-${url.hashCode()}",
                     title = shortUrl(url),
-                    subtitle = "$url  •  ←/→ enable or disable  •  OK remove",
+                    subtitle = "$url  •  OK enable or disable  •  → remove",
                     value = if (enabled) "On" else "Off",
-                    onPrevious = {
-                        scope.launch { runtime.setAddonEnabled(url, false); revision++; onDataChanged() }
+                    onActivate = {
+                        scope.launch { runtime.setAddonEnabled(url, !enabled); revision++; onDataChanged() }
                     },
-                    onNext = {
-                        scope.launch { runtime.setAddonEnabled(url, true); revision++; onDataChanged() }
-                    },
-                    onActivate = { removeUrl = url },
                     section = "INSTALLED ADDONS",
                     icon = Icons.Default.Extension,
+                    onRightAction = { removeUrl = url },
                 )
             )
         }
@@ -712,21 +709,16 @@ private fun TvProviderSettings(
                 TvSettingsEntry(
                     id = "repo-${repository.manifestUrl.hashCode()}",
                     title = repository.name,
-                    subtitle = "${repository.version} • ${repository.providers.size} providers • ←/→ enable • OK remove",
+                    subtitle = "${repository.version} • ${repository.providers.size} providers • OK enable or disable • → remove",
                     value = if (repoEnabled) "On" else "Off",
-                    onPrevious = {
-                        runtime.pluginStore.setRepositoryEnabled(repository, false)
+                    onActivate = {
+                        runtime.pluginStore.setRepositoryEnabled(repository, !repoEnabled)
                         revision++
                         onDataChanged()
                     },
-                    onNext = {
-                        runtime.pluginStore.setRepositoryEnabled(repository, true)
-                        revision++
-                        onDataChanged()
-                    },
-                    onActivate = { removeRepo = repository },
                     section = "REPOSITORIES",
                     icon = Icons.Default.SettingsInputComponent,
+                    onRightAction = { removeRepo = repository },
                 )
             )
             repository.providers.forEach { provider ->
@@ -739,22 +731,17 @@ private fun TvProviderSettings(
                         subtitle = buildString {
                             append(health?.status?.label ?: "No diagnostic yet")
                             provider.description?.takeIf { it.isNotBlank() }?.let { append(" • ").append(it) }
-                            append(" • ←/→ enable • OK diagnostics")
+                            append(" • OK enable or disable • → diagnostics")
                         },
                         value = if (enabled) "On" else "Off",
                         enabled = repoEnabled && pluginsEnabled,
-                        onPrevious = {
-                            runtime.pluginStore.setProviderEnabled(repository, provider, false)
+                        onActivate = {
+                            runtime.pluginStore.setProviderEnabled(repository, provider, !enabled)
                             revision++
                             onDataChanged()
                         },
-                        onNext = {
-                            runtime.pluginStore.setProviderEnabled(repository, provider, true)
-                            revision++
-                            onDataChanged()
-                        },
-                        onActivate = { diagnosticTarget = repository to provider },
                         section = "PROVIDERS",
+                        onRightAction = { diagnosticTarget = repository to provider },
                     )
                 )
             }
@@ -1411,8 +1398,6 @@ private fun toggleEntry(
     subtitle = subtitle,
     value = if (checked) "On" else "Off",
     enabled = enabled,
-    onPrevious = { onChanged(false) },
-    onNext = { onChanged(true) },
     onActivate = { onChanged(!checked) },
 )
 

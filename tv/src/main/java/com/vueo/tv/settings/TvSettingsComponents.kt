@@ -69,6 +69,7 @@ internal data class TvSettingsEntry(
     val onNext: (() -> Unit)? = null,
     val section: String? = null,
     val icon: ImageVector? = null,
+    val onRightAction: (() -> Unit)? = null,
 )
 
 internal data class TvSettingsNavItem(
@@ -982,12 +983,21 @@ private fun TvSettingsContextPane(
                 overflow = TextOverflow.Ellipsis,
             )
         } else {
-            Text(
-                text = "OK  Select    ◀ ▶  Adjust",
-                color = TvDesign.Dim.copy(alpha = .82f),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Medium,
-            )
+            val controlHint = when {
+                selectedEntry?.onPrevious != null || selectedEntry?.onNext != null -> "OK  Select    ◀ ▶  Adjust"
+                selectedEntry?.onRightAction != null -> "OK  Toggle    ▶  More"
+                selectedEntry?.onActivate != null && selectedEntry.value in setOf("On", "Off") -> "OK  Toggle"
+                selectedEntry?.onActivate != null -> "OK  Select"
+                else -> ""
+            }
+            if (controlHint.isNotBlank()) {
+                Text(
+                    text = controlHint,
+                    color = TvDesign.Dim.copy(alpha = .82f),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }
@@ -1040,6 +1050,12 @@ private fun TvSettingsRow(
                         keyCode == KeyEvent.KEYCODE_DPAD_RIGHT &&
                         entry.onNext != null -> {
                         entry.onNext.invoke()
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown &&
+                        keyCode == KeyEvent.KEYCODE_DPAD_RIGHT &&
+                        entry.onRightAction != null -> {
+                        entry.onRightAction.invoke()
                         true
                     }
                     event.type == KeyEventType.KeyDown &&

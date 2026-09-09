@@ -711,7 +711,7 @@ internal fun TvSearchScreen(
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(if (searchingMode) 6.dp else 14.dp))
 
             when {
                 !searchingMode && session.discoverRows.isEmpty() && !discovering -> {
@@ -985,13 +985,10 @@ private fun TvSearchModeToggle(
                 val code = event.nativeKeyEvent.keyCode
                 when {
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        if (mode == TvSearchMode.TITLE) onLeft() else onModeChange(TvSearchMode.TITLE)
+                        onLeft()
                         true
                     }
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        onModeChange(TvSearchMode.ACTOR)
-                        true
-                    }
+                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_UP -> {
                         onUp()
                         true
