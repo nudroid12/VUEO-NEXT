@@ -38,7 +38,7 @@ internal data class TvSubtitleLanguageGroup(
 )
 
 internal data class TvPlayerSubtitleStyleState(
-    val fontSizeSp: Int = 18,
+    val fontSizeSp: Int = 22,
     val bold: Boolean = false,
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
@@ -106,7 +106,11 @@ internal fun tvPlayerTrackChoices(
                 metadata = if (trackType == C.TRACK_TYPE_AUDIO) {
                     tvBuildAudioTrackMetadata(format.label, format.channelCount, format.sampleMimeType)
                 } else {
-                    tvFriendlyLanguage(trackLanguage)
+                    externalSubtitle?.id?.takeIf { it.isNotBlank() }
+                        ?: format.id?.takeIf { it.isNotBlank() }
+                        ?: format.label?.takeIf {
+                            it.isNotBlank() && !it.startsWith(TV_SUBTITLE_LABEL_PREFIX)
+                        }
                 },
                 selectionId = selectionId,
             )

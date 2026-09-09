@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -359,7 +360,9 @@ internal fun NuvioPlayerSubtitleWorkspace(
         groups.indexOfFirst { it.code == activeLanguageCode }.let { if (it < 0) 0 else it + 1 }
     ) ?: languageRequesters.first()
     val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else FocusRequester.Cancel
-    val styleLeftRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
+    val selectedVisibleTrackIndex = visibleTracks.indexOfFirst { it.selected }
+    val styleLeftRequester = trackRequesters.getOrNull(selectedVisibleTrackIndex)
+        ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
     var initialFocusAssigned by remember { mutableStateOf(false) }
 
     LaunchedEffect(groups, initialFocusAssigned) {
@@ -375,52 +378,64 @@ internal fun NuvioPlayerSubtitleWorkspace(
         initialFocusAssigned = true
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .42f))) {
+    val textColours = remember {
+        listOf(
+            0xFFFFFFFF.toInt(),
+            0xFFDCEEFF.toInt(),
+            0xFFFFCC2F.toInt(),
+            0xFF18C7F5.toInt(),
+            0xFFFF6B86.toInt(),
+            0xFF6EE7C1.toInt(),
+        )
+    }
+    val outlineColours = remember {
+        listOf(
+            0xFF000000.toInt(),
+            0xFFFFFFFF.toInt(),
+            0xFF18C7F5.toInt(),
+            0xFFFF6B86.toInt(),
+        )
+    }
+    val opacity = subtitleAlphaPercent(style.textColor)
+    val fontPercent = (style.fontSizeSp * 100 / 20)
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = .30f))
+            .background(
+                Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .84f),
+                    .42f to Color.Black.copy(alpha = .58f),
+                    1f to Color.Black.copy(alpha = .24f),
+                )
+            )
+    ) {
         Column(
             modifier = Modifier
-                .align(Alignment.Center)
-                .width(940.dp)
-                .fillMaxHeight(.84f),
+                .fillMaxSize()
+                .padding(start = 42.dp, top = 30.dp, end = 42.dp, bottom = 28.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Column {
-                    Text(
-                        "Subtitles",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "Choose a language, exact track and style",
-                        color = Color.White.copy(alpha = .52f),
-                        fontSize = 10.sp,
-                    )
-                }
-                Text(
-                    "Back to close",
-                    color = Color.White.copy(alpha = .36f),
-                    fontSize = 9.sp,
-                    modifier = Modifier.padding(bottom = 2.dp),
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
+            Text(
+                "Subtitles",
+                color = Color.White,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(18.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
             ) {
-                NuvioSubtitleSectionCard(title = "Languages", modifier = Modifier.width(228.dp)) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        item(key = "subtitle:off") {
-                            NuvioSubtitleChoiceRow(
-                                title = "Off",
-                                detail = "Disable subtitles",
+                Column(modifier = Modifier.width(238.dp).fillMaxHeight()) {
+                    NuvioSubtitleColumnTitle("Languages")
+                    Spacer(Modifier.height(10.dp))
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        item(key = "subtitle:none") {
+                            NuvioSubtitleLanguageRow(
+                                title = "None",
+                                count = null,
                                 selected = subtitlesDisabled && activeLanguageCode == null,
                                 requester = languageRequesters[0],
                                 rightRequester = firstTrackRequester,
@@ -432,9 +447,9 @@ internal fun NuvioPlayerSubtitleWorkspace(
                             }
                         }
                         itemsIndexed(groups, key = { _, group -> group.code }) { index, group ->
-                            NuvioSubtitleChoiceRow(
+                            NuvioSubtitleLanguageRow(
                                 title = group.label,
-                                detail = "${group.tracks.size} track${if (group.tracks.size == 1) "" else "s"}",
+                                count = group.tracks.size,
                                 selected = group.code == activeLanguageCode ||
                                     (activeLanguageCode == null && !subtitlesDisabled && group.code == selectedLanguageCode),
                                 requester = languageRequesters[index + 1],
@@ -448,227 +463,192 @@ internal fun NuvioPlayerSubtitleWorkspace(
                     }
                 }
 
-                Box(modifier = Modifier.width(332.dp).fillMaxHeight()) {
-                    if (activeLanguageCode != null) {
-                        NuvioSubtitleSectionCard(title = "Subtitles", modifier = Modifier.fillMaxSize()) {
-                            when {
-                                visibleTracks.isNotEmpty() -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
-                                        val matchingLabels = visibleTracks.count {
-                                            it.label.equals(track.label, ignoreCase = true)
-                                        }
-                                        val matchingIndex = if (matchingLabels > 1) {
-                                            visibleTracks.take(index + 1).count {
-                                                it.label.equals(track.label, ignoreCase = true)
-                                            }
-                                        } else 0
-                                        val trackDetail = buildList {
-                                            track.sourceLabel.takeIf { it.isNotBlank() }?.let(::add)
-                                            track.metadata?.takeIf { it.isNotBlank() }?.let(::add)
-                                            if (matchingLabels > 1) add("Track $matchingIndex")
-                                        }.distinct().joinToString(" • ")
-
-                                        NuvioSubtitleChoiceRow(
-                                            title = track.label,
-                                            detail = trackDetail,
-                                            selected = !subtitlesDisabled && track.selected,
-                                            requester = trackRequesters[index],
-                                            leftRequester = activeLanguageRequester,
-                                            rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
-                                            onInteraction = onInteraction,
-                                        ) {
-                                            styleOpen = true
-                                            onSelect(track)
-                                        }
-                                    }
+                Column(modifier = Modifier.width(390.dp).fillMaxHeight()) {
+                    NuvioSubtitleColumnTitle("Subtitles")
+                    Spacer(Modifier.height(10.dp))
+                    when {
+                        activeLanguageCode == null -> NuvioSubtitleEmpty("Choose a language to see its exact subtitle tracks.")
+                        visibleTracks.isNotEmpty() -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
+                                val matchingLabels = visibleTracks.count {
+                                    it.label.equals(track.label, ignoreCase = true)
                                 }
-                                groups.isEmpty() -> NuvioSubtitleEmpty(
-                                    "No subtitles available. Try another source or install a subtitle addon."
-                                )
-                                else -> NuvioSubtitleEmpty("No subtitle track is available for this language.")
+                                val matchingIndex = if (matchingLabels > 1) {
+                                    visibleTracks.take(index + 1).count {
+                                        it.label.equals(track.label, ignoreCase = true)
+                                    }
+                                } else 0
+                                val identity = buildList {
+                                    track.metadata?.takeIf { it.isNotBlank() }?.let(::add)
+                                    if (matchingLabels > 1) add("Track $matchingIndex")
+                                }.distinct().joinToString(" • ")
+
+                                NuvioSubtitleTrackRow(
+                                    title = track.label,
+                                    provider = track.sourceLabel,
+                                    detail = identity,
+                                    selected = !subtitlesDisabled && track.selected,
+                                    requester = trackRequesters[index],
+                                    leftRequester = activeLanguageRequester,
+                                    rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
+                                    onInteraction = onInteraction,
+                                ) {
+                                    styleOpen = true
+                                    onSelect(track)
+                                }
                             }
                         }
+                        groups.isEmpty() -> NuvioSubtitleEmpty(
+                            "No subtitles available. Try another source or install a subtitle addon."
+                        )
+                        else -> NuvioSubtitleEmpty("No subtitle track is available for this language.")
                     }
                 }
 
-                Box(modifier = Modifier.width(360.dp).fillMaxHeight()) {
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    NuvioSubtitleColumnTitle("Subtitle Style")
+                    Spacer(Modifier.height(10.dp))
                     if (styleOpen && !subtitlesDisabled) {
-                        NuvioSubtitleSectionCard(title = "Style & Sync", modifier = Modifier.fillMaxSize()) {
-                            val textColours = listOf(
-                                0xFFFFFFFF.toInt(),
-                                0xFFFFFF66.toInt(),
-                                0xFF66E7FF.toInt(),
-                                0xFFB9FF3A.toInt(),
-                                0xFFFF6577.toInt(),
-                            )
-                            val outlineColours = listOf(
-                                0xFF000000.toInt(),
-                                0xFFFFFFFF.toInt(),
-                                0xFF38E8F2.toInt(),
-                                0xFFFF6577.toInt(),
-                            )
-                            val opacity = subtitleAlphaPercent(style.textColor)
-
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                item(key = "subtitle:sync") {
-                                    NuvioSubtitleAdjustRow(
-                                        title = "Subtitle sync",
-                                        value = formatSubtitleDelayTv(subtitleDelayMs),
-                                        requester = syncRequester,
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onLeft = { onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000)) },
-                                        onRight = { onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000)) },
-                                    )
-                                }
-                                item(key = "subtitle:size") {
-                                    NuvioSubtitleAdjustRow(
-                                        title = "Text size",
-                                        value = "${style.fontSizeSp} sp",
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onLeft = {
-                                            onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
-                                        },
-                                        onRight = {
-                                            onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
-                                        },
-                                    )
-                                }
-                                item(key = "subtitle:bold") {
-                                    NuvioSubtitleToggleRow(
-                                        title = "Bold",
-                                        enabled = style.bold,
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
-                                    )
-                                }
-                                item(key = "subtitle:text-colour") {
-                                    NuvioSubtitleAdjustRow(
-                                        title = "Text colour",
-                                        value = subtitleColourName(style.textColor),
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onLeft = {
-                                            onStyleChange(style.copy(textColor = cycleSubtitleColour(textColours, style.textColor, -1)))
-                                        },
-                                        onRight = {
-                                            onStyleChange(style.copy(textColor = cycleSubtitleColour(textColours, style.textColor, 1)))
-                                        },
-                                    )
-                                }
-                                item(key = "subtitle:opacity") {
-                                    NuvioSubtitleAdjustRow(
-                                        title = "Text opacity",
-                                        value = "$opacity%",
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onLeft = {
-                                            onStyleChange(
-                                                style.copy(
-                                                    textColor = subtitleWithAlpha(
-                                                        style.textColor,
-                                                        (opacity - 10).coerceAtLeast(30),
-                                                    )
-                                                )
-                                            )
-                                        },
-                                        onRight = {
-                                            onStyleChange(
-                                                style.copy(
-                                                    textColor = subtitleWithAlpha(
-                                                        style.textColor,
-                                                        (opacity + 10).coerceAtMost(100),
-                                                    )
-                                                )
-                                            )
-                                        },
-                                    )
-                                }
-                                item(key = "subtitle:outline") {
-                                    NuvioSubtitleToggleRow(
-                                        title = "Outline",
-                                        enabled = style.outlineEnabled,
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onToggle = {
-                                            onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled))
-                                        },
-                                    )
-                                }
-                                if (style.outlineEnabled) {
-                                    item(key = "subtitle:outline-colour") {
-                                        NuvioSubtitleAdjustRow(
-                                            title = "Outline colour",
-                                            value = subtitleColourName(style.outlineColor),
-                                            leftRequester = styleLeftRequester,
-                                            onInteraction = onInteraction,
-                                            onLeft = {
-                                                onStyleChange(
-                                                    style.copy(
-                                                        outlineColor = cycleSubtitleColour(
-                                                            outlineColours,
-                                                            style.outlineColor,
-                                                            -1,
-                                                        )
-                                                    )
-                                                )
-                                            },
-                                            onRight = {
-                                                onStyleChange(
-                                                    style.copy(
-                                                        outlineColor = cycleSubtitleColour(
-                                                            outlineColours,
-                                                            style.outlineColor,
-                                                            1,
-                                                        )
-                                                    )
-                                                )
-                                            },
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                            item(key = "subtitle:sync") {
+                                NuvioSubtitleStepperRow(
+                                    title = "Delay",
+                                    value = formatSubtitleDelayTv(subtitleDelayMs),
+                                    requester = syncRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
+                                    },
+                                    onIncrease = {
+                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
+                                    },
+                                )
+                            }
+                            item(key = "subtitle:size") {
+                                NuvioSubtitleStepperRow(
+                                    title = "Font Size",
+                                    value = "$fontPercent%",
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
+                                    },
+                                )
+                            }
+                            item(key = "subtitle:bold") {
+                                NuvioSubtitleToggleRow(
+                                    title = "Bold",
+                                    enabled = style.bold,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
+                                )
+                            }
+                            item(key = "subtitle:text-colour") {
+                                NuvioSubtitleColorRow(
+                                    title = "Text Color",
+                                    colours = textColours,
+                                    selectedColour = style.textColor,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                ) { colour ->
+                                    onStyleChange(
+                                        style.copy(
+                                            textColor = subtitleWithAlpha(colour, opacity)
                                         )
-                                    }
-                                }
-                                item(key = "subtitle:position") {
-                                    NuvioSubtitleAdjustRow(
-                                        title = "Bottom position",
-                                        value = "${style.bottomPaddingPercent}%",
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                        onLeft = {
-                                            onStyleChange(
-                                                style.copy(
-                                                    bottomPaddingPercent = (style.bottomPaddingPercent - 5).coerceAtLeast(5)
-                                                )
-                                            )
-                                        },
-                                        onRight = {
-                                            onStyleChange(
-                                                style.copy(
-                                                    bottomPaddingPercent = (style.bottomPaddingPercent + 5).coerceAtMost(40)
-                                                )
-                                            )
-                                        },
                                     )
                                 }
-                                item(key = "subtitle:reset") {
-                                    NuvioSubtitleActionRow(
-                                        title = "Reset style",
-                                        detail = "Restore VUEO TV subtitle defaults",
+                            }
+                            item(key = "subtitle:opacity") {
+                                NuvioSubtitleStepperRow(
+                                    title = "Text Opacity",
+                                    value = "$opacity%",
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
+                                            )
+                                        )
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
+                                            )
+                                        )
+                                    },
+                                )
+                            }
+                            item(key = "subtitle:outline") {
+                                NuvioSubtitleToggleRow(
+                                    title = "Outline",
+                                    enabled = style.outlineEnabled,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
+                                )
+                            }
+                            if (style.outlineEnabled) {
+                                item(key = "subtitle:outline-colour") {
+                                    NuvioSubtitleColorRow(
+                                        title = "Outline Color",
+                                        colours = outlineColours,
+                                        selectedColour = style.outlineColor,
                                         leftRequester = styleLeftRequester,
                                         onInteraction = onInteraction,
-                                    ) {
-                                        onStyleChange(TvPlayerSubtitleStyleState())
+                                    ) { colour ->
+                                        onStyleChange(style.copy(outlineColor = colour))
                                     }
                                 }
                             }
+                            item(key = "subtitle:position") {
+                                NuvioSubtitleStepperRow(
+                                    title = "Bottom Position",
+                                    value = "${style.bottomPaddingPercent}%",
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
+                                            )
+                                        )
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
+                                            )
+                                        )
+                                    },
+                                )
+                            }
+                            item(key = "subtitle:reset") {
+                                NuvioSubtitleActionRow(
+                                    title = "Reset Style",
+                                    detail = "White • 110% • black outline • 8% bottom",
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                ) {
+                                    onStyleChange(TvPlayerSubtitleStyleState())
+                                }
+                            }
                         }
+                    } else {
+                        NuvioSubtitleEmpty("Select an exact subtitle track to adjust its style.")
                     }
                 }
             }
         }
     }
 }
+
 
 @Composable
 internal fun NuvioPlayerAudioWorkspace(
@@ -733,43 +713,41 @@ internal fun NuvioPlayerAudioWorkspace(
 }
 
 @Composable
-private fun NuvioSubtitleSectionCard(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(Color(0xFF11161B).copy(alpha = .94f), RoundedCornerShape(14.dp))
-            .border(1.dp, Color.White.copy(alpha = .06f), RoundedCornerShape(14.dp))
-            .padding(12.dp),
-    ) {
-        Text(title, color = Color.White.copy(alpha = .78f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        content()
-    }
+private fun NuvioSubtitleColumnTitle(title: String) {
+    Text(
+        title,
+        color = Color.White.copy(alpha = .82f),
+        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
 }
 
+private fun subtitleAccentContentColor(): Color =
+    if (TvDesign.Accent.luminance() >= .48f) Color.Black else Color.White
+
 @Composable
-private fun NuvioSubtitleChoiceRow(
+private fun NuvioSubtitleLanguageRow(
     title: String,
-    detail: String,
+    count: Int?,
     selected: Boolean,
     requester: FocusRequester,
-    leftRequester: FocusRequester = FocusRequester.Cancel,
-    rightRequester: FocusRequester = FocusRequester.Cancel,
+    rightRequester: FocusRequester,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
-    var focused by remember(title, detail) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    var focused by remember(title) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    val contentColor = if (focused) subtitleAccentContentColor() else Color.White
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(requester)
-            .focusProperties { left = leftRequester; right = rightRequester }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .focusProperties { right = rightRequester }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
             .onPreviewKeyEvent { event ->
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
@@ -777,79 +755,266 @@ private fun NuvioSubtitleChoiceRow(
                 true
             }
             .focusable()
-            .background(if (focused) Color.White else if (selected) Color.White.copy(alpha = .08f) else Color.Transparent, shape)
-            .border(
-                if (focused) 2.dp else 1.dp,
+            .background(
                 when {
-                    focused -> Color.White
-                    selected -> TvDesign.Accent.copy(alpha = .62f)
-                    else -> Color.White.copy(alpha = .08f)
+                    focused -> TvDesign.Accent
+                    selected -> Color.White.copy(alpha = .09f)
+                    else -> Color.Transparent
                 },
                 shape,
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .border(
+                width = if (selected && !focused) 1.dp else 0.dp,
+                color = if (selected && !focused) TvDesign.Accent.copy(alpha = .38f) else Color.Transparent,
+                shape = shape,
+            )
+            .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Text(
+            title,
+            color = contentColor,
+            fontSize = 14.sp,
+            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        count?.let {
+            Box(
+                modifier = Modifier
+                    .size(27.dp)
+                    .background(
+                        if (focused) contentColor.copy(alpha = .14f)
+                        else Color.White.copy(alpha = .12f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    it.toString(),
+                    color = if (focused) contentColor else Color.White.copy(alpha = .78f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NuvioSubtitleTrackRow(
+    title: String,
+    provider: String,
+    detail: String,
+    selected: Boolean,
+    requester: FocusRequester,
+    leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(title, provider, detail) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(13.dp)
+    val contentColor = if (focused) subtitleAccentContentColor() else Color.White
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .focusProperties {
+                left = leftRequester
+                right = rightRequester
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(
+                when {
+                    focused -> TvDesign.Accent
+                    selected -> TvDesign.Accent.copy(alpha = .12f)
+                    else -> Color.White.copy(alpha = .035f)
+                },
+                shape,
+            )
+            .border(
+                width = if (focused) 0.dp else 1.dp,
+                color = if (selected) TvDesign.Accent.copy(alpha = .34f) else Color.White.copy(alpha = .055f),
+                shape = shape,
+            )
+            .padding(horizontal = 15.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .background(
+                        if (focused) contentColor.copy(alpha = .11f) else Color.White.copy(alpha = .07f),
+                        RoundedCornerShape(999.dp),
+                    )
+                    .border(
+                        1.dp,
+                        if (focused) contentColor.copy(alpha = .28f) else Color.White.copy(alpha = .12f),
+                        RoundedCornerShape(999.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    provider.ifBlank { "Subtitle" },
+                    color = if (focused) contentColor.copy(alpha = .72f) else Color.White.copy(alpha = .64f),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
             Text(
                 title,
-                color = if (focused) Color.Black else Color.White,
-                fontSize = 12.sp,
-                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+                color = contentColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (detail.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     detail,
-                    color = if (focused) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .46f),
-                    fontSize = 9.sp,
+                    color = if (focused) contentColor.copy(alpha = .60f) else Color.White.copy(alpha = .48f),
+                    fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
         if (selected) {
-            Text("Active", color = if (focused) Color.Black else TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "✓",
+                color = if (focused) contentColor else TvDesign.Accent,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 10.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun NuvioSubtitleAdjustRow(
+private fun NuvioSubtitleStepperRow(
     title: String,
     value: String,
     requester: FocusRequester? = null,
     leftRequester: FocusRequester,
     onInteraction: () -> Unit,
-    onLeft: () -> Unit,
-    onRight: () -> Unit,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
 ) {
-    var focused by remember(title) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
-    Row(
+    val minusRequester = remember(title) { FocusRequester() }
+    val internalValueRequester = remember(title) { FocusRequester() }
+    val plusRequester = remember(title) { FocusRequester() }
+    val valueRequester = requester ?: internalValueRequester
+
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            title,
+            color = Color.White.copy(alpha = .90f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            NuvioSubtitleStepperButton(
+                label = "−",
+                width = 52.dp,
+                requester = minusRequester,
+                leftRequester = leftRequester,
+                rightRequester = valueRequester,
+                onInteraction = onInteraction,
+                onClick = onDecrease,
+            )
+            NuvioSubtitleStepperButton(
+                label = value,
+                width = 120.dp,
+                requester = valueRequester,
+                leftRequester = minusRequester,
+                rightRequester = plusRequester,
+                onInteraction = onInteraction,
+                onClick = onIncrease,
+            )
+            NuvioSubtitleStepperButton(
+                label = "+",
+                width = 52.dp,
+                requester = plusRequester,
+                leftRequester = valueRequester,
+                rightRequester = FocusRequester.Cancel,
+                onInteraction = onInteraction,
+                onClick = onIncrease,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NuvioSubtitleStepperButton(
+    label: String,
+    width: androidx.compose.ui.unit.Dp,
+    requester: FocusRequester,
+    leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember(requester) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    val contentColor = if (focused) subtitleAccentContentColor() else Color.White
+
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
-            .focusProperties { left = leftRequester; right = FocusRequester.Cancel }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .width(width)
+            .height(45.dp)
+            .focusRequester(requester)
+            .focusProperties {
+                left = leftRequester
+                right = rightRequester
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> { onLeft(); onInteraction(); true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> { onRight(); onInteraction(); true }
-                    else -> false
-                }
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
             }
             .focusable()
-            .background(if (focused) Color.White else Color.White.copy(alpha = .04f), shape)
-            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .08f), shape)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .07f), shape)
+            .border(
+                if (focused) 0.dp else 1.dp,
+                Color.White.copy(alpha = .09f),
+                shape,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = if (focused) Color.Black else Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f))
-        Text("‹  $value  ›", color = if (focused) Color.Black else Color.White.copy(alpha = .68f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            label,
+            color = contentColor,
+            fontSize = if (label == "+" || label == "−") 22.sp else 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -862,12 +1027,20 @@ private fun NuvioSubtitleToggleRow(
     onToggle: () -> Unit,
 ) {
     var focused by remember(title) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(11.dp)
+    val contentColor = if (focused) subtitleAccentContentColor() else Color.White
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .focusProperties { left = leftRequester; right = FocusRequester.Cancel }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .focusProperties {
+                left = leftRequester
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
             .onPreviewKeyEvent { event ->
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
@@ -875,13 +1048,101 @@ private fun NuvioSubtitleToggleRow(
                 true
             }
             .focusable()
-            .background(if (focused) Color.White else Color.White.copy(alpha = .04f), shape)
-            .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .08f), shape)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .045f), shape)
+            .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, color = if (focused) Color.Black else Color.White, fontSize = 11.sp, modifier = Modifier.weight(1f))
-        Text(if (enabled) "On" else "Off", color = if (focused) Color.Black else if (enabled) TvDesign.Accent else Color.White.copy(alpha = .54f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            title,
+            color = contentColor,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            if (enabled) "On" else "Off",
+            color = if (focused) contentColor else if (enabled) TvDesign.Accent else Color.White.copy(alpha = .52f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun NuvioSubtitleColorRow(
+    title: String,
+    colours: List<Int>,
+    selectedColour: Int,
+    leftRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onSelected: (Int) -> Unit,
+) {
+    val requesters = remember(colours) { List(colours.size) { FocusRequester() } }
+
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            title,
+            color = Color.White.copy(alpha = .90f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(7.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            colours.forEachIndexed { index, colour ->
+                var focused by remember(colour) { mutableStateOf(false) }
+                val selected = (selectedColour and 0x00FFFFFF) == (colour and 0x00FFFFFF)
+                val swatch = Color(colour)
+                val checkColor = if (swatch.luminance() > .48f) Color.Black else Color.White
+
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .focusRequester(requesters[index])
+                        .focusProperties {
+                            if (index == 0) left = leftRequester
+                            if (index == colours.lastIndex) right = FocusRequester.Cancel
+                        }
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) onInteraction()
+                        }
+                        .onPreviewKeyEvent { event ->
+                            if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                            onInteraction()
+                            if (event.type == KeyEventType.KeyUp) onSelected(colour)
+                            true
+                        }
+                        .focusable()
+                        .border(
+                            width = if (focused) 3.dp else if (selected) 2.dp else 1.dp,
+                            color = when {
+                                focused -> TvDesign.Accent
+                                selected -> Color.White.copy(alpha = .92f)
+                                else -> Color.White.copy(alpha = .18f)
+                            },
+                            shape = CircleShape,
+                        )
+                        .padding(4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(swatch, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) {
+                            Text(
+                                "✓",
+                                color = checkColor,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -894,12 +1155,20 @@ private fun NuvioSubtitleActionRow(
     onClick: () -> Unit,
 ) {
     var focused by remember(title) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
-    Row(
+    val shape = RoundedCornerShape(11.dp)
+    val contentColor = if (focused) subtitleAccentContentColor() else Color.White
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .focusProperties { left = leftRequester; right = FocusRequester.Cancel }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+            .focusProperties {
+                left = leftRequester
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
             .onPreviewKeyEvent { event ->
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
@@ -907,31 +1176,23 @@ private fun NuvioSubtitleActionRow(
                 true
             }
             .focusable()
-            .background(if (focused) Color.White else Color.White.copy(alpha = .04f), shape)
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused) Color.White else Color.White.copy(alpha = .08f),
-                shape,
-            )
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .045f), shape)
+            .padding(horizontal = 13.dp, vertical = 10.dp),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = if (focused) Color.Black else Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                detail,
-                color = if (focused) Color.Black.copy(alpha = .62f) else Color.White.copy(alpha = .46f),
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            title,
+            color = contentColor,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            detail,
+            color = if (focused) contentColor.copy(alpha = .62f) else Color.White.copy(alpha = .44f),
+            fontSize = 9.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -946,34 +1207,12 @@ private fun NuvioSubtitleEmpty(message: String) {
     )
 }
 
-private fun cycleSubtitleColour(colours: List<Int>, current: Int, direction: Int): Int {
-    if (colours.isEmpty()) return current
-    val rgb = current and 0x00FFFFFF
-    val alpha = current ushr 24
-    val index = colours.indexOfFirst { (it and 0x00FFFFFF) == rgb }.let { if (it < 0) 0 else it }
-    val nextRgb = colours[(index + direction).floorMod(colours.size)] and 0x00FFFFFF
-    return (alpha shl 24) or nextRgb
-}
-
 private fun subtitleAlphaPercent(colour: Int): Int =
     (((colour ushr 24) * 100) + 127) / 255
 
 private fun subtitleWithAlpha(colour: Int, opacityPercent: Int): Int {
     val alpha = (255 * opacityPercent.coerceIn(0, 100) / 100) shl 24
     return (colour and 0x00FFFFFF) or alpha
-}
-
-private fun Int.floorMod(size: Int): Int = ((this % size) + size) % size
-
-private fun subtitleColourName(value: Int): String = when (value and 0x00FFFFFF) {
-    0x00FFFFFF -> "White"
-    0x00FFFF66 -> "Yellow"
-    0x0066E7FF -> "Cyan"
-    0x00B9FF3A -> "Lime"
-    0x00FF6577 -> "Rose"
-    0x00000000 -> "Black"
-    0x0038E8F2 -> "Aqua"
-    else -> "Custom"
 }
 
 private fun formatSubtitleDelayTv(value: Int): String = when {

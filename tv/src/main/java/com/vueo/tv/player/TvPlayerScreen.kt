@@ -175,14 +175,17 @@ fun TvPlayerScreen(
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
     val latestSubtitleDelayMs = androidx.compose.runtime.rememberUpdatedState(subtitleDelayMs)
-    val storedSubtitleFontSizeSp = remember { settings.subtitleFontSizeSp() }
+    val storedSubtitleFontSizeSp = remember {
+        settings.migrateTvSubtitlePresentationDefaults()
+        settings.subtitleFontSizeSp()
+    }
     val storedSubtitleBottomPaddingPercent = remember { settings.subtitleBottomPaddingPercent() }
     val storedSubtitleTextColor = remember { settings.subtitleTextColor() }
     val storedSubtitleTextOpacityPercent = remember { settings.subtitleTextOpacityPercent() }
     var subtitleStyle by remember {
         mutableStateOf(
             TvPlayerSubtitleStyleState(
-                fontSizeSp = if (storedSubtitleFontSizeSp == 20) 18 else storedSubtitleFontSizeSp,
+                fontSizeSp = storedSubtitleFontSizeSp,
                 bold = settings.subtitleBold(),
                 textColor = if ((storedSubtitleTextColor ushr 24) != 0xFF) {
                     storedSubtitleTextColor
@@ -191,7 +194,7 @@ fun TvPlayerScreen(
                 },
                 outlineEnabled = settings.subtitleOutlineEnabled(),
                 outlineColor = settings.subtitleOutlineColor(),
-                bottomPaddingPercent = if (storedSubtitleBottomPaddingPercent == 22) 8 else storedSubtitleBottomPaddingPercent,
+                bottomPaddingPercent = storedSubtitleBottomPaddingPercent,
             )
         )
     }
@@ -250,12 +253,6 @@ fun TvPlayerScreen(
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
-
-    LaunchedEffect(Unit) {
-        // Migrate the old TV defaults to a more conventional living-room subtitle presentation.
-        if (storedSubtitleFontSizeSp == 20) settings.setSubtitleFontSizeSp(18)
-        if (storedSubtitleBottomPaddingPercent == 22) settings.setSubtitleBottomPaddingPercent(8)
-    }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     val activeSkip = remember(positionMs, skipSegments) {

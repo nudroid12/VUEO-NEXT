@@ -426,6 +426,41 @@ class SettingsStore(
             .apply()
     }
 
+    /**
+     * One-time migration for the TV player subtitle presentation refresh.
+     * Called only by the TV app, so Mobile keeps its own subtitle defaults.
+     */
+    fun migrateTvSubtitlePresentationDefaults() {
+        val markerKey = profileKey(KEY_TV_SUBTITLE_PRESENTATION_V2)
+        if (prefs.getBoolean(markerKey, false)) return
+
+        val fontSizeKey = profileKey(KEY_SUBTITLE_FONT_SIZE_SP)
+        val bottomPaddingKey = profileKey(KEY_SUBTITLE_BOTTOM_PADDING_PERCENT)
+        val currentFontSize = if (prefs.contains(fontSizeKey)) {
+            prefs.getInt(fontSizeKey, 20)
+        } else {
+            20
+        }
+        val currentBottomPadding = if (prefs.contains(bottomPaddingKey)) {
+            prefs.getInt(bottomPaddingKey, 22)
+        } else {
+            22
+        }
+
+        prefs.edit().apply {
+            // 18sp and 20sp were previous TV defaults. Move those defaults to 22sp,
+            // but keep intentional custom sizes outside that legacy range.
+            if (!prefs.contains(fontSizeKey) || currentFontSize == 18 || currentFontSize == 20) {
+                putInt(fontSizeKey, 22)
+            }
+            // 22% was the old shared bottom position. TV now uses the conventional 8% baseline.
+            if (!prefs.contains(bottomPaddingKey) || currentBottomPadding == 22) {
+                putInt(bottomPaddingKey, 8)
+            }
+            putBoolean(markerKey, true)
+        }.apply()
+    }
+
     fun subtitleBold(): Boolean =
         prefs.getBoolean(
             profileKey(KEY_SUBTITLE_BOLD),
@@ -975,6 +1010,9 @@ class SettingsStore(
 
         private const val KEY_SUBTITLE_FONT_SIZE_SP =
             "subtitle_font_size_sp"
+
+        private const val KEY_TV_SUBTITLE_PRESENTATION_V2 =
+            "tv_subtitle_presentation_v2"
 
         private const val KEY_SUBTITLE_BOLD =
             "subtitle_bold"
