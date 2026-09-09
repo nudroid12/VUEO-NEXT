@@ -27,6 +27,7 @@ import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeStore
 import com.vueo.shared.core.plugin.ProviderHealthStatus
+import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.storage.AppAccent
@@ -714,15 +715,41 @@ private fun TvProviderSettings(
                     onRightAction = { removeRepo = repository },
                 )
             )
-            repository.providers.forEach { provider ->
+            val rankedProviders =
+                repository.providers
+                    .map { provider ->
+                        provider to healthStore.record(repository.manifestUrl, provider.id)
+                    }
+                    .sortedWith(
+                        compareBy<Pair<PluginProviderDescriptor, com.vueo.shared.core.plugin.ProviderHealthRecord?>> { (_, health) ->
+                            providerHealthSortKey(health).availabilityTier
+                        }.thenByDescending { (_, health) ->
+                            providerHealthSortKey(health).performanceScore
+                        }.thenBy { (_, health) ->
+                            providerHealthSortKey(health).statusTier
+                        }.thenBy { (_, health) ->
+                            providerHealthSortKey(health).responseMs
+                        }.thenBy { (provider, _) ->
+                            provider.name.lowercase()
+                        }
+                    )
+            rankedProviders.forEachIndexed { index, (provider, health) ->
                 val enabled = runtime.pluginStore.isProviderEnabled(repository, provider)
-                val health = healthStore.record(repository.manifestUrl, provider.id)
+                val performance = healthStore.performance(health)
+                val performanceSummary = buildList {
+                    add("Score ${performance.score}")
+                    performance.hitRatePercent?.let { add("$it% hit") }
+                    performance.averageResponseMs?.let { add(formatTvProviderAverageResponse(it)) }
+                    if (performance.historyRuns > 0) add("${performance.historyRuns} runs") else add("no history")
+                }.joinToString(" • ")
                 add(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
-                        title = provider.name,
+                        title = "#${index + 1}  ${provider.name}",
                         subtitle = buildString {
-                            append(health?.status?.label ?: "No diagnostic yet")
+                            append(performanceSummary)
+                            append(" • ")
+                            append(health?.status?.label ?: "Unknown")
                             provider.description?.takeIf { it.isNotBlank() }?.let { append(" • ").append(it) }
                             append(" • OK enable or disable • → diagnostics")
                         },
@@ -752,6 +779,14 @@ private fun TvProviderSettings(
         topLabel = "Content Manager",
     )
 }
+
+private fun formatTvProviderAverageResponse(responseMs: Long): String =
+    if (responseMs < 1_000L) {
+        "${responseMs} ms avg"
+    } else {
+        val tenths = ((responseMs + 50L) / 100L) / 10.0
+        "${tenths}s avg"
+    }
 
 @Composable
 private fun TvCatalogSettings(

@@ -192,6 +192,7 @@ import com.vueo.app.core.enrichment.MediaRating
 import com.vueo.app.core.enrichment.RichDetailsClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.plugin.ProviderPerformanceSnapshot
 import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
@@ -2184,8 +2185,40 @@ private fun PluginRepositoryCard(
         }
 
         if (repository.providers.isNotEmpty()) {
+            val knownHealth =
+                remember(repository.manifestUrl, healthRevision) {
+                    healthStore.records()
+                        .asSequence()
+                        .filter { it.repositoryManifestUrl == repository.manifestUrl }
+                        .associateBy { it.providerId }
+                }
+            val rankedProviders =
+                remember(repository, knownHealth, healthRevision) {
+                    repository.providers
+                        .map { provider ->
+                            RankedProviderHealthEntry(
+                                repository = repository,
+                                provider = provider,
+                                health = knownHealth[provider.id],
+                            )
+                        }
+                        .sortedWith(
+                            compareBy<RankedProviderHealthEntry> { entry ->
+                                providerHealthSortKey(entry.health).availabilityTier
+                            }.thenByDescending { entry ->
+                                providerHealthSortKey(entry.health).performanceScore
+                            }.thenBy { entry ->
+                                providerHealthSortKey(entry.health).statusTier
+                            }.thenBy { entry ->
+                                providerHealthSortKey(entry.health).responseMs
+                            }.thenBy { entry ->
+                                entry.provider.name.lowercase()
+                            }
+                        )
+                }
+
             Text(
-                text = "PROVIDERS",
+                text = "PROVIDERS • PERFORMANCE ORDER",
                 color = VueoPalette.Muted,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -2199,21 +2232,17 @@ private fun PluginRepositoryCard(
                 color = VueoPalette.SurfaceElevated,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    repository.providers.forEach { provider ->
+                    rankedProviders.forEachIndexed { index, entry ->
+                        val provider = entry.provider
+                        val health = entry.health
                         val enabled = store.isProviderEnabled(repository, provider)
-                        val health = if (healthRevision >= 0) {
-                            healthStore.record(
-                                repositoryManifestUrl = repository.manifestUrl,
-                                providerId = provider.id,
-                            )
-                        } else {
-                            null
-                        }
 
                         ProviderHealthRow(
                             repository = repository,
                             provider = provider,
                             health = health,
+                            performance = healthStore.performance(health),
+                            rank = index + 1,
                             enabled = enabled,
                             providerCodeReady = codeStore.isReady(repository, provider),
                             onEnabledChanged = { next ->
@@ -2233,6 +2262,8 @@ private fun ProviderHealthRow(
     repository: PluginRepositoryDescriptor,
     provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
     health: ProviderHealthRecord?,
+    performance: ProviderPerformanceSnapshot,
+    rank: Int,
     enabled: Boolean,
     providerCodeReady: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
@@ -2260,8 +2291,26 @@ private fun ProviderHealthRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    provider.name,
+                    "#$rank  ${provider.name}",
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                val performanceDetails = buildList {
+                    add("Score ${performance.score}")
+                    performance.hitRatePercent?.let { add("$it% hit") }
+                    performance.averageResponseMs?.let { add(formatProviderAverageResponse(it)) }
+                    if (performance.historyRuns > 0) {
+                        add("${performance.historyRuns} runs")
+                    } else {
+                        add("no history")
+                    }
+                }.joinToString(" • ")
+                Text(
+                    performanceDetails,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f),
+                    fontSize = 10.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2280,7 +2329,7 @@ private fun ProviderHealthRow(
                     Text(
                         details,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f),
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
