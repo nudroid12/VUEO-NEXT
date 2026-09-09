@@ -97,6 +97,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     LaunchedEffect(runtime) {
         TvDesign.applyTheme(runtime.settingsStore.appTheme())
         TvDesign.applyAccent(runtime.settingsStore.appAccent())
+
+        // Resolve the first destination using local state only. Network addon
+        // manifests must never keep the TV app parked on its startup artwork.
         runtime.boot()
         route =
             if (runtime.profileStore.shouldShowPickerOnStartup()) {
@@ -105,6 +108,30 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 TvRoute.HOME
             }
         profileReturnRoute = TvRoute.HOME
+
+        // Cache first, then prepare addons. Home can render the restored rows as
+        // soon as disk IO completes, while the network refresh remains off the
+        // startup critical path.
+        launch {
+            try {
+                runtime.restoreHomeCache()
+                refreshToken++
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // A broken cache must not block startup or addon preparation.
+            }
+
+            try {
+                runtime.prepareAddonsInBackground()
+                runtime.requestHomeRefreshAfterAddonPreparation()
+                refreshToken++
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // Keep cached/local Home usable if addon preparation fails.
+            }
+        }
 
         launch { runtime.prepareProvidersInBackground() }
         if (runtime.settingsStore.automaticUpdateChecksEnabled()) {

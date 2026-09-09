@@ -30,6 +30,7 @@ import com.vueo.shared.core.storage.SettingsStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * New TV runtime. It deliberately mirrors Mobile's proven runtime boundaries
@@ -62,30 +63,42 @@ class TvRuntime(context: Context) {
     val pluginEngine = PluginSourceEngine(appContext, pluginStore)
     private val sourceDiscoveryEngine = SourceDiscoveryEngine(engine, pluginEngine, pluginStore)
     private val providerSync = ProviderCodeSyncManager(appContext)
+    private val addonLoadMutex = Mutex()
 
-    suspend fun boot() {
+    @Volatile
+    private var addonsPrepared = false
+
+    /**
+     * Startup-critical work only. Keep this path local so a slow addon can never
+     * hold the launch screen. Network-backed addon preparation is deliberately
+     * handled by [prepareAddonsInBackground] after the first app destination is shown.
+     */
+    fun boot() {
         profileStore.ensureDefaultProfile()
-        CatalogDiscoveryCache.restoreHome(appContext)
         content.seedDevelopmentDefaultsIfNeeded()
+    }
 
-        coroutineScope {
-            content.manifestUrls()
-                .map { manifestUrl ->
-                    async {
-                        runCatching {
-                            require(manifestUrl.startsWith("https://"))
-                            StremioAddonExtension.fromManifestUrl(manifestUrl)
-                        }.onSuccess { extension ->
-                            engine.install(extension)
-                            engine.setExtensionEnabled(
-                                id = extension.descriptor.id,
-                                enabled = content.isAddonEnabled(manifestUrl),
-                            )
-                        }
-                    }
-                }
-                .awaitAll()
+    suspend fun restoreHomeCache() {
+        CatalogDiscoveryCache.restoreHome(appContext)
+    }
+
+    suspend fun prepareAddonsInBackground() {
+        addonLoadMutex.lock()
+        try {
+            installConfiguredAddons()
+            addonsPrepared = true
+        } finally {
+            addonLoadMutex.unlock()
         }
+    }
+
+    /**
+     * Once manifests are ready, expire only the in-memory freshness marker.
+     * Existing rows stay available as the visual fallback while Home refreshes
+     * against the fully prepared addon set.
+     */
+    fun requestHomeRefreshAfterAddonPreparation() {
+        CatalogDiscoveryCache.invalidateHomeMemory()
     }
 
     suspend fun prepareProvidersInBackground() {
@@ -94,6 +107,13 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun homeRows(forceRefresh: Boolean = false): List<CatalogRow> {
+        if (!addonsPrepared) {
+            return CatalogDiscoveryCache.home(allowStale = true)
+                .orEmpty()
+                .let(::applyCatalogPreferences)
+                .let(::applyPersonalization)
+        }
+
         val freshCached =
             CatalogDiscoveryCache.home(allowStale = false)
                 .orEmpty()
@@ -150,20 +170,37 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun refreshAddons() {
-        engine.installed().map { it.descriptor.id }.forEach(engine::uninstall)
-        content.manifestUrls().forEach { manifestUrl ->
-            runCatching {
-                require(manifestUrl.startsWith("https://"))
-                StremioAddonExtension.fromManifestUrl(manifestUrl)
-            }.onSuccess { extension ->
-                engine.install(extension)
-                engine.setExtensionEnabled(
-                    id = extension.descriptor.id,
-                    enabled = content.isAddonEnabled(manifestUrl),
-                )
-            }
+        addonLoadMutex.lock()
+        addonsPrepared = false
+        try {
+            engine.installed().map { it.descriptor.id }.forEach(engine::uninstall)
+            installConfiguredAddons()
+            CatalogDiscoveryCache.clearAll(appContext)
+        } finally {
+            addonsPrepared = true
+            addonLoadMutex.unlock()
         }
-        CatalogDiscoveryCache.clearAll(appContext)
+    }
+
+    private suspend fun installConfiguredAddons() {
+        coroutineScope {
+            content.manifestUrls()
+                .map { manifestUrl ->
+                    async {
+                        runCatching {
+                            require(manifestUrl.startsWith("https://"))
+                            StremioAddonExtension.fromManifestUrl(manifestUrl)
+                        }.onSuccess { extension ->
+                            engine.install(extension)
+                            engine.setExtensionEnabled(
+                                id = extension.descriptor.id,
+                                enabled = content.isAddonEnabled(manifestUrl),
+                            )
+                        }
+                    }
+                }
+                .awaitAll()
+        }
     }
 
     suspend fun reloadPersistentConfiguration() {
