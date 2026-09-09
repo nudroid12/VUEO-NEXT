@@ -10,19 +10,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
+import com.vueo.tv.core.enrichDetailMetadata
+import com.vueo.tv.core.loadCoreDetail
+import com.vueo.tv.core.prepareDetailForCore
+import kotlinx.coroutines.launch
 
 /**
- * TV 39A Detail boundary.
- *
- * VUEO owns data, library state and routing. Presentation is delegated to the
- * Nuvio-first 39A screen tree. The small Nuvio extras payload only fills visual
- * metadata that VUEO's base MediaItem does not currently carry (logo/status/
- * country/crew/trailer target); playback/source contracts remain untouched.
+ * TV Details follows Mobile's orchestration upstream:
+ * instant shell -> identity preparation -> core metadata -> progressive extras.
+ * TV keeps only its 10-foot presentation/focus behavior here.
  */
 @Composable
 fun TvDetailScreen(
@@ -35,95 +37,154 @@ fun TvDetailScreen(
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    val initialShell = remember(initial) {
+        DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
+    }
 
-    var item by remember(initial.id, initial.type) { mutableStateOf(initial) }
-    var loading by remember(initial.id, initial.type) { mutableStateOf(true) }
-    var watchlisted by remember(initial.id, initial.type) {
-        mutableStateOf(runtime.libraryStore.isWatchlisted(initial))
+    var item by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(initialShell) }
+    var loading by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(true) }
+    var watchlisted by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(runtime.libraryStore.isWatchlisted(initialShell))
     }
-    var movieWatched by remember(initial.id, initial.type) {
-        mutableStateOf(runtime.libraryStore.isMarkedWatched(initial))
+    var movieWatched by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(runtime.libraryStore.isMarkedWatched(initialShell))
     }
-    var nuvioExtras by remember(initial.id, initial.type) {
+    var nuvioExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf(TvDetailNuvioExtras())
     }
-    var ratings by remember(initial.id, initial.type) {
+    var supplementalRatings by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaRating>>(emptyList())
     }
-    var related by remember(initial.id, initial.type) {
+    var ratings by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(detailBaseRatings(initialShell))
+    }
+    var related by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaItem>>(emptyList())
     }
-    var selectedSeason by remember(initial.id, initial.type) { mutableStateOf<Int?>(null) }
-    var selectedEpisode by remember(initial.id, initial.type) { mutableStateOf<EpisodeItem?>(null) }
+    var selectedSeason by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<Int?>(null) }
+    var selectedEpisode by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<EpisodeItem?>(null) }
 
-    LaunchedEffect(initial.id, initial.type) {
-        val mediaKey = "${initial.type}:${initial.id}"
-        val restoringSameTitle = NuvioDetailFocusMemory.mediaKey == mediaKey
-        if (!restoringSameTitle) NuvioDetailFocusMemory.resetFor(mediaKey)
-
-        loading = true
-        val enriched = runCatching { runtime.loadMeta(initial) }.getOrDefault(initial)
-        item = enriched
-        watchlisted = runtime.libraryStore.isWatchlisted(enriched)
-        movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-        nuvioExtras = TvDetailNuvioExtras()
-        ratings = (detailBaseRatings(enriched) + runCatching { runtime.ratings(enriched) }.getOrDefault(emptyList()))
+    fun publishRatings(media: MediaItem) {
+        ratings = (detailBaseRatings(media) + supplementalRatings)
             .associateBy(MediaRating::source)
             .values
             .toList()
-        related = runCatching { runtime.relatedTitles(enriched) }.getOrDefault(emptyList())
+    }
 
-        if (enriched.isDetailSeries()) {
-            val history = runtime.libraryStore.history()
-            val resumeEntry = history.firstOrNull { entry ->
-                entry.media.id == enriched.id &&
-                    entry.media.type == enriched.type &&
-                    entry.season != null &&
-                    entry.episode != null &&
-                    detailCanResume(entry)
-            }
-            val resumeEpisode = resumeEntry?.let { entry ->
-                enriched.episodes.firstOrNull { episode ->
-                    episode.season == entry.season && episode.episode == entry.episode
-                }
-            }
-            val seasonNumbers = enriched.episodes.map(EpisodeItem::season).distinct()
-            val regularSeasons = seasonNumbers.filter { it > 0 }.sorted()
-            val specials = seasonNumbers.filter { it == 0 }
-            val orderedSeasons = regularSeasons + specials
-            val rememberedSeason = NuvioDetailFocusMemory.selectedSeason
-                ?.takeIf { restoringSameTitle && it in orderedSeasons }
-            val firstSeason = rememberedSeason
-                ?: resumeEpisode?.season
-                ?: orderedSeasons.firstOrNull()
-
-            val rememberedEpisode = NuvioDetailFocusMemory.episodeId
-                ?.takeIf { restoringSameTitle }
-                ?.let { id ->
-                    enriched.episodes.firstOrNull { episode ->
-                        episode.id == id && episode.season == firstSeason
-                    }
-                }
-
-            selectedSeason = firstSeason
-            selectedEpisode = rememberedEpisode
-                ?: resumeEpisode?.takeIf { it.season == firstSeason }
-                ?: enriched.episodes.firstOrNull { it.season == firstSeason }
-            NuvioDetailFocusMemory.selectedSeason = firstSeason
-        } else {
+    fun syncEpisodeSelection(
+        media: MediaItem,
+        preserveCurrent: Boolean,
+        restoringSameTitle: Boolean,
+    ) {
+        if (!media.isDetailSeries() || media.episodes.isEmpty()) {
             selectedSeason = null
             selectedEpisode = null
             NuvioDetailFocusMemory.selectedSeason = null
             NuvioDetailFocusMemory.episodeId = null
+            return
         }
-        loading = false
+
+        if (preserveCurrent) {
+            val current = selectedEpisode?.let { selected ->
+                media.episodes.firstOrNull { candidate ->
+                    candidate.season == selected.season && candidate.episode == selected.episode
+                }
+            }
+            if (current != null) {
+                selectedSeason = current.season
+                selectedEpisode = current
+                return
+            }
+        }
+
+        val history = runtime.libraryStore.history()
+        val resumeEntry = history.firstOrNull { entry ->
+            entry.media.id == media.id &&
+                entry.media.type == media.type &&
+                entry.season != null &&
+                entry.episode != null &&
+                detailCanResume(entry)
+        }
+        val resumeEpisode = resumeEntry?.let { entry ->
+            media.episodes.firstOrNull { episode ->
+                episode.season == entry.season && episode.episode == entry.episode
+            }
+        }
+
+        val seasonNumbers = media.episodes.map(EpisodeItem::season).distinct()
+        val orderedSeasons = seasonNumbers.filter { it > 0 }.sorted() + seasonNumbers.filter { it == 0 }
+        val rememberedSeason = NuvioDetailFocusMemory.selectedSeason
+            ?.takeIf { restoringSameTitle && it in orderedSeasons }
+        val firstSeason = rememberedSeason ?: resumeEpisode?.season ?: orderedSeasons.firstOrNull()
+        val rememberedEpisode = NuvioDetailFocusMemory.episodeId
+            ?.takeIf { restoringSameTitle }
+            ?.let { id ->
+                media.episodes.firstOrNull { episode ->
+                    episode.id == id && episode.season == firstSeason
+                }
+            }
+
+        selectedSeason = firstSeason
+        selectedEpisode = rememberedEpisode
+            ?: resumeEpisode?.takeIf { it.season == firstSeason }
+            ?: media.episodes.firstOrNull { it.season == firstSeason }
+        NuvioDetailFocusMemory.selectedSeason = firstSeason
     }
 
-    LaunchedEffect(item.id, item.type, loading) {
-        if (!loading) {
+    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
+        val mediaKey = "${initial.type}:${initial.id}"
+        val restoringSameTitle = NuvioDetailFocusMemory.mediaKey == mediaKey
+        if (!restoringSameTitle) NuvioDetailFocusMemory.resetFor(mediaKey)
+
+        // Publish the catalog/search item immediately. Network work must not own the page shell.
+        val shell = DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
+        item = shell
+        loading = true
+        related = emptyList()
+        nuvioExtras = TvDetailNuvioExtras()
+        supplementalRatings = emptyList()
+        publishRatings(shell)
+        watchlisted = runtime.libraryStore.isWatchlisted(shell)
+        movieWatched = runtime.libraryStore.isMarkedWatched(shell)
+        syncEpisodeSelection(shell, preserveCurrent = false, restoringSameTitle = restoringSameTitle)
+
+        // Actor Search / More Like This can produce tmdb:<id>. Resolve that identity before Stremio core.
+        val prepared = runCatching { runtime.prepareDetailForCore(initial) }.getOrDefault(initial)
+        val core = runCatching { runtime.loadCoreDetail(prepared) }
+            .getOrElse { DetailUpstreamPolicy.normalizeSeriesEpisodes(prepared) }
+
+        item = core
+        publishRatings(core)
+        watchlisted = runtime.libraryStore.isWatchlisted(core)
+        movieWatched = runtime.libraryStore.isMarkedWatched(core)
+        syncEpisodeSelection(core, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+
+        // Core metadata is enough to release Detail. Everything else is progressive.
+        loading = false
+
+        launch {
+            val enriched = runCatching { runtime.enrichDetailMetadata(core) }.getOrDefault(core)
+            item = enriched
+            publishRatings(enriched)
+            watchlisted = runtime.libraryStore.isWatchlisted(enriched)
+            movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
+            syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+        }
+
+        launch {
+            val fetched = runCatching { runtime.ratings(core) }.getOrDefault(emptyList())
+            supplementalRatings = fetched
+            publishRatings(item)
+        }
+
+        launch {
+            related = runCatching { runtime.relatedTitles(core) }.getOrDefault(emptyList())
+        }
+
+        launch {
             nuvioExtras = runCatching {
                 loadTvDetailNuvioExtras(
-                    media = item,
+                    media = core,
                     tmdbApiKey = runtime.pluginStore.tmdbApiKey(),
                 )
             }.getOrDefault(TvDetailNuvioExtras())
