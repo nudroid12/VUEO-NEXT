@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +31,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +39,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
@@ -86,7 +87,8 @@ internal data class TvSettingsMetric(
 private data class TvSettingsEmbeddedHost(
     val panelKey: String,
     val requesterFor: (String) -> FocusRequester,
-    val onFirstRowAvailable: (String) -> Unit,
+    val onFocusableRowsChanged: (List<String>) -> Unit,
+    val restorePanelFocus: () -> Boolean,
     val onLeftToCategory: () -> Unit,
     val onRowFocused: (String) -> Unit,
 )
@@ -117,18 +119,57 @@ internal fun TvSettingsMasterDetailShell(
     val panelRequesters = remember { mutableMapOf<String, MutableMap<String, FocusRequester>>() }
     val panelFirstRowIds = remember { mutableMapOf<String, String>() }
     val panelLastFocusedIds = remember { mutableMapOf<String, String>() }
+    val panelFocusableRowIds = remember { mutableMapOf<String, List<String>>() }
     var lastPane by remember { mutableStateOf("category") }
     var navExpanded by remember { mutableStateOf(false) }
+    var sidebarFocusIntent by remember { mutableStateOf(false) }
 
     fun requesterForPanelRow(key: String, rowId: String): FocusRequester =
         panelRequesters.getOrPut(key) { mutableMapOf() }.getOrPut(rowId) { FocusRequester() }
 
+    fun updatePanelFocusableRows(key: String, rowIds: List<String>) {
+        val previousRows = panelFocusableRowIds[key].orEmpty()
+        panelFocusableRowIds[key] = rowIds
+
+        if (rowIds.isEmpty()) {
+            panelFirstRowIds.remove(key)
+            return
+        }
+
+        panelFirstRowIds[key] = rowIds.first()
+        val previousFocusedId = panelLastFocusedIds[key]
+        if (previousFocusedId == null) {
+            panelLastFocusedIds[key] = rowIds.first()
+            return
+        }
+
+        if (previousFocusedId !in rowIds) {
+            val previousIndex = previousRows.indexOf(previousFocusedId)
+            val fallbackIndex = if (previousIndex >= 0) {
+                previousIndex.coerceAtMost(rowIds.lastIndex)
+            } else {
+                0
+            }
+            panelLastFocusedIds[key] = rowIds[fallbackIndex]
+        }
+    }
+
+    fun panelFocusTargetId(key: String): String? {
+        val focusableRows = panelFocusableRowIds[key].orEmpty()
+        if (focusableRows.isEmpty()) return null
+        return panelLastFocusedIds[key]?.takeIf { it in focusableRows }
+            ?: panelFirstRowIds[key]?.takeIf { it in focusableRows }
+            ?: focusableRows.first()
+    }
+
     fun focusGlobalNav() {
+        sidebarFocusIntent = true
         navExpanded = true
         runCatching { navRequesters.getValue("Settings").requestFocus() }
     }
 
     fun focusSelectedCategory(): Boolean {
+        sidebarFocusIntent = false
         navExpanded = false
         lastPane = "category"
         return runCatching {
@@ -138,11 +179,13 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun focusPanel(): Boolean {
+        sidebarFocusIntent = false
         navExpanded = false
-        val rowId = panelLastFocusedIds[panelKey] ?: panelFirstRowIds[panelKey] ?: return false
-        val requester = panelRequesters[panelKey]?.get(rowId) ?: return false
+        val rowId = panelFocusTargetId(panelKey) ?: return false
+        val requester = requesterForPanelRow(panelKey, rowId)
         return runCatching {
             requester.requestFocus()
+            panelLastFocusedIds[panelKey] = rowId
             lastPane = "panel"
             true
         }.getOrDefault(false)
@@ -256,7 +299,10 @@ internal fun TvSettingsMasterDetailShell(
                 LocalTvSettingsEmbeddedHost provides TvSettingsEmbeddedHost(
                     panelKey = panelKey,
                     requesterFor = { rowId -> requesterForPanelRow(panelKey, rowId) },
-                    onFirstRowAvailable = { rowId -> panelFirstRowIds[panelKey] = rowId },
+                    onFocusableRowsChanged = { rowIds -> updatePanelFocusableRows(panelKey, rowIds) },
+                    restorePanelFocus = {
+                        if (lastPane == "panel") focusPanel() else false
+                    },
                     onLeftToCategory = { focusSelectedCategory() },
                     onRowFocused = { rowId ->
                         panelLastFocusedIds[panelKey] = rowId
@@ -268,7 +314,12 @@ internal fun TvSettingsMasterDetailShell(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight(),
+                        .fillMaxHeight()
+                        .focusRestorer {
+                            panelFocusTargetId(panelKey)?.let { requesterForPanelRow(panelKey, it) }
+                                ?: FocusRequester.Default
+                        }
+                        .focusGroup(),
                 ) {
                     content()
                 }
@@ -280,10 +331,21 @@ internal fun TvSettingsMasterDetailShell(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = { navExpanded = true },
+            onFocused = {
+                if (sidebarFocusIntent) {
+                    navExpanded = true
+                } else if (lastPane == "panel") {
+                    focusPanel()
+                } else {
+                    focusSelectedCategory()
+                }
+            },
             onNavigate = onNavigate,
             onProfile = onProfile,
-            onReturnToContent = { focusSelectedCategory() },
+            onReturnToContent = {
+                sidebarFocusIntent = false
+                if (lastPane == "panel") focusPanel() else focusSelectedCategory()
+            },
             modifier = Modifier.align(Alignment.CenterStart),
         )
     }
@@ -383,7 +445,11 @@ internal fun TvSettingsProfilePanel(
     val host = LocalTvSettingsEmbeddedHost.current ?: return
     val profileRequester = host.requesterFor("profile-card")
     val switchRequester = host.requesterFor("switch-profiles")
-    SideEffect { host.onFirstRowAvailable("profile-card") }
+    LaunchedEffect(host.panelKey) {
+        host.onFocusableRowsChanged(listOf("profile-card", "switch-profiles"))
+        delay(24)
+        host.restorePanelFocus()
+    }
     var profileFocused by remember(profileName) { mutableStateOf(false) }
     var switchFocused by remember(profileName) { mutableStateOf(false) }
 
@@ -663,30 +729,46 @@ internal fun TvSettingsListScreen(
 
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
-    val rowRequesters = remember(entries.map { it.id }) {
-        entries.associate { it.id to FocusRequester() }
-    }
-    val firstFocusable = entries.firstOrNull { it.enabled } ?: entries.firstOrNull()
-    val lastFocusable = entries.lastOrNull { it.enabled } ?: entries.lastOrNull()
-    var lastFocusedId by remember(entries.map { it.id }) {
-        mutableStateOf(firstFocusable?.id.orEmpty())
-    }
+    val rowRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    entries.forEach { entry -> rowRequesters.getOrPut(entry.id) { FocusRequester() } }
+    val focusableIds = entries.filter { it.enabled }.map { it.id }
+    val firstFocusable = entries.firstOrNull { it.enabled }
+    val lastFocusable = entries.lastOrNull { it.enabled }
+    var lastFocusedId by remember { mutableStateOf(firstFocusable?.id.orEmpty()) }
+    var previousFocusableIds by remember { mutableStateOf(focusableIds) }
     var navExpanded by remember { mutableStateOf(false) }
+    var sidebarFocusIntent by remember { mutableStateOf(false) }
 
-    LaunchedEffect(firstFocusable?.id) {
-        val first = firstFocusable ?: return@LaunchedEffect
+    LaunchedEffect(focusableIds) {
+        if (focusableIds.isEmpty()) return@LaunchedEffect
+
+        if (lastFocusedId !in focusableIds) {
+            val previousIndex = previousFocusableIds.indexOf(lastFocusedId)
+            val fallbackIndex = if (previousIndex >= 0) {
+                previousIndex.coerceAtMost(focusableIds.lastIndex)
+            } else {
+                0
+            }
+            lastFocusedId = focusableIds[fallbackIndex]
+        }
+        previousFocusableIds = focusableIds
+
         delay(90)
-        runCatching { rowRequesters.getValue(first.id).requestFocus() }
+        runCatching { rowRequesters.getValue(lastFocusedId).requestFocus() }
     }
 
     fun focusSettingsNav() {
+        sidebarFocusIntent = true
         navExpanded = true
         runCatching { navRequesters.getValue("Settings").requestFocus() }
     }
 
     fun restoreContentFocus(): Boolean {
+        sidebarFocusIntent = false
         navExpanded = false
-        val requester = rowRequesters[lastFocusedId] ?: rowRequesters.values.firstOrNull() ?: return false
+        val targetId = lastFocusedId.takeIf { it in focusableIds } ?: focusableIds.firstOrNull() ?: return false
+        val requester = rowRequesters[targetId] ?: return false
+        lastFocusedId = targetId
         return runCatching { requester.requestFocus(); true }.getOrDefault(false)
     }
 
@@ -733,7 +815,12 @@ internal fun TvSettingsListScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .focusRestorer {
+                        val targetId = lastFocusedId.takeIf { it in focusableIds } ?: focusableIds.firstOrNull()
+                        targetId?.let { rowRequesters[it] } ?: FocusRequester.Default
+                    }
+                    .focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 var previousSection: String? = null
@@ -786,7 +873,9 @@ internal fun TvSettingsListScreen(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = { navExpanded = true },
+            onFocused = {
+                if (sidebarFocusIntent) navExpanded = true else restoreContentFocus()
+            },
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = ::restoreContentFocus,
@@ -805,9 +894,17 @@ private fun TvSettingsEmbeddedPanel(
     footer: String?,
     metrics: List<TvSettingsMetric>,
 ) {
-    val firstFocusable = entries.firstOrNull { it.enabled } ?: entries.firstOrNull()
-    val lastFocusable = entries.lastOrNull { it.enabled } ?: entries.lastOrNull()
-    SideEffect { firstFocusable?.let { host.onFirstRowAvailable(it.id) } }
+    val focusableIds = entries.filter { it.enabled }.map { it.id }
+    val firstFocusable = entries.firstOrNull { it.enabled }
+    val lastFocusable = entries.lastOrNull { it.enabled }
+
+    LaunchedEffect(host.panelKey, focusableIds) {
+        host.onFocusableRowsChanged(focusableIds)
+        if (focusableIds.isNotEmpty()) {
+            delay(24)
+            host.restorePanelFocus()
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),

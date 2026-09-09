@@ -1282,7 +1282,7 @@ private fun TvUpdatesSettings(
             autoChecks = it
             runtime.settingsStore.setAutomaticUpdateChecksEnabled(it)
         }.copy(section = "UPDATES"))
-        add(TvSettingsEntry("check", "Check for Updates", "Check the latest green VUEO development build.", if (checking) "Checking…" else "Check", enabled = !checking, onActivate = ::checkNow, section = "UPDATES"))
+        add(TvSettingsEntry("check", "Check for Updates", "Check the latest green VUEO development build.", if (checking) "Checking…" else "Check", onActivate = ::checkNow, section = "UPDATES"))
         if (available != null) {
             add(
                 TvSettingsEntry(
@@ -1292,18 +1292,19 @@ private fun TvUpdatesSettings(
                         TvUpdateManager.needsInstallPermission(context) -> "Allow"
                         else -> "Update"
                     },
-                    enabled = !downloading,
                     onActivate = {
-                        if (TvUpdateManager.needsInstallPermission(context)) {
-                            TvUpdateManager.openInstallPermissionSettings(context)
-                            status = "Allow installs for VUEO, then return and choose Update again."
-                        } else {
-                            downloading = true
-                            progress = 0
-                            scope.launch {
-                                TvUpdateManager.downloadAndInstall(context.applicationContext, available) { progress = it }
-                                    .onFailure { status = it.message ?: "Unable to install update." }
-                                downloading = false
+                        if (!downloading) {
+                            if (TvUpdateManager.needsInstallPermission(context)) {
+                                TvUpdateManager.openInstallPermissionSettings(context)
+                                status = "Allow installs for VUEO, then return and choose Update again."
+                            } else {
+                                downloading = true
+                                progress = 0
+                                scope.launch {
+                                    TvUpdateManager.downloadAndInstall(context.applicationContext, available) { progress = it }
+                                        .onFailure { status = it.message ?: "Unable to install update." }
+                                    downloading = false
+                                }
                             }
                         }
                     },
