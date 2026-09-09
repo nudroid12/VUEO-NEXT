@@ -192,7 +192,6 @@ import com.vueo.mobile.core.enrichment.MediaRating
 import com.vueo.mobile.core.enrichment.RichDetailsClient
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
-import com.vueo.shared.core.plugin.ProviderPerformanceSnapshot
 import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
@@ -2218,7 +2217,7 @@ private fun PluginRepositoryCard(
                 }
 
             Text(
-                text = "PROVIDERS • PERFORMANCE ORDER",
+                text = "PROVIDERS",
                 color = VueoPalette.Muted,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -2232,7 +2231,7 @@ private fun PluginRepositoryCard(
                 color = VueoPalette.SurfaceElevated,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    rankedProviders.forEachIndexed { index, entry ->
+                    rankedProviders.forEach { entry ->
                         val provider = entry.provider
                         val health = entry.health
                         val enabled = store.isProviderEnabled(repository, provider)
@@ -2241,8 +2240,6 @@ private fun PluginRepositoryCard(
                             repository = repository,
                             provider = provider,
                             health = health,
-                            performance = healthStore.performance(health),
-                            rank = index + 1,
                             enabled = enabled,
                             providerCodeReady = codeStore.isReady(repository, provider),
                             onEnabledChanged = { next ->
@@ -2262,8 +2259,6 @@ private fun ProviderHealthRow(
     repository: PluginRepositoryDescriptor,
     provider: com.vueo.mobile.core.plugin.PluginProviderDescriptor,
     health: ProviderHealthRecord?,
-    performance: ProviderPerformanceSnapshot,
-    rank: Int,
     enabled: Boolean,
     providerCodeReady: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
@@ -2276,11 +2271,6 @@ private fun ProviderHealthRow(
         mutableStateOf(false)
     }
 
-    val effectiveStatus = if (!enabled) {
-        "Disabled"
-    } else {
-        health?.status?.label ?: ProviderHealthStatus.UNKNOWN.label
-    }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -2291,26 +2281,8 @@ private fun ProviderHealthRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "#$rank  ${provider.name}",
+                    provider.name,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                val performanceDetails = buildList {
-                    add("Score ${performance.score}")
-                    performance.hitRatePercent?.let { add("$it% hit") }
-                    performance.averageResponseMs?.let { add(formatProviderAverageResponse(it)) }
-                    if (performance.historyRuns > 0) {
-                        add("${performance.historyRuns} runs")
-                    } else {
-                        add("no history")
-                    }
-                }.joinToString(" • ")
-                Text(
-                    performanceDetails,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f),
-                    fontSize = 10.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2336,24 +2308,6 @@ private fun ProviderHealthRow(
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.End,
-            ) {
-                Text(
-                    effectiveStatus,
-                    color = providerStatusColor(enabled, health),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-
-                health?.responseMs?.let { responseMs ->
-                    Text(
-                        "${responseMs} ms",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .45f),
-                        fontSize = 10.sp,
-                    )
-                }
-            }
 
             if (health != null) {
                 IconButton(

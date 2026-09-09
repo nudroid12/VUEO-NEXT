@@ -733,25 +733,18 @@ private fun TvProviderSettings(
                             provider.name.lowercase()
                         }
                     )
-            rankedProviders.forEachIndexed { index, (provider, health) ->
+            rankedProviders.forEach { (provider, health) ->
                 val enabled = runtime.pluginStore.isProviderEnabled(repository, provider)
-                val performance = healthStore.performance(health)
-                val performanceSummary = buildList {
-                    add("Score ${performance.score}")
-                    performance.hitRatePercent?.let { add("$it% hit") }
-                    performance.averageResponseMs?.let { add(formatTvProviderAverageResponse(it)) }
-                    if (performance.historyRuns > 0) add("${performance.historyRuns} runs") else add("no history")
-                }.joinToString(" • ")
                 add(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
-                        title = "#${index + 1}  ${provider.name}",
+                        title = provider.name,
                         subtitle = buildString {
-                            append(performanceSummary)
-                            append(" • ")
-                            append(health?.status?.label ?: "Unknown")
-                            provider.description?.takeIf { it.isNotBlank() }?.let { append(" • ").append(it) }
-                            append(" • OK enable or disable • → diagnostics")
+                            provider.description?.takeIf { it.isNotBlank() }?.let {
+                                append(it)
+                                append(" • ")
+                            }
+                            append("OK enable or disable • → diagnostics")
                         },
                         value = if (enabled) "On" else "Off",
                         enabled = repoEnabled && pluginsEnabled,
@@ -779,14 +772,6 @@ private fun TvProviderSettings(
         topLabel = "Content Manager",
     )
 }
-
-private fun formatTvProviderAverageResponse(responseMs: Long): String =
-    if (responseMs < 1_000L) {
-        "${responseMs} ms avg"
-    } else {
-        val tenths = ((responseMs + 50L) / 100L) / 10.0
-        "${tenths}s avg"
-    }
 
 @Composable
 private fun TvCatalogSettings(
