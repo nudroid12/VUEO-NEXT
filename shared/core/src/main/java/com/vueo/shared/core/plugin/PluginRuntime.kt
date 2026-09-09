@@ -3498,6 +3498,11 @@ private fun emptyDiscoveryResult():
             response
                 ?.optString("error")
                 ?.takeIf { it.isNotBlank() }
+        val streamCount =
+            response
+                ?.optJSONArray("streams")
+                ?.length()
+                ?: 0
 
         return buildString {
             append("url=")
@@ -3509,7 +3514,8 @@ private fun emptyDiscoveryResult():
                 append(" error=")
                 append(error.take(120))
             } else {
-                append(" result=ok")
+                append(" result=ok streams=")
+                append(streamCount)
             }
         }
     }

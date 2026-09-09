@@ -125,16 +125,13 @@ internal class PluginWebViewResolver(
                     headers["Cookie"] = refreshedCookie
                 }
 
-                /*
-                 * Cloudstream's MSM21 ExtractorLink explicitly uses the mirror
-                 * URL as playback referer. Do the same here instead of trusting
-                 * the iframe's transient request Referer.
-                 */
                 headers["User-Agent"] =
                     headers["User-Agent"] ?: request.userAgent
                 headers["Accept"] =
                     headers["Accept"] ?: "*/*"
-                headers["Referer"] = request.url
+                headers["Referer"] =
+                    headers["Referer"]
+                        ?: request.referer.ifBlank { request.url }
 
                 return headers
             }
@@ -206,11 +203,12 @@ internal class PluginWebViewResolver(
                 label: String,
                 rawUrl: String?,
                 headers: Map<String, String>,
+                forcePlayable: Boolean = false,
             ) {
                 val fixedUrl = rawUrl
                     ?.trim()
                     ?.toAbsoluteUrl(request.url)
-                    ?.takeIf { request.isStreamUrl(it) }
+                    ?.takeIf { forcePlayable || request.isStreamUrl(it) }
                     ?: return
 
                 val fixedHeaders = headers.toMutableMap().apply {
@@ -270,6 +268,45 @@ internal class PluginWebViewResolver(
                             )
                         }
                     }
+
+                    clean.startsWith("VUEO_CANDIDATE|") -> {
+                        val parts = clean.split("|", limit = 3)
+                        if (parts.size >= 3) {
+                            val file = parts[2]
+                            addStream(
+                                label = guessLabel(file),
+                                rawUrl = file,
+                                headers = request.defaultHeaders(),
+                            )
+                        }
+                    }
+
+                    clean.startsWith("VUEO_RESPONSE|") -> {
+                        val parts = clean.split("|", limit = 4)
+                        if (parts.size >= 4) {
+                            val mime = parts[1]
+                            val length = parts[2].toLongOrNull() ?: -1L
+                            val file = parts[3]
+                            if (request.isPlayableResponse(file, mime, length)) {
+                                addStream(
+                                    label = guessLabel(file),
+                                    rawUrl = file,
+                                    headers = request.defaultHeaders(),
+                                    forcePlayable = true,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            fun injectRuntimeHook(view: WebView?) {
+                if (!request.directLoad) return
+                runCatching {
+                    val hookScript = HOOK_JS
+                        .substringAfter("<script>")
+                        .substringBeforeLast("</script>")
+                    view?.evaluateJavascript(hookScript, null)
                 }
             }
 
@@ -706,20 +743,22 @@ internal class PluginWebViewResolver(
                         view: WebView?,
                         url: String?,
                         favicon: Bitmap?,
-                    ) = Unit
+                    ) {
+                        injectRuntimeHook(view)
+                    }
+
+                    override fun onPageCommitVisible(
+                        view: WebView?,
+                        url: String?,
+                    ) {
+                        injectRuntimeHook(view)
+                    }
 
                     override fun onPageFinished(
                         view: WebView?,
                         url: String?,
                     ) {
-                        if (!request.directLoad) return
-
-                        runCatching {
-                            val hookScript = HOOK_JS
-                                .substringAfter("<script>")
-                                .substringBeforeLast("</script>")
-                            view?.evaluateJavascript(hookScript, null)
-                        }
+                        injectRuntimeHook(view)
                     }
 
                     override fun shouldInterceptRequest(
@@ -743,11 +782,21 @@ internal class PluginWebViewResolver(
 
                         if (request.isStreamUrl(requestUrl)) {
                             captureStream(webRequest)
-                            return WebResourceResponse(
-                                "video/mp4",
-                                "UTF-8",
-                                ByteArrayInputStream(ByteArray(0)),
-                            )
+
+                            /*
+                             * Capture must be passive by default. Older builds
+                             * returned an empty response here, which stopped
+                             * JS/MSE players after their first source/API hit
+                             * and prevented the downstream manifest request from
+                             * ever being revealed.
+                             */
+                            if (request.blockMatchedRequests) {
+                                return WebResourceResponse(
+                                    "video/mp4",
+                                    "UTF-8",
+                                    ByteArrayInputStream(ByteArray(0)),
+                                )
+                            }
                         }
 
                         return super.shouldInterceptRequest(view, webRequest)
@@ -874,13 +923,49 @@ internal class PluginWebViewResolver(
         val viewportHeight: Int,
         val clickX: Float,
         val clickY: Float,
+        val blockMatchedRequests: Boolean,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
             if (value.isBlank()) return false
             if (blockedParts.any(value::contains)) return false
+
+            // Known final transports always stay eligible, even when a
+            // provider supplies extra match probes for an API/player endpoint.
+            if (DEFAULT_MATCH_PARTS.any(value::contains)) return true
+
+            // Source-discovery endpoints are probes, not playable streams.
+            // Treating them as final used to schedule an early WebView finish.
+            if (DEFAULT_DISCOVERY_PARTS.any(value::contains)) return false
+
             return matchParts.any(value::contains)
         }
+
+        fun isPlayableResponse(
+            rawUrl: String?,
+            contentType: String?,
+            contentLength: Long,
+        ): Boolean {
+            val value = rawUrl?.lowercase().orEmpty()
+            if (value.isBlank()) return false
+            if (blockedParts.any(value::contains)) return false
+            if (looksLikeMediaSegment(value)) return false
+            if (isStreamUrl(value)) return true
+
+            val mime = contentType?.lowercase().orEmpty()
+            return when {
+                mime.contains("application/vnd.apple.mpegurl") -> true
+                mime.contains("application/x-mpegurl") -> true
+                mime.contains("application/dash+xml") -> true
+                mime.startsWith("video/mp4") -> contentLength >= MIN_DIRECT_VIDEO_BYTES
+                mime.startsWith("video/webm") -> contentLength >= MIN_DIRECT_VIDEO_BYTES
+                mime.startsWith("video/x-m4v") -> contentLength >= MIN_DIRECT_VIDEO_BYTES
+                else -> false
+            }
+        }
+
+        private fun looksLikeMediaSegment(value: String): Boolean =
+            SEGMENT_PARTS.any(value::contains)
 
         fun defaultHeaders(): Map<String, String> =
             mapOf(
@@ -900,10 +985,12 @@ internal class PluginWebViewResolver(
                 val timeoutMs = json.optLong("timeoutMs", DEFAULT_WEBVIEW_TIMEOUT_MS)
                     .coerceIn(MIN_WEBVIEW_TIMEOUT_MS, MAX_WEBVIEW_TIMEOUT_MS)
 
-                val matchParts = json.optJSONArray("match")
-                    .toVueoStringList()
-                    .map { it.lowercase() }
-                    .ifEmpty { DEFAULT_MATCH_PARTS }
+                val matchParts = (
+                    DEFAULT_MATCH_PARTS +
+                        json.optJSONArray("match")
+                            .toVueoStringList()
+                            .map { it.lowercase() }
+                ).distinct()
 
                 val blockedParts = json.optJSONArray("blocked")
                     .toVueoStringList()
@@ -951,6 +1038,10 @@ internal class PluginWebViewResolver(
                         .toFloat(),
                     clickY = json.optDouble("clickY", viewportHeight / 2.0)
                         .toFloat(),
+                    blockMatchedRequests = json.optBoolean(
+                        "blockMatchedRequests",
+                        false,
+                    ),
                 )
             }
         }
@@ -1100,9 +1191,41 @@ internal class PluginWebViewResolver(
         private val DEFAULT_MATCH_PARTS = listOf(
             "/sora/",
             ".m3u8",
+            ".mpd",
             ".mp4",
             ".m4v",
+            ".webm",
+            ".mkv",
         )
+
+        private val DEFAULT_DISCOVERY_PARTS = listOf(
+            "/backend_/sources/",
+            "/backend/sources/",
+            "/api/source/",
+            "/api/sources/",
+            "/sources/berkas",
+            "/sources/valstrax",
+            "/sources/burat",
+            "/sources/zinogre",
+            "/sources/daedalus",
+        )
+
+        private val SEGMENT_PARTS = listOf(
+            ".m4s",
+            ".cmfv",
+            ".cmfa",
+            ".ts?",
+            "/segment/",
+            "/segments/",
+            "/chunk/",
+            "/chunks/",
+            "seg-",
+            "segment-",
+            "fragment-",
+            "init.mp4",
+        )
+
+        private const val MIN_DIRECT_VIDEO_BYTES = 512L * 1024L
 
         private val DEFAULT_BLOCKED_PARTS = listOf(
             "googlesyndication",
@@ -1140,9 +1263,60 @@ internal class PluginWebViewResolver(
 
   function abs(url) {
     if (!url) return "";
-    url = String(url);
+    try {
+      if (typeof url === "object" && url.url) url = url.url;
+    } catch(e) {}
+    url = String(url || "");
     if (url.indexOf("//") === 0) return "https:" + url;
+    try { return new URL(url, document.baseURI).href; } catch(e) {}
     return url;
+  }
+
+  function normalizeText(value) {
+    return String(value || "")
+      .replace(/\\u002f/ig, "/")
+      .replace(/\\\//g, "/")
+      .replace(/&amp;/g, "&");
+  }
+
+  function emitUrls(tag, value) {
+    try {
+      var text = normalizeText(value);
+      if (!text || text.length > 262144) return;
+      var matcher = /(https?:\/\/[^\s"'<>\\]+|\/\/[^\s"'<>\\]+)/ig;
+      var count = 0;
+      var match;
+      while ((match = matcher.exec(text)) && count < 32) {
+        cap("VUEO_CANDIDATE|" + String(tag || "scan") + "|" + abs(match[1]));
+        count++;
+      }
+    } catch(e) {}
+  }
+
+  function scanValue(value, tag, depth, seen) {
+    try {
+      if (depth > 4 || value == null) return;
+      if (typeof value === "string") {
+        emitUrls(tag, value);
+        return;
+      }
+      if (typeof value !== "object") return;
+      seen = seen || (typeof WeakSet !== "undefined" ? new WeakSet() : null);
+      if (seen) {
+        if (seen.has(value)) return;
+        seen.add(value);
+      }
+      if (Array.isArray(value)) {
+        for (var i = 0; i < value.length && i < 64; i++) {
+          scanValue(value[i], tag, depth + 1, seen);
+        }
+        return;
+      }
+      var keys = Object.keys(value);
+      for (var k = 0; k < keys.length && k < 64; k++) {
+        scanValue(value[keys[k]], tag, depth + 1, seen);
+      }
+    } catch(e) {}
   }
 
   function sendSources(list) {
@@ -1191,10 +1365,41 @@ internal class PluginWebViewResolver(
         }
       }
 
-      var videos = document.querySelectorAll("video");
+      var videos = document.querySelectorAll("video,source");
       for (var v = 0; v < videos.length; v++) {
-        var src = videos[v].currentSrc || videos[v].src || "";
-        if (src) cap("VUEO_VIDEO|" + abs(src));
+        var src = videos[v].currentSrc || videos[v].src || videos[v].getAttribute("src") || "";
+        if (src && String(src).indexOf("blob:") !== 0) {
+          cap("VUEO_VIDEO|" + abs(src));
+        }
+      }
+    } catch(e) {}
+  }
+
+  function inspectResponse(response) {
+    try {
+      if (!response) return;
+      var type = "";
+      var length = "-1";
+      try { type = response.headers.get("content-type") || ""; } catch(e) {}
+      try { length = response.headers.get("content-length") || "-1"; } catch(e) {}
+      var responseUrl = abs(response.url || "");
+      if (responseUrl) {
+        cap("VUEO_RESPONSE|" + type + "|" + length + "|" + responseUrl);
+      }
+
+      var lower = String(type || "").toLowerCase();
+      var numericLength = parseInt(length || "-1", 10);
+      var textLike =
+        lower.indexOf("json") !== -1 ||
+        lower.indexOf("text/") === 0 ||
+        lower.indexOf("javascript") !== -1 ||
+        lower.indexOf("xml") !== -1 ||
+        lower === "";
+
+      if (textLike && (numericLength < 0 || numericLength <= 524288)) {
+        response.clone().text().then(function(text) {
+          emitUrls("fetch-response", text);
+        }).catch(function(){});
       }
     } catch(e) {}
   }
@@ -1203,26 +1408,161 @@ internal class PluginWebViewResolver(
     var oldFetch = window.fetch;
     if (oldFetch) {
       window.fetch = function() {
-        try { cap("VUEO_FETCH|" + abs(arguments[0])); } catch(e) {}
-        return oldFetch.apply(this, arguments);
+        var requestUrl = "";
+        try { requestUrl = abs(arguments[0]); } catch(e) {}
+        if (requestUrl) cap("VUEO_FETCH|" + requestUrl);
+        return oldFetch.apply(this, arguments).then(function(response) {
+          inspectResponse(response);
+          return response;
+        });
       };
     }
   } catch(e) {}
 
   try {
     var oldOpen = XMLHttpRequest.prototype.open;
+    var oldSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function(method, requestUrl) {
-      try { cap("VUEO_XHR|" + abs(requestUrl)); } catch(e) {}
+      try {
+        this.__vueoRequestUrl = abs(requestUrl);
+        cap("VUEO_XHR|" + this.__vueoRequestUrl);
+      } catch(e) {}
       return oldOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function() {
+      try {
+        if (!this.__vueoCaptureBound) {
+          this.__vueoCaptureBound = true;
+          this.addEventListener("load", function() {
+            try {
+              var responseUrl = abs(this.responseURL || this.__vueoRequestUrl || "");
+              var type = this.getResponseHeader("content-type") || "";
+              var length = this.getResponseHeader("content-length") || "-1";
+              if (responseUrl) {
+                cap("VUEO_RESPONSE|" + type + "|" + length + "|" + responseUrl);
+              }
+              var lower = String(type || "").toLowerCase();
+              var textLike =
+                lower.indexOf("json") !== -1 ||
+                lower.indexOf("text/") === 0 ||
+                lower.indexOf("javascript") !== -1 ||
+                lower.indexOf("xml") !== -1 ||
+                lower === "";
+              if (textLike && (!this.responseType || this.responseType === "text")) {
+                emitUrls("xhr-response", this.responseText || "");
+              }
+            } catch(e) {}
+          });
+        }
+      } catch(e) {}
+      return oldSend.apply(this, arguments);
     };
   } catch(e) {}
 
+  try {
+    var oldJsonParse = JSON.parse;
+    JSON.parse = function(text, reviver) {
+      var result = oldJsonParse.apply(this, arguments);
+      try {
+        setTimeout(function() {
+          scanValue(result, "json-parse", 0, null);
+        }, 0);
+      } catch(e) {}
+      return result;
+    };
+  } catch(e) {}
+
+  try {
+    var oldAtob = window.atob;
+    if (oldAtob) {
+      window.atob = function(value) {
+        var decoded = oldAtob.apply(this, arguments);
+        try {
+          if (decoded && decoded.length <= 262144) emitUrls("atob", decoded);
+        } catch(e) {}
+        return decoded;
+      };
+    }
+  } catch(e) {}
+
+  try {
+    if (window.crypto && window.crypto.subtle && window.crypto.subtle.decrypt) {
+      var oldDecrypt = window.crypto.subtle.decrypt.bind(window.crypto.subtle);
+      window.crypto.subtle.decrypt = function() {
+        return oldDecrypt.apply(this, arguments).then(function(result) {
+          try {
+            if (result && result.byteLength && result.byteLength <= 524288) {
+              var decoded = new TextDecoder("utf-8").decode(result);
+              emitUrls("webcrypto-decrypt", decoded);
+            }
+          } catch(e) {}
+          return result;
+        });
+      };
+    }
+  } catch(e) {}
+
+  try {
+    var oldSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      try {
+        if (String(name || "").toLowerCase() === "src") {
+          var tag = String(this.tagName || "").toLowerCase();
+          if (tag === "video" || tag === "source") {
+            var mediaUrl = abs(value);
+            if (mediaUrl && mediaUrl.indexOf("blob:") !== 0) {
+              cap("VUEO_VIDEO|" + mediaUrl);
+            }
+          }
+        }
+      } catch(e) {}
+      return oldSetAttribute.apply(this, arguments);
+    };
+  } catch(e) {}
+
+  try {
+    var observer = new MutationObserver(function() {
+      inspectPlayer();
+    });
+    observer.observe(document.documentElement || document, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["src"]
+    });
+  } catch(e) {}
+
+  try {
+    if (window.URL && window.URL.createObjectURL) {
+      var oldCreateObjectURL = window.URL.createObjectURL.bind(window.URL);
+      window.URL.createObjectURL = function(value) {
+        var objectUrl = oldCreateObjectURL(value);
+        try {
+          var type = value && value.type ? String(value.type) : "";
+          var size = value && typeof value.size === "number" ? value.size : -1;
+          cap("VUEO_BLOB|" + type + "|" + size + "|" + objectUrl);
+        } catch(e) {}
+        return objectUrl;
+      };
+    }
+  } catch(e) {}
+
+  try {
+    if (window.MediaSource && window.MediaSource.prototype.addSourceBuffer) {
+      var oldAddSourceBuffer = window.MediaSource.prototype.addSourceBuffer;
+      window.MediaSource.prototype.addSourceBuffer = function(mime) {
+        try { cap("VUEO_MSE|" + String(mime || "")); } catch(e) {}
+        return oldAddSourceBuffer.apply(this, arguments);
+      };
+    }
+  } catch(e) {}
+
   inspectPlayer();
-  setTimeout(inspectPlayer, 300);
-  setTimeout(inspectPlayer, 700);
-  setTimeout(inspectPlayer, 1200);
-  setTimeout(inspectPlayer, 2000);
-  setInterval(inspectPlayer, 1000);
+  setTimeout(inspectPlayer, 250);
+  setTimeout(inspectPlayer, 600);
+  setTimeout(inspectPlayer, 1000);
+  setTimeout(inspectPlayer, 1800);
+  setInterval(inspectPlayer, 900);
 })();
 </script>
         """
