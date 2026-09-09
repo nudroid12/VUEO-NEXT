@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,12 +40,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.tv.R
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
@@ -419,27 +422,40 @@ private fun nuvioRatingDisplayValue(rating: MediaRating): String {
 @Composable
 private fun NuvioRatingMark(source: String) {
     val normalized = source.lowercase()
-    val (label, background, foreground) = when (normalized) {
-        "imdb" -> Triple("IMDb", Color(0xFFF5C518), Color.Black)
-        "tmdb" -> Triple("TMDB", Color(0xFF0D253F), Color(0xFF90CEA1))
-        "tomatoes" -> Triple("RT", Color(0xFFFA320A), Color.White)
-        "metacritic" -> Triple("M", Color(0xFFFFCC34), Color.Black)
-        "trakt" -> Triple("T", Color(0xFFED1C24), Color.White)
-        else -> Triple(source.take(4).uppercase(), TvDesign.White.copy(alpha = .16f), TvDesign.White)
+    val logo = when (normalized) {
+        "imdb" -> R.drawable.rating_imdb
+        "tmdb" -> R.drawable.rating_tmdb
+        "tomatoes" -> R.drawable.rating_rotten_tomatoes
+        "metacritic" -> R.drawable.rating_metacritic
+        "trakt" -> R.drawable.rating_trakt
+        else -> null
+    }
+
+    if (logo != null) {
+        Image(
+            painter = painterResource(logo),
+            contentDescription = source,
+            modifier = Modifier.size(
+                width = if (normalized == "imdb") 34.dp else 20.dp,
+                height = 20.dp,
+            ),
+            contentScale = ContentScale.Fit,
+        )
+        return
     }
 
     Box(
         modifier = Modifier
             .height(22.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(background)
-            .padding(horizontal = if (label.length > 2) 5.dp else 6.dp),
+            .background(TvDesign.White.copy(alpha = .16f))
+            .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = label,
-            color = foreground,
-            fontSize = if (label.length > 3) 8.sp else 10.sp,
+            text = source.take(4).uppercase(),
+            color = TvDesign.White,
+            fontSize = 9.sp,
             fontWeight = FontWeight.Black,
             maxLines = 1,
         )
