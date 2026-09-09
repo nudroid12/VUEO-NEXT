@@ -369,7 +369,7 @@ jobs:
                 | sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
                 | head -n 1
             )"
-            [ "$MOBILE_PACKAGE" = "com.vueo.app" ] || {
+            [ "$MOBILE_PACKAGE" = "com.vueo.mobile" ] || {
               echo "::error::Wrong Mobile package: $MOBILE_PACKAGE"
               exit 1
             }
