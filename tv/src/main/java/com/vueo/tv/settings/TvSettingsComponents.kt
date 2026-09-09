@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -95,6 +96,7 @@ private data class TvSettingsEmbeddedHost(
 
 private val LocalTvSettingsEmbeddedHost = staticCompositionLocalOf<TvSettingsEmbeddedHost?> { null }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvSettingsMasterDetailShell(
     categories: List<TvSettingsNavItem>,
@@ -699,6 +701,7 @@ private fun TvSettingsMetricsRow(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvSettingsListScreen(
     title: String,
