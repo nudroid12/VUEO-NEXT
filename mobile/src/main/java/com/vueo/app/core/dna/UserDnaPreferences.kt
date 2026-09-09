@@ -1,4 +1,3 @@
-package com.vueo.app.core.dna
-
-/** Mobile compatibility alias. Canonical DNA preferences live in :shared:core. */
-typealias UserDnaPreferences = com.vueo.shared.core.dna.UserDnaPreferences
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

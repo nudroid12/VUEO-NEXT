@@ -1,4 +1,3 @@
-package com.vueo.app.core.stremio
-
-/** Mobile compatibility alias for the canonical Shared Core Stremio extension. */
-typealias StremioAddonProvider = com.vueo.shared.core.extensions.StremioAddonExtension
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

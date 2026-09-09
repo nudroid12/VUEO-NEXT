@@ -12,7 +12,7 @@ Before making changes, especially with an AI coding agent, read:
 ## Modules
 
 ```text
-:mobile       Android Mobile, com.vueo.app
+:mobile       Android Mobile, com.vueo.mobile
 :tv           Android TV, com.vueo.tv
 :shared:core  Shared domain/runtime/storage/integration logic
 ```

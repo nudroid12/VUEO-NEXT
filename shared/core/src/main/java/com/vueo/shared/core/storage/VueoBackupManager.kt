@@ -314,7 +314,7 @@ object VueoBackupManager {
 
         val aliases = when {
             targetPackage == "com.vueo.tv" && sourcePackage != "com.vueo.tv" -> mobileToTvAliases
-            targetPackage == "com.vueo.app" && sourcePackage == "com.vueo.tv" -> tvToMobileAliases
+            targetPackage == "com.vueo.mobile" && sourcePackage == "com.vueo.tv" -> tvToMobileAliases
             else -> emptyMap()
         }
 

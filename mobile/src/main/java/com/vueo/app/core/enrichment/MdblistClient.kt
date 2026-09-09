@@ -1,5 +1,3 @@
-package com.vueo.app.core.enrichment
-
-/** Mobile compatibility facade. Canonical MDBList enhancement lives in :shared:core. */
-val MdblistClient = com.vueo.shared.core.enrichment.MdblistClient
-typealias MediaRating = com.vueo.shared.core.enrichment.MediaRating
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

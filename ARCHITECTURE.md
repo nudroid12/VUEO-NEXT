@@ -4,7 +4,7 @@ VUEO-NEXT is the clean monorepo for the VUEO ecosystem.
 
 ## Applications
 
-- `mobile/` -> Android Mobile application, `com.vueo.app`
+- `mobile/` -> Android Mobile application, `com.vueo.mobile`
 - `tv/` -> Android TV application, `com.vueo.tv`
 - `shared/core/` -> reusable VUEO domain and runtime logic, no application ID
 
@@ -36,7 +36,7 @@ Every shared-core migration must keep both application modules buildable.
 
 | Product | Application ID |
 | --- | --- |
-| VUEO Mobile | `com.vueo.app` |
+| VUEO Mobile | `com.vueo.mobile` |
 | VUEO TV | `com.vueo.tv` |
 
 These IDs must not be casually changed after release/signing is established.

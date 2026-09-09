@@ -1,4 +1,3 @@
-package com.vueo.app.core.extensions
-
-/** Mobile compatibility alias for the canonical shared catalog cache. */
-typealias CatalogDiscoveryCache = com.vueo.shared.core.extensions.CatalogDiscoveryCache
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

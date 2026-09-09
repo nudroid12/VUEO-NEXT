@@ -1,9 +1,3 @@
-package com.vueo.app.core.storage
-
-/*
- * Backup, restore and reset are implemented in
- * com.vueo.shared.core.storage.VueoBackupManager.
- *
- * This source file is intentionally kept as an empty migration marker so
- * replacement-only patch workflows remove the former Mobile implementation.
- */
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

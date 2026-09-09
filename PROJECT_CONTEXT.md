@@ -40,7 +40,7 @@ Locked application IDs:
 
 | Product | Application ID |
 | --- | --- |
-| VUEO Mobile | `com.vueo.app` |
+| VUEO Mobile | `com.vueo.mobile` |
 | VUEO TV | `com.vueo.tv` |
 
 Do not casually change these package/application IDs.
@@ -67,7 +67,7 @@ Rules:
 
 ## 4. Mobile compatibility files are often aliases
 
-Several files under `mobile/src/main/java/com/vueo/app/core/...` intentionally preserve old Mobile package names while delegating to Shared Core.
+Several files under `mobile/src/main/java/com/vueo/mobile/core/...` intentionally preserve Mobile compatibility facades while delegating to Shared Core.
 
 Examples include:
 
@@ -188,7 +188,7 @@ Mobile is now in a stabilisation phase. Avoid adding new Mobile features unless 
 
 Architecture cleanup started in 28F. The Content Manager UI family was extracted from the oversized `VueoApp.kt` into:
 
-- `mobile/src/main/java/com/vueo/app/ui/VueoContentManager.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoContentManager.kt`
 
 This extraction is presentation-only. Content Manager data models, stores, provider runtime and Shared Core contracts were not rewritten. Continue reducing `VueoApp.kt` only in small, behaviour-preserving slices. Do not move startup/profile/player logic during unrelated cleanup.
 
@@ -422,11 +422,11 @@ Accent applies to product accents/progress/status. White + scale focus remains t
 
 High-value Mobile UI entry points now include:
 
-- `mobile/src/main/java/com/vueo/app/ui/VueoApp.kt`
-- `mobile/src/main/java/com/vueo/app/ui/VueoContentManager.kt`
-- `mobile/src/main/java/com/vueo/app/ui/VueoSettings.kt`
-- `mobile/src/main/java/com/vueo/app/ui/VueoProfiles.kt`
-- `mobile/src/main/java/com/vueo/app/ui/VueoDesign.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoApp.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoContentManager.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoSettings.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoProfiles.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/VueoDesign.kt`
 
 `VueoApp.kt` is still large. Extract only coherent screen families, keep navigation contracts stable, and validate regression-sensitive flows after each extraction.
 

@@ -1,6 +1,3 @@
-package com.vueo.app.core.player
-
-/** Mobile compatibility facade. Canonical skip-segment repository lives in :shared:core. */
-typealias PlayerSkipKind = com.vueo.shared.core.player.PlayerSkipKind
-typealias PlayerSkipSegment = com.vueo.shared.core.player.PlayerSkipSegment
-val PlayerSkipRepository = com.vueo.shared.core.player.PlayerSkipRepository
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

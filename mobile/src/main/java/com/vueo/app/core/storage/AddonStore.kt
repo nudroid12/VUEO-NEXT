@@ -1,4 +1,3 @@
-package com.vueo.app.core.storage
-
-/** Mobile compatibility alias. Canonical content-manager state lives in shared/core. */
-typealias AddonStore = com.vueo.shared.core.storage.ContentManagerStore
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

@@ -1,7 +1,3 @@
-package com.vueo.app.core.plugin
-
-/** Mobile compatibility aliases. Provider health state and migration live in shared/core. */
-typealias ProviderHealthStatus = com.vueo.shared.core.plugin.ProviderHealthStatus
-typealias ProviderHealthRecord = com.vueo.shared.core.plugin.ProviderHealthRecord
-typealias ProviderHealthSummary = com.vueo.shared.core.plugin.ProviderHealthSummary
-typealias PluginHealthStore = com.vueo.shared.core.plugin.PluginHealthStore
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

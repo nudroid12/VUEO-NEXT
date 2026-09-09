@@ -1,13 +1,3 @@
-package com.vueo.app.core.extensions
-
-import com.vueo.app.core.stremio.StremioAddonProvider
-
-object ExtensionInstaller {
-    suspend fun installStremioAddon(manifestUrl: String): MediaExtension {
-        val url = manifestUrl.trim()
-        require(url.startsWith("https://")) {
-            "Only HTTPS addon manifest URLs are accepted."
-        }
-        return StremioAddonProvider.fromManifestUrl(url)
-    }
-}
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.

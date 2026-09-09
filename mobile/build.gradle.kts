@@ -17,11 +17,11 @@ val vueoKeystorePassword =
         ?.takeIf { it.isNotBlank() }
 
 android {
-    namespace = "com.vueo.app"
+    namespace = "com.vueo.mobile"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.vueo.app"
+        applicationId = "com.vueo.mobile"
         minSdk = 23
         targetSdk = 36
         versionCode = vueoCiVersionCode ?: 23

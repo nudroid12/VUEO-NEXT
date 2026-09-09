@@ -26,7 +26,7 @@ This document protects already-approved Mobile behaviour while TV work continues
 
 ## Content Manager
 
-- Content Manager presentation lives in `mobile/src/main/java/com/vueo/app/ui/VueoContentManager.kt`.
+- Content Manager presentation lives in `mobile/src/main/java/com/vueo/mobile/ui/VueoContentManager.kt`.
 - Addon enabled state and per-catalog enabled state are separate persisted controls.
 - Hidden catalogs retain their saved order.
 - Home discovery receives both saved catalog order and disabled catalog keys.

@@ -1,5 +1,3 @@
-package com.vueo.app.core.storage
-
-/** Mobile compatibility aliases. Canonical library/history storage lives in :shared:core. */
-typealias LibraryPlaybackEntry = com.vueo.shared.core.storage.LibraryPlaybackEntry
-typealias LibraryStore = com.vueo.shared.core.storage.LibraryStore
+// Package migration tombstone.
+// The implementation moved to com.vueo.mobile.
+// This inert file intentionally replaces the old source because the ZIP apply workflow does not delete moved files.
