@@ -37,6 +37,13 @@ data class ProviderHealthRecord(
     val logs: List<String> =
         emptyList(),
     val lastCheckedEpochMs: Long,
+    val historyRuns: Int = 0,
+    val historySuccesses: Int = 0,
+    val historyNoResults: Int = 0,
+    val historyHardFailures: Int = 0,
+    val consecutiveHardFailures: Int = 0,
+    val averageResponseMs: Long? = null,
+    val lastSuccessEpochMs: Long? = null,
 )
 
 class PluginHealthStore(
@@ -101,14 +108,32 @@ class PluginHealthStore(
     ) {
         migrateLegacyIfNeeded()
 
+        val key =
+            recordKey(
+                record
+                    .repositoryManifestUrl,
+                record.providerId,
+            )
+        val previous =
+            prefs.getString(
+                key,
+                null,
+            )?.let { raw ->
+                runCatching {
+                    JSONObject(raw)
+                        .toRecord()
+                }.getOrNull()
+            }
+        val merged =
+            mergeProviderHistory(
+                previous = previous,
+                latest = record,
+            )
+
         prefs.edit()
             .putString(
-                recordKey(
-                    record
-                        .repositoryManifestUrl,
-                    record.providerId,
-                ),
-                record
+                key,
+                merged
                     .toJson()
                     .toString(),
             )
@@ -140,6 +165,11 @@ class PluginHealthStore(
 
         editor.apply()
     }
+
+    fun performance(
+        record: ProviderHealthRecord?,
+    ): ProviderPerformanceSnapshot =
+        providerPerformance(record)
 
     fun summary(
         repositories:
@@ -413,6 +443,40 @@ private fun ProviderHealthRecord
             "lastCheckedEpochMs",
             lastCheckedEpochMs,
         )
+        .put(
+            "historyRuns",
+            historyRuns,
+        )
+        .put(
+            "historySuccesses",
+            historySuccesses,
+        )
+        .put(
+            "historyNoResults",
+            historyNoResults,
+        )
+        .put(
+            "historyHardFailures",
+            historyHardFailures,
+        )
+        .put(
+            "consecutiveHardFailures",
+            consecutiveHardFailures,
+        )
+        .apply {
+            averageResponseMs?.let {
+                put(
+                    "averageResponseMs",
+                    it,
+                )
+            }
+            lastSuccessEpochMs?.let {
+                put(
+                    "lastSuccessEpochMs",
+                    it,
+                )
+            }
+        }
 
 private fun JSONObject
     .toRecord():
@@ -506,6 +570,47 @@ private fun JSONObject
                 "lastCheckedEpochMs",
                 0L,
             ),
+        historyRuns =
+            optInt(
+                "historyRuns",
+                0,
+            ).coerceAtLeast(0),
+        historySuccesses =
+            optInt(
+                "historySuccesses",
+                0,
+            ).coerceAtLeast(0),
+        historyNoResults =
+            optInt(
+                "historyNoResults",
+                0,
+            ).coerceAtLeast(0),
+        historyHardFailures =
+            optInt(
+                "historyHardFailures",
+                0,
+            ).coerceAtLeast(0),
+        consecutiveHardFailures =
+            optInt(
+                "consecutiveHardFailures",
+                0,
+            ).coerceAtLeast(0),
+        averageResponseMs =
+            if (has("averageResponseMs")) {
+                optLong(
+                    "averageResponseMs"
+                )
+            } else {
+                null
+            },
+        lastSuccessEpochMs =
+            if (has("lastSuccessEpochMs")) {
+                optLong(
+                    "lastSuccessEpochMs"
+                )
+            } else {
+                null
+            },
     )
 }
 

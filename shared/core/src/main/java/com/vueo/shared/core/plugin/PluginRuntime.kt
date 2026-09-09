@@ -208,6 +208,18 @@ suspend fun discoverProgressive(
                     it.repositoryManifestUrl to
                         it.providerId
                 }
+        val knownHealthSortKeys =
+            knownHealth.mapValues {
+                (_, record) ->
+
+                providerHealthSortKey(
+                    record
+                )
+            }
+        val defaultHealthSortKey =
+            providerHealthSortKey(
+                null
+            )
 
         val targets =
             store.repositories()
@@ -240,22 +252,34 @@ suspend fun discoverProgressive(
                             PluginRepositoryDescriptor,
                             PluginProviderDescriptor
                         >
-                    > {
-                        val record =
-                            knownHealth[
-                                it.first.manifestUrl to
-                                    it.second.id
-                            ]
-
-                        providerPriority(
-                            record?.status
-                        )
-                    }.thenBy {
-                        knownHealth[
-                            it.first.manifestUrl to
-                                it.second.id
+                    > { target ->
+                        knownHealthSortKeys[
+                            target.first.manifestUrl to
+                                target.second.id
+                        ]?.availabilityTier
+                            ?: defaultHealthSortKey
+                                .availabilityTier
+                    }.thenByDescending { target ->
+                        knownHealthSortKeys[
+                            target.first.manifestUrl to
+                                target.second.id
+                        ]?.performanceScore
+                            ?: defaultHealthSortKey
+                                .performanceScore
+                    }.thenBy { target ->
+                        knownHealthSortKeys[
+                            target.first.manifestUrl to
+                                target.second.id
+                        ]?.statusTier
+                            ?: defaultHealthSortKey
+                                .statusTier
+                    }.thenBy { target ->
+                        knownHealthSortKeys[
+                            target.first.manifestUrl to
+                                target.second.id
                         ]?.responseMs
-                            ?: Long.MAX_VALUE
+                            ?: defaultHealthSortKey
+                                .responseMs
                     }
                 )
 
@@ -751,22 +775,6 @@ private fun emptyDiscoveryResult():
         failedProviders = 0,
         diagnostics = emptyList(),
     )
-
-private fun providerPriority(
-    status: ProviderHealthStatus?,
-): Int =
-    when (status) {
-        ProviderHealthStatus.ONLINE -> 0
-        ProviderHealthStatus.SLOW -> 1
-        ProviderHealthStatus.UNKNOWN,
-        null -> 2
-        ProviderHealthStatus.NO_RESULTS -> 3
-        ProviderHealthStatus.TIMEOUT,
-        ProviderHealthStatus.BLOCKED,
-        ProviderHealthStatus.FAILED -> 4
-        ProviderHealthStatus.NEEDS_SETUP,
-        ProviderHealthStatus.UNAVAILABLE -> 5
-    }
 
     private suspend fun runProvider(
         repository: PluginRepositoryDescriptor,

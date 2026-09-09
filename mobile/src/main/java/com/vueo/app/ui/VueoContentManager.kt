@@ -64,6 +64,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -191,6 +192,7 @@ import com.vueo.app.core.enrichment.MediaRating
 import com.vueo.app.core.enrichment.RichDetailsClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.app.core.dna.UserDnaEngine
@@ -1209,6 +1211,9 @@ internal fun PluginsScreen(
     var showRuntimeDiagnostics by remember {
         mutableStateOf(false)
     }
+    var showProviderHealth by remember {
+        mutableStateOf(false)
+    }
 
     fun refreshRepositories() {
         repositories =
@@ -1241,6 +1246,17 @@ internal fun PluginsScreen(
             it.manifestUrl ==
                 selectedRepositoryUrl
         }
+
+    if (showProviderHealth) {
+        ProviderHealthOverviewScreen(
+            repositories = repositories,
+            store = store,
+            healthStore = healthStore,
+            healthRevision = healthRevision,
+            onBack = { showProviderHealth = false },
+        )
+        return
+    }
 
     Column(
         modifier =
@@ -1323,7 +1339,9 @@ internal fun PluginsScreen(
                         pluginStore = store,
                     )
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showProviderHealth = true },
                     shape = RoundedCornerShape(17.dp),
                     color = VueoPalette.SurfaceElevated,
                 ) {
@@ -1347,17 +1365,12 @@ internal fun PluginsScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        IconButton(
-                            onClick = { healthRevision++ },
-                            modifier = Modifier.size(38.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh health",
-                                tint = Color.White.copy(alpha = .82f),
-                                modifier = Modifier.size(19.dp),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Open Provider Health",
+                            tint = Color.White.copy(alpha = .72f),
+                            modifier = Modifier.size(24.dp),
+                        )
                     }
                 }
             }
@@ -1731,6 +1744,244 @@ internal fun PluginsScreen(
         )
     }
 }
+
+private data class RankedProviderHealthEntry(
+    val repository: PluginRepositoryDescriptor,
+    val provider: com.vueo.app.core.plugin.PluginProviderDescriptor,
+    val health: ProviderHealthRecord?,
+)
+
+@Composable
+private fun ProviderHealthOverviewScreen(
+    repositories: List<PluginRepositoryDescriptor>,
+    store: PluginStore,
+    healthStore: PluginHealthStore,
+    healthRevision: Int,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    val knownHealth =
+        remember(repositories, healthRevision) {
+            healthStore.records()
+                .associateBy {
+                    it.repositoryManifestUrl to it.providerId
+                }
+        }
+    val rankedProviders =
+        remember(repositories, knownHealth, healthRevision) {
+            repositories
+                .filter(store::isRepositoryEnabled)
+                .flatMap { repository ->
+                    repository.providers
+                        .filter { provider ->
+                            store.isProviderEnabled(repository, provider)
+                        }
+                        .map { provider ->
+                            RankedProviderHealthEntry(
+                                repository = repository,
+                                provider = provider,
+                                health = knownHealth[repository.manifestUrl to provider.id],
+                            )
+                        }
+                }
+                .sortedWith(
+                    compareBy<RankedProviderHealthEntry> { entry ->
+                        providerHealthSortKey(entry.health).availabilityTier
+                    }.thenByDescending { entry ->
+                        providerHealthSortKey(entry.health).performanceScore
+                    }.thenBy { entry ->
+                        providerHealthSortKey(entry.health).statusTier
+                    }.thenBy { entry ->
+                        providerHealthSortKey(entry.health).responseMs
+                    }.thenBy { entry ->
+                        entry.provider.name.lowercase()
+                    }
+                )
+        }
+    val measuredProviders =
+        rankedProviders.count { entry ->
+            healthStore.performance(entry.health).historyRuns > 0
+        }
+
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(
+            title = "Provider Health",
+            subtitle = "Historical provider performance",
+            onBack = onBack,
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 4.dp,
+                bottom = 116.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            item(key = "provider-health-explainer") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(17.dp),
+                    color = VueoPalette.SurfaceElevated,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text(
+                            text = "Smart provider order",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "$measuredProviders/${rankedProviders.size} enabled providers have scan history. " +
+                                "Ranking updates automatically after source scans.",
+                            color = VueoPalette.Muted,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp,
+                        )
+                        Text(
+                            text = "Score affects scan order only. Providers are not removed, and No Results is not treated as a hard failure.",
+                            color = VueoPalette.Muted.copy(alpha = .78f),
+                            fontSize = 9.5.sp,
+                            lineHeight = 13.sp,
+                        )
+                    }
+                }
+            }
+
+            if (rankedProviders.isEmpty()) {
+                item(key = "provider-health-empty") {
+                    Text(
+                        text = "No enabled providers.",
+                        color = VueoPalette.Muted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 18.dp),
+                    )
+                }
+            } else {
+                item(key = "provider-health-heading") {
+                    Text(
+                        text = "PROVIDER RANKING",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 1.dp),
+                    )
+                }
+
+                itemsIndexed(
+                    items = rankedProviders,
+                    key = { _, entry ->
+                        entry.repository.manifestUrl + ":" + entry.provider.id
+                    },
+                ) { index, entry ->
+                    ProviderHealthRankingRow(
+                        rank = index + 1,
+                        entry = entry,
+                        healthStore = healthStore,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderHealthRankingRow(
+    rank: Int,
+    entry: RankedProviderHealthEntry,
+    healthStore: PluginHealthStore,
+) {
+    val performance = healthStore.performance(entry.health)
+    val status = entry.health?.status ?: ProviderHealthStatus.UNKNOWN
+    val timing =
+        performance.averageResponseMs?.let(::formatProviderAverageResponse)
+            ?: "No timing"
+    val history =
+        if (performance.historyRuns > 0) {
+            val hit = performance.hitRatePercent?.let { "$it% hit" } ?: "No hit rate"
+            "$hit • $timing • ${performance.historyRuns} runs"
+        } else {
+            "No scan history yet"
+        }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(15.dp),
+        color = VueoPalette.SurfaceElevated,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "#$rank",
+                color = Color.White.copy(alpha = .52f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(34.dp),
+            )
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = entry.provider.name,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = entry.repository.name,
+                    color = VueoPalette.Muted.copy(alpha = .78f),
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = history,
+                    color = VueoPalette.Muted,
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "Score ${performance.score}",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = status.label,
+                    color = providerStatusColor(true, entry.health),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+private fun formatProviderAverageResponse(
+    responseMs: Long,
+): String =
+    if (responseMs < 1_000L) {
+        "${responseMs} ms avg"
+    } else {
+        val tenths = ((responseMs + 50L) / 100L) / 10.0
+        "${tenths}s avg"
+    }
 
 @Composable
 private fun RuntimeDiagnosticsDialog(
