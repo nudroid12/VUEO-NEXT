@@ -186,7 +186,6 @@ import com.vueo.app.core.extensions.SourceRanker
 import com.vueo.app.core.extensions.SourceCleaner
 import com.vueo.app.core.extensions.SourceDiscoveryCache
 import com.vueo.app.core.extensions.CatalogDiscoveryCache
-import com.vueo.app.core.enrichment.GeminiClient
 import com.vueo.app.core.enrichment.MdblistClient
 import com.vueo.app.core.enrichment.MediaRating
 import com.vueo.app.core.enrichment.RichDetailsClient

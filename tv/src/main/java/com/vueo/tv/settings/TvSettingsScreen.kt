@@ -58,7 +58,6 @@ private enum class TvSettingsPage {
     ENHANCEMENTS,
     ENHANCEMENT_TMDB,
     ENHANCEMENT_MDBLIST,
-    ENHANCEMENT_GEMINI,
     PLAYBACK,
     SUBTITLES,
     SOURCES,
@@ -95,8 +94,7 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
     TvSettingsPage.ENHANCEMENT_TMDB,
-    TvSettingsPage.ENHANCEMENT_MDBLIST,
-    TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
+    TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
     else -> this
 }
 
@@ -106,8 +104,7 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_CATALOGS,
     TvSettingsPage.ENHANCEMENT_TMDB,
-    TvSettingsPage.ENHANCEMENT_MDBLIST,
-    TvSettingsPage.ENHANCEMENT_GEMINI -> true
+    TvSettingsPage.ENHANCEMENT_MDBLIST -> true
     else -> false
 }
 
@@ -138,8 +135,7 @@ fun TvSettingsScreen(
             TvSettingsPage.CONTENT_PROVIDERS,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
             TvSettingsPage.ENHANCEMENT_TMDB,
-            TvSettingsPage.ENHANCEMENT_MDBLIST,
-            TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
+            TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
             else -> page
         }
         panelAutoFocusToken += 1
@@ -197,9 +193,6 @@ fun TvSettingsScreen(
                 runtime, onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.ENHANCEMENT_MDBLIST -> TvMdblistEnhancementSettings(
-                runtime, onNavigate, onProfile, ::backPanel
-            )
-            TvSettingsPage.ENHANCEMENT_GEMINI -> TvGeminiEnhancementSettings(
                 runtime, onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.PLAYBACK -> TvPlaybackSettings(
@@ -847,24 +840,11 @@ private fun TvEnhancementSettings(
             section = "METADATA & RATINGS",
             icon = Icons.Default.SettingsInputComponent,
         ),
-        TvSettingsEntry(
-            id = "gemini",
-            title = "Gemini",
-            subtitle = "Optional AI insights for movie and series details.",
-            value = if (store.geminiApiKey().isNotBlank()) {
-                if (store.geminiInsightsEnabled()) "Configured • Insights on" else "Configured • Insights off"
-            } else {
-                "Not configured"
-            },
-            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_GEMINI) },
-            section = "AI",
-            icon = Icons.Default.SettingsInputComponent,
-        ),
     )
 
     TvSettingsListScreen(
         title = "Enhancements",
-        subtitle = "Optional services for richer metadata, ratings and AI features.",
+        subtitle = "Optional services for richer metadata and ratings.",
         entries = entries,
         onNavigate = onNavigate,
         onProfile = onProfile,
@@ -1009,59 +989,6 @@ private fun TvMdblistEnhancementSettings(
     )
 }
 
-@Composable
-private fun TvGeminiEnhancementSettings(
-    runtime: TvRuntime,
-    onNavigate: (String) -> Unit,
-    onProfile: () -> Unit,
-    onBack: () -> Unit,
-) {
-    val store = runtime.settingsStore
-    var apiKey by remember { mutableStateOf(store.geminiApiKey()) }
-    var editing by remember { mutableStateOf(false) }
-    var insights by remember { mutableStateOf(store.geminiInsightsEnabled()) }
-
-    if (editing) {
-        TvTextEntryDialog(
-            title = "Gemini API Key",
-            initialValue = apiKey,
-            secret = true,
-            onDismiss = { editing = false },
-            onSave = { value ->
-                apiKey = value
-                store.setGeminiApiKey(value)
-                editing = false
-            },
-        )
-    }
-
-    val entries = listOf(
-        TvSettingsEntry(
-            id = "api-key",
-            title = "API Key",
-            subtitle = "Stored locally on this TV. Gemini is used only after an explicit VUEO action.",
-            value = configuredLabel(apiKey),
-            onActivate = { editing = true },
-            section = "CONNECTION",
-            icon = Icons.Default.SettingsInputComponent,
-        ),
-        toggleEntry(
-            "insights", "Gemini Insights", "Allow optional AI insight surfaces when Gemini is configured.", insights,
-            enabled = apiKey.isNotBlank(),
-        ) { insights = it; store.setGeminiInsightsEnabled(it) }.copy(section = "AI"),
-    )
-
-    TvSettingsListScreen(
-        title = "Gemini",
-        subtitle = "Optional AI insights for movie and series details.",
-        entries = entries,
-        onNavigate = onNavigate,
-        onProfile = onProfile,
-        onBack = onBack,
-        topLabel = "Enhancements",
-        footer = "The Gemini API key is stored locally on this device.",
-    )
-}
 
 @Composable
 private fun TvPlaybackSettings(
@@ -1423,8 +1350,6 @@ private fun enhancementSummary(runtime: TvRuntime): String = buildString {
     append(if (runtime.pluginStore.tmdbApiKey().isBlank()) "optional" else "configured")
     append(" • MDBList ")
     append(if (runtime.settingsStore.mdblistApiKey().isBlank()) "optional" else "configured")
-    append(" • Gemini ")
-    append(if (runtime.settingsStore.geminiApiKey().isBlank()) "optional" else "configured")
 }
 
 private fun configuredLabel(value: String): String = if (value.isBlank()) "Not configured" else "Configured"

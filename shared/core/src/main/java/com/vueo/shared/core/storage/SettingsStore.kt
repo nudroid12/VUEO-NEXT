@@ -122,6 +122,16 @@ class SettingsStore(
     private val profileStore =
         profileStore ?: ProfileStore(appContext)
 
+    init {
+        // Remove credentials/preferences from the retired AI integration.
+        if (prefs.contains("gemini_api_key") || prefs.contains("gemini_ai_insights")) {
+            prefs.edit()
+                .remove("gemini_api_key")
+                .remove("gemini_ai_insights")
+                .apply()
+        }
+    }
+
     private fun profileKey(
         key: String,
     ): String =
@@ -828,39 +838,6 @@ class SettingsStore(
             .apply()
     }
 
-    fun geminiApiKey(): String =
-        prefs.getString(
-            KEY_GEMINI_API_KEY,
-            "",
-        ).orEmpty().trim()
-
-    fun setGeminiApiKey(
-        apiKey: String,
-    ) {
-        prefs.edit()
-            .putString(
-                KEY_GEMINI_API_KEY,
-                apiKey.trim(),
-            )
-            .apply()
-    }
-
-    fun geminiInsightsEnabled(): Boolean =
-        prefs.getBoolean(
-            KEY_GEMINI_INSIGHTS,
-            true,
-        )
-
-    fun setGeminiInsightsEnabled(
-        enabled: Boolean,
-    ) {
-        prefs.edit()
-            .putBoolean(
-                KEY_GEMINI_INSIGHTS,
-                enabled,
-            )
-            .apply()
-    }
 
     fun appTheme(): AppTheme =
         enumValue(
@@ -1069,11 +1046,6 @@ class SettingsStore(
         private const val KEY_MDBLIST_TRAKT =
             "mdblist_trakt"
 
-        private const val KEY_GEMINI_API_KEY =
-            "gemini_api_key"
-
-        private const val KEY_GEMINI_INSIGHTS =
-            "gemini_ai_insights"
 
         private const val KEY_APP_THEME =
             "app_theme"

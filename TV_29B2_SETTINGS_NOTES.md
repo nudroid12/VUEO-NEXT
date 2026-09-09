@@ -30,7 +30,6 @@ This patch deliberately avoids exposing fake preferences. Settings now have TV c
 - Content Manager changes the active addon/provider/catalog configuration and refreshes discovery data.
 - TMDB enrichment changes metadata/artwork and related-title surfaces.
 - MDBList controls external ratings shown on Details.
-- Gemini controls optional title insight on Details.
 - Playback settings drive resume, quality ranking, playback speed, video fit, content warnings, skip segments, next-episode autoplay and source recovery.
 - Subtitle preferences drive language selection, default state and TV subtitle rendering.
 - Technical Source Details changes Source Picker presentation.

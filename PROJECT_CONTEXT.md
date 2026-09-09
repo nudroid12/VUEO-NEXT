@@ -127,7 +127,6 @@ Do not rename it to "Content & Discovery", "Extensions", or another generic labe
 - TMDB enhancement
 - MDBList ratings
 - Rich Details
-- Gemini client/insight
 - metadata enhancement engine
 - Content Warning repository
 
@@ -354,7 +353,6 @@ TV Detail parity direction includes:
 - local VUEO similarity fallback
 - rich cast with images/character names
 - network/production branding when available
-- Gemini Insight on demand
 - related-title back-stack behaviour
 
 Keep enrichment logic in Shared Core and the 10-foot presentation in TV.
@@ -674,7 +672,7 @@ TV Library uses one vertical responsive content canvas, My List/Cloud controls, 
 
 ## TV 29E — Detail functional rebuild
 
-Detail now follows the project-wide rule: Mobile VUEO is canonical for feature/data behaviour, while supplied Nuvio TV is the composition/D-pad reference. The Detail screen is rebuilt around a sticky cinematic backdrop and hero action area, followed by season tabs/episode cards and supporting content. Existing Shared Core/TvRuntime contracts remain authoritative for metadata, My List, playback/history, ratings, DNA, recommendations and Gemini insight. No Nuvio runtime code is imported.
+Detail now follows the project-wide rule: Mobile VUEO is canonical for feature/data behaviour, while supplied Nuvio TV is the composition/D-pad reference. The Detail screen is rebuilt around a sticky cinematic backdrop and hero action area, followed by season tabs/episode cards and supporting content. Existing Shared Core/TvRuntime contracts remain authoritative for metadata, My List, playback/history, ratings, DNA and recommendations. No Nuvio runtime code is imported.
 
 29E is deliberately a functional baseline. Final cross-screen typography, density, spacing, focus motion and sidebar calibration will happen after Detail → Source → Player are functionally rebuilt.
 

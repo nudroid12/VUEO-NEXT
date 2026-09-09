@@ -9,7 +9,6 @@ import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
-import com.vueo.shared.core.enrichment.GeminiClient
 import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.media.CatalogRow
@@ -256,21 +255,6 @@ class TvRuntime(context: Context) {
             }
     }
 
-    suspend fun geminiInsight(item: MediaItem): String? {
-        val apiKey = settingsStore.geminiApiKey()
-        if (!settingsStore.geminiInsightsEnabled() || apiKey.isBlank()) return null
-        val profileId = profileStore.activeProfileId()
-        val dna = dnaEngine.build().takeIf { dnaPreferences.userDnaEnabled(profileId) }
-        val match = dna?.let { dnaEngine.matchPercent(item, it) }
-        return runCatching {
-            GeminiClient.titleInsight(
-                media = item,
-                dna = dna,
-                dnaMatchPercent = match,
-                apiKey = apiKey,
-            )
-        }.getOrNull()
-    }
 
     fun dnaMatch(item: MediaItem): Int? {
         val profileId = profileStore.activeProfileId()

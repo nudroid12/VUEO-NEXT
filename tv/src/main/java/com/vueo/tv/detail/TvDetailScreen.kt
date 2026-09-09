@@ -8,7 +8,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.enrichment.MediaRating
@@ -16,7 +15,6 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
-import kotlinx.coroutines.launch
 
 /**
  * TV 39A Detail boundary.
@@ -57,10 +55,6 @@ fun TvDetailScreen(
     }
     var selectedSeason by remember(initial.id, initial.type) { mutableStateOf<Int?>(null) }
     var selectedEpisode by remember(initial.id, initial.type) { mutableStateOf<EpisodeItem?>(null) }
-    var insight by remember(initial.id, initial.type) { mutableStateOf<String?>(null) }
-    var insightLoading by remember(initial.id, initial.type) { mutableStateOf(false) }
-    var insightError by remember(initial.id, initial.type) { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(initial.id, initial.type) {
         val mediaKey = "${initial.type}:${initial.id}"
@@ -161,11 +155,6 @@ fun TvDetailScreen(
             loading = loading,
         )
     }
-    val insightAvailable = remember(loading) {
-        !loading &&
-            runtime.settingsStore.geminiInsightsEnabled() &&
-            runtime.settingsStore.geminiApiKey().isNotBlank()
-    }
 
     TvDetailPresentation(
         state = TvDetailPresentationState(
@@ -184,10 +173,6 @@ fun TvDetailScreen(
             playbackEntry = playbackEntry,
             related = related,
             primaryActionLabel = primaryActionLabel,
-            insightAvailable = insightAvailable,
-            insight = insight,
-            insightLoading = insightLoading,
-            insightError = insightError,
         ),
         onPlay = {
             if (!loading && (!item.isDetailSeries() || selectedEpisode != null)) {
@@ -232,23 +217,6 @@ fun TvDetailScreen(
             onWatch(item, episode)
         },
         onOpenRelated = onOpenRelated,
-        onGenerateInsight = {
-            if (!insightLoading) {
-                insightLoading = true
-                insightError = null
-                scope.launch {
-                    runCatching { runtime.geminiInsight(item) }
-                        .onSuccess { result ->
-                            insight = result
-                            if (result.isNullOrBlank()) insightError = "No insight returned."
-                        }
-                        .onFailure { error ->
-                            insightError = error.message ?: "Insight failed."
-                        }
-                    insightLoading = false
-                }
-            }
-        },
     )
 }
 
@@ -268,10 +236,6 @@ internal data class TvDetailPresentationState(
     val playbackEntry: LibraryPlaybackEntry?,
     val related: List<MediaItem>,
     val primaryActionLabel: String,
-    val insightAvailable: Boolean,
-    val insight: String?,
-    val insightLoading: Boolean,
-    val insightError: String?,
 )
 
 internal fun detailPlaybackEntry(

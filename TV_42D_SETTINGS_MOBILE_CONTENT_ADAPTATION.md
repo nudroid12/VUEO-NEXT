@@ -27,8 +27,7 @@ Baseline: 42A full repository with 42B and 42C patches applied.
 - Rebuilds Enhancements root to match Mobile hierarchy:
   - TMDB
   - MDBList
-  - Gemini
-- TMDB, MDBList, and Gemini now open nested Settings panels rather than exposing every enhancement control on the root page.
+- TMDB and MDBList now open nested Settings panels rather than exposing every enhancement control on the root page.
 - Existing enhancement switches and API key behavior are preserved in those nested panels.
 - Playback, Subtitles, Sources, Appearance, Data & Storage, Updates, and About now use the same card and section presentation while keeping their existing TV logic.
 

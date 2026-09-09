@@ -44,7 +44,6 @@ internal fun TvDetailPresentation(
     onEpisodeFocused: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onEpisodeSelected: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onOpenRelated: (com.vueo.shared.core.media.MediaItem) -> Unit,
-    onGenerateInsight: () -> Unit,
 ) {
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
@@ -57,7 +56,6 @@ internal fun TvDetailPresentation(
     val peopleContentRequester = remember(mediaKey) { FocusRequester() }
     val relatedContentRequester = remember(mediaKey) { FocusRequester() }
     val trailerContentRequester = remember(mediaKey) { FocusRequester() }
-    val insightRequester = remember(mediaKey) { FocusRequester() }
 
     val people = remember(state.item, state.nuvioExtras.leadingCrew) {
         nuvioDetailPeople(state.item, state.nuvioExtras.leadingCrew)
@@ -81,18 +79,15 @@ internal fun TvDetailPresentation(
         hasSeasons -> seasonRequester
         hasEpisodes -> episodeRequester
         hasPeopleSection -> peopleEntryRequester
-        state.insightAvailable -> insightRequester
         else -> null
     }
     val firstBelowSeasons = when {
         hasEpisodes -> episodeRequester
         hasPeopleSection -> peopleEntryRequester
-        state.insightAvailable -> insightRequester
         else -> null
     }
     val firstBelowEpisodes = when {
         hasPeopleSection -> peopleEntryRequester
-        state.insightAvailable -> insightRequester
         else -> null
     }
     val peopleUp = when {
@@ -227,23 +222,6 @@ internal fun TvDetailPresentation(
                 }
             }
 
-            if (state.insightAvailable) {
-                item(key = "nuvio-insight:$mediaKey") {
-                    NuvioDetailInsight(
-                        insight = state.insight,
-                        loading = state.insightLoading,
-                        error = state.insightError,
-                        requester = insightRequester,
-                        upRequester = when {
-                            hasPeopleSection -> peopleEntryRequester
-                            hasEpisodes -> episodeRequester
-                            hasSeasons -> seasonRequester
-                            else -> playRequester
-                        },
-                        onGenerate = onGenerateInsight,
-                    )
-                }
-            }
         }
 
         if (state.loading) {

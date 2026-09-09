@@ -29,7 +29,6 @@ The Mobile `MediaDetailsScreen` carries the following Detail semantics that 29E 
 - Cast
 - Network / Production companies
 - More Like This
-- optional Gemini/VUEO title insight when enabled and configured
 
 ## Nuvio TV patterns adapted
 
@@ -67,7 +66,6 @@ TV presentation patterns adapted:
 - Cast is informational because current VUEO Mobile has no cast-detail navigation contract. It is not given a fake TV-only route.
 - Network/Production remains informational, matching current Mobile behaviour.
 - More Like This keeps the existing `onOpenRelated` route contract.
-- VUEO Insight is explicit/manual: when Gemini insights are enabled and configured, OK generates through the existing `TvRuntime.geminiInsight()` path rather than introducing another client.
 
 ## Explicitly not changed
 

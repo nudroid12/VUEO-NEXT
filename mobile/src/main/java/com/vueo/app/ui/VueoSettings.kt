@@ -1,7 +1,6 @@
 package com.vueo.app.ui
 
 // VUEO DNA OPTIONAL SETTINGS PATCH - 2026-08-29
-// VUEO GEMINI V1.1 FLASH-LITE - 2026-08-29
 
 import android.content.Context
 import android.content.Intent
@@ -70,14 +69,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.app.BuildConfig
 import com.vueo.app.core.extensions.CatalogDiscoveryCache
 import com.vueo.app.core.extensions.SourceDiscoveryCache
 import com.vueo.app.core.extensions.UnifiedMediaEngine
-import com.vueo.app.core.enrichment.GeminiClient
 import com.vueo.app.core.enrichment.MdblistClient
 import com.vueo.app.core.enrichment.TmdbEnhancementClient
 import com.vueo.app.core.dna.UserDnaEngine
@@ -187,8 +184,6 @@ internal fun VueoSettingsHub(
         pluginStore.tmdbApiKey().isNotBlank()
     val mdblistConfigured =
         settingsStore.mdblistApiKey().isNotBlank()
-    val geminiConfigured =
-        settingsStore.geminiApiKey().isNotBlank()
     val updateStore = remember {
         VueoUpdateStore(context.applicationContext)
     }
@@ -510,7 +505,6 @@ internal fun VueoSettingsHub(
                                 buildString {
                                     append("TMDB ${if (tmdbConfigured) "configured" else "optional"}")
                                     append(" • MDBList ${if (mdblistConfigured) "configured" else "optional"}")
-                                    append(" • Gemini ${if (geminiConfigured) "configured" else "optional"}")
                                 },
                                 Icons.Default.SettingsInputComponent, onEnhancements,
                             )
@@ -769,7 +763,6 @@ internal fun EnhancementsSettingsScreen(
     onBack: () -> Unit,
     onTmdb: () -> Unit,
     onMdblist: () -> Unit,
-    onGemini: () -> Unit,
 ) {
     val context = LocalContext.current
     val pluginStore =
@@ -781,7 +774,7 @@ internal fun EnhancementsSettingsScreen(
 
     VueoSettingsPage(
         title = "Enhancements",
-        subtitle = "Optional services for richer metadata, ratings and AI features.",
+        subtitle = "Optional services for richer metadata and ratings.",
         onBack = onBack,
     ) {
         item(key = "enhancements-metadata") {
@@ -806,24 +799,6 @@ internal fun EnhancementsSettingsScreen(
             }
         }
 
-        item(key = "enhancements-ai") {
-            VueoSettingsHubGroup(
-                label = "AI"
-            ) {
-                VueoSettingsHubRow(
-                    title = "Gemini",
-                    subtitle = "Optional AI insights for movie and series details.",
-                    status =
-                        if (settingsStore.geminiApiKey().isNotBlank()) {
-                            if (settingsStore.geminiInsightsEnabled()) "Configured • Insights on" else "Configured • Insights off"
-                        } else {
-                            "Not configured"
-                        },
-                    icon = Icons.Default.SettingsInputComponent,
-                    onClick = onGemini,
-                )
-            }
-        }
 
         item(key = "enhancements-note") {
             VueoCompactInfo(
@@ -834,246 +809,6 @@ internal fun EnhancementsSettingsScreen(
     }
 }
 
-@Composable
-internal fun GeminiEnhancementSettingsScreen(
-    settingsStore: SettingsStore,
-    onBack: () -> Unit,
-) {
-    var apiKey by remember {
-        mutableStateOf(
-            settingsStore
-                .geminiApiKey()
-        )
-    }
-
-    var saved by remember {
-        mutableStateOf(false)
-    }
-
-    val scope =
-        rememberCoroutineScope()
-
-    var testing by remember {
-        mutableStateOf(false)
-    }
-
-    var connectionStatus by remember {
-        mutableStateOf<String?>(
-            null
-        )
-    }
-
-    var insightsEnabled by remember {
-        mutableStateOf(
-            settingsStore
-                .geminiInsightsEnabled()
-        )
-    }
-
-    VueoSettingsPage(
-        title = "Gemini",
-        subtitle =
-            "Optional AI enhancement powered by Google's Gemini API.",
-        onBack = onBack,
-    ) {
-        item {
-            VueoStatusCard(
-                title = "Status",
-                value =
-                    connectionStatus
-                        ?: if (
-                            apiKey.trim()
-                                .isNotEmpty()
-                        ) {
-                            "Configured"
-                        } else {
-                            "Not configured"
-                        },
-                text =
-                    "VUEO uses Gemini only after an explicit action. The API key is stored locally on this device.",
-            )
-        }
-
-        item {
-            Card(
-                shape =
-                    RoundedCornerShape(
-                        18.dp
-                    ),
-                colors =
-                    CardDefaults
-                        .cardColors(
-                            containerColor =
-                                VueoPalette.Surface,
-                        ),
-            ) {
-                Column(
-                    modifier =
-                        Modifier.padding(
-                            16.dp
-                        ),
-                    verticalArrangement =
-                        Arrangement.spacedBy(
-                            10.dp
-                        ),
-                ) {
-                    Text(
-                        text = "API Key",
-                        color =
-                            Color.White,
-                        fontWeight =
-                            FontWeight.Bold,
-                    )
-
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = {
-                            apiKey = it
-                            saved = false
-                            connectionStatus =
-                                null
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth(),
-                        singleLine = true,
-                        label = {
-                            Text(
-                                "Gemini API Key"
-                            )
-                        },
-                        visualTransformation =
-                            PasswordVisualTransformation(),
-                    )
-
-                    Row(
-                        horizontalArrangement =
-                            Arrangement.spacedBy(
-                                8.dp
-                            ),
-                    ) {
-                        Button(
-                            onClick = {
-                                settingsStore
-                                    .setGeminiApiKey(
-                                        apiKey
-                                    )
-                                saved = true
-                                connectionStatus =
-                                    null
-                            },
-                        ) {
-                            Text("Save")
-                        }
-
-                        OutlinedButton(
-                            enabled =
-                                !testing,
-                            onClick = {
-                                val key =
-                                    apiKey.trim()
-
-                                if (
-                                    key.isBlank()
-                                ) {
-                                    connectionStatus =
-                                        "Enter API key"
-                                } else {
-                                    testing = true
-                                    connectionStatus =
-                                        "Testing..."
-
-                                    scope.launch {
-                                        val result =
-                                            GeminiClient
-                                                .testConnection(
-                                                    key
-                                                )
-
-                                        connectionStatus =
-                                            result.message
-
-                                        testing = false
-                                    }
-                                }
-                            },
-                        ) {
-                            Text(
-                                if (
-                                    testing
-                                ) {
-                                    "Testing..."
-                                } else {
-                                    "Test Connection"
-                                }
-                            )
-                        }
-                    }
-
-                    if (saved) {
-                        Text(
-                            text =
-                                "Gemini configuration saved locally.",
-                            color =
-                                VueoPalette.Accent,
-                            fontSize =
-                                11.sp,
-                            fontWeight =
-                                FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            VueoSectionLabel(
-                "FEATURES"
-            )
-        }
-
-        item {
-            VueoSettingsToggleCard(
-                title = "AI Insights",
-                subtitle =
-                    "Show an optional Gemini Insight card on movie and series details. Gemini is called only when you tap Generate Insight.",
-                checked =
-                    insightsEnabled,
-                enabled =
-                    apiKey.trim()
-                        .isNotEmpty(),
-                onCheckedChange = {
-                    enabled ->
-                    insightsEnabled =
-                        enabled
-
-                    settingsStore
-                        .setGeminiInsightsEnabled(
-                            enabled
-                        )
-                },
-            )
-        }
-
-        item {
-            VueoStatusCard(
-                title = "Model",
-                value =
-                    "Gemini 3.5 Flash-Lite",
-                text =
-                    "VUEO uses gemini-3.5-flash-lite through the v1beta Interactions API with minimal thinking and a short output cap.",
-            )
-        }
-
-        item {
-            VueoInfoCard(
-                title = "Privacy & usage",
-                text =
-                    "Generate Insight sends selected-title metadata to Google's Gemini API. If User DNA is enabled, VUEO may also send a compact taste summary such as top genres and DNA confidence. Raw History, My List and playback records are not sent. Requests can count against your Gemini API quota or billing.",
-            )
-        }
-    }
-}
 
 @Composable
 internal fun TmdbEnhancementSettingsScreen(

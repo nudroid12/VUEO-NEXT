@@ -54,11 +54,20 @@ object VueoBackupManager {
         ),
         "vueo_settings" to setOf(
             "mdblist_api_key",
-            "gemini_api_key",
         ),
         "vueo_tv_settings" to setOf(
             "mdblist_api_key",
+        ),
+    )
+
+    private val retiredPreferenceKeys = mapOf(
+        "vueo_settings" to setOf(
             "gemini_api_key",
+            "gemini_ai_insights",
+        ),
+        "vueo_tv_settings" to setOf(
+            "gemini_api_key",
+            "gemini_ai_insights",
         ),
     )
 
@@ -100,11 +109,12 @@ object VueoBackupManager {
             val prefs = appContext.getSharedPreferences(name, Context.MODE_PRIVATE)
             val group = JSONObject()
             val secrets = credentialKeys[name].orEmpty()
+            val retired = retiredPreferenceKeys[name].orEmpty()
 
             prefs.all
                 .toSortedMap()
                 .forEach valueLoop@ { (key, value) ->
-                    if (!includeCredentials && key in secrets) {
+                    if (key in retired || (!includeCredentials && key in secrets)) {
                         return@valueLoop
                     }
 
@@ -212,8 +222,10 @@ object VueoBackupManager {
                 val editor = prefs.edit().clear()
                 val keys = source.keys()
 
+                val retired = retiredPreferenceKeys[name].orEmpty()
                 while (keys.hasNext()) {
                     val key = keys.next()
+                    if (key in retired) continue
                     val encoded = source.optJSONObject(key) ?: continue
 
                     if (restorePreferenceValue(editor, key, encoded)) {
