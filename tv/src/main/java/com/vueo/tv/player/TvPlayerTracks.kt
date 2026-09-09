@@ -3,6 +3,8 @@ package com.vueo.tv.player
 import android.content.Context
 import android.os.Looper
 import androidx.media3.common.C
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ForwardingRenderer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.common.TrackSelectionOverride
@@ -33,6 +35,15 @@ internal data class TvSubtitleLanguageGroup(
     val code: String,
     val label: String,
     val tracks: List<TvPlayerTrackChoice>,
+)
+
+internal data class TvPlayerSubtitleStyleState(
+    val fontSizeSp: Int = 18,
+    val bold: Boolean = false,
+    val textColor: Int = 0xFFFFFFFF.toInt(),
+    val outlineEnabled: Boolean = true,
+    val outlineColor: Int = 0xFF000000.toInt(),
+    val bottomPaddingPercent: Int = 8,
 )
 
 internal fun tvExternalSubtitleSelectionId(track: SubtitleTrack): String =
@@ -110,22 +121,26 @@ internal fun tvBuildSubtitleLanguageGroups(
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
 ): List<TvSubtitleLanguageGroup> {
-    val preferredOrder = listOfNotNull(preferredLanguageCode, secondaryLanguageCode)
-        .map(::tvCanonicalLanguage)
-        .distinct()
+    val preferred = preferredLanguageCode?.let(::tvCanonicalLanguage)
+    val secondary = secondaryLanguageCode?.let(::tvCanonicalLanguage)
 
     return tracks
         .groupBy { tvCanonicalLanguage(it.language) }
         .map { (code, groupedTracks) ->
             TvSubtitleLanguageGroup(
                 code = code,
-                label = tvFriendlyLanguage(groupedTracks.firstOrNull()?.language ?: code),
+                label = tvFriendlyLanguage(code),
                 tracks = groupedTracks,
             )
         }
         .sortedWith(
             compareBy<TvSubtitleLanguageGroup> {
-                preferredOrder.indexOf(it.code).let { index -> if (index < 0) Int.MAX_VALUE else index }
+                when (it.code) {
+                    preferred -> 0
+                    secondary -> 1
+                    "und" -> 3
+                    else -> 2
+                }
             }.thenBy { it.label.lowercase() }
         )
 }
@@ -212,6 +227,7 @@ private fun tvBuildAudioSelectionId(
 internal class TvSubtitleOffsetRenderersFactory(
     context: Context,
     private val subtitleDelayUsProvider: () -> Long,
+    private val shouldNormalizeCuePositionProvider: () -> Boolean,
 ) : DefaultRenderersFactory(context) {
     override fun buildTextRenderers(
         context: Context,
@@ -220,14 +236,59 @@ internal class TvSubtitleOffsetRenderersFactory(
         extensionRendererMode: Int,
         out: ArrayList<Renderer>,
     ) {
+        val normalizingOutput = TvCueNormalizingTextOutput(
+            delegate = output,
+            shouldNormalizeCuePositionProvider = shouldNormalizeCuePositionProvider,
+        )
         val firstTextRenderer = out.size
-        super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+        super.buildTextRenderers(
+            context,
+            normalizingOutput,
+            outputLooper,
+            extensionRendererMode,
+            out,
+        )
         for (index in firstTextRenderer until out.size) {
             out[index] = TvSubtitleOffsetRenderer(
                 baseRenderer = out[index],
                 subtitleDelayUsProvider = subtitleDelayUsProvider,
             )
         }
+    }
+}
+
+private class TvCueNormalizingTextOutput(
+    private val delegate: TextOutput,
+    private val shouldNormalizeCuePositionProvider: () -> Boolean,
+) : TextOutput {
+    override fun onCues(cueGroup: CueGroup) {
+        delegate.onCues(
+            CueGroup(
+                cueGroup.cues.map(::normalizeCuePosition),
+                cueGroup.presentationTimeUs,
+            )
+        )
+    }
+
+    @Deprecated("Uses a deprecated player callback for text outputs.")
+    override fun onCues(cues: List<Cue>) {
+        delegate.onCues(cues.map(::normalizeCuePosition))
+    }
+
+    private fun normalizeCuePosition(cue: Cue): Cue {
+        if (
+            !shouldNormalizeCuePositionProvider() ||
+            cue.bitmap != null ||
+            cue.verticalType != Cue.TYPE_UNSET ||
+            cue.line == Cue.DIMEN_UNSET
+        ) {
+            return cue
+        }
+
+        return cue.buildUpon()
+            .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+            .setLineAnchor(Cue.TYPE_UNSET)
+            .build()
     }
 }
 

@@ -67,6 +67,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -176,17 +177,26 @@ fun TvPlayerScreen(
     val latestSubtitleDelayMs = androidx.compose.runtime.rememberUpdatedState(subtitleDelayMs)
     val storedSubtitleFontSizeSp = remember { settings.subtitleFontSizeSp() }
     val storedSubtitleBottomPaddingPercent = remember { settings.subtitleBottomPaddingPercent() }
-    var subtitleFontSizeSp by remember {
-        mutableIntStateOf(if (storedSubtitleFontSizeSp == 20) 18 else storedSubtitleFontSizeSp)
+    val storedSubtitleTextColor = remember { settings.subtitleTextColor() }
+    val storedSubtitleTextOpacityPercent = remember { settings.subtitleTextOpacityPercent() }
+    var subtitleStyle by remember {
+        mutableStateOf(
+            TvPlayerSubtitleStyleState(
+                fontSizeSp = if (storedSubtitleFontSizeSp == 20) 18 else storedSubtitleFontSizeSp,
+                bold = settings.subtitleBold(),
+                textColor = if ((storedSubtitleTextColor ushr 24) != 0xFF) {
+                    storedSubtitleTextColor
+                } else {
+                    withAlpha(storedSubtitleTextColor, storedSubtitleTextOpacityPercent)
+                },
+                outlineEnabled = settings.subtitleOutlineEnabled(),
+                outlineColor = settings.subtitleOutlineColor(),
+                bottomPaddingPercent = if (storedSubtitleBottomPaddingPercent == 22) 8 else storedSubtitleBottomPaddingPercent,
+            )
+        )
     }
-    var subtitleBold by remember { mutableStateOf(settings.subtitleBold()) }
-    var subtitleTextColor by remember { mutableIntStateOf(settings.subtitleTextColor()) }
-    var subtitleTextOpacityPercent by remember { mutableIntStateOf(settings.subtitleTextOpacityPercent()) }
-    var subtitleOutlineEnabled by remember { mutableStateOf(settings.subtitleOutlineEnabled()) }
-    var subtitleOutlineColor by remember { mutableIntStateOf(settings.subtitleOutlineColor()) }
-    var subtitleBottomPaddingPercent by remember {
-        mutableIntStateOf(if (storedSubtitleBottomPaddingPercent == 22) 8 else storedSubtitleBottomPaddingPercent)
-    }
+    var selectedSubtitleIsExternal by remember(mediaKey) { mutableStateOf(false) }
+    val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
     val httpFactory = remember(bundle.videoId) {
         DefaultHttpDataSource.Factory()
@@ -196,9 +206,15 @@ fun TvPlayerScreen(
     val player = remember(bundle.videoId) {
         ExoPlayer.Builder(
             context,
-            TvSubtitleOffsetRenderersFactory(context) {
-                latestSubtitleDelayMs.value.toLong() * 1_000L
-            },
+            TvSubtitleOffsetRenderersFactory(
+                context = context,
+                subtitleDelayUsProvider = {
+                    latestSubtitleDelayMs.value.toLong() * 1_000L
+                },
+                shouldNormalizeCuePositionProvider = {
+                    latestSelectedSubtitleIsExternal.value
+                },
+            ),
         )
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpFactory))
             .build()
@@ -363,6 +379,7 @@ fun TvPlayerScreen(
         playbackError = null
         textTracks = emptyList()
         audioTracks = emptyList()
+        selectedSubtitleIsExternal = false
 
         val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
@@ -390,6 +407,25 @@ fun TvPlayerScreen(
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
         val listener = object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                val currentTextTracks = tvPlayerTrackChoices(
+                    tracks = tracks,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    externalSubtitles = externalSubtitlesBySelectionId,
+                )
+                textTracks = currentTextTracks
+                audioTracks = tvPlayerTrackChoices(
+                    tracks = tracks,
+                    trackType = C.TRACK_TYPE_AUDIO,
+                )
+                selectedSubtitleIsExternal =
+                    !subtitlesDisabled &&
+                        currentTextTracks
+                            .firstOrNull { it.selected }
+                            ?.selectionId
+                            ?.startsWith("external:") == true
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 isBuffering = false
                 handleSourceFailure(error.message ?: "Playback failed.")
@@ -517,6 +553,12 @@ fun TvPlayerScreen(
             )
             textTracks = currentTextTracks
             audioTracks = currentAudioTracks
+            selectedSubtitleIsExternal =
+                !subtitlesDisabled &&
+                    currentTextTracks
+                        .firstOrNull { it.selected }
+                        ?.selectionId
+                        ?.startsWith("external:") == true
 
             val tracksBelongToActiveSource =
                 player.currentMediaItem?.localConfiguration?.uri?.toString() == activeSource.url
@@ -560,10 +602,12 @@ fun TvPlayerScreen(
                     savedSelection == TV_SUBTITLE_OFF -> {
                         tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                         subtitlesDisabled = true
+                        selectedSubtitleIsExternal = false
                     }
                     savedTrack != null -> {
                         tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, savedTrack)
                         subtitlesDisabled = false
+                        selectedSubtitleIsExternal = savedTrack.selectionId.startsWith("external:")
                     }
                     savedSelection == null -> {
                         subtitlesDisabled = !settings.subtitlesOnByDefault()
@@ -721,16 +765,13 @@ fun TvPlayerScreen(
             .focusable(),
     ) {
         val exoPlayer = player
-        val subtitleFontSize = subtitleFontSizeSp.toFloat()
-        val subtitleForeground = withAlpha(subtitleTextColor, subtitleTextOpacityPercent)
-        val subtitleEdgeType = if (subtitleOutlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE
-        val subtitleStyle = CaptionStyleCompat(
-            subtitleForeground,
+        val appliedSubtitleStyle = CaptionStyleCompat(
+            subtitleStyle.textColor,
             android.graphics.Color.TRANSPARENT,
             android.graphics.Color.TRANSPARENT,
-            subtitleEdgeType,
-            subtitleOutlineColor,
-            if (subtitleBold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
+            if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
+            subtitleStyle.outlineColor,
+            if (subtitleStyle.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
         )
         val resizeMode = when (videoFit) {
             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -739,7 +780,7 @@ fun TvPlayerScreen(
             PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         }
-        val baseSubtitleBottomPaddingFraction = subtitleBottomPaddingPercent / 100f
+        val baseSubtitleBottomPaddingFraction = subtitleStyle.bottomPaddingPercent / 100f
         val subtitleBottomPaddingFraction = if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
             maxOf(baseSubtitleBottomPaddingFraction, 0.18f)
         } else {
@@ -753,18 +794,20 @@ fun TvPlayerScreen(
                     this.player = exoPlayer
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     this.resizeMode = resizeMode
-                    subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleFontSize)
+                    subtitleView?.setApplyEmbeddedStyles(false)
                     subtitleView?.setApplyEmbeddedFontSizes(false)
-                    subtitleView?.setStyle(subtitleStyle)
+                    subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
+                    subtitleView?.setStyle(appliedSubtitleStyle)
                     subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
                 }
             },
             update = {
                 it.player = exoPlayer
                 it.resizeMode = resizeMode
-                it.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleFontSize)
+                it.subtitleView?.setApplyEmbeddedStyles(false)
                 it.subtitleView?.setApplyEmbeddedFontSizes(false)
-                it.subtitleView?.setStyle(subtitleStyle)
+                it.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
+                it.subtitleView?.setStyle(appliedSubtitleStyle)
                 it.subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
             },
             modifier = Modifier.fillMaxSize(),
@@ -941,24 +984,19 @@ fun TvPlayerScreen(
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
                 subtitleDelayMs = subtitleDelayMs,
-                fontSizeSp = subtitleFontSizeSp,
-                bold = subtitleBold,
-                textColor = subtitleTextColor,
-                textOpacityPercent = subtitleTextOpacityPercent,
-                outlineEnabled = subtitleOutlineEnabled,
-                outlineColor = subtitleOutlineColor,
-                bottomPaddingPercent = subtitleBottomPaddingPercent,
+                style = subtitleStyle,
                 onInteraction = ::noteInteraction,
-                onDismiss = { closePanel() },
                 onDisable = {
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
+                    selectedSubtitleIsExternal = false
                     settings.setSubtitleSelection(mediaKey, TV_SUBTITLE_OFF)
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
                 onSelect = { choice ->
                     tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, choice)
                     subtitlesDisabled = false
+                    selectedSubtitleIsExternal = choice.selectionId.startsWith("external:")
                     settings.setSubtitleSelection(mediaKey, choice.selectionId)
                     settings.setLastSubtitleSelection(
                         PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
@@ -968,33 +1006,15 @@ fun TvPlayerScreen(
                     subtitleDelayMs = updated.coerceIn(-60_000, 60_000)
                     settings.setSubtitleDelayMs(mediaKey, subtitleDelayMs)
                 },
-                onFontSizeChange = { updated ->
-                    subtitleFontSizeSp = updated.coerceIn(12, 40)
-                    settings.setSubtitleFontSizeSp(subtitleFontSizeSp)
-                },
-                onBoldChange = { updated ->
-                    subtitleBold = updated
-                    settings.setSubtitleBold(updated)
-                },
-                onTextColorChange = { updated ->
-                    subtitleTextColor = updated
-                    settings.setSubtitleTextColor(updated)
-                },
-                onTextOpacityChange = { updated ->
-                    subtitleTextOpacityPercent = updated.coerceIn(20, 100)
-                    settings.setSubtitleTextOpacityPercent(subtitleTextOpacityPercent)
-                },
-                onOutlineChange = { updated ->
-                    subtitleOutlineEnabled = updated
-                    settings.setSubtitleOutlineEnabled(updated)
-                },
-                onOutlineColorChange = { updated ->
-                    subtitleOutlineColor = updated
-                    settings.setSubtitleOutlineColor(updated)
-                },
-                onBottomPaddingChange = { updated ->
-                    subtitleBottomPaddingPercent = updated.coerceIn(5, 40)
-                    settings.setSubtitleBottomPaddingPercent(subtitleBottomPaddingPercent)
+                onStyleChange = { updated ->
+                    subtitleStyle = updated
+                    settings.setSubtitleFontSizeSp(updated.fontSizeSp)
+                    settings.setSubtitleBold(updated.bold)
+                    settings.setSubtitleTextColor(updated.textColor)
+                    settings.setSubtitleTextOpacityPercent(alphaPercent(updated.textColor))
+                    settings.setSubtitleOutlineEnabled(updated.outlineEnabled)
+                    settings.setSubtitleOutlineColor(updated.outlineColor)
+                    settings.setSubtitleBottomPaddingPercent(updated.bottomPaddingPercent)
                 },
             )
         }
@@ -1113,6 +1133,9 @@ private fun withAlpha(argb: Int, percent: Int): Int {
     val alpha = (255 * percent.coerceIn(0, 100) / 100) shl 24
     return (argb and 0x00FFFFFF) or alpha
 }
+
+private fun alphaPercent(argb: Int): Int =
+    (((argb ushr 24) * 100) + 127) / 255
 
 private fun subtitleMimeType(url: String): String =
     when (url.substringBefore("?").substringAfterLast(".", "").lowercase()) {
