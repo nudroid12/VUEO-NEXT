@@ -137,6 +137,7 @@ fun TvPlayerScreen(
     val progressRequester = remember { FocusRequester() }
     val nextRequester = remember { FocusRequester() }
     val subtitlesRequester = remember { FocusRequester() }
+    val subtitleWorkspaceRequester = remember { FocusRequester() }
     val audioRequester = remember { FocusRequester() }
     val sourcesRequester = remember { FocusRequester() }
     val episodesRequester = remember { FocusRequester() }
@@ -225,6 +226,7 @@ fun TvPlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(true) }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
+    var subtitlePanelFocusEntered by remember { mutableStateOf(false) }
     var restorePanelFocus by remember { mutableStateOf<TvPlayerPanel?>(null) }
     var interactionToken by remember { mutableIntStateOf(0) }
     var positionMs by remember { mutableLongStateOf(startPosition) }
@@ -693,6 +695,23 @@ fun TvPlayerScreen(
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val code = event.nativeKeyEvent.keyCode
 
+                if (
+                    activePanel == TvPlayerPanel.SUBTITLES &&
+                    !subtitlePanelFocusEntered &&
+                    code in setOf(
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_DPAD_RIGHT,
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                    )
+                ) {
+                    noteInteraction()
+                    runCatching { subtitleWorkspaceRequester.requestFocus() }
+                    return@onPreviewKeyEvent true
+                }
+
                 when (code) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         togglePlayback()
@@ -908,6 +927,7 @@ fun TvPlayerScreen(
             },
             onOpenPanel = { panel ->
                 activePanel = panel
+                if (panel == TvPlayerPanel.SUBTITLES) subtitlePanelFocusEntered = false
                 noteInteraction()
             },
             onDismissPanel = { closePanel() },
@@ -978,11 +998,15 @@ fun TvPlayerScreen(
             NuvioPlayerSubtitleWorkspace(
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
+                entryFocusRequester = subtitleWorkspaceRequester,
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
                 subtitleDelayMs = subtitleDelayMs,
                 style = subtitleStyle,
-                onInteraction = ::noteInteraction,
+                onInteraction = {
+                    subtitlePanelFocusEntered = true
+                    noteInteraction()
+                },
                 onDisable = {
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true

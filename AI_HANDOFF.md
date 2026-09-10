@@ -121,10 +121,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Home must not import or invoke the legacy `TvSidebar` from `TvTopBar.kt`.
 - Preserve the Nuvio-referenced structural ratios and focus model documented in `TV_32A_HOME_TRUE_REBUILD.md` unless a later explicit product decision replaces them.
 
-## TV subtitle workspace current direction
+## TV 44B subtitle workspace correction
 
-- The Player subtitle workspace keeps the three-column TV layout: Languages, Subtitles and Subtitle Style.
-- Do not replace it with a drill-down side sheet or add the Mobile `Float` action.
-- Selected language/track uses the configured accent; D-pad focus remains a separate neutral-white edge.
-- Keep exact track/provider metadata visible and preserve Player track selection, delay and style persistence.
-- Back remains owned by the Player panel stack and must restore focus to the `Subs` control.
+- Preserve the existing three-column VUEO subtitle workspace composition.
+- Its overlay is deliberately transparent so the video and subtitle remain visible at their real positions while sync is adjusted.
+- Do not add a Float mode and do not relocate the rendered subtitle while this workspace is open.
+- Opening the workspace must transfer focus directly into its selected language row. If initial focus is missed, the next D-pad direction or OK/Enter must recover focus into the panel.
