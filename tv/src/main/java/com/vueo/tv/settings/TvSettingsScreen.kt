@@ -22,11 +22,12 @@ import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.enrichment.MdblistClient
+import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeStore
-import com.vueo.shared.core.plugin.ProviderHealthStatus
 import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.source.SourceDiscoveryCache
@@ -55,6 +56,7 @@ private enum class TvSettingsPage {
     CONTENT_MANAGER,
     CONTENT_ADDONS,
     CONTENT_PROVIDERS,
+    CONTENT_PROVIDER_HEALTH,
     CONTENT_CATALOGS,
     ENHANCEMENTS,
     ENHANCEMENT_TMDB,
@@ -93,6 +95,7 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
+    TvSettingsPage.CONTENT_PROVIDER_HEALTH,
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
@@ -103,6 +106,7 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.PROFILE_CHOOSER,
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
+    TvSettingsPage.CONTENT_PROVIDER_HEALTH,
     TvSettingsPage.CONTENT_CATALOGS,
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST -> true
@@ -134,6 +138,7 @@ fun TvSettingsScreen(
             TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
+            TvSettingsPage.CONTENT_PROVIDER_HEALTH,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
             TvSettingsPage.ENHANCEMENT_TMDB,
             TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
@@ -183,6 +188,9 @@ fun TvSettingsScreen(
             )
             TvSettingsPage.CONTENT_PROVIDERS -> TvProviderSettings(
                 runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvProviderHealthOverview(
+                runtime, onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.CONTENT_CATALOGS -> TvCatalogSettings(
                 runtime, onNavigate, onProfile, onDataChanged, ::backPanel
@@ -464,21 +472,18 @@ private fun TvContentManagerHub(
 ) {
     val context = LocalContext.current
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
-    val health = healthStore.records()
-    val onlineCount = health.count {
-        it.status == ProviderHealthStatus.ONLINE || it.status == ProviderHealthStatus.SLOW
-    }
-    val slowCount = health.count {
-        it.status == ProviderHealthStatus.SLOW || it.status == ProviderHealthStatus.TIMEOUT
-    }
-    val failedCount = health.count {
-        it.status == ProviderHealthStatus.FAILED ||
-            it.status == ProviderHealthStatus.BLOCKED ||
-            it.status == ProviderHealthStatus.UNAVAILABLE
-    }
+    val repositories = runtime.pluginStore.repositories()
+    val healthSummary = healthStore.summary(
+        repositories = repositories,
+        pluginStore = runtime.pluginStore,
+    )
+    val onlineCount = healthSummary.online
+    val slowCount = healthSummary.slow
+    val failedCount = healthSummary.failed + healthSummary.blocked +
+        healthSummary.unavailable + healthSummary.timeout
     val addons = runtime.engine.stremioAddons()
     val installedAddons = addons.size
-    val repositoryCount = runtime.pluginStore.repositories().size
+    val repositoryCount = repositories.size
     val providerCount = runtime.pluginStore.totalProviderCount()
     val catalogCount = addons.sumOf { extension ->
         extension.descriptor.catalogs.count { it.canLoadWithoutExtras }
@@ -496,6 +501,14 @@ private fun TvContentManagerHub(
             "providers", "Plugins & Providers", "Repositories, runtime providers, health and diagnostics.",
             "$repositoryCount repos • $providerCount providers",
             onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDERS) },
+            section = "CONTENT",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
+        TvSettingsEntry(
+            "provider-health", "Provider Health",
+            "Historical performance, ranking, hit rate, timing and current status.",
+            "${healthSummary.online} online • ${healthSummary.slow} slow • ${healthSummary.noResults} no results",
+            onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDER_HEALTH) },
             section = "CONTENT",
             icon = Icons.Default.SettingsInputComponent,
         ),
@@ -538,6 +551,7 @@ private fun TvAddonSettings(
     var showAdd by remember { mutableStateOf(false) }
     var removeUrl by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
+    var refreshingAddons by remember { mutableStateOf(false) }
     val manifests = remember(revision) { runtime.content.manifestUrls() }
 
     if (showAdd) {
@@ -580,6 +594,34 @@ private fun TvAddonSettings(
 
     val entries = buildList {
         add(TvSettingsEntry("add", "Add Addon", "Install an HTTPS addon manifest URL.", onActivate = { showAdd = true }, section = "ADDONS", icon = Icons.Default.Extension))
+        add(
+            TvSettingsEntry(
+                id = "refresh-addons",
+                title = "Refresh Addons",
+                subtitle = "Reload installed addon manifests on demand. Normal enable/disable changes stay local and do not refetch manifests.",
+                value = if (refreshingAddons) "Refreshing…" else "Refresh",
+                onActivate = {
+                    if (!refreshingAddons) {
+                        refreshingAddons = true
+                        status = null
+                        scope.launch {
+                            runCatching { runtime.refreshAddons() }
+                                .onSuccess {
+                                    revision++
+                                    status = "Addon manifests refreshed."
+                                    onDataChanged()
+                                }
+                                .onFailure { error ->
+                                    status = error.message ?: "Unable to refresh addons."
+                                }
+                            refreshingAddons = false
+                        }
+                    }
+                },
+                section = "ADDONS",
+                icon = Icons.Default.Refresh,
+            )
+        )
         manifests.forEachIndexed { index, url ->
             val enabled = runtime.content.isAddonEnabled(url)
             add(
@@ -623,6 +665,7 @@ private fun TvProviderSettings(
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
     var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
     var showRuntimeDiagnostics by remember { mutableStateOf(false) }
+    var refreshingRepositories by remember { mutableStateOf(false) }
 
     if (showAdd) {
         TvTextEntryDialog(
@@ -689,6 +732,39 @@ private fun TvProviderSettings(
         add(TvSettingsEntry("add-repo", "Add Repository", "Install an HTTPS provider repository manifest.", onActivate = { showAdd = true }, section = "PROVIDER SYSTEM"))
         add(
             TvSettingsEntry(
+                id = "refresh-repositories",
+                title = "Refresh Repositories",
+                subtitle = "Reload installed manifests and refresh provider code while preserving enable/disable preferences.",
+                value = if (refreshingRepositories) "Refreshing…" else "Refresh",
+                onActivate = {
+                    if (!refreshingRepositories) {
+                        refreshingRepositories = true
+                        status = null
+                        scope.launch {
+                            runCatching { runtime.refreshPluginRepositories() }
+                                .onSuccess { summary ->
+                                    revision++
+                                    status = buildString {
+                                        append("Refreshed ${summary.refreshedRepositories} repositories")
+                                        if (summary.failedRepositories > 0) append(" • ${summary.failedRepositories} failed")
+                                        append(" • ${summary.readyProviders} provider code ready")
+                                        if (summary.failedProviders > 0) append(" • ${summary.failedProviders} code failed")
+                                    }
+                                    onDataChanged()
+                                }
+                                .onFailure { error ->
+                                    status = error.message ?: "Unable to refresh repositories."
+                                }
+                            refreshingRepositories = false
+                        }
+                    }
+                },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.Refresh,
+            )
+        )
+        add(
+            TvSettingsEntry(
                 id = "runtime-diagnostics",
                 title = "Performance & Crash Diagnostics",
                 subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
@@ -699,11 +775,12 @@ private fun TvProviderSettings(
         )
         repositories.forEach { repository ->
             val repoEnabled = runtime.pluginStore.isRepositoryEnabled(repository)
+            val readyProviders = providerCodeStore.readyCount(repository)
             add(
                 TvSettingsEntry(
                     id = "repo-${repository.manifestUrl.hashCode()}",
                     title = repository.name,
-                    subtitle = "${repository.version} • ${repository.providers.size} providers • OK enable or disable • → remove",
+                    subtitle = "${repository.version} • ${repository.providers.size} providers • $readyProviders ready • OK enable or disable • → remove",
                     value = if (repoEnabled) "On" else "Off",
                     onActivate = {
                         runtime.pluginStore.setRepositoryEnabled(repository, !repoEnabled)
@@ -881,8 +958,11 @@ private fun TvTmdbEnhancementSettings(
     onBack: () -> Unit,
 ) {
     val store = runtime.settingsStore
+    val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf(runtime.pluginStore.tmdbApiKey()) }
     var editing by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var connectionStatus by remember { mutableStateOf<String?>(null) }
     var metadata by remember { mutableStateOf(store.tmdbMetadataEnrichmentEnabled()) }
     var artwork by remember { mutableStateOf(store.tmdbArtworkEnrichmentEnabled()) }
     var recommendations by remember { mutableStateOf(store.tmdbRecommendationsEnabled()) }
@@ -897,34 +977,64 @@ private fun TvTmdbEnhancementSettings(
             onSave = { value ->
                 apiKey = value
                 runtime.pluginStore.setTmdbApiKey(value)
+                connectionStatus = null
                 editing = false
             },
         )
     }
 
-    val entries = listOf(
-        TvSettingsEntry(
-            id = "api-key",
-            title = "API Key",
-            subtitle = "Stored locally on this TV and used only for TMDB requests.",
-            value = configuredLabel(apiKey),
-            onActivate = { editing = true },
-            section = "CONNECTION",
-            icon = Icons.Default.SettingsInputComponent,
-        ),
-        toggleEntry(
+    val entries = buildList {
+        add(
+            TvSettingsEntry(
+                id = "api-key",
+                title = "API Key",
+                subtitle = "Stored locally on this TV and used only for TMDB requests.",
+                value = configuredLabel(apiKey),
+                onActivate = { editing = true },
+                section = "CONNECTION",
+                icon = Icons.Default.SettingsInputComponent,
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "test-connection",
+                title = "Test Connection",
+                subtitle = "Verify the current TMDB v3 API key without changing your saved settings.",
+                value = if (testing) "Testing…" else connectionStatus ?: "Test",
+                onActivate = {
+                    if (!testing) {
+                        val key = apiKey.trim()
+                        if (key.isBlank()) {
+                            connectionStatus = "Enter API key"
+                        } else {
+                            testing = true
+                            connectionStatus = "Testing…"
+                            scope.launch {
+                                val ok = runCatching { TmdbEnhancementClient.testConnection(key) }
+                                    .getOrDefault(false)
+                                connectionStatus = if (ok) "Connected" else "Connection failed"
+                                testing = false
+                            }
+                        }
+                    }
+                },
+                section = "CONNECTION",
+                icon = Icons.Default.Refresh,
+            )
+        )
+        add(toggleEntry(
             "metadata", "Metadata", "Enrich details with runtime, cast, genres and production metadata.", metadata,
-        ) { metadata = it; store.setTmdbMetadataEnrichmentEnabled(it) }.copy(section = "FEATURES"),
-        toggleEntry(
+        ) { metadata = it; store.setTmdbMetadataEnrichmentEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry(
             "artwork", "Artwork", "Use richer backdrop and poster artwork when available.", artwork,
-        ) { artwork = it; store.setTmdbArtworkEnrichmentEnabled(it) }.copy(section = "FEATURES"),
-        toggleEntry(
+        ) { artwork = it; store.setTmdbArtworkEnrichmentEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry(
             "recommendations", "Recommendations", "Allow recommendation surfaces to use TMDB recommendations.", recommendations,
-        ) { recommendations = it; store.setTmdbRecommendationsEnabled(it) }.copy(section = "FEATURES"),
-        toggleEntry(
+        ) { recommendations = it; store.setTmdbRecommendationsEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry(
             "similar", "Similar Titles", "Allow recommendation surfaces to use similar-title results.", similar,
-        ) { similar = it; store.setTmdbSimilarTitlesEnabled(it) }.copy(section = "FEATURES"),
-    )
+        ) { similar = it; store.setTmdbSimilarTitlesEnabled(it) }.copy(section = "FEATURES"))
+    }
 
     TvSettingsListScreen(
         title = "TMDB",
@@ -945,8 +1055,11 @@ private fun TvMdblistEnhancementSettings(
     onBack: () -> Unit,
 ) {
     val store = runtime.settingsStore
+    val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf(store.mdblistApiKey()) }
     var editing by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var connectionStatus by remember { mutableStateOf<String?>(null) }
     var ratings by remember { mutableStateOf(store.mdblistRatingsEnabled()) }
     var imdb by remember { mutableStateOf(store.mdblistImdbEnabled()) }
     var rt by remember { mutableStateOf(store.mdblistRottenTomatoesEnabled()) }
@@ -963,40 +1076,70 @@ private fun TvMdblistEnhancementSettings(
             onSave = { value ->
                 apiKey = value
                 store.setMdblistApiKey(value)
+                connectionStatus = null
                 editing = false
             },
         )
     }
 
-    val entries = listOf(
-        TvSettingsEntry(
-            id = "api-key",
-            title = "API Key",
-            subtitle = "Stored locally on this TV and used only for MDBList requests.",
-            value = configuredLabel(apiKey),
-            onActivate = { editing = true },
-            section = "CONNECTION",
-            icon = Icons.Default.SettingsInputComponent,
-        ),
-        toggleEntry(
+    val entries = buildList {
+        add(
+            TvSettingsEntry(
+                id = "api-key",
+                title = "API Key",
+                subtitle = "Stored locally on this TV and used only for MDBList requests.",
+                value = configuredLabel(apiKey),
+                onActivate = { editing = true },
+                section = "CONNECTION",
+                icon = Icons.Default.SettingsInputComponent,
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "test-connection",
+                title = "Test Connection",
+                subtitle = "Verify the current MDBList API key without changing your saved settings.",
+                value = if (testing) "Testing…" else connectionStatus ?: "Test",
+                onActivate = {
+                    if (!testing) {
+                        val key = apiKey.trim()
+                        if (key.isBlank()) {
+                            connectionStatus = "Enter API key"
+                        } else {
+                            testing = true
+                            connectionStatus = "Testing…"
+                            scope.launch {
+                                val ok = runCatching { MdblistClient.testConnection(key) }
+                                    .getOrDefault(false)
+                                connectionStatus = if (ok) "Connected" else "Connection failed"
+                                testing = false
+                            }
+                        }
+                    }
+                },
+                section = "CONNECTION",
+                icon = Icons.Default.Refresh,
+            )
+        )
+        add(toggleEntry(
             "ratings", "Ratings", "Fetch supported rating sources when title details load.", ratings,
-        ) { ratings = it; store.setMdblistRatingsEnabled(it) }.copy(section = "RATINGS"),
-        toggleEntry(
+        ) { ratings = it; store.setMdblistRatingsEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry(
             "imdb", "IMDb Rating", "Allow IMDb rating from MDBList.", imdb, enabled = ratings,
-        ) { imdb = it; store.setMdblistImdbEnabled(it) }.copy(section = "RATINGS"),
-        toggleEntry(
+        ) { imdb = it; store.setMdblistImdbEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry(
             "rt", "Rotten Tomatoes", "Allow Rotten Tomatoes rating from MDBList.", rt, enabled = ratings,
-        ) { rt = it; store.setMdblistRottenTomatoesEnabled(it) }.copy(section = "RATINGS"),
-        toggleEntry(
+        ) { rt = it; store.setMdblistRottenTomatoesEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry(
             "metacritic", "Metacritic", "Allow Metacritic rating from MDBList.", metacritic, enabled = ratings,
-        ) { metacritic = it; store.setMdblistMetacriticEnabled(it) }.copy(section = "RATINGS"),
-        toggleEntry(
+        ) { metacritic = it; store.setMdblistMetacriticEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry(
             "tmdb", "TMDB Rating", "Allow TMDB rating from MDBList.", tmdb, enabled = ratings,
-        ) { tmdb = it; store.setMdblistTmdbRatingEnabled(it) }.copy(section = "RATINGS"),
-        toggleEntry(
+        ) { tmdb = it; store.setMdblistTmdbRatingEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry(
             "trakt", "Trakt Rating", "Allow Trakt rating from MDBList.", trakt, enabled = ratings,
-        ) { trakt = it; store.setMdblistTraktEnabled(it) }.copy(section = "RATINGS"),
-    )
+        ) { trakt = it; store.setMdblistTraktEnabled(it) }.copy(section = "RATINGS"))
+    }
 
     TvSettingsListScreen(
         title = "MDBList",

@@ -17,8 +17,10 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
-import com.vueo.shared.core.plugin.PluginRepositoryClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
+import com.vueo.shared.core.plugin.PluginRepositoryManager
+import com.vueo.shared.core.plugin.PluginRepositoryRefreshSummary
+import com.vueo.shared.core.plugin.PluginHealthStore
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
 import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.source.SourceDiscoveryCache
@@ -64,6 +66,8 @@ class TvRuntime(context: Context) {
     val pluginEngine = PluginSourceEngine(appContext, pluginStore)
     private val sourceDiscoveryEngine = SourceDiscoveryEngine(engine, pluginEngine, pluginStore)
     private val providerSync = ProviderCodeSyncManager(appContext)
+    private val pluginRepositoryManager = PluginRepositoryManager(appContext)
+    private val pluginHealthStore = PluginHealthStore(appContext)
     private val addonLoadMutex = Mutex()
 
     @Volatile
@@ -211,32 +215,49 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun addAddon(manifestUrl: String) {
-        require(manifestUrl.trim().startsWith("https://")) {
+        val normalized = manifestUrl.trim()
+        require(normalized.startsWith("https://")) {
             "VUEO requires an HTTPS addon manifest URL."
         }
-        content.add(manifestUrl)
-        refreshAddons()
+        val extension = StremioAddonExtension.fromManifestUrl(normalized)
+        content.add(extension.descriptor.baseUrl)
+        engine.install(extension)
+        engine.setExtensionEnabled(extension.descriptor.id, true)
+        CatalogDiscoveryCache.clearAll(appContext)
     }
 
     suspend fun removeAddon(manifestUrl: String) {
-        content.remove(manifestUrl)
-        refreshAddons()
+        val normalized = manifestUrl.trim()
+        engine.stremioAddons()
+            .firstOrNull { it.descriptor.baseUrl == normalized }
+            ?.let { engine.uninstall(it.descriptor.id) }
+        content.remove(normalized)
+        CatalogDiscoveryCache.clearAll(appContext)
     }
 
     suspend fun setAddonEnabled(manifestUrl: String, enabled: Boolean) {
-        content.setAddonEnabled(manifestUrl, enabled)
-        refreshAddons()
+        val normalized = manifestUrl.trim()
+        content.setAddonEnabled(normalized, enabled)
+        engine.stremioAddons()
+            .firstOrNull { it.descriptor.baseUrl == normalized }
+            ?.let { engine.setExtensionEnabled(it.descriptor.id, enabled) }
+        CatalogDiscoveryCache.clearAll(appContext)
     }
 
     suspend fun addPluginRepository(inputUrl: String): PluginRepositoryDescriptor {
-        val repository = PluginRepositoryClient.fetch(inputUrl)
-        pluginStore.upsert(repository)
-        pluginStore.setRepositoryEnabled(repository, true)
-        providerSync.syncRepository(repository, force = true)
-        return repository
+        val result = pluginRepositoryManager.installOrRefresh(
+            inputUrl = inputUrl,
+            forceCodeRefresh = true,
+        )
+        pluginStore.setRepositoryEnabled(result.repository, true)
+        return result.repository
     }
 
+    suspend fun refreshPluginRepositories(): PluginRepositoryRefreshSummary =
+        pluginRepositoryManager.refreshInstalled(forceCodeRefresh = true)
+
     suspend fun removePluginRepository(repository: PluginRepositoryDescriptor) {
+        pluginHealthStore.removeRepository(repository.manifestUrl)
         pluginStore.remove(repository.manifestUrl)
     }
 
