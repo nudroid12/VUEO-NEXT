@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 
 /**
  * Modern Home hero scene.
@@ -54,7 +55,10 @@ internal fun TvModernHomeHero(
         ) {
             Crossfade(
                 targetState = entry,
-                animationSpec = tween(durationMillis = 300),
+                animationSpec = tween(
+                    durationMillis = 250,
+                    easing = TvMotion.EaseOut,
+                ),
                 label = "modernHomeHeroMedia",
                 modifier = Modifier.fillMaxSize(),
             ) { displayedEntry ->
@@ -73,7 +77,11 @@ internal fun TvModernHomeHero(
 
         Crossfade(
             targetState = entry,
-            animationSpec = tween(durationMillis = 180),
+            animationSpec = tween(
+                durationMillis = 170,
+                delayMillis = 30,
+                easing = TvMotion.EaseOut,
+            ),
             label = "modernHomeHeroCopy",
             modifier = Modifier
                 .align(Alignment.BottomStart)

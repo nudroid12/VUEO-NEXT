@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.BuildConfig
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.launch
 
 private val PromptShape = RoundedCornerShape(24.dp)
@@ -263,7 +264,10 @@ private fun TvUpdateAction(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(if (focused) 125 else 95),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "updateActionScale",
     )
 

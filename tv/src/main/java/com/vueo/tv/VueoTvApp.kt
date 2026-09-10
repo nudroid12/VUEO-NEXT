@@ -1,6 +1,7 @@
 package com.vueo.tv
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,8 @@ import com.vueo.tv.settings.TvConfirmDialog
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.tvPlayerFadeThrough
+import com.vueo.tv.ui.motion.tvScreenFadeThrough
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdatePrompt
 import com.vueo.tv.update.TvUpdateRelease
@@ -323,7 +326,18 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         Box(
             modifier = Modifier.fillMaxSize().background(TvDesign.Black),
         ) {
-            when (route) {
+            AnimatedContent(
+                targetState = route,
+                transitionSpec = {
+                    if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
+                        tvPlayerFadeThrough()
+                    } else {
+                        tvScreenFadeThrough()
+                    }
+                },
+                label = "vueoRootRoute",
+            ) { displayedRoute ->
+                when (displayedRoute) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Image(
@@ -494,6 +508,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             },
                         )
                     }
+                }
                 }
             }
 

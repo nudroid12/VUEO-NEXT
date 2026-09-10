@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.storage.ProfileStore
+import com.vueo.tv.ui.motion.TvMotion
 
 /** Root destinations stay VUEO-owned. Only their TV presentation is rebuilt. */
 val TvPrimaryDestinations = listOf("Home", "Search", "Library", "Settings")
@@ -94,17 +95,27 @@ fun TvSidebar(
 
     val width by animateDpAsState(
         targetValue = if (expanded) SidebarExpandedWidth else SidebarCollapsedWidth,
-        animationSpec = tween(durationMillis = if (expanded) 190 else 145),
+        animationSpec = tween(
+            durationMillis = if (expanded) 180 else 130,
+            easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
+        ),
         label = "vueoSidebarWidth",
     )
     val labelAlpha by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(durationMillis = if (expanded) 155 else 90),
+        animationSpec = tween(
+            durationMillis = if (expanded) 155 else 90,
+            delayMillis = if (expanded) 25 else 0,
+            easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
+        ),
         label = "vueoSidebarLabelAlpha",
     )
     val panelAlpha by animateFloatAsState(
         targetValue = if (expanded) .98f else .86f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = tween(
+            durationMillis = TvMotion.ELEMENT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "vueoSidebarPanelAlpha",
     )
 
@@ -210,7 +221,10 @@ private fun SidebarNavigationItem(
             selected && !expanded -> 1.07f
             else -> 1f
         },
-        animationSpec = tween(durationMillis = if (focused) 120 else 90),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = when {
@@ -321,7 +335,10 @@ private fun SidebarProfileItem(
     val avatarDrawable = ProfileAvatarCatalog.drawableRes(avatarId)
     val avatarScale by animateFloatAsState(
         targetValue = if (focused) 1.10f else 1f,
-        animationSpec = tween(durationMillis = if (focused) 120 else 90),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "vueoSidebarProfileScale",
     )
     val focusBrush = if (expanded && focused) {

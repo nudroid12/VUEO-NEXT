@@ -131,13 +131,7 @@ fun TvProfilePickerScreen(
     AnimatedContent(
         targetState = editor,
         transitionSpec = {
-            tvScreenFadeThrough(
-                enterDurationMillis = 380,
-                exitDurationMillis = 200,
-                enterDelayMillis = 34,
-                initialScale = 0.986f,
-                targetScale = 0.992f,
-            )
+            tvScreenFadeThrough()
         },
         modifier = Modifier.fillMaxSize().background(PickerBlack),
         label = "tvProfileEditorTransition",
@@ -157,13 +151,7 @@ fun TvProfilePickerScreen(
             AnimatedContent(
                 targetState = mode,
                 transitionSpec = {
-                    tvScreenFadeThrough(
-                        enterDurationMillis = 320,
-                        exitDurationMillis = 175,
-                        enterDelayMillis = 22,
-                        initialScale = 0.994f,
-                        targetScale = 0.996f,
-                    )
+                    tvScreenFadeThrough()
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "tvProfileManageTransition",
@@ -774,7 +762,7 @@ private fun PickerProfileCard(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "pickerProfileScale",
     )
 
@@ -848,7 +836,7 @@ private fun ManageProfileCard(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "manageProfileScale",
     )
 
@@ -897,7 +885,7 @@ private fun AddProfileCard(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "addProfileScale",
     )
     Column(
@@ -959,7 +947,7 @@ private fun TvAvatarChoice(
     var focused by remember(avatar.id) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.055f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "profileEditorAvatarScale",
     )
 
@@ -1031,7 +1019,7 @@ private fun TvPickerToggleRow(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused && enabled) 1.014f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "pickerToggleScale",
     )
 
@@ -1066,7 +1054,7 @@ private fun TvEditorToggleRow(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.012f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "profileEditorToggleScale",
     )
     Row(
@@ -1108,7 +1096,7 @@ private fun TvProfileAction(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused && enabled) 1.025f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "profileActionScale:$label",
     )
     val background = when {
@@ -1157,7 +1145,7 @@ private fun TvIconAction(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.05f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "profileIconActionScale:$contentDescription",
     )
     Box(

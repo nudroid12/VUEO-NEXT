@@ -5,6 +5,10 @@ import android.net.Uri
 import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -95,6 +99,9 @@ import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotion
+import com.vueo.tv.ui.motion.tvPanelEnter
+import com.vueo.tv.ui.motion.tvPanelExit
 import kotlinx.coroutines.delay
 
 internal enum class TvPlayerPanel {
@@ -994,7 +1001,11 @@ fun TvPlayerScreen(
             },
         )
 
-        if (activePanel == TvPlayerPanel.SUBTITLES) {
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.SUBTITLES,
+            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+        ) {
             NuvioPlayerSubtitleWorkspace(
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
@@ -1040,7 +1051,11 @@ fun TvPlayerScreen(
             )
         }
 
-        if (activePanel == TvPlayerPanel.AUDIO) {
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.AUDIO,
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
+        ) {
             NuvioPlayerAudioWorkspace(
                 tracks = audioTracks,
                 automaticSelected = audioAutomaticSelected,

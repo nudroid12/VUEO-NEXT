@@ -72,6 +72,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.CancellationException
@@ -1150,7 +1151,10 @@ private fun TvSearchPosterTile(
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(if (focused) 145 else 110),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "searchPosterScale",
     )
 

@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.shared.core.storage.AppAccent
 import com.vueo.shared.core.storage.AppTheme
 
@@ -97,7 +98,10 @@ fun Modifier.tvPremiumFocus(
     var focused by remember { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(
         targetValue = if (focused) scale else 1f,
-        animationSpec = tween(durationMillis = if (focused) 135 else 105),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "tvPremiumFocusScale",
     )
 

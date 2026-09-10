@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -264,7 +265,10 @@ private fun TvModernHomeCard(
     var focused by remember(entry.key) { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(
         targetValue = if (focused) FocusedCardScale else 1f,
-        animationSpec = tween(durationMillis = if (focused) 125 else 95),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "modernHomeCardScale",
     )
 

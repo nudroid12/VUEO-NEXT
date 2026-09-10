@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 
 /**
@@ -99,12 +100,18 @@ internal fun TvDetailPresentation(
     val backdropScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 190
     val backdropAlpha by animateFloatAsState(
         targetValue = if (backdropScrolled) .07f else 1f,
-        animationSpec = tween(if (backdropScrolled) 180 else 420),
+        animationSpec = tween(
+            durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
+            easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
+        ),
         label = "detail39BackdropAlpha",
     )
     val scrimAlpha by animateFloatAsState(
         targetValue = if (backdropScrolled) 0f else 1f,
-        animationSpec = tween(if (backdropScrolled) 180 else 360),
+        animationSpec = tween(
+            durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
+            easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
+        ),
         label = "detail39ScrimAlpha",
     )
 

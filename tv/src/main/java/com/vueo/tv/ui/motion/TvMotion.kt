@@ -20,21 +20,26 @@ import androidx.compose.ui.graphics.Color
  * short fade-throughs, very shallow depth scaling and no bounce.
  */
 internal object TvMotion {
-    const val QUICK_MS = 150
-    const val FOCUS_MS = 170
-    const val STANDARD_MS = 280
-    const val SCREEN_MS = 340
+    const val FOCUS_IN_MS = 120
+    const val FOCUS_OUT_MS = 90
+    const val QUICK_MS = 110
+    const val ELEMENT_MS = 160
+    const val PANEL_IN_MS = 190
+    const val PANEL_OUT_MS = 110
+    const val SCREEN_IN_MS = 250
+    const val SCREEN_OUT_MS = 130
+    const val BACKDROP_MS = 270
 
     val EaseOut = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
     val EaseInOut = CubicBezierEasing(0.40f, 0f, 0.20f, 1f)
 }
 
 internal fun tvScreenFadeThrough(
-    enterDurationMillis: Int = TvMotion.SCREEN_MS,
-    exitDurationMillis: Int = TvMotion.QUICK_MS,
-    enterDelayMillis: Int = 28,
-    initialScale: Float = 0.988f,
-    targetScale: Float = 0.994f,
+    enterDurationMillis: Int = TvMotion.SCREEN_IN_MS,
+    exitDurationMillis: Int = TvMotion.SCREEN_OUT_MS,
+    enterDelayMillis: Int = 12,
+    initialScale: Float = 0.992f,
+    targetScale: Float = 0.996f,
 ): ContentTransform =
     (
         fadeIn(
@@ -75,9 +80,9 @@ internal fun tvImmediateCut(): ContentTransform =
 
 /** Player workspace uses fade only so video never appears to zoom. */
 internal fun tvPlayerFadeThrough(
-    enterDurationMillis: Int = 240,
-    exitDurationMillis: Int = 120,
-    enterDelayMillis: Int = 50,
+    enterDurationMillis: Int = 180,
+    exitDurationMillis: Int = 90,
+    enterDelayMillis: Int = 0,
 ): ContentTransform =
     fadeIn(
         animationSpec = tween(
@@ -96,16 +101,16 @@ internal fun tvPlayerFadeThrough(
 internal fun tvPanelEnter(): EnterTransition =
     fadeIn(
         animationSpec = tween(
-            durationMillis = TvMotion.STANDARD_MS,
-            delayMillis = 20,
+            durationMillis = TvMotion.PANEL_IN_MS,
+            delayMillis = 8,
             easing = TvMotion.EaseOut,
         ),
     ) +
         scaleIn(
-            initialScale = 0.992f,
+            initialScale = 0.996f,
             animationSpec = tween(
-                durationMillis = TvMotion.STANDARD_MS,
-                delayMillis = 20,
+                durationMillis = TvMotion.PANEL_IN_MS,
+                delayMillis = 8,
                 easing = TvMotion.EaseOut,
             ),
         )
@@ -113,26 +118,26 @@ internal fun tvPanelEnter(): EnterTransition =
 internal fun tvPanelExit(): ExitTransition =
     fadeOut(
         animationSpec = tween(
-            durationMillis = TvMotion.QUICK_MS,
+            durationMillis = TvMotion.PANEL_OUT_MS,
             easing = TvMotion.EaseInOut,
         ),
     ) +
         scaleOut(
             targetScale = 0.996f,
             animationSpec = tween(
-                durationMillis = TvMotion.QUICK_MS,
+                durationMillis = TvMotion.PANEL_OUT_MS,
                 easing = TvMotion.EaseInOut,
             ),
         )
 
-internal fun tvFocusSpec(): FiniteAnimationSpec<Float> =
+internal fun tvFocusSpec(focused: Boolean = true): FiniteAnimationSpec<Float> =
     tween(
-        durationMillis = TvMotion.FOCUS_MS,
+        durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
         easing = TvMotion.EaseOut,
     )
 
-internal fun tvFocusColorSpec(): FiniteAnimationSpec<Color> =
+internal fun tvFocusColorSpec(focused: Boolean = true): FiniteAnimationSpec<Color> =
     tween(
-        durationMillis = TvMotion.FOCUS_MS,
+        durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
         easing = TvMotion.EaseOut,
     )

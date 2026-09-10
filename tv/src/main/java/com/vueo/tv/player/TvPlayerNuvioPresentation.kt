@@ -1,7 +1,9 @@
 package com.vueo.tv.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +49,12 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotion
+import com.vueo.tv.ui.motion.tvPanelEnter
+import com.vueo.tv.ui.motion.tvPanelExit
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun NuvioPlayerPresentation(
@@ -92,13 +100,32 @@ internal fun NuvioPlayerPresentation(
     onPlayEpisode: (EpisodeItem) -> Unit,
     onPanelSelected: (TvPlayerOption) -> Unit,
 ) {
+    val retainedPanelOptions = remember { mutableStateOf<List<TvPlayerOption>>(emptyList()) }
+    LaunchedEffect(panelOptions) {
+        if (panelOptions.isNotEmpty()) retainedPanelOptions.value = panelOptions
+    }
+    val displayedPanelOptions = panelOptions.ifEmpty { retainedPanelOptions.value }
+
     Box(Modifier.fillMaxSize()) {
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
-        if (showChrome || activePanel != TvPlayerPanel.NONE || playbackError != null || activeSkip != null || nextCountdown > 0) {
+        val showScrim = showChrome ||
+            activePanel != TvPlayerPanel.NONE ||
+            playbackError != null ||
+            activeSkip != null ||
+            nextCountdown > 0
+        AnimatedVisibility(
+            visible = showScrim,
+            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+        ) {
             NuvioPlayerCinematicScrim(strong = activePanel != TvPlayerPanel.NONE || playbackError != null)
         }
 
-        if (showChrome) {
+        AnimatedVisibility(
+            visible = showChrome,
+            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+        ) {
             NuvioPlayerControls(
                 media = media,
                 episode = episode,
@@ -168,23 +195,37 @@ internal fun NuvioPlayerPresentation(
             )
         }
 
-        when (activePanel) {
-            TvPlayerPanel.MORE ->
-                NuvioPlayerCompactOverlay(
-                    panel = activePanel,
-                    options = panelOptions,
-                    onInteraction = onInteraction,
-                    onSelected = onPanelSelected,
-                )
-            TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
-            TvPlayerPanel.SOURCES -> NuvioPlayerSourcesPanel(
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.MORE,
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
+        ) {
+            NuvioPlayerCompactOverlay(
+                panel = TvPlayerPanel.MORE,
+                options = displayedPanelOptions,
+                onInteraction = onInteraction,
+                onSelected = onPanelSelected,
+            )
+        }
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.SOURCES,
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
+        ) {
+            NuvioPlayerSourcesPanel(
                 title = episode?.let { "S${it.season}E${it.episode} • ${it.title}" } ?: media.name,
-                options = panelOptions,
+                options = displayedPanelOptions,
                 onInteraction = onInteraction,
                 onDismiss = onDismissPanel,
                 onSelected = onPanelSelected,
             )
-            TvPlayerPanel.EPISODES -> NuvioPlayerEpisodesPanel(
+        }
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.EPISODES,
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
+        ) {
+            NuvioPlayerEpisodesPanel(
                 mediaTitle = media.name,
                 episodes = episodes,
                 currentEpisode = episode,
@@ -192,7 +233,6 @@ internal fun NuvioPlayerPresentation(
                 onDismiss = onDismissPanel,
                 onSelected = onPlayEpisode,
             )
-            TvPlayerPanel.NONE -> Unit
         }
     }
 }
@@ -215,31 +255,37 @@ private fun NuvioContentWarningsOverlay(
         lineHeightFraction.snapTo(0f)
         itemAlphas.forEach { it.snapTo(0f) }
 
-        containerAlpha.animateTo(1f, tween(300))
+        containerAlpha.animateTo(1f, tween(220, easing = TvMotion.EaseOut))
         lineHeightFraction.animateTo(
             1f,
-            tween(400, easing = FastOutSlowInEasing),
+            tween(260, easing = TvMotion.EaseOut),
         )
 
-        for (index in 0 until count) {
-            delay(80L)
-            itemAlphas[index].animateTo(1f, tween(200))
+        coroutineScope {
+            itemAlphas.forEachIndexed { index, alpha ->
+                launch {
+                    delay(index * 55L)
+                    alpha.animateTo(1f, tween(160, easing = TvMotion.EaseOut))
+                }
+            }
         }
 
         delay(5_000L)
 
-        for (index in (count - 1) downTo 0) {
-            delay(60L)
-            itemAlphas[index].animateTo(0f, tween(150))
+        coroutineScope {
+            itemAlphas.asReversed().forEachIndexed { index, alpha ->
+                launch {
+                    delay(index * 40L)
+                    alpha.animateTo(0f, tween(100, easing = TvMotion.EaseInOut))
+                }
+            }
         }
 
-        delay(100L)
         lineHeightFraction.animateTo(
             0f,
-            tween(300, easing = FastOutSlowInEasing),
+            tween(180, easing = TvMotion.EaseInOut),
         )
-        delay(200L)
-        containerAlpha.animateTo(0f, tween(200))
+        containerAlpha.animateTo(0f, tween(120, easing = TvMotion.EaseInOut))
         onAnimationComplete()
     }
 

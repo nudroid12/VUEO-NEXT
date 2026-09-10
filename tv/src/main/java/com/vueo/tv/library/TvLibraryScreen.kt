@@ -57,6 +57,7 @@ import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
@@ -488,7 +489,10 @@ private fun LibraryControlPill(
     var focused by remember(label) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(180),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "libraryControlScale",
     )
 
@@ -560,7 +564,10 @@ private fun LibraryViewModeButton(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(180),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "libraryViewModeScale",
     )
 
@@ -665,7 +672,10 @@ private fun LibraryPosterCard(
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(180),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "libraryPosterScale",
     )
 
@@ -764,7 +774,10 @@ private fun LibraryListRow(
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.01f else 1f,
-        animationSpec = tween(180),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "libraryListScale",
     )
 

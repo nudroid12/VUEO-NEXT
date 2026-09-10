@@ -57,6 +57,7 @@ import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 
 private val SourceHorizontalOuterPadding = 52.dp
@@ -205,7 +206,10 @@ private fun SourceBackdrop(
 ) {
     val alpha by animateFloatAsState(
         targetValue = if (loading) .70f else .50f,
-        animationSpec = tween(500),
+        animationSpec = tween(
+            durationMillis = TvMotion.BACKDROP_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "sourceBackdropAlpha",
     )
 

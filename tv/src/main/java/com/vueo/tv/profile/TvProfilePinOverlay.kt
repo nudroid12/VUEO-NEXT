@@ -167,7 +167,7 @@ private fun PinKey(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tvFocusSpec(),
+        animationSpec = tvFocusSpec(focused),
         label = "pinKeyScale",
     )
 

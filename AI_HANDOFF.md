@@ -127,3 +127,12 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Its overlay is deliberately transparent so the video and subtitle remain visible at their real positions while sync is adjusted.
 - Do not add a Float mode and do not relocate the rendered subtitle while this workspace is open.
 - Opening the workspace must transfer focus directly into its selected language row. If initial focus is missed, the next D-pad direction or OK/Enter must recover focus into the panel.
+
+## TV 45 motion polish
+
+- TV motion uses short fade-throughs, shallow scale and no spring or bounce.
+- Focus scale timing is 120ms in and 90ms out with the shared `TvMotion.EaseOut` curve.
+- General screen transitions are 250ms in and 130ms out. Player route transitions are fade-only at 180ms in and 90ms out so video never zooms.
+- Player chrome, scrim and workspaces animate independently from the video. The transparent subtitle workspace remains fade-only and does not move the rendered subtitle.
+- Hero and backdrop transitions are capped near 270ms. Do not restore the previous 420ms to 500ms fades.
+- This revision was reviewed statically only. No local Gradle build was run, as requested by the maintainer.

@@ -53,6 +53,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaPerson
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 
 private enum class NuvioPeopleTab { CAST, RELATED, TRAILER }
 
@@ -117,7 +118,10 @@ internal fun NuvioDetailPeopleSwitcher(
 
         Crossfade(
             targetState = active,
-            animationSpec = tween(160),
+            animationSpec = tween(
+                durationMillis = TvMotion.ELEMENT_MS,
+                easing = TvMotion.EaseOut,
+            ),
             label = "detail39PeopleTab",
         ) { tab ->
             when (tab) {
@@ -372,7 +376,10 @@ private fun NuvioRelatedCard(
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(if (focused) 120 else 90),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "detail39RelatedScale",
     )
 
@@ -534,7 +541,10 @@ private fun NuvioCompanyCard(company: MediaCompany) {
     var focused by remember(company.name) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.03f else 1f,
-        animationSpec = tween(110),
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
         label = "detail39CompanyScale",
     )
 
@@ -579,4 +589,3 @@ private fun NuvioCompanyCard(company: MediaCompany) {
         }
     }
 }
-
