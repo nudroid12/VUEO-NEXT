@@ -1106,6 +1106,13 @@ private fun emptyDiscoveryResult():
                         responseJson
                     }
 
+                    function<String, Boolean>(
+                        "__vueoCancelFetch"
+                    ) { requestId ->
+                        providerHttpSession.cancel(requestId)
+                        true
+                    }
+
                     asyncFunction<String, String>(
                         "__vueoWebViewResolve"
                     ) { requestJson ->
@@ -1312,6 +1319,8 @@ private fun emptyDiscoveryResult():
                 logs =
                     logs.toList(),
             )
+        } finally {
+            providerHttpSession.cancelAll()
         }
     }
 
@@ -1361,6 +1370,19 @@ private fun emptyDiscoveryResult():
               originalLanguage: "",
               aliases: []
             };
+            globalThis.VUEO_RUNTIME_CAPABILITIES = {
+              version: 4,
+              fetch: true,
+              binaryBody: true,
+              blob: true,
+              formData: true,
+              abortController: true,
+              axios: true,
+              webViewResolve: true,
+              providerCookieSession: true,
+              maxResponseBytes: 4194304,
+              maxRequestTimeoutMs: 30000
+            };
 
             globalThis.vueoDiscoveryContext =
               async function (tmdbUrl) {
@@ -1403,14 +1425,554 @@ private fun emptyDiscoveryResult():
               }
             }
 
-            function __vueoHeaders(raw) {
-              var normalized = {};
-              if (raw && typeof raw === "object") {
-                Object.keys(raw).forEach(function (key) {
-                  normalized[String(key)] = String(raw[key]);
-                });
+            function VueoHeaders(initial) {
+              this._values = {};
+              this._names = {};
+
+              if (initial instanceof VueoHeaders) {
+                var existing = initial.entries();
+                for (var item of existing) {
+                  this.append(item[0], item[1]);
+                }
+              } else if (Array.isArray(initial)) {
+                for (var i = 0; i < initial.length; i++) {
+                  if (initial[i] && initial[i].length >= 2) {
+                    this.append(initial[i][0], initial[i][1]);
+                  }
+                }
+              } else if (initial && typeof initial === "object") {
+                var keys = Object.keys(initial);
+                for (var j = 0; j < keys.length; j++) {
+                  this.append(keys[j], initial[keys[j]]);
+                }
               }
-              return normalized;
+            }
+
+            VueoHeaders.prototype.append = function (name, value) {
+              var original = String(name);
+              var key = original.toLowerCase();
+              var text = String(value);
+              this._names[key] = this._names[key] || original;
+              this._values[key] = this._values[key]
+                ? this._values[key] + ", " + text
+                : text;
+            };
+
+            VueoHeaders.prototype.set = function (name, value) {
+              var original = String(name);
+              var key = original.toLowerCase();
+              this._names[key] = original;
+              this._values[key] = String(value);
+            };
+
+            VueoHeaders.prototype.get = function (name) {
+              var key = String(name).toLowerCase();
+              return Object.prototype.hasOwnProperty.call(this._values, key)
+                ? this._values[key]
+                : null;
+            };
+
+            VueoHeaders.prototype.has = function (name) {
+              return this.get(name) !== null;
+            };
+
+            VueoHeaders.prototype.delete = function (name) {
+              var key = String(name).toLowerCase();
+              delete this._values[key];
+              delete this._names[key];
+            };
+
+            VueoHeaders.prototype.entries = function () {
+              var self = this;
+              return Object.keys(this._values).map(function (key) {
+                return [self._names[key] || key, self._values[key]];
+              })[Symbol.iterator]();
+            };
+
+            VueoHeaders.prototype.keys = function () {
+              var self = this;
+              return Object.keys(this._values).map(function (key) {
+                return self._names[key] || key;
+              })[Symbol.iterator]();
+            };
+
+            VueoHeaders.prototype.values = function () {
+              var self = this;
+              return Object.keys(this._values).map(function (key) {
+                return self._values[key];
+              })[Symbol.iterator]();
+            };
+
+            VueoHeaders.prototype.forEach = function (callback, thisArg) {
+              var entries = this.entries();
+              for (var item of entries) {
+                callback.call(thisArg, item[1], item[0], this);
+              }
+            };
+
+            VueoHeaders.prototype.toJSON = function () {
+              var result = {};
+              this.forEach(function (value, name) {
+                result[name] = value;
+              });
+              return result;
+            };
+
+            if (typeof Symbol !== "undefined" && Symbol.iterator) {
+              VueoHeaders.prototype[Symbol.iterator] =
+                VueoHeaders.prototype.entries;
+            }
+
+            globalThis.Headers = globalThis.Headers || VueoHeaders;
+
+            function __vueoHeaders(raw) {
+              return new Headers(raw).toJSON();
+            }
+
+            function __vueoUtf8BodyBytes(value) {
+              var encoded = unescape(encodeURIComponent(String(value)));
+              var bytes = [];
+              for (var i = 0; i < encoded.length; i++) {
+                bytes.push(encoded.charCodeAt(i) & 255);
+              }
+              return bytes;
+            }
+
+            function __vueoBytesToBuffer(bytes) {
+              return new Uint8Array(bytes).buffer;
+            }
+
+            function __vueoBase64BodyBytes(value) {
+              var binary = atob(String(value || ""));
+              var bytes = [];
+              for (var i = 0; i < binary.length; i++) {
+                bytes.push(binary.charCodeAt(i) & 255);
+              }
+              return bytes;
+            }
+
+            function __vueoBodyBase64(bytes) {
+              var binary = "";
+              for (var i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i] & 255);
+              }
+              return __vueoBinaryToBase64(binary);
+            }
+
+            function VueoBlob(parts, options) {
+              parts = parts || [];
+              options = options || {};
+              this.type = String(options.type || "").toLowerCase();
+              this._bytes = [];
+
+              for (var i = 0; i < parts.length; i++) {
+                var part = parts[i];
+                var bytes;
+                if (part instanceof VueoBlob) {
+                  bytes = part._bytes;
+                } else if (part instanceof ArrayBuffer) {
+                  bytes = Array.prototype.slice.call(new Uint8Array(part));
+                } else if (ArrayBuffer.isView && ArrayBuffer.isView(part)) {
+                  bytes = Array.prototype.slice.call(
+                    new Uint8Array(part.buffer, part.byteOffset, part.byteLength)
+                  );
+                } else {
+                  bytes = __vueoUtf8BodyBytes(part);
+                }
+                this._bytes = this._bytes.concat(bytes);
+              }
+
+              this.size = this._bytes.length;
+            }
+
+            VueoBlob.prototype.arrayBuffer = async function () {
+              return __vueoBytesToBuffer(this._bytes);
+            };
+
+            VueoBlob.prototype.bytes = async function () {
+              return new Uint8Array(this._bytes);
+            };
+
+            VueoBlob.prototype.text = async function () {
+              return new TextDecoder().decode(new Uint8Array(this._bytes));
+            };
+
+            VueoBlob.prototype.slice = function (start, end, type) {
+              var size = this._bytes.length;
+              var from = start == null ? 0 : Number(start);
+              var to = end == null ? size : Number(end);
+              if (from < 0) from = Math.max(size + from, 0);
+              if (to < 0) to = Math.max(size + to, 0);
+              return new VueoBlob(
+                [new Uint8Array(this._bytes.slice(from, to))],
+                { type: type || "" }
+              );
+            };
+
+            globalThis.Blob = globalThis.Blob || VueoBlob;
+
+            function VueoFile(parts, name, options) {
+              VueoBlob.call(this, parts, options);
+              this.name = String(name || "");
+              this.lastModified = Number(
+                options && options.lastModified != null
+                  ? options.lastModified
+                  : Date.now()
+              );
+            }
+            VueoFile.prototype = Object.create(VueoBlob.prototype);
+            VueoFile.prototype.constructor = VueoFile;
+            globalThis.File = globalThis.File || VueoFile;
+
+            function VueoFormData() {
+              this._entries = [];
+            }
+
+            VueoFormData.prototype.append = function (name, value, filename) {
+              this._entries.push({
+                name: String(name),
+                value: value,
+                filename: filename == null ? null : String(filename)
+              });
+            };
+
+            VueoFormData.prototype.set = function (name, value, filename) {
+              this.delete(name);
+              this.append(name, value, filename);
+            };
+
+            VueoFormData.prototype.get = function (name) {
+              name = String(name);
+              for (var i = 0; i < this._entries.length; i++) {
+                if (this._entries[i].name === name) {
+                  return this._entries[i].value;
+                }
+              }
+              return null;
+            };
+
+            VueoFormData.prototype.getAll = function (name) {
+              name = String(name);
+              return this._entries.filter(function (entry) {
+                return entry.name === name;
+              }).map(function (entry) {
+                return entry.value;
+              });
+            };
+
+            VueoFormData.prototype.has = function (name) {
+              return this.get(name) !== null;
+            };
+
+            VueoFormData.prototype.delete = function (name) {
+              name = String(name);
+              this._entries = this._entries.filter(function (entry) {
+                return entry.name !== name;
+              });
+            };
+
+            VueoFormData.prototype.entries = function () {
+              return this._entries.map(function (entry) {
+                return [entry.name, entry.value];
+              })[Symbol.iterator]();
+            };
+
+            VueoFormData.prototype.keys = function () {
+              return this._entries.map(function (entry) {
+                return entry.name;
+              })[Symbol.iterator]();
+            };
+
+            VueoFormData.prototype.values = function () {
+              return this._entries.map(function (entry) {
+                return entry.value;
+              })[Symbol.iterator]();
+            };
+
+            VueoFormData.prototype.forEach = function (callback, thisArg) {
+              for (var i = 0; i < this._entries.length; i++) {
+                var entry = this._entries[i];
+                callback.call(thisArg, entry.value, entry.name, this);
+              }
+            };
+
+            if (typeof Symbol !== "undefined" && Symbol.iterator) {
+              VueoFormData.prototype[Symbol.iterator] =
+                VueoFormData.prototype.entries;
+            }
+
+            globalThis.FormData = globalThis.FormData || VueoFormData;
+
+            function __vueoMultipart(formData) {
+              var boundary =
+                "----VueoFormBoundary" +
+                Math.random().toString(16).slice(2);
+              var bytes = [];
+
+              function appendText(value) {
+                bytes = bytes.concat(__vueoUtf8BodyBytes(value));
+              }
+
+              for (var i = 0; i < formData._entries.length; i++) {
+                var entry = formData._entries[i];
+                var escapedName = entry.name.replace(/\"/g, "%22");
+                appendText("--" + boundary + "\r\n");
+                appendText(
+                  "Content-Disposition: form-data; name=\"" +
+                  escapedName + "\""
+                );
+
+                if (entry.value instanceof Blob) {
+                  var filename =
+                    entry.filename || entry.value.name || "blob";
+                  appendText(
+                    "; filename=\"" +
+                    String(filename).replace(/\"/g, "%22") +
+                    "\"\r\n"
+                  );
+                  appendText(
+                    "Content-Type: " +
+                    (entry.value.type || "application/octet-stream") +
+                    "\r\n\r\n"
+                  );
+                  bytes = bytes.concat(entry.value._bytes);
+                  appendText("\r\n");
+                } else {
+                  appendText("\r\n\r\n" + String(entry.value) + "\r\n");
+                }
+              }
+
+              appendText("--" + boundary + "--\r\n");
+              return {
+                bodyBase64: __vueoBodyBase64(bytes),
+                contentType: "multipart/form-data; boundary=" + boundary
+              };
+            }
+
+            function VueoAbortSignal() {
+              this.aborted = false;
+              this.reason = undefined;
+              this.onabort = null;
+              this.__vueoTimeoutMs = 0;
+              this._listeners = [];
+            }
+
+            VueoAbortSignal.prototype.addEventListener = function (type, callback) {
+              if (type === "abort" && typeof callback === "function") {
+                this._listeners.push(callback);
+              }
+            };
+
+            VueoAbortSignal.prototype.removeEventListener = function (type, callback) {
+              if (type !== "abort") return;
+              this._listeners = this._listeners.filter(function (listener) {
+                return listener !== callback;
+              });
+            };
+
+            VueoAbortSignal.prototype.throwIfAborted = function () {
+              if (this.aborted) throw this.reason;
+            };
+
+            function __vueoAbortError(reason) {
+              if (reason && typeof reason === "object" && reason.name) {
+                return reason;
+              }
+              var error = new Error(
+                reason == null ? "The operation was aborted" : String(reason)
+              );
+              error.name = "AbortError";
+              error.code = "ERR_CANCELED";
+              return error;
+            }
+
+            function VueoAbortController() {
+              this.signal = new VueoAbortSignal();
+            }
+
+            VueoAbortController.prototype.abort = function (reason) {
+              var signal = this.signal;
+              if (signal.aborted) return;
+              signal.aborted = true;
+              signal.reason = __vueoAbortError(reason);
+              if (typeof signal.onabort === "function") {
+                signal.onabort.call(signal, { type: "abort", target: signal });
+              }
+              signal._listeners.slice().forEach(function (listener) {
+                listener.call(signal, { type: "abort", target: signal });
+              });
+            };
+
+            VueoAbortSignal.timeout = function (millis) {
+              var controller = new VueoAbortController();
+              controller.signal.__vueoTimeoutMs = Math.max(0, Number(millis || 0));
+              setTimeout(function () {
+                var reason = new Error("The operation timed out");
+                reason.name = "TimeoutError";
+                controller.abort(reason);
+              }, controller.signal.__vueoTimeoutMs);
+              return controller.signal;
+            };
+
+            globalThis.AbortSignal = globalThis.AbortSignal || VueoAbortSignal;
+            globalThis.AbortController =
+              globalThis.AbortController || VueoAbortController;
+            if (typeof globalThis.AbortSignal.timeout !== "function") {
+              globalThis.AbortSignal.timeout = VueoAbortSignal.timeout;
+            }
+
+            function VueoResponse(nativeResponse, requestUrl) {
+              this.ok =
+                nativeResponse.status >= 200 &&
+                nativeResponse.status < 300;
+              this.status = nativeResponse.status || 0;
+              this.statusText = nativeResponse.statusText || "";
+              this.url = nativeResponse.url || requestUrl;
+              this.redirected = this.url !== requestUrl;
+              this.type = "basic";
+              this.headers = new Headers(nativeResponse.headers || {});
+              this.bodyUsed = false;
+              this.bodyTruncated = nativeResponse.bodyTruncated === true;
+              this._bodyText = nativeResponse.body || "";
+              this._bodyBase64 = nativeResponse.bodyBase64 || "";
+            }
+
+            VueoResponse.prototype._consume = function () {
+              if (this.bodyUsed) {
+                throw new TypeError("Body has already been consumed");
+              }
+              this.bodyUsed = true;
+            };
+
+            VueoResponse.prototype._bytes = function () {
+              return this._bodyBase64
+                ? __vueoBase64BodyBytes(this._bodyBase64)
+                : __vueoUtf8BodyBytes(this._bodyText);
+            };
+
+            VueoResponse.prototype.text = async function () {
+              this._consume();
+              if (this._bodyBase64) {
+                return new TextDecoder().decode(new Uint8Array(this._bytes()));
+              }
+              return this._bodyText;
+            };
+
+            VueoResponse.prototype.json = async function () {
+              var text = await this.text();
+              return JSON.parse(text || "null");
+            };
+
+            VueoResponse.prototype.arrayBuffer = async function () {
+              this._consume();
+              return __vueoBytesToBuffer(this._bytes());
+            };
+
+            VueoResponse.prototype.bytes = async function () {
+              this._consume();
+              return new Uint8Array(this._bytes());
+            };
+
+            VueoResponse.prototype.blob = async function () {
+              this._consume();
+              return new Blob(
+                [new Uint8Array(this._bytes())],
+                { type: this.headers.get("content-type") || "" }
+              );
+            };
+
+            VueoResponse.prototype.clone = function () {
+              if (this.bodyUsed) {
+                throw new TypeError("Body has already been consumed");
+              }
+              return new VueoResponse({
+                status: this.status,
+                statusText: this.statusText,
+                url: this.url,
+                headers: this.headers.toJSON(),
+                body: this._bodyText,
+                bodyBase64: this._bodyBase64,
+                bodyTruncated: this.bodyTruncated
+              }, this.url);
+            };
+
+            globalThis.Response = globalThis.Response || VueoResponse;
+
+            function VueoRequest(input, init) {
+              init = init || {};
+              var source = input && typeof input === "object" ? input : {};
+              this.url = String(source.url || input || "");
+              this.method = String(init.method || source.method || "GET").toUpperCase();
+              this.headers = new Headers(init.headers || source.headers || {});
+              this.body = init.body !== undefined ? init.body : source.body;
+              this.redirect = String(init.redirect || source.redirect || "follow");
+              this.signal = init.signal || source.signal || null;
+              this.timeout = Number(init.timeout || source.timeout || 0);
+              this.binaryResponse =
+                init.binaryResponse === true || source.binaryResponse === true;
+            }
+
+            VueoRequest.prototype.clone = function () {
+              return new VueoRequest(this);
+            };
+
+            globalThis.Request = globalThis.Request || VueoRequest;
+
+            function __vueoSerializeBody(body, headers) {
+              if (body == null) return { body: null, bodyBase64: null };
+
+              if (body instanceof FormData) {
+                var multipart = __vueoMultipart(body);
+                if (!headers.has("content-type")) {
+                  headers.set("Content-Type", multipart.contentType);
+                }
+                return { body: null, bodyBase64: multipart.bodyBase64 };
+              }
+
+              if (
+                typeof URLSearchParams !== "undefined" &&
+                body instanceof URLSearchParams
+              ) {
+                if (!headers.has("content-type")) {
+                  headers.set(
+                    "Content-Type",
+                    "application/x-www-form-urlencoded;charset=UTF-8"
+                  );
+                }
+                return { body: body.toString(), bodyBase64: null };
+              }
+
+              if (body instanceof Blob) {
+                if (body.type && !headers.has("content-type")) {
+                  headers.set("Content-Type", body.type);
+                }
+                return {
+                  body: null,
+                  bodyBase64: __vueoBodyBase64(body._bytes)
+                };
+              }
+
+              if (body instanceof ArrayBuffer) {
+                return {
+                  body: null,
+                  bodyBase64: __vueoBodyBase64(
+                    Array.prototype.slice.call(new Uint8Array(body))
+                  )
+                };
+              }
+
+              if (ArrayBuffer.isView && ArrayBuffer.isView(body)) {
+                return {
+                  body: null,
+                  bodyBase64: __vueoBodyBase64(
+                    Array.prototype.slice.call(
+                      new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+                    )
+                  )
+                };
+              }
+
+              return { body: String(body), bodyBase64: null };
             }
 
             globalThis.webviewResolve = async function (input, options) {
@@ -1444,147 +2006,390 @@ private fun emptyDiscoveryResult():
             globalThis.webViewResolve =
               globalThis.webviewResolve;
 
+            var __vueoFetchSequence = 0;
+
             globalThis.fetch = async function (input, init) {
-              init = init || {};
-
-              var request = {
-                url: String(input && input.url ? input.url : input),
-                method: String(init.method || "GET").toUpperCase(),
-                headers: __vueoHeaders(init.headers),
-                body: init.body == null ? null : String(init.body),
-                contentType:
-                  init.headers &&
-                  (init.headers["Content-Type"] || init.headers["content-type"])
-                    ? String(
-                        init.headers["Content-Type"] ||
-                        init.headers["content-type"]
-                      )
-                    : null,
-                redirect:
-                  init.redirect == null
-                    ? "follow"
-                    : String(init.redirect)
-              };
-
-              var raw = await __vueoNativeFetch(
-                JSON.stringify(request)
-              );
-
-              var response = JSON.parse(raw);
-
-              if (response.error) {
-                throw new Error(response.error);
+              var fetchRequest = new Request(input, init || {});
+              var signal = fetchRequest.signal;
+              if (signal && signal.aborted) {
+                throw signal.reason;
               }
 
-              var responseHeaders = response.headers || {};
-              var bodyText = response.body || "";
+              var headers = fetchRequest.headers;
+              var serialized = __vueoSerializeBody(fetchRequest.body, headers);
+              var requestId = "fetch-" + (++__vueoFetchSequence);
+              var timeoutMs = fetchRequest.timeout;
+              if (signal && signal.__vueoTimeoutMs > 0) {
+                timeoutMs = timeoutMs > 0
+                  ? Math.min(timeoutMs, signal.__vueoTimeoutMs)
+                  : signal.__vueoTimeoutMs;
+              }
 
-              return {
-                ok:
-                  response.status >= 200 &&
-                  response.status < 300,
-                status: response.status || 0,
-                statusText: response.statusText || "",
-                url: response.url || request.url,
-                headers: {
-                  get: function (name) {
-                    if (!name) return null;
-                    var lower = String(name).toLowerCase();
-                    var keys = Object.keys(responseHeaders);
-                    for (var i = 0; i < keys.length; i++) {
-                      if (keys[i].toLowerCase() === lower) {
-                        return String(responseHeaders[keys[i]]);
-                      }
-                    }
-                    return null;
-                  },
-                  has: function (name) {
-                    return this.get(name) !== null;
-                  }
-                },
-                text: async function () {
-                  return bodyText;
-                },
-                json: async function () {
-                  return JSON.parse(bodyText || "null");
-                },
-                clone: function () {
-                  return this;
-                }
+              var request = {
+                requestId: requestId,
+                url: fetchRequest.url,
+                method: fetchRequest.method,
+                headers: headers.toJSON(),
+                body: serialized.body,
+                bodyBase64: serialized.bodyBase64,
+                contentType: headers.get("content-type"),
+                redirect: fetchRequest.redirect,
+                timeoutMs: timeoutMs,
+                binaryResponse: fetchRequest.binaryResponse
               };
+
+              var abortListener = function () {
+                __vueoCancelFetch(requestId);
+              };
+              if (signal) signal.addEventListener("abort", abortListener);
+
+              try {
+                var raw = await __vueoNativeFetch(JSON.stringify(request));
+                if (signal && signal.aborted) {
+                  throw signal.reason;
+                }
+
+                var response = JSON.parse(raw);
+                if (response.error) {
+                  var networkError = new TypeError(response.error);
+                  networkError.code = /timeout|timed out/i.test(response.error)
+                    ? "ETIMEDOUT"
+                    : (/cancel/i.test(response.error)
+                        ? "ERR_CANCELED"
+                        : "ERR_NETWORK");
+                  networkError.errorType = response.errorType || "NetworkError";
+                  throw networkError;
+                }
+
+                return new Response(response, request.url);
+              } finally {
+                if (signal) {
+                  signal.removeEventListener("abort", abortListener);
+                }
+              }
             };
 
-            function __vueoAxiosRequest(config) {
-              config = config || {};
+            function __vueoAxiosParams(url, params) {
+              if (!params) return url;
+              var query = [];
+              Object.keys(params).forEach(function (key) {
+                var values = Array.isArray(params[key]) ? params[key] : [params[key]];
+                values.forEach(function (value) {
+                  if (value == null) return;
+                  query.push(
+                    encodeURIComponent(key) +
+                    (Array.isArray(params[key]) ? "[]" : "") +
+                    "=" + encodeURIComponent(String(value))
+                  );
+                });
+              });
+              if (!query.length) return url;
+              return url + (url.indexOf("?") >= 0 ? "&" : "?") + query.join("&");
+            }
 
-              return fetch(config.url, {
-                method: config.method || "GET",
-                headers: config.headers || {},
-                body:
-                  config.data == null
-                    ? null
-                    : (
-                        typeof config.data === "string"
-                          ? config.data
-                          : JSON.stringify(config.data)
+            function __vueoAxiosMerge(base, extra) {
+              var result = {};
+              Object.keys(base || {}).forEach(function (key) { result[key] = base[key]; });
+              Object.keys(extra || {}).forEach(function (key) { result[key] = extra[key]; });
+              result.headers = Object.assign({}, (base || {}).headers || {}, (extra || {}).headers || {});
+              return result;
+            }
+
+            function __vueoAxiosHeaders(raw, method) {
+              raw = raw || {};
+              var merged = {};
+              var groups = [raw.common, raw[String(method || "").toLowerCase()]];
+              groups.forEach(function (group) {
+                Object.keys(group || {}).forEach(function (key) {
+                  merged[key] = group[key];
+                });
+              });
+              var reserved = ["common", "get", "delete", "head", "options", "post", "put", "patch"];
+              Object.keys(raw).forEach(function (key) {
+                if (reserved.indexOf(key.toLowerCase()) < 0) {
+                  merged[key] = raw[key];
+                }
+              });
+              return merged;
+            }
+
+            function __vueoAxiosTransform(data, headers, transforms, status) {
+              if (!transforms) return data;
+              var functions = Array.isArray(transforms) ? transforms : [transforms];
+              for (var i = 0; i < functions.length; i++) {
+                if (typeof functions[i] === "function") {
+                  data = functions[i](data, headers, status);
+                }
+              }
+              return data;
+            }
+
+            function __vueoInterceptorManager() {
+              this.handlers = [];
+            }
+            __vueoInterceptorManager.prototype.use = function (fulfilled, rejected) {
+              this.handlers.push({ fulfilled: fulfilled, rejected: rejected });
+              return this.handlers.length - 1;
+            };
+            __vueoInterceptorManager.prototype.eject = function (id) {
+              if (this.handlers[id]) this.handlers[id] = null;
+            };
+
+            function __vueoCreateAxios(defaults) {
+              var instance = function (config) {
+                return instance.request(config);
+              };
+
+              instance.defaults = defaults || {};
+              instance.interceptors = {
+                request: new __vueoInterceptorManager(),
+                response: new __vueoInterceptorManager()
+              };
+
+              instance.request = function (config) {
+                var chain = Promise.resolve(__vueoAxiosMerge(instance.defaults, config || {}));
+                instance.interceptors.request.handlers.forEach(function (handler) {
+                  if (handler) chain = chain.then(handler.fulfilled, handler.rejected);
+                });
+
+                chain = chain.then(async function (finalConfig) {
+                  if (finalConfig.cancelToken) {
+                    finalConfig.cancelToken.throwIfRequested();
+                  }
+                  var method = String(finalConfig.method || "GET").toUpperCase();
+                  var url = String(finalConfig.url || "");
+                  if (finalConfig.baseURL && !/^https?:\/\//i.test(url)) {
+                    url = String(finalConfig.baseURL).replace(/\/$/, "") +
+                      "/" + url.replace(/^\//, "");
+                  }
+                  if (finalConfig.paramsSerializer) {
+                    var serializedParams =
+                      typeof finalConfig.paramsSerializer === "function"
+                        ? finalConfig.paramsSerializer(finalConfig.params || {})
+                        : finalConfig.paramsSerializer.serialize(finalConfig.params || {});
+                    if (serializedParams) {
+                      url += (url.indexOf("?") >= 0 ? "&" : "?") + serializedParams;
+                    }
+                  } else {
+                    url = __vueoAxiosParams(url, finalConfig.params);
+                  }
+
+                  var headers = new Headers(
+                    __vueoAxiosHeaders(finalConfig.headers, method)
+                  );
+                  if (finalConfig.auth && !headers.has("authorization")) {
+                    headers.set(
+                      "Authorization",
+                      "Basic " + btoa(
+                        String(finalConfig.auth.username || "") +
+                        ":" + String(finalConfig.auth.password || "")
                       )
-              }).then(async function (response) {
-                var text = await response.text();
-                var data = text;
-
-                try {
-                  data = JSON.parse(text);
-                } catch (_) {}
-
-                if (!response.ok) {
-                  var error =
-                    new Error(
-                      "Request failed with status " +
-                      response.status
                     );
+                  }
+                  var body = __vueoAxiosTransform(
+                    finalConfig.data,
+                    headers,
+                    finalConfig.transformRequest
+                  );
+                  var isBodyObject =
+                    body &&
+                    typeof body === "object" &&
+                    !(body instanceof FormData) &&
+                    !(body instanceof URLSearchParams) &&
+                    !(body instanceof Blob) &&
+                    !(body instanceof ArrayBuffer) &&
+                    !(ArrayBuffer.isView && ArrayBuffer.isView(body));
+                  if (isBodyObject) {
+                    body = JSON.stringify(body);
+                    if (!headers.has("content-type")) {
+                      headers.set("Content-Type", "application/json");
+                    }
+                  }
 
-                  error.response = {
+                  var requestSignal = finalConfig.signal || null;
+                  if (finalConfig.cancelToken) {
+                    var cancelController = new AbortController();
+                    if (requestSignal) {
+                      if (requestSignal.aborted) {
+                        cancelController.abort(requestSignal.reason);
+                      } else {
+                        requestSignal.addEventListener("abort", function () {
+                          cancelController.abort(requestSignal.reason);
+                        });
+                      }
+                    }
+                    finalConfig.cancelToken.promise.then(function (reason) {
+                      cancelController.abort(reason);
+                    });
+                    requestSignal = cancelController.signal;
+                  }
+
+                  var responseType = String(finalConfig.responseType || "json").toLowerCase();
+                  var response;
+                  try {
+                    response = await fetch(url, {
+                      method: method,
+                      headers: headers,
+                      body: body == null ? null : body,
+                      signal: requestSignal,
+                      timeout: Number(finalConfig.timeout || 0),
+                      binaryResponse:
+                        responseType === "arraybuffer" ||
+                        responseType === "blob",
+                      redirect: finalConfig.maxRedirects === 0 ? "manual" : "follow"
+                    });
+                  } catch (cause) {
+                    if (
+                      cause &&
+                      (cause.name === "AbortError" || cause.code === "ERR_CANCELED")
+                    ) {
+                      var canceled = new VueoCanceledError(cause.message);
+                      canceled.config = finalConfig;
+                      canceled.cause = cause;
+                      throw canceled;
+                    }
+
+                    var networkError = new Error(cause && cause.message
+                      ? cause.message
+                      : "Network Error");
+                    networkError.name = "AxiosError";
+                    networkError.code =
+                      /timeout|timed out/i.test(networkError.message)
+                        ? "ECONNABORTED"
+                        : "ERR_NETWORK";
+                    networkError.config = finalConfig;
+                    networkError.cause = cause;
+                    networkError.isAxiosError = true;
+                    throw networkError;
+                  }
+
+                  var data;
+                  if (responseType === "arraybuffer") {
+                    data = await response.arrayBuffer();
+                  } else if (responseType === "blob") {
+                    data = await response.blob();
+                  } else {
+                    var text = await response.text();
+                    if (responseType === "text") {
+                      data = text;
+                    } else {
+                      try { data = JSON.parse(text); } catch (_) { data = text; }
+                    }
+                  }
+                  data = __vueoAxiosTransform(
+                    data,
+                    response.headers,
+                    finalConfig.transformResponse,
+                    response.status
+                  );
+
+                  var axiosResponse = {
                     data: data,
                     status: response.status,
                     statusText: response.statusText,
                     headers: response.headers,
-                    config: config
+                    config: finalConfig,
+                    request: null
                   };
+                  var valid = typeof finalConfig.validateStatus === "function"
+                    ? finalConfig.validateStatus(response.status)
+                    : response.status >= 200 && response.status < 300;
+                  if (!valid) {
+                    var error = new Error("Request failed with status " + response.status);
+                    error.name = "AxiosError";
+                    error.code = "ERR_BAD_RESPONSE";
+                    error.config = finalConfig;
+                    error.response = axiosResponse;
+                    error.isAxiosError = true;
+                    throw error;
+                  }
+                  return axiosResponse;
+                });
 
-                  throw error;
-                }
+                instance.interceptors.response.handlers.forEach(function (handler) {
+                  if (handler) chain = chain.then(handler.fulfilled, handler.rejected);
+                });
+                return chain;
+              };
 
-                return {
-                  data: data,
-                  status: response.status,
-                  statusText: response.statusText,
-                  headers: response.headers,
-                  config: config
+              ["get", "delete", "head", "options"].forEach(function (method) {
+                instance[method] = function (url, config) {
+                  return instance.request(Object.assign({}, config || {}, {
+                    url: url,
+                    method: method.toUpperCase()
+                  }));
                 };
               });
+
+              ["post", "put", "patch"].forEach(function (method) {
+                instance[method] = function (url, data, config) {
+                  return instance.request(Object.assign({}, config || {}, {
+                    url: url,
+                    method: method.toUpperCase(),
+                    data: data
+                  }));
+                };
+              });
+
+              instance.create = function (config) {
+                return __vueoCreateAxios(__vueoAxiosMerge(instance.defaults, config || {}));
+              };
+              instance.all = function (promises) { return Promise.all(promises); };
+              instance.spread = function (callback) {
+                return function (values) { return callback.apply(null, values); };
+              };
+              instance.isAxiosError = function (error) {
+                return !!(error && error.isAxiosError);
+              };
+              instance.CancelToken = VueoCancelToken;
+              instance.CanceledError = VueoCanceledError;
+              instance.Cancel = VueoCanceledError;
+              instance.isCancel = function (error) {
+                return !!(error && error.__CANCEL__);
+              };
+              return instance;
             }
 
-            var __vueoAxiosModule = function (config) {
-              return __vueoAxiosRequest(config);
+            function VueoCanceledError(message) {
+              this.name = "CanceledError";
+              this.message = message == null ? "canceled" : String(message);
+              this.code = "ERR_CANCELED";
+              this.__CANCEL__ = true;
+              this.isAxiosError = true;
+            }
+            VueoCanceledError.prototype = Object.create(Error.prototype);
+            VueoCanceledError.prototype.constructor = VueoCanceledError;
+
+            function VueoCancelToken(executor) {
+              if (typeof executor !== "function") {
+                throw new TypeError("executor must be a function");
+              }
+              var token = this;
+              this.reason = null;
+              this.promise = new Promise(function (resolve) {
+                executor(function (message) {
+                  if (token.reason) return;
+                  token.reason = new VueoCanceledError(message);
+                  resolve(token.reason);
+                });
+              });
+            }
+            VueoCancelToken.prototype.throwIfRequested = function () {
+              if (this.reason) throw this.reason;
+            };
+            VueoCancelToken.source = function () {
+              var cancel;
+              var token = new VueoCancelToken(function (cancelFunction) {
+                cancel = cancelFunction;
+              });
+              return { token: token, cancel: cancel };
             };
 
-            __vueoAxiosModule.request = __vueoAxiosRequest;
-
-            __vueoAxiosModule.get = function (url, config) {
-              config = config || {};
-              config.url = url;
-              config.method = "GET";
-              return __vueoAxiosRequest(config);
-            };
-
-            __vueoAxiosModule.post = function (url, data, config) {
-              config = config || {};
-              config.url = url;
-              config.method = "POST";
-              config.data = data;
-              return __vueoAxiosRequest(config);
-            };
-
+            var __vueoAxiosModule = __vueoCreateAxios({
+              headers: { common: {} }
+            });
+            __vueoAxiosModule.default = __vueoAxiosModule;
+            __vueoAxiosModule.VERSION = "1.x-vueo";
             globalThis.axios = __vueoAxiosModule;
 
             globalThis.btoa = function (value) {
@@ -1599,29 +2404,120 @@ private fun emptyDiscoveryResult():
               );
             };
 
-            globalThis.Buffer = globalThis.Buffer || {
-              from: function (value) {
-                var text = String(value);
+            function __vueoMakeBuffer(bytes) {
+              var result = new Uint8Array(bytes || []);
+              result.__vueoBuffer = true;
+              result.toString = function (encoding) {
+                encoding = String(encoding || "utf8").toLowerCase();
+                var values = Array.prototype.slice.call(this);
+                if (encoding === "base64") return __vueoBodyBase64(values);
+                if (encoding === "hex") {
+                  return values.map(function (value) {
+                    return (value < 16 ? "0" : "") + value.toString(16);
+                  }).join("");
+                }
+                return new TextDecoder().decode(this);
+              };
+              result.slice = function (start, end) {
+                return __vueoMakeBuffer(
+                  Array.prototype.slice.call(this, start, end)
+                );
+              };
+              return result;
+            }
 
-                return {
-                  toString: function (encoding) {
-                    if (encoding === "base64") {
-                      return __vueoBase64(text);
-                    }
-                    return text;
+            var VueoBuffer = {
+              from: function (value, encoding) {
+                encoding = String(encoding || "utf8").toLowerCase();
+                if (value instanceof ArrayBuffer) {
+                  return __vueoMakeBuffer(
+                    Array.prototype.slice.call(new Uint8Array(value))
+                  );
+                }
+                if (ArrayBuffer.isView && ArrayBuffer.isView(value)) {
+                  return __vueoMakeBuffer(
+                    Array.prototype.slice.call(
+                      new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+                    )
+                  );
+                }
+                if (Array.isArray(value)) return __vueoMakeBuffer(value);
+                if (encoding === "base64") {
+                  return __vueoMakeBuffer(__vueoBase64BodyBytes(value));
+                }
+                if (encoding === "hex") {
+                  var bytes = [];
+                  var hex = String(value).replace(/\s/g, "");
+                  for (var i = 0; i + 1 < hex.length; i += 2) {
+                    bytes.push(parseInt(hex.slice(i, i + 2), 16));
                   }
-                };
+                  return __vueoMakeBuffer(bytes);
+                }
+                return __vueoMakeBuffer(__vueoUtf8BodyBytes(value));
+              },
+              alloc: function (size, fill) {
+                var bytes = new Array(Math.max(0, Number(size || 0))).fill(0);
+                if (fill != null) {
+                  var fillBuffer = VueoBuffer.from(fill);
+                  for (var i = 0; i < bytes.length; i++) {
+                    bytes[i] = fillBuffer.length ? fillBuffer[i % fillBuffer.length] : 0;
+                  }
+                }
+                return __vueoMakeBuffer(bytes);
+              },
+              concat: function (buffers) {
+                var bytes = [];
+                (buffers || []).forEach(function (buffer) {
+                  bytes = bytes.concat(Array.prototype.slice.call(buffer));
+                });
+                return __vueoMakeBuffer(bytes);
+              },
+              isBuffer: function (value) {
+                return !!(value && value.__vueoBuffer);
+              },
+              byteLength: function (value, encoding) {
+                return VueoBuffer.from(value, encoding).length;
               }
             };
 
+            globalThis.Buffer = globalThis.Buffer || VueoBuffer;
+
+            var __vueoTimerSequence = 0;
+            var __vueoTimers = {};
+
             globalThis.setTimeout = function (callback, millis) {
-              return __vueoDelay(Number(millis || 0))
+              var id = ++__vueoTimerSequence;
+              __vueoTimers[id] = true;
+              __vueoDelay(Number(millis || 0))
                 .then(function () {
-                  return callback();
+                  if (!__vueoTimers[id]) return;
+                  delete __vueoTimers[id];
+                  callback();
                 });
+              return id;
             };
 
-            globalThis.clearTimeout = function () {};
+            globalThis.clearTimeout = function (id) {
+              delete __vueoTimers[id];
+            };
+
+            globalThis.setInterval = function (callback, millis) {
+              var id = ++__vueoTimerSequence;
+              __vueoTimers[id] = true;
+
+              function tick() {
+                __vueoDelay(Number(millis || 0)).then(function () {
+                  if (!__vueoTimers[id]) return;
+                  callback();
+                  tick();
+                });
+              }
+
+              tick();
+              return id;
+            };
+
+            globalThis.clearInterval = globalThis.clearTimeout;
 
             function __vueoNativeUrl(input, base) {
                           var raw = __vueoUrlOp(
@@ -1811,6 +2707,32 @@ private fun emptyDiscoveryResult():
                               );
                           };
 
+                        URLSearchParams.prototype.sort =
+                          function () {
+                            this._pairs = this._pairs
+                              .map(function (pair, index) {
+                                return { pair: pair, index: index };
+                              })
+                              .sort(function (left, right) {
+                                if (left.pair[0] < right.pair[0]) return -1;
+                                if (left.pair[0] > right.pair[0]) return 1;
+                                return left.index - right.index;
+                              })
+                              .map(function (entry) {
+                                return entry.pair;
+                              });
+                          };
+
+                        Object.defineProperty(
+                          URLSearchParams.prototype,
+                          "size",
+                          {
+                            get: function () {
+                              return this._pairs.length;
+                            }
+                          }
+                        );
+
                         URLSearchParams.prototype.keys =
                           function () {
                             return this._pairs
@@ -1913,18 +2835,6 @@ private fun emptyDiscoveryResult():
                         URL.prototype.toJSON =
                           function () {
                             return this.href;
-                          };
-
-                        globalThis.AbortSignal =
-                          globalThis.AbortSignal ||
-                          {
-                            timeout: function (millis) {
-                              return {
-                                __vueoTimeoutMs:
-                                  Number(millis || 0),
-                                aborted: false
-                              };
-                            }
                           };
 
                         function __vueoUtf8Bytes(value) {
@@ -3372,6 +4282,40 @@ private fun emptyDiscoveryResult():
                               name === "axios"
                             ) {
                               return __vueoAxiosModule;
+                            }
+
+                            if (
+                              name === "node-fetch" ||
+                              name === "cross-fetch"
+                            ) {
+                              var fetchModule = globalThis.fetch;
+                              fetchModule.default = globalThis.fetch;
+                              fetchModule.Headers = globalThis.Headers;
+                              fetchModule.Request = globalThis.Request;
+                              fetchModule.Response = globalThis.Response;
+                              fetchModule.Blob = globalThis.Blob;
+                              fetchModule.FormData = globalThis.FormData;
+                              return fetchModule;
+                            }
+
+                            if (name === "undici") {
+                              return {
+                                fetch: globalThis.fetch,
+                                Headers: globalThis.Headers,
+                                Request: globalThis.Request,
+                                Response: globalThis.Response,
+                                Blob: globalThis.Blob,
+                                File: globalThis.File,
+                                FormData: globalThis.FormData
+                              };
+                            }
+
+                            if (name === "form-data") {
+                              return globalThis.FormData;
+                            }
+
+                            if (name === "buffer") {
+                              return { Buffer: globalThis.Buffer };
                             }
 
                             if (
