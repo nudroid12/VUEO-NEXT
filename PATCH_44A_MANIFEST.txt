@@ -1,0 +1,31 @@
+VUEO TV Patch 44A
+=================
+
+Scope: Android TV Player subtitle workspace presentation rebuild.
+
+Changed files:
+- tv/src/main/java/com/vueo/tv/player/TvPlayerNuvioPanels.kt
+- AI_HANDOFF.md
+- TV_44A_SUBTITLES_WORKSPACE_REBUILD.md
+
+Repository-root marker included in patch ZIP:
+- build.gradle.kts
+
+Behaviour preserved:
+- Shared/Core subtitle track policy
+- Media3 exact-track selection
+- subtitle language preference and persistence
+- subtitle delay, size, colour, opacity, outline and position settings
+- Player panel Back/focus restoration contract
+
+Presentation changes:
+- three simultaneous TV-native cards for Languages, Subtitles and Subtitle Style
+- no Mobile-only Float action
+- larger 10-foot typography
+- separate accent selection and neutral-white D-pad focus states
+- visible provider/track metadata and remote navigation hints
+
+Validation note:
+- static change and ZIP integrity checks passed
+- local Gradle compile was blocked before source compilation because Android
+  Gradle Plugin 9.1.1 could not be resolved from configured repositories
