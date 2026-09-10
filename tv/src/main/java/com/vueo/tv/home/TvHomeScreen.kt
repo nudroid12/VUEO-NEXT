@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
@@ -51,10 +52,35 @@ fun TvHomeScreen(
         loading = false
     }
 
-    val continueWatching = remember(refreshToken) { runtime.libraryStore.continueWatching() }
-    val watchlist = remember(refreshToken) { runtime.libraryStore.watchlist() }
+    val continueWatching = remember(refreshToken) {
+        runtime.libraryStore.continueWatching().take(12)
+    }
+    val watchHistory = remember(refreshToken) {
+        runtime.libraryStore.history()
+    }
+    val activeProfileId = remember(refreshToken) {
+        runtime.profileStore.activeProfileId()
+    }
+    val personalizedHomeEnabled = remember(refreshToken, activeProfileId) {
+        runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
+    }
+    val homeRecommendations = remember(
+        catalogRows,
+        watchHistory,
+        activeProfileId,
+        personalizedHomeEnabled,
+        refreshToken,
+    ) {
+        HomeRecommendationPolicy.build(
+            catalogRows = catalogRows,
+            watchHistory = watchHistory,
+            dnaEngine = runtime.dnaEngine,
+            personalizationEnabled = personalizedHomeEnabled,
+            limit = 12,
+        )
+    }
 
-    val rows = remember(catalogRows, continueWatching, watchlist) {
+    val rows = remember(catalogRows, continueWatching, homeRecommendations) {
         buildList {
             if (continueWatching.isNotEmpty()) {
                 add(
@@ -73,15 +99,32 @@ fun TvHomeScreen(
                 )
             }
 
-            if (watchlist.isNotEmpty()) {
+            if (homeRecommendations.forYou.size >= 4) {
                 add(
                     TvHomeRow(
-                        key = "my-list",
-                        title = "My List",
+                        key = "for-you",
+                        title = "For You",
                         kind = TvHomeRowKind.POSTERS,
-                        entries = watchlist.map { media ->
+                        entries = homeRecommendations.forYou.map { media ->
                             TvHomeEntry.Media(
-                                key = "my-list:${media.type}:${media.id}",
+                                key = "for-you:${media.type}:${media.id}",
+                                media = media,
+                            )
+                        },
+                    )
+                )
+            }
+
+            val becauseSeed = homeRecommendations.becauseYouWatchedSeed
+            if (becauseSeed != null && homeRecommendations.becauseYouWatched.size >= 4) {
+                add(
+                    TvHomeRow(
+                        key = "because-you-watched",
+                        title = "Because You Watched ${becauseSeed.name}",
+                        kind = TvHomeRowKind.POSTERS,
+                        entries = homeRecommendations.becauseYouWatched.map { media ->
+                            TvHomeEntry.Media(
+                                key = "because:${media.type}:${media.id}",
                                 media = media,
                             )
                         },

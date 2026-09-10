@@ -189,6 +189,10 @@ import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.detail.DetailPeoplePolicy
+import com.vueo.shared.core.home.HomeCatalogPolicy
+import com.vueo.shared.core.home.HomeRecommendationPolicy
+import com.vueo.shared.core.search.DiscoverCatalogPolicy
+import com.vueo.shared.core.search.DiscoverSortMode
 import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
@@ -1480,7 +1484,7 @@ private fun HomeScreen(
         disabledCatalogKeys,
     ) {
         mutableStateOf(
-            orderHomeCatalogRows(
+            HomeCatalogPolicy.orderRows(
                 rows =
                     CatalogDiscoveryCache
                         .home(
@@ -1541,7 +1545,7 @@ private fun HomeScreen(
             }
             ?.let {
                 rows =
-                    orderHomeCatalogRows(
+                    HomeCatalogPolicy.orderRows(
                         rows = it,
                         catalogOrder =
                             catalogOrder,
@@ -1574,7 +1578,7 @@ private fun HomeScreen(
                 fresh.isNotEmpty()
             ) {
                 rows =
-                    orderHomeCatalogRows(
+                    HomeCatalogPolicy.orderRows(
                         rows = fresh,
                         catalogOrder =
                             catalogOrder,
@@ -1599,7 +1603,7 @@ private fun HomeScreen(
                 rows.isEmpty()
             ) {
                 rows =
-                    orderHomeCatalogRows(
+                    HomeCatalogPolicy.orderRows(
                         rows =
                             CatalogDiscoveryCache
                                 .home(
@@ -1676,208 +1680,31 @@ private fun HomeScreen(
             libraryStore.history()
         }
 
-    val dnaSnapshot =
+    val homeRecommendations =
         remember(
+            rows,
+            watchHistory,
             activeProfileId,
             libraryVersion,
             personalizedHomeEnabled,
         ) {
-            if (
-                personalizedHomeEnabled
-            ) {
-                dnaEngine.build()
-            } else {
-                null
-            }
-        }
-
-    val catalogCandidates =
-        remember(rows) {
-            rows
-                .asSequence()
-                .flatMap {
-                    it.items.asSequence()
-                }
-                .distinctBy {
-                    "${it.type}:${it.id}"
-                }
-                .toList()
-        }
-
-    val watchedTitleKeys =
-        remember(
-            watchHistory
-        ) {
-            watchHistory
-                .asSequence()
-                .map {
-                    "${it.media.type}:${it.media.id}"
-                }
-                .toSet()
+            HomeRecommendationPolicy.build(
+                catalogRows = rows,
+                watchHistory = watchHistory,
+                dnaEngine = dnaEngine,
+                personalizationEnabled = personalizedHomeEnabled,
+                limit = 12,
+            )
         }
 
     val forYouItems =
-        remember(
-            catalogCandidates,
-            dnaSnapshot,
-            watchedTitleKeys,
-            personalizedHomeEnabled,
-        ) {
-            val snapshot =
-                dnaSnapshot
-
-            if (
-                !personalizedHomeEnabled ||
-                snapshot == null ||
-                !snapshot.hasUsefulData
-            ) {
-                emptyList()
-            } else {
-                catalogCandidates
-                    .asSequence()
-                    .filterNot {
-                        "${it.type}:${it.id}" in
-                            watchedTitleKeys
-                    }
-                    .mapNotNull {
-                        candidate ->
-                        dnaEngine
-                            .matchPercent(
-                                media =
-                                    candidate,
-                                dna =
-                                    snapshot,
-                            )
-                            ?.takeIf {
-                                it >= 55
-                            }
-                            ?.let {
-                                score ->
-                                candidate to score
-                            }
-                    }
-                    .sortedByDescending {
-                        it.second
-                    }
-                    .take(12)
-                    .map {
-                        it.first
-                    }
-                    .toList()
-            }
-        }
+        homeRecommendations.forYou
 
     val becauseYouWatchedSeed =
-        remember(
-            watchHistory,
-            personalizedHomeEnabled,
-        ) {
-            if (
-                !personalizedHomeEnabled
-            ) {
-                null
-            } else {
-                watchHistory
-                    .asSequence()
-                    .filter {
-                        entry ->
-                        entry.isCompleted ||
-                            entry.positionMs >=
-                                120_000L ||
-                            entry.progressFraction >=
-                                .20f
-                    }
-                    .distinctBy {
-                        entry ->
-                        "${entry.media.type}:${entry.media.id}"
-                    }
-                    .firstOrNull()
-                    ?.media
-            }
-        }
+        homeRecommendations.becauseYouWatchedSeed
 
     val becauseYouWatchedItems =
-        remember(
-            becauseYouWatchedSeed,
-            catalogCandidates,
-            watchedTitleKeys,
-            forYouItems,
-            personalizedHomeEnabled,
-        ) {
-            val seed =
-                becauseYouWatchedSeed
-
-            if (
-                !personalizedHomeEnabled ||
-                seed == null
-            ) {
-                emptyList()
-            } else {
-                val seedGenres =
-                    seed.genres
-                        .map {
-                            it.trim()
-                                .lowercase()
-                        }
-                        .filter {
-                            it.isNotBlank()
-                        }
-                        .toSet()
-
-                val related =
-                    CatalogDiscoveryCache
-                        .related(
-                            seed,
-                            limit = 30,
-                        )
-
-                val fallback =
-                    catalogCandidates
-                        .filter {
-                            candidate ->
-                            candidate.type ==
-                                seed.type &&
-                                candidate.genres
-                                    .any {
-                                        genre ->
-                                        genre.trim()
-                                            .lowercase() in
-                                            seedGenres
-                                    }
-                        }
-
-                val forYouKeys =
-                    forYouItems
-                        .asSequence()
-                        .map {
-                            "${it.type}:${it.id}"
-                        }
-                        .toSet()
-
-                (
-                    related +
-                        fallback
-                )
-                    .asSequence()
-                    .distinctBy {
-                        "${it.type}:${it.id}"
-                    }
-                    .filterNot {
-                        candidate ->
-                        val key =
-                            "${candidate.type}:${candidate.id}"
-
-                        key ==
-                            "${seed.type}:${seed.id}" ||
-                            key in
-                                watchedTitleKeys ||
-                            key in
-                                forYouKeys
-                    }
-                    .take(12)
-                    .toList()
-            }
-        }
+        homeRecommendations.becauseYouWatched
 
         LazyColumn(
         state = listState,
@@ -3481,34 +3308,6 @@ private fun EmptyHomeCard(
     }
 }
 
-private fun orderHomeCatalogRows(
-    rows: List<CatalogRow>,
-    catalogOrder: List<String>,
-    disabledCatalogKeys: Set<String> = emptySet(),
-): List<CatalogRow> {
-    val enabledRows =
-        if (disabledCatalogKeys.isEmpty()) {
-            rows
-        } else {
-            rows.filterNot { it.id in disabledCatalogKeys }
-        }
-
-    if (catalogOrder.isEmpty()) {
-        return enabledRows
-    }
-
-    val index =
-        catalogOrder
-            .withIndex()
-            .associate {
-                it.value to it.index
-            }
-
-    return enabledRows.sortedBy {
-        index[it.id] ?: Int.MAX_VALUE
-    }
-}
-
 private fun homeCatalogTypeLabel(
     row: CatalogRow,
 ): String? {
@@ -4447,20 +4246,10 @@ private fun SearchScreen(
             discoverRows,
             sortMode,
         ) {
-            discoverRows
-                .sortedByDescending {
-                    row ->
-                    searchCatalogPriority(
-                        row = row,
-                        mode = sortMode,
-                    )
-                }
-                .flatMap {
-                    it.items
-                }
-                .distinctBy {
-                    "${it.type}:${it.id}"
-                }
+            DiscoverCatalogPolicy.baseItems(
+                rows = discoverRows,
+                mode = sortMode.toDiscoverSortMode(),
+            )
         }
 
     val sourceItems =
@@ -4567,17 +4356,10 @@ private fun SearchScreen(
                     query = normalizedQuery,
                 )
             } else {
-                if (
-                    sortMode ==
-                    SearchSortMode.NEWEST
-                ) {
-                    searchSortItems(
-                        items = filtered,
-                        mode = sortMode,
-                    )
-                } else {
-                    filtered
-                }
+                DiscoverCatalogPolicy.orderFiltered(
+                    items = filtered,
+                    mode = sortMode.toDiscoverSortMode(),
+                )
             }
         }
 
@@ -5024,40 +4806,12 @@ private fun SearchScreen(
     }
 }
 
-private fun searchCatalogPriority(
-    row: CatalogRow,
-    mode: SearchSortMode,
-): Int {
-    val value =
-        "${row.id} ${row.title}"
-            .lowercase()
-
-    return when (mode) {
-        SearchSortMode.POPULAR ->
-            when {
-                "popular" in value -> 100
-                "top" in value -> 80
-                else -> 0
-            }
-
-        SearchSortMode.TRENDING ->
-            when {
-                "trending" in value -> 100
-                "trend" in value -> 100
-                "popular" in value -> 60
-                else -> 0
-            }
-
-        SearchSortMode.NEWEST ->
-            when {
-                "new" in value -> 100
-                "latest" in value -> 100
-                "recent" in value -> 90
-                "release" in value -> 80
-                else -> 0
-            }
+private fun SearchSortMode.toDiscoverSortMode(): DiscoverSortMode =
+    when (this) {
+        SearchSortMode.POPULAR -> DiscoverSortMode.POPULAR
+        SearchSortMode.TRENDING -> DiscoverSortMode.TRENDING
+        SearchSortMode.NEWEST -> DiscoverSortMode.NEWEST
     }
-}
 
 private fun searchMatchesType(
     item: MediaItem,

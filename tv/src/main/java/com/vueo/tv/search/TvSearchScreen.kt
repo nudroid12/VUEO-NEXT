@@ -1,5 +1,7 @@
 package com.vueo.tv.search
 import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.search.DiscoverCatalogPolicy
+import com.vueo.shared.core.search.DiscoverSortMode
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -58,6 +60,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -66,7 +69,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
-import com.vueo.shared.core.extensions.MediaBrowseKind
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
@@ -114,8 +116,6 @@ internal class TvSearchSession {
 
     var searchResults by mutableStateOf<List<MediaItem>>(emptyList())
     var discoverRows by mutableStateOf<List<CatalogRow>>(emptyList())
-    var browseResults by mutableStateOf<Map<TvSearchTypeFilter, List<MediaItem>>>(emptyMap())
-    var browseContentVersion by mutableStateOf<Int?>(null)
     var actorSourceAvailable by mutableStateOf(true)
 
     var focusedMediaKey by mutableStateOf<String?>(null)
@@ -134,9 +134,9 @@ internal fun TvSearchScreen(
     onOpenMedia: (MediaItem) -> Unit,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     var searching by remember { mutableStateOf(false) }
     var discovering by remember { mutableStateOf(session.discoverRows.isEmpty()) }
-    var browsingType by remember { mutableStateOf(false) }
     var requestId by remember { mutableStateOf(0L) }
     var navExpanded by remember { mutableStateOf(false) }
     var lastContentTarget by remember { mutableStateOf("field") }
@@ -160,16 +160,28 @@ internal fun TvSearchScreen(
     }
 
     LaunchedEffect(contentVersion) {
-        if (session.browseContentVersion != contentVersion) {
-            session.browseResults = emptyMap()
-            session.browseContentVersion = contentVersion
-        }
-        discovering = session.discoverRows.isEmpty()
-        val current = runCatching { runtime.homeRows(forceRefresh = false) }
-            .getOrDefault(emptyList())
+        CatalogDiscoveryCache.home(allowStale = true)
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { session.discoverRows = it }
 
-        session.discoverRows = current.ifEmpty {
-            CatalogDiscoveryCache.home(allowStale = true).orEmpty()
+        if (session.discoverRows.isNotEmpty()) {
+            discovering = false
+            return@LaunchedEffect
+        }
+
+        discovering = true
+        runCatching {
+            runtime.engine.loadCatalogRows(forceRefresh = false)
+        }.onSuccess { fresh ->
+            if (fresh.isNotEmpty()) {
+                session.discoverRows = fresh
+                CatalogDiscoveryCache.persistHome(
+                    context = context.applicationContext,
+                    rows = fresh,
+                )
+            }
+        }.onFailure {
+            session.discoverRows = CatalogDiscoveryCache.home(allowStale = true).orEmpty()
         }
         discovering = false
     }
@@ -335,68 +347,28 @@ internal fun TvSearchScreen(
     val normalizedQuery = session.query.trim()
     val searchingMode = normalizedQuery.isNotBlank()
 
-    LaunchedEffect(session.typeFilter, contentVersion, searchingMode) {
-        if (searchingMode || session.typeFilter == TvSearchTypeFilter.ALL) {
-            browsingType = false
-            return@LaunchedEffect
-        }
-
-        val filter = session.typeFilter
-        if (session.browseResults.containsKey(filter)) {
-            browsingType = false
-            return@LaunchedEffect
-        }
-
-        val kind = when (filter) {
-            TvSearchTypeFilter.MOVIES -> MediaBrowseKind.MOVIE
-            TvSearchTypeFilter.SERIES -> MediaBrowseKind.SERIES
-            TvSearchTypeFilter.ANIME -> MediaBrowseKind.ANIME
-            TvSearchTypeFilter.ALL -> return@LaunchedEffect
-        }
-
-        browsingType = true
-        val loaded = try {
-            runtime.engine.browse(
-                kind = kind,
-                maxCatalogs = 16,
-                maxResults = 120,
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Throwable) {
-            emptyList()
-        }
-        session.browseResults = session.browseResults + (filter to loaded)
-        browsingType = false
-    }
-
-    val animeCatalogKeys = remember(session.discoverRows, session.browseResults) {
-        (
-            session.discoverRows
-                .filter { row ->
-                    listOf(row.id, row.title, row.providerName)
-                        .any { it.contains("anime", ignoreCase = true) }
-                }
-                .flatMap { it.items } +
-                session.browseResults[TvSearchTypeFilter.ANIME].orEmpty()
-            )
-            .map { mediaKey(it) }
+    val animeCatalogKeys = remember(session.discoverRows) {
+        session.discoverRows
+            .filter { row ->
+                listOf(row.id, row.title, row.providerName)
+                    .any { it.contains("anime", ignoreCase = true) }
+            }
+            .flatMap { it.items }
+            .map(::mediaKey)
             .toSet()
     }
 
     val discoverBaseItems = remember(session.discoverRows, session.sortMode) {
-        session.discoverRows
-            .sortedByDescending { searchCatalogPriority(it, session.sortMode) }
-            .flatMap { it.items }
-            .distinctBy(::mediaKey)
+        DiscoverCatalogPolicy.baseItems(
+            rows = session.discoverRows,
+            mode = session.sortMode.toDiscoverSortMode(),
+        )
     }
 
-    val typedBrowseItems = session.browseResults[session.typeFilter]
-    val sourceItems = when {
-        searchingMode -> session.searchResults
-        session.typeFilter != TvSearchTypeFilter.ALL && typedBrowseItems != null ->
-            typedBrowseItems.ifEmpty { discoverBaseItems }
-        else -> discoverBaseItems
+    val sourceItems = if (searchingMode) {
+        session.searchResults
+    } else {
+        discoverBaseItems
     }
 
     val availableGenres = remember(sourceItems, session.typeFilter, animeCatalogKeys) {
@@ -440,7 +412,10 @@ internal fun TvSearchScreen(
                 searchSortItems(filtered, session.sortMode, normalizedQuery)
 
             else ->
-                searchSortItems(filtered, session.sortMode)
+                DiscoverCatalogPolicy.orderFiltered(
+                    items = filtered,
+                    mode = session.sortMode.toDiscoverSortMode(),
+                )
         }
     }
 
@@ -567,7 +542,7 @@ internal fun TvSearchScreen(
                     )
                 }
 
-                if (searching || discovering || browsingType) {
+                if (searching || discovering) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth(.76f)
@@ -722,7 +697,7 @@ internal fun TvSearchScreen(
                     )
                 }
 
-                !searchingMode && filteredItems.isEmpty() && !discovering && !browsingType -> {
+                !searchingMode && filteredItems.isEmpty() && !discovering -> {
                     SearchEmptyState(
                         title = "No ${session.typeFilter.label} titles",
                         body = if (session.typeFilter == TvSearchTypeFilter.ANIME) {
@@ -1395,30 +1370,12 @@ private fun SearchEmptyState(
     }
 }
 
-private fun searchCatalogPriority(
-    row: CatalogRow,
-    mode: TvSearchSortMode,
-): Int {
-    val value = "${row.id} ${row.title}".lowercase()
-    return when (mode) {
-        TvSearchSortMode.POPULAR -> when {
-            "popular" in value -> 100
-            "top" in value -> 80
-            else -> 0
-        }
-        TvSearchSortMode.TRENDING -> when {
-            "trending" in value || "trend" in value -> 100
-            "popular" in value -> 60
-            else -> 0
-        }
-        TvSearchSortMode.NEWEST -> when {
-            "new" in value || "latest" in value -> 100
-            "recent" in value -> 90
-            "release" in value -> 80
-            else -> 0
-        }
+private fun TvSearchSortMode.toDiscoverSortMode(): DiscoverSortMode =
+    when (this) {
+        TvSearchSortMode.POPULAR -> DiscoverSortMode.POPULAR
+        TvSearchSortMode.TRENDING -> DiscoverSortMode.TRENDING
+        TvSearchSortMode.NEWEST -> DiscoverSortMode.NEWEST
     }
-}
 
 private fun searchMatchesType(
     item: MediaItem,

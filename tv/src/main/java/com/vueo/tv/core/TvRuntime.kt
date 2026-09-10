@@ -4,6 +4,7 @@ import android.content.Context
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
+import com.vueo.shared.core.home.HomeCatalogPolicy
 import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
 import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
 import com.vueo.shared.core.enrichment.MediaRating
@@ -111,7 +112,6 @@ class TvRuntime(context: Context) {
             return CatalogDiscoveryCache.home(allowStale = true)
                 .orEmpty()
                 .let(::applyCatalogPreferences)
-                .let(::applyPersonalization)
         }
 
         val freshCached =
@@ -120,7 +120,6 @@ class TvRuntime(context: Context) {
 
         if (!forceRefresh && freshCached.isNotEmpty()) {
             return applyCatalogPreferences(freshCached)
-                .let(::applyPersonalization)
         }
 
         val staleCached =
@@ -138,7 +137,6 @@ class TvRuntime(context: Context) {
             CatalogDiscoveryCache.persistHome(appContext, fresh)
         }
         return applyCatalogPreferences(fresh.ifEmpty { staleCached })
-            .let(::applyPersonalization)
     }
 
     suspend fun search(query: String): List<MediaItem> =
@@ -299,32 +297,12 @@ class TvRuntime(context: Context) {
         return dnaEngine.matchPercent(item)
     }
 
-    private fun applyPersonalization(rows: List<CatalogRow>): List<CatalogRow> {
-        val profileId = profileStore.activeProfileId()
-        if (!dnaPreferences.shouldPersonalizeRecommendations(profileId)) return rows
-        val dna = dnaEngine.build()
-        return rows.map { row ->
-            row.copy(
-                items = row.items
-                    .withIndex()
-                    .sortedWith(
-                        compareByDescending<IndexedValue<MediaItem>> { indexed ->
-                            dnaEngine.matchPercent(indexed.value, dna) ?: -1
-                        }.thenBy { it.index }
-                    )
-                    .map { it.value }
-            )
-        }
-    }
-
-    private fun applyCatalogPreferences(rows: List<CatalogRow>): List<CatalogRow> {
-        if (rows.isEmpty()) return rows
-        val disabled = content.disabledCatalogKeys()
-        val order = content.catalogOrder().withIndex().associate { it.value to it.index }
-        return rows
-            .filterNot { it.id in disabled }
-            .sortedBy { order[it.id] ?: Int.MAX_VALUE }
-    }
+    private fun applyCatalogPreferences(rows: List<CatalogRow>): List<CatalogRow> =
+        HomeCatalogPolicy.orderRows(
+            rows = rows,
+            catalogOrder = content.catalogOrder(),
+            disabledCatalogKeys = content.disabledCatalogKeys(),
+        )
 
 }
 
