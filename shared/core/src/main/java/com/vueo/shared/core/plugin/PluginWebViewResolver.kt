@@ -107,7 +107,6 @@ internal class PluginWebViewResolver(
             )
             var finishScheduled = false
             var destroyed = false
-            var playableCaptured = false
 
             fun finalizedPlaybackHeaders(
                 stream: CapturedStream,
@@ -218,6 +217,7 @@ internal class PluginWebViewResolver(
                     putIfAbsent("Referer", request.referer.ifBlank { request.url })
                 }
 
+                var added = false
                 synchronized(streams) {
                     if (!streams.containsKey(fixedUrl)) {
                         streams[fixedUrl] = CapturedStream(
@@ -225,19 +225,11 @@ internal class PluginWebViewResolver(
                             url = fixedUrl,
                             headers = fixedHeaders,
                         )
+                        added = true
                     }
                 }
 
-                // Provider-supplied match probes (for example workers.dev or
-                // player/source endpoints) are useful discovery candidates, but
-                // they are not necessarily playable media. Keep them in the
-                // result set for provider follow-up without stopping interaction
-                // or finishing the WebView early. Only a known final transport,
-                // or a URL confirmed playable by response metadata, may do that.
-                if (forcePlayable || request.isConfirmedPlayableUrl(fixedUrl)) {
-                    playableCaptured = true
-                    scheduleFinishSoon()
-                }
+                if (added) scheduleFinishSoon()
             }
 
             fun handleBridgeCapture(value: String) {
@@ -319,7 +311,7 @@ internal class PluginWebViewResolver(
             }
 
             fun clickWebView() {
-                if (playableCaptured) return
+                if (streams.isNotEmpty()) return
 
                 if (request.directLoad) {
                     runCatching {
@@ -947,15 +939,6 @@ internal class PluginWebViewResolver(
             if (DEFAULT_DISCOVERY_PARTS.any(value::contains)) return false
 
             return matchParts.any(value::contains)
-        }
-
-        fun isConfirmedPlayableUrl(rawUrl: String?): Boolean {
-            val value = rawUrl?.lowercase().orEmpty()
-            if (value.isBlank()) return false
-            if (blockedParts.any(value::contains)) return false
-            if (looksLikeMediaSegment(value)) return false
-
-            return DEFAULT_MATCH_PARTS.any(value::contains)
         }
 
         fun isPlayableResponse(
