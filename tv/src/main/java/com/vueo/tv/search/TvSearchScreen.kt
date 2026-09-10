@@ -1,5 +1,6 @@
 package com.vueo.tv.search
 import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
 
@@ -67,7 +68,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
@@ -78,7 +78,6 @@ import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -197,10 +196,7 @@ internal fun TvSearchScreen(
             session.actorSourceAvailable = true
             session.searchResults =
                 if (requestedMode == TvSearchMode.TITLE && normalized.length >= 2) {
-                    searchRankAndDedupe(
-                        items = CatalogDiscoveryCache.searchLocal(normalized),
-                        query = normalized,
-                    )
+                    SearchOrchestrator.localTitleResults(normalized)
                 } else {
                     emptyList()
                 }
@@ -209,13 +205,8 @@ internal fun TvSearchScreen(
 
         if (requestedMode == TvSearchMode.TITLE) {
             session.actorSourceAvailable = true
-            val local = searchRankAndDedupe(
-                items = CatalogDiscoveryCache.searchLocal(normalized),
-                query = normalized,
-            )
-            if (local.isNotEmpty() || session.searchResults.isEmpty()) {
-                session.searchResults = local
-            }
+            val local = SearchOrchestrator.localTitleResults(normalized)
+            session.searchResults = local
 
             searching = true
             delay(250)
@@ -225,53 +216,46 @@ internal fun TvSearchScreen(
                 session.mode != requestedMode
             ) return@LaunchedEffect
 
-            val remote = try {
-                runtime.engine.search(
-                    query = normalized,
-                    onPartial = { partial ->
-                        if (
-                            thisRequest == requestId &&
-                            session.query.trim() == normalized &&
-                            session.mode == requestedMode
-                        ) {
-                            session.searchResults = searchRankAndDedupe(
-                                items = partial + local,
-                                query = normalized,
-                            )
-                        }
-                    },
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                emptyList()
-            }
+            val remote = SearchOrchestrator.remoteTitleResults(
+                engine = runtime.engine,
+                query = normalized,
+                localResults = local,
+                onPartial = { partial ->
+                    if (
+                        thisRequest == requestId &&
+                        session.query.trim() == normalized &&
+                        session.mode == requestedMode
+                    ) {
+                        session.searchResults = partial
+                    }
+                },
+            )
 
             if (
                 thisRequest == requestId &&
                 session.query.trim() == normalized &&
                 session.mode == requestedMode
             ) {
-                session.searchResults = searchRankAndDedupe(
-                    items = remote + local,
-                    query = normalized,
-                )
+                session.searchResults = remote
                 searching = false
             }
             return@LaunchedEffect
         }
 
         val tmdbApiKey = runtime.pluginStore.tmdbApiKey()
-        val addonActorSearch = runtime.engine.hasActorSearchAddons()
-        session.actorSourceAvailable = addonActorSearch || tmdbApiKey.isNotBlank()
+        val actorAvailability = SearchOrchestrator.actorAvailability(
+            engine = runtime.engine,
+            tmdbApiKey = tmdbApiKey,
+        )
+        session.actorSourceAvailable = actorAvailability.available
+        session.searchResults = emptyList()
 
         if (!session.actorSourceAvailable) {
-            session.searchResults = emptyList()
             searching = false
             return@LaunchedEffect
         }
 
-        if (session.searchResults.isEmpty()) searching = true
+        searching = true
         delay(250)
         if (
             thisRequest != requestId ||
@@ -279,69 +263,29 @@ internal fun TvSearchScreen(
             session.mode != requestedMode
         ) return@LaunchedEffect
 
-        coroutineScope {
-            var providerItems = emptyList<MediaItem>()
-            var tmdbItems = emptyList<MediaItem>()
-
-            fun publish() {
+        val actorResults = SearchOrchestrator.actorResults(
+            engine = runtime.engine,
+            query = normalized,
+            tmdbApiKey = tmdbApiKey,
+            onPartial = { partial ->
                 if (
                     thisRequest == requestId &&
                     session.query.trim() == normalized &&
                     session.mode == requestedMode
                 ) {
-                    session.searchResults = runtime.engine.mergeActorResults(
-                        items = providerItems + tmdbItems,
-                    )
+                    session.searchResults = partial
                 }
-            }
-
-            launch {
-                providerItems =
-                    if (!addonActorSearch) {
-                        emptyList()
-                    } else {
-                        try {
-                            runtime.engine.searchActor(
-                                query = normalized,
-                                onPartial = { partial ->
-                                    providerItems = partial
-                                    publish()
-                                },
-                            )
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Throwable) {
-                            emptyList()
-                        }
-                    }
-                publish()
-            }
-
-            launch {
-                tmdbItems =
-                    if (tmdbApiKey.isBlank()) {
-                        emptyList()
-                    } else {
-                        try {
-                            TmdbEnhancementClient.actorFilmography(
-                                query = normalized,
-                                apiKey = tmdbApiKey,
-                            ).orEmpty()
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Throwable) {
-                            emptyList()
-                        }
-                    }
-                publish()
-            }
-        }
+            },
+        )
 
         if (
             thisRequest == requestId &&
             session.query.trim() == normalized &&
             session.mode == requestedMode
-        ) searching = false
+        ) {
+            session.searchResults = actorResults
+            searching = false
+        }
     }
 
     val normalizedQuery = session.query.trim()
@@ -1450,58 +1394,6 @@ private fun searchSortItems(
                 .thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
         )
     }
-}
-
-private fun searchRankAndDedupe(
-    items: List<MediaItem>,
-    query: String,
-): List<MediaItem> {
-    val normalizedQuery = searchNormalizeText(query)
-    if (normalizedQuery.isBlank()) return items.distinctBy(::mediaKey)
-
-    val groups = mutableListOf<MutableList<MediaItem>>()
-
-    items
-        .filter { searchIsRelevantEnough(it, normalizedQuery) }
-        .forEach { candidate ->
-            val candidateTitle = searchCanonicalTitle(candidate)
-            val candidateType = searchCanonicalType(candidate.type)
-            val candidateYear = searchReleaseYear(candidate)
-
-            val target = groups.firstOrNull { group ->
-                val sample = group.first()
-                val sampleYear = searchReleaseYear(sample)
-                candidateTitle == searchCanonicalTitle(sample) &&
-                    candidateType == searchCanonicalType(sample.type) &&
-                    (
-                        candidateYear == 0 ||
-                            sampleYear == 0 ||
-                            kotlin.math.abs(candidateYear - sampleYear) <= 1
-                        )
-            }
-
-            if (target == null) groups += mutableListOf(candidate) else target += candidate
-        }
-
-    return groups
-        .mapNotNull { duplicates ->
-            val best = duplicates.maxByOrNull { item ->
-                searchRelevanceScore(item, normalizedQuery) * 100 + searchMetadataScore(item)
-            } ?: return@mapNotNull null
-
-            best.copy(
-                genres = duplicates.flatMap { it.genres }.distinctBy { it.lowercase() },
-                catalogSources = (best.catalogSources + duplicates.flatMap { it.catalogSources })
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinctBy { it.lowercase() },
-            )
-        }
-        .sortedWith(
-            compareByDescending<MediaItem> { searchRelevanceScore(it, normalizedQuery) }
-                .thenByDescending(::searchMetadataScore)
-                .thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
-        )
 }
 
 private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =

@@ -159,7 +159,11 @@ fun TvDetailScreen(
         movieWatched = runtime.libraryStore.isMarkedWatched(core)
         syncEpisodeSelection(core, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
 
-        // Core metadata is enough to release Detail. Everything else is progressive.
+        val localRelated = runtime.localRelatedTitles(core)
+        related = localRelated
+
+        // Core metadata + local More Like This are enough to release Detail.
+        // Remote enrichment continues progressively, matching Mobile behavior.
         loading = false
 
         launch {
@@ -178,7 +182,12 @@ fun TvDetailScreen(
         }
 
         launch {
-            related = runCatching { runtime.relatedTitles(core) }.getOrDefault(emptyList())
+            related = runCatching {
+                runtime.relatedTitles(
+                    item = core,
+                    localItems = localRelated,
+                )
+            }.getOrDefault(localRelated)
         }
 
         launch {

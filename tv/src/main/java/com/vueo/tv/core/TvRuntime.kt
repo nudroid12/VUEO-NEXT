@@ -9,7 +9,6 @@ import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
 import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.enrichment.MdblistClient
-import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.media.CatalogRow
@@ -21,6 +20,7 @@ import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.PluginRepositoryClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderCodeSyncManager
+import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
@@ -264,9 +264,19 @@ class TvRuntime(context: Context) {
         }
     }
 
-    suspend fun relatedTitles(item: MediaItem): List<MediaItem> =
-        TmdbEnhancementClient.moreLikeThis(
+    fun localRelatedTitles(item: MediaItem): List<MediaItem> =
+        RelatedContentOrchestrator.local(
             item = item,
+            limit = 18,
+        )
+
+    suspend fun relatedTitles(
+        item: MediaItem,
+        localItems: List<MediaItem> = localRelatedTitles(item),
+    ): List<MediaItem> =
+        RelatedContentOrchestrator.mergeRemote(
+            item = item,
+            localItems = localItems,
             apiKey = pluginStore.tmdbApiKey(),
             recommendationsEnabled = settingsStore.tmdbRecommendationsEnabled(),
             similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),

@@ -194,6 +194,8 @@ import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
 import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.search.SearchOrchestrator
+import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.mobile.core.dna.UserDnaEngine
@@ -4000,14 +4002,7 @@ private fun SearchScreen(
                         SearchMode.TITLE &&
                     normalized.length >= 2
                 ) {
-                    searchRankAndDedupe(
-                        items =
-                            CatalogDiscoveryCache
-                                .searchLocal(
-                                    normalized
-                                ),
-                        query = normalized,
-                    )
+                    SearchOrchestrator.localTitleResults(normalized)
                 } else {
                     emptyList()
                 }
@@ -4021,14 +4016,7 @@ private fun SearchScreen(
             actorSourceAvailable = true
 
             val local =
-                searchRankAndDedupe(
-                    items =
-                        CatalogDiscoveryCache
-                            .searchLocal(
-                                normalized
-                            ),
-                    query = normalized,
-                )
+                SearchOrchestrator.localTitleResults(normalized)
 
             searchResults = local
             searching = true
@@ -4043,52 +4031,27 @@ private fun SearchScreen(
             }
 
             val remote =
-                try {
-                    engine.search(
-                        query = normalized,
-                        onPartial = { partial ->
-                            if (
-                                requestId ==
-                                    searchRequestId &&
-                                query.trim() ==
-                                    normalized &&
-                                searchMode ==
-                                    requestedMode
-                            ) {
-                                searchResults =
-                                    searchRankAndDedupe(
-                                        items =
-                                            partial +
-                                                local,
-                                        query =
-                                            normalized,
-                                    )
-                            }
-                        },
-                    )
-                } catch (
-                    cancelled:
-                        CancellationException
-                ) {
-                    throw cancelled
-                } catch (
-                    _: Throwable
-                ) {
-                    emptyList()
-                }
+                SearchOrchestrator.remoteTitleResults(
+                    engine = engine,
+                    query = normalized,
+                    localResults = local,
+                    onPartial = { partial ->
+                        if (
+                            requestId == searchRequestId &&
+                            query.trim() == normalized &&
+                            searchMode == requestedMode
+                        ) {
+                            searchResults = partial
+                        }
+                    },
+                )
 
             if (
                 requestId == searchRequestId &&
                 query.trim() == normalized &&
                 searchMode == requestedMode
             ) {
-                searchResults =
-                    searchRankAndDedupe(
-                        items =
-                            remote + local,
-                        query = normalized,
-                    )
-
+                searchResults = remote
                 searching = false
             }
 
@@ -4098,12 +4061,14 @@ private fun SearchScreen(
         val tmdbApiKey =
             searchPluginStore
                 .tmdbApiKey()
-        val addonActorSearch =
-            engine.hasActorSearchAddons()
+        val actorAvailability =
+            SearchOrchestrator.actorAvailability(
+                engine = engine,
+                tmdbApiKey = tmdbApiKey,
+            )
 
         actorSourceAvailable =
-            addonActorSearch ||
-                tmdbApiKey.isNotBlank()
+            actorAvailability.available
 
         searchResults = emptyList()
 
@@ -4123,88 +4088,28 @@ private fun SearchScreen(
             return@LaunchedEffect
         }
 
-        coroutineScope {
-            var providerItems =
-                emptyList<MediaItem>()
-            var tmdbItems =
-                emptyList<MediaItem>()
-
-            fun publishActorResults() {
-                if (
-                    requestId == searchRequestId &&
-                    query.trim() == normalized &&
-                    searchMode == requestedMode
-                ) {
-                    searchResults =
-                        engine.mergeActorResults(
-                            items =
-                                providerItems +
-                                    tmdbItems,
-                        )
-                }
-            }
-
-            launch {
-                providerItems =
-                    if (!addonActorSearch) {
-                        emptyList()
-                    } else {
-                        try {
-                            engine.searchActor(
-                                query = normalized,
-                                onPartial = { partial ->
-                                    providerItems = partial
-                                    publishActorResults()
-                                },
-                            )
-                        } catch (
-                            cancelled:
-                                CancellationException
-                        ) {
-                            throw cancelled
-                        } catch (
-                            _: Throwable
-                        ) {
-                            emptyList()
-                        }
+        val actorResults =
+            SearchOrchestrator.actorResults(
+                engine = engine,
+                query = normalized,
+                tmdbApiKey = tmdbApiKey,
+                onPartial = { partial ->
+                    if (
+                        requestId == searchRequestId &&
+                        query.trim() == normalized &&
+                        searchMode == requestedMode
+                    ) {
+                        searchResults = partial
                     }
-
-                publishActorResults()
-            }
-
-            launch {
-                tmdbItems =
-                    if (tmdbApiKey.isBlank()) {
-                        emptyList()
-                    } else {
-                        try {
-                            TmdbEnhancementClient
-                                .actorFilmography(
-                                    query = normalized,
-                                    apiKey = tmdbApiKey,
-                                )
-                                .orEmpty()
-                        } catch (
-                            cancelled:
-                                CancellationException
-                        ) {
-                            throw cancelled
-                        } catch (
-                            _: Throwable
-                        ) {
-                            emptyList()
-                        }
-                    }
-
-                publishActorResults()
-            }
-        }
+                },
+            )
 
         if (
             requestId == searchRequestId &&
             query.trim() == normalized &&
             searchMode == requestedMode
         ) {
+            searchResults = actorResults
             searching = false
         }
     }
@@ -4992,151 +4897,6 @@ private fun searchSortItems(
                     }
             )
     }
-}
-
-private fun searchRankAndDedupe(
-    items: List<MediaItem>,
-    query: String,
-): List<MediaItem> {
-    val normalizedQuery =
-        searchNormalizeText(query)
-
-    if (normalizedQuery.isBlank()) {
-        return items
-            .distinctBy {
-                "${it.type}:${it.id}"
-            }
-    }
-
-    val groups =
-        mutableListOf<
-            MutableList<MediaItem>
-        >()
-
-    items
-        .filter {
-            searchIsRelevantEnough(
-                item = it,
-                query = normalizedQuery,
-            )
-        }
-        .forEach {
-            candidate ->
-
-            val candidateTitle =
-                searchCanonicalTitle(
-                    candidate
-                )
-            val candidateType =
-                searchCanonicalType(
-                    candidate.type
-                )
-            val candidateYear =
-                searchReleaseYear(
-                    candidate
-                )
-
-            val target =
-                groups.firstOrNull {
-                    group ->
-                    val sample =
-                        group.first()
-
-                    val sampleYear =
-                        searchReleaseYear(
-                            sample
-                        )
-
-                    candidateTitle ==
-                        searchCanonicalTitle(
-                            sample
-                        ) &&
-                        candidateType ==
-                            searchCanonicalType(
-                                sample.type
-                            ) &&
-                        (
-                            candidateYear == 0 ||
-                                sampleYear == 0 ||
-                                kotlin.math.abs(
-                                    candidateYear -
-                                        sampleYear
-                                ) <= 1
-                        )
-                }
-
-            if (target == null) {
-                groups +=
-                    mutableListOf(
-                        candidate
-                    )
-            } else {
-                target += candidate
-            }
-        }
-
-    return groups
-        .mapNotNull {
-            duplicates ->
-
-            val best =
-                duplicates.maxByOrNull {
-                    item ->
-                    (
-                        searchRelevanceScore(
-                            item = item,
-                            query =
-                                normalizedQuery,
-                        ) * 100
-                    ) +
-                        searchMetadataScore(
-                            item
-                        )
-                }
-                    ?: return@mapNotNull null
-
-            best.copy(
-                genres =
-                    duplicates
-                        .flatMap {
-                            it.genres
-                        }
-                        .distinctBy {
-                            it.lowercase()
-                        },
-                catalogSources =
-                    (
-                        best.catalogSources +
-                            duplicates
-                                .flatMap {
-                                    it.catalogSources
-                                }
-                    )
-                        .map {
-                            it.trim()
-                        }
-                        .filter {
-                            it.isNotBlank()
-                        }
-                        .distinctBy {
-                            it.lowercase()
-                        },
-            )
-        }
-        .sortedWith(
-            compareByDescending<MediaItem> {
-                searchRelevanceScore(
-                    item = it,
-                    query = normalizedQuery,
-                )
-            }.thenByDescending {
-                searchMetadataScore(it)
-            }.thenByDescending {
-                it.imdbRating
-                    ?: it.tmdbRating
-                    ?: 0.0
-            }
-        )
 }
 
 private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =
@@ -7151,11 +6911,10 @@ private fun MediaDetailsScreen(
             coreItem
 
         val localRelated =
-            CatalogDiscoveryCache
-                .related(
-                    resolvedItem,
-                    limit = 18,
-                )
+            RelatedContentOrchestrator.local(
+                item = resolvedItem,
+                limit = 18,
+            )
 
         relatedItems =
             localRelated
@@ -7232,49 +6991,19 @@ private fun MediaDetailsScreen(
         }
 
         launch {
-            if (
-                tmdbKey.isBlank() ||
-                (
-                    !settingsStore
-                        .tmdbRecommendationsEnabled() &&
-                    !settingsStore
-                        .tmdbSimilarTitlesEnabled()
+            relatedItems =
+                RelatedContentOrchestrator.mergeRemote(
+                    item = resolvedItem,
+                    localItems = localRelated,
+                    apiKey = tmdbKey,
+                    recommendationsEnabled =
+                        settingsStore
+                            .tmdbRecommendationsEnabled(),
+                    similarEnabled =
+                        settingsStore
+                            .tmdbSimilarTitlesEnabled(),
+                    limit = 18,
                 )
-            ) {
-                return@launch
-            }
-
-            val tmdbRelated =
-                runCatching {
-                    TmdbEnhancementClient
-                        .moreLikeThis(
-                            item =
-                                resolvedItem,
-                            apiKey =
-                                tmdbKey,
-                            recommendationsEnabled =
-                                settingsStore
-                                    .tmdbRecommendationsEnabled(),
-                            similarEnabled =
-                                settingsStore
-                                    .tmdbSimilarTitlesEnabled(),
-                            limit = 18,
-                        )
-                }.getOrDefault(
-                    emptyList()
-                )
-
-            if (tmdbRelated.isNotEmpty()) {
-                relatedItems =
-                    (
-                        tmdbRelated +
-                            localRelated
-                    )
-                        .distinctBy {
-                            "${it.type}:${it.id}"
-                        }
-                        .take(18)
-            }
         }
 
         launch {

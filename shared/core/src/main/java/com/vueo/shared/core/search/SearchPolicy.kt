@@ -105,4 +105,67 @@ object SearchPolicy {
         .replace(Regex("""[^a-z0-9]+"""), " ")
         .trim()
         .replace(Regex("""\s+"""), " ")
+    fun rankAndDedupe(
+        items: List<MediaItem>,
+        query: String,
+    ): List<MediaItem> {
+        val normalizedQuery = normalizeText(query)
+        if (normalizedQuery.isBlank()) {
+            return items.distinctBy { "${it.type}:${it.id}" }
+        }
+
+        val groups = mutableListOf<MutableList<MediaItem>>()
+
+        items
+            .filter { isRelevantEnough(it, normalizedQuery) }
+            .forEach { candidate ->
+                val candidateTitle = canonicalTitle(candidate)
+                val candidateType = canonicalType(candidate.type)
+                val candidateYear = releaseYear(candidate)
+
+                val target = groups.firstOrNull { group ->
+                    val sample = group.first()
+                    val sampleYear = releaseYear(sample)
+                    candidateTitle == canonicalTitle(sample) &&
+                        candidateType == canonicalType(sample.type) &&
+                        (
+                            candidateYear == 0 ||
+                                sampleYear == 0 ||
+                                kotlin.math.abs(candidateYear - sampleYear) <= 1
+                            )
+                }
+
+                if (target == null) {
+                    groups += mutableListOf(candidate)
+                } else {
+                    target += candidate
+                }
+            }
+
+        return groups
+            .mapNotNull { duplicates ->
+                val best = duplicates.maxByOrNull { item ->
+                    relevanceScore(item, normalizedQuery) * 100 + metadataScore(item)
+                } ?: return@mapNotNull null
+
+                best.copy(
+                    genres = duplicates
+                        .flatMap { it.genres }
+                        .distinctBy { it.lowercase() },
+                    catalogSources = (
+                        best.catalogSources +
+                            duplicates.flatMap { it.catalogSources }
+                        )
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinctBy { it.lowercase() },
+                )
+            }
+            .sortedWith(
+                compareByDescending<MediaItem> { relevanceScore(it, normalizedQuery) }
+                    .thenByDescending(::metadataScore)
+                    .thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
+            )
+    }
+
 }

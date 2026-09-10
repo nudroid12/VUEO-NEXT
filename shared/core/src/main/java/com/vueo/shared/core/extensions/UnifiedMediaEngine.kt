@@ -823,42 +823,11 @@ class UnifiedMediaEngine {
     private fun rankSearchResults(
         items: List<MediaItem>,
         query: String,
-    ): List<MediaItem> {
-        val normalizedQuery =
-            normalizeSearchText(query)
-
-        if (normalizedQuery.isBlank()) {
-            return mergeSearchDuplicates(
-                items = items,
-                query = normalizedQuery,
-            )
-        }
-
-        return mergeSearchDuplicates(
-            items =
-                items.filter {
-                    searchIsRelevantEnough(
-                        item = it,
-                        query = normalizedQuery,
-                    )
-                },
-            query = normalizedQuery,
+    ): List<MediaItem> =
+        SearchPolicy.rankAndDedupe(
+            items = items,
+            query = query,
         )
-            .sortedWith(
-                compareByDescending<MediaItem> {
-                    searchRelevanceScore(
-                        item = it,
-                        query = normalizedQuery,
-                    )
-                }.thenByDescending {
-                    searchMetadataScore(it)
-                }.thenByDescending {
-                    it.imdbRating
-                        ?: it.tmdbRating
-                        ?: 0.0
-                }
-            )
-    }
 
     private fun mergeSearchDuplicates(
         items: List<MediaItem>,
