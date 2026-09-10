@@ -3,7 +3,11 @@ package com.vueo.shared.core.plugin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -87,7 +91,57 @@ object PluginHttp {
         }
     }
 
-    suspend fun executeJson(requestJson: String): String = withContext(Dispatchers.IO) {
+    /**
+     * A short-lived HTTP session owned by one provider execution.
+     *
+     * Providers commonly obtain a signed media URL only after a login,
+     * consent or anti-bot request sets a cookie. Keeping this jar scoped to
+     * one execution prevents cookies leaking between providers while still
+     * allowing the provider's subsequent requests to behave like a browser.
+     */
+    fun newSession(): Session = Session()
+
+    class Session internal constructor() {
+        private val cookieJar = MemoryCookieJar()
+        private val sessionClient by lazy {
+            client.newBuilder()
+                .cookieJar(cookieJar)
+                .build()
+        }
+        private val sessionManualRedirectClient by lazy {
+            sessionClient.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+        }
+
+        suspend fun executeJson(requestJson: String): String =
+            executeJsonWithClients(
+                requestJson = requestJson,
+                normalClient = sessionClient,
+                manualClient = sessionManualRedirectClient,
+            )
+
+        fun cookieHeader(url: String): String? {
+            val parsed = url.toHttpUrlOrNull() ?: return null
+            return cookieJar.loadForRequest(parsed)
+                .joinToString("; ") { "${it.name}=${it.value}" }
+                .takeIf { it.isNotBlank() }
+        }
+    }
+
+    suspend fun executeJson(requestJson: String): String =
+        executeJsonWithClients(
+            requestJson = requestJson,
+            normalClient = client,
+            manualClient = manualRedirectClient,
+        )
+
+    private suspend fun executeJsonWithClients(
+        requestJson: String,
+        normalClient: OkHttpClient,
+        manualClient: OkHttpClient,
+    ): String = withContext(Dispatchers.IO) {
         runCatching {
             val input = JSONObject(requestJson)
             val url = input.optString("url")
@@ -127,13 +181,13 @@ object PluginHttp {
                 else -> requestBuilder.method(method, body)
             }
 
-            val requestClient = if (input.optString("redirect", "follow") == "manual") {
-                manualRedirectClient
+            val selectedClient = if (input.optString("redirect", "follow") == "manual") {
+                manualClient
             } else {
-                client
+                normalClient
             }
 
-            requestClient.newCall(requestBuilder.build()).execute().use { response ->
+            selectedClient.newCall(requestBuilder.build()).execute().use { response ->
                 val responseHeaders = JSONObject()
                 response.headers.names().forEach { name ->
                     responseHeaders.put(name, response.headers.values(name).joinToString(", "))
@@ -264,4 +318,34 @@ object PluginHttp {
         "connection",
         "accept-encoding",
     )
+}
+
+private class MemoryCookieJar : CookieJar {
+    private val lock = Any()
+    private val cookies = mutableListOf<Cookie>()
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> =
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            cookies.removeAll { it.expiresAt < now }
+            cookies.filter { it.matches(url) }
+        }
+
+    override fun saveFromResponse(url: HttpUrl, newCookies: List<Cookie>) {
+        if (newCookies.isEmpty()) return
+
+        synchronized(lock) {
+            newCookies.forEach { incoming ->
+                cookies.removeAll { existing ->
+                    existing.name == incoming.name &&
+                        existing.domain == incoming.domain &&
+                        existing.path == incoming.path
+                }
+
+                if (incoming.expiresAt >= System.currentTimeMillis()) {
+                    cookies += incoming
+                }
+            }
+        }
+    }
 }

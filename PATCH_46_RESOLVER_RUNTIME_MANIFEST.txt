@@ -1,0 +1,26 @@
+VUEO NEXT - PATCH 46 RESOLVER RUNTIME
+
+Scope
+- Latest repository baseline: VUEO-NEXT-main (30)
+- Resolver-only runtime compatibility improvements
+- No UI, player layout, subtitle workspace, or motion changes
+
+Changed files
+- shared/core/src/main/java/com/vueo/shared/core/plugin/PluginHttp.kt
+- shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntime.kt
+
+Changes
+1. Provider-scoped in-memory cookie session
+   - Native fetch and axios requests from one provider share cookies.
+   - Cookies do not leak between provider executions.
+   - Matching cookies are copied to a returned playable stream when the provider did not supply a Cookie header.
+2. Resolver output normalization
+   - Accepts arrays, streams/sources/results/items/data/links wrappers, single stream/result objects, and direct stream objects.
+3. Stream metadata normalization
+   - URL aliases: url, streamUrl, playbackUrl, link, src, file.
+   - Torrent aliases: infoHash, hash, btih, magnet, plus file index.
+   - Quality, codec, HDR, audio, language, size, rank, and nested proxy/request headers.
+
+Validation
+- Static source inspection only.
+- Local Android build intentionally not run because the local build environment is unavailable.

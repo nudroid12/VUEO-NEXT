@@ -977,6 +977,9 @@ private fun emptyDiscoveryResult():
         val webViewTraceCount =
             java.util.concurrent.atomic.AtomicInteger(0)
 
+        val providerHttpSession =
+            PluginHttp.newSession()
+
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
 
@@ -1074,7 +1077,7 @@ private fun emptyDiscoveryResult():
                                 )
                         val responseJson =
                             sharedTmdb
-                                ?: PluginHttp.executeJson(
+                                ?: providerHttpSession.executeJson(
                                     requestJson
                                 )
                         val traceIndex =
@@ -1267,7 +1270,24 @@ private fun emptyDiscoveryResult():
                             provider,
                         resultJson =
                             resultJson,
-                    ),
+                    ).map { stream ->
+                        val cookieHeader =
+                            stream.url?.let(providerHttpSession::cookieHeader)
+                        if (
+                            cookieHeader.isNullOrBlank() ||
+                            stream.headers.keys.any {
+                                it.equals("Cookie", ignoreCase = true)
+                            }
+                        ) {
+                            stream
+                        } else {
+                            stream.copy(
+                                headers =
+                                    stream.headers +
+                                        ("Cookie" to cookieHeader)
+                            )
+                        }
+                    },
                 error =
                     null,
                 logs =
@@ -3401,6 +3421,52 @@ private fun emptyDiscoveryResult():
               );
             }
 
+            function __vueoNormalizeStreams(value) {
+              if (Array.isArray(value)) return value;
+              if (!value || typeof value !== "object") return [];
+
+              var collectionKeys = [
+                "streams",
+                "sources",
+                "results",
+                "items",
+                "data",
+                "links"
+              ];
+
+              for (var i = 0; i < collectionKeys.length; i++) {
+                var collection = value[collectionKeys[i]];
+                if (Array.isArray(collection)) return collection;
+              }
+
+              if (value.stream && typeof value.stream === "object") {
+                return [value.stream];
+              }
+
+              if (value.result && typeof value.result === "object") {
+                return [value.result];
+              }
+
+              if (
+                value.url ||
+                value.streamUrl ||
+                value.stream_url ||
+                value.playbackUrl ||
+                value.playback_url ||
+                value.link ||
+                value.src ||
+                value.file ||
+                value.infoHash ||
+                value.info_hash ||
+                value.hash ||
+                value.magnet
+              ) {
+                return [value];
+              }
+
+              return [];
+            }
+
             var __vueoStreams =
               await Promise.resolve(
                 __vueoGetStreams(
@@ -3412,9 +3478,7 @@ private fun emptyDiscoveryResult():
               );
 
             JSON.stringify(
-              Array.isArray(__vueoStreams)
-                ? __vueoStreams
-                : []
+              __vueoNormalizeStreams(__vueoStreams)
             );
         """.trimIndent()
     }
@@ -3647,10 +3711,36 @@ private fun parseProviderStreams(
     provider: PluginProviderDescriptor,
     resultJson: String,
 ): List<SourceCandidate> {
+    val rootObject =
+        runCatching { JSONObject(resultJson) }
+            .getOrNull()
+
     val array =
-        runCatching {
-            JSONArray(resultJson)
-        }.getOrNull()
+        runCatching { JSONArray(resultJson) }
+            .getOrNull()
+            ?: rootObject?.let { root ->
+                listOf(
+                    "streams",
+                    "sources",
+                    "results",
+                    "items",
+                    "data",
+                    "links",
+                )
+                    .firstNotNullOfOrNull { key ->
+                        root.optJSONArray(key)
+                    }
+                    ?: listOf("stream", "result")
+                        .firstNotNullOfOrNull { key ->
+                            root.optJSONObject(key)
+                        }
+                        ?.let { JSONArray().put(it) }
+                    ?: if (root.hasAnyStreamField()) {
+                        JSONArray().put(root)
+                    } else {
+                        null
+                    }
+            }
             ?: return emptyList()
 
     return (0 until array.length())
@@ -3659,37 +3749,52 @@ private fun parseProviderStreams(
                 array.optJSONObject(index)
                     ?: return@mapNotNull null
 
+            val rawUrl =
+                item.firstNonBlank(
+                    "url",
+                    "streamUrl",
+                    "stream_url",
+                    "playbackUrl",
+                    "playback_url",
+                    "link",
+                    "src",
+                    "file",
+                )
             val url =
-                item.optString("url")
-                    .takeIf {
-                        it.startsWith(
-                            "https://"
-                        ) ||
-                        it.startsWith(
-                            "http://"
-                        )
-                    }
-                    ?: return@mapNotNull null
+                rawUrl?.takeIf {
+                    it.startsWith("https://") ||
+                        it.startsWith("http://")
+                }
+
+            val infoHash =
+                item.firstNonBlank(
+                    "infoHash",
+                    "info_hash",
+                    "hash",
+                    "btih",
+                    "magnet",
+                )?.extractInfoHash()
+
+            if (url == null && infoHash == null) {
+                return@mapNotNull null
+            }
 
             val headers =
-                item.optJSONObject("headers")
-                    .toStringMap()
+                item.streamHeaders()
 
             val quality =
-                item.optString("quality")
-                    .takeIf {
-                        it.isNotBlank()
-                    }
+                item.firstNonBlank(
+                    "quality",
+                    "resolution",
+                    "res",
+                )
 
             val displayName =
-                item.optString("title")
-                    .takeIf {
-                        it.isNotBlank()
-                    }
-                    ?: item.optString("name")
-                        .takeIf {
-                            it.isNotBlank()
-                        }
+                item.firstNonBlank(
+                    "title",
+                    "name",
+                    "label",
+                )
                     ?: provider.name
 
             SourceCandidate(
@@ -3702,17 +3807,33 @@ private fun parseProviderStreams(
                     displayName,
                 url =
                     url,
+                infoHash =
+                    infoHash,
+                fileIndex =
+                    item.firstInt(
+                        "fileIndex",
+                        "file_index",
+                        "index",
+                    ),
                 quality =
                     quality,
                 codec =
-                    item.optString("codec")
-                        .takeIf { it.isNotBlank() },
+                    item.firstNonBlank(
+                        "codec",
+                        "videoCodec",
+                        "video_codec",
+                    ),
                 hdr =
-                    item.optString("hdr")
-                        .takeIf { it.isNotBlank() },
+                    item.firstNonBlank(
+                        "hdr",
+                        "dynamicRange",
+                    ),
                 audio =
-                    item.optString("audio")
-                        .takeIf { it.isNotBlank() },
+                    item.firstNonBlank(
+                        "audio",
+                        "audioCodec",
+                        "audio_codec",
+                    ),
                 language =
                     listOf(
                         "language",
@@ -3720,12 +3841,23 @@ private fun parseProviderStreams(
                         "audioLanguage",
                         "audio_language",
                     ).firstNotNullOfOrNull { field ->
-                        item.optString(field)
-                            .trim()
-                            .takeIf { it.isNotBlank() }
+                        item.firstNonBlank(field)
                     },
+                sizeBytes =
+                    item.firstLong(
+                        "sizeBytes",
+                        "size_bytes",
+                        "size",
+                        "fileSize",
+                        "file_size",
+                    ),
                 headers =
                     headers,
+                rankBoost =
+                    item.firstInt(
+                        "rankBoost",
+                        "rank_boost",
+                    ) ?: 0,
                 providerId =
                     "plugin:" +
                     repository.manifestUrl
@@ -3737,6 +3869,114 @@ private fun parseProviderStreams(
                     provider.name,
             )
         }
+}
+
+private fun JSONObject.hasAnyStreamField(): Boolean =
+    listOf(
+        "url",
+        "streamUrl",
+        "stream_url",
+        "playbackUrl",
+        "playback_url",
+        "link",
+        "src",
+        "file",
+        "infoHash",
+        "info_hash",
+        "hash",
+        "btih",
+        "magnet",
+    ).any(::has)
+
+private fun JSONObject.firstNonBlank(
+    vararg fields: String,
+): String? =
+    fields.firstNotNullOfOrNull { field ->
+        optString(field)
+            .trim()
+            .takeIf { it.isNotBlank() }
+    }
+
+private fun JSONObject.firstLong(
+    vararg fields: String,
+): Long? =
+    fields.firstNotNullOfOrNull { field ->
+        if (!has(field) || isNull(field)) {
+            null
+        } else {
+            when (val value = opt(field)) {
+                is Number -> value.toLong().takeIf { it >= 0L }
+                else -> value.toString().parseByteSize()
+            }
+        }
+    }
+
+private fun JSONObject.firstInt(
+    vararg fields: String,
+): Int? =
+    fields.firstNotNullOfOrNull { field ->
+        if (!has(field) || isNull(field)) {
+            null
+        } else {
+            opt(field).toString().toIntOrNull()
+        }
+    }
+
+private fun String.parseByteSize(): Long? {
+    val match =
+        Regex("^([0-9]+(?:\\.[0-9]+)?)\\s*(b|kb|kib|mb|mib|gb|gib)?$", RegexOption.IGNORE_CASE)
+            .matchEntire(trim())
+            ?: return null
+    val amount = match.groupValues[1].toDoubleOrNull() ?: return null
+    val unit = match.groupValues[2].lowercase()
+    val multiplier =
+        when (unit) {
+            "gb", "gib" -> 1024.0 * 1024.0 * 1024.0
+            "mb", "mib" -> 1024.0 * 1024.0
+            "kb", "kib" -> 1024.0
+            else -> 1.0
+        }
+    return (amount * multiplier)
+        .toLong()
+        .takeIf { it >= 0L }
+}
+
+private fun String.extractInfoHash(): String? {
+    val value = trim()
+    if (value.isBlank()) return null
+    if (!value.startsWith("magnet:", ignoreCase = true)) {
+        return value
+    }
+
+    return Regex(
+        "(?:^|[?&])xt=urn:btih:([^&]+)",
+        RegexOption.IGNORE_CASE,
+    ).find(value)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.takeIf { it.isNotBlank() }
+}
+
+private fun JSONObject.streamHeaders(): Map<String, String> {
+    val result = linkedMapOf<String, String>()
+
+    fun merge(value: JSONObject?) {
+        value.toStringMap().forEach { (key, headerValue) ->
+            if (headerValue.isNotBlank()) result[key] = headerValue
+        }
+    }
+
+    merge(optJSONObject("headers"))
+    merge(optJSONObject("requestHeaders"))
+    merge(optJSONObject("request_headers"))
+
+    val behaviorHints = optJSONObject("behaviorHints")
+    merge(behaviorHints?.optJSONObject("proxyHeaders"))
+    merge(behaviorHints?.optJSONObject("proxy_headers"))
+    merge(behaviorHints?.optJSONObject("headers"))
+    merge(behaviorHints?.optJSONObject("requestHeaders"))
+
+    return result
 }
 
 private fun JSONObject?.toStringMap():
