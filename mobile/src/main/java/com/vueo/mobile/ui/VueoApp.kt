@@ -188,6 +188,7 @@ import com.vueo.mobile.core.enrichment.RichDetailsClient
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
+import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
@@ -8470,11 +8471,7 @@ private fun MediaDetailsScreen(
             }
         }
 
-        if (
-            item.directors.isNotEmpty() ||
-            item.creators.isNotEmpty() ||
-            item.writers.isNotEmpty()
-        ) {
+        if (DetailPeoplePolicy.creditLines(item).isNotEmpty()) {
             item {
                 MediaCreditsSummary(
                     media = item
@@ -8520,10 +8517,11 @@ private fun MediaDetailsScreen(
                 }
             }
 
-        if (item.cast.isNotEmpty()) {
+        val detailCast = DetailPeoplePolicy.cast(item)
+        if (detailCast.isNotEmpty()) {
             item {
                 MediaCastSection(
-                    cast = item.cast
+                    cast = detailCast
                 )
             }
         }
@@ -9257,6 +9255,7 @@ private fun DnaMatchMark(
 private fun MediaCreditsSummary(
     media: MediaItem,
 ) {
+    val credits = remember(media) { DetailPeoplePolicy.creditLines(media) }
     Column(
         modifier =
             Modifier.padding(
@@ -9267,27 +9266,10 @@ private fun MediaCreditsSummary(
                 6.dp
             ),
     ) {
-        if (
-            media.type == "series" &&
-            media.creators.isNotEmpty()
-        ) {
+        credits.forEach { credit ->
             DetailsCreditLine(
-                label = "Creator",
-                names = media.creators,
-            )
-        } else if (
-            media.directors.isNotEmpty()
-        ) {
-            DetailsCreditLine(
-                label = "Director",
-                names = media.directors,
-            )
-        }
-
-        if (media.writers.isNotEmpty()) {
-            DetailsCreditLine(
-                label = "Writer",
-                names = media.writers,
+                label = credit.label,
+                names = credit.names,
             )
         }
     }
@@ -9445,7 +9427,7 @@ private fun MediaCastSection(
                 ),
         ) {
             items(
-                cast.take(20),
+                cast,
                 key = {
                     "${it.name}:${it.character.orEmpty()}"
                 },

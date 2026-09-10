@@ -20,7 +20,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.media.MediaPerson
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
@@ -113,55 +112,6 @@ internal fun NuvioDetailMessage(message: String) {
             fontSize = 12.sp,
         )
     }
-}
-
-internal fun nuvioDetailPeople(
-    item: MediaItem,
-    enrichedCrew: List<MediaPerson>,
-): List<MediaPerson> {
-    val castByName = item.cast.associateBy { it.name.trim().lowercase() }
-    val leading = buildList {
-        addAll(enrichedCrew)
-        item.creators.take(2).forEach { name ->
-            val match = castByName[name.trim().lowercase()]
-            add(
-                MediaPerson(
-                    name = name,
-                    character = "Creator",
-                    role = "Creator",
-                    profile = match?.profile,
-                )
-            )
-        }
-        item.directors.take(2).forEach { name ->
-            val match = castByName[name.trim().lowercase()]
-            add(
-                MediaPerson(
-                    name = name,
-                    character = "Director",
-                    role = "Director",
-                    profile = match?.profile,
-                )
-            )
-        }
-        if (item.creators.isEmpty() && item.directors.isEmpty()) {
-            item.writers.take(1).forEach { name ->
-                val match = castByName[name.trim().lowercase()]
-                add(
-                    MediaPerson(
-                        name = name,
-                        character = "Writer",
-                        role = "Writer",
-                        profile = match?.profile,
-                    )
-                )
-            }
-        }
-    }
-    val leadingNames = leading.map { it.name.trim().lowercase() }.toSet()
-    return (leading + item.cast.filterNot { it.name.trim().lowercase() in leadingNames })
-        .distinctBy { it.name.trim().lowercase() + "|" + it.character.orEmpty() }
-        .take(20)
 }
 
 internal fun nuvioDetailRuntime(minutes: Int): String {

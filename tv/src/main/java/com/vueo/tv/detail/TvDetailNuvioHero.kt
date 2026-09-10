@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.MediaRating
+import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.R
 import com.vueo.tv.ui.TvDesign
@@ -66,7 +67,7 @@ internal fun NuvioDetailHero(
     onTrailer: () -> Unit,
 ) {
     val item = state.item
-    val creditLine = remember(item) { nuvioDetailCreditLine(item) }
+    val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val canPlay = !state.loading && (!item.isDetailSeries() || state.selectedEpisode != null)
     val primaryMeta = remember(item, state.ratings, state.nuvioExtras.fullReleaseDate) {
         buildList {
@@ -170,17 +171,23 @@ internal fun NuvioDetailHero(
 
         Spacer(Modifier.height(17.dp))
 
-        if (!creditLine.isNullOrBlank()) {
-            Text(
-                text = creditLine,
-                color = TvDesign.White.copy(alpha = .76f),
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        if (creditLines.isNotEmpty()) {
+            Column(
                 modifier = Modifier.fillMaxWidth(NuvioHeroContentWidth),
-            )
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                creditLines.forEach { credit ->
+                    Text(
+                        text = "${credit.label}: ${credit.names.joinToString(", ")}",
+                        color = TvDesign.White.copy(alpha = .76f),
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Spacer(Modifier.height(11.dp))
         }
 
@@ -536,14 +543,3 @@ private fun NuvioMetaDot() {
     )
 }
 
-private fun nuvioDetailCreditLine(item: MediaItem): String? {
-    val creators = item.creators.take(3).joinToString(", ")
-    val directors = item.directors.take(3).joinToString(", ")
-    val writers = item.writers.take(3).joinToString(", ")
-    return when {
-        item.isDetailSeries() && creators.isNotBlank() -> "Creator: $creators"
-        directors.isNotBlank() -> "Director: $directors"
-        writers.isNotBlank() -> "Writer: $writers"
-        else -> null
-    }
-}

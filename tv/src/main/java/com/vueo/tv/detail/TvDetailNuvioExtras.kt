@@ -3,7 +3,6 @@ package com.vueo.tv.detail
 import android.net.Uri
 import com.vueo.shared.core.enrichment.MetadataHttp
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.media.MediaPerson
 import com.vueo.shared.core.plugin.TmdbResolver
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,7 +15,6 @@ internal data class TvDetailNuvioExtras(
     val language: String? = null,
     val status: String? = null,
     val fullReleaseDate: String? = null,
-    val leadingCrew: List<MediaPerson> = emptyList(),
     val trailerUrl: String? = null,
 )
 
@@ -40,7 +38,7 @@ internal suspend fun loadTvDetailNuvioExtras(
     val detailUrl =
         "https://api.themoviedb.org/3/$endpoint/${Uri.encode(tmdbId)}" +
             "?api_key=${Uri.encode(apiKey)}" +
-            "&append_to_response=credits,images,videos" +
+            "&append_to_response=images,videos" +
             "&include_image_language=en,null"
 
     val json = JSONObject(MetadataHttp.get(detailUrl))
@@ -59,7 +57,6 @@ internal suspend fun loadTvDetailNuvioExtras(
         .trim()
         .takeIf(String::isNotBlank)
         ?.let(::formatTvDetailReleaseDate)
-    val leadingCrew = tvDetailLeadingCrew(json, isSeries)
     val trailerUrl = tvDetailTrailerUrl(json.optJSONObject("videos")?.optJSONArray("results"))
 
     return TvDetailNuvioExtras(
@@ -68,7 +65,6 @@ internal suspend fun loadTvDetailNuvioExtras(
         language = language,
         status = status,
         fullReleaseDate = releaseDate,
-        leadingCrew = leadingCrew,
         trailerUrl = trailerUrl,
     )
 }
@@ -150,59 +146,6 @@ private fun tvDetailCountryLabel(countries: JSONArray): String? {
         }
     }.distinct().take(2)
     return names.takeIf { it.isNotEmpty() }?.joinToString(", ")
-}
-
-private fun tvDetailLeadingCrew(
-    json: JSONObject,
-    isSeries: Boolean,
-): List<MediaPerson> {
-    val result = mutableListOf<MediaPerson>()
-    if (isSeries) {
-        val creators = json.optJSONArray("created_by")
-        if (creators != null) {
-            for (index in 0 until creators.length()) {
-                val person = creators.optJSONObject(index) ?: continue
-                val name = person.optString("name").trim()
-                if (name.isBlank()) continue
-                result += MediaPerson(
-                    name = name,
-                    character = "Creator",
-                    role = "Creator",
-                    profile = person.optString("profile_path")
-                        .takeIf { it.startsWith("/") }
-                        ?.let { "https://image.tmdb.org/t/p/w185$it" },
-                )
-            }
-        }
-    }
-
-    val crew = json.optJSONObject("credits")?.optJSONArray("crew")
-    if (crew != null) {
-        val wantedJobs = if (isSeries) {
-            setOf("Director", "Writer", "Screenplay", "Teleplay")
-        } else {
-            setOf("Director", "Writer", "Screenplay")
-        }
-        for (index in 0 until crew.length()) {
-            val person = crew.optJSONObject(index) ?: continue
-            val job = person.optString("job").trim()
-            if (job !in wantedJobs) continue
-            val name = person.optString("name").trim()
-            if (name.isBlank()) continue
-            result += MediaPerson(
-                name = name,
-                character = job,
-                role = job,
-                profile = person.optString("profile_path")
-                    .takeIf { it.startsWith("/") }
-                    ?.let { "https://image.tmdb.org/t/p/w185$it" },
-            )
-        }
-    }
-
-    return result
-        .distinctBy { it.name.trim().lowercase() + "|" + it.character.orEmpty() }
-        .take(4)
 }
 
 private fun tvDetailTrailerUrl(videos: JSONArray?): String? {

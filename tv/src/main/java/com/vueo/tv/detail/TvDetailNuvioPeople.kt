@@ -109,7 +109,7 @@ internal fun NuvioDetailPeopleSwitcher(
         } else {
             NuvioDetailSectionTitle(
                 when (available.first()) {
-                    NuvioPeopleTab.CAST -> "Creator and Cast"
+                    NuvioPeopleTab.CAST -> "Cast"
                     NuvioPeopleTab.RELATED -> "More like this"
                     NuvioPeopleTab.TRAILER -> "Trailer"
                 }
@@ -176,7 +176,7 @@ private fun NuvioPeopleTabs(
             val requester = if (index == 0) sectionRequester else extraRequesters.getValue(tab)
             var focused by remember(tab) { mutableStateOf(false) }
             val label = when (tab) {
-                NuvioPeopleTab.CAST -> "Creator and Cast"
+                NuvioPeopleTab.CAST -> "Cast"
                 NuvioPeopleTab.RELATED -> "More like this"
                 NuvioPeopleTab.TRAILER -> "Trailer"
             }
@@ -261,7 +261,6 @@ private fun NuvioCastMember(
 ) {
     var focused by remember(person.name, person.character) { mutableStateOf(false) }
     val role = person.character?.takeIf(String::isNotBlank)
-        ?: person.role?.takeIf(String::isNotBlank)
 
     Column(
         modifier = Modifier

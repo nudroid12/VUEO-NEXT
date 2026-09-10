@@ -22,6 +22,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
+import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
@@ -58,8 +59,8 @@ internal fun TvDetailPresentation(
     val relatedContentRequester = remember(mediaKey) { FocusRequester() }
     val trailerContentRequester = remember(mediaKey) { FocusRequester() }
 
-    val people = remember(state.item, state.nuvioExtras.leadingCrew) {
-        nuvioDetailPeople(state.item, state.nuvioExtras.leadingCrew)
+    val people = remember(state.item) {
+        DetailPeoplePolicy.cast(state.item)
     }
     val hasCast = people.isNotEmpty()
     val hasRelated = state.related.isNotEmpty()
