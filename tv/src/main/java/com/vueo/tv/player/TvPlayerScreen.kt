@@ -964,7 +964,7 @@ fun TvPlayerScreen(
             TvPlayerPanel.NONE -> emptyList()
         }
 
-        NuvioPlayerPresentation(
+        VueoPlayerPresentation(
             media = media,
             episode = episode,
             activeSource = activeSource,
@@ -1102,7 +1102,7 @@ fun TvPlayerScreen(
             enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
             exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
         ) {
-            NuvioPlayerSubtitleWorkspace(
+            VueoPlayerSubtitleWorkspace(
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
                 entryFocusRequester = subtitleWorkspaceRequester,
@@ -1152,7 +1152,7 @@ fun TvPlayerScreen(
             enter = tvPanelEnter(),
             exit = tvPanelExit(),
         ) {
-            NuvioPlayerAudioWorkspace(
+            VueoPlayerAudioWorkspace(
                 tracks = audioTracks,
                 automaticSelected = audioAutomaticSelected,
                 activeSourceLabel = activeSource.audio,

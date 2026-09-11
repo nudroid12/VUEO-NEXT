@@ -70,7 +70,7 @@ private val SidebarIconSize = 24.dp
 /**
  * 33A root sidebar.
  *
- * Rebuilt from a blank presentation using the interaction model of Nuvio's
+ * Rebuilt from a blank presentation using the interaction model of Vueo's
  * modern TV navigation: content -> current destination -> expanded drawer ->
  * content, while preserving VUEO routes and screen-owned focus restoration.
  *
@@ -255,7 +255,7 @@ private fun SidebarNavigationItem(
                 // spatial focus. This makes LEFT from content deterministic;
                 // once it receives focus the drawer expands and every route is
                 // enabled, mirroring the selected-route entry behaviour of
-                // Nuvio's modern scaffold without a floating pill.
+                // Vueo's modern scaffold without a floating pill.
                 canFocus = expanded || canFocusWhenCollapsed
             }
             .onFocusChanged { state ->

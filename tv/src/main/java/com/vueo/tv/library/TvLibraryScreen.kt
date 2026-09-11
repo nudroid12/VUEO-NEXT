@@ -203,7 +203,7 @@ fun TvLibraryScreen(
             }
     }
 
-    // Nuvio-reference focus restoration: poster first when returning from
+    // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
     LaunchedEffect(mediaKeys, gridView, cloudSelected) {
         delay(110)

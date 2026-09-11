@@ -67,7 +67,7 @@ private val SourceCardShape = RoundedCornerShape(12.dp)
 private val SourceChipShape = RoundedCornerShape(20.dp)
 private const val SourceKeyRepeatThrottleMs = 112L
 
-/** Nuvio-inspired 40/60 TV source-selection composition. */
+/** Vueo-inspired 40/60 TV source-selection composition. */
 @Composable
 internal fun TvSourcePresentation(
     state: TvSourcePresentationState,

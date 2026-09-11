@@ -20,7 +20,7 @@ import com.vueo.tv.core.TvSourceBundle
  * This file now owns only VUEO discovery/ranking/settings/playback semantics.
  * The previous 29F Compose presentation was removed. TV layout, focus and
  * source-card presentation live in TvSourcePresentation.kt and are rebuilt
- * using the supplied Nuvio StreamScreen as the interaction/layout reference.
+ * using the supplied Vueo StreamScreen as the interaction/layout reference.
  */
 @Composable
 fun TvSourceScreen(

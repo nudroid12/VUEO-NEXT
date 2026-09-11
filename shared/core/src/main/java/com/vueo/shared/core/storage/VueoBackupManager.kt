@@ -4,12 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.plugin.ProviderCodeStore
 import com.vueo.shared.core.source.SourceDiscoveryCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 
 /**
  * Shared VUEO backup/restore format for Mobile and TV.
@@ -282,10 +282,7 @@ object VueoBackupManager {
                 }
             }
 
-            runCatching {
-                File(appContext.filesDir, "nuvio_plugin_scrapers")
-                    .deleteRecursively()
-            }
+            ProviderCodeStore.clearStoredCode(appContext)
 
             runCatching {
                 appContext.cacheDir

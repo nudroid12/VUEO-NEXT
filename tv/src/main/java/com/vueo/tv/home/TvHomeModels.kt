@@ -39,7 +39,7 @@ internal data class TvHomeRow(
 )
 
 /**
- * Small process-lifetime focus snapshot, equivalent to the focus state Nuvio
+ * Small process-lifetime focus snapshot, equivalent to the focus state Vueo
  * keeps for Home. It remembers the active row and the focused item per row,
  * but it does not own navigation or data.
  */

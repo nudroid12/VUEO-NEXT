@@ -132,14 +132,8 @@ Settings is a calm single-column 10-foot workspace. Up/Down changes focus, Left/
 - The rail overlays the cinematic canvas and uses a quiet translucent charcoal surface with a subtle neutral edge. No live blur, glow, bounce, or decorative motion.
 - Normal app pages remain free of the VUEO wordmark.
 
-## 29C.4 Nuvio-reference visual system
-The supplied Nuvio TV source is the current design reference for the VUEO TV rebuild. Use it as a visual and interaction benchmark, not as a code/runtime architecture dependency.
-
-Relevant source references in the supplied project:
-- `app/src/main/java/com/nuvio/tv/MainActivity.kt` — `ModernSidebarScaffold`, collapsed route pill, focus transfer and expand/collapse choreography.
-- `app/src/main/java/com/nuvio/tv/ModernSidebarBlurPanel.kt` — rounded floating panel, Profile-at-top composition, centered primary destinations, circular icon wells and pill navigation rows.
-- `app/src/main/java/com/nuvio/tv/ui/components/SidebarNavigation.kt` — selected/focused item treatment.
-- `app/src/main/java/com/nuvio/tv/ui/theme/ComponentTokens.kt` and `MotionFocusTokens.kt` — sidebar sizing/motion proportions.
+## 29C.4 VUEO TV visual system
+The current VUEO TV design system is the visual and interaction baseline. It is presentation-only and does not alter Shared Core/runtime architecture.
 
 VUEO adaptation rules:
 - Keep VUEO routes, Shared Core behavior and current theme system.
@@ -150,25 +144,25 @@ VUEO adaptation rules:
 - Navigation row target is roughly 52dp high with a ~34dp circular leading visual and rounded-full selected/focus surface.
 - Keep neutral white, low-noise focus and no bounce/neon treatment.
 
-## 29D Library composition — Mobile parity, Nuvio TV grammar
-- Library feature/data behavior follows VUEO Mobile; Nuvio is a TV presentation/focus reference only.
+## 29D Library composition — Mobile parity, VUEO TV grammar
+- Library feature/data behavior follows VUEO Mobile; TV uses the established VUEO presentation/focus grammar.
 - Visible Library structure: **Library title → My List / Cloud controls + Grid/List control → content**.
 - Continue Watching and History are not dedicated Library sections.
 - Grid/List view is a real user preference and must remain remembered using the Mobile preference contract.
 - Poster density is target-width responsive; fixed 8-up is not a global TV design rule.
-- Poster proportions remain 2:3. Nuvio reference proportions guide the current target width (~126dp), 12dp radius, 2dp focused edge, ~1.02 scale and ~180ms focus motion.
+- Poster proportions remain 2:3. VUEO proportions guide the current target width (~126dp), 12dp radius, 2dp focused edge, ~1.02 scale and ~180ms focus motion.
 - List mode is compact and content-first: poster thumbnail, title, release/type metadata, restrained focus surface.
 - Preserve exact last-item/scroll focus return after Detail where possible.
 - Keep Library header below the 29C.4 collapsed route pill rather than adding a permanent left rail gutter.
 
-## 29E Detail baseline — Nuvio-reference composition, Mobile behaviour
+## 29E Detail baseline — VUEO TV composition, Mobile behaviour
 
 Detail uses a sticky full-screen backdrop with strong left and bottom scrims, a bottom-weighted hero text/action block, then TV-native horizontal sections. Primary action receives initial focus; custom controls activate on KeyUp once; focus motion remains shallow (~1.02–1.025) with neutral white treatment. Series uses season tabs plus 16:9 episode cards with playback progress. More Like This uses restrained landscape cards. Overview must remain accessible even when hero copy is clamped.
 
 This is not a final visual lock. Preserve the functional composition and Mobile parity, then calibrate exact density/spacing/type/motion during the final whole-TV polish pass.
 
-## 29F Source Selection baseline — Nuvio stream grammar, Mobile source semantics
+## 29F Source Selection baseline — VUEO stream grammar, Mobile source semantics
 
-Source uses the supplied Nuvio `StreamScreen.kt` as the 10-foot composition reference: cinematic full-screen backdrop, quiet information plane on the left, provider chips plus a rounded translucent stream workspace on the right. Source rows do not scale on focus; use a restrained 2dp focus edge/surface contrast instead. Keep the workspace dense enough for several rows at once and avoid oversized mobile cards.
+Source uses the established VUEO 10-foot composition: cinematic full-screen backdrop, quiet information plane on the left, provider chips plus a rounded translucent stream workspace on the right. Source rows do not scale on focus; use a restrained 2dp focus edge/surface contrast instead. Keep the workspace dense enough for several rows at once and avoid oversized mobile cards.
 
 Functional presentation must still expose VUEO Mobile semantics: live/ready discovery state, optional Engine Details, provider filtering, recommended source, source metadata/technical-detail preference and progressive results. D-pad rules: initial source focus when safe, UP from the first row to the active chip, chip DOWN to results, LEFT/RIGHT source-row provider cycling, and KeyUp-only OK activation. Exact dimensions/type/motion remain subject to the final whole-TV polish pass.

@@ -28,10 +28,10 @@ import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 
 /**
- * TV 39A — true Nuvio-first Details presentation.
+ * TV 39A — true Vueo-first Details presentation.
  *
  * This file intentionally contains only the screen composition/root focus map.
- * The previous VUEO Details visual tree is not reused. The supplied Nuvio
+ * The previous VUEO Details visual tree is not reused. The supplied Vueo
  * 0.8.6 Details screen is the layout/interaction reference.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -64,7 +64,7 @@ internal fun TvDetailPresentation(
     }
     val hasCast = people.isNotEmpty()
     val hasRelated = state.related.isNotEmpty()
-    val hasTrailer = !state.nuvioExtras.trailerUrl.isNullOrBlank()
+    val hasTrailer = !state.vueoExtras.trailerUrl.isNullOrBlank()
     val peopleSectionCount = listOf(hasCast, hasRelated, hasTrailer).count { it }
     val hasPeopleSection = peopleSectionCount > 0
     val hasPeopleTabs = peopleSectionCount > 1
@@ -122,9 +122,9 @@ internal fun TvDetailPresentation(
     }
 
     LaunchedEffect(mediaKey, state.selectedEpisode?.id) {
-        val rememberedEpisodeId = NuvioDetailFocusMemory.episodeId
+        val rememberedEpisodeId = VueoDetailFocusMemory.episodeId
         val restoreEpisode = state.item.isDetailSeries() &&
-            NuvioDetailFocusMemory.mediaKey == mediaKey &&
+            VueoDetailFocusMemory.mediaKey == mediaKey &&
             rememberedEpisodeId != null &&
             rememberedEpisodeId == state.selectedEpisode?.id
         if (restoreEpisode) {
@@ -138,7 +138,7 @@ internal fun TvDetailPresentation(
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        NuvioDetailBackdrop(
+        VueoDetailBackdrop(
             item = state.item,
             imageAlpha = backdropAlpha,
             scrimAlpha = scrimAlpha,
@@ -150,8 +150,8 @@ internal fun TvDetailPresentation(
             contentPadding = PaddingValues(bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item(key = "nuvio-hero:$mediaKey") {
-                NuvioDetailHero(
+            item(key = "vueo-hero:$mediaKey") {
+                VueoDetailHero(
                     state = state,
                     playRequester = playRequester,
                     listRequester = listRequester,
@@ -164,8 +164,8 @@ internal fun TvDetailPresentation(
             }
 
             if (hasSeasons) {
-                item(key = "nuvio-seasons:$mediaKey") {
-                    NuvioDetailSeasonTabs(
+                item(key = "vueo-seasons:$mediaKey") {
+                    VueoDetailSeasonTabs(
                         seasons = state.seasons,
                         selectedSeason = state.selectedSeason,
                         sectionRequester = seasonRequester,
@@ -177,8 +177,8 @@ internal fun TvDetailPresentation(
             }
 
             if (hasEpisodes) {
-                item(key = "nuvio-episodes:$mediaKey:${state.selectedSeason}") {
-                    NuvioDetailEpisodes(
+                item(key = "vueo-episodes:$mediaKey:${state.selectedSeason}") {
+                    VueoDetailEpisodes(
                         media = state.item,
                         episodes = state.episodes,
                         selectedEpisode = state.selectedEpisode,
@@ -191,14 +191,14 @@ internal fun TvDetailPresentation(
                     )
                 }
             } else if (state.item.isDetailSeries() && !state.loading && state.item.episodes.isEmpty()) {
-                item(key = "nuvio-episodes-empty:$mediaKey") {
-                    NuvioDetailMessage("Episodes are not available for this title yet.")
+                item(key = "vueo-episodes-empty:$mediaKey") {
+                    VueoDetailMessage("Episodes are not available for this title yet.")
                 }
             }
 
             if (hasPeopleSection) {
-                item(key = "nuvio-people:$mediaKey") {
-                    NuvioDetailPeopleSwitcher(
+                item(key = "vueo-people:$mediaKey") {
+                    VueoDetailPeopleSwitcher(
                         media = state.item,
                         cast = people,
                         related = state.related,
@@ -218,16 +218,16 @@ internal fun TvDetailPresentation(
             val networks = state.item.networks
             val production = state.item.productionCompanies
             if (networks.isNotEmpty()) {
-                item(key = "nuvio-networks:$mediaKey") {
-                    NuvioDetailCompanies(
+                item(key = "vueo-networks:$mediaKey") {
+                    VueoDetailCompanies(
                         title = if (networks.size == 1) "Network" else "Networks",
                         companies = networks,
                     )
                 }
             }
             if (production.isNotEmpty()) {
-                item(key = "nuvio-production:$mediaKey") {
-                    NuvioDetailCompanies(
+                item(key = "vueo-production:$mediaKey") {
+                    VueoDetailCompanies(
                         title = "Production",
                         companies = production,
                     )

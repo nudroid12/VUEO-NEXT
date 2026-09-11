@@ -34,7 +34,7 @@ import com.vueo.tv.ui.motion.TvMotion
 /**
  * Modern Home hero scene.
  *
- * Important: the fades live inside the hero-media bounds, matching Nuvio's
+ * Important: the fades live inside the hero-media bounds, matching Vueo's
  * Modern Home composition. This avoids dimming the entire Home surface and
  * gives the rows a clean black field beneath the artwork.
  */
@@ -106,7 +106,7 @@ private fun HeroMediaGradient(modifier: Modifier = Modifier) {
 
     Box(
         modifier = modifier.drawWithCache {
-            // Nuvio Modern Home only fades the leading ~45% of the hero-media
+            // Vueo Modern Home only fades the leading ~45% of the hero-media
             // plane. The rest of the artwork stays vivid.
             val horizontalFadeWidth = size.width * .45f
             val horizontalStops = arrayOf(

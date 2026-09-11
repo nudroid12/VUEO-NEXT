@@ -128,31 +128,31 @@ The temporary 29B.1 flat Settings surface is replaced by the canonical VUEO hier
 
 The 29C.2 centered top capsule is superseded by the 29C.3 slim collapsible left sidebar. Normal TV destinations use Home / Search / Library / Settings with Profile at the bottom of the rail. The rail is collapsed while content owns focus and expands only when the rail owns focus. DPAD_LEFT from a logical first content column enters the current destination; DPAD_RIGHT returns to the exact last content focus where available. UP/DOWN explores the rail; OK commits once; focus alone never routes. Do not restore persistent top navigation, VUEO page wordmarks, auto-route-on-focus, or stacked focus targets.
 
-## 29C.4 Nuvio-reference TV UI direction — supersedes 29C.3 sidebar visuals
-- The supplied `NuvioTV-0.8.6-beta` source is now the primary **TV presentation and remote-interaction reference** for rebuild work after the profile gate.
-- Reference Nuvio composition, density, focus grammar, overlay/panel treatment and motion before inventing new TV chrome. Do not copy Nuvio runtime/data architecture into VUEO.
+## 29C.4 VUEO TV UI direction — supersedes 29C.3 sidebar visuals
+- The current VUEO implementation is the primary **TV presentation and remote-interaction baseline** after the profile gate.
+- Preserve VUEO composition, density, focus grammar, overlay/panel treatment and motion before inventing new TV chrome. Do not introduce a second runtime/data architecture.
 - VUEO behavior remains owned by Shared Core/Mobile-proven semantics, and VUEO branding/routes/theme remain VUEO-specific.
-- For the global sidebar specifically, use the Nuvio modern pattern: a quiet floating current-route pill while content owns focus; a rounded floating overlay panel when navigation owns focus; Profile at the top; Home / Search / Library / Settings centered vertically; circular icon wells; full-pill selected/focused rows.
+- For the global sidebar specifically, use the VUEO modern pattern: a quiet floating current-route pill while content owns focus; a rounded floating overlay panel when navigation owns focus; Profile at the top; Home / Search / Library / Settings centered vertically; circular icon wells; full-pill selected/focused rows.
 - The previous permanent 66dp collapsed rail / 202dp expanded rail visual is retired.
 - LEFT from logical content edge opens the current destination, RIGHT restores exact last content focus where supported, UP/DOWN explores navigation, OK commits once, and focus alone never routes.
-- Search may hide the collapsed route pill to keep its header clear, matching the supplied Nuvio modern-sidebar pattern.
+- Search may hide the collapsed route pill to keep its header clear, matching the current VUEO modern-sidebar pattern.
 - No post-profile VUEO wordmark returns to normal page chrome.
 
 ## 29D Library parity lock — supersedes old TV Library composition
 
-Library behavior is sourced from canonical VUEO Mobile, while Nuvio is only the TV presentation/focus reference. The visible Library screen is **My List + Cloud placeholder + Grid/List view**. Continue Watching and History must not be reintroduced as dedicated Library sections unless Mobile changes first. Their Shared Core data remains valid for other surfaces.
+Library behavior is sourced from canonical VUEO Mobile, while TV uses the established VUEO presentation/focus grammar. The visible Library screen is **My List + Cloud placeholder + Grid/List view**. Continue Watching and History must not be reintroduced as dedicated Library sections unless Mobile changes first. Their Shared Core data remains valid for other surfaces.
 
 Grid/List uses the same `vueo_library_ui` / `grid_view` preference contract as Mobile. Library poster density is responsive to a target card width and is **not** locked to 8 columns. LEFT from the first logical content edge enters the current 29C.4 sidebar; sidebar RIGHT restores the last Library control/item where practical; OK/Enter commits once on KeyUp; focus movement never routes. Returning from Detail should restore the last Library item/scroll position without creating a second library-data store.
 
-## 29E Detail functional baseline — Mobile behaviour + Nuvio TV composition
+## 29E Detail functional baseline — Mobile behaviour + VUEO TV composition
 
-Detail is now a functional rebuild, not a final visual lock. VUEO Mobile/Shared Core remain canonical for Detail data/actions; supplied Nuvio Detail sources are the TV composition/focus reference only. Preserve My List, resume-aware primary action state, season/episode selection, episode progress, facts/ratings/DNA, credits, Overview, Cast, Network/Production, More Like This and optional manual VUEO Insight where supported by current Mobile/runtime behaviour. Do not create TV-only cast/company routes or duplicate playback/library stores.
+Detail is now a functional rebuild, not a final visual lock. VUEO Mobile/Shared Core remain canonical for Detail data/actions; TV uses the established VUEO composition/focus baseline. Preserve My List, resume-aware primary action state, season/episode selection, episode progress, facts/ratings/DNA, credits, Overview, Cast, Network/Production, More Like This and optional manual VUEO Insight where supported by current Mobile/runtime behaviour. Do not create TV-only cast/company routes or duplicate playback/library stores.
 
-Use the Nuvio-style sticky cinematic backdrop + hero actions + season tabs/landscape episode row + supporting horizontal sections, with shallow neutral focus and KeyUp-only activation. This 29E screen is intentionally subject to the later whole-TV final polish pass.
+Use the VUEO sticky cinematic backdrop + hero actions + season tabs/landscape episode row + supporting horizontal sections, with shallow neutral focus and KeyUp-only activation. This 29E screen is intentionally subject to the later whole-TV final polish pass.
 
 ## 29F Source Selection lock — functional baseline
 
-Source behavior/data is sourced from VUEO Mobile + Shared Core; supplied Nuvio `StreamScreen.kt` is only the TV composition/D-pad reference. Preserve shared `SourceCleaner`/`PlayerSourcePolicy` ranking, preferred-quality/original-language context, direct-play gating, provider filters, recommendation, source technical-details preference, provider diagnostics and the short-lived shared source-discovery cache behavior. Do not create a TV-only resolver/ranker/store.
+Source behavior/data is sourced from VUEO Mobile + Shared Core; TV uses the established VUEO composition/D-pad baseline. Preserve shared `SourceCleaner`/`PlayerSourcePolicy` ranking, preferred-quality/original-language context, direct-play gating, provider filters, recommendation, source technical-details preference, provider diagnostics and the short-lived shared source-discovery cache behavior. Do not create a TV-only resolver/ranker/store.
 
 The current TV composition is backdrop + left identity/engine context + right provider-chip/source-list workspace. Cached/fresh results may appear progressively. Focus alone never plays a source; OK/Enter commits once on KeyUp. First result receives initial focus only if the user has not already interacted; UP from the first result returns to the active provider chip; LEFT/RIGHT on a source row may cycle provider filters. Returning from Player should restore the last provider/source when available. This is not the final visual polish lock.
 

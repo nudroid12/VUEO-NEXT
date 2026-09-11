@@ -78,24 +78,24 @@ Startup automatic update checks now surface the existing TV updater result throu
 
 The centered 29C.2 top navigation capsule is superseded. Use `TvSidebar` from `tv/ui/TvTopBar.kt`: 66dp collapsed / 202dp expanded, Home → Search → Library → Settings, Profile at bottom. LEFT from first logical content column enters current destination; RIGHT restores exact last content focus when possible; UP/DOWN explores; OK commits once; focus never routes. Keep Search 8-up poster density and 29C.2a update popup restore intact.
 
-## TV 29C.4 — Nuvio-reference direction
-The maintainer explicitly chose the supplied `NuvioTV-0.8.6-beta` source as the UI reference for subsequent TV rebuild work. Before designing a TV screen/chrome from scratch, inspect the relevant Nuvio source first. Treat Nuvio as the presentation/D-pad reference only; VUEO still owns its routes, data/runtime, Shared Core contracts, profile behavior and theme.
+## TV 29C.4 — VUEO TV presentation direction
+The current VUEO TV presentation direction is cinematic, remote-first and reference-driven. Preserve the established composition, density, focus grammar, overlays, motion and D-pad behavior while VUEO continues to own routes, data/runtime, Shared Core contracts, profile behavior and theme.
 
-The first implementation is the global sidebar: `TvSidebar` now follows Nuvio's modern floating-sidebar pattern rather than 29C.3's permanent slim rail. Collapsed state is a floating current-route pill (hidden on Search, label can collapse after idle); expanded state is an inset rounded overlay panel with Profile at top and Home/Search/Library/Settings centered. LEFT enters navigation, RIGHT restores last content focus, focus never routes, one OK commits once.
+The first implementation is the global sidebar: `TvSidebar` now follows the current VUEO floating-sidebar pattern rather than 29C.3's permanent slim rail. Collapsed state is a floating current-route pill (hidden on Search, label can collapse after idle); expanded state is an inset rounded overlay panel with Profile at top and Home/Search/Library/Settings centered. LEFT enters navigation, RIGHT restores last content focus, focus never routes, one OK commits once.
 
 ## TV 29D Library current direction
 
-Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonical for Library feature/data behavior; the supplied Nuvio project is the TV visual/focus reference only. Current Mobile Library = `LibraryStore.watchlist()` / My List, Cloud placeholder, Grid/List toggle persisted under `vueo_library_ui` → `grid_view`. Continue Watching and History are not visible Library sections, though their Shared Core data remains valid elsewhere.
+Do not rebuild Library from the old TV horizontal rails. Mobile VUEO is canonical for Library feature/data behavior; TV keeps the established VUEO visual/focus grammar. Current Mobile Library = `LibraryStore.watchlist()` / My List, Cloud placeholder, Grid/List toggle persisted under `vueo_library_ui` → `grid_view`. Continue Watching and History are not visible Library sections, though their Shared Core data remains valid elsewhere.
 
-`TvLibraryScreen.kt` now follows that contract with a responsive poster canvas (target width, not fixed 8 columns), compact list mode, Nuvio-proportioned 1.02 focus scale / 180ms motion, 29C.4 sidebar entry/return, and TV-only ephemeral last-item/scroll restoration after Detail. Do not create a second Library data store. Do not treat Search's old 8-up density as a global rule.
+`TvLibraryScreen.kt` now follows that contract with a responsive poster canvas (target width, not fixed 8 columns), compact list mode, VUEO 1.02 focus scale / 180ms motion, 29C.4 sidebar entry/return, and TV-only ephemeral last-item/scroll restoration after Detail. Do not create a second Library data store. Do not treat Search's old 8-up density as a global rule.
 
 ## TV 29E Detail current direction
 
-`TvDetailScreen.kt` is now the functional Detail baseline. Behaviour/data comes from Mobile + Shared Core; supplied Nuvio Detail source is the presentation/focus reference. Keep resume-aware Watch/Play labels, My List, season/episode state, progress, facts/ratings/DNA, credits, Overview, Cast, companies, More Like This and manual VUEO Insight where configured. Cast/company remain informational because VUEO Mobile has no cast/company navigation contract. Source and Player are still the next functional rebuilds. Do not spend a separate polish pass on Library/Detail yet; the maintainer wants a final whole-TV polish after the functional flow is complete.
+`TvDetailScreen.kt` is now the functional Detail baseline. Behaviour/data comes from Mobile + Shared Core; TV presentation/focus follows the established VUEO detail grammar. Keep resume-aware Watch/Play labels, My List, season/episode state, progress, facts/ratings/DNA, credits, Overview, Cast, companies, More Like This and manual VUEO Insight where configured. Cast/company remain informational because VUEO Mobile has no cast/company navigation contract. Source and Player are still the next functional rebuilds. Do not spend a separate polish pass on Library/Detail yet; the maintainer wants a final whole-TV polish after the functional flow is complete.
 
 ## TV 29F Source Selection current direction
 
-`TvSourceScreen.kt` is now the functional Source baseline. VUEO Mobile's Source Picker is canonical for ranking/filtering/recommendation/diagnostic behavior; supplied Nuvio `StreamScreen.kt` is the TV composition/focus reference. TV now shows shared cached results immediately, publishes addon/plugin results progressively, preserves provider order, exposes Engine Details, marks the VUEO-recommended source, obeys `showSourceTechnicalDetails`, and restores the last source/provider when returning from Player where possible.
+`TvSourceScreen.kt` is now the functional Source baseline. VUEO Mobile's Source Picker is canonical for ranking/filtering/recommendation/diagnostic behavior; TV composition/focus follows the established VUEO source-selection grammar. TV now shows shared cached results immediately, publishes addon/plugin results progressively, preserves provider order, exposes Engine Details, marks the VUEO-recommended source, obeys `showSourceTechnicalDetails`, and restores the last source/provider when returning from Player where possible.
 
 `TvRuntime.discover(...)` gained an optional `onUpdate(TvSourceDiscoverySnapshot)` callback but still returns the same final `TvSourceBundle`. Do not replace Shared Core discovery/ranking/cache with TV-only logic. Source is still a functional baseline; exact visual calibration waits for the final whole-TV polish after Player.
 
@@ -104,7 +104,7 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 
 ## TV 30C Home source-referenced rebuild
 
-- Home/sidebar were rewritten after reviewing the user-supplied NuvioTV 0.8.6-beta source.
+- Home/sidebar were rewritten around the current VUEO TV composition and D-pad grammar.
 - VUEO keeps its own data/routes; only layout and focus principles were adapted.
 - Collapsed TV navigation is now a stable icon-only rail; no floating route pill.
 - Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
@@ -118,7 +118,7 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Home visual composition lives in `TvHomePresentation.kt`.
 - Home navigation/sidebar lives in `TvHomeNavigation.kt`.
 - Home must not import or invoke the legacy `TvSidebar` from `TvTopBar.kt`.
-- Preserve the Nuvio-referenced structural ratios and focus model described above unless a later explicit product decision replaces them.
+- Preserve the established VUEO structural ratios and focus model described above unless a later explicit product decision replaces them.
 
 ## TV 44B subtitle workspace correction
 

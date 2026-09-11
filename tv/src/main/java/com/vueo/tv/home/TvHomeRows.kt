@@ -101,7 +101,7 @@ internal fun TvModernHomeRows(
                 size: Float,
                 containerSize: Float,
             ): Float {
-                // Mirror Nuvio Modern Home: settle each focused row around a
+                // Mirror Vueo Modern Home: settle each focused row around a
                 // 40dp header anchor instead of snapping it flush to the top.
                 val distance = offset - topInsetPx
                 if (abs(distance) < 1f) return 0f

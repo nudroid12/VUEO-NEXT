@@ -17,11 +17,18 @@ data class ProviderCodeSyncResult(
 )
 
 class ProviderCodeStore(context: Context) {
+    private val appContext = context.applicationContext
     private val root = File(
-        context.filesDir,
-        "nuvio_plugin_scrapers",
-    ).apply {
-        mkdirs()
+        appContext.filesDir,
+        CACHE_DIRECTORY,
+    )
+
+    init {
+        migrateLegacyCacheIfNeeded(
+            filesDir = appContext.filesDir,
+            target = root,
+        )
+        root.mkdirs()
     }
 
     fun read(
@@ -122,6 +129,47 @@ class ProviderCodeStore(context: Context) {
             .joinToString("") {
                 "%02x".format(it)
             }
+
+    companion object {
+        private const val CACHE_DIRECTORY = "vueo_plugin_scrapers"
+        private const val LEGACY_CACHE_DIRECTORY = "nuvio_plugin_scrapers"
+
+        internal fun clearStoredCode(context: Context) {
+            val filesDir = context.applicationContext.filesDir
+            listOf(
+                CACHE_DIRECTORY,
+                LEGACY_CACHE_DIRECTORY,
+            ).forEach { directory ->
+                runCatching {
+                    File(filesDir, directory).deleteRecursively()
+                }
+            }
+        }
+
+        private fun migrateLegacyCacheIfNeeded(
+            filesDir: File,
+            target: File,
+        ) {
+            if (target.exists()) return
+
+            val legacy = File(
+                filesDir,
+                LEGACY_CACHE_DIRECTORY,
+            )
+            if (!legacy.isDirectory) return
+
+            if (legacy.renameTo(target)) return
+
+            runCatching {
+                target.mkdirs()
+                legacy.copyRecursively(
+                    target = target,
+                    overwrite = false,
+                )
+                legacy.deleteRecursively()
+            }
+        }
+    }
 }
 
 class ProviderCodeSyncManager(

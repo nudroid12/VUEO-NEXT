@@ -51,8 +51,8 @@ fun TvDetailScreen(
     var movieWatched by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf(runtime.libraryStore.isMarkedWatched(initialShell))
     }
-    var nuvioExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
-        mutableStateOf(TvDetailNuvioExtras())
+    var vueoExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(TvDetailVueoExtras())
     }
     var supplementalRatings by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaRating>>(emptyList())
@@ -81,8 +81,8 @@ fun TvDetailScreen(
         if (!media.isDetailSeries() || media.episodes.isEmpty()) {
             selectedSeason = null
             selectedEpisode = null
-            NuvioDetailFocusMemory.selectedSeason = null
-            NuvioDetailFocusMemory.episodeId = null
+            VueoDetailFocusMemory.selectedSeason = null
+            VueoDetailFocusMemory.episodeId = null
             return
         }
 
@@ -115,10 +115,10 @@ fun TvDetailScreen(
 
         val seasonNumbers = media.episodes.map(EpisodeItem::season).distinct()
         val orderedSeasons = seasonNumbers.filter { it > 0 }.sorted() + seasonNumbers.filter { it == 0 }
-        val rememberedSeason = NuvioDetailFocusMemory.selectedSeason
+        val rememberedSeason = VueoDetailFocusMemory.selectedSeason
             ?.takeIf { restoringSameTitle && it in orderedSeasons }
         val firstSeason = rememberedSeason ?: resumeEpisode?.season ?: orderedSeasons.firstOrNull()
-        val rememberedEpisode = NuvioDetailFocusMemory.episodeId
+        val rememberedEpisode = VueoDetailFocusMemory.episodeId
             ?.takeIf { restoringSameTitle }
             ?.let { id ->
                 media.episodes.firstOrNull { episode ->
@@ -130,20 +130,20 @@ fun TvDetailScreen(
         selectedEpisode = rememberedEpisode
             ?: resumeEpisode?.takeIf { it.season == firstSeason }
             ?: media.episodes.firstOrNull { it.season == firstSeason }
-        NuvioDetailFocusMemory.selectedSeason = firstSeason
+        VueoDetailFocusMemory.selectedSeason = firstSeason
     }
 
     LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
         val mediaKey = "${initial.type}:${initial.id}"
-        val restoringSameTitle = NuvioDetailFocusMemory.mediaKey == mediaKey
-        if (!restoringSameTitle) NuvioDetailFocusMemory.resetFor(mediaKey)
+        val restoringSameTitle = VueoDetailFocusMemory.mediaKey == mediaKey
+        if (!restoringSameTitle) VueoDetailFocusMemory.resetFor(mediaKey)
 
         // Publish the catalog/search item immediately. Network work must not own the page shell.
         val shell = DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
         item = shell
         loading = true
         related = emptyList()
-        nuvioExtras = TvDetailNuvioExtras()
+        vueoExtras = TvDetailVueoExtras()
         supplementalRatings = emptyList()
         publishRatings(shell)
         watchlisted = runtime.libraryStore.isWatchlisted(shell)
@@ -203,12 +203,12 @@ fun TvDetailScreen(
         }
 
         launch {
-            nuvioExtras = runCatching {
-                loadTvDetailNuvioExtras(
+            vueoExtras = runCatching {
+                loadTvDetailVueoExtras(
                     media = core,
                     tmdbApiKey = runtime.pluginStore.tmdbApiKey(),
                 )
-            }.getOrDefault(TvDetailNuvioExtras())
+            }.getOrDefault(TvDetailVueoExtras())
         }
     }
 
@@ -240,7 +240,7 @@ fun TvDetailScreen(
             loading = loading,
             watchlisted = watchlisted,
             movieWatched = movieWatched,
-            nuvioExtras = nuvioExtras,
+            vueoExtras = vueoExtras,
             ratings = ratings,
             dnaMatch = dnaMatch,
             seasons = seasons,
@@ -271,7 +271,7 @@ fun TvDetailScreen(
             }
         },
         onTrailer = {
-            nuvioExtras.trailerUrl?.let { url ->
+            vueoExtras.trailerUrl?.let { url ->
                 runCatching {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                 }
@@ -280,20 +280,20 @@ fun TvDetailScreen(
         onSeasonSelected = { season ->
             selectedSeason = season
             selectedEpisode = item.episodes.firstOrNull { it.season == season }
-            NuvioDetailFocusMemory.selectedSeason = season
-            NuvioDetailFocusMemory.episodeId = null
+            VueoDetailFocusMemory.selectedSeason = season
+            VueoDetailFocusMemory.episodeId = null
         },
         onEpisodeFocused = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
-            NuvioDetailFocusMemory.selectedSeason = episode.season
-            NuvioDetailFocusMemory.episodeId = episode.id
+            VueoDetailFocusMemory.selectedSeason = episode.season
+            VueoDetailFocusMemory.episodeId = episode.id
         },
         onEpisodeSelected = { episode ->
             selectedSeason = episode.season
             selectedEpisode = episode
-            NuvioDetailFocusMemory.selectedSeason = episode.season
-            NuvioDetailFocusMemory.episodeId = episode.id
+            VueoDetailFocusMemory.selectedSeason = episode.season
+            VueoDetailFocusMemory.episodeId = episode.id
             val episodeEntry = detailPlaybackEntry(item, episode, history)
                 ?: detailInitialPlaybackEntry(item, episode, initialLibraryEntry)
             val startPositionMs = episodeEntry?.takeIf(::detailCanResume)?.positionMs ?: 0L
@@ -308,7 +308,7 @@ internal data class TvDetailPresentationState(
     val loading: Boolean,
     val watchlisted: Boolean,
     val movieWatched: Boolean,
-    val nuvioExtras: TvDetailNuvioExtras,
+    val vueoExtras: TvDetailVueoExtras,
     val ratings: List<MediaRating>,
     val dnaMatch: Int?,
     val seasons: List<Int>,
