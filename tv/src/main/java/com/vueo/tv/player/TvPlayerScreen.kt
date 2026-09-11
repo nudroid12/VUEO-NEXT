@@ -87,7 +87,6 @@ import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
-import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.player.PlayerSourcePolicy
@@ -113,11 +112,6 @@ internal enum class TvPlayerPanel {
     SOURCES,
     EPISODES,
     MORE,
-}
-
-internal enum class TvPlayerPanelPlacement {
-    LEFT_OVERLAY,
-    RIGHT_PANEL,
 }
 
 internal data class TvPlayerOption(
@@ -1268,12 +1262,6 @@ private fun nextEpisode(episodes: List<EpisodeItem>, current: EpisodeItem?): Epi
     return ordered.getOrNull(index + 1)
 }
 
-private fun skipLabel(kind: PlayerSkipKind): String = when (kind) {
-    PlayerSkipKind.INTRO -> "Skip Intro"
-    PlayerSkipKind.RECAP -> "Skip Recap"
-    PlayerSkipKind.ENDING -> "Skip Ending"
-}
-
 private fun withAlpha(argb: Int, percent: Int): Int {
     val alpha = (255 * percent.coerceIn(0, 100) / 100) shl 24
     return (argb and 0x00FFFFFF) or alpha
@@ -1296,15 +1284,6 @@ private fun playbackTitle(media: VueoMediaItem, episode: EpisodeItem?): String =
 
 private fun formatSpeed(speed: Float): String =
     if (speed % 1f == 0f) speed.toInt().toString() else speed.toString().trimEnd('0').trimEnd('.')
-
-private fun timeLabel(milliseconds: Long): String {
-    val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
-    val hours = totalSeconds / 3_600L
-    val minutes = (totalSeconds % 3_600L) / 60L
-    val seconds = totalSeconds % 60L
-    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
-    else "%d:%02d".format(minutes, seconds)
-}
 
 private fun androidx.compose.ui.input.key.KeyEvent.isTvActivationKey(): Boolean =
     nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||

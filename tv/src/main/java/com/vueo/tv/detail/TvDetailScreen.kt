@@ -351,13 +351,6 @@ internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean =
     entry.positionMs > 15_000L &&
         (entry.durationMs <= 0L || entry.positionMs < (entry.durationMs * .95f).toLong())
 
-internal fun detailRemainingLabel(entry: LibraryPlaybackEntry): String {
-    if (entry.durationMs <= 0L) return "Resume"
-    val remainingMs = (entry.durationMs - entry.positionMs).coerceAtLeast(0L)
-    val minutes = (remainingMs / 60_000L).coerceAtLeast(0L)
-    return if (minutes > 0L) "$minutes min left" else "Almost done"
-}
-
 internal fun MediaItem.isDetailSeries(): Boolean =
     type.lowercase() in setOf("series", "tv")
 

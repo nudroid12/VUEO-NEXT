@@ -1450,13 +1450,6 @@ private fun choiceEntry(
     onActivate = next,
 )
 
-private fun enhancementSummary(runtime: TvRuntime): String = buildString {
-    append("TMDB ")
-    append(if (runtime.pluginStore.tmdbApiKey().isBlank()) "optional" else "configured")
-    append(" • MDBList ")
-    append(if (runtime.settingsStore.mdblistApiKey().isBlank()) "optional" else "configured")
-}
-
 private fun configuredLabel(value: String): String = if (value.isBlank()) "Not configured" else "Configured"
 
 private fun shortUrl(value: String): String = runCatching {

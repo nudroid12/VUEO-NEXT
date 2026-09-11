@@ -1318,61 +1318,6 @@ private fun ManageProfileCard(
 }
 
 @Composable
-private fun ProfileSummaryCard(
-    profile: VueoProfile,
-    profileCount: Int,
-) {
-    Card(
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    VueoPalette.SurfaceElevated,
-            ),
-        shape =
-            RoundedCornerShape(
-                20.dp
-            ),
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        18.dp
-                    ),
-            verticalAlignment =
-                Alignment.CenterVertically,
-            horizontalArrangement =
-                Arrangement.spacedBy(
-                    14.dp
-                ),
-        ) {
-            ProfileAvatar(
-                profile = profile,
-                size = 54,
-            )
-
-            Column {
-                Text(
-                    text = "Watching as ${profile.name}",
-                    color =
-                        Color.White,
-                    fontWeight =
-                        FontWeight.Bold,
-                    fontSize = 17.sp,
-                )
-                Text(
-                    text = "$profileCount local ${if (profileCount == 1) "profile" else "profiles"}",
-                    color =
-                        VueoPalette.Muted,
-                    fontSize = 13.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun ProfileAvatar(
     profile: VueoProfile,
     size: Int,

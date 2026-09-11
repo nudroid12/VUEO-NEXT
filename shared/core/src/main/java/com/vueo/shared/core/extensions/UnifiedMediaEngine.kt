@@ -954,9 +954,6 @@ class UnifiedMediaEngine {
         }
     }
 
-    private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =
-        SearchPolicy.isRelevantEnough(item, query)
-
     private fun searchCanonicalTitle(item: MediaItem): String =
         SearchPolicy.canonicalTitle(item)
 
@@ -971,9 +968,6 @@ class UnifiedMediaEngine {
 
     private fun searchReleaseYear(item: MediaItem): Int =
         SearchPolicy.releaseYear(item)
-
-    private fun searchTitleQuery(normalizedQuery: String): String =
-        SearchPolicy.titleQuery(normalizedQuery)
 
     private fun normalizeSearchText(value: String): String =
         SearchPolicy.normalizeText(value)
