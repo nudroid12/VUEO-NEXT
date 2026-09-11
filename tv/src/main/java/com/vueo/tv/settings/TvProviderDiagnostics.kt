@@ -46,9 +46,15 @@ internal fun TvProviderDiagnosticDialog(
 ) {
     val context = LocalContext.current
     var rawExpanded by remember(repository.manifestUrl, provider.id) { mutableStateOf(false) }
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+
+    fun closeAndRestore() {
+        onDismiss()
+        restoreSettingsFocus()
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::closeAndRestore,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("Provider Diagnostic")
@@ -149,7 +155,7 @@ internal fun TvProviderDiagnosticDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = ::closeAndRestore) { Text("Close") }
         },
     )
 }
@@ -163,9 +169,15 @@ internal fun TvRuntimeDiagnosticsDialog(
     var diagnosticText by remember {
         mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
     }
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+
+    fun closeAndRestore() {
+        onDismiss()
+        restoreSettingsFocus()
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::closeAndRestore,
         title = { Text("Performance & Crash Diagnostics") },
         text = {
             Column(
@@ -212,7 +224,7 @@ internal fun TvRuntimeDiagnosticsDialog(
                 ) {
                     Text("Clear")
                 }
-                TextButton(onClick = onDismiss) { Text("Close") }
+                TextButton(onClick = ::closeAndRestore) { Text("Close") }
             }
         },
     )

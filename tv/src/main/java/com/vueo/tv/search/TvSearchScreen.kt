@@ -161,31 +161,19 @@ internal fun TvSearchScreen(
     LaunchedEffect(contentVersion) {
         val versionChanged = session.discoverContentVersion != contentVersion
         val cached = runtime.cachedHomeRows()
-
         if (cached.isNotEmpty()) {
             session.discoverRows = cached
             session.discoverContentVersion = contentVersion
             discovering = false
             return@LaunchedEffect
         }
-
         if (!versionChanged && session.discoverRows.isNotEmpty()) {
             discovering = false
             return@LaunchedEffect
         }
-
-        // Content Manager mutations clear the shared cache. Do not keep showing
-        // a removed/disabled catalog from TvSearchSession while the fresh set loads.
-        if (versionChanged) {
-            session.discoverRows = emptyList()
-        }
-
+        if (versionChanged) session.discoverRows = emptyList()
         discovering = true
-        session.discoverRows = runCatching {
-            runtime.homeRows(forceRefresh = false)
-        }.getOrElse {
-            runtime.cachedHomeRows()
-        }
+        session.discoverRows = runCatching { runtime.homeRows(forceRefresh = false) }.getOrElse { runtime.cachedHomeRows() }
         session.discoverContentVersion = contentVersion
         discovering = false
     }
@@ -213,7 +201,9 @@ internal fun TvSearchScreen(
         if (requestedMode == TvSearchMode.TITLE) {
             session.actorSourceAvailable = true
             val local = SearchOrchestrator.localTitleResults(normalized)
-            session.searchResults = local
+            if (local.isNotEmpty() || session.searchResults.isEmpty()) {
+                session.searchResults = local
+            }
 
             searching = true
             delay(250)
@@ -228,21 +218,13 @@ internal fun TvSearchScreen(
                 query = normalized,
                 localResults = local,
                 onPartial = { partial ->
-                    if (
-                        thisRequest == requestId &&
-                        session.query.trim() == normalized &&
-                        session.mode == requestedMode
-                    ) {
+                    if (thisRequest == requestId && session.query.trim() == normalized && session.mode == requestedMode) {
                         session.searchResults = partial
                     }
                 },
             )
 
-            if (
-                thisRequest == requestId &&
-                session.query.trim() == normalized &&
-                session.mode == requestedMode
-            ) {
+            if (thisRequest == requestId && session.query.trim() == normalized && session.mode == requestedMode) {
                 session.searchResults = remote
                 session.completedSearchKey = searchKey
                 searching = false
@@ -259,39 +241,26 @@ internal fun TvSearchScreen(
         session.searchResults = emptyList()
 
         if (!session.actorSourceAvailable) {
-            session.completedSearchKey = searchKey
             searching = false
             return@LaunchedEffect
         }
 
         searching = true
         delay(250)
-        if (
-            thisRequest != requestId ||
-            session.query.trim() != normalized ||
-            session.mode != requestedMode
-        ) return@LaunchedEffect
+        if (thisRequest != requestId || session.query.trim() != normalized || session.mode != requestedMode) return@LaunchedEffect
 
         val actorResults = SearchOrchestrator.actorResults(
             engine = runtime.engine,
             query = normalized,
             tmdbApiKey = tmdbApiKey,
             onPartial = { partial ->
-                if (
-                    thisRequest == requestId &&
-                    session.query.trim() == normalized &&
-                    session.mode == requestedMode
-                ) {
+                if (thisRequest == requestId && session.query.trim() == normalized && session.mode == requestedMode) {
                     session.searchResults = partial
                 }
             },
         )
 
-        if (
-            thisRequest == requestId &&
-            session.query.trim() == normalized &&
-            session.mode == requestedMode
-        ) {
+        if (thisRequest == requestId && session.query.trim() == normalized && session.mode == requestedMode) {
             session.searchResults = actorResults
             session.completedSearchKey = searchKey
             searching = false
@@ -387,12 +356,8 @@ internal fun TvSearchScreen(
         initialFirstVisibleItemScrollOffset = session.firstVisibleItemScrollOffset,
     )
     val resultKeys = remember(filteredItems) { filteredItems.map(::mediaKey) }
-    val resultRequesterCache = remember(session.query, session.mode) {
-        mutableMapOf<String, FocusRequester>()
-    }
-    val resultRequesters = resultKeys.associateWith { key ->
-        resultRequesterCache.getOrPut(key) { FocusRequester() }
-    }
+    val resultRequesterCache = remember(session.query, session.mode) { mutableMapOf<String, FocusRequester>() }
+    val resultRequesters = resultKeys.associateWith { key -> resultRequesterCache.getOrPut(key) { FocusRequester() } }
 
     fun resetGridForFilterChange() {
         session.focusedMediaKey = null
@@ -423,62 +388,35 @@ internal fun TvSearchScreen(
 
     LaunchedEffect(session.restoreResultsFocus, filteredItems) {
         if (!session.restoreResultsFocus) return@LaunchedEffect
+        val key = session.focusedMediaKey ?: return@LaunchedEffect
+        val index = filteredItems.indexOfFirst { mediaKey(it) == key }
+        if (index < 0) return@LaunchedEffect
 
-        val key = session.focusedMediaKey
-        val index = key?.let { target ->
-            filteredItems.indexOfFirst { mediaKey(it) == target }
-        } ?: -1
-
-        val restored = if (index >= 0 && key != null) {
-            runCatching { gridState.scrollToItem(index) }
-            delay(90)
-            runCatching {
-                resultRequesters.getValue(key).requestFocus()
-                true
-            }.getOrDefault(false)
-        } else {
-            false
-        }
-
-        session.restoreResultsFocus = false
-        if (!restored) {
-            session.focusedMediaKey = null
-            delay(40)
-            val firstKey = resultKeys.firstOrNull()
-            val fallbackRestored = firstKey != null && runCatching {
-                gridState.scrollToItem(0)
-                resultRequesters.getValue(firstKey).requestFocus()
-                true
-            }.getOrDefault(false)
-            if (!fallbackRestored) {
-                runCatching { fieldRequester.requestFocus() }
-            }
-        }
+        runCatching { gridState.scrollToItem(index) }
+        delay(90)
+        val restored = runCatching {
+            resultRequesters.getValue(key).requestFocus()
+            true
+        }.getOrDefault(false)
+        if (restored) session.restoreResultsFocus = false
     }
 
     fun focusFirstResult(): Boolean {
         val firstKey = resultKeys.firstOrNull() ?: return false
-        scope.launch {
-            runCatching { gridState.scrollToItem(0) }
-            delay(40)
-            runCatching { resultRequesters.getValue(firstKey).requestFocus() }
-        }
-        return true
+        return runCatching {
+            resultRequesters.getValue(firstKey).requestFocus()
+            true
+        }.getOrDefault(false)
     }
 
     fun dismissChoiceDialog() {
         val restoreFocus = dialogReturnFocus
         choiceDialog = null
         dialogReturnFocus = null
-        scope.launch {
-            delay(40)
-            restoreFocus?.invoke()
-        }
+        scope.launch { delay(40); restoreFocus?.invoke() }
     }
 
-    BackHandler(enabled = choiceDialog != null) {
-        dismissChoiceDialog()
-    }
+    BackHandler(enabled = choiceDialog != null) { dismissChoiceDialog() }
     BackHandler(enabled = choiceDialog == null, onBack = onBack)
 
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
@@ -1379,21 +1317,14 @@ private fun searchSortActorItems(
     items: List<MediaItem>,
     mode: TvSearchSortMode,
 ): List<MediaItem> =
-    SearchResultOrderPolicy.sortActorItems(
-        items = items,
-        mode = mode.toDiscoverSortMode(),
-    )
+    SearchResultOrderPolicy.sortActorItems(items, mode.toDiscoverSortMode())
 
 private fun searchSortItems(
     items: List<MediaItem>,
     mode: TvSearchSortMode,
     query: String? = null,
 ): List<MediaItem> =
-    SearchResultOrderPolicy.sortTitleItems(
-        items = items,
-        mode = mode.toDiscoverSortMode(),
-        query = query,
-    )
+    SearchResultOrderPolicy.sortTitleItems(items, mode.toDiscoverSortMode(), query)
 
 private fun searchCatalogLabel(runtime: TvRuntime, item: MediaItem): String? {
     val direct = item.catalogSources.firstOrNull { it.isNotBlank() }

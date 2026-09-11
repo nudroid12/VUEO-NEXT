@@ -236,9 +236,7 @@ fun TvPlayerScreen(
         )
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpFactory))
             .build()
-            .apply {
-                setAudioAttributes(AudioAttributes.DEFAULT, true)
-            }
+            .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -441,13 +439,11 @@ fun TvPlayerScreen(
         val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
-
         val currentPosition = player.currentPosition.coerceAtLeast(0L)
         val continuePlaying = player.playWhenReady
         val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
-
         audioPreferenceRestored = false
         subtitlePreferenceRestored = false
         player.setMediaItem(
@@ -458,19 +454,14 @@ fun TvPlayerScreen(
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
                 preferEmbedded = settings.embeddedSubtitlePriority(),
-            ),
-            currentPosition,
+            ), currentPosition,
         )
         var params = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitlesDisabled)
-        if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) {
-            params = params.setPreferredTextLanguages(*languages.toTypedArray())
-        }
-        PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { originalLanguage ->
-            params = params.setPreferredAudioLanguages(originalLanguage)
-        }
+        if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
+        PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { params = params.setPreferredAudioLanguages(it) }
         player.trackSelectionParameters = params.build()
         player.prepare()
         player.playWhenReady = continuePlaying
@@ -511,17 +502,12 @@ fun TvPlayerScreen(
                     playbackError = null
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    val completedDuration =
-                        player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+                    val completedDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
                     runtime.playbackStore.clearPosition(mediaKey)
                     runtime.libraryStore.recordPlayback(
-                        media = media,
-                        videoId = bundle.videoId,
-                        episodeTitle = episode?.title,
-                        season = episode?.season,
-                        episode = episode?.episode,
-                        positionMs = completedDuration,
-                        durationMs = completedDuration,
+                        media = media, videoId = bundle.videoId, episodeTitle = episode?.title,
+                        season = episode?.season, episode = episode?.episode,
+                        positionMs = completedDuration, durationMs = completedDuration,
                     )
                     onLibraryChanged()
                     controlsVisible = true
@@ -1253,19 +1239,10 @@ private fun buildMediaItem(
             .setLabel(tvExternalSubtitleLabel(subtitle))
             .setMimeType(subtitleMimeType(subtitle.url))
             .setSelectionFlags(
-                if (
-                    subtitlesOnByDefault &&
-                    autoSelectPreferred &&
-                    !preferEmbedded &&
-                    (
-                        normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language)) == 0 ||
-                            (normalizedPreferredLanguages.isEmpty() && index == 0)
-                    )
-                ) {
-                    C.SELECTION_FLAG_DEFAULT
-                } else {
-                    0
-                }
+                if (subtitlesOnByDefault && autoSelectPreferred && !preferEmbedded && (
+                    normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language)) == 0 ||
+                        (normalizedPreferredLanguages.isEmpty() && index == 0)
+                )) C.SELECTION_FLAG_DEFAULT else 0
             )
             .build()
     }

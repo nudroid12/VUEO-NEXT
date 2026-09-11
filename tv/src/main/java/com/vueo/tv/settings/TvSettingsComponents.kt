@@ -34,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -59,6 +60,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal data class TvSettingsEntry(
     val id: String,
@@ -90,11 +92,12 @@ private data class TvSettingsEmbeddedHost(
     val requesterFor: (String) -> FocusRequester,
     val onFocusableRowsChanged: (List<String>) -> Unit,
     val restorePanelFocus: () -> Boolean,
+    val requestDeferredPanelRestore: () -> Unit,
     val onLeftToCategory: () -> Unit,
     val onRowFocused: (String) -> Unit,
 )
 
-private val LocalTvSettingsEmbeddedHost = staticCompositionLocalOf<TvSettingsEmbeddedHost?> { null }
+internal val LocalTvSettingsEmbeddedHost = staticCompositionLocalOf<TvSettingsEmbeddedHost?> { null }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -125,6 +128,7 @@ internal fun TvSettingsMasterDetailShell(
     var lastPane by remember { mutableStateOf("category") }
     var navExpanded by remember { mutableStateOf(false) }
     var sidebarFocusIntent by remember { mutableStateOf(false) }
+    val shellScope = rememberCoroutineScope()
 
     fun requesterForPanelRow(key: String, rowId: String): FocusRequester =
         panelRequesters.getOrPut(key) { mutableMapOf() }.getOrPut(rowId) { FocusRequester() }
@@ -191,6 +195,18 @@ internal fun TvSettingsMasterDetailShell(
             lastPane = "panel"
             true
         }.getOrDefault(false)
+    }
+
+    fun requestDeferredPanelRestore() {
+        shellScope.launch {
+            // Dialogs and Android system surfaces release focus one frame later.
+            // Retry once so focus never falls through to the global sidebar.
+            delay(70)
+            if (!focusPanel()) {
+                delay(90)
+                if (!focusPanel()) focusSelectedCategory()
+            }
+        }
     }
 
     BackHandler {
@@ -305,6 +321,7 @@ internal fun TvSettingsMasterDetailShell(
                     restorePanelFocus = {
                         if (lastPane == "panel") focusPanel() else false
                     },
+                    requestDeferredPanelRestore = ::requestDeferredPanelRestore,
                     onLeftToCategory = { focusSelectedCategory() },
                     onRowFocused = { rowId ->
                         panelLastFocusedIds[panelKey] = rowId
@@ -1265,6 +1282,14 @@ private fun TvSettingsRow(
 }
 
 @Composable
+internal fun rememberTvSettingsDeferredFocusRestore(): () -> Unit {
+    val embeddedHost = LocalTvSettingsEmbeddedHost.current
+    return remember(embeddedHost) {
+        { embeddedHost?.requestDeferredPanelRestore?.invoke() }
+    }
+}
+
+@Composable
 internal fun TvTextEntryDialog(
     title: String,
     initialValue: String,
@@ -1274,9 +1299,20 @@ internal fun TvTextEntryDialog(
     onSave: (String) -> Unit,
 ) {
     var value by remember(title, initialValue) { mutableStateOf(initialValue) }
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+
+    fun dismissAndRestore() {
+        onDismiss()
+        restoreSettingsFocus()
+    }
+
+    fun saveAndRestore() {
+        onSave(value.trim())
+        restoreSettingsFocus()
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::dismissAndRestore,
         title = { Text(title) },
         text = {
             OutlinedTextField(
@@ -1288,10 +1324,10 @@ internal fun TvTextEntryDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(value.trim()) }) { Text("Save") }
+            TextButton(onClick = ::saveAndRestore) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = ::dismissAndRestore) { Text("Cancel") }
         },
     )
 }
@@ -1304,15 +1340,27 @@ internal fun TvConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+
+    fun dismissAndRestore() {
+        onDismiss()
+        restoreSettingsFocus()
+    }
+
+    fun confirmAndRestore() {
+        onConfirm()
+        restoreSettingsFocus()
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::dismissAndRestore,
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmLabel) }
+            TextButton(onClick = ::confirmAndRestore) { Text(confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = ::dismissAndRestore) { Text("Cancel") }
         },
     )
 }

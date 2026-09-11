@@ -187,28 +187,16 @@ internal fun NuvioPlayerPresentation(
 
         playbackError?.let { message ->
             Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(
-                        Color.Black.copy(alpha = .86f),
-                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                    )
+                modifier = Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = .86f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
                     .padding(horizontal = 22.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = message,
-                    color = Color(0xFFFFB0B0),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                )
+                Text(text = message, color = Color(0xFFFFB0B0), fontSize = 13.sp, lineHeight = 18.sp)
                 NuvioPlayerPromptButton(
-                    text = "Retry",
-                    requester = errorRequester,
-                    downRequester = progressRequester,
-                    onInteraction = onInteraction,
-                    onClick = onRetryPlayback,
+                    text = "Retry", requester = errorRequester, downRequester = progressRequester,
+                    onInteraction = onInteraction, onClick = onRetryPlayback,
                 )
             }
         }

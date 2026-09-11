@@ -6,11 +6,5 @@ import com.vueo.shared.core.media.MediaItem
 
 internal typealias TvDetailNuvioExtras = DetailSupplementalInfo
 
-internal suspend fun loadTvDetailNuvioExtras(
-    media: MediaItem,
-    tmdbApiKey: String,
-): TvDetailNuvioExtras =
-    DetailSupplementalClient.load(
-        media = media,
-        tmdbApiKey = tmdbApiKey,
-    )
+internal suspend fun loadTvDetailNuvioExtras(media: MediaItem, tmdbApiKey: String): TvDetailNuvioExtras =
+    DetailSupplementalClient.load(media, tmdbApiKey)

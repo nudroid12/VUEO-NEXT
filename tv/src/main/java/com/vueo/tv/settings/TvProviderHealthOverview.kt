@@ -23,10 +23,6 @@ private data class TvRankedProviderHealthEntry(
     val health: ProviderHealthRecord?,
 )
 
-/**
- * TV presentation of Mobile's Provider Health semantics.
- * Ranking data comes from Shared Core; this screen only adapts it for D-pad use.
- */
 @Composable
 internal fun TvProviderHealthOverview(
     runtime: TvRuntime,
@@ -38,46 +34,23 @@ internal fun TvProviderHealthOverview(
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
     val repositories = runtime.pluginStore.repositories()
-    val knownHealth = remember(repositories) {
-        healthStore.records().associateBy { it.repositoryManifestUrl to it.providerId }
-    }
+    val knownHealth = remember(repositories) { healthStore.records().associateBy { it.repositoryManifestUrl to it.providerId } }
     val rankedProviders = remember(repositories, knownHealth) {
-        repositories
-            .filter(runtime.pluginStore::isRepositoryEnabled)
-            .flatMap { repository ->
-                repository.providers
-                    .filter { provider -> runtime.pluginStore.isProviderEnabled(repository, provider) }
-                    .map { provider ->
-                        TvRankedProviderHealthEntry(
-                            repository = repository,
-                            provider = provider,
-                            health = knownHealth[repository.manifestUrl to provider.id],
-                        )
-                    }
+        repositories.filter(runtime.pluginStore::isRepositoryEnabled).flatMap { repository ->
+            repository.providers.filter { runtime.pluginStore.isProviderEnabled(repository, it) }.map { provider ->
+                TvRankedProviderHealthEntry(repository, provider, knownHealth[repository.manifestUrl to provider.id])
             }
-            .sortedWith(
-                compareBy<TvRankedProviderHealthEntry> { entry ->
-                    providerHealthSortKey(entry.health).availabilityTier
-                }.thenByDescending { entry ->
-                    providerHealthSortKey(entry.health).performanceScore
-                }.thenBy { entry ->
-                    providerHealthSortKey(entry.health).statusTier
-                }.thenBy { entry ->
-                    providerHealthSortKey(entry.health).responseMs
-                }.thenBy { entry ->
-                    entry.provider.name.lowercase()
-                }
-            )
+        }.sortedWith(
+            compareBy<TvRankedProviderHealthEntry> { providerHealthSortKey(it.health).availabilityTier }
+                .thenByDescending { providerHealthSortKey(it.health).performanceScore }
+                .thenBy { providerHealthSortKey(it.health).statusTier }
+                .thenBy { providerHealthSortKey(it.health).responseMs }
+                .thenBy { it.provider.name.lowercase() }
+        )
     }
-    val summary = remember(repositories, knownHealth) {
-        healthStore.summary(repositories, runtime.pluginStore)
-    }
-    val measuredProviders = rankedProviders.count {
-        healthStore.performance(it.health).historyRuns > 0
-    }
-    var diagnosticTarget by remember {
-        mutableStateOf<TvRankedProviderHealthEntry?>(null)
-    }
+    val summary = remember(repositories, knownHealth) { healthStore.summary(repositories, runtime.pluginStore) }
+    val measuredProviders = rankedProviders.count { healthStore.performance(it.health).historyRuns > 0 }
+    var diagnosticTarget by remember { mutableStateOf<TvRankedProviderHealthEntry?>(null) }
 
     diagnosticTarget?.let { entry ->
         TvProviderDiagnosticDialog(
@@ -91,40 +64,24 @@ internal fun TvProviderHealthOverview(
     }
 
     val entries = if (rankedProviders.isEmpty()) {
-        listOf(
-            TvSettingsEntry(
-                id = "empty",
-                title = "No enabled providers",
-                subtitle = "Enable a provider in Plugins & Providers, then run source discovery to build health history.",
-                value = "—",
-                enabled = false,
-                section = "PROVIDER RANKING",
-            )
+        listOf(TvSettingsEntry("empty", "No enabled providers", "Enable a provider in Plugins & Providers, then run source discovery to build health history.", "—", enabled = false, section = "PROVIDER RANKING"))
+    } else rankedProviders.mapIndexed { index, entry ->
+        val performance = healthStore.performance(entry.health)
+        val status = entry.health?.status ?: ProviderHealthStatus.UNKNOWN
+        val timing = performance.averageResponseMs?.let(::formatTvProviderAverageResponse) ?: "No timing"
+        val history = if (performance.historyRuns > 0) {
+            val hit = performance.hitRatePercent?.let { "$it% hit" } ?: "No hit rate"
+            "$hit • $timing • ${performance.historyRuns} runs"
+        } else "No scan history yet"
+        TvSettingsEntry(
+            id = "provider-health-${entry.repository.manifestUrl.hashCode()}-${entry.provider.id}",
+            title = "#${index + 1} ${entry.provider.name}",
+            subtitle = "${entry.repository.name} • $history • OK diagnostics",
+            value = "Score ${performance.score} • ${status.label}",
+            onActivate = { diagnosticTarget = entry },
+            section = "PROVIDER RANKING",
+            icon = Icons.Default.SettingsInputComponent,
         )
-    } else {
-        rankedProviders.mapIndexed { index, entry ->
-            val performance = healthStore.performance(entry.health)
-            val status = entry.health?.status ?: ProviderHealthStatus.UNKNOWN
-            val timing = performance.averageResponseMs
-                ?.let(::formatTvProviderAverageResponse)
-                ?: "No timing"
-            val history = if (performance.historyRuns > 0) {
-                val hit = performance.hitRatePercent?.let { "$it% hit" } ?: "No hit rate"
-                "$hit • $timing • ${performance.historyRuns} runs"
-            } else {
-                "No scan history yet"
-            }
-
-            TvSettingsEntry(
-                id = "provider-health-${entry.repository.manifestUrl.hashCode()}-${entry.provider.id}",
-                title = "#${index + 1} ${entry.provider.name}",
-                subtitle = "${entry.repository.name} • $history • OK diagnostics",
-                value = "Score ${performance.score} • ${status.label}",
-                onActivate = { diagnosticTarget = entry },
-                section = "PROVIDER RANKING",
-                icon = Icons.Default.SettingsInputComponent,
-            )
-        }
     }
 
     TvSettingsListScreen(
@@ -139,19 +96,11 @@ internal fun TvProviderHealthOverview(
             TvSettingsMetric("$measuredProviders/${rankedProviders.size}", "Measured"),
             TvSettingsMetric(summary.online.toString(), "Online"),
             TvSettingsMetric(summary.slow.toString(), "Slow"),
-            TvSettingsMetric(
-                (summary.failed + summary.blocked + summary.unavailable + summary.timeout).toString(),
-                "Failed",
-            ),
+            TvSettingsMetric((summary.failed + summary.blocked + summary.unavailable + summary.timeout).toString(), "Failed"),
         ),
         footer = "Score affects scan order only. Providers are not removed, and No Results is not treated as a hard failure.",
     )
 }
 
 private fun formatTvProviderAverageResponse(responseMs: Long): String =
-    if (responseMs < 1_000L) {
-        "${responseMs} ms avg"
-    } else {
-        val tenths = ((responseMs + 50L) / 100L) / 10.0
-        "${tenths}s avg"
-    }
+    if (responseMs < 1_000L) "${responseMs} ms avg" else "${((responseMs + 50L) / 100L) / 10.0}s avg"

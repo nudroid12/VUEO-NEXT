@@ -165,7 +165,6 @@ fun TvDetailScreen(
         related = localRelated
 
         // Core metadata + local More Like This are enough to release Detail.
-        // Remote enrichment continues progressively, matching Mobile behavior.
         loading = false
 
         launch {
@@ -175,13 +174,8 @@ fun TvDetailScreen(
                 publishRatings(enriched)
                 watchlisted = runtime.libraryStore.isWatchlisted(enriched)
                 movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(
-                    enriched,
-                    preserveCurrent = true,
-                    restoringSameTitle = restoringSameTitle,
-                )
+                syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
             }
-
             val rich = runCatching { runtime.enrichDetailRichDetails(enriched) }.getOrDefault(enriched)
             if (rich != enriched) {
                 enriched = rich
@@ -189,11 +183,7 @@ fun TvDetailScreen(
                 publishRatings(enriched)
                 watchlisted = runtime.libraryStore.isWatchlisted(enriched)
                 movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(
-                    enriched,
-                    preserveCurrent = true,
-                    restoringSameTitle = restoringSameTitle,
-                )
+                syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
             }
         }
 
@@ -225,13 +215,7 @@ fun TvDetailScreen(
     val history = remember(item.id, item.type, selectedEpisode, loading) {
         runtime.libraryStore.history()
     }
-    val playbackEntry = remember(
-        item.id,
-        item.type,
-        selectedEpisode?.id,
-        history,
-        initialLibraryEntry,
-    ) {
+    val playbackEntry = remember(item.id, item.type, selectedEpisode?.id, history, initialLibraryEntry) {
         detailPlaybackEntry(item, selectedEpisode, history)
             ?: detailInitialPlaybackEntry(item, selectedEpisode, initialLibraryEntry)
     }
@@ -247,11 +231,7 @@ fun TvDetailScreen(
         if (loading) null else runtime.dnaMatch(item)
     }
     val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry) {
-        detailPrimaryActionLabel(
-            item = item,
-            episode = selectedEpisode,
-            playbackEntry = playbackEntry,
-        )
+        detailPrimaryActionLabel(item, selectedEpisode, playbackEntry)
     }
 
     TvDetailPresentation(
@@ -275,10 +255,7 @@ fun TvDetailScreen(
         onPlay = {
             val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
             if (!seriesNeedsEpisode || selectedEpisode != null) {
-                val startPositionMs = playbackEntry
-                    ?.takeIf(::detailCanResume)
-                    ?.positionMs
-                    ?: 0L
+                val startPositionMs = playbackEntry?.takeIf(::detailCanResume)?.positionMs ?: 0L
                 onWatch(item, selectedEpisode, startPositionMs)
             }
         },
@@ -319,10 +296,7 @@ fun TvDetailScreen(
             NuvioDetailFocusMemory.episodeId = episode.id
             val episodeEntry = detailPlaybackEntry(item, episode, history)
                 ?: detailInitialPlaybackEntry(item, episode, initialLibraryEntry)
-            val startPositionMs = episodeEntry
-                ?.takeIf(::detailCanResume)
-                ?.positionMs
-                ?: 0L
+            val startPositionMs = episodeEntry?.takeIf(::detailCanResume)?.positionMs ?: 0L
             onWatch(item, episode, startPositionMs)
         },
         onOpenRelated = onOpenRelated,
@@ -369,12 +343,8 @@ private fun detailInitialPlaybackEntry(
 ): LibraryPlaybackEntry? =
     initial?.takeIf { entry ->
         if (media.isDetailSeries()) {
-            episode != null &&
-                entry.season == episode.season &&
-                entry.episode == episode.episode
-        } else {
-            true
-        }
+            episode != null && entry.season == episode.season && entry.episode == episode.episode
+        } else true
     }
 
 internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean =

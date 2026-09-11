@@ -63,17 +63,8 @@ object DetailUpstreamPolicy {
         metadataEnabled: Boolean,
         artworkEnabled: Boolean,
     ): MediaItem {
-        if (tmdbApiKey.isBlank() || (!metadataEnabled && !artworkEnabled)) {
-            return normalizeSeriesEpisodes(media)
-        }
-        return normalizeSeriesEpisodes(
-            TmdbEnhancementClient.enrich(
-                item = media,
-                apiKey = tmdbApiKey,
-                metadataEnabled = metadataEnabled,
-                artworkEnabled = artworkEnabled,
-            )
-        )
+        if (tmdbApiKey.isBlank() || (!metadataEnabled && !artworkEnabled)) return normalizeSeriesEpisodes(media)
+        return normalizeSeriesEpisodes(TmdbEnhancementClient.enrich(media, tmdbApiKey, metadataEnabled, artworkEnabled))
     }
 
     suspend fun enrichRichDetails(
@@ -82,13 +73,6 @@ object DetailUpstreamPolicy {
         enabled: Boolean,
     ): MediaItem {
         if (tmdbApiKey.isBlank() || !enabled) return normalizeSeriesEpisodes(media)
-        return normalizeSeriesEpisodes(
-            RichDetailsClient.enrich(
-                media = media,
-                apiKey = tmdbApiKey,
-            )
-        )
+        return normalizeSeriesEpisodes(RichDetailsClient.enrich(media, tmdbApiKey))
     }
-
-
 }

@@ -606,14 +606,8 @@ private fun TvAddonSettings(
                         status = null
                         scope.launch {
                             runCatching { runtime.refreshAddons() }
-                                .onSuccess {
-                                    revision++
-                                    status = "Addon manifests refreshed."
-                                    onDataChanged()
-                                }
-                                .onFailure { error ->
-                                    status = error.message ?: "Unable to refresh addons."
-                                }
+                                .onSuccess { revision++; status = "Addon manifests refreshed."; onDataChanged() }
+                                .onFailure { error -> status = error.message ?: "Unable to refresh addons." }
                             refreshingAddons = false
                         }
                     }
@@ -752,9 +746,7 @@ private fun TvProviderSettings(
                                     }
                                     onDataChanged()
                                 }
-                                .onFailure { error ->
-                                    status = error.message ?: "Unable to refresh repositories."
-                                }
+                                .onFailure { error -> status = error.message ?: "Unable to refresh repositories." }
                             refreshingRepositories = false
                         }
                     }
@@ -984,56 +976,28 @@ private fun TvTmdbEnhancementSettings(
     }
 
     val entries = buildList {
-        add(
-            TvSettingsEntry(
-                id = "api-key",
-                title = "API Key",
-                subtitle = "Stored locally on this TV and used only for TMDB requests.",
-                value = configuredLabel(apiKey),
-                onActivate = { editing = true },
-                section = "CONNECTION",
-                icon = Icons.Default.SettingsInputComponent,
-            )
-        )
-        add(
-            TvSettingsEntry(
-                id = "test-connection",
-                title = "Test Connection",
-                subtitle = "Verify the current TMDB v3 API key without changing your saved settings.",
-                value = if (testing) "Testing…" else connectionStatus ?: "Test",
-                onActivate = {
-                    if (!testing) {
-                        val key = apiKey.trim()
-                        if (key.isBlank()) {
-                            connectionStatus = "Enter API key"
-                        } else {
-                            testing = true
-                            connectionStatus = "Testing…"
-                            scope.launch {
-                                val ok = runCatching { TmdbEnhancementClient.testConnection(key) }
-                                    .getOrDefault(false)
-                                connectionStatus = if (ok) "Connected" else "Connection failed"
-                                testing = false
-                            }
+        add(TvSettingsEntry("api-key", "API Key", "Stored locally on this TV and used only for TMDB requests.", configuredLabel(apiKey), onActivate = { editing = true }, section = "CONNECTION", icon = Icons.Default.SettingsInputComponent))
+        add(TvSettingsEntry(
+            id = "test-connection", title = "Test Connection",
+            subtitle = "Verify the current TMDB v3 API key without changing your saved settings.",
+            value = if (testing) "Testing…" else connectionStatus ?: "Test",
+            onActivate = {
+                if (!testing) {
+                    val key = apiKey.trim()
+                    if (key.isBlank()) connectionStatus = "Enter API key" else {
+                        testing = true; connectionStatus = "Testing…"
+                        scope.launch {
+                            val ok = runCatching { TmdbEnhancementClient.testConnection(key) }.getOrDefault(false)
+                            connectionStatus = if (ok) "Connected" else "Connection failed"; testing = false
                         }
                     }
-                },
-                section = "CONNECTION",
-                icon = Icons.Default.Refresh,
-            )
-        )
-        add(toggleEntry(
-            "metadata", "Metadata", "Enrich details with runtime, cast, genres and production metadata.", metadata,
-        ) { metadata = it; store.setTmdbMetadataEnrichmentEnabled(it) }.copy(section = "FEATURES"))
-        add(toggleEntry(
-            "artwork", "Artwork", "Use richer backdrop and poster artwork when available.", artwork,
-        ) { artwork = it; store.setTmdbArtworkEnrichmentEnabled(it) }.copy(section = "FEATURES"))
-        add(toggleEntry(
-            "recommendations", "Recommendations", "Allow recommendation surfaces to use TMDB recommendations.", recommendations,
-        ) { recommendations = it; store.setTmdbRecommendationsEnabled(it) }.copy(section = "FEATURES"))
-        add(toggleEntry(
-            "similar", "Similar Titles", "Allow recommendation surfaces to use similar-title results.", similar,
-        ) { similar = it; store.setTmdbSimilarTitlesEnabled(it) }.copy(section = "FEATURES"))
+                }
+            }, section = "CONNECTION", icon = Icons.Default.Refresh,
+        ))
+        add(toggleEntry("metadata", "Metadata", "Enrich details with runtime, cast, genres and production metadata.", metadata) { metadata = it; store.setTmdbMetadataEnrichmentEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry("artwork", "Artwork", "Use richer backdrop and poster artwork when available.", artwork) { artwork = it; store.setTmdbArtworkEnrichmentEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry("recommendations", "Recommendations", "Allow recommendation surfaces to use TMDB recommendations.", recommendations) { recommendations = it; store.setTmdbRecommendationsEnabled(it) }.copy(section = "FEATURES"))
+        add(toggleEntry("similar", "Similar Titles", "Allow recommendation surfaces to use similar-title results.", similar) { similar = it; store.setTmdbSimilarTitlesEnabled(it) }.copy(section = "FEATURES"))
     }
 
     TvSettingsListScreen(
@@ -1083,62 +1047,30 @@ private fun TvMdblistEnhancementSettings(
     }
 
     val entries = buildList {
-        add(
-            TvSettingsEntry(
-                id = "api-key",
-                title = "API Key",
-                subtitle = "Stored locally on this TV and used only for MDBList requests.",
-                value = configuredLabel(apiKey),
-                onActivate = { editing = true },
-                section = "CONNECTION",
-                icon = Icons.Default.SettingsInputComponent,
-            )
-        )
-        add(
-            TvSettingsEntry(
-                id = "test-connection",
-                title = "Test Connection",
-                subtitle = "Verify the current MDBList API key without changing your saved settings.",
-                value = if (testing) "Testing…" else connectionStatus ?: "Test",
-                onActivate = {
-                    if (!testing) {
-                        val key = apiKey.trim()
-                        if (key.isBlank()) {
-                            connectionStatus = "Enter API key"
-                        } else {
-                            testing = true
-                            connectionStatus = "Testing…"
-                            scope.launch {
-                                val ok = runCatching { MdblistClient.testConnection(key) }
-                                    .getOrDefault(false)
-                                connectionStatus = if (ok) "Connected" else "Connection failed"
-                                testing = false
-                            }
+        add(TvSettingsEntry("api-key", "API Key", "Stored locally on this TV and used only for MDBList requests.", configuredLabel(apiKey), onActivate = { editing = true }, section = "CONNECTION", icon = Icons.Default.SettingsInputComponent))
+        add(TvSettingsEntry(
+            id = "test-connection", title = "Test Connection",
+            subtitle = "Verify the current MDBList API key without changing your saved settings.",
+            value = if (testing) "Testing…" else connectionStatus ?: "Test",
+            onActivate = {
+                if (!testing) {
+                    val key = apiKey.trim()
+                    if (key.isBlank()) connectionStatus = "Enter API key" else {
+                        testing = true; connectionStatus = "Testing…"
+                        scope.launch {
+                            val ok = runCatching { MdblistClient.testConnection(key) }.getOrDefault(false)
+                            connectionStatus = if (ok) "Connected" else "Connection failed"; testing = false
                         }
                     }
-                },
-                section = "CONNECTION",
-                icon = Icons.Default.Refresh,
-            )
-        )
-        add(toggleEntry(
-            "ratings", "Ratings", "Fetch supported rating sources when title details load.", ratings,
-        ) { ratings = it; store.setMdblistRatingsEnabled(it) }.copy(section = "RATINGS"))
-        add(toggleEntry(
-            "imdb", "IMDb Rating", "Allow IMDb rating from MDBList.", imdb, enabled = ratings,
-        ) { imdb = it; store.setMdblistImdbEnabled(it) }.copy(section = "RATINGS"))
-        add(toggleEntry(
-            "rt", "Rotten Tomatoes", "Allow Rotten Tomatoes rating from MDBList.", rt, enabled = ratings,
-        ) { rt = it; store.setMdblistRottenTomatoesEnabled(it) }.copy(section = "RATINGS"))
-        add(toggleEntry(
-            "metacritic", "Metacritic", "Allow Metacritic rating from MDBList.", metacritic, enabled = ratings,
-        ) { metacritic = it; store.setMdblistMetacriticEnabled(it) }.copy(section = "RATINGS"))
-        add(toggleEntry(
-            "tmdb", "TMDB Rating", "Allow TMDB rating from MDBList.", tmdb, enabled = ratings,
-        ) { tmdb = it; store.setMdblistTmdbRatingEnabled(it) }.copy(section = "RATINGS"))
-        add(toggleEntry(
-            "trakt", "Trakt Rating", "Allow Trakt rating from MDBList.", trakt, enabled = ratings,
-        ) { trakt = it; store.setMdblistTraktEnabled(it) }.copy(section = "RATINGS"))
+                }
+            }, section = "CONNECTION", icon = Icons.Default.Refresh,
+        ))
+        add(toggleEntry("ratings", "Ratings", "Fetch supported rating sources when title details load.", ratings) { ratings = it; store.setMdblistRatingsEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry("imdb", "IMDb Rating", "Allow IMDb rating from MDBList.", imdb, enabled = ratings) { imdb = it; store.setMdblistImdbEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry("rt", "Rotten Tomatoes", "Allow Rotten Tomatoes rating from MDBList.", rt, enabled = ratings) { rt = it; store.setMdblistRottenTomatoesEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry("metacritic", "Metacritic", "Allow Metacritic rating from MDBList.", metacritic, enabled = ratings) { metacritic = it; store.setMdblistMetacriticEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry("tmdb", "TMDB Rating", "Allow TMDB rating from MDBList.", tmdb, enabled = ratings) { tmdb = it; store.setMdblistTmdbRatingEnabled(it) }.copy(section = "RATINGS"))
+        add(toggleEntry("trakt", "Trakt Rating", "Allow Trakt rating from MDBList.", trakt, enabled = ratings) { trakt = it; store.setMdblistTraktEnabled(it) }.copy(section = "RATINGS"))
     }
 
     TvSettingsListScreen(
@@ -1293,12 +1225,14 @@ private fun TvDataStorageSettings(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
     val store = runtime.settingsStore
     var includeCredentials by remember { mutableStateOf(store.includeCredentialsInBackup()) }
     var status by remember { mutableStateOf<String?>(null) }
     var confirmAction by remember { mutableStateOf<String?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        restoreSettingsFocus()
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching { VueoBackupManager.exportToUri(context, uri, includeCredentials) }
@@ -1307,6 +1241,7 @@ private fun TvDataStorageSettings(
         }
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        restoreSettingsFocus()
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
@@ -1395,6 +1330,12 @@ private fun TvUpdatesSettings(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        restoreSettingsFocus()
+    }
     var autoChecks by remember { mutableStateOf(runtime.settingsStore.automaticUpdateChecksEnabled()) }
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
@@ -1438,7 +1379,7 @@ private fun TvUpdatesSettings(
                     onActivate = {
                         if (!downloading) {
                             if (TvUpdateManager.needsInstallPermission(context)) {
-                                TvUpdateManager.openInstallPermissionSettings(context)
+                                TvUpdateManager.installPermissionIntent(context)?.let { installPermissionLauncher.launch(it) }
                                 status = "Allow installs for VUEO, then return and choose Update again."
                             } else {
                                 downloading = true
