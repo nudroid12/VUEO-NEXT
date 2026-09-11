@@ -688,7 +688,7 @@ TV Player is now rebuilt around a TV-native remote interaction model rather than
 
 The bottom row now exposes Play/Pause, 10 second rewind/forward, Next, Subtitles, Audio, Sources, Episodes and More. Subtitles, Audio, Sources, Episodes and More use D-pad side panels with horizontal focus trapping and focus restoration to the opening control. Source changes preserve position, existing auto-recovery remains intact, episodes use the existing navigation callback, and More persists playback speed/video fit through `SettingsStore`. Skip segments and auto-next remain contextual actions and are focusable.
 
-29G does not rewrite the ExoPlayer, Shared Core storage, source discovery/ranking, skip repository or playback-history contracts. Full Gradle compilation is not confirmed in the current execution environment because Gradle 9.3.1 is not cached and `services.gradle.org` cannot be resolved. Real-TV calibration is still required before final cross-screen polish. See `TV_29G_NOTES.md`.
+29G does not rewrite the ExoPlayer, Shared Core storage, source discovery/ranking, skip repository or playback-history contracts. Full Gradle compilation is not confirmed in the current execution environment because Gradle 9.3.1 is not cached and `services.gradle.org` cannot be resolved. Real-TV calibration is still required before final cross-screen polish.
 
 ### TV 30A — Premium Home density
 Home presentation is now calibrated around the current 29C.4 floating sidebar. The hero reading zone occupies roughly the upper half of the viewport; Continue Watching remains medium landscape while My List/catalog rails use medium 2:3 posters (~128dp) for about 5–6 visible titles on a common TV viewport. Focus motion is restrained (~1.028), rail density is tighter, and backdrop scrims are lighter. No Home data, route or sidebar interaction contract changed.
@@ -700,7 +700,6 @@ Home presentation is now calibrated around the current 29C.4 floating sidebar. T
 - Collapsed TV navigation is now a stable icon-only rail; no floating route pill.
 - Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
 - Per-row focus memory and deterministic UP/DOWN row transfer are part of the Home contract.
-- See `TV_30C_HOME_SOURCE_REBUILD.md`.
 
 ## TV 42A - Settings Mobile Category Rebuild (2026-09-08)
 

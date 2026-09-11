@@ -109,7 +109,6 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Collapsed TV navigation is now a stable icon-only rail; no floating route pill.
 - Home rows begin at ~49% viewport height, hero copy is ~42% width, CW is landscape and catalogs remain portrait.
 - Per-row focus memory and deterministic UP/DOWN row transfer are part of the Home contract.
-- See `TV_30C_HOME_SOURCE_REBUILD.md`.
 
 ## TV 32A Home true rebuild
 
@@ -119,7 +118,7 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Home visual composition lives in `TvHomePresentation.kt`.
 - Home navigation/sidebar lives in `TvHomeNavigation.kt`.
 - Home must not import or invoke the legacy `TvSidebar` from `TvTopBar.kt`.
-- Preserve the Nuvio-referenced structural ratios and focus model documented in `TV_32A_HOME_TRUE_REBUILD.md` unless a later explicit product decision replaces them.
+- Preserve the Nuvio-referenced structural ratios and focus model described above unless a later explicit product decision replaces them.
 
 ## TV 44B subtitle workspace correction
 
