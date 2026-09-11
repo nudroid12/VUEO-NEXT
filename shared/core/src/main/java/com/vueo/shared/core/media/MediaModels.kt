@@ -67,6 +67,8 @@ data class CatalogRow(
 data class StreamSource(
     val name: String,
     val url: String? = null,
+    val streamType: String? = null,
+    val mimeType: String? = null,
     val infoHash: String? = null,
     val fileIndex: Int? = null,
     val quality: String? = null,
@@ -80,8 +82,26 @@ data class StreamSource(
     val providerId: String,
     val providerName: String,
 ) {
+    val transport: StreamTransport
+        get() = StreamTransportPolicy.classify(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
+
+    val playbackMimeType: String?
+        get() = StreamTransportPolicy.playbackMimeType(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
+
     val isDirectPlayable: Boolean
-        get() = url?.startsWith("https://") == true
+        get() = StreamTransportPolicy.isDirectPlayable(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
 }
 
 data class SubtitleTrack(

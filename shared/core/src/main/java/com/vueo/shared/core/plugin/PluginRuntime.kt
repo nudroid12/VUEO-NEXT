@@ -9,6 +9,8 @@ import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.media.StreamTransport
+import com.vueo.shared.core.media.StreamTransportPolicy
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SourceResolveResult
@@ -1258,16 +1260,25 @@ private fun emptyDiscoveryResult():
                     )
                 }
 
+            val parsedStreams =
+                parseProviderStreams(
+                    repository =
+                        repository,
+                    provider =
+                        provider,
+                    resultJson =
+                        resultJson,
+                )
+
+            val finalizedStreams =
+                finalizeProviderStreams(
+                    streams = parsedStreams,
+                    provider = provider,
+                    runtimeDiagnosticScanId = runtimeDiagnosticScanId,
+                )
+
             ProviderExecution(
-                streams =
-                    parseProviderStreams(
-                        repository =
-                            repository,
-                        provider =
-                            provider,
-                        resultJson =
-                            resultJson,
-                    ),
+                streams = finalizedStreams,
                 error =
                     null,
                 logs =
@@ -3541,6 +3552,125 @@ private fun emptyDiscoveryResult():
         }
     }
 
+    private suspend fun finalizeProviderStreams(
+        streams: List<SourceCandidate>,
+        provider: PluginProviderDescriptor,
+        runtimeDiagnosticScanId: Long,
+    ): List<SourceCandidate> {
+        if (streams.isEmpty()) return emptyList()
+
+        val direct = streams.filter { it.isDirectPlayable }
+        val embeds = streams.filter { it.transport == StreamTransport.EMBED }
+
+        /*
+         * Do not make a provider that already returned a playable source wait
+         * for optional embed work. This keeps first-play latency unchanged for
+         * healthy direct providers while ensuring embed pages never leak into
+         * ExoPlayer as if they were media URLs.
+         */
+        if (direct.isNotEmpty() || embeds.isEmpty()) {
+            return direct
+        }
+
+        val targets = embeds.take(
+            if (lowMemoryDevice) 1 else MAX_AUTO_EMBED_RESOLVES_PER_PROVIDER
+        )
+
+        val resolved = supervisorScope {
+            targets
+                .map { candidate ->
+                    async {
+                        resolveEmbedCandidate(candidate)
+                    }
+                }
+                .awaitAll()
+                .flatten()
+                .filter { it.isDirectPlayable }
+                .distinctBy { it.url }
+        }
+
+        RuntimeDiagnostics.recordDiscoveryTrace(
+            scanId = runtimeDiagnosticScanId,
+            providerName = provider.name,
+            stage = "RESOLVER",
+            details = "embed=${embeds.size} resolved=${resolved.size}",
+        )
+
+        return resolved
+    }
+
+    private suspend fun resolveEmbedCandidate(
+        candidate: SourceCandidate,
+    ): List<SourceCandidate> {
+        val url = candidate.url ?: return emptyList()
+        val referer = candidate.headers.valueIgnoreCase("Referer")
+            ?: url
+        val userAgent = candidate.headers.valueIgnoreCase("User-Agent")
+
+        val requestJson = JSONObject()
+            .put("url", url)
+            .put("referer", referer)
+            .put("timeoutMs", AUTO_EMBED_RESOLVE_TIMEOUT_MS)
+            .put("finishAfterFirstMs", AUTO_EMBED_FINISH_AFTER_FIRST_MS)
+            .put("directLoad", true)
+            .put("suppressPopups", true)
+            .apply {
+                if (!userAgent.isNullOrBlank()) {
+                    put("userAgent", userAgent)
+                }
+            }
+            .toString()
+
+        val responseJson = webViewConcurrency.withPermit {
+            webViewResolver.resolveJson(requestJson)
+        }
+
+        val response = runCatching { JSONObject(responseJson) }
+            .getOrNull()
+            ?: return emptyList()
+        if (response.optString("error").isNotBlank()) return emptyList()
+
+        val streams = response.optJSONArray("streams") ?: return emptyList()
+        return (0 until streams.length()).mapNotNull { index ->
+            val item = streams.optJSONObject(index) ?: return@mapNotNull null
+            val resolvedUrl = item.optString("url")
+                .trim()
+                .takeIf { it.startsWith("https://", ignoreCase = true) }
+                ?: return@mapNotNull null
+            val streamType = item.optString("type")
+                .trim()
+                .takeIf { it.isNotBlank() }
+            val rawMimeType = item.optString("mimeType")
+                .trim()
+                .takeIf { it.isNotBlank() }
+            val resolvedHeaders = item.optJSONObject("headers").toStringMap()
+            val label = item.optString("label")
+                .trim()
+                .takeIf { it.isNotBlank() && !it.equals("Auto", true) }
+
+            candidate.copy(
+                id = "${candidate.id}:resolved:$index",
+                name = label?.let { "${candidate.name} • $it" } ?: candidate.name,
+                url = resolvedUrl,
+                streamType = streamType,
+                mimeType = StreamTransportPolicy.playbackMimeType(
+                    url = resolvedUrl,
+                    streamType = streamType,
+                    mimeType = rawMimeType,
+                ),
+                quality = candidate.quality ?: label,
+                headers = candidate.headers + resolvedHeaders,
+            )
+        }
+    }
+
+    private fun Map<String, String>.valueIgnoreCase(
+        name: String,
+    ): String? = entries
+        .firstOrNull { it.key.equals(name, ignoreCase = true) }
+        ?.value
+        ?.takeIf { it.isNotBlank() }
+
     private data class ProviderExecution(
         val streams: List<SourceCandidate>,
         val error: String?,
@@ -3567,6 +3697,15 @@ private fun emptyDiscoveryResult():
 
         private const val MAX_PROVIDER_TIMEOUT_MS =
             20_000L
+
+        private const val MAX_AUTO_EMBED_RESOLVES_PER_PROVIDER =
+            2
+
+        private const val AUTO_EMBED_RESOLVE_TIMEOUT_MS =
+            4_500L
+
+        private const val AUTO_EMBED_FINISH_AFTER_FIRST_MS =
+            650L
 
         private const val DEFAULT_MEMORY_CLASS_MB =
             256
@@ -3681,6 +3820,40 @@ private fun parseProviderStreams(
                         it.isNotBlank()
                     }
 
+            val streamType =
+                listOf(
+                    "type",
+                    "format",
+                    "streamType",
+                    "sourceType",
+                ).firstNotNullOfOrNull { field ->
+                    item.optString(field)
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                }
+                    ?: provider.formats
+                        .singleOrNull()
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+
+            val rawMimeType =
+                listOf(
+                    "mimeType",
+                    "contentType",
+                    "content_type",
+                ).firstNotNullOfOrNull { field ->
+                    item.optString(field)
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                }
+
+            val mimeType =
+                StreamTransportPolicy.playbackMimeType(
+                    url = url,
+                    streamType = streamType,
+                    mimeType = rawMimeType,
+                )
+
             val displayName =
                 item.optString("title")
                     .takeIf {
@@ -3702,6 +3875,10 @@ private fun parseProviderStreams(
                     displayName,
                 url =
                     url,
+                streamType =
+                    streamType,
+                mimeType =
+                    mimeType,
                 quality =
                     quality,
                 codec =

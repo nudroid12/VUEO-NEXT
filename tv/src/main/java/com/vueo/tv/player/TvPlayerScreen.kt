@@ -161,7 +161,12 @@ fun TvPlayerScreen(
         }
     }
 
-    val playableSources = remember(bundle.sources, source.url) {
+    val playableSources = remember(
+        bundle.sources,
+        source.url,
+        source.streamType,
+        source.mimeType,
+    ) {
         (listOf(source) + bundle.sources)
             .filter { it.isDirectPlayable }
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
@@ -172,7 +177,14 @@ fun TvPlayerScreen(
     }
     val latestExternalSubtitlesBySelectionId =
         androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
-    var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
+    var activeSource by remember(
+        bundle.videoId,
+        source.url,
+        source.streamType,
+        source.mimeType,
+    ) {
+        mutableStateOf(source)
+    }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
     var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }
@@ -386,8 +398,13 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(activeSource.url, bundle.videoId) {
-        val url = activeSource.url ?: return@LaunchedEffect
+    LaunchedEffect(
+        activeSource.url,
+        activeSource.streamType,
+        activeSource.mimeType,
+        bundle.videoId,
+    ) {
+        activeSource.url ?: return@LaunchedEffect
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
@@ -404,7 +421,7 @@ fun TvPlayerScreen(
 
         player.setMediaItem(
             buildMediaItem(
-                sourceUrl = url,
+                source = activeSource,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
@@ -428,7 +445,13 @@ fun TvPlayerScreen(
         appliedSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
     }
 
-    LaunchedEffect(player, activeSource.url, bundle.subtitles) {
+    LaunchedEffect(
+        player,
+        activeSource.url,
+        activeSource.streamType,
+        activeSource.mimeType,
+        bundle.subtitles,
+    ) {
         val url = activeSource.url ?: return@LaunchedEffect
         val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
@@ -442,7 +465,7 @@ fun TvPlayerScreen(
         subtitlePreferenceRestored = false
         player.setMediaItem(
             buildMediaItem(
-                sourceUrl = url,
+                source = activeSource,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
@@ -1191,6 +1214,8 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
         },
         name = name,
         url = url,
+        streamType = streamType,
+        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,
@@ -1206,7 +1231,7 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
     )
 
 private fun buildMediaItem(
-    sourceUrl: String,
+    source: StreamSource,
     subtitles: List<SubtitleTrack>,
     preferredLanguages: List<String>,
     subtitlesOnByDefault: Boolean,
@@ -1242,7 +1267,10 @@ private fun buildMediaItem(
     }
 
     return MediaItem.Builder()
-        .setUri(Uri.parse(sourceUrl))
+        .setUri(Uri.parse(requireNotNull(source.url)))
+        .apply {
+            source.playbackMimeType?.let { setMimeType(it) }
+        }
         .setSubtitleConfigurations(configurations)
         .build()
 }

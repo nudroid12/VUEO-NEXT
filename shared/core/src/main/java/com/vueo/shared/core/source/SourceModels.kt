@@ -1,5 +1,8 @@
 package com.vueo.shared.core.source
 
+import com.vueo.shared.core.media.StreamTransport
+import com.vueo.shared.core.media.StreamTransportPolicy
+
 data class SourceRequest(
     val mediaType: String,
     val videoId: String,
@@ -17,6 +20,8 @@ data class SourceCandidate(
     val id: String,
     val name: String,
     val url: String? = null,
+    val streamType: String? = null,
+    val mimeType: String? = null,
     val infoHash: String? = null,
     val fileIndex: Int? = null,
     val quality: String? = null,
@@ -30,12 +35,31 @@ data class SourceCandidate(
     val providerId: String,
     val providerName: String,
 ) {
+    val transport: StreamTransport
+        get() = StreamTransportPolicy.classify(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
+
+    val playbackMimeType: String?
+        get() = StreamTransportPolicy.playbackMimeType(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
+
     /**
-     * Keep the same security baseline as current VUEO Mobile: only HTTPS
-     * direct URLs are considered immediately playable by the shared core.
+     * Only HTTPS sources that are not explicit/obvious embed pages are passed
+     * straight to the player. Unknown signed CDN URLs remain eligible to avoid
+     * regressing providers that do not expose an extension.
      */
     val isDirectPlayable: Boolean
-        get() = url?.startsWith("https://") == true
+        get() = StreamTransportPolicy.isDirectPlayable(
+            url = url,
+            streamType = streamType,
+            mimeType = mimeType,
+        )
 
     val isTorrent: Boolean
         get() = !infoHash.isNullOrBlank()

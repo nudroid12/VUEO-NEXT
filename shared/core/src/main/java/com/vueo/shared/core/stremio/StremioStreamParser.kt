@@ -37,10 +37,31 @@ object StremioStreamParser {
                 ?.optLong("videoSize", -1L)
                 ?.takeIf { it > 0L }
 
+            val streamType = listOf(
+                "type",
+                "format",
+                "streamType",
+            ).firstNotNullOfOrNull { field ->
+                item.optString(field)
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+            }
+            val mimeType = listOf(
+                "mimeType",
+                "contentType",
+                "content_type",
+            ).firstNotNullOfOrNull { field ->
+                item.optString(field)
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+            }
+
             SourceCandidate(
                 id = "${manifest.id}:stream:$index",
                 name = title,
                 url = streamUrl,
+                streamType = streamType,
+                mimeType = mimeType,
                 infoHash = infoHash,
                 fileIndex = item.optInt("fileIdx", -1).takeIf { it >= 0 },
                 quality = inferQuality(title),

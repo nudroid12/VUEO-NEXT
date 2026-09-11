@@ -1611,6 +1611,8 @@ private fun StreamSource.toSourceCandidate(): SourceCandidate =
         },
         name = name,
         url = url,
+        streamType = streamType,
+        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,
@@ -1657,6 +1659,10 @@ object SourceCleaner {
             infoHash = primary.infoHash?.takeIf { it.isNotBlank() }
                 ?: duplicate.infoHash,
             fileIndex = primary.fileIndex ?: duplicate.fileIndex,
+            streamType = primary.streamType?.takeIf { it.isNotBlank() }
+                ?: duplicate.streamType,
+            mimeType = primary.mimeType?.takeIf { it.isNotBlank() }
+                ?: duplicate.mimeType,
             quality = primary.quality?.takeIf { it.isNotBlank() }
                 ?: duplicate.quality,
             codec = primary.codec?.takeIf { it.isNotBlank() }

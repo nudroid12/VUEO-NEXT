@@ -15,6 +15,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.content.Context
+import com.vueo.shared.core.media.StreamTransportPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
@@ -22,11 +23,11 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.Request
 import java.io.ByteArrayInputStream
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 
 
@@ -64,36 +65,54 @@ internal class PluginWebViewResolver(
     private val appContext = context.applicationContext
     private val webViewConcurrency = Semaphore(1)
 
-    suspend fun resolveJson(requestJson: String): String =
-        webViewConcurrency.withPermit {
-            withContext(Dispatchers.Main.immediate) {
-            val request = runCatching {
-                ResolveRequest.parse(requestJson)
-            }.getOrElse { error ->
-                return@withContext errorJson(
-                    error.message ?: "Invalid WebView resolver request."
-                )
-            }
+    suspend fun resolveJson(requestJson: String): String {
+        val request = runCatching {
+            ResolveRequest.parse(requestJson)
+        }.getOrElse { error ->
+            return errorJson(
+                error.message ?: "Invalid WebView resolver request."
+            )
+        }
 
-            val streams = resolve(request)
-            JSONObject().apply {
-                put(
-                    "streams",
-                    JSONArray().apply {
-                        streams.forEach { stream ->
-                            put(
-                                JSONObject().apply {
-                                    put("label", stream.label)
-                                    put("url", stream.url)
-                                    put("headers", JSONObject(stream.headers))
-                                }
-                            )
-                        }
-                    },
+        val validationError = withContext(Dispatchers.IO) {
+            runCatching {
+                PluginHttp.requirePublicHttpUrl(
+                    url = request.url,
+                    allowHttp = true,
                 )
-            }.toString()
+            }.exceptionOrNull()
+        }
+        if (validationError != null) {
+            return errorJson(
+                validationError.message
+                    ?: "WebView resolver blocked a local/private URL."
+            )
+        }
+
+        return webViewConcurrency.withPermit {
+            withContext(Dispatchers.Main.immediate) {
+                val streams = resolve(request)
+                JSONObject().apply {
+                    put(
+                        "streams",
+                        JSONArray().apply {
+                            streams.forEach { stream ->
+                                put(
+                                    JSONObject().apply {
+                                        put("label", stream.label)
+                                        put("url", stream.url)
+                                        stream.streamType?.let { put("type", it) }
+                                        stream.mimeType?.let { put("mimeType", it) }
+                                        put("headers", JSONObject(stream.headers))
+                                    }
+                                )
+                            }
+                        },
+                    )
+                }.toString()
             }
         }
+    }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private suspend fun resolve(
@@ -105,8 +124,26 @@ internal class PluginWebViewResolver(
             val streams = Collections.synchronizedMap(
                 linkedMapOf<String, CapturedStream>()
             )
+            val safeHosts = ConcurrentHashMap<String, Boolean>()
             var finishScheduled = false
             var destroyed = false
+
+            fun isAllowedWebUrl(rawUrl: String?): Boolean {
+                val value = rawUrl?.trim().orEmpty()
+                if (value.isBlank()) return false
+                val uri = runCatching { URI(value) }.getOrNull() ?: return false
+                val scheme = uri.scheme?.lowercase()
+                if (scheme != "http" && scheme != "https") return false
+                if (PluginHttp.isClearlyLocalHttpUrl(value)) return false
+                val host = uri.host?.lowercase()?.takeIf { it.isNotBlank() }
+                    ?: return false
+                return safeHosts.getOrPut(host) {
+                    PluginHttp.isPublicHttpUrlBlocking(
+                        url = value,
+                        allowHttp = true,
+                    )
+                }
+            }
 
             fun finalizedPlaybackHeaders(
                 stream: CapturedStream,
@@ -204,12 +241,21 @@ internal class PluginWebViewResolver(
                 rawUrl: String?,
                 headers: Map<String, String>,
                 forcePlayable: Boolean = false,
+                streamType: String? = null,
+                mimeType: String? = null,
             ) {
                 val fixedUrl = rawUrl
                     ?.trim()
                     ?.toAbsoluteUrl(request.url)
                     ?.takeIf { forcePlayable || request.isStreamUrl(it) }
+                    ?.takeIf(::isAllowedWebUrl)
                     ?: return
+
+                val normalizedMimeType = StreamTransportPolicy.playbackMimeType(
+                    url = fixedUrl,
+                    streamType = streamType,
+                    mimeType = mimeType,
+                )
 
                 val fixedHeaders = headers.toMutableMap().apply {
                     putIfAbsent("User-Agent", request.userAgent)
@@ -224,6 +270,10 @@ internal class PluginWebViewResolver(
                             label = label.trim().ifBlank { guessLabel(fixedUrl) },
                             url = fixedUrl,
                             headers = fixedHeaders,
+                            streamType = streamType
+                                ?.trim()
+                                ?.takeIf { it.isNotBlank() },
+                            mimeType = normalizedMimeType,
                         )
                         added = true
                     }
@@ -244,6 +294,7 @@ internal class PluginWebViewResolver(
                                 label = parts[1],
                                 rawUrl = parts[3],
                                 headers = request.defaultHeaders(),
+                                streamType = parts[2],
                             )
                         }
                     }
@@ -293,6 +344,7 @@ internal class PluginWebViewResolver(
                                     rawUrl = file,
                                     headers = request.defaultHeaders(),
                                     forcePlayable = true,
+                                    mimeType = mime,
                                 )
                             }
                         }
@@ -725,6 +777,10 @@ internal class PluginWebViewResolver(
                 webView.settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    allowFileAccessFromFileURLs = false
+                    allowUniversalAccessFromFileURLs = false
                     mediaPlaybackRequiresUserGesture = false
                     loadsImagesAutomatically = true
                     javaScriptCanOpenWindowsAutomatically = !request.suppressPopups
@@ -768,6 +824,15 @@ internal class PluginWebViewResolver(
                         val requestUrl = webRequest?.url?.toString().orEmpty()
 
                         if (
+                            requestUrl.startsWith("http://", ignoreCase = true) ||
+                            requestUrl.startsWith("https://", ignoreCase = true)
+                        ) {
+                            if (!isAllowedWebUrl(requestUrl)) {
+                                return blockedWebResponse()
+                            }
+                        }
+
+                        if (
                             request.injectAbyssHook &&
                             shouldInjectAbyssPage(requestUrl)
                         ) {
@@ -807,9 +872,14 @@ internal class PluginWebViewResolver(
                         view: WebView?,
                         url: String?,
                     ): Boolean {
+                        val targetUrl = url.orEmpty()
+                        if (
+                            targetUrl.startsWith("http", ignoreCase = true) &&
+                            PluginHttp.isClearlyLocalHttpUrl(targetUrl)
+                        ) return true
                         if (!request.lockMainFrameHost) return false
                         val host = runCatching {
-                            URI(url.orEmpty()).host.orEmpty().lowercase()
+                            URI(targetUrl).host.orEmpty().lowercase()
                         }.getOrDefault("")
                         return targetHost.isNotBlank() &&
                             host.isNotBlank() &&
@@ -820,8 +890,13 @@ internal class PluginWebViewResolver(
                         view: WebView?,
                         webRequest: WebResourceRequest?,
                     ): Boolean {
-                        if (!request.lockMainFrameHost) return false
                         if (webRequest?.isForMainFrame != true) return false
+                        val targetUrl = webRequest.url?.toString().orEmpty()
+                        if (
+                            targetUrl.startsWith("http", ignoreCase = true) &&
+                            PluginHttp.isClearlyLocalHttpUrl(targetUrl)
+                        ) return true
+                        if (!request.lockMainFrameHost) return false
 
                         val host = runCatching {
                             webRequest.url?.host.orEmpty().lowercase()
@@ -902,6 +977,8 @@ internal class PluginWebViewResolver(
         val label: String,
         val url: String,
         val headers: Map<String, String>,
+        val streamType: String? = null,
+        val mimeType: String? = null,
     )
 
     private data class ResolveRequest(
@@ -1052,38 +1129,36 @@ internal class PluginWebViewResolver(
         referer: String,
         userAgent: String,
     ): WebResourceResponse {
-        val connection = URL(pageUrl).openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.instanceFollowRedirects = true
-        connection.setRequestProperty("User-Agent", userAgent)
-        connection.setRequestProperty("Referer", referer)
-        connection.setRequestProperty(
-            "Accept",
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        )
-        connection.setRequestProperty(
-            "Accept-Language",
-            "ms-MY,ms;q=0.9,en-US;q=0.8,en;q=0.7",
-        )
-        connection.setRequestProperty("Accept-Encoding", "identity")
-        connection.connectTimeout = 7_000
-        connection.readTimeout = 7_000
+        val response = PluginHttp.client.newCall(
+            Request.Builder()
+                .url(pageUrl)
+                .header("User-Agent", userAgent)
+                .header("Referer", referer)
+                .header(
+                    "Accept",
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                )
+                .header(
+                    "Accept-Language",
+                    "ms-MY,ms;q=0.9,en-US;q=0.8,en;q=0.7",
+                )
+                .header("Accept-Encoding", "identity")
+                .build()
+        ).execute()
 
-        val html = connection.inputStream
-            .bufferedReader()
-            .use { it.readText() }
+        val html = response.use { safeResponse ->
+            if (!safeResponse.isSuccessful) {
+                error("HTTP ${safeResponse.code} while resolving embedded page.")
+            }
 
-        connection.headerFields
-            .filterKeys { it?.equals("Set-Cookie", true) == true }
-            .values
-            .flatten()
-            .forEach { cookie ->
+            safeResponse.headers("Set-Cookie").forEach { cookie ->
                 runCatching {
                     CookieManager.getInstance().setCookie(pageUrl, cookie)
                 }
             }
-        runCatching { CookieManager.getInstance().flush() }
-        connection.disconnect()
+            runCatching { CookieManager.getInstance().flush() }
+            safeResponse.body.string()
+        }
 
         val injected = if (html.contains("<head>", true)) {
             html.replaceFirst(
@@ -1102,6 +1177,13 @@ internal class PluginWebViewResolver(
             responseHeaders = mapOf("Access-Control-Allow-Origin" to "*")
         }
     }
+
+    private fun blockedWebResponse(): WebResourceResponse =
+        WebResourceResponse(
+            "text/plain",
+            "UTF-8",
+            ByteArrayInputStream(ByteArray(0)),
+        )
 
     private fun shouldInjectAbyssPage(url: String): Boolean {
         val value = url.lowercase()

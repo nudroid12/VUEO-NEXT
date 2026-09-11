@@ -85,6 +85,8 @@ class StremioAddonExtension private constructor(
             StreamSource(
                 name = source.name,
                 url = source.url,
+                streamType = source.streamType,
+                mimeType = source.mimeType,
                 infoHash = source.infoHash,
                 fileIndex = source.fileIndex,
                 quality = source.quality,

@@ -9804,6 +9804,8 @@ private fun PlayerScreen(
     val playableSources = remember(
         availableSources,
         source.url,
+        source.streamType,
+        source.mimeType,
         media.originalLanguage,
     ) {
         (listOf(source) + availableSources)
@@ -9858,6 +9860,8 @@ private fun PlayerScreen(
 
     val player = remember(
         source.url,
+        source.streamType,
+        source.mimeType,
         source.headers,
         mediaKey,
         initialPositionMs,
@@ -9900,10 +9904,7 @@ private fun PlayerScreen(
 
                 val playerMediaItem =
                     buildPlayerMediaItem(
-                        sourceUrl =
-                            requireNotNull(
-                                source.url
-                            ),
+                        source = source,
                         subtitles = subtitles,
                         preferredLanguageCode =
                             playerPreferredSubtitleLanguageCode(
@@ -9991,7 +9992,7 @@ private fun PlayerScreen(
 
             player.setMediaItem(
                 buildPlayerMediaItem(
-                    sourceUrl = requireNotNull(source.url),
+                    source = source,
                     subtitles = subtitles,
                     preferredLanguageCode =
                         playerPreferredSubtitleLanguageCode(
@@ -10521,6 +10522,8 @@ private fun PlayerScreen(
 
     LaunchedEffect(
         source.url,
+        source.streamType,
+        source.mimeType,
     ) {
         sourceRecoverySession.begin(source)
         playbackPhase = PlayerPlaybackPhase.LOADING
@@ -13152,7 +13155,7 @@ private fun formatPlaybackTime(
 }
 
 private fun buildPlayerMediaItem(
-    sourceUrl: String,
+    source: StreamSource,
     subtitles: List<SubtitleTrack>,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -13252,8 +13255,11 @@ private fun buildPlayerMediaItem(
     return Media3MediaItem
         .Builder()
         .setUri(
-            Uri.parse(sourceUrl)
+            Uri.parse(requireNotNull(source.url))
         )
+        .apply {
+            source.playbackMimeType?.let { setMimeType(it) }
+        }
         .setSubtitleConfigurations(
             subtitleConfigurations
         )
