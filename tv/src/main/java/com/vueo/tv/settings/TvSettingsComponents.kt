@@ -177,11 +177,11 @@ internal fun TvSettingsMasterDetailShell(
     fun focusSelectedCategory(): Boolean {
         sidebarFocusIntent = false
         navExpanded = false
-        lastPane = "category"
-        return runCatching {
+        val focused = runCatching {
             categoryRequesters.getValue(selectedCategoryId).requestFocus()
-            true
         }.getOrDefault(false)
+        if (focused) lastPane = "category"
+        return focused
     }
 
     fun focusPanel(): Boolean {
@@ -189,25 +189,28 @@ internal fun TvSettingsMasterDetailShell(
         navExpanded = false
         val rowId = panelFocusTargetId(panelKey) ?: return false
         val requester = requesterForPanelRow(panelKey, rowId)
-        return runCatching {
-            requester.requestFocus()
+        val focused = runCatching { requester.requestFocus() }.getOrDefault(false)
+        if (focused) {
             panelLastFocusedIds[panelKey] = rowId
             lastPane = "panel"
-            true
-        }.getOrDefault(false)
+        }
+        return focused
     }
 
     fun requestDeferredPanelRestore() {
         shellScope.launch {
-            // Dialogs, Android system surfaces, and panel replacement can release
-            // focus before the destination row is attached. Never steal focus back
-            // when the user intentionally entered the global sidebar.
-            delay(70)
-            if (sidebarFocusIntent) return@launch
-            if (!focusPanel()) {
-                delay(90)
-                if (sidebarFocusIntent) return@launch
-                if (!focusPanel()) focusSelectedCategory()
+            // A panel replacement can temporarily leave the focused row detached.
+            // Retry until the destination row is genuinely focusable. Do not steal
+            // focus back after the user intentionally moved to categories/sidebar.
+            for (waitMs in listOf(24L, 48L, 90L, 140L)) {
+                delay(waitMs)
+                if (sidebarFocusIntent || lastPane != "panel") return@launch
+                if (focusPanel()) return@launch
+            }
+            // Empty panels still need a deterministic escape target. Only fall back
+            // after the full retry window, never during a normal panel transition.
+            if (!sidebarFocusIntent && lastPane == "panel" && panelFocusableRowIds[panelKey].isEmpty()) {
+                focusSelectedCategory()
             }
         }
     }
@@ -228,16 +231,10 @@ internal fun TvSettingsMasterDetailShell(
     LaunchedEffect(panelAutoFocusToken) {
         if (panelAutoFocusToken <= 0) return@LaunchedEffect
 
-        // Opening/backing between Settings panels replaces the currently focused
-        // row in the same composition pass. Wait for the new panel to publish its
-        // focusable rows, then retry across frames instead of relying on one 70 ms
-        // request that can lose the race and fall through to the sidebar.
-        delay(24)
-        if (focusPanel()) return@LaunchedEffect
-        delay(48)
-        if (focusPanel()) return@LaunchedEffect
-        delay(90)
-        if (!sidebarFocusIntent && !focusPanel()) focusSelectedCategory()
+        // Opening/backing between Settings panels keeps ownership in the panel.
+        // The destination rows publish asynchronously, so use the shared retry path.
+        lastPane = "panel"
+        requestDeferredPanelRestore()
     }
 
     Box(
@@ -300,8 +297,16 @@ internal fun TvSettingsMasterDetailShell(
                                 requester = categoryRequesters.getValue(category.id),
                                 onFocused = {
                                     navExpanded = false
-                                    lastPane = "category"
-                                    onCategorySelected(category.id)
+                                    if (lastPane == "panel") {
+                                        // During panel replacement Compose may momentarily
+                                        // fall back into the category column. That is not a
+                                        // user navigation intent, so never let focus alone
+                                        // mutate the active Settings page.
+                                        requestDeferredPanelRestore()
+                                    } else {
+                                        lastPane = "category"
+                                        onCategorySelected(category.id)
+                                    }
                                 },
                                 onLeft = ::focusGlobalNav,
                                 onRight = { focusPanel() },

@@ -790,6 +790,16 @@ private fun SourceCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+
+            source.url?.takeIf(String::isNotBlank)?.let { url ->
+                Text(
+                    text = url,
+                    color = if (focused) TvDesign.White.copy(alpha = .58f) else TvDesign.Dim,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         Column(
