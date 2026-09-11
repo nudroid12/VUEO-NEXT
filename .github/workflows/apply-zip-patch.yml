@@ -158,6 +158,52 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      - name: Validate explicit deletions
+        if: steps.zip.outputs.found == 'true'
+        shell: bash
+        env:
+          SOURCE_ROOT: ${{ steps.root.outputs.path }}
+        run: |
+          set -euo pipefail
+
+          DELETE_MANIFEST="$SOURCE_ROOT/.vueo-delete-files.txt"
+          if [ ! -f "$DELETE_MANIFEST" ]; then
+            echo "No explicit deletion manifest."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os
+          from pathlib import PurePosixPath
+
+          manifest = PurePosixPath(os.environ["SOURCE_ROOT"]) / ".vueo-delete-files.txt"
+          lines = open(str(manifest), encoding="utf-8").read().splitlines()
+          count = 0
+
+          for line_number, raw in enumerate(lines, start=1):
+              path_text = raw.strip()
+              if not path_text or path_text.startswith("#"):
+                  continue
+
+              path = PurePosixPath(path_text)
+              if path.is_absolute():
+                  raise SystemExit(f"Unsafe absolute deletion path at line {line_number}: {path_text}")
+              if path_text.startswith("./"):
+                  raise SystemExit(f"Deletion paths must be repository-relative without ./ at line {line_number}: {path_text}")
+              if ".." in path.parts:
+                  raise SystemExit(f"Unsafe parent traversal at line {line_number}: {path_text}")
+              if ".git" in path.parts:
+                  raise SystemExit(f"Deletion manifest cannot modify .git at line {line_number}: {path_text}")
+              if any(ch in path_text for ch in "*?[]"):
+                  raise SystemExit(f"Globs are not allowed in deletion manifest at line {line_number}: {path_text}")
+              if path_text.endswith("/"):
+                  raise SystemExit(f"Deletion manifest accepts exact file paths only at line {line_number}: {path_text}")
+
+              count += 1
+
+          print(f"Explicit deletion manifest validated: {count} file path(s).")
+          PY
+
       - name: Apply files to repository
         if: steps.zip.outputs.found == 'true'
         shell: bash
@@ -168,8 +214,44 @@ jobs:
 
           rsync -a \
             --exclude '.git/' \
+            --exclude '.vueo-delete-files.txt' \
             "$SOURCE_ROOT/" \
             ./
+
+      - name: Apply explicit deletions
+        if: steps.zip.outputs.found == 'true'
+        shell: bash
+        env:
+          SOURCE_ROOT: ${{ steps.root.outputs.path }}
+        run: |
+          set -euo pipefail
+
+          DELETE_MANIFEST="$SOURCE_ROOT/.vueo-delete-files.txt"
+          if [ ! -f "$DELETE_MANIFEST" ]; then
+            exit 0
+          fi
+
+          while IFS= read -r raw || [ -n "$raw" ]; do
+            path="${raw%$'\r'}"
+            path="${path#"${path%%[![:space:]]*}"}"
+            path="${path%"${path##*[![:space:]]}"}"
+            [ -n "$path" ] || continue
+            case "$path" in
+              \#*) continue ;;
+            esac
+
+            if [ -d "$path" ] && [ ! -L "$path" ]; then
+              echo "::error::Deletion manifest may only name files, not directories: $path"
+              exit 1
+            fi
+
+            if [ -e "$path" ] || [ -L "$path" ]; then
+              echo "Deleting: $path"
+              rm -f -- "$path"
+            else
+              echo "Already absent: $path"
+            fi
+          done < "$DELETE_MANIFEST"
 
       - name: Remove uploaded ZIP
         if: steps.zip.outputs.found == 'true'
@@ -234,5 +316,5 @@ jobs:
             echo "## VUEO ZIP Patch"
             echo
             echo "Upload one ZIP containing repository-relative file paths."
-            echo "The workflow extracts the files to those paths, overwrites matching files, removes the ZIP, commits the result, and triggers the VUEO build."
+            echo "The workflow extracts files, overwrites matching paths, applies optional exact-file deletions from .vueo-delete-files.txt, removes the ZIP, commits the result, and triggers the VUEO build."
           } >> "$GITHUB_STEP_SUMMARY"
