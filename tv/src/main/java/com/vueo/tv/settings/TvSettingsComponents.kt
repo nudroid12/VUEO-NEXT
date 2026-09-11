@@ -199,11 +199,14 @@ internal fun TvSettingsMasterDetailShell(
 
     fun requestDeferredPanelRestore() {
         shellScope.launch {
-            // Dialogs and Android system surfaces release focus one frame later.
-            // Retry once so focus never falls through to the global sidebar.
+            // Dialogs, Android system surfaces, and panel replacement can release
+            // focus before the destination row is attached. Never steal focus back
+            // when the user intentionally entered the global sidebar.
             delay(70)
+            if (sidebarFocusIntent) return@launch
             if (!focusPanel()) {
                 delay(90)
+                if (sidebarFocusIntent) return@launch
                 if (!focusPanel()) focusSelectedCategory()
             }
         }
@@ -224,8 +227,17 @@ internal fun TvSettingsMasterDetailShell(
 
     LaunchedEffect(panelAutoFocusToken) {
         if (panelAutoFocusToken <= 0) return@LaunchedEffect
-        delay(70)
-        focusPanel()
+
+        // Opening/backing between Settings panels replaces the currently focused
+        // row in the same composition pass. Wait for the new panel to publish its
+        // focusable rows, then retry across frames instead of relying on one 70 ms
+        // request that can lose the race and fall through to the sidebar.
+        delay(24)
+        if (focusPanel()) return@LaunchedEffect
+        delay(48)
+        if (focusPanel()) return@LaunchedEffect
+        delay(90)
+        if (!sidebarFocusIntent && !focusPanel()) focusSelectedCategory()
     }
 
     Box(
@@ -354,7 +366,7 @@ internal fun TvSettingsMasterDetailShell(
                 if (sidebarFocusIntent) {
                     navExpanded = true
                 } else if (lastPane == "panel") {
-                    focusPanel()
+                    requestDeferredPanelRestore()
                 } else {
                     focusSelectedCategory()
                 }
