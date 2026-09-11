@@ -209,7 +209,7 @@ internal fun TvSettingsMasterDetailShell(
             }
             // Empty panels still need a deterministic escape target. Only fall back
             // after the full retry window, never during a normal panel transition.
-            if (!sidebarFocusIntent && lastPane == "panel" && panelFocusableRowIds[panelKey].isEmpty()) {
+            if (!sidebarFocusIntent && lastPane == "panel" && panelFocusableRowIds[panelKey].isNullOrEmpty()) {
                 focusSelectedCategory()
             }
         }
