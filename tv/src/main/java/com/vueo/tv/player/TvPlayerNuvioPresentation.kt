@@ -89,8 +89,10 @@ internal fun NuvioPlayerPresentation(
     moreRequester: FocusRequester,
     skipRequester: FocusRequester,
     nextContextRequester: FocusRequester,
+    errorRequester: FocusRequester,
     onInteraction: () -> Unit,
     onPlayPause: () -> Unit,
+    onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
     onSeekBy: (Long) -> Unit,
     onNext: () -> Unit,
@@ -184,15 +186,31 @@ internal fun NuvioPlayerPresentation(
         }
 
         playbackError?.let { message ->
-            Text(
-                text = message,
-                color = Color(0xFFFFB0B0),
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                modifier = Modifier.align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = .86f), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(
+                        Color.Black.copy(alpha = .86f),
+                        androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                    )
                     .padding(horizontal = 22.dp, vertical = 16.dp),
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = message,
+                    color = Color(0xFFFFB0B0),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+                NuvioPlayerPromptButton(
+                    text = "Retry",
+                    requester = errorRequester,
+                    downRequester = progressRequester,
+                    onInteraction = onInteraction,
+                    onClick = onRetryPlayback,
+                )
+            }
         }
 
         AnimatedVisibility(

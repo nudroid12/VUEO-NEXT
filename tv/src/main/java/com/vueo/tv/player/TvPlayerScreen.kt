@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -89,6 +90,7 @@ import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
+import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.source.SOURCE_RECOVERY_SOURCE_TIMEOUT_MS
 import com.vueo.shared.core.source.SOURCE_REBUFFER_TIMEOUT_MS
 import com.vueo.shared.core.source.SOURCE_STARTUP_TIMEOUT_MS
@@ -151,6 +153,7 @@ fun TvPlayerScreen(
     val moreRequester = remember { FocusRequester() }
     val skipRequester = remember { FocusRequester() }
     val nextContextRequester = remember { FocusRequester() }
+    val errorRequester = remember { FocusRequester() }
 
     val mediaKey = "${media.type}:${media.id}:${bundle.videoId}"
     val settings = runtime.settingsStore
@@ -173,6 +176,8 @@ fun TvPlayerScreen(
     val externalSubtitlesBySelectionId = remember(bundle.subtitles) {
         bundle.subtitles.associateBy(::tvExternalSubtitleSelectionId)
     }
+    val latestExternalSubtitlesBySelectionId =
+        androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
     var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
@@ -180,6 +185,8 @@ fun TvPlayerScreen(
     var isBuffering by remember(bundle.videoId) { mutableStateOf(false) }
     var recoveryInProgress by remember(bundle.videoId) { mutableStateOf(false) }
     var playbackError by remember(bundle.videoId) { mutableStateOf<String?>(null) }
+    var retryGeneration by remember(bundle.videoId) { mutableIntStateOf(0) }
+    var autoNextCancelled by remember(bundle.videoId) { mutableStateOf(false) }
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
     val latestSubtitleDelayMs = androidx.compose.runtime.rememberUpdatedState(subtitleDelayMs)
@@ -229,6 +236,9 @@ fun TvPlayerScreen(
         )
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(httpFactory))
             .build()
+            .apply {
+                setAudioAttributes(AudioAttributes.DEFAULT, true)
+            }
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -260,6 +270,9 @@ fun TvPlayerScreen(
     var audioAutomaticSelected by remember(mediaKey) { mutableStateOf(true) }
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
+    var appliedSubtitleUrls by remember(bundle.videoId, activeSource.url) {
+        mutableStateOf(bundle.subtitles.map { it.url }.distinct())
+    }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
 
@@ -347,6 +360,7 @@ fun TvPlayerScreen(
 
         if (alternate != null) {
             resumeTargetMs = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
+            saveProgress()
             recoveryInProgress = true
             hasRenderedFirstFrame = false
             isBuffering = false
@@ -366,6 +380,11 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
+            nextCountdown > 0 -> {
+                autoNextCancelled = true
+                nextCountdown = 0
+                requestControlFocus(progressRequester)
+            }
             activePanel != TvPlayerPanel.NONE -> closePanel()
             controlsVisible -> {
                 controlsVisible = false
@@ -396,6 +415,8 @@ fun TvPlayerScreen(
                 sourceUrl = url,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
+                subtitlesOnByDefault = !subtitlesDisabled,
+                autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
                 preferEmbedded = settings.embeddedSubtitlePriority(),
             ),
             resumeTargetMs.coerceAtLeast(0L),
@@ -405,10 +426,55 @@ fun TvPlayerScreen(
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) {
             params = params.setPreferredTextLanguages(*languages.toTypedArray())
         }
+        PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { originalLanguage ->
+            params = params.setPreferredAudioLanguages(originalLanguage)
+        }
         player.trackSelectionParameters = params.build()
         player.setPlaybackSpeed(playbackSpeed)
         player.prepare()
         player.playWhenReady = true
+        appliedSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
+    }
+
+    LaunchedEffect(player, activeSource.url, bundle.subtitles) {
+        val url = activeSource.url ?: return@LaunchedEffect
+        val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
+        if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
+        if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
+
+        val currentPosition = player.currentPosition.coerceAtLeast(0L)
+        val continuePlaying = player.playWhenReady
+        val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
+        val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
+        val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
+
+        audioPreferenceRestored = false
+        subtitlePreferenceRestored = false
+        player.setMediaItem(
+            buildMediaItem(
+                sourceUrl = url,
+                subtitles = bundle.subtitles,
+                preferredLanguages = languages,
+                subtitlesOnByDefault = !subtitlesDisabled,
+                autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
+                preferEmbedded = settings.embeddedSubtitlePriority(),
+            ),
+            currentPosition,
+        )
+        var params = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitlesDisabled)
+        if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) {
+            params = params.setPreferredTextLanguages(*languages.toTypedArray())
+        }
+        PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { originalLanguage ->
+            params = params.setPreferredAudioLanguages(originalLanguage)
+        }
+        player.trackSelectionParameters = params.build()
+        player.prepare()
+        player.playWhenReady = continuePlaying
+        appliedSubtitleUrls = latestSubtitleUrls
     }
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -417,7 +483,7 @@ fun TvPlayerScreen(
                 val currentTextTracks = tvPlayerTrackChoices(
                     tracks = tracks,
                     trackType = C.TRACK_TYPE_TEXT,
-                    externalSubtitles = externalSubtitlesBySelectionId,
+                    externalSubtitles = latestExternalSubtitlesBySelectionId.value,
                 )
                 textTracks = currentTextTracks
                 audioTracks = tvPlayerTrackChoices(
@@ -444,6 +510,31 @@ fun TvPlayerScreen(
                     recoveryInProgress = false
                     playbackError = null
                 }
+                if (playbackState == Player.STATE_ENDED) {
+                    val completedDuration =
+                        player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+                    runtime.playbackStore.clearPosition(mediaKey)
+                    runtime.libraryStore.recordPlayback(
+                        media = media,
+                        videoId = bundle.videoId,
+                        episodeTitle = episode?.title,
+                        season = episode?.season,
+                        episode = episode?.episode,
+                        positionMs = completedDuration,
+                        durationMs = completedDuration,
+                    )
+                    onLibraryChanged()
+                    controlsVisible = true
+                    playing = false
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playing = isPlaying
+                if (!isPlaying && player.playbackState != Player.STATE_ENDED) {
+                    saveProgress()
+                    requestControlFocus(progressRequester)
+                }
             }
 
             override fun onRenderedFirstFrame() {
@@ -458,7 +549,7 @@ fun TvPlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError) {
+    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError, retryGeneration) {
         if (hasRenderedFirstFrame || playbackError != null) return@LaunchedEffect
 
         val timeoutMs = if (sourceRecoverySession.isAutomaticRecoveryActive()) {
@@ -474,7 +565,7 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(activeSource.url, isBuffering, hasRenderedFirstFrame, playbackError) {
+    LaunchedEffect(activeSource.url, isBuffering, hasRenderedFirstFrame, playbackError, retryGeneration) {
         if (!isBuffering || !hasRenderedFirstFrame || playbackError != null) {
             return@LaunchedEffect
         }
@@ -551,7 +642,7 @@ fun TvPlayerScreen(
             val currentTextTracks = tvPlayerTrackChoices(
                 tracks = player.currentTracks,
                 trackType = C.TRACK_TYPE_TEXT,
-                externalSubtitles = externalSubtitlesBySelectionId,
+                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
             )
             val currentAudioTracks = tvPlayerTrackChoices(
                 tracks = player.currentTracks,
@@ -657,15 +748,15 @@ fun TvPlayerScreen(
         restorePanelFocus = null
     }
 
-    LaunchedEffect(ended, nextEpisode?.id, settings.autoPlayNextEpisodeEnabled()) {
-        if (!ended || nextEpisode == null || !settings.autoPlayNextEpisodeEnabled()) {
+    LaunchedEffect(ended, nextEpisode?.id, settings.autoPlayNextEpisodeEnabled(), autoNextCancelled) {
+        if (!ended || nextEpisode == null || !settings.autoPlayNextEpisodeEnabled() || autoNextCancelled) {
             nextCountdown = 0
             return@LaunchedEffect
         }
         for (remaining in 8 downTo 1) {
             nextCountdown = remaining
             delay(1_000)
-            if (player.playbackState != Player.STATE_ENDED) {
+            if (player.playbackState != Player.STATE_ENDED || autoNextCancelled) {
                 nextCountdown = 0
                 return@LaunchedEffect
             }
@@ -673,6 +764,13 @@ fun TvPlayerScreen(
         nextCountdown = 0
         saveProgress()
         onPlayNextEpisode(nextEpisode)
+    }
+
+    LaunchedEffect(playbackError) {
+        if (playbackError == null) return@LaunchedEffect
+        controlsVisible = true
+        delay(16)
+        runCatching { errorRequester.requestFocus() }
     }
 
     LaunchedEffect(controlsVisible, activePanel, interactionToken, playing) {
@@ -814,6 +912,7 @@ fun TvPlayerScreen(
             factory = { viewContext ->
                 PlayerView(viewContext).apply {
                     useController = false
+                    keepScreenOn = true
                     this.player = exoPlayer
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     this.resizeMode = resizeMode
@@ -826,6 +925,7 @@ fun TvPlayerScreen(
             },
             update = {
                 it.player = exoPlayer
+                it.keepScreenOn = true
                 it.resizeMode = resizeMode
                 it.subtitleView?.setApplyEmbeddedStyles(false)
                 it.subtitleView?.setApplyEmbeddedFontSizes(false)
@@ -916,9 +1016,24 @@ fun TvPlayerScreen(
             moreRequester = moreRequester,
             skipRequester = skipRequester,
             nextContextRequester = nextContextRequester,
+            errorRequester = errorRequester,
             onInteraction = ::noteInteraction,
             onPlayPause = ::togglePlayback,
+            onRetryPlayback = {
+                saveProgress()
+                sourceRecoverySession.allowRetry(activeSource.toSourceCandidateForPlayer())
+                resumeTargetMs = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
+                playbackError = null
+                recoveryInProgress = false
+                hasRenderedFirstFrame = false
+                isBuffering = false
+                retryGeneration += 1
+                player.prepare()
+                player.play()
+                requestControlFocus(progressRequester)
+            },
             onRestart = {
+                autoNextCancelled = false
                 player.seekTo(0L)
                 positionMs = 0L
                 if (!player.isPlaying) player.play()
@@ -961,6 +1076,7 @@ fun TvPlayerScreen(
                         if (target != null) {
                             if (target.url != activeSource.url) {
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
+                                saveProgress()
                                 sourceRecoverySession.allowRetry(target.toSourceCandidateForPlayer())
                                 activeSource = target
                             }
@@ -1113,6 +1229,8 @@ private fun buildMediaItem(
     sourceUrl: String,
     subtitles: List<SubtitleTrack>,
     preferredLanguages: List<String>,
+    subtitlesOnByDefault: Boolean,
+    autoSelectPreferred: Boolean,
     preferEmbedded: Boolean,
 ): MediaItem {
     val normalizedPreferredLanguages = preferredLanguages
@@ -1134,7 +1252,21 @@ private fun buildMediaItem(
             .setLanguage(tvCanonicalLanguage(subtitle.language).takeUnless { it == "und" })
             .setLabel(tvExternalSubtitleLabel(subtitle))
             .setMimeType(subtitleMimeType(subtitle.url))
-            .setSelectionFlags(if (!preferEmbedded && index == 0) C.SELECTION_FLAG_DEFAULT else 0)
+            .setSelectionFlags(
+                if (
+                    subtitlesOnByDefault &&
+                    autoSelectPreferred &&
+                    !preferEmbedded &&
+                    (
+                        normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language)) == 0 ||
+                            (normalizedPreferredLanguages.isEmpty() && index == 0)
+                    )
+                ) {
+                    C.SELECTION_FLAG_DEFAULT
+                } else {
+                    0
+                }
+            )
             .build()
     }
 
