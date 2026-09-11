@@ -85,6 +85,13 @@ class TvRuntime(context: Context) {
         CatalogDiscoveryCache.restoreHome(appContext)
     }
 
+    fun cachedHomeRows(): List<CatalogRow> =
+        CatalogDiscoveryCache.home(allowStale = true)
+            .orEmpty()
+            .let(::applyCatalogPreferences)
+
+    fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
+
     suspend fun prepareAddonsInBackground() {
         addonLoadMutex.lock()
         try {

@@ -35,8 +35,8 @@ fun TvHomeScreen(
     onResume: (LibraryPlaybackEntry) -> Unit,
     onProfile: () -> Unit,
 ) {
-    var catalogRows by remember { mutableStateOf<List<CatalogRow>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var catalogRows by remember { mutableStateOf(runtime.cachedHomeRows()) }
+    var loading by remember { mutableStateOf(catalogRows.isEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(runtime, refreshToken) {
@@ -49,7 +49,7 @@ fun TvHomeScreen(
                 if (catalogRows.isEmpty()) error = failure.message ?: "Unable to load Home"
             }
 
-        loading = false
+        loading = catalogRows.isEmpty() && !runtime.isHomeCatalogRuntimeReady()
     }
 
     val continueWatching = remember(refreshToken) {
@@ -159,6 +159,13 @@ fun TvHomeScreen(
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     var navExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(rows.isEmpty(), loading, error) {
+        if (rows.isEmpty() && !loading) {
+            navExpanded = true
+            runCatching { navRequesters.getValue("Home").requestFocus() }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(

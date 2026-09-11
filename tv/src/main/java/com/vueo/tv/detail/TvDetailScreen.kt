@@ -31,8 +31,9 @@ import kotlinx.coroutines.launch
 fun TvDetailScreen(
     runtime: TvRuntime,
     initial: MediaItem,
+    initialLibraryEntry: LibraryPlaybackEntry? = null,
     onBack: () -> Unit,
-    onWatch: (MediaItem, EpisodeItem?) -> Unit,
+    onWatch: (MediaItem, EpisodeItem?, Long) -> Unit,
     onOpenRelated: (MediaItem) -> Unit = {},
     onLibraryChanged: () -> Unit,
 ) {
@@ -99,7 +100,7 @@ fun TvDetailScreen(
         }
 
         val history = runtime.libraryStore.history()
-        val resumeEntry = history.firstOrNull { entry ->
+        val resumeEntry = initialLibraryEntry ?: history.firstOrNull { entry ->
             entry.media.id == media.id &&
                 entry.media.type == media.type &&
                 entry.season != null &&
@@ -224,8 +225,15 @@ fun TvDetailScreen(
     val history = remember(item.id, item.type, selectedEpisode, loading) {
         runtime.libraryStore.history()
     }
-    val playbackEntry = remember(item.id, item.type, selectedEpisode?.id, history) {
+    val playbackEntry = remember(
+        item.id,
+        item.type,
+        selectedEpisode?.id,
+        history,
+        initialLibraryEntry,
+    ) {
         detailPlaybackEntry(item, selectedEpisode, history)
+            ?: detailInitialPlaybackEntry(item, selectedEpisode, initialLibraryEntry)
     }
     val seasons = remember(item.episodes) {
         val regular = item.episodes.map(EpisodeItem::season).distinct().filter { it > 0 }.sorted()
@@ -265,8 +273,13 @@ fun TvDetailScreen(
             primaryActionLabel = primaryActionLabel,
         ),
         onPlay = {
-            if (!loading && (!item.isDetailSeries() || selectedEpisode != null)) {
-                onWatch(item, selectedEpisode)
+            val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
+            if (!seriesNeedsEpisode || selectedEpisode != null) {
+                val startPositionMs = playbackEntry
+                    ?.takeIf(::detailCanResume)
+                    ?.positionMs
+                    ?: 0L
+                onWatch(item, selectedEpisode, startPositionMs)
             }
         },
         onToggleList = {
@@ -304,7 +317,13 @@ fun TvDetailScreen(
             selectedEpisode = episode
             NuvioDetailFocusMemory.selectedSeason = episode.season
             NuvioDetailFocusMemory.episodeId = episode.id
-            onWatch(item, episode)
+            val episodeEntry = detailPlaybackEntry(item, episode, history)
+                ?: detailInitialPlaybackEntry(item, episode, initialLibraryEntry)
+            val startPositionMs = episodeEntry
+                ?.takeIf(::detailCanResume)
+                ?.positionMs
+                ?: 0L
+            onWatch(item, episode, startPositionMs)
         },
         onOpenRelated = onOpenRelated,
     )
@@ -341,6 +360,21 @@ internal fun detailPlaybackEntry(
             } else {
                 !media.isDetailSeries()
             }
+    }
+
+private fun detailInitialPlaybackEntry(
+    media: MediaItem,
+    episode: EpisodeItem?,
+    initial: LibraryPlaybackEntry?,
+): LibraryPlaybackEntry? =
+    initial?.takeIf { entry ->
+        if (media.isDetailSeries()) {
+            episode != null &&
+                entry.season == episode.season &&
+                entry.episode == episode.episode
+        } else {
+            true
+        }
     }
 
 internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean =

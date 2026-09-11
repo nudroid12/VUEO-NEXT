@@ -118,6 +118,17 @@ internal fun TvHomePresentation(
                         .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
                 )
             }
+
+            else -> {
+                Text(
+                    text = "No Home catalogs available. Add or enable content in Settings.",
+                    color = TvDesign.Muted,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
+                )
+            }
         }
     }
 }

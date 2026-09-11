@@ -77,6 +77,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
+    var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
     var selectedEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
     var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
@@ -167,6 +168,17 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
     fun openDetail(media: MediaItem, from: TvRoute) {
         selectedMedia = media
+        selectedLibraryEntry = null
+        selectedEpisode = null
+        initialPositionMs = 0L
+        detailBackStack = emptyList()
+        detailReturnRoute = from
+        route = TvRoute.DETAIL
+    }
+
+    fun openPlaybackDetail(entry: LibraryPlaybackEntry, from: TvRoute) {
+        selectedMedia = entry.media
+        selectedLibraryEntry = entry
         selectedEpisode = null
         initialPositionMs = 0L
         detailBackStack = emptyList()
@@ -179,33 +191,13 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         if (previous != null) {
             detailBackStack = detailBackStack.dropLast(1)
             selectedMedia = previous
+            selectedLibraryEntry = null
             selectedEpisode = null
             initialPositionMs = 0L
         } else {
+            selectedLibraryEntry = null
             route = detailReturnRoute
         }
-    }
-
-    fun resume(entry: LibraryPlaybackEntry, from: TvRoute) {
-        selectedMedia = entry.media
-        val resumeSeason = entry.season
-        val resumeEpisode = entry.episode
-        selectedEpisode =
-            if (
-                entry.media.type.lowercase() in setOf("series", "tv") &&
-                resumeSeason != null &&
-                resumeEpisode != null
-            ) {
-                EpisodeItem(
-                    id = entry.videoId,
-                    title = entry.episodeTitle ?: "Episode $resumeEpisode",
-                    season = resumeSeason,
-                    episode = resumeEpisode,
-                )
-            } else null
-        initialPositionMs = entry.positionMs
-        sourceReturnRoute = from
-        route = TvRoute.SOURCE
     }
 
     fun sourceSessionKey(media: MediaItem, episode: EpisodeItem?): String =
@@ -355,7 +347,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         refreshToken = refreshToken,
                         onNavigate = ::navigate,
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },
-                        onResume = { resume(it, TvRoute.HOME) },
+                        onResume = { openPlaybackDetail(it, TvRoute.HOME) },
                         onProfile = { openDna(TvRoute.HOME) },
                     )
                 }
@@ -379,7 +371,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.LIBRARY) },
                         onOpenMedia = { openDetail(it, TvRoute.LIBRARY) },
-                        onResume = { resume(it, TvRoute.LIBRARY) },
+                        onResume = { openPlaybackDetail(it, TvRoute.LIBRARY) },
                         onBack = { route = TvRoute.HOME },
                     )
                 }
@@ -428,11 +420,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         TvDetailScreen(
                             runtime = runtime,
                             initial = media,
+                            initialLibraryEntry = selectedLibraryEntry,
                             onBack = ::closeDetail,
-                            onWatch = { enriched, episode ->
+                            onWatch = { enriched, episode, startPositionMs ->
                                 selectedMedia = enriched
                                 selectedEpisode = episode
-                                initialPositionMs = 0L
+                                initialPositionMs = startPositionMs
                                 sourceReturnRoute = TvRoute.DETAIL
                                 route = TvRoute.SOURCE
                             },
@@ -441,6 +434,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                     detailBackStack = detailBackStack + current
                                 }
                                 selectedMedia = related
+                                selectedLibraryEntry = null
                                 selectedEpisode = null
                                 initialPositionMs = 0L
                             },
