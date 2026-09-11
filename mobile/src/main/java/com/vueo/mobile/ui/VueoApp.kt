@@ -4027,52 +4027,27 @@ private fun SearchScreen(
             }
 
             val remote =
-                try {
-                    engine.search(
-                        query = normalized,
-                        onPartial = { partial ->
-                            if (
-                                requestId ==
-                                    searchRequestId &&
-                                query.trim() ==
-                                    normalized &&
-                                searchMode ==
-                                    requestedMode
-                            ) {
-                                searchResults =
-                                    searchRankAndDedupe(
-                                        items =
-                                            partial +
-                                                local,
-                                        query =
-                                            normalized,
-                                    )
-                            }
-                        },
-                    )
-                } catch (
-                    cancelled:
-                        CancellationException
-                ) {
-                    throw cancelled
-                } catch (
-                    _: Throwable
-                ) {
-                    emptyList()
-                }
+                SearchOrchestrator.remoteTitleResults(
+                    engine = engine,
+                    query = normalized,
+                    localResults = local,
+                    onPartial = { partial ->
+                        if (
+                            requestId == searchRequestId &&
+                            query.trim() == normalized &&
+                            searchMode == requestedMode
+                        ) {
+                            searchResults = partial
+                        }
+                    },
+                )
 
             if (
                 requestId == searchRequestId &&
                 query.trim() == normalized &&
                 searchMode == requestedMode
             ) {
-                searchResults =
-                    searchRankAndDedupe(
-                        items =
-                            remote + local,
-                        query = normalized,
-                    )
-
+                searchResults = remote
                 searching = false
             }
 
@@ -4082,13 +4057,13 @@ private fun SearchScreen(
         val tmdbApiKey =
             searchPluginStore
                 .tmdbApiKey()
-        val addonActorSearch =
-            engine.hasActorSearchAddons()
+        val actorAvailability =
+            SearchOrchestrator.actorAvailability(
+                engine = engine,
+                tmdbApiKey = tmdbApiKey,
+            )
 
-        actorSourceAvailable =
-            addonActorSearch ||
-                tmdbApiKey.isNotBlank()
-
+        actorSourceAvailable = actorAvailability.available
         searchResults = emptyList()
 
         if (!actorSourceAvailable) {
@@ -4107,88 +4082,28 @@ private fun SearchScreen(
             return@LaunchedEffect
         }
 
-        coroutineScope {
-            var providerItems =
-                emptyList<MediaItem>()
-            var tmdbItems =
-                emptyList<MediaItem>()
-
-            fun publishActorResults() {
-                if (
-                    requestId == searchRequestId &&
-                    query.trim() == normalized &&
-                    searchMode == requestedMode
-                ) {
-                    searchResults =
-                        engine.mergeActorResults(
-                            items =
-                                providerItems +
-                                    tmdbItems,
-                        )
-                }
-            }
-
-            launch {
-                providerItems =
-                    if (!addonActorSearch) {
-                        emptyList()
-                    } else {
-                        try {
-                            engine.searchActor(
-                                query = normalized,
-                                onPartial = { partial ->
-                                    providerItems = partial
-                                    publishActorResults()
-                                },
-                            )
-                        } catch (
-                            cancelled:
-                                CancellationException
-                        ) {
-                            throw cancelled
-                        } catch (
-                            _: Throwable
-                        ) {
-                            emptyList()
-                        }
+        val actorResults =
+            SearchOrchestrator.actorResults(
+                engine = engine,
+                query = normalized,
+                tmdbApiKey = tmdbApiKey,
+                onPartial = { partial ->
+                    if (
+                        requestId == searchRequestId &&
+                        query.trim() == normalized &&
+                        searchMode == requestedMode
+                    ) {
+                        searchResults = partial
                     }
-
-                publishActorResults()
-            }
-
-            launch {
-                tmdbItems =
-                    if (tmdbApiKey.isBlank()) {
-                        emptyList()
-                    } else {
-                        try {
-                            TmdbEnhancementClient
-                                .actorFilmography(
-                                    query = normalized,
-                                    apiKey = tmdbApiKey,
-                                )
-                                .orEmpty()
-                        } catch (
-                            cancelled:
-                                CancellationException
-                        ) {
-                            throw cancelled
-                        } catch (
-                            _: Throwable
-                        ) {
-                            emptyList()
-                        }
-                    }
-
-                publishActorResults()
-            }
-        }
+                },
+            )
 
         if (
             requestId == searchRequestId &&
             query.trim() == normalized &&
             searchMode == requestedMode
         ) {
+            searchResults = actorResults
             searching = false
         }
     }
@@ -8178,6 +8093,43 @@ private fun DetailsLoadingSkeleton() {
             color =
                 VueoPalette.Surface,
         ) {}
+    }
+}
+
+private fun baseDetailsRatings(
+    media: MediaItem,
+): List<MediaRating> =
+    buildList {
+        media.imdbRating
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?.let { add(MediaRating(source = "imdb", value = it)) }
+
+        media.tmdbRating
+            ?.takeIf { it.isFinite() && it > 0.0 }
+            ?.let { add(MediaRating(source = "tmdb", value = it)) }
+    }
+
+private fun cleanDetailsReleaseInfo(
+    releaseInfo: String?,
+): String? =
+    releaseInfo
+        ?.trim()
+        ?.trimEnd { char ->
+            char.isWhitespace() || char == '-' || char == '–' || char == '—'
+        }
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+
+private fun formatDetailsRuntime(
+    minutes: Int,
+): String {
+    if (minutes <= 0) return ""
+    val hours = minutes / 60
+    val remaining = minutes % 60
+    return when {
+        hours <= 0 -> "${minutes}m"
+        remaining <= 0 -> "${hours}h"
+        else -> "${hours}h ${remaining}m"
     }
 }
 

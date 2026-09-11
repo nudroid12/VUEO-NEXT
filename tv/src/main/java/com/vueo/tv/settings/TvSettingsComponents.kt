@@ -87,7 +87,7 @@ internal data class TvSettingsMetric(
     val label: String,
 )
 
-private data class TvSettingsEmbeddedHost(
+internal data class TvSettingsEmbeddedHost(
     val panelKey: String,
     val requesterFor: (String) -> FocusRequester,
     val onFocusableRowsChanged: (List<String>) -> Unit,
