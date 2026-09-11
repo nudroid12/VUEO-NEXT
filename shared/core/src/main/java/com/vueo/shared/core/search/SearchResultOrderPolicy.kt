@@ -1,6 +1,7 @@
 package com.vueo.shared.core.search
 
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.media.MediaTypePolicy
 
 /**
  * Mobile search result ordering promoted to Shared Core so Mobile and TV use
@@ -15,9 +16,9 @@ object SearchResultOrderPolicy {
     ): Boolean = when (filter) {
         SearchMediaFilter.ALL -> true
         SearchMediaFilter.MOVIES ->
-            item.type.equals("movie", ignoreCase = true) && !isAnime(item, animeCatalogKeys)
+            MediaTypePolicy.isMovie(item.type) && !isAnime(item, animeCatalogKeys)
         SearchMediaFilter.SERIES ->
-            item.type.equals("series", ignoreCase = true) && !isAnime(item, animeCatalogKeys)
+            MediaTypePolicy.isSeries(item.type) && !isAnime(item, animeCatalogKeys)
         SearchMediaFilter.ANIME -> isAnime(item, animeCatalogKeys)
     }
 

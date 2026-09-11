@@ -62,14 +62,12 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
@@ -117,6 +115,8 @@ internal class TvSearchSession {
     var searchResults by mutableStateOf<List<MediaItem>>(emptyList())
     var discoverRows by mutableStateOf<List<CatalogRow>>(emptyList())
     var actorSourceAvailable by mutableStateOf(true)
+    var completedSearchKey by mutableStateOf<String?>(null)
+    var discoverContentVersion by mutableStateOf<Int?>(null)
 
     var focusedMediaKey by mutableStateOf<String?>(null)
     var restoreResultsFocus by mutableStateOf(false)
@@ -134,7 +134,6 @@ internal fun TvSearchScreen(
     onOpenMedia: (MediaItem) -> Unit,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
     var searching by remember { mutableStateOf(false) }
     var discovering by remember { mutableStateOf(session.discoverRows.isEmpty()) }
     var requestId by remember { mutableStateOf(0L) }
@@ -160,29 +159,34 @@ internal fun TvSearchScreen(
     }
 
     LaunchedEffect(contentVersion) {
-        CatalogDiscoveryCache.home(allowStale = true)
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { session.discoverRows = it }
+        val versionChanged = session.discoverContentVersion != contentVersion
+        val cached = runtime.cachedHomeRows()
 
-        if (session.discoverRows.isNotEmpty()) {
+        if (cached.isNotEmpty()) {
+            session.discoverRows = cached
+            session.discoverContentVersion = contentVersion
             discovering = false
             return@LaunchedEffect
         }
 
-        discovering = true
-        runCatching {
-            runtime.engine.loadCatalogRows(forceRefresh = false)
-        }.onSuccess { fresh ->
-            if (fresh.isNotEmpty()) {
-                session.discoverRows = fresh
-                CatalogDiscoveryCache.persistHome(
-                    context = context.applicationContext,
-                    rows = fresh,
-                )
-            }
-        }.onFailure {
-            session.discoverRows = CatalogDiscoveryCache.home(allowStale = true).orEmpty()
+        if (!versionChanged && session.discoverRows.isNotEmpty()) {
+            discovering = false
+            return@LaunchedEffect
         }
+
+        // Content Manager mutations clear the shared cache. Do not keep showing
+        // a removed/disabled catalog from TvSearchSession while the fresh set loads.
+        if (versionChanged) {
+            session.discoverRows = emptyList()
+        }
+
+        discovering = true
+        session.discoverRows = runCatching {
+            runtime.homeRows(forceRefresh = false)
+        }.getOrElse {
+            runtime.cachedHomeRows()
+        }
+        session.discoverContentVersion = contentVersion
         discovering = false
     }
 
@@ -191,16 +195,18 @@ internal fun TvSearchScreen(
         requestId += 1L
         val thisRequest = requestId
         val requestedMode = session.mode
+        val searchKey = "$contentVersion|${requestedMode.name}|$normalized"
+
+        if (session.completedSearchKey == searchKey) {
+            searching = false
+            return@LaunchedEffect
+        }
 
         if (normalized.length < 2) {
             searching = false
             session.actorSourceAvailable = true
-            session.searchResults =
-                if (requestedMode == TvSearchMode.TITLE && normalized.length >= 2) {
-                    SearchOrchestrator.localTitleResults(normalized)
-                } else {
-                    emptyList()
-                }
+            session.searchResults = emptyList()
+            session.completedSearchKey = searchKey
             return@LaunchedEffect
         }
 
@@ -238,6 +244,7 @@ internal fun TvSearchScreen(
                 session.mode == requestedMode
             ) {
                 session.searchResults = remote
+                session.completedSearchKey = searchKey
                 searching = false
             }
             return@LaunchedEffect
@@ -252,6 +259,7 @@ internal fun TvSearchScreen(
         session.searchResults = emptyList()
 
         if (!session.actorSourceAvailable) {
+            session.completedSearchKey = searchKey
             searching = false
             return@LaunchedEffect
         }
@@ -285,6 +293,7 @@ internal fun TvSearchScreen(
             session.mode == requestedMode
         ) {
             session.searchResults = actorResults
+            session.completedSearchKey = searchKey
             searching = false
         }
     }
@@ -378,7 +387,12 @@ internal fun TvSearchScreen(
         initialFirstVisibleItemScrollOffset = session.firstVisibleItemScrollOffset,
     )
     val resultKeys = remember(filteredItems) { filteredItems.map(::mediaKey) }
-    val resultRequesters = remember(resultKeys) { resultKeys.associateWith { FocusRequester() } }
+    val resultRequesterCache = remember(session.query, session.mode) {
+        mutableMapOf<String, FocusRequester>()
+    }
+    val resultRequesters = resultKeys.associateWith { key ->
+        resultRequesterCache.getOrPut(key) { FocusRequester() }
+    }
 
     fun resetGridForFilterChange() {
         session.focusedMediaKey = null
@@ -409,31 +423,61 @@ internal fun TvSearchScreen(
 
     LaunchedEffect(session.restoreResultsFocus, filteredItems) {
         if (!session.restoreResultsFocus) return@LaunchedEffect
-        val key = session.focusedMediaKey ?: return@LaunchedEffect
-        val index = filteredItems.indexOfFirst { mediaKey(it) == key }
-        if (index < 0) return@LaunchedEffect
 
-        runCatching { gridState.scrollToItem(index) }
-        delay(90)
-        val restored = runCatching {
-            resultRequesters.getValue(key).requestFocus()
-            true
-        }.getOrDefault(false)
-        if (restored) session.restoreResultsFocus = false
+        val key = session.focusedMediaKey
+        val index = key?.let { target ->
+            filteredItems.indexOfFirst { mediaKey(it) == target }
+        } ?: -1
+
+        val restored = if (index >= 0 && key != null) {
+            runCatching { gridState.scrollToItem(index) }
+            delay(90)
+            runCatching {
+                resultRequesters.getValue(key).requestFocus()
+                true
+            }.getOrDefault(false)
+        } else {
+            false
+        }
+
+        session.restoreResultsFocus = false
+        if (!restored) {
+            session.focusedMediaKey = null
+            delay(40)
+            val firstKey = resultKeys.firstOrNull()
+            val fallbackRestored = firstKey != null && runCatching {
+                gridState.scrollToItem(0)
+                resultRequesters.getValue(firstKey).requestFocus()
+                true
+            }.getOrDefault(false)
+            if (!fallbackRestored) {
+                runCatching { fieldRequester.requestFocus() }
+            }
+        }
     }
 
     fun focusFirstResult(): Boolean {
         val firstKey = resultKeys.firstOrNull() ?: return false
-        return runCatching {
-            resultRequesters.getValue(firstKey).requestFocus()
-            true
-        }.getOrDefault(false)
+        scope.launch {
+            runCatching { gridState.scrollToItem(0) }
+            delay(40)
+            runCatching { resultRequesters.getValue(firstKey).requestFocus() }
+        }
+        return true
+    }
+
+    fun dismissChoiceDialog() {
+        val restoreFocus = dialogReturnFocus
+        choiceDialog = null
+        dialogReturnFocus = null
+        scope.launch {
+            delay(40)
+            restoreFocus?.invoke()
+        }
     }
 
     BackHandler(enabled = choiceDialog != null) {
-        dialogReturnFocus?.invoke()
-        choiceDialog = null
-        dialogReturnFocus = null
+        dismissChoiceDialog()
     }
     BackHandler(enabled = choiceDialog == null, onBack = onBack)
 
@@ -472,19 +516,17 @@ internal fun TvSearchScreen(
                             if (next != session.mode) {
                                 session.mode = next
                                 session.searchResults = emptyList()
+                                session.completedSearchKey = null
                                 session.genre = null
-                                session.focusedMediaKey = null
-                                session.restoreResultsFocus = false
-                                session.firstVisibleItemIndex = 0
-                                session.firstVisibleItemScrollOffset = 0
+                                resetGridForFilterChange()
                             }
                         },
-                        onValueChange = {
-                            session.query = it
-                            session.restoreResultsFocus = false
-                            session.focusedMediaKey = null
-                            session.firstVisibleItemIndex = 0
-                            session.firstVisibleItemScrollOffset = 0
+                        onValueChange = { nextQuery ->
+                            if (nextQuery != session.query) {
+                                session.query = nextQuery
+                                session.completedSearchKey = null
+                                resetGridForFilterChange()
+                            }
                         },
                         onLeftWhenEmpty = {
                             navExpanded = true
@@ -544,9 +586,7 @@ internal fun TvSearchScreen(
                                                 resetGridForFilterChange()
                                             }
                                         }
-                                    dialogReturnFocus?.invoke()
-                                    choiceDialog = null
-                                    dialogReturnFocus = null
+                                    dismissChoiceDialog()
                                 },
                             )
                         },
@@ -580,9 +620,7 @@ internal fun TvSearchScreen(
                                                 resetGridForFilterChange()
                                             }
                                         }
-                                    dialogReturnFocus?.invoke()
-                                    choiceDialog = null
-                                    dialogReturnFocus = null
+                                    dismissChoiceDialog()
                                 },
                             )
                         },
@@ -610,9 +648,7 @@ internal fun TvSearchScreen(
                                         session.genre = next
                                         resetGridForFilterChange()
                                     }
-                                    dialogReturnFocus?.invoke()
-                                    choiceDialog = null
-                                    dialogReturnFocus = null
+                                    dismissChoiceDialog()
                                 },
                             )
                         },
