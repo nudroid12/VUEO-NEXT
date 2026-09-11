@@ -184,16 +184,17 @@ import com.vueo.mobile.core.extensions.SourceDiscoveryCache
 import com.vueo.mobile.core.extensions.CatalogDiscoveryCache
 import com.vueo.mobile.core.enrichment.MdblistClient
 import com.vueo.mobile.core.enrichment.MediaRating
-import com.vueo.mobile.core.enrichment.RichDetailsClient
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.detail.DetailPeoplePolicy
+import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.home.HomeCatalogPolicy
 import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
-import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.search.SearchResultOrderPolicy
+import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.source.SourceDiscoveryEngine
@@ -4171,14 +4172,11 @@ private fun SearchScreen(
             animeCatalogKeys,
         ) {
             sourceItems
-                .filter {
-                    item ->
-                    searchMatchesType(
+                .filter { item ->
+                    SearchResultOrderPolicy.matchesType(
                         item = item,
-                        filter =
-                            typeFilter,
-                        animeCatalogKeys =
-                            animeCatalogKeys,
+                        filter = typeFilter.toSearchMediaFilter(),
+                        animeCatalogKeys = animeCatalogKeys,
                     )
                 }
                 .flatMap {
@@ -4233,14 +4231,12 @@ private fun SearchScreen(
                 sourceItems
                     .filter {
                         item ->
-                        searchMatchesType(
+                        SearchResultOrderPolicy.matchesType(
                             item = item,
-                            filter =
-                                typeFilter,
-                            animeCatalogKeys =
-                                animeCatalogKeys,
+                            filter = typeFilter.toSearchMediaFilter(),
+                            animeCatalogKeys = animeCatalogKeys,
                         ) &&
-                            searchMatchesGenre(
+                            SearchResultOrderPolicy.matchesGenre(
                                 item = item,
                                 genre = genre,
                             )
@@ -4718,210 +4714,33 @@ private fun SearchSortMode.toDiscoverSortMode(): DiscoverSortMode =
         SearchSortMode.NEWEST -> DiscoverSortMode.NEWEST
     }
 
-private fun searchMatchesType(
-    item: MediaItem,
-    filter: SearchTypeFilter,
-    animeCatalogKeys: Set<String>,
-): Boolean =
-    when (filter) {
-        SearchTypeFilter.ALL ->
-            true
-
-        SearchTypeFilter.MOVIES ->
-            item.type.equals(
-                "movie",
-                ignoreCase = true,
-            ) &&
-                !searchIsAnime(
-                    item = item,
-                    animeCatalogKeys =
-                        animeCatalogKeys,
-                )
-
-        SearchTypeFilter.SERIES ->
-            item.type.equals(
-                "series",
-                ignoreCase = true,
-            ) &&
-                !searchIsAnime(
-                    item = item,
-                    animeCatalogKeys =
-                        animeCatalogKeys,
-                )
-
-        SearchTypeFilter.ANIME ->
-            searchIsAnime(
-                item = item,
-                animeCatalogKeys =
-                    animeCatalogKeys,
-            )
+private fun SearchTypeFilter.toSearchMediaFilter(): SearchMediaFilter =
+    when (this) {
+        SearchTypeFilter.ALL -> SearchMediaFilter.ALL
+        SearchTypeFilter.MOVIES -> SearchMediaFilter.MOVIES
+        SearchTypeFilter.SERIES -> SearchMediaFilter.SERIES
+        SearchTypeFilter.ANIME -> SearchMediaFilter.ANIME
     }
-
-private fun searchIsAnime(
-    item: MediaItem,
-    animeCatalogKeys: Set<String>,
-): Boolean {
-    if (
-        item.type.equals(
-            "anime",
-            ignoreCase = true,
-        ) ||
-        item.genres.any {
-            it.equals(
-                "anime",
-                ignoreCase = true,
-            )
-        }
-    ) {
-        return true
-    }
-
-    val key =
-        "${item.type}:${item.id}"
-
-    if (key in animeCatalogKeys) {
-        return true
-    }
-
-    return listOfNotNull(
-        item.sourceExtensionId,
-        item.id,
-    ).any {
-        it.contains(
-            "anime",
-            ignoreCase = true,
-        )
-    }
-}
-
-private fun searchMatchesGenre(
-    item: MediaItem,
-    genre: String?,
-): Boolean {
-    if (genre == null) {
-        return true
-    }
-
-    return item.genres.any {
-        it.equals(
-            genre,
-            ignoreCase = true,
-        )
-    }
-}
 
 private fun searchSortActorItems(
     items: List<MediaItem>,
     mode: SearchSortMode,
 ): List<MediaItem> =
-    when (mode) {
-        SearchSortMode.POPULAR,
-        SearchSortMode.TRENDING ->
-            items
-
-        SearchSortMode.NEWEST ->
-            items.sortedByDescending {
-                searchReleaseYear(it)
-            }
-    }
+    SearchResultOrderPolicy.sortActorItems(
+        items = items,
+        mode = mode.toDiscoverSortMode(),
+    )
 
 private fun searchSortItems(
     items: List<MediaItem>,
     mode: SearchSortMode,
     query: String? = null,
-): List<MediaItem> {
-    val normalizedQuery =
-        query
-            ?.let(::searchNormalizeText)
-            .orEmpty()
-
-    if (normalizedQuery.isBlank()) {
-        return when (mode) {
-            SearchSortMode.POPULAR ->
-                items.sortedByDescending {
-                    it.imdbRating
-                        ?: it.tmdbRating
-                        ?: 0.0
-                }
-
-            SearchSortMode.TRENDING ->
-                items
-
-            SearchSortMode.NEWEST ->
-                items.sortedByDescending {
-                    searchReleaseYear(it)
-                }
-        }
-    }
-
-    val relevance =
-        compareByDescending<MediaItem> {
-            searchRelevanceScore(
-                item = it,
-                query = normalizedQuery,
-            )
-        }
-
-    return when (mode) {
-        SearchSortMode.POPULAR ->
-            items.sortedWith(
-                relevance
-                    .thenByDescending {
-                        it.imdbRating
-                            ?: it.tmdbRating
-                            ?: 0.0
-                    }
-                    .thenByDescending {
-                        searchReleaseYear(it)
-                    }
-            )
-
-        SearchSortMode.TRENDING ->
-            items.sortedWith(
-                relevance
-                    .thenByDescending {
-                        searchMetadataScore(it)
-                    }
-            )
-
-        SearchSortMode.NEWEST ->
-            items.sortedWith(
-                relevance
-                    .thenByDescending {
-                        searchReleaseYear(it)
-                    }
-                    .thenByDescending {
-                        it.imdbRating
-                            ?: it.tmdbRating
-                            ?: 0.0
-                    }
-            )
-    }
-}
-
-private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =
-    SearchPolicy.isRelevantEnough(item, query)
-
-private fun searchCanonicalTitle(item: MediaItem): String =
-    SearchPolicy.canonicalTitle(item)
-
-private fun searchCanonicalType(value: String): String =
-    SearchPolicy.canonicalType(value)
-
-private fun searchRelevanceScore(item: MediaItem, query: String): Int =
-    SearchPolicy.relevanceScore(item, query)
-
-private fun searchMetadataScore(item: MediaItem): Int =
-    SearchPolicy.metadataScore(item)
-
-private fun searchTitleQuery(normalizedQuery: String): String =
-    SearchPolicy.titleQuery(normalizedQuery)
-
-private fun searchNormalizeText(value: String): String =
-    SearchPolicy.normalizeText(value)
-
-private fun searchReleaseYear(item: MediaItem): Int =
-    SearchPolicy.releaseYear(item)
+): List<MediaItem> =
+    SearchResultOrderPolicy.sortTitleItems(
+        items = items,
+        mode = mode.toDiscoverSortMode(),
+        query = query,
+    )
 
 @Composable
 private fun SearchModeToggle(
@@ -6824,7 +6643,7 @@ private fun MediaDetailsScreen(
         // Instant detail shell: publish everything already carried by the
         // catalog/search item before any network metadata work starts.
         val shellItem =
-            normalizeSeriesEpisodes(
+            DetailUpstreamPolicy.normalizeSeriesEpisodes(
                 initialItem
             )
 
@@ -6865,13 +6684,10 @@ private fun MediaDetailsScreen(
                     )
             ) {
                 runCatching {
-                    TmdbEnhancementClient
-                        .prepareForCore(
-                            item =
-                                initialItem,
-                            apiKey =
-                                tmdbKey,
-                        )
+                    DetailUpstreamPolicy.prepareForCore(
+                        item = initialItem,
+                        tmdbApiKey = tmdbKey,
+                    )
                 }.getOrDefault(
                     initialItem
                 )
@@ -6882,7 +6698,7 @@ private fun MediaDetailsScreen(
         // Core Stremio metadata is the only stage that controls the
         // "still resolving" state. The page itself remains fully visible.
         val coreItem =
-            normalizeSeriesEpisodes(
+            DetailUpstreamPolicy.normalizeSeriesEpisodes(
                 engine.loadMeta(
                     preparedItem
                 )
@@ -6936,19 +6752,12 @@ private fun MediaDetailsScreen(
             ) {
                 enrichedItem =
                     runCatching {
-                        TmdbEnhancementClient
-                            .enrich(
-                                item =
-                                    enrichedItem,
-                                apiKey =
-                                    tmdbKey,
-                                metadataEnabled =
-                                    settingsStore
-                                        .tmdbMetadataEnrichmentEnabled(),
-                                artworkEnabled =
-                                    settingsStore
-                                        .tmdbArtworkEnrichmentEnabled(),
-                            )
+                        DetailUpstreamPolicy.enrichTmdb(
+                            media = enrichedItem,
+                            tmdbApiKey = tmdbKey,
+                            metadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
+                            artworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
+                        )
                     }.getOrDefault(
                         enrichedItem
                     )
@@ -6971,13 +6780,11 @@ private fun MediaDetailsScreen(
             ) {
                 enrichedItem =
                     runCatching {
-                        RichDetailsClient
-                            .enrich(
-                                media =
-                                    enrichedItem,
-                                apiKey =
-                                    tmdbKey,
-                            )
+                        DetailUpstreamPolicy.enrichRichDetails(
+                            media = enrichedItem,
+                            tmdbApiKey = tmdbKey,
+                            enabled = true,
+                        )
                     }.getOrDefault(
                         enrichedItem
                     )
@@ -8298,88 +8105,6 @@ private fun DetailsLoadingSkeleton() {
                 VueoPalette.Surface,
         ) {}
     }
-}
-
-private fun normalizeSeriesEpisodes(
-    media: MediaItem,
-): MediaItem {
-    if (
-        media.type != "series" ||
-        media.episodes.isEmpty()
-    ) {
-        return media
-    }
-
-    val normalized =
-        media.episodes.map { episode ->
-            val idParts =
-                episode.id.split(":")
-
-            val idSeason =
-                idParts
-                    .getOrNull(
-                        idParts.lastIndex - 1
-                    )
-                    ?.toIntOrNull()
-
-            val idEpisode =
-                idParts
-                    .lastOrNull()
-                    ?.toIntOrNull()
-
-            episode.copy(
-                season =
-                    when {
-                        episode.season > 0 ->
-                            episode.season
-                        idSeason != null &&
-                            idSeason > 0 ->
-                            idSeason
-                        else ->
-                            episode.season
-                    },
-                episode =
-                    when {
-                        episode.episode > 0 ->
-                            episode.episode
-                        idEpisode != null &&
-                            idEpisode > 0 ->
-                            idEpisode
-                        else ->
-                            episode.episode
-                    },
-            )
-        }
-
-    val finalEpisodes =
-        if (
-            normalized.isNotEmpty() &&
-            normalized.none {
-                it.season > 0
-            } &&
-            normalized.all {
-                it.season == 0
-            }
-        ) {
-            normalized.map {
-                it.copy(
-                    season = 1
-                )
-            }
-        } else {
-            normalized
-        }
-
-    return media.copy(
-        episodes =
-            finalEpisodes.sortedWith(
-                compareBy<EpisodeItem> {
-                    it.season
-                }.thenBy {
-                    it.episode
-                }
-            )
-    )
 }
 
 private fun baseDetailsRatings(

@@ -16,7 +16,8 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
-import com.vueo.tv.core.enrichDetailMetadata
+import com.vueo.tv.core.enrichDetailRichDetails
+import com.vueo.tv.core.enrichDetailTmdb
 import com.vueo.tv.core.loadCoreDetail
 import com.vueo.tv.core.prepareDetailForCore
 import kotlinx.coroutines.launch
@@ -167,12 +168,32 @@ fun TvDetailScreen(
         loading = false
 
         launch {
-            val enriched = runCatching { runtime.enrichDetailMetadata(core) }.getOrDefault(core)
-            item = enriched
-            publishRatings(enriched)
-            watchlisted = runtime.libraryStore.isWatchlisted(enriched)
-            movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-            syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+            var enriched = runCatching { runtime.enrichDetailTmdb(core) }.getOrDefault(core)
+            if (enriched != core) {
+                item = enriched
+                publishRatings(enriched)
+                watchlisted = runtime.libraryStore.isWatchlisted(enriched)
+                movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
+                syncEpisodeSelection(
+                    enriched,
+                    preserveCurrent = true,
+                    restoringSameTitle = restoringSameTitle,
+                )
+            }
+
+            val rich = runCatching { runtime.enrichDetailRichDetails(enriched) }.getOrDefault(enriched)
+            if (rich != enriched) {
+                enriched = rich
+                item = enriched
+                publishRatings(enriched)
+                watchlisted = runtime.libraryStore.isWatchlisted(enriched)
+                movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
+                syncEpisodeSelection(
+                    enriched,
+                    preserveCurrent = true,
+                    restoringSameTitle = restoringSameTitle,
+                )
+            }
         }
 
         launch {
@@ -217,12 +238,11 @@ fun TvDetailScreen(
     val dnaMatch = remember(item, loading) {
         if (loading) null else runtime.dnaMatch(item)
     }
-    val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry, loading) {
+    val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry) {
         detailPrimaryActionLabel(
             item = item,
             episode = selectedEpisode,
             playbackEntry = playbackEntry,
-            loading = loading,
         )
     }
 
@@ -341,11 +361,9 @@ private fun detailPrimaryActionLabel(
     item: MediaItem,
     episode: EpisodeItem?,
     playbackEntry: LibraryPlaybackEntry?,
-    loading: Boolean,
 ): String {
     val canResume = playbackEntry?.let(::detailCanResume) == true
     return when {
-        loading -> "Loading…"
         item.isDetailSeries() && episode != null && canResume ->
             "Resume S${episode.season} E${episode.episode}"
         item.isDetailSeries() && episode != null ->

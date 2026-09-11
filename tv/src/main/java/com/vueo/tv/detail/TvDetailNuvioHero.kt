@@ -68,7 +68,8 @@ internal fun NuvioDetailHero(
 ) {
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
-    val canPlay = !state.loading && (!item.isDetailSeries() || state.selectedEpisode != null)
+    val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
+    val canPlay = !seriesNeedsEpisode || state.selectedEpisode != null
     val primaryMeta = remember(item, state.ratings, state.nuvioExtras.fullReleaseDate) {
         buildList {
             if (item.genres.isNotEmpty()) add(item.genres.take(4).joinToString(" • "))

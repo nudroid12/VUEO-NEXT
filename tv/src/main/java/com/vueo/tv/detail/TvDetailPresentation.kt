@@ -116,16 +116,20 @@ internal fun TvDetailPresentation(
         label = "detail39ScrimAlpha",
     )
 
-    LaunchedEffect(mediaKey, state.loading, state.selectedEpisode?.id) {
-        if (!state.loading) {
-            delay(110)
-            val restoreEpisode = state.item.isDetailSeries() &&
-                NuvioDetailFocusMemory.mediaKey == mediaKey &&
-                NuvioDetailFocusMemory.episodeId != null &&
-                NuvioDetailFocusMemory.episodeId == state.selectedEpisode?.id
-            runCatching {
-                if (restoreEpisode) episodeRequester.requestFocus() else playRequester.requestFocus()
-            }
+    LaunchedEffect(mediaKey) {
+        delay(110)
+        runCatching { playRequester.requestFocus() }
+    }
+
+    LaunchedEffect(mediaKey, state.selectedEpisode?.id) {
+        val rememberedEpisodeId = NuvioDetailFocusMemory.episodeId
+        val restoreEpisode = state.item.isDetailSeries() &&
+            NuvioDetailFocusMemory.mediaKey == mediaKey &&
+            rememberedEpisodeId != null &&
+            rememberedEpisodeId == state.selectedEpisode?.id
+        if (restoreEpisode) {
+            delay(120)
+            runCatching { episodeRequester.requestFocus() }
         }
     }
 

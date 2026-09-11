@@ -5,8 +5,6 @@ import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
 import com.vueo.shared.core.home.HomeCatalogPolicy
-import com.vueo.shared.core.enrichment.MetadataEnhancementEngine
-import com.vueo.shared.core.enrichment.MetadataEnhancementOptions
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.dna.UserDnaEngine
@@ -141,34 +139,6 @@ class TvRuntime(context: Context) {
             CatalogDiscoveryCache.persistHome(appContext, fresh)
         }
         return applyCatalogPreferences(fresh.ifEmpty { staleCached })
-    }
-
-    suspend fun search(query: String): List<MediaItem> =
-        engine.search(query = query, maxResults = 80)
-
-    suspend fun loadMeta(item: MediaItem): MediaItem {
-        val core = engine.loadMeta(item)
-        val result = MetadataEnhancementEngine.enrich(
-            media = core,
-            options = MetadataEnhancementOptions(
-                tmdbApiKey = pluginStore.tmdbApiKey(),
-                mdblistApiKey = settingsStore.mdblistApiKey(),
-                tmdbMetadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
-                tmdbArtworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
-                richDetailsEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
-                ratingsEnabled = settingsStore.mdblistRatingsEnabled(),
-            ),
-        )
-
-        val imdb = result.ratings.firstOrNull { it.source == "imdb" }?.value
-            ?.takeIf { settingsStore.mdblistImdbEnabled() }
-        val tmdb = result.ratings.firstOrNull { it.source == "tmdb" }?.value
-            ?.takeIf { settingsStore.mdblistTmdbRatingEnabled() }
-
-        return result.media.copy(
-            imdbRating = imdb ?: result.media.imdbRating,
-            tmdbRating = tmdb ?: result.media.tmdbRating,
-        )
     }
 
     suspend fun refreshAddons() {

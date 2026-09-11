@@ -14,11 +14,17 @@ internal suspend fun TvRuntime.loadCoreDetail(item: MediaItem): MediaItem =
         engine.loadMeta(item)
     )
 
-internal suspend fun TvRuntime.enrichDetailMetadata(item: MediaItem): MediaItem =
-    DetailUpstreamPolicy.enrichMetadata(
+internal suspend fun TvRuntime.enrichDetailTmdb(item: MediaItem): MediaItem =
+    DetailUpstreamPolicy.enrichTmdb(
         media = item,
         tmdbApiKey = pluginStore.tmdbApiKey(),
         metadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
         artworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
-        richDetailsEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
+    )
+
+internal suspend fun TvRuntime.enrichDetailRichDetails(item: MediaItem): MediaItem =
+    DetailUpstreamPolicy.enrichRichDetails(
+        media = item,
+        tmdbApiKey = pluginStore.tmdbApiKey(),
+        enabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
     )

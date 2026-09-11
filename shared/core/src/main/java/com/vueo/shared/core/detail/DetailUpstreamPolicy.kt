@@ -57,30 +57,38 @@ object DetailUpstreamPolicy {
         )
     }
 
-    suspend fun enrichMetadata(
+    suspend fun enrichTmdb(
         media: MediaItem,
         tmdbApiKey: String,
         metadataEnabled: Boolean,
         artworkEnabled: Boolean,
-        richDetailsEnabled: Boolean,
     ): MediaItem {
-        if (tmdbApiKey.isBlank()) return normalizeSeriesEpisodes(media)
-
-        var enriched = media
-        if (metadataEnabled || artworkEnabled) {
-            enriched = TmdbEnhancementClient.enrich(
-                item = enriched,
+        if (tmdbApiKey.isBlank() || (!metadataEnabled && !artworkEnabled)) {
+            return normalizeSeriesEpisodes(media)
+        }
+        return normalizeSeriesEpisodes(
+            TmdbEnhancementClient.enrich(
+                item = media,
                 apiKey = tmdbApiKey,
                 metadataEnabled = metadataEnabled,
                 artworkEnabled = artworkEnabled,
             )
-        }
-        if (richDetailsEnabled) {
-            enriched = RichDetailsClient.enrich(
-                media = enriched,
+        )
+    }
+
+    suspend fun enrichRichDetails(
+        media: MediaItem,
+        tmdbApiKey: String,
+        enabled: Boolean,
+    ): MediaItem {
+        if (tmdbApiKey.isBlank() || !enabled) return normalizeSeriesEpisodes(media)
+        return normalizeSeriesEpisodes(
+            RichDetailsClient.enrich(
+                media = media,
                 apiKey = tmdbApiKey,
             )
-        }
-        return normalizeSeriesEpisodes(enriched)
+        )
     }
+
+
 }

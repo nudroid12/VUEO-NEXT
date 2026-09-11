@@ -1,5 +1,6 @@
 package com.vueo.tv.search
-import com.vueo.shared.core.search.SearchPolicy
+import com.vueo.shared.core.search.SearchResultOrderPolicy
+import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
@@ -317,7 +318,13 @@ internal fun TvSearchScreen(
 
     val availableGenres = remember(sourceItems, session.typeFilter, animeCatalogKeys) {
         sourceItems
-            .filter { searchMatchesType(it, session.typeFilter, animeCatalogKeys) }
+            .filter {
+                SearchResultOrderPolicy.matchesType(
+                    item = it,
+                    filter = session.typeFilter.toSearchMediaFilter(),
+                    animeCatalogKeys = animeCatalogKeys,
+                )
+            }
             .flatMap { it.genres }
             .map { it.trim() }
             .filter { it.isNotBlank() && !it.equals("anime", ignoreCase = true) }
@@ -344,8 +351,11 @@ internal fun TvSearchScreen(
         animeCatalogKeys,
     ) {
         val filtered = sourceItems.filter { item ->
-            searchMatchesType(item, session.typeFilter, animeCatalogKeys) &&
-                searchMatchesGenre(item, session.genre)
+            SearchResultOrderPolicy.matchesType(
+                item = item,
+                filter = session.typeFilter.toSearchMediaFilter(),
+                animeCatalogKeys = animeCatalogKeys,
+            ) && SearchResultOrderPolicy.matchesGenre(item, session.genre)
         }
 
         when {
@@ -1321,104 +1331,33 @@ private fun TvSearchSortMode.toDiscoverSortMode(): DiscoverSortMode =
         TvSearchSortMode.NEWEST -> DiscoverSortMode.NEWEST
     }
 
-private fun searchMatchesType(
-    item: MediaItem,
-    filter: TvSearchTypeFilter,
-    animeCatalogKeys: Set<String>,
-): Boolean = when (filter) {
-    TvSearchTypeFilter.ALL -> true
-    TvSearchTypeFilter.MOVIES ->
-        item.type.equals("movie", ignoreCase = true) && !searchIsAnime(item, animeCatalogKeys)
-    TvSearchTypeFilter.SERIES ->
-        item.type.equals("series", ignoreCase = true) && !searchIsAnime(item, animeCatalogKeys)
-    TvSearchTypeFilter.ANIME -> searchIsAnime(item, animeCatalogKeys)
-}
-
-private fun searchIsAnime(item: MediaItem, animeCatalogKeys: Set<String>): Boolean {
-    if (
-        item.type.equals("anime", ignoreCase = true) ||
-        item.genres.any { it.equals("anime", ignoreCase = true) }
-    ) return true
-
-    if (mediaKey(item) in animeCatalogKeys) return true
-
-    return listOfNotNull(item.sourceExtensionId, item.id)
-        .any { it.contains("anime", ignoreCase = true) }
-}
-
-private fun searchMatchesGenre(item: MediaItem, genre: String?): Boolean =
-    genre == null || item.genres.any { it.equals(genre, ignoreCase = true) }
+private fun TvSearchTypeFilter.toSearchMediaFilter(): SearchMediaFilter =
+    when (this) {
+        TvSearchTypeFilter.ALL -> SearchMediaFilter.ALL
+        TvSearchTypeFilter.MOVIES -> SearchMediaFilter.MOVIES
+        TvSearchTypeFilter.SERIES -> SearchMediaFilter.SERIES
+        TvSearchTypeFilter.ANIME -> SearchMediaFilter.ANIME
+    }
 
 private fun searchSortActorItems(
     items: List<MediaItem>,
     mode: TvSearchSortMode,
-): List<MediaItem> = when (mode) {
-    TvSearchSortMode.POPULAR,
-    TvSearchSortMode.TRENDING -> items
-    TvSearchSortMode.NEWEST -> items.sortedByDescending(::searchReleaseYear)
-}
+): List<MediaItem> =
+    SearchResultOrderPolicy.sortActorItems(
+        items = items,
+        mode = mode.toDiscoverSortMode(),
+    )
 
 private fun searchSortItems(
     items: List<MediaItem>,
     mode: TvSearchSortMode,
     query: String? = null,
-): List<MediaItem> {
-    val normalizedQuery = query?.let(::searchNormalizeText).orEmpty()
-
-    if (normalizedQuery.isBlank()) {
-        return when (mode) {
-            TvSearchSortMode.POPULAR -> items.sortedByDescending {
-                it.imdbRating ?: it.tmdbRating ?: 0.0
-            }
-            TvSearchSortMode.TRENDING -> items
-            TvSearchSortMode.NEWEST -> items.sortedByDescending(::searchReleaseYear)
-        }
-    }
-
-    val relevance = compareByDescending<MediaItem> {
-        searchRelevanceScore(it, normalizedQuery)
-    }
-
-    return when (mode) {
-        TvSearchSortMode.POPULAR -> items.sortedWith(
-            relevance
-                .thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
-                .thenByDescending(::searchReleaseYear)
-        )
-        TvSearchSortMode.TRENDING -> items.sortedWith(
-            relevance.thenByDescending(::searchMetadataScore)
-        )
-        TvSearchSortMode.NEWEST -> items.sortedWith(
-            relevance
-                .thenByDescending(::searchReleaseYear)
-                .thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
-        )
-    }
-}
-
-private fun searchIsRelevantEnough(item: MediaItem, query: String): Boolean =
-    SearchPolicy.isRelevantEnough(item, query)
-
-private fun searchCanonicalTitle(item: MediaItem): String =
-    SearchPolicy.canonicalTitle(item)
-
-private fun searchCanonicalType(value: String): String =
-    SearchPolicy.canonicalType(value)
-
-private fun searchRelevanceScore(item: MediaItem, query: String): Int =
-    SearchPolicy.relevanceScore(item, query)
-
-private fun searchMetadataScore(item: MediaItem): Int =
-    SearchPolicy.metadataScore(item)
-
-private fun searchTitleQuery(normalizedQuery: String): String =
-    SearchPolicy.titleQuery(normalizedQuery)
-
-private fun searchNormalizeText(value: String): String =
-    SearchPolicy.normalizeText(value)
-
-private fun searchReleaseYear(item: MediaItem): Int =
-    SearchPolicy.releaseYear(item)
+): List<MediaItem> =
+    SearchResultOrderPolicy.sortTitleItems(
+        items = items,
+        mode = mode.toDiscoverSortMode(),
+        query = query,
+    )
 
 private fun searchCatalogLabel(runtime: TvRuntime, item: MediaItem): String? {
     val direct = item.catalogSources.firstOrNull { it.isNotBlank() }
