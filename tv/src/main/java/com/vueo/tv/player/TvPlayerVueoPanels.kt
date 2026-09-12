@@ -56,6 +56,7 @@ import com.vueo.tv.ui.TvNetworkImage
 import kotlinx.coroutines.delay
 
 private val PanelShape = RoundedCornerShape(18.dp)
+private val SubtitleWorkspaceBottomClearance = 104.dp
 
 @Composable
 internal fun VueoPlayerCompactOverlay(
@@ -426,7 +427,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = 20.dp),
+                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = SubtitleWorkspaceBottomClearance),
         ) {
             Text(
                 "Subtitles",
@@ -449,7 +450,7 @@ internal fun VueoPlayerSubtitleWorkspace(
             ) {
                 Column(
                     modifier = Modifier
-                        .weight(.22f)
+                        .weight(.30f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
@@ -495,7 +496,7 @@ internal fun VueoPlayerSubtitleWorkspace(
 
                 Column(
                     modifier = Modifier
-                        .weight(.50f)
+                        .weight(.40f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
@@ -545,7 +546,7 @@ internal fun VueoPlayerSubtitleWorkspace(
 
                 Column(
                     modifier = Modifier
-                        .weight(.28f)
+                        .weight(.30f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
