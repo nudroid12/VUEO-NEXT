@@ -137,6 +137,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -9561,6 +9562,74 @@ private fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val entryConfigurationOrientation = remember {
+        context.resources.configuration.orientation
+    }
+    val previousRequestedOrientation = remember(activity) {
+        activity?.requestedOrientation
+            ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    val currentConfigurationOrientation =
+        LocalConfiguration.current.orientation
+    val latestOnBack = rememberUpdatedState(onBack)
+    var playerExitRequested by remember {
+        mutableStateOf(false)
+    }
+    var playerExitCommitted by remember {
+        mutableStateOf(false)
+    }
+
+    fun commitPlayerExit() {
+        if (!playerExitCommitted) {
+            playerExitCommitted = true
+            latestOnBack.value()
+        }
+    }
+
+    fun requestPlayerExit() {
+        if (playerExitRequested) return
+
+        playerExitRequested = true
+        activity?.requestedOrientation =
+            when (previousRequestedOrientation) {
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED ->
+                    when (entryConfigurationOrientation) {
+                        android.content.res.Configuration
+                            .ORIENTATION_LANDSCAPE ->
+                            ActivityInfo
+                                .SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+                        else ->
+                            ActivityInfo
+                                .SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    }
+
+                else -> previousRequestedOrientation
+            }
+
+        if (
+            activity == null ||
+            currentConfigurationOrientation ==
+                entryConfigurationOrientation
+        ) {
+            commitPlayerExit()
+        }
+    }
+
+    LaunchedEffect(
+        playerExitRequested,
+        currentConfigurationOrientation,
+        entryConfigurationOrientation,
+    ) {
+        if (
+            playerExitRequested &&
+            !playerExitCommitted &&
+            currentConfigurationOrientation ==
+                entryConfigurationOrientation
+        ) {
+            commitPlayerExit()
+        }
+    }
     val latestEpisodeSwitchingTo =
         rememberUpdatedState(episodeSwitchingTo)
     val latestOnEpisodeSwitchCompleted =
@@ -9852,7 +9921,7 @@ private fun PlayerScreen(
             controlsLocked ->
                 controlsLocked = false
 
-            else -> onBack()
+            else -> requestPlayerExit()
         }
     }
 
@@ -10781,7 +10850,9 @@ private fun PlayerScreen(
                 player.playWhenReady = true
                 resumePromptVisible = false
             },
-            onDismiss = onBack,
+            onDismiss = {
+                requestPlayerExit()
+            },
         )
     }
 
@@ -11571,7 +11642,7 @@ private fun PlayerScreen(
                     contentDescription = "Back",
                     onClick = {
                         savePosition()
-                        onBack()
+                        requestPlayerExit()
                     },
                 )
             }
