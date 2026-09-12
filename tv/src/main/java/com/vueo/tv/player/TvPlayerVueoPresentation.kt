@@ -103,10 +103,17 @@ internal fun VueoPlayerPresentation(
     onPanelSelected: (TvPlayerOption) -> Unit,
 ) {
     val retainedPanelOptions = remember { mutableStateOf<List<TvPlayerOption>>(emptyList()) }
+    val moreLastFocusKey = remember { mutableStateOf<String?>(null) }
     LaunchedEffect(panelOptions) {
         if (panelOptions.isNotEmpty()) retainedPanelOptions.value = panelOptions
     }
     val displayedPanelOptions = panelOptions.ifEmpty { retainedPanelOptions.value }
+    val progressUpRequester = when {
+        playbackError != null -> errorRequester
+        activeSkip != null -> skipRequester
+        nextCountdown > 0 && nextEpisode != null -> nextContextRequester
+        else -> restartRequester
+    }
 
     Box(Modifier.fillMaxSize()) {
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
@@ -142,6 +149,7 @@ internal fun VueoPlayerPresentation(
                 hasEpisodes = hasEpisodes,
                 restartRequester = restartRequester,
                 progressRequester = progressRequester,
+                progressUpRequester = progressUpRequester,
                 nextRequester = nextRequester,
                 subtitlesRequester = subtitlesRequester,
                 audioRequester = audioRequester,
@@ -172,14 +180,18 @@ internal fun VueoPlayerPresentation(
 
         activeSkip?.let { segment ->
             VueoPlayerPromptButton(
-                text = vueoSkipLabel(segment), requester = skipRequester, downRequester = progressRequester,
+                text = vueoSkipLabel(segment), requester = skipRequester,
+                upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
+                downRequester = progressRequester,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 118.dp),
                 onInteraction = onInteraction, onClick = { onSkip(segment) },
             )
         }
         if (nextCountdown > 0 && nextEpisode != null) {
             VueoPlayerPromptButton(
-                text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester, downRequester = progressRequester,
+                text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester,
+                upRequester = FocusRequester.Cancel,
+                downRequester = if (activeSkip != null) skipRequester else progressRequester,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = if (activeSkip != null) 168.dp else 118.dp),
                 onInteraction = onInteraction, onClick = onNext,
             )
@@ -195,7 +207,9 @@ internal fun VueoPlayerPresentation(
             ) {
                 Text(text = message, color = Color(0xFFFFB0B0), fontSize = 13.sp, lineHeight = 18.sp)
                 VueoPlayerPromptButton(
-                    text = "Retry", requester = errorRequester, downRequester = progressRequester,
+                    text = "Retry", requester = errorRequester,
+                    upRequester = FocusRequester.Cancel,
+                    downRequester = progressRequester,
                     onInteraction = onInteraction, onClick = onRetryPlayback,
                 )
             }
@@ -209,7 +223,9 @@ internal fun VueoPlayerPresentation(
             VueoPlayerCompactOverlay(
                 panel = TvPlayerPanel.MORE,
                 options = displayedPanelOptions,
+                initialFocusKey = moreLastFocusKey.value,
                 onInteraction = onInteraction,
+                onFocused = { moreLastFocusKey.value = it.key },
                 onSelected = onPanelSelected,
             )
         }
@@ -361,6 +377,7 @@ private fun VueoPlayerControls(
     hasEpisodes: Boolean,
     restartRequester: FocusRequester,
     progressRequester: FocusRequester,
+    progressUpRequester: FocusRequester,
     nextRequester: FocusRequester,
     subtitlesRequester: FocusRequester,
     audioRequester: FocusRequester,
@@ -452,7 +469,7 @@ private fun VueoPlayerControls(
             positionMs = positionMs,
             durationMs = durationMs,
             requester = progressRequester,
-            upRequester = restartRequester,
+            upRequester = progressUpRequester,
             downRequester = bottomDefaultRequester,
             onInteraction = onInteraction,
             onSeekBy = onSeekBy,

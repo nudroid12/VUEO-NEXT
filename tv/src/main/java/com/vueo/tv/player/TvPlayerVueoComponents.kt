@@ -216,6 +216,7 @@ internal fun VueoPlayerPillAction(
 internal fun VueoPlayerPromptButton(
     text: String,
     requester: FocusRequester,
+    upRequester: FocusRequester,
     downRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onInteraction: () -> Unit,
@@ -227,7 +228,7 @@ internal fun VueoPlayerPromptButton(
         modifier = modifier
             .focusRequester(requester)
             .focusProperties {
-                up = FocusRequester.Cancel
+                up = upRequester
                 down = downRequester
                 left = FocusRequester.Cancel
                 right = FocusRequester.Cancel

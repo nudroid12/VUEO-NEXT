@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +55,6 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
-import kotlinx.coroutines.delay
 
 private val PanelShape = RoundedCornerShape(18.dp)
 private val SubtitleWorkspaceBottomClearance = 104.dp
@@ -62,7 +63,9 @@ private val SubtitleWorkspaceBottomClearance = 104.dp
 internal fun VueoPlayerCompactOverlay(
     panel: TvPlayerPanel,
     options: List<TvPlayerOption>,
+    initialFocusKey: String?,
     onInteraction: () -> Unit,
+    onFocused: (TvPlayerOption) -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
 ) {
     val title = when (panel) {
@@ -92,7 +95,14 @@ internal fun VueoPlayerCompactOverlay(
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = Color.White.copy(alpha = .56f), fontSize = 11.sp)
             Spacer(Modifier.height(18.dp))
-            VueoOptionList(options, .58f, onInteraction, onSelected)
+            VueoOptionList(
+                options = options,
+                maxHeightFraction = .58f,
+                onInteraction = onInteraction,
+                onSelected = onSelected,
+                initialFocusKey = initialFocusKey,
+                onFocused = onFocused,
+            )
         }
     }
 }
@@ -105,6 +115,9 @@ internal fun VueoPlayerSourcesPanel(
     onDismiss: () -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
 ) {
+    val closeRequester = remember { FocusRequester() }
+    val listEntryRequester = remember { FocusRequester() }
+
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .28f))) {
         Column(
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(520.dp)
@@ -114,12 +127,184 @@ internal fun VueoPlayerSourcesPanel(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Sources", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
-                VueoPanelTextAction("Close", onDismiss)
+                VueoPanelTextAction(
+                    label = "Close",
+                    requester = closeRequester,
+                    downRequester = listEntryRequester,
+                    onInteraction = onInteraction,
+                    onClick = onDismiss,
+                )
             }
             Spacer(Modifier.height(10.dp))
             Text(title, color = Color.White.copy(alpha = .56f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(18.dp))
-            VueoOptionList(options, .90f, onInteraction, onSelected)
+            VueoOptionList(
+                options = options,
+                maxHeightFraction = .90f,
+                onInteraction = onInteraction,
+                onSelected = onSelected,
+                topRequester = closeRequester,
+                entryFocusRequester = listEntryRequester,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VueoOptionList(
+    options: List<TvPlayerOption>,
+    maxHeightFraction: Float,
+    onInteraction: () -> Unit,
+    onSelected: (TvPlayerOption) -> Unit,
+    topRequester: FocusRequester = FocusRequester.Cancel,
+    entryFocusRequester: FocusRequester? = null,
+    initialFocusKey: String? = null,
+    onFocused: (TvPlayerOption) -> Unit = {},
+) {
+    val state = rememberLazyListState()
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    var initialFocusAssigned by remember { mutableStateOf(false) }
+    val initialIndex = remember(options, initialFocusKey) {
+        options.indexOfFirst {
+            it.key == initialFocusKey && it.enabled
+        }.takeIf { it >= 0 }
+            ?: options.indexOfFirst { it.selected && it.enabled }.takeIf { it >= 0 }
+            ?: options.indexOfFirst { it.enabled }.takeIf { it >= 0 }
+            ?: 0
+    }
+    val firstEnabledIndex = options.indexOfFirst { it.enabled }
+    val lastEnabledIndex = options.indexOfLast { it.enabled }
+
+    fun requesterFor(index: Int): FocusRequester {
+        if (entryFocusRequester != null && index == firstEnabledIndex) {
+            return entryFocusRequester
+        }
+        val option = options.getOrNull(index) ?: return FocusRequester.Cancel
+        return requesters.getOrPut(option.key) { FocusRequester() }
+    }
+
+    LaunchedEffect(options, initialFocusKey, initialFocusAssigned) {
+        if (initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
+        state.scrollToItem(initialIndex)
+        if (requesterFor(initialIndex).requestTvFocus()) {
+            initialFocusAssigned = true
+        }
+    }
+    if (options.isEmpty()) {
+        Text("Nothing available for this stream.", color = Color.White.copy(alpha = .52f), fontSize = 12.sp)
+        return
+    }
+    LazyColumn(
+        state = state,
+        modifier = Modifier.fillMaxHeight(maxHeightFraction),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        itemsIndexed(options, key = { _, option -> option.key }) { index, option ->
+            VueoOptionRow(
+                option = option,
+                requester = requesterFor(index),
+                topRequester = topRequester,
+                blockUp = index == firstEnabledIndex,
+                blockDown = index == lastEnabledIndex,
+                onInteraction = onInteraction,
+                onFocused = { onFocused(option) },
+            ) {
+                onSelected(option)
+            }
+        }
+    }
+}
+
+@Composable
+private fun VueoOptionRow(
+    option: TvPlayerOption,
+    requester: FocusRequester,
+    topRequester: FocusRequester,
+    blockUp: Boolean,
+    blockDown: Boolean,
+    onInteraction: () -> Unit,
+    onFocused: () -> Unit,
+    onSelected: () -> Unit,
+) {
+    var focused by remember(option.key) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(9.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .focusProperties {
+                if (blockUp) up = topRequester
+                if (blockDown) down = FocusRequester.Cancel
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) {
+                    onInteraction()
+                    onFocused()
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp && option.enabled) onSelected()
+                true
+            }
+            .focusable(option.enabled)
+            .clickable(enabled = option.enabled, onClick = onSelected)
+            .background(
+                when {
+                    focused -> Color.White.copy(alpha = .13f)
+                    option.selected -> Color.White.copy(alpha = .06f)
+                    else -> Color.Transparent
+                },
+                shape,
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                when {
+                    focused -> Color.White
+                    option.selected -> TvDesign.Accent.copy(alpha = .58f)
+                    else -> Color.White.copy(alpha = .07f)
+                },
+                shape,
+            )
+            .padding(horizontal = 13.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(28.dp)
+                .background(
+                    if (option.selected) TvDesign.Accent else Color.Transparent,
+                    RoundedCornerShape(2.dp),
+                )
+        )
+        Spacer(Modifier.width(11.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                option.title,
+                color = if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
+                fontSize = 12.sp,
+                fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            option.meta?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    it,
+                    color = Color.White.copy(alpha = .48f),
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (option.selected) {
+            Text("Active", color = TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -138,119 +323,170 @@ internal fun VueoPlayerEpisodesPanel(
         normal + episodes.map { it.season }.distinct().filter { it == 0 }
     }
     var selectedSeason by remember(episodes, currentEpisode?.season) {
-        mutableIntStateOf(currentEpisode?.season?.takeIf { it in seasons } ?: seasons.firstOrNull() ?: 1)
+        mutableIntStateOf(
+            currentEpisode?.season?.takeIf { it in seasons }
+                ?: seasons.firstOrNull()
+                ?: 1
+        )
     }
     val seasonEpisodes = remember(episodes, selectedSeason) {
         episodes.filter { it.season == selectedSeason }.sortedBy { it.episode }
     }
+    val closeRequester = remember { FocusRequester() }
+    val episodeEntryRequester = remember { FocusRequester() }
+    val seasonRequesters = remember(seasons) {
+        List(seasons.size.coerceAtLeast(1)) { FocusRequester() }
+    }
+    val selectedSeasonIndex = seasons.indexOf(selectedSeason).coerceAtLeast(0)
+    val seasonListState = rememberLazyListState()
+    var lastFocusedSeasonIndex by remember(seasons) {
+        mutableIntStateOf(selectedSeasonIndex)
+    }
+    val seasonReturnRequester = seasonRequesters.getOrNull(lastFocusedSeasonIndex)
+        ?: seasonRequesters.getOrNull(selectedSeasonIndex)
+        ?: FocusRequester.Cancel
+
+    LaunchedEffect(selectedSeasonIndex, seasons) {
+        if (seasons.isNotEmpty()) {
+            seasonListState.scrollToItem(selectedSeasonIndex)
+        }
+    }
+    val listTopRequester = if (seasons.size > 1) seasonReturnRequester else closeRequester
+    val closeDownRequester = if (seasons.size > 1) seasonReturnRequester else episodeEntryRequester
 
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .30f))) {
         Column(
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(520.dp)
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(520.dp)
                 .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
                 .background(Color(0xFF111418).copy(alpha = .99f))
                 .padding(28.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(Modifier.weight(1f)) {
                     Text("Episodes", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(3.dp))
-                    Text(mediaTitle, color = Color.White.copy(alpha = .54f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        mediaTitle,
+                        color = Color.White.copy(alpha = .54f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                VueoPanelTextAction("Close", onDismiss)
+                VueoPanelTextAction(
+                    label = "Close",
+                    requester = closeRequester,
+                    downRequester = closeDownRequester,
+                    onInteraction = onInteraction,
+                    onClick = onDismiss,
+                )
             }
 
             if (seasons.size > 1) {
                 Spacer(Modifier.height(16.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
-                    itemsIndexed(seasons, key = { _, season -> season }) { _, season ->
-                        VueoSeasonChip(season, season == selectedSeason) { selectedSeason = season }
+                LazyRow(
+                    state = seasonListState,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp),
+                ) {
+                    itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
+                        VueoSeasonChip(
+                            season = season,
+                            selected = season == selectedSeason,
+                            requester = seasonRequesters[index],
+                            upRequester = closeRequester,
+                            downRequester = episodeEntryRequester,
+                            blockLeft = index == 0,
+                            blockRight = index == seasons.lastIndex,
+                            onInteraction = onInteraction,
+                            onFocused = { lastFocusedSeasonIndex = index },
+                        ) {
+                            selectedSeason = season
+                        }
                     }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
-            VueoEpisodeList(seasonEpisodes, currentEpisode, onInteraction, onSelected)
+            VueoEpisodeList(
+                episodes = seasonEpisodes,
+                currentEpisode = currentEpisode,
+                entryFocusRequester = episodeEntryRequester,
+                topRequester = listTopRequester,
+                onInteraction = onInteraction,
+                onSelected = onSelected,
+            )
         }
     }
 }
 
 @Composable
-private fun VueoOptionList(
-    options: List<TvPlayerOption>,
-    maxHeightFraction: Float,
-    onInteraction: () -> Unit,
-    onSelected: (TvPlayerOption) -> Unit,
-) {
-    val state = rememberLazyListState()
-    val requesters = remember { mutableMapOf<String, FocusRequester>() }
-    var initialFocusAssigned by remember { mutableStateOf(false) }
-
-    fun requesterFor(option: TvPlayerOption): FocusRequester =
-        requesters.getOrPut(option.key) { FocusRequester() }
-
-    LaunchedEffect(options, initialFocusAssigned) {
-        if (initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
-        val index = options.indexOfFirst { it.selected && it.enabled }.takeIf { it >= 0 }
-            ?: options.indexOfFirst { it.enabled }.takeIf { it >= 0 } ?: 0
-        state.scrollToItem(index)
-        delay(45)
-        runCatching { requesterFor(options[index]).requestFocus() }
-        initialFocusAssigned = true
-    }
-    if (options.isEmpty()) {
-        Text("Nothing available for this stream.", color = Color.White.copy(alpha = .52f), fontSize = 12.sp)
-        return
-    }
-    LazyColumn(state = state, modifier = Modifier.fillMaxHeight(maxHeightFraction), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        itemsIndexed(options, key = { _, option -> option.key }) { _, option ->
-            VueoOptionRow(option, requesterFor(option), onInteraction) { onSelected(option) }
-        }
-    }
-}
-
-@Composable
-private fun VueoOptionRow(
-    option: TvPlayerOption,
+private fun VueoSeasonChip(
+    season: Int,
+    selected: Boolean,
     requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
+    blockLeft: Boolean,
+    blockRight: Boolean,
     onInteraction: () -> Unit,
-    onSelected: () -> Unit,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
 ) {
-    var focused by remember(option.key) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(9.dp)
-    Row(
-        modifier = Modifier.fillMaxWidth().focusRequester(requester)
-            .focusProperties { left = FocusRequester.Cancel; right = FocusRequester.Cancel }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
-            .focusable(option.enabled).clickable(enabled = option.enabled, onClick = onSelected)
-            .background(when { focused -> Color.White.copy(alpha = .13f); option.selected -> Color.White.copy(alpha = .06f); else -> Color.Transparent }, shape)
-            .border(if (focused) 2.dp else 1.dp, when { focused -> Color.White; option.selected -> TvDesign.Accent.copy(alpha = .58f); else -> Color.White.copy(alpha = .07f) }, shape)
-            .padding(horizontal = 13.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(3.dp).height(28.dp).background(if (option.selected) TvDesign.Accent else Color.Transparent, RoundedCornerShape(2.dp)))
-        Spacer(Modifier.width(11.dp))
-        Column(Modifier.weight(1f)) {
-            Text(option.title, color = if (option.enabled) Color.White else Color.White.copy(alpha = .30f), fontSize = 12.sp, fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            option.meta?.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.height(2.dp)); Text(it, color = Color.White.copy(alpha = .48f), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (option.selected) Text("Active", color = TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun VueoSeasonChip(season: Int, selected: Boolean, onClick: () -> Unit) {
     var focused by remember(season) { mutableStateOf(false) }
     val shape = RoundedCornerShape(22.dp)
     Box(
-        modifier = Modifier.onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick)
-            .background(when { focused -> Color.White; selected -> Color.White.copy(alpha = .13f); else -> Color.Transparent }, shape)
-            .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = .12f), shape)
+        modifier = Modifier
+            .focusRequester(requester)
+            .focusProperties {
+                up = upRequester
+                down = downRequester
+                if (blockLeft) left = FocusRequester.Cancel
+                if (blockRight) right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) {
+                    onInteraction()
+                    onFocused()
+                }
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .clickable(onClick = onClick)
+            .background(
+                when {
+                    focused -> Color.White
+                    selected -> Color.White.copy(alpha = .13f)
+                    else -> Color.Transparent
+                },
+                shape,
+            )
+            .border(
+                1.dp,
+                if (focused) Color.White else Color.White.copy(alpha = .12f),
+                shape,
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Text(if (season == 0) "Specials" else "Season $season", color = if (focused) Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (season == 0) "Specials" else "Season $season",
+            color = if (focused) Color.Black else Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -258,20 +494,55 @@ private fun VueoSeasonChip(season: Int, selected: Boolean, onClick: () -> Unit) 
 private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
+    entryFocusRequester: FocusRequester,
+    topRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
 ) {
     val state = rememberLazyListState()
-    val currentIndex = episodes.indexOfFirst { e -> currentEpisode?.let { it.id == e.id || (it.season == e.season && it.episode == e.episode) } == true }.coerceAtLeast(0)
-    val requesters = remember(episodes.map { it.id }) { List(episodes.size.coerceAtLeast(1)) { FocusRequester() } }
-    LaunchedEffect(episodes, currentEpisode?.id) {
-        if (episodes.isEmpty()) return@LaunchedEffect
-        state.scrollToItem(currentIndex); delay(45); runCatching { requesters[currentIndex].requestFocus() }
+    val currentIndex = episodes.indexOfFirst { episode ->
+        currentEpisode?.let {
+            it.id == episode.id ||
+                (it.season == episode.season && it.episode == episode.episode)
+        } == true
+    }.coerceAtLeast(0)
+    val requesters = remember(episodes.map { it.id }, currentIndex, entryFocusRequester) {
+        List(episodes.size.coerceAtLeast(1)) { index ->
+            if (index == currentIndex) entryFocusRequester else FocusRequester()
+        }
     }
-    LazyColumn(state = state, modifier = Modifier.fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
-        itemsIndexed(episodes, key = { _, e -> e.id }) { index, episode ->
-            val selected = currentEpisode?.let { it.id == episode.id || (it.season == episode.season && it.episode == episode.episode) } == true
-            VueoEpisodeRow(episode, selected, requesters[index], onInteraction) { onSelected(episode) }
+    var initialFocusAssigned by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialFocusAssigned, episodes, currentEpisode?.id) {
+        if (initialFocusAssigned || episodes.isEmpty()) return@LaunchedEffect
+        state.scrollToItem(currentIndex)
+        if (requesters[currentIndex].requestTvFocus()) {
+            initialFocusAssigned = true
+        }
+    }
+
+    LazyColumn(
+        state = state,
+        modifier = Modifier.fillMaxHeight(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
+    ) {
+        itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
+            val selected = currentEpisode?.let {
+                it.id == episode.id ||
+                    (it.season == episode.season && it.episode == episode.episode)
+            } == true
+            VueoEpisodeRow(
+                episode = episode,
+                selected = selected,
+                requester = requesters[index],
+                topRequester = topRequester,
+                blockUp = index == 0,
+                blockDown = index == episodes.lastIndex,
+                onInteraction = onInteraction,
+            ) {
+                onSelected(episode)
+            }
         }
     }
 }
@@ -281,42 +552,147 @@ private fun VueoEpisodeRow(
     episode: EpisodeItem,
     selected: Boolean,
     requester: FocusRequester,
+    topRequester: FocusRequester,
+    blockUp: Boolean,
+    blockDown: Boolean,
     onInteraction: () -> Unit,
     onSelected: () -> Unit,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Row(
-        modifier = Modifier.fillMaxWidth().focusRequester(requester)
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
-            .focusable().clickable(onClick = onSelected)
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(requester)
+            .focusProperties {
+                if (blockUp) up = topRequester
+                if (blockDown) down = FocusRequester.Cancel
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onSelected()
+                true
+            }
+            .focusable()
+            .clickable(onClick = onSelected)
             .background(if (focused) Color.White.copy(alpha = .11f) else Color.Transparent, shape)
-            .border(if (focused) 2.dp else 1.dp, when { focused -> Color.White; selected -> TvDesign.Accent.copy(alpha = .52f); else -> Color.White.copy(alpha = .07f) }, shape)
+            .border(
+                if (focused) 2.dp else 1.dp,
+                when {
+                    focused -> Color.White
+                    selected -> TvDesign.Accent.copy(alpha = .52f)
+                    else -> Color.White.copy(alpha = .07f)
+                },
+                shape,
+            )
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(130.dp).height(90.dp).clip(RoundedCornerShape(8.dp)).background(TvDesign.SurfaceRaised)) {
-            TvNetworkImage(episode.thumbnail, episode.title, Modifier.fillMaxSize(), ContentScale.Crop, TvDesign.SurfaceRaised)
-            Text("S${episode.season}E${episode.episode}", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.align(Alignment.BottomStart).padding(7.dp).background(Color.Black.copy(alpha = .72f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
-            if (selected) Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(9.dp).background(TvDesign.Accent, CircleShape))
+        Box(
+            Modifier
+                .width(130.dp)
+                .height(90.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(TvDesign.SurfaceRaised)
+        ) {
+            TvNetworkImage(
+                episode.thumbnail,
+                episode.title,
+                Modifier.fillMaxSize(),
+                ContentScale.Crop,
+                TvDesign.SurfaceRaised,
+            )
+            Text(
+                "S${episode.season}E${episode.episode}",
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(7.dp)
+                    .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(5.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+            if (selected) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(9.dp)
+                        .background(TvDesign.Accent, CircleShape)
+                )
+            }
         }
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(episode.title.ifBlank { "Episode ${episode.episode}" }, color = Color.White, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            vueoPlayerFormatReleaseDate(episode.released)?.let { Text(it, color = Color.White.copy(alpha = .42f), fontSize = 9.sp) }
-            episode.overview?.takeIf { it.isNotBlank() }?.let { Text(it, color = Color.White.copy(alpha = .48f), fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            Text(
+                episode.title.ifBlank { "Episode ${episode.episode}" },
+                color = Color.White,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            vueoPlayerFormatReleaseDate(episode.released)?.let {
+                Text(it, color = Color.White.copy(alpha = .42f), fontSize = 9.sp)
+            }
+            episode.overview?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    color = Color.White.copy(alpha = .48f),
+                    fontSize = 9.sp,
+                    lineHeight = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun VueoPanelTextAction(label: String, onClick: () -> Unit) {
+private fun VueoPanelTextAction(
+    label: String,
+    requester: FocusRequester,
+    downRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
     var focused by remember(label) { mutableStateOf(false) }
     val shape = RoundedCornerShape(7.dp)
     Text(
-        label, color = if (focused) Color.Black else Color.White.copy(alpha = .74f), fontSize = 10.sp, fontWeight = FontWeight.Medium,
-        modifier = Modifier.onFocusChanged { focused = it.isFocused }.focusable().clickable(onClick = onClick)
+        label,
+        color = if (focused) Color.Black else Color.White.copy(alpha = .74f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .focusRequester(requester)
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = downRequester
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .clickable(onClick = onClick)
             .background(if (focused) Color.White else Color.White.copy(alpha = .07f), shape)
             .padding(horizontal = 12.dp, vertical = 7.dp),
     )
@@ -366,26 +742,43 @@ internal fun VueoPlayerSubtitleWorkspace(
         List(visibleTracks.size.coerceAtLeast(1)) { FocusRequester() }
     }
     val syncRequester = remember { FocusRequester() }
+    val sizeRequester = remember { FocusRequester() }
+    val boldRequester = remember { FocusRequester() }
+    val textColorRequester = remember { FocusRequester() }
+    val opacityRequester = remember { FocusRequester() }
+    val outlineRequester = remember { FocusRequester() }
+    val outlineColorRequester = remember { FocusRequester() }
+    val positionRequester = remember { FocusRequester() }
+    val resetRequester = remember { FocusRequester() }
     val activeLanguageRequester = languageRequesters.getOrNull(
         groups.indexOfFirst { it.code == activeLanguageCode }.let { if (it < 0) 0 else it + 1 }
     ) ?: languageRequesters.first()
     val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else FocusRequester.Cancel
     val selectedVisibleTrackIndex = visibleTracks.indexOfFirst { it.selected }
-    val styleLeftRequester = trackRequesters.getOrNull(selectedVisibleTrackIndex)
+    var styleReturnTrackIndex by remember(visibleTracks.map { it.key }) {
+        mutableIntStateOf(selectedVisibleTrackIndex.coerceAtLeast(0))
+    }
+    var pendingTrackFocusLanguage by remember { mutableStateOf<String?>(null) }
+    val styleLeftRequester = trackRequesters.getOrNull(styleReturnTrackIndex)
         ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
     var initialFocusAssigned by remember { mutableStateOf(false) }
 
     LaunchedEffect(groups, entryLanguageIndex, initialFocusAssigned) {
         if (initialFocusAssigned) return@LaunchedEffect
-        repeat(4) { attempt ->
-            delay(if (attempt == 0) 24 else 48)
-            val focused = runCatching {
-                languageRequesters[entryLanguageIndex.coerceIn(languageRequesters.indices)].requestFocus()
-            }.getOrDefault(false)
-            if (focused) {
-                initialFocusAssigned = true
-                return@LaunchedEffect
-            }
+        initialFocusAssigned = languageRequesters[
+            entryLanguageIndex.coerceIn(languageRequesters.indices)
+        ].requestTvFocus()
+    }
+
+    LaunchedEffect(activeLanguageCode, visibleTracks, pendingTrackFocusLanguage) {
+        if (
+            pendingTrackFocusLanguage != activeLanguageCode ||
+            visibleTracks.isEmpty()
+        ) {
+            return@LaunchedEffect
+        }
+        if (trackRequesters.first().requestTvFocus()) {
+            pendingTrackFocusLanguage = null
         }
     }
 
@@ -469,9 +862,12 @@ internal fun VueoPlayerSubtitleWorkspace(
                                 count = null,
                                 selected = subtitlesDisabled && activeLanguageCode == null,
                                 requester = languageRequesters[0],
+                                blockUp = true,
+                                blockDown = groups.isEmpty(),
                                 rightRequester = firstTrackRequester,
                                 onInteraction = onInteraction,
                             ) {
+                                pendingTrackFocusLanguage = null
                                 activeLanguageCode = null
                                 styleOpen = false
                                 onDisable()
@@ -484,9 +880,21 @@ internal fun VueoPlayerSubtitleWorkspace(
                                 selected = group.code == activeLanguageCode ||
                                     (activeLanguageCode == null && !subtitlesDisabled && group.code == selectedLanguageCode),
                                 requester = languageRequesters[index + 1],
+                                blockUp = false,
+                                blockDown = index == groups.lastIndex,
                                 rightRequester = if (group.code == activeLanguageCode) firstTrackRequester else FocusRequester.Cancel,
+                                onRight = if (group.code != activeLanguageCode && group.tracks.isNotEmpty()) {
+                                    {
+                                        activeLanguageCode = group.code
+                                        styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
+                                        pendingTrackFocusLanguage = group.code
+                                    }
+                                } else {
+                                    null
+                                },
                                 onInteraction = onInteraction,
                             ) {
+                                pendingTrackFocusLanguage = null
                                 activeLanguageCode = group.code
                                 styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
                             }
@@ -528,9 +936,12 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     detail = identity,
                                     selected = !subtitlesDisabled && track.selected,
                                     requester = trackRequesters[index],
+                                    blockUp = index == 0,
+                                    blockDown = index == visibleTracks.lastIndex,
                                     leftRequester = activeLanguageRequester,
                                     rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
                                     onInteraction = onInteraction,
+                                    onFocused = { styleReturnTrackIndex = index },
                                 ) {
                                     styleOpen = true
                                     onSelect(track)
@@ -556,139 +967,150 @@ internal fun VueoPlayerSubtitleWorkspace(
                     VueoSubtitleColumnTitle("Style")
                     Spacer(Modifier.height(10.dp))
                     if (styleOpen && !subtitlesDisabled) {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(bottom = 6.dp),
                             verticalArrangement = Arrangement.spacedBy(11.dp),
-                            contentPadding = PaddingValues(bottom = 6.dp),
                         ) {
-                            item(key = "subtitle:sync") {
-                                VueoSubtitleStepperRow(
-                                    title = "Sync",
-                                    value = formatSubtitleDelayTv(subtitleDelayMs),
-                                    requester = syncRequester,
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onDecrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
-                                    },
-                                    onIncrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
-                                    },
+                            VueoSubtitleStepperRow(
+                                title = "Sync",
+                                value = formatSubtitleDelayTv(subtitleDelayMs),
+                                requester = syncRequester,
+                                upRequester = FocusRequester.Cancel,
+                                downRequester = sizeRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onDecrease = {
+                                    onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
+                                },
+                                onIncrease = {
+                                    onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
+                                },
+                            )
+                            VueoSubtitleStepperRow(
+                                title = "Font Size",
+                                value = "${style.fontSizeSp}sp",
+                                requester = sizeRequester,
+                                upRequester = syncRequester,
+                                downRequester = boldRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onDecrease = {
+                                    onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
+                                },
+                                onIncrease = {
+                                    onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
+                                },
+                            )
+                            VueoSubtitleToggleRow(
+                                title = "Bold",
+                                enabled = style.bold,
+                                requester = boldRequester,
+                                upRequester = sizeRequester,
+                                downRequester = textColorRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
+                            )
+                            VueoSubtitleColorRow(
+                                title = "Text Color",
+                                colours = textColours,
+                                selectedColour = style.textColor,
+                                requester = textColorRequester,
+                                upRequester = boldRequester,
+                                downRequester = opacityRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                            ) { colour ->
+                                onStyleChange(
+                                    style.copy(
+                                        textColor = subtitleWithAlpha(colour, opacity)
+                                    )
                                 )
                             }
-                            item(key = "subtitle:size") {
-                                VueoSubtitleStepperRow(
-                                    title = "Font Size",
-                                    value = "${style.fontSizeSp}sp",
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onDecrease = {
-                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
-                                    },
-                                    onIncrease = {
-                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
-                                    },
-                                )
-                            }
-                            item(key = "subtitle:bold") {
-                                VueoSubtitleToggleRow(
-                                    title = "Bold",
-                                    enabled = style.bold,
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
-                                )
-                            }
-                            item(key = "subtitle:text-colour") {
+                            VueoSubtitleStepperRow(
+                                title = "Text Opacity",
+                                value = "$opacity%",
+                                requester = opacityRequester,
+                                upRequester = textColorRequester,
+                                downRequester = outlineRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onDecrease = {
+                                    onStyleChange(
+                                        style.copy(
+                                            textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
+                                        )
+                                    )
+                                },
+                                onIncrease = {
+                                    onStyleChange(
+                                        style.copy(
+                                            textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
+                                        )
+                                    )
+                                },
+                            )
+                            VueoSubtitleToggleRow(
+                                title = "Outline",
+                                enabled = style.outlineEnabled,
+                                requester = outlineRequester,
+                                upRequester = opacityRequester,
+                                downRequester = if (style.outlineEnabled) outlineColorRequester else positionRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
+                            )
+                            if (style.outlineEnabled) {
                                 VueoSubtitleColorRow(
-                                    title = "Text Color",
-                                    colours = textColours,
-                                    selectedColour = style.textColor,
+                                    title = "Outline Color",
+                                    colours = outlineColours,
+                                    selectedColour = style.outlineColor,
+                                    requester = outlineColorRequester,
+                                    upRequester = outlineRequester,
+                                    downRequester = positionRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                 ) { colour ->
+                                    onStyleChange(style.copy(outlineColor = colour))
+                                }
+                            }
+                            VueoSubtitleStepperRow(
+                                title = "Bottom Position",
+                                value = "${style.bottomPaddingPercent}%",
+                                requester = positionRequester,
+                                upRequester = if (style.outlineEnabled) outlineColorRequester else outlineRequester,
+                                downRequester = resetRequester,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                                onDecrease = {
                                     onStyleChange(
                                         style.copy(
-                                            textColor = subtitleWithAlpha(colour, opacity)
+                                            bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
                                         )
                                     )
-                                }
-                            }
-                            item(key = "subtitle:opacity") {
-                                VueoSubtitleStepperRow(
-                                    title = "Text Opacity",
-                                    value = "$opacity%",
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onDecrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
-                                            )
+                                },
+                                onIncrease = {
+                                    onStyleChange(
+                                        style.copy(
+                                            bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
                                         )
-                                    },
-                                    onIncrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
-                                            )
-                                        )
-                                    },
-                                )
-                            }
-                            item(key = "subtitle:outline") {
-                                VueoSubtitleToggleRow(
-                                    title = "Outline",
-                                    enabled = style.outlineEnabled,
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
-                                )
-                            }
-                            if (style.outlineEnabled) {
-                                item(key = "subtitle:outline-colour") {
-                                    VueoSubtitleColorRow(
-                                        title = "Outline Color",
-                                        colours = outlineColours,
-                                        selectedColour = style.outlineColor,
-                                        leftRequester = styleLeftRequester,
-                                        onInteraction = onInteraction,
-                                    ) { colour ->
-                                        onStyleChange(style.copy(outlineColor = colour))
-                                    }
-                                }
-                            }
-                            item(key = "subtitle:position") {
-                                VueoSubtitleStepperRow(
-                                    title = "Bottom Position",
-                                    value = "${style.bottomPaddingPercent}%",
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                    onDecrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
-                                            )
-                                        )
-                                    },
-                                    onIncrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
-                                            )
-                                        )
-                                    },
-                                )
-                            }
-                            item(key = "subtitle:reset") {
-                                VueoSubtitleActionRow(
-                                    title = "Reset Style",
-                                    detail = "White • 22sp • black outline • 8% bottom",
-                                    leftRequester = styleLeftRequester,
-                                    onInteraction = onInteraction,
-                                ) {
-                                    onStyleChange(TvPlayerSubtitleStyleState())
-                                }
+                                    )
+                                },
+                            )
+                            VueoSubtitleActionRow(
+                                title = "Reset Style",
+                                detail = "White • 22sp • black outline • 8% bottom",
+                                requester = resetRequester,
+                                upRequester = positionRequester,
+                                downRequester = FocusRequester.Cancel,
+                                leftRequester = styleLeftRequester,
+                                onInteraction = onInteraction,
+                            ) {
+                                onStyleChange(TvPlayerSubtitleStyleState())
                             }
                         }
                     } else {
@@ -711,6 +1133,8 @@ internal fun VueoPlayerAudioWorkspace(
     onAutomatic: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
 ) {
+    val closeRequester = remember { FocusRequester() }
+    val listEntryRequester = remember { FocusRequester() }
     val options = remember(tracks, automaticSelected, activeSourceLabel) {
         buildList {
             add(
@@ -747,7 +1171,20 @@ internal fun VueoPlayerAudioWorkspace(
                 .background(Color(0xFF111418).copy(alpha = .99f))
                 .padding(horizontal = 28.dp, vertical = 32.dp),
         ) {
-            Text("Audio", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Audio", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                VueoPanelTextAction(
+                    label = "Close",
+                    requester = closeRequester,
+                    downRequester = listEntryRequester,
+                    onInteraction = onInteraction,
+                    onClick = onDismiss,
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 if (tracks.isEmpty()) "No selectable alternate audio tracks" else "Choose an exact audio track",
@@ -755,10 +1192,17 @@ internal fun VueoPlayerAudioWorkspace(
                 fontSize = 11.sp,
             )
             Spacer(Modifier.height(18.dp))
-            VueoOptionList(options, .84f, onInteraction) { option ->
-                if (option.key == TV_AUDIO_AUTO) onAutomatic()
-                else tracks.firstOrNull { it.selectionId == option.key }?.let(onSelect)
-            }
+            VueoOptionList(
+                options = options,
+                maxHeightFraction = .84f,
+                onInteraction = onInteraction,
+                onSelected = { option ->
+                    if (option.key == TV_AUDIO_AUTO) onAutomatic()
+                    else tracks.firstOrNull { it.selectionId == option.key }?.let(onSelect)
+                },
+                topRequester = closeRequester,
+                entryFocusRequester = listEntryRequester,
+            )
         }
     }
 }
@@ -782,7 +1226,10 @@ private fun VueoSubtitleLanguageRow(
     count: Int?,
     selected: Boolean,
     requester: FocusRequester,
+    blockUp: Boolean,
+    blockDown: Boolean,
     rightRequester: FocusRequester,
+    onRight: (() -> Unit)? = null,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -793,12 +1240,26 @@ private fun VueoSubtitleLanguageRow(
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(requester)
-            .focusProperties { right = rightRequester }
+            .focusProperties {
+                if (blockUp) up = FocusRequester.Cancel
+                if (blockDown) down = FocusRequester.Cancel
+                left = FocusRequester.Cancel
+                right = rightRequester
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
+                if (
+                    event.type == KeyEventType.KeyDown &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT &&
+                    onRight != null
+                ) {
+                    onInteraction()
+                    onRight()
+                    return@onPreviewKeyEvent true
+                }
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onClick()
@@ -871,9 +1332,12 @@ private fun VueoSubtitleTrackRow(
     detail: String,
     selected: Boolean,
     requester: FocusRequester,
+    blockUp: Boolean,
+    blockDown: Boolean,
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
     onInteraction: () -> Unit,
+    onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(title, provider, detail) { mutableStateOf(false) }
@@ -884,12 +1348,17 @@ private fun VueoSubtitleTrackRow(
             .fillMaxWidth()
             .focusRequester(requester)
             .focusProperties {
+                if (blockUp) up = FocusRequester.Cancel
+                if (blockDown) down = FocusRequester.Cancel
                 left = leftRequester
                 right = rightRequester
             }
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onInteraction()
+                if (it.isFocused) {
+                    onInteraction()
+                    onFocused()
+                }
             }
             .onPreviewKeyEvent { event ->
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
@@ -984,6 +1453,8 @@ private fun VueoSubtitleStepperRow(
     title: String,
     value: String,
     requester: FocusRequester? = null,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
     leftRequester: FocusRequester,
     onInteraction: () -> Unit,
     onDecrease: () -> Unit,
@@ -1011,6 +1482,8 @@ private fun VueoSubtitleStepperRow(
                 label = "−",
                 modifier = Modifier.width(46.dp),
                 requester = minusRequester,
+                upRequester = upRequester,
+                downRequester = downRequester,
                 leftRequester = leftRequester,
                 rightRequester = valueRequester,
                 onInteraction = onInteraction,
@@ -1020,6 +1493,8 @@ private fun VueoSubtitleStepperRow(
                 label = value,
                 modifier = Modifier.weight(1f),
                 requester = valueRequester,
+                upRequester = upRequester,
+                downRequester = downRequester,
                 leftRequester = minusRequester,
                 rightRequester = plusRequester,
                 onInteraction = onInteraction,
@@ -1029,6 +1504,8 @@ private fun VueoSubtitleStepperRow(
                 label = "+",
                 modifier = Modifier.width(46.dp),
                 requester = plusRequester,
+                upRequester = upRequester,
+                downRequester = downRequester,
                 leftRequester = valueRequester,
                 rightRequester = FocusRequester.Cancel,
                 onInteraction = onInteraction,
@@ -1043,6 +1520,8 @@ private fun VueoSubtitleStepperButton(
     label: String,
     modifier: Modifier,
     requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
     onInteraction: () -> Unit,
@@ -1056,6 +1535,8 @@ private fun VueoSubtitleStepperButton(
             .height(38.dp)
             .focusRequester(requester)
             .focusProperties {
+                up = upRequester
+                down = downRequester
                 left = leftRequester
                 right = rightRequester
             }
@@ -1095,6 +1576,9 @@ private fun VueoSubtitleStepperButton(
 private fun VueoSubtitleToggleRow(
     title: String,
     enabled: Boolean,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
     leftRequester: FocusRequester,
     onInteraction: () -> Unit,
     onToggle: () -> Unit,
@@ -1114,7 +1598,10 @@ private fun VueoSubtitleToggleRow(
             modifier = Modifier
                 .width(64.dp)
                 .height(38.dp)
+                .focusRequester(requester)
                 .focusProperties {
+                    up = upRequester
+                    down = downRequester
                     left = leftRequester
                     right = FocusRequester.Cancel
                 }
@@ -1163,11 +1650,21 @@ private fun VueoSubtitleColorRow(
     title: String,
     colours: List<Int>,
     selectedColour: Int,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
     leftRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSelected: (Int) -> Unit,
 ) {
-    val requesters = remember(colours) { List(colours.size) { FocusRequester() } }
+    val selectedIndex = colours.indexOfFirst {
+        (selectedColour and 0x00FFFFFF) == (it and 0x00FFFFFF)
+    }.coerceAtLeast(0)
+    val requesters = remember(colours, selectedIndex, requester) {
+        List(colours.size) { index ->
+            if (index == selectedIndex) requester else FocusRequester()
+        }
+    }
 
     Column(Modifier.fillMaxWidth()) {
         Text(
@@ -1189,6 +1686,8 @@ private fun VueoSubtitleColorRow(
                         .size(36.dp)
                         .focusRequester(requesters[index])
                         .focusProperties {
+                            up = upRequester
+                            down = downRequester
                             if (index == 0) left = leftRequester
                             if (index == colours.lastIndex) right = FocusRequester.Cancel
                         }
@@ -1240,6 +1739,9 @@ private fun VueoSubtitleColorRow(
 private fun VueoSubtitleActionRow(
     title: String,
     detail: String,
+    requester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester,
     leftRequester: FocusRequester,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
@@ -1251,7 +1753,10 @@ private fun VueoSubtitleActionRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(requester)
             .focusProperties {
+                up = upRequester
+                down = downRequester
                 left = leftRequester
                 right = FocusRequester.Cancel
             }
