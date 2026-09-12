@@ -1,5 +1,6 @@
 package com.vueo.shared.core.stremio
 
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
 import org.json.JSONArray
@@ -29,10 +30,12 @@ object StremioStreamParser {
                 item.optString("name", manifest.name),
             ).trim().ifBlank { manifest.name }
             val behaviorHints = item.optJSONObject("behaviorHints")
-            val requestHeaders = behaviorHints
-                ?.optJSONObject("proxyHeaders")
-                ?.optJSONObject("request")
-                .toStringMap()
+            val requestHeaders = PlaybackRequestHeaders.sanitize(
+                behaviorHints
+                    ?.optJSONObject("proxyHeaders")
+                    ?.optJSONObject("request")
+                    .toStringMap()
+            )
             val videoSize = behaviorHints
                 ?.optLong("videoSize", -1L)
                 ?.takeIf { it > 0L }

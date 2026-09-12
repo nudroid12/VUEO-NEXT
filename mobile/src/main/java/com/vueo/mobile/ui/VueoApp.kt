@@ -241,6 +241,7 @@ import com.vueo.mobile.core.model.EpisodeItem
 import com.vueo.mobile.core.model.MediaCompany
 import com.vueo.mobile.core.model.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.mobile.core.model.MediaPerson
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
@@ -9866,14 +9867,20 @@ private fun PlayerScreen(
         mediaKey,
         initialPositionMs,
     ) {
+        val playbackHeaders = PlaybackRequestHeaders.sanitize(source.headers)
+        val playbackUserAgent = PlaybackRequestHeaders.value(
+            headers = playbackHeaders,
+            name = "User-Agent",
+        ) ?: "VUEO/${BuildConfig.VERSION_NAME}"
         val httpFactory =
             DefaultHttpDataSource.Factory()
-                .setUserAgent(
-                    "VUEO/${BuildConfig.VERSION_NAME}"
-                )
+                .setUserAgent(playbackUserAgent)
                 .setAllowCrossProtocolRedirects(true)
                 .setDefaultRequestProperties(
-                    source.headers
+                    PlaybackRequestHeaders.without(
+                        headers = playbackHeaders,
+                        name = "User-Agent",
+                    )
                 )
 
         val mediaSourceFactory =
@@ -10524,6 +10531,7 @@ private fun PlayerScreen(
         source.url,
         source.streamType,
         source.mimeType,
+        source.headers,
     ) {
         sourceRecoverySession.begin(source)
         playbackPhase = PlayerPlaybackPhase.LOADING

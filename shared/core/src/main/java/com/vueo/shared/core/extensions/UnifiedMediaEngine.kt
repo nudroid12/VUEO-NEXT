@@ -4,6 +4,7 @@ import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.source.SourceCandidate
@@ -1680,11 +1681,10 @@ object SourceCleaner {
     private fun mergeHeaders(
         primary: Map<String, String>,
         duplicate: Map<String, String>,
-    ): Map<String, String> = when {
-        duplicate.isEmpty() -> primary
-        primary.isEmpty() -> duplicate
-        else -> duplicate + primary
-    }
+    ): Map<String, String> = PlaybackRequestHeaders.merge(
+        base = duplicate,
+        overlay = primary,
+    )
 
     fun qualityBucket(
         source: StreamSource,

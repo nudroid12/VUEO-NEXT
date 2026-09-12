@@ -84,6 +84,7 @@ import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
@@ -166,6 +167,7 @@ fun TvPlayerScreen(
         source.url,
         source.streamType,
         source.mimeType,
+        source.headers,
     ) {
         (listOf(source) + bundle.sources)
             .filter { it.isDirectPlayable }
@@ -182,6 +184,7 @@ fun TvPlayerScreen(
         source.url,
         source.streamType,
         source.mimeType,
+        source.headers,
     ) {
         mutableStateOf(source)
     }
@@ -402,6 +405,7 @@ fun TvPlayerScreen(
         activeSource.url,
         activeSource.streamType,
         activeSource.mimeType,
+        activeSource.headers,
         bundle.videoId,
     ) {
         activeSource.url ?: return@LaunchedEffect
@@ -409,7 +413,19 @@ fun TvPlayerScreen(
         recoveryInProgress = false
         hasRenderedFirstFrame = false
         isBuffering = false
-        httpFactory.setDefaultRequestProperties(activeSource.headers)
+        val playbackHeaders = PlaybackRequestHeaders.sanitize(activeSource.headers)
+        val playbackUserAgent = PlaybackRequestHeaders.value(
+            headers = playbackHeaders,
+            name = "User-Agent",
+        ) ?: "VUEO-TV"
+        httpFactory
+            .setUserAgent(playbackUserAgent)
+            .setDefaultRequestProperties(
+                PlaybackRequestHeaders.without(
+                    headers = playbackHeaders,
+                    name = "User-Agent",
+                )
+            )
         playbackError = null
         textTracks = emptyList()
         audioTracks = emptyList()
@@ -450,6 +466,7 @@ fun TvPlayerScreen(
         activeSource.url,
         activeSource.streamType,
         activeSource.mimeType,
+        activeSource.headers,
         bundle.subtitles,
     ) {
         val url = activeSource.url ?: return@LaunchedEffect
@@ -552,7 +569,13 @@ fun TvPlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError, retryGeneration) {
+    LaunchedEffect(
+        activeSource.url,
+        activeSource.headers,
+        hasRenderedFirstFrame,
+        playbackError,
+        retryGeneration,
+    ) {
         if (hasRenderedFirstFrame || playbackError != null) return@LaunchedEffect
 
         val timeoutMs = if (sourceRecoverySession.isAutomaticRecoveryActive()) {
@@ -568,7 +591,14 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(activeSource.url, isBuffering, hasRenderedFirstFrame, playbackError, retryGeneration) {
+    LaunchedEffect(
+        activeSource.url,
+        activeSource.headers,
+        isBuffering,
+        hasRenderedFirstFrame,
+        playbackError,
+        retryGeneration,
+    ) {
         if (!isBuffering || !hasRenderedFirstFrame || playbackError != null) {
             return@LaunchedEffect
         }

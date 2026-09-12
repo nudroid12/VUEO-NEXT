@@ -1,5 +1,6 @@
 package com.vueo.shared.core.plugin.resolver
 
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamTransport
 import com.vueo.shared.core.media.StreamTransportPolicy
 import com.vueo.shared.core.plugin.PluginWebViewResolver
@@ -29,12 +30,14 @@ internal class WebViewEmbedProviderStreamResolver(
         source: SourceCandidate,
     ): List<SourceCandidate> {
         val url = source.url ?: return emptyList()
-        val referer = source.headers.valueIgnoreCase("Referer") ?: url
-        val userAgent = source.headers.valueIgnoreCase("User-Agent")
+        val providerHeaders = PlaybackRequestHeaders.sanitize(source.headers)
+        val referer = PlaybackRequestHeaders.value(providerHeaders, "Referer") ?: url
+        val userAgent = PlaybackRequestHeaders.value(providerHeaders, "User-Agent")
 
         val requestJson = JSONObject()
             .put("url", url)
             .put("referer", referer)
+            .put("headers", JSONObject(providerHeaders))
             .put("timeoutMs", AUTO_EMBED_RESOLVE_TIMEOUT_MS)
             .put("finishAfterFirstMs", AUTO_EMBED_FINISH_AFTER_FIRST_MS)
             .put("directLoad", true)
@@ -89,7 +92,10 @@ internal class WebViewEmbedProviderStreamResolver(
                     mimeType = rawMimeType,
                 ),
                 quality = source.quality ?: label,
-                headers = source.headers + resolvedHeaders,
+                headers = PlaybackRequestHeaders.merge(
+                    base = source.headers,
+                    overlay = resolvedHeaders,
+                ),
             )
         }
     }
@@ -100,13 +106,6 @@ internal class WebViewEmbedProviderStreamResolver(
         const val AUTO_EMBED_OUTER_TIMEOUT_MS = 5_250L
     }
 }
-
-private fun Map<String, String>.valueIgnoreCase(
-    name: String,
-): String? = entries
-    .firstOrNull { it.key.equals(name, ignoreCase = true) }
-    ?.value
-    ?.takeIf { it.isNotBlank() }
 
 private fun JSONObject?.toStringMap(): Map<String, String> {
     if (this == null) return emptyMap()

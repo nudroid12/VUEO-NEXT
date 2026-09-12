@@ -9,6 +9,7 @@ import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamTransportPolicy
 import com.vueo.shared.core.plugin.resolver.createProviderStreamResolverRegistry
 import com.vueo.shared.core.source.SourceCandidate
@@ -3716,8 +3717,10 @@ private fun parseProviderStreams(
                     ?: return@mapNotNull null
 
             val headers =
-                item.optJSONObject("headers")
-                    .toStringMap()
+                PlaybackRequestHeaders.sanitize(
+                    item.optJSONObject("headers")
+                        .toStringMap()
+                )
 
             val quality =
                 item.optString("quality")

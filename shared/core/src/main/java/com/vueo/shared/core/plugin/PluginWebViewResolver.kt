@@ -15,6 +15,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.content.Context
+import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamTransportPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -49,6 +50,20 @@ private fun JSONArray?.toVueoLongList(): List<Long> {
                 else -> null
             }
         }
+}
+
+private fun JSONObject?.toVueoStringMap(): Map<String, String> {
+    if (this == null) return emptyMap()
+    val result = linkedMapOf<String, String>()
+    val iterator = keys()
+    while (iterator.hasNext()) {
+        val key = iterator.next()
+        optString(key)
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?.let { result[key] = it }
+    }
+    return result
 }
 
 
@@ -148,27 +163,23 @@ internal class PluginWebViewResolver(
             fun finalizedPlaybackHeaders(
                 stream: CapturedStream,
             ): Map<String, String> {
-                val headers = stream.headers
-                    .filterKeys { key ->
-                        key.lowercase() !in BLOCKED_PLAYBACK_HEADERS
-                    }
-                    .toMutableMap()
+                var headers = PlaybackRequestHeaders.withDefaults(
+                    headers = stream.headers,
+                    userAgent = request.userAgent,
+                    referer = request.referer.ifBlank { request.url },
+                    accept = "*/*",
+                )
 
                 val refreshedCookie = runCatching {
                     CookieManager.getInstance().getCookie(stream.url)
                 }.getOrNull().orEmpty()
 
                 if (refreshedCookie.isNotBlank()) {
-                    headers["Cookie"] = refreshedCookie
+                    headers = PlaybackRequestHeaders.merge(
+                        base = headers,
+                        overlay = mapOf("Cookie" to refreshedCookie),
+                    )
                 }
-
-                headers["User-Agent"] =
-                    headers["User-Agent"] ?: request.userAgent
-                headers["Accept"] =
-                    headers["Accept"] ?: "*/*"
-                headers["Referer"] =
-                    headers["Referer"]
-                        ?: request.referer.ifBlank { request.url }
 
                 return headers
             }
@@ -257,25 +268,48 @@ internal class PluginWebViewResolver(
                     mimeType = mimeType,
                 )
 
-                val fixedHeaders = headers.toMutableMap().apply {
-                    putIfAbsent("User-Agent", request.userAgent)
-                    putIfAbsent("Accept", "*/*")
-                    putIfAbsent("Referer", request.referer.ifBlank { request.url })
-                }
+                val incomingHeaders = PlaybackRequestHeaders.sanitize(headers)
+                val fixedHeaders = PlaybackRequestHeaders.withDefaults(
+                    headers = incomingHeaders,
+                    userAgent = request.userAgent,
+                    referer = request.referer.ifBlank { request.url },
+                    accept = "*/*",
+                )
+                val normalizedStreamType = streamType
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                val normalizedLabel = label.trim()
+                    .ifBlank { guessLabel(fixedUrl) }
 
                 var added = false
                 synchronized(streams) {
-                    if (!streams.containsKey(fixedUrl)) {
+                    val existing = streams[fixedUrl]
+                    if (existing == null) {
                         streams[fixedUrl] = CapturedStream(
-                            label = label.trim().ifBlank { guessLabel(fixedUrl) },
+                            label = normalizedLabel,
                             url = fixedUrl,
                             headers = fixedHeaders,
-                            streamType = streamType
-                                ?.trim()
-                                ?.takeIf { it.isNotBlank() },
+                            streamType = normalizedStreamType,
                             mimeType = normalizedMimeType,
                         )
                         added = true
+                    } else {
+                        streams[fixedUrl] = existing.copy(
+                            label = existing.label
+                                .takeUnless { it.equals("Auto", ignoreCase = true) }
+                                ?: normalizedLabel,
+                            headers = PlaybackRequestHeaders.withDefaults(
+                                headers = PlaybackRequestHeaders.merge(
+                                    base = existing.headers,
+                                    overlay = incomingHeaders,
+                                ),
+                                userAgent = request.userAgent,
+                                referer = request.referer.ifBlank { request.url },
+                                accept = "*/*",
+                            ),
+                            streamType = normalizedStreamType ?: existing.streamType,
+                            mimeType = normalizedMimeType ?: existing.mimeType,
+                        )
                     }
                 }
 
@@ -293,7 +327,7 @@ internal class PluginWebViewResolver(
                             addStream(
                                 label = parts[1],
                                 rawUrl = parts[3],
-                                headers = request.defaultHeaders(),
+                                headers = emptyMap(),
                                 streamType = parts[2],
                             )
                         }
@@ -304,7 +338,7 @@ internal class PluginWebViewResolver(
                         addStream(
                             label = guessLabel(file),
                             rawUrl = file,
-                            headers = request.defaultHeaders(),
+                            headers = emptyMap(),
                         )
                     }
 
@@ -315,7 +349,7 @@ internal class PluginWebViewResolver(
                             addStream(
                                 label = guessLabel(file),
                                 rawUrl = file,
-                                headers = request.defaultHeaders(),
+                                headers = emptyMap(),
                             )
                         }
                     }
@@ -327,7 +361,7 @@ internal class PluginWebViewResolver(
                             addStream(
                                 label = guessLabel(file),
                                 rawUrl = file,
-                                headers = request.defaultHeaders(),
+                                headers = emptyMap(),
                             )
                         }
                     }
@@ -342,7 +376,7 @@ internal class PluginWebViewResolver(
                                 addStream(
                                     label = guessLabel(file),
                                     rawUrl = file,
-                                    headers = request.defaultHeaders(),
+                                    headers = emptyMap(),
                                     forcePlayable = true,
                                     mimeType = mime,
                                 )
@@ -767,6 +801,16 @@ internal class PluginWebViewResolver(
                 val cookieManager = CookieManager.getInstance()
                 cookieManager.setAcceptCookie(true)
                 cookieManager.setAcceptThirdPartyCookies(webView, true)
+                PlaybackRequestHeaders.value(
+                    headers = request.initialHeaders,
+                    name = "Cookie",
+                )
+                    ?.split(';')
+                    ?.map(String::trim)
+                    ?.filter { it.contains('=') }
+                    ?.forEach { cookie ->
+                        runCatching { cookieManager.setCookie(request.url, cookie) }
+                    }
 
                 webView.addJavascriptInterface(
                     CaptureBridge(::handleBridgeCapture),
@@ -841,6 +885,7 @@ internal class PluginWebViewResolver(
                                     pageUrl = requestUrl,
                                     referer = request.referer.ifBlank { request.url },
                                     userAgent = request.userAgent,
+                                    initialHeaders = request.initialHeaders,
                                 )
                             }.getOrNull()
                         }
@@ -937,10 +982,19 @@ internal class PluginWebViewResolver(
                 """.trimIndent()
 
                 if (request.directLoad) {
-                    val initialHeaders = mutableMapOf<String, String>()
-                    if (request.referer.isNotBlank()) {
-                        initialHeaders["Referer"] = request.referer
-                    }
+                    var initialHeaders = PlaybackRequestHeaders.withDefaults(
+                        headers = request.initialHeaders,
+                        referer = request.referer.ifBlank { request.url },
+                        accept = "*/*",
+                    )
+                    initialHeaders = PlaybackRequestHeaders.without(
+                        headers = initialHeaders,
+                        name = "User-Agent",
+                    )
+                    initialHeaders = PlaybackRequestHeaders.without(
+                        headers = initialHeaders,
+                        name = "Cookie",
+                    )
                     webView.loadUrl(request.url, initialHeaders)
                 } else {
                     webView.loadDataWithBaseURL(
@@ -984,6 +1038,7 @@ internal class PluginWebViewResolver(
     private data class ResolveRequest(
         val url: String,
         val referer: String,
+        val initialHeaders: Map<String, String>,
         val timeoutMs: Long,
         val finishAfterFirstMs: Long,
         val clickDelaysMs: List<Long>,
@@ -1044,13 +1099,6 @@ internal class PluginWebViewResolver(
         private fun looksLikeMediaSegment(value: String): Boolean =
             SEGMENT_PARTS.any(value::contains)
 
-        fun defaultHeaders(): Map<String, String> =
-            mapOf(
-                "User-Agent" to userAgent,
-                "Accept" to "*/*",
-                "Referer" to referer.ifBlank { url },
-            )
-
         companion object {
             fun parse(raw: String): ResolveRequest {
                 val json = JSONObject(raw)
@@ -1089,6 +1137,9 @@ internal class PluginWebViewResolver(
                 return ResolveRequest(
                     url = url,
                     referer = json.optString("referer").trim(),
+                    initialHeaders = PlaybackRequestHeaders.sanitize(
+                        json.optJSONObject("headers").toVueoStringMap()
+                    ),
                     timeoutMs = timeoutMs,
                     finishAfterFirstMs = json.optLong(
                         "finishAfterFirstMs",
@@ -1128,22 +1179,27 @@ internal class PluginWebViewResolver(
         pageUrl: String,
         referer: String,
         userAgent: String,
+        initialHeaders: Map<String, String>,
     ): WebResourceResponse {
+        val playbackHeaders = PlaybackRequestHeaders.withDefaults(
+            headers = initialHeaders,
+            userAgent = userAgent,
+            referer = referer,
+            accept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+        val requestBuilder = Request.Builder().url(pageUrl)
+        playbackHeaders.forEach { (name, value) ->
+            requestBuilder.header(name, value)
+        }
+        requestBuilder
+            .header(
+                "Accept-Language",
+                "ms-MY,ms;q=0.9,en-US;q=0.8,en;q=0.7",
+            )
+            .header("Accept-Encoding", "identity")
+
         val response = PluginHttp.client.newCall(
-            Request.Builder()
-                .url(pageUrl)
-                .header("User-Agent", userAgent)
-                .header("Referer", referer)
-                .header(
-                    "Accept",
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                )
-                .header(
-                    "Accept-Language",
-                    "ms-MY,ms;q=0.9,en-US;q=0.8,en;q=0.7",
-                )
-                .header("Accept-Encoding", "identity")
-                .build()
+            requestBuilder.build()
         ).execute()
 
         val html = response.use { safeResponse ->
@@ -1319,14 +1375,6 @@ internal class PluginWebViewResolver(
             "decafeligiblyhad",
             "algiersreests",
             "morestamping",
-        )
-
-        private val BLOCKED_PLAYBACK_HEADERS = setOf(
-            "host",
-            "connection",
-            "accept-encoding",
-            "range",
-            "origin",
         )
 
         private const val HOOK_JS = """
