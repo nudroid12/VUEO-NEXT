@@ -55,7 +55,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import kotlinx.coroutines.delay
 
-private val PanelShape = RoundedCornerShape(16.dp)
+private val PanelShape = RoundedCornerShape(18.dp)
 
 @Composable
 internal fun VueoPlayerCompactOverlay(
@@ -407,60 +407,60 @@ internal fun VueoPlayerSubtitleWorkspace(
         )
     }
     val opacity = subtitleAlphaPercent(style.textColor)
-    val cardBackground = Color(0xFF17191C).copy(alpha = .96f)
-    val cardBorder = Color.White.copy(alpha = .11f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = .18f))
+            .background(Color.Black.copy(alpha = .20f))
             .background(
                 Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .56f),
-                    .38f to Color.Black.copy(alpha = .28f),
-                    .72f to Color.Black.copy(alpha = .16f),
-                    1f to Color.Black.copy(alpha = .10f),
+                    0f to Color.Black.copy(alpha = .60f),
+                    .38f to Color.Black.copy(alpha = .30f),
+                    .72f to Color.Black.copy(alpha = .15f),
+                    1f to Color.Black.copy(alpha = .08f),
                 )
             )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 48.dp, top = 28.dp, end = 48.dp, bottom = 24.dp),
+                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = 20.dp),
         ) {
             Text(
                 "Subtitles",
                 color = Color.White,
-                fontSize = 27.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 "Choose a language, track and style",
                 color = Color.White.copy(alpha = .56f),
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Normal,
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(
                     modifier = Modifier
-                        .width(250.dp)
+                        .weight(.22f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
                         .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
                 ) {
                     VueoSubtitleColumnTitle("Languages")
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         item(key = "subtitle:none") {
                             VueoSubtitleLanguageRow(
@@ -495,20 +495,20 @@ internal fun VueoPlayerSubtitleWorkspace(
 
                 Column(
                     modifier = Modifier
-                        .width(430.dp)
+                        .weight(.50f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
                         .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
                 ) {
                     VueoSubtitleColumnTitle("Subtitles")
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     when {
                         activeLanguageCode == null -> VueoSubtitleEmpty("Choose a language to see its exact subtitle tracks.")
                         visibleTracks.isNotEmpty() -> LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
                             itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
                                 val matchingLabels = visibleTracks.count {
@@ -519,10 +519,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         it.label.equals(track.label, ignoreCase = true)
                                     }
                                 } else 0
-                                val identity = buildList {
-                                    track.metadata?.takeIf { it.isNotBlank() }?.let(::add)
-                                    if (matchingLabels > 1) add("Track $matchingIndex")
-                                }.distinct().joinToString(" • ")
+                                val identity = if (matchingLabels > 1) "Track $matchingIndex" else ""
 
                                 VueoSubtitleTrackRow(
                                     title = track.label,
@@ -548,20 +545,20 @@ internal fun VueoPlayerSubtitleWorkspace(
 
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(.28f)
                         .fillMaxHeight()
                         .clip(PanelShape)
                         .background(cardBackground)
                         .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
                 ) {
                     VueoSubtitleColumnTitle("Style")
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     if (styleOpen && !subtitlesDisabled) {
                         LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(15.dp),
-                            contentPadding = PaddingValues(bottom = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(11.dp),
+                            contentPadding = PaddingValues(bottom = 6.dp),
                         ) {
                             item(key = "subtitle:sync") {
                                 VueoSubtitleStepperRow(
@@ -770,7 +767,7 @@ private fun VueoSubtitleColumnTitle(title: String) {
     Text(
         title,
         color = Color.White.copy(alpha = .94f),
-        fontSize = 16.sp,
+        fontSize = 15.sp,
         fontWeight = FontWeight.SemiBold,
     )
 }
@@ -789,7 +786,7 @@ private fun VueoSubtitleLanguageRow(
     onClick: () -> Unit,
 ) {
     var focused by remember(title) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(11.dp)
 
     Row(
         modifier = Modifier
@@ -809,8 +806,8 @@ private fun VueoSubtitleLanguageRow(
             .focusable()
             .background(
                 when {
-                    focused -> TvDesign.Accent.copy(alpha = .30f)
-                    selected -> TvDesign.Accent.copy(alpha = .16f)
+                    focused -> TvDesign.Accent.copy(alpha = .26f)
+                    selected -> TvDesign.Accent.copy(alpha = .10f)
                     else -> Color.Transparent
                 },
                 shape,
@@ -823,18 +820,18 @@ private fun VueoSubtitleLanguageRow(
                 },
                 color = when {
                     focused -> TvDesign.Accent
-                    selected -> TvDesign.Accent.copy(alpha = .72f)
+                    selected -> TvDesign.Accent.copy(alpha = .48f)
                     else -> Color.Transparent
                 },
                 shape = shape,
             )
-            .padding(horizontal = 13.dp, vertical = 11.dp),
+            .padding(horizontal = 11.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             title,
             color = Color.White,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -843,13 +840,13 @@ private fun VueoSubtitleLanguageRow(
         count?.let {
             Box(
                 modifier = Modifier
-                    .width(31.dp)
-                    .height(31.dp)
+                    .width(27.dp)
+                    .height(27.dp)
                     .background(
                         when {
-                            focused -> TvDesign.Accent.copy(alpha = .42f)
-                            selected -> TvDesign.Accent.copy(alpha = .28f)
-                            else -> Color.White.copy(alpha = .12f)
+                            focused -> TvDesign.Accent.copy(alpha = .34f)
+                            selected -> TvDesign.Accent.copy(alpha = .18f)
+                            else -> Color.White.copy(alpha = .09f)
                         },
                         RoundedCornerShape(10.dp),
                     ),
@@ -858,7 +855,7 @@ private fun VueoSubtitleLanguageRow(
                 Text(
                     it.toString(),
                     color = Color.White.copy(alpha = .92f),
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -879,7 +876,7 @@ private fun VueoSubtitleTrackRow(
     onClick: () -> Unit,
 ) {
     var focused by remember(title, provider, detail) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(15.dp)
+    val shape = RoundedCornerShape(13.dp)
 
     Row(
         modifier = Modifier
@@ -902,9 +899,9 @@ private fun VueoSubtitleTrackRow(
             .focusable()
             .background(
                 when {
-                    focused -> TvDesign.Accent.copy(alpha = .28f)
-                    selected -> TvDesign.Accent.copy(alpha = .16f)
-                    else -> Color.Black.copy(alpha = .20f)
+                    focused -> TvDesign.Accent.copy(alpha = .24f)
+                    selected -> TvDesign.Accent.copy(alpha = .10f)
+                    else -> Color.White.copy(alpha = .025f)
                 },
                 shape,
             )
@@ -912,54 +909,54 @@ private fun VueoSubtitleTrackRow(
                 width = when {
                     focused -> 2.dp
                     selected -> 1.dp
-                    else -> 1.dp
+                    else -> 0.dp
                 },
                 color = when {
                     focused -> TvDesign.Accent
-                    selected -> TvDesign.Accent.copy(alpha = .72f)
-                    else -> Color.White.copy(alpha = .08f)
+                    selected -> TvDesign.Accent.copy(alpha = .48f)
+                    else -> Color.Transparent
                 },
                 shape = shape,
             )
-            .padding(horizontal = 15.dp, vertical = 13.dp),
+            .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Box(
                 modifier = Modifier
                     .background(
-                        if (selected || focused) TvDesign.Accent.copy(alpha = .18f)
-                        else Color.White.copy(alpha = .08f),
+                        if (selected || focused) TvDesign.Accent.copy(alpha = .12f)
+                        else Color.White.copy(alpha = .055f),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
                         1.dp,
-                        if (selected || focused) TvDesign.Accent.copy(alpha = .50f)
-                        else Color.White.copy(alpha = .13f),
+                        if (selected || focused) TvDesign.Accent.copy(alpha = .38f)
+                        else Color.White.copy(alpha = .09f),
                         RoundedCornerShape(999.dp),
                     )
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
             ) {
                 Text(
                     provider.ifBlank { "Subtitle" },
                     color = if (selected || focused) TvDesign.Accent else Color.White.copy(alpha = .66f),
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(5.dp))
             Text(
                 title,
                 color = Color.White,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (detail.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     detail,
                     color = Color.White.copy(alpha = .50f),
@@ -973,7 +970,7 @@ private fun VueoSubtitleTrackRow(
             Text(
                 "✓",
                 color = TvDesign.Accent,
-                fontSize = 22.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 10.dp),
             )
@@ -1000,18 +997,18 @@ private fun VueoSubtitleStepperRow(
         Text(
             title,
             color = Color.White.copy(alpha = .72f),
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(5.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             VueoSubtitleStepperButton(
                 label = "−",
-                modifier = Modifier.width(52.dp),
+                modifier = Modifier.width(46.dp),
                 requester = minusRequester,
                 leftRequester = leftRequester,
                 rightRequester = valueRequester,
@@ -1029,7 +1026,7 @@ private fun VueoSubtitleStepperRow(
             )
             VueoSubtitleStepperButton(
                 label = "+",
-                modifier = Modifier.width(52.dp),
+                modifier = Modifier.width(46.dp),
                 requester = plusRequester,
                 leftRequester = valueRequester,
                 rightRequester = FocusRequester.Cancel,
@@ -1055,7 +1052,7 @@ private fun VueoSubtitleStepperButton(
 
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(38.dp)
             .focusRequester(requester)
             .focusProperties {
                 left = leftRequester
@@ -1086,7 +1083,7 @@ private fun VueoSubtitleStepperButton(
         Text(
             label,
             color = Color.White,
-            fontSize = if (label == "+" || label == "−") 20.sp else 13.sp,
+            fontSize = if (label == "+" || label == "−") 18.sp else 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
@@ -1108,14 +1105,14 @@ private fun VueoSubtitleToggleRow(
         Text(
             title,
             color = Color.White.copy(alpha = .72f),
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(5.dp))
         Box(
             modifier = Modifier
-                .width(70.dp)
-                .height(44.dp)
+                .width(64.dp)
+                .height(38.dp)
                 .focusProperties {
                     left = leftRequester
                     right = FocusRequester.Cancel
@@ -1153,7 +1150,7 @@ private fun VueoSubtitleToggleRow(
             Text(
                 if (enabled) "On" else "Off",
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -1174,12 +1171,12 @@ private fun VueoSubtitleColorRow(
     Column(Modifier.fillMaxWidth()) {
         Text(
             title,
-            color = Color.White.copy(alpha = .90f),
-            fontSize = 13.sp,
+            color = Color.White.copy(alpha = .72f),
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(7.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        Spacer(Modifier.height(5.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             colours.forEachIndexed { index, colour ->
                 var focused by remember(colour) { mutableStateOf(false) }
                 val selected = (selectedColour and 0x00FFFFFF) == (colour and 0x00FFFFFF)
@@ -1188,7 +1185,7 @@ private fun VueoSubtitleColorRow(
 
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(36.dp)
                         .focusRequester(requesters[index])
                         .focusProperties {
                             if (index == 0) left = leftRequester
@@ -1227,7 +1224,7 @@ private fun VueoSubtitleColorRow(
                             Text(
                                 "✓",
                                 color = checkColor,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -1269,19 +1266,19 @@ private fun VueoSubtitleActionRow(
             }
             .focusable()
             .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .045f), shape)
-            .padding(horizontal = 13.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(
             title,
             color = contentColor,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(2.dp))
         Text(
             detail,
             color = if (focused) contentColor.copy(alpha = .62f) else Color.White.copy(alpha = .44f),
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1293,8 +1290,8 @@ private fun VueoSubtitleEmpty(message: String) {
     Text(
         message,
         color = Color.White.copy(alpha = .52f),
-        fontSize = 11.sp,
-        lineHeight = 15.sp,
+        fontSize = 10.sp,
+        lineHeight = 14.sp,
         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
     )
 }

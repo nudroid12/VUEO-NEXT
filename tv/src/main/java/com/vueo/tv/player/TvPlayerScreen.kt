@@ -832,12 +832,9 @@ fun TvPlayerScreen(
                                     requestControlFocus(progressRequester)
                                     true
                                 }
-                                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                    seekBy(-10_000L)
-                                    true
-                                }
+                                KeyEvent.KEYCODE_DPAD_LEFT,
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    seekBy(10_000L)
+                                    requestControlFocus(progressRequester)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP -> {
