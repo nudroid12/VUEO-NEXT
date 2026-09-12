@@ -15,8 +15,6 @@ fun StreamSource.toSourceCandidate(): SourceCandidate =
         },
         name = name,
         url = url,
-        streamType = streamType,
-        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,
@@ -35,8 +33,6 @@ fun SourceCandidate.toStreamSource(): StreamSource =
     StreamSource(
         name = name,
         url = url,
-        streamType = streamType,
-        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,

@@ -9,9 +9,6 @@ import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
-import com.vueo.shared.core.media.PlaybackRequestHeaders
-import com.vueo.shared.core.media.StreamTransportPolicy
-import com.vueo.shared.core.plugin.resolver.createProviderStreamResolverRegistry
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SourceResolveResult
@@ -139,14 +136,6 @@ class PluginSourceEngine(
     private val webViewResolver =
         PluginWebViewResolver(
             appContext
-        )
-
-    private val providerStreamResolverRegistry =
-        createProviderStreamResolverRegistry(
-            webViewResolver = webViewResolver,
-            webViewConcurrency = webViewConcurrency,
-            maxFallbackCandidates =
-                if (lowMemoryDevice) 1 else 2,
         )
 
     private val healthStore =
@@ -1269,25 +1258,16 @@ private fun emptyDiscoveryResult():
                     )
                 }
 
-            val parsedStreams =
-                parseProviderStreams(
-                    repository =
-                        repository,
-                    provider =
-                        provider,
-                    resultJson =
-                        resultJson,
-                )
-
-            val finalizedStreams =
-                finalizeProviderStreams(
-                    streams = parsedStreams,
-                    provider = provider,
-                    runtimeDiagnosticScanId = runtimeDiagnosticScanId,
-                )
-
             ProviderExecution(
-                streams = finalizedStreams,
+                streams =
+                    parseProviderStreams(
+                        repository =
+                            repository,
+                        provider =
+                            provider,
+                        resultJson =
+                            resultJson,
+                    ),
                 error =
                     null,
                 logs =
@@ -3561,31 +3541,6 @@ private fun emptyDiscoveryResult():
         }
     }
 
-    private suspend fun finalizeProviderStreams(
-        streams: List<SourceCandidate>,
-        provider: PluginProviderDescriptor,
-        runtimeDiagnosticScanId: Long,
-    ): List<SourceCandidate> {
-        val resolution = providerStreamResolverRegistry.resolve(streams)
-
-        if (resolution.fallbackAttempted) {
-            RuntimeDiagnostics.recordDiscoveryTrace(
-                scanId = runtimeDiagnosticScanId,
-                providerName = provider.name,
-                stage = "RESOLVER",
-                details =
-                    "embed=${resolution.fallbackCandidateCount} " +
-                        "resolved=${resolution.fallbackResolvedCount} " +
-                        "attempts=${resolution.fallbackResolverAttempts} " +
-                        "failures=${resolution.fallbackFailureCount} " +
-                        "timeouts=${resolution.fallbackTimeoutCount} " +
-                        "recovered=${resolution.fallbackRecoveredByNextCount}",
-            )
-        }
-
-        return resolution.sources
-    }
-
     private data class ProviderExecution(
         val streams: List<SourceCandidate>,
         val error: String?,
@@ -3717,50 +3672,14 @@ private fun parseProviderStreams(
                     ?: return@mapNotNull null
 
             val headers =
-                PlaybackRequestHeaders.sanitize(
-                    item.optJSONObject("headers")
-                        .toStringMap()
-                )
+                item.optJSONObject("headers")
+                    .toStringMap()
 
             val quality =
                 item.optString("quality")
                     .takeIf {
                         it.isNotBlank()
                     }
-
-            val streamType =
-                listOf(
-                    "type",
-                    "format",
-                    "streamType",
-                    "sourceType",
-                ).firstNotNullOfOrNull { field ->
-                    item.optString(field)
-                        .trim()
-                        .takeIf { it.isNotBlank() }
-                }
-                    ?: provider.formats
-                        .singleOrNull()
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-
-            val rawMimeType =
-                listOf(
-                    "mimeType",
-                    "contentType",
-                    "content_type",
-                ).firstNotNullOfOrNull { field ->
-                    item.optString(field)
-                        .trim()
-                        .takeIf { it.isNotBlank() }
-                }
-
-            val mimeType =
-                StreamTransportPolicy.playbackMimeType(
-                    url = url,
-                    streamType = streamType,
-                    mimeType = rawMimeType,
-                )
 
             val displayName =
                 item.optString("title")
@@ -3783,10 +3702,6 @@ private fun parseProviderStreams(
                     displayName,
                 url =
                     url,
-                streamType =
-                    streamType,
-                mimeType =
-                    mimeType,
                 quality =
                     quality,
                 codec =

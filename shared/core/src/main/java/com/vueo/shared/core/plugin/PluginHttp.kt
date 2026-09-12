@@ -52,26 +52,9 @@ object PluginHttp {
             }
     }
 
-    /*
-     * The DNS used by the actual OkHttp connection re-checks every resolved
-     * address. That keeps redirect follow-ups from bypassing the private-IP
-     * guard after the initial provider URL was validated.
-     */
-    private val publicOnlyDns = object : Dns {
-        override fun lookup(hostname: String): List<InetAddress> {
-            val addresses = resilientDns.lookup(hostname)
-            if (addresses.any(::isPrivateAddress)) {
-                throw UnknownHostException(
-                    "Plugin network access cannot reach local/private addresses."
-                )
-            }
-            return addresses
-        }
-    }
-
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .dns(publicOnlyDns)
+            .dns(resilientDns)
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(18, TimeUnit.SECONDS)
@@ -242,63 +225,9 @@ object PluginHttp {
 
     private fun rejectLocalAddress(url: String) {
         val host = url.toHttpUrl().host
-        publicOnlyDns.lookup(host)
-    }
-
-    internal fun requirePublicHttpUrl(
-        url: String,
-        allowHttp: Boolean = true,
-    ) {
-        val parsed = url.toHttpUrl()
-        require(
-            parsed.scheme == "https" ||
-                (allowHttp && parsed.scheme == "http")
-        ) {
-            "Plugin network access only allows HTTP(S)."
-        }
-        publicOnlyDns.lookup(parsed.host)
-    }
-
-    internal fun isPublicHttpUrlBlocking(
-        url: String,
-        allowHttp: Boolean = true,
-    ): Boolean = runCatching {
-        requirePublicHttpUrl(
-            url = url,
-            allowHttp = allowHttp,
-        )
-    }.isSuccess
-
-    internal fun isClearlyLocalHttpUrl(url: String): Boolean = runCatching {
-        val host = url.toHttpUrl().host.trim().lowercase()
-        when {
-            host == "localhost" || host.endsWith(".localhost") -> true
-            host == "::" || host == "::1" -> true
-            ':' in host && host.startsWith("fc", ignoreCase = true) -> true
-            ':' in host && host.startsWith("fd", ignoreCase = true) -> true
-            ':' in host && host.startsWith("fe80", ignoreCase = true) -> true
-            else -> isPrivateIpv4Literal(host)
-        }
-    }.getOrDefault(true)
-
-    private fun isPrivateIpv4Literal(host: String): Boolean {
-        val parts = host.split('.')
-        if (parts.size != 4) return false
-        val octets = parts.map { it.toIntOrNull() ?: return false }
-        if (octets.any { it !in 0..255 }) return false
-
-        val first = octets[0]
-        val second = octets[1]
-        return when {
-            first == 0 -> true
-            first == 10 -> true
-            first == 100 && second in 64..127 -> true
-            first == 127 -> true
-            first == 169 && second == 254 -> true
-            first == 172 && second in 16..31 -> true
-            first == 192 && second == 168 -> true
-            first >= 224 -> true
-            else -> false
+        val addresses = resilientDns.lookup(host)
+        require(addresses.none(::isPrivateAddress)) {
+            "Plugin network access cannot reach local/private addresses."
         }
     }
 
@@ -307,8 +236,7 @@ object PluginHttp {
             address.isAnyLocalAddress ||
             address.isLoopbackAddress ||
             address.isLinkLocalAddress ||
-            address.isSiteLocalAddress ||
-            address.isMulticastAddress
+            address.isSiteLocalAddress
         ) return true
 
         val bytes = address.address

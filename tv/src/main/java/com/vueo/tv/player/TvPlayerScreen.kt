@@ -84,7 +84,6 @@ import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem as VueoMediaItem
-import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
@@ -162,13 +161,7 @@ fun TvPlayerScreen(
         }
     }
 
-    val playableSources = remember(
-        bundle.sources,
-        source.url,
-        source.streamType,
-        source.mimeType,
-        source.headers,
-    ) {
+    val playableSources = remember(bundle.sources, source.url) {
         (listOf(source) + bundle.sources)
             .filter { it.isDirectPlayable }
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
@@ -179,15 +172,7 @@ fun TvPlayerScreen(
     }
     val latestExternalSubtitlesBySelectionId =
         androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
-    var activeSource by remember(
-        bundle.videoId,
-        source.url,
-        source.streamType,
-        source.mimeType,
-        source.headers,
-    ) {
-        mutableStateOf(source)
-    }
+    var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
     var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }
@@ -401,31 +386,13 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(
-        activeSource.url,
-        activeSource.streamType,
-        activeSource.mimeType,
-        activeSource.headers,
-        bundle.videoId,
-    ) {
-        activeSource.url ?: return@LaunchedEffect
+    LaunchedEffect(activeSource.url, bundle.videoId) {
+        val url = activeSource.url ?: return@LaunchedEffect
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
         isBuffering = false
-        val playbackHeaders = PlaybackRequestHeaders.sanitize(activeSource.headers)
-        val playbackUserAgent = PlaybackRequestHeaders.value(
-            headers = playbackHeaders,
-            name = "User-Agent",
-        ) ?: "VUEO-TV"
-        httpFactory
-            .setUserAgent(playbackUserAgent)
-            .setDefaultRequestProperties(
-                PlaybackRequestHeaders.without(
-                    headers = playbackHeaders,
-                    name = "User-Agent",
-                )
-            )
+        httpFactory.setDefaultRequestProperties(activeSource.headers)
         playbackError = null
         textTracks = emptyList()
         audioTracks = emptyList()
@@ -437,7 +404,7 @@ fun TvPlayerScreen(
 
         player.setMediaItem(
             buildMediaItem(
-                source = activeSource,
+                sourceUrl = url,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
@@ -461,14 +428,7 @@ fun TvPlayerScreen(
         appliedSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
     }
 
-    LaunchedEffect(
-        player,
-        activeSource.url,
-        activeSource.streamType,
-        activeSource.mimeType,
-        activeSource.headers,
-        bundle.subtitles,
-    ) {
+    LaunchedEffect(player, activeSource.url, bundle.subtitles) {
         val url = activeSource.url ?: return@LaunchedEffect
         val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
@@ -482,7 +442,7 @@ fun TvPlayerScreen(
         subtitlePreferenceRestored = false
         player.setMediaItem(
             buildMediaItem(
-                source = activeSource,
+                sourceUrl = url,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
@@ -569,13 +529,7 @@ fun TvPlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(
-        activeSource.url,
-        activeSource.headers,
-        hasRenderedFirstFrame,
-        playbackError,
-        retryGeneration,
-    ) {
+    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError, retryGeneration) {
         if (hasRenderedFirstFrame || playbackError != null) return@LaunchedEffect
 
         val timeoutMs = if (sourceRecoverySession.isAutomaticRecoveryActive()) {
@@ -591,14 +545,7 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(
-        activeSource.url,
-        activeSource.headers,
-        isBuffering,
-        hasRenderedFirstFrame,
-        playbackError,
-        retryGeneration,
-    ) {
+    LaunchedEffect(activeSource.url, isBuffering, hasRenderedFirstFrame, playbackError, retryGeneration) {
         if (!isBuffering || !hasRenderedFirstFrame || playbackError != null) {
             return@LaunchedEffect
         }
@@ -1244,8 +1191,6 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
         },
         name = name,
         url = url,
-        streamType = streamType,
-        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,
@@ -1261,7 +1206,7 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
     )
 
 private fun buildMediaItem(
-    source: StreamSource,
+    sourceUrl: String,
     subtitles: List<SubtitleTrack>,
     preferredLanguages: List<String>,
     subtitlesOnByDefault: Boolean,
@@ -1297,10 +1242,7 @@ private fun buildMediaItem(
     }
 
     return MediaItem.Builder()
-        .setUri(Uri.parse(requireNotNull(source.url)))
-        .apply {
-            source.playbackMimeType?.let { setMimeType(it) }
-        }
+        .setUri(Uri.parse(sourceUrl))
         .setSubtitleConfigurations(configurations)
         .build()
 }

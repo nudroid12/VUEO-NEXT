@@ -241,7 +241,6 @@ import com.vueo.mobile.core.model.EpisodeItem
 import com.vueo.mobile.core.model.MediaCompany
 import com.vueo.mobile.core.model.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
-import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.mobile.core.model.MediaPerson
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
@@ -9805,8 +9804,6 @@ private fun PlayerScreen(
     val playableSources = remember(
         availableSources,
         source.url,
-        source.streamType,
-        source.mimeType,
         media.originalLanguage,
     ) {
         (listOf(source) + availableSources)
@@ -9861,26 +9858,18 @@ private fun PlayerScreen(
 
     val player = remember(
         source.url,
-        source.streamType,
-        source.mimeType,
         source.headers,
         mediaKey,
         initialPositionMs,
     ) {
-        val playbackHeaders = PlaybackRequestHeaders.sanitize(source.headers)
-        val playbackUserAgent = PlaybackRequestHeaders.value(
-            headers = playbackHeaders,
-            name = "User-Agent",
-        ) ?: "VUEO/${BuildConfig.VERSION_NAME}"
         val httpFactory =
             DefaultHttpDataSource.Factory()
-                .setUserAgent(playbackUserAgent)
+                .setUserAgent(
+                    "VUEO/${BuildConfig.VERSION_NAME}"
+                )
                 .setAllowCrossProtocolRedirects(true)
                 .setDefaultRequestProperties(
-                    PlaybackRequestHeaders.without(
-                        headers = playbackHeaders,
-                        name = "User-Agent",
-                    )
+                    source.headers
                 )
 
         val mediaSourceFactory =
@@ -9911,7 +9900,10 @@ private fun PlayerScreen(
 
                 val playerMediaItem =
                     buildPlayerMediaItem(
-                        source = source,
+                        sourceUrl =
+                            requireNotNull(
+                                source.url
+                            ),
                         subtitles = subtitles,
                         preferredLanguageCode =
                             playerPreferredSubtitleLanguageCode(
@@ -9999,7 +9991,7 @@ private fun PlayerScreen(
 
             player.setMediaItem(
                 buildPlayerMediaItem(
-                    source = source,
+                    sourceUrl = requireNotNull(source.url),
                     subtitles = subtitles,
                     preferredLanguageCode =
                         playerPreferredSubtitleLanguageCode(
@@ -10529,9 +10521,6 @@ private fun PlayerScreen(
 
     LaunchedEffect(
         source.url,
-        source.streamType,
-        source.mimeType,
-        source.headers,
     ) {
         sourceRecoverySession.begin(source)
         playbackPhase = PlayerPlaybackPhase.LOADING
@@ -13163,7 +13152,7 @@ private fun formatPlaybackTime(
 }
 
 private fun buildPlayerMediaItem(
-    source: StreamSource,
+    sourceUrl: String,
     subtitles: List<SubtitleTrack>,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -13263,11 +13252,8 @@ private fun buildPlayerMediaItem(
     return Media3MediaItem
         .Builder()
         .setUri(
-            Uri.parse(requireNotNull(source.url))
+            Uri.parse(sourceUrl)
         )
-        .apply {
-            source.playbackMimeType?.let { setMimeType(it) }
-        }
         .setSubtitleConfigurations(
             subtitleConfigurations
         )

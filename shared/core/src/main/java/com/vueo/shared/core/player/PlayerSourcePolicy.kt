@@ -122,8 +122,6 @@ object PlayerSourcePolicy {
             },
             name = name,
             url = url,
-            streamType = streamType,
-            mimeType = mimeType,
             infoHash = infoHash,
             fileIndex = fileIndex,
             quality = quality,

@@ -4,7 +4,6 @@ import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.source.SourceCandidate
@@ -1612,8 +1611,6 @@ private fun StreamSource.toSourceCandidate(): SourceCandidate =
         },
         name = name,
         url = url,
-        streamType = streamType,
-        mimeType = mimeType,
         infoHash = infoHash,
         fileIndex = fileIndex,
         quality = quality,
@@ -1660,10 +1657,6 @@ object SourceCleaner {
             infoHash = primary.infoHash?.takeIf { it.isNotBlank() }
                 ?: duplicate.infoHash,
             fileIndex = primary.fileIndex ?: duplicate.fileIndex,
-            streamType = primary.streamType?.takeIf { it.isNotBlank() }
-                ?: duplicate.streamType,
-            mimeType = primary.mimeType?.takeIf { it.isNotBlank() }
-                ?: duplicate.mimeType,
             quality = primary.quality?.takeIf { it.isNotBlank() }
                 ?: duplicate.quality,
             codec = primary.codec?.takeIf { it.isNotBlank() }
@@ -1681,10 +1674,11 @@ object SourceCleaner {
     private fun mergeHeaders(
         primary: Map<String, String>,
         duplicate: Map<String, String>,
-    ): Map<String, String> = PlaybackRequestHeaders.merge(
-        base = duplicate,
-        overlay = primary,
-    )
+    ): Map<String, String> = when {
+        duplicate.isEmpty() -> primary
+        primary.isEmpty() -> duplicate
+        else -> duplicate + primary
+    }
 
     fun qualityBucket(
         source: StreamSource,

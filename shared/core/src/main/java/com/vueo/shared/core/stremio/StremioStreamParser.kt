@@ -1,6 +1,5 @@
 package com.vueo.shared.core.stremio
 
-import com.vueo.shared.core.media.PlaybackRequestHeaders
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
 import org.json.JSONArray
@@ -30,41 +29,18 @@ object StremioStreamParser {
                 item.optString("name", manifest.name),
             ).trim().ifBlank { manifest.name }
             val behaviorHints = item.optJSONObject("behaviorHints")
-            val requestHeaders = PlaybackRequestHeaders.sanitize(
-                behaviorHints
-                    ?.optJSONObject("proxyHeaders")
-                    ?.optJSONObject("request")
-                    .toStringMap()
-            )
+            val requestHeaders = behaviorHints
+                ?.optJSONObject("proxyHeaders")
+                ?.optJSONObject("request")
+                .toStringMap()
             val videoSize = behaviorHints
                 ?.optLong("videoSize", -1L)
                 ?.takeIf { it > 0L }
-
-            val streamType = listOf(
-                "type",
-                "format",
-                "streamType",
-            ).firstNotNullOfOrNull { field ->
-                item.optString(field)
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-            }
-            val mimeType = listOf(
-                "mimeType",
-                "contentType",
-                "content_type",
-            ).firstNotNullOfOrNull { field ->
-                item.optString(field)
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-            }
 
             SourceCandidate(
                 id = "${manifest.id}:stream:$index",
                 name = title,
                 url = streamUrl,
-                streamType = streamType,
-                mimeType = mimeType,
                 infoHash = infoHash,
                 fileIndex = item.optInt("fileIdx", -1).takeIf { it >= 0 },
                 quality = inferQuality(title),
