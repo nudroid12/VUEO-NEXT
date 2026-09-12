@@ -278,8 +278,8 @@ fun TvPlayerScreen(
         }
     }
     val hasSubtitleControl = textTracks.isNotEmpty() || bundle.subtitles.isNotEmpty()
-    val hasAudioControl = audioTracks.isNotEmpty()
-    val hasSourcesControl = playableSources.size > 1
+    val hasAudioControl = audioTracks.isNotEmpty() || !activeSource.audio.isNullOrBlank()
+    val hasSourcesControl = playableSources.isNotEmpty()
     val hasEpisodesControl = media.episodes.isNotEmpty()
 
     val focusScope = rememberCoroutineScope()
@@ -1212,7 +1212,6 @@ fun TvPlayerScreen(
                 automaticSelected = audioAutomaticSelected,
                 activeSourceLabel = activeSource.audio,
                 onInteraction = ::noteInteraction,
-                onDismiss = { closePanel() },
                 onAutomatic = {
                     tvClearTrackOverride(player, C.TRACK_TYPE_AUDIO, disable = false)
                     audioAutomaticSelected = true

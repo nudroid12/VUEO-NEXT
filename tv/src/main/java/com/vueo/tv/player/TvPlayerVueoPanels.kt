@@ -1129,12 +1129,9 @@ internal fun VueoPlayerAudioWorkspace(
     automaticSelected: Boolean,
     activeSourceLabel: String?,
     onInteraction: () -> Unit,
-    onDismiss: () -> Unit,
     onAutomatic: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
 ) {
-    val closeRequester = remember { FocusRequester() }
-    val listEntryRequester = remember { FocusRequester() }
     val options = remember(tracks, automaticSelected, activeSourceLabel) {
         buildList {
             add(
@@ -1171,20 +1168,7 @@ internal fun VueoPlayerAudioWorkspace(
                 .background(Color(0xFF111418).copy(alpha = .99f))
                 .padding(horizontal = 28.dp, vertical = 32.dp),
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Audio", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                VueoPanelTextAction(
-                    label = "Close",
-                    requester = closeRequester,
-                    downRequester = listEntryRequester,
-                    onInteraction = onInteraction,
-                    onClick = onDismiss,
-                )
-            }
+            Text("Audio", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
                 if (tracks.isEmpty()) "No selectable alternate audio tracks" else "Choose an exact audio track",
@@ -1200,8 +1184,6 @@ internal fun VueoPlayerAudioWorkspace(
                     if (option.key == TV_AUDIO_AUTO) onAutomatic()
                     else tracks.firstOrNull { it.selectionId == option.key }?.let(onSelect)
                 },
-                topRequester = closeRequester,
-                entryFocusRequester = listEntryRequester,
             )
         }
     }
