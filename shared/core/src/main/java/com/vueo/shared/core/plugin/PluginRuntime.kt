@@ -3574,7 +3574,11 @@ private fun emptyDiscoveryResult():
                 stage = "RESOLVER",
                 details =
                     "embed=${resolution.fallbackCandidateCount} " +
-                        "resolved=${resolution.fallbackResolvedCount}",
+                        "resolved=${resolution.fallbackResolvedCount} " +
+                        "attempts=${resolution.fallbackResolverAttempts} " +
+                        "failures=${resolution.fallbackFailureCount} " +
+                        "timeouts=${resolution.fallbackTimeoutCount} " +
+                        "recovered=${resolution.fallbackRecoveredByNextCount}",
             )
         }
 

@@ -18,6 +18,13 @@ internal interface ProviderStreamResolver {
     val id: String
     val stage: ProviderResolverStage
 
+    /**
+     * Optional outer execution budget. This is a safety net around resolver
+     * implementations, not a delay: successful resolvers return immediately.
+     */
+    val timeoutMs: Long?
+        get() = null
+
     fun canResolve(source: SourceCandidate): Boolean
 
     suspend fun resolve(source: SourceCandidate): List<SourceCandidate>
@@ -28,4 +35,8 @@ internal data class ProviderStreamResolution(
     val fallbackCandidateCount: Int = 0,
     val fallbackResolvedCount: Int = 0,
     val fallbackAttempted: Boolean = false,
+    val fallbackResolverAttempts: Int = 0,
+    val fallbackFailureCount: Int = 0,
+    val fallbackTimeoutCount: Int = 0,
+    val fallbackRecoveredByNextCount: Int = 0,
 )

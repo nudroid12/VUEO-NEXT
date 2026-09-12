@@ -20,6 +20,7 @@ internal class WebViewEmbedProviderStreamResolver(
 ) : ProviderStreamResolver {
     override val id: String = "webview-embed"
     override val stage: ProviderResolverStage = ProviderResolverStage.FALLBACK
+    override val timeoutMs: Long = AUTO_EMBED_OUTER_TIMEOUT_MS
 
     override fun canResolve(source: SourceCandidate): Boolean =
         source.transport == StreamTransport.EMBED
@@ -96,6 +97,7 @@ internal class WebViewEmbedProviderStreamResolver(
     private companion object {
         const val AUTO_EMBED_RESOLVE_TIMEOUT_MS = 4_500L
         const val AUTO_EMBED_FINISH_AFTER_FIRST_MS = 650L
+        const val AUTO_EMBED_OUTER_TIMEOUT_MS = 5_250L
     }
 }
 

@@ -13,16 +13,28 @@ internal fun createProviderStreamResolverRegistry(
     webViewResolver: PluginWebViewResolver,
     webViewConcurrency: Semaphore,
     maxFallbackCandidates: Int,
-): ProviderStreamResolverRegistry =
-    ProviderStreamResolverRegistry(
-        resolvers = listOf(
-            HlsProviderStreamResolver,
-            DashProviderStreamResolver,
-            DirectProviderStreamResolver,
-            WebViewEmbedProviderStreamResolver(
-                webViewResolver = webViewResolver,
-                webViewConcurrency = webViewConcurrency,
-            ),
-        ),
+    hostSpecificFallbackResolvers: List<ProviderStreamResolver> = emptyList(),
+): ProviderStreamResolverRegistry {
+    require(
+        hostSpecificFallbackResolvers.all {
+            it.stage == ProviderResolverStage.FALLBACK
+        },
+    ) {
+        "Host-specific provider resolvers must be FALLBACK resolvers."
+    }
+
+    return ProviderStreamResolverRegistry(
+        resolvers =
+            listOf(
+                HlsProviderStreamResolver,
+                DashProviderStreamResolver,
+                DirectProviderStreamResolver,
+            ) +
+                hostSpecificFallbackResolvers +
+                WebViewEmbedProviderStreamResolver(
+                    webViewResolver = webViewResolver,
+                    webViewConcurrency = webViewConcurrency,
+                ),
         maxFallbackCandidates = maxFallbackCandidates,
     )
+}
