@@ -52,9 +52,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.motion.tvPanelEnter
 import com.vueo.tv.ui.motion.tvPanelExit
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun VueoPlayerPresentation(
@@ -139,6 +137,7 @@ internal fun VueoPlayerPresentation(
                 media = media,
                 episode = episode,
                 activeSource = activeSource,
+                contentWarningVisible = warningVisible,
                 playing = playing,
                 positionMs = positionMs,
                 durationMs = durationMs,
@@ -169,7 +168,7 @@ internal fun VueoPlayerPresentation(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 48.dp, top = 38.dp),
+                    .padding(start = 48.dp, top = 32.dp),
             ) {
                 VueoContentWarningsOverlay(
                     warnings = contentWarnings,
@@ -267,7 +266,7 @@ private fun VueoContentWarningsOverlay(
     val count = warnings.size
     if (count == 0) return
 
-    val totalLineHeight = (count * 14) + ((count - 1) * 2)
+    val totalLineHeight = (count * 19) + ((count - 1) * 4)
     val containerAlpha = remember { Animatable(0f) }
     val lineHeightFraction = remember { Animatable(0f) }
     val itemAlphas = remember(count) { List(count) { Animatable(0f) } }
@@ -277,37 +276,31 @@ private fun VueoContentWarningsOverlay(
         lineHeightFraction.snapTo(0f)
         itemAlphas.forEach { it.snapTo(0f) }
 
-        containerAlpha.animateTo(1f, tween(220, easing = TvMotion.EaseOut))
+        containerAlpha.animateTo(1f, tween(300, easing = TvMotion.EaseOut))
         lineHeightFraction.animateTo(
             1f,
-            tween(260, easing = TvMotion.EaseOut),
+            tween(400, easing = TvMotion.EaseOut),
         )
 
-        coroutineScope {
-            itemAlphas.forEachIndexed { index, alpha ->
-                launch {
-                    delay(index * 55L)
-                    alpha.animateTo(1f, tween(160, easing = TvMotion.EaseOut))
-                }
-            }
+        itemAlphas.forEach { alpha ->
+            delay(80L)
+            alpha.animateTo(1f, tween(200, easing = TvMotion.EaseOut))
         }
 
         delay(5_000L)
 
-        coroutineScope {
-            itemAlphas.asReversed().forEachIndexed { index, alpha ->
-                launch {
-                    delay(index * 40L)
-                    alpha.animateTo(0f, tween(100, easing = TvMotion.EaseInOut))
-                }
-            }
+        itemAlphas.asReversed().forEach { alpha ->
+            delay(60L)
+            alpha.animateTo(0f, tween(150, easing = TvMotion.EaseInOut))
         }
 
+        delay(100L)
         lineHeightFraction.animateTo(
             0f,
-            tween(180, easing = TvMotion.EaseInOut),
+            tween(300, easing = TvMotion.EaseInOut),
         )
-        containerAlpha.animateTo(0f, tween(120, easing = TvMotion.EaseInOut))
+        delay(200L)
+        containerAlpha.animateTo(0f, tween(200, easing = TvMotion.EaseInOut))
         onAnimationComplete()
     }
 
@@ -319,14 +312,14 @@ private fun VueoContentWarningsOverlay(
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
+                .width(4.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
                 .clip(RoundedCornerShape(50))
                 .background(Color(0xFFB9FF3A)),
         )
         Column(
-            modifier = Modifier.padding(start = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(start = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             warnings.forEachIndexed { index, warning ->
                 Row(
@@ -336,15 +329,15 @@ private fun VueoContentWarningsOverlay(
                     Text(
                         text = warning.label,
                         color = Color.White.copy(alpha = .92f),
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
+                        fontSize = 14.sp,
+                        lineHeight = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = " • ${warning.severity}",
                         color = Color.White.copy(alpha = .56f),
-                        fontSize = 9.sp,
-                        lineHeight = 11.sp,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
                     )
                 }
             }
@@ -367,6 +360,7 @@ private fun VueoPlayerControls(
     media: MediaItem,
     episode: EpisodeItem?,
     activeSource: StreamSource,
+    contentWarningVisible: Boolean,
     playing: Boolean,
     positionMs: Long,
     durationMs: Long,
@@ -413,16 +407,20 @@ private fun VueoPlayerControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 24.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(end = 24.dp),
-            )
+            if (contentWarningVisible) {
+                Spacer(Modifier.weight(1f))
+            } else {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    lineHeight = 28.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 24.dp),
+                )
+            }
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
