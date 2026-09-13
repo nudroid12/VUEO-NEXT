@@ -145,6 +145,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
@@ -2092,6 +2093,8 @@ private fun HomeFeaturedCarousel(
             ) {
                 Text(
                     text = item.name,
+                    modifier =
+                        Modifier.fillMaxWidth(),
                     color =
                         Color.White,
                     fontSize = 28.sp,
@@ -2099,6 +2102,8 @@ private fun HomeFeaturedCarousel(
                         30.sp,
                     fontWeight =
                         FontWeight.Black,
+                    textAlign =
+                        TextAlign.Center,
                     maxLines = 2,
                     overflow =
                         TextOverflow.Ellipsis,
@@ -2860,71 +2865,79 @@ private fun HomeContinueWatchingCard(
                             end = 10.dp,
                             bottom = 8.dp,
                         ),
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        3.dp
-                    ),
             ) {
-                homeEpisodeLabel(
-                    entry
-                )
-                    ?.let {
-                        episode ->
-                        Text(
-                            text =
-                                episode,
-                            color =
-                                Color.White
-                                    .copy(
-                                        alpha =
-                                            .88f
-                                    ),
-                            fontSize =
-                                9.sp,
-                            fontWeight =
-                                FontWeight
-                                    .Medium,
-                            maxLines = 1,
-                        )
-                    }
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(
+                            0.dp
+                        ),
+                ) {
+                    homeEpisodeLabel(
+                        entry
+                    )
+                        ?.let {
+                            episode ->
+                            Text(
+                                text =
+                                    episode,
+                                color =
+                                    Color.White
+                                        .copy(
+                                            alpha =
+                                                .88f
+                                        ),
+                                fontSize =
+                                    9.sp,
+                                lineHeight =
+                                    11.sp,
+                                fontWeight =
+                                    FontWeight
+                                        .Medium,
+                                maxLines = 1,
+                            )
+                        }
 
-                Text(
-                    text =
-                        entry.media.name,
-                    color =
-                        Color.White,
-                    fontWeight =
-                        FontWeight.Bold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow =
-                        TextOverflow
-                            .Ellipsis,
-                )
+                    Text(
+                        text =
+                            entry.media.name,
+                        color =
+                            Color.White,
+                        fontWeight =
+                            FontWeight.Bold,
+                        fontSize = 13.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        overflow =
+                            TextOverflow
+                                .Ellipsis,
+                    )
 
-                entry.episodeTitle
-                    ?.takeIf {
-                        it.isNotBlank()
-                    }
-                    ?.let {
-                        episodeTitle ->
-                        Text(
-                            text =
-                                episodeTitle,
-                            color =
-                                Color.White
-                                    .copy(
-                                        alpha =
-                                            .68f
-                                    ),
-                            fontSize =
-                                9.sp,
-                            maxLines = 1,
-                            overflow =
-                                TextOverflow
-                                    .Ellipsis,
-                        )
-                    }
+                    entry.episodeTitle
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+                            episodeTitle ->
+                            Text(
+                                text =
+                                    episodeTitle,
+                                color =
+                                    Color.White
+                                        .copy(
+                                            alpha =
+                                                .68f
+                                        ),
+                                fontSize =
+                                    9.sp,
+                                lineHeight =
+                                    11.sp,
+                                maxLines = 1,
+                                overflow =
+                                    TextOverflow
+                                        .Ellipsis,
+                            )
+                        }
+                }
 
                 LinearProgressIndicator(
                     progress = {
@@ -2937,6 +2950,9 @@ private fun HomeContinueWatchingCard(
                     },
                     modifier =
                         Modifier
+                            .padding(
+                                top = 4.dp
+                            )
                             .fillMaxWidth()
                             .height(3.dp)
                             .clip(
