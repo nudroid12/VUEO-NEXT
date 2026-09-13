@@ -55,7 +55,6 @@ class LibraryStore(
     prefsName: String = PREFS_NAME,
     private val watchlistStorageKey: String = KEY_WATCHLIST,
     private val historyStorageKey: String = KEY_HISTORY,
-    private val continueWatchingStorageKey: String = KEY_CONTINUE_WATCHING,
     private val dismissedContinueWatchingStorageKey: String = KEY_DISMISSED_CONTINUE_WATCHING,
     private val markedWatchedStorageKey: String = KEY_MARKED_WATCHED,
     profileStore: ProfileStore? = null,
@@ -213,8 +212,7 @@ class LibraryStore(
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
 
-        return readContinueWatching()
-            .ifEmpty { history() }
+        return history()
             .filter {
                 it.positionMs > 5_000L &&
                     !it.isCompleted
@@ -280,9 +278,6 @@ class LibraryStore(
                         .currentTimeMillis(),
             ),
         )
-
-        val updated = entries.first()
-        writeContinueWatching(updated)
 
         writeHistory(
             entries.take(
@@ -360,11 +355,6 @@ class LibraryStore(
             .remove(
                 scopedKey(
                     historyStorageKey
-                )
-            )
-            .remove(
-                scopedKey(
-                    continueWatchingStorageKey
                 )
             )
             .remove(
@@ -493,28 +483,6 @@ class LibraryStore(
             "addedAt",
             0L,
         )
-
-    private fun readContinueWatching(): List<LibraryPlaybackEntry> =
-        readObjectArray(
-            scopedKey(
-                continueWatchingStorageKey
-            )
-        ).mapNotNull {
-            runCatching {
-                playbackFromJson(it)
-            }.getOrNull()
-        }
-
-    private fun writeContinueWatching(
-        entry: LibraryPlaybackEntry,
-    ) {
-        writeArray(
-            scopedKey(
-                continueWatchingStorageKey
-            ),
-            listOf(playbackToJson(entry)),
-        )
-    }
 
     private fun readHistory():
         List<LibraryPlaybackEntry> =
@@ -891,9 +859,6 @@ class LibraryStore(
 
         private const val KEY_HISTORY =
             "history"
-
-        private const val KEY_CONTINUE_WATCHING =
-            "continue_watching"
 
         private const val KEY_DISMISSED_CONTINUE_WATCHING =
             "dismissed_continue_watching"
