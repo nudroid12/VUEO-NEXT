@@ -33,6 +33,7 @@ data class MediaItem(
     val originalTitle: String? = null,
     val aliases: List<String> = emptyList(),
     val originalLanguage: String? = null,
+    val countries: List<String> = emptyList(),
     val genres: List<String> = emptyList(),
     val episodes: List<EpisodeItem> = emptyList(),
     val sourceExtensionId: String? = null,

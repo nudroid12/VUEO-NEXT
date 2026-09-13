@@ -273,6 +273,14 @@ private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
         ).firstNotNullOfOrNull { field ->
             optString(field).trim().takeIf(String::isNotBlank)
         },
+        countries = optFlexibleStrings(
+            "country",
+            "countries",
+            "productionCountries",
+            "production_countries",
+            "originCountry",
+            "origin_country",
+        ),
         genres = optJSONArray("genres").toStringList(),
         episodes = optJSONArray("videos").toEpisodeList(),
         sourceExtensionId = sourceId,

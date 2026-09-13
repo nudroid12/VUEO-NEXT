@@ -63,6 +63,34 @@ object RichDetailsClient {
             .optJSONArray("production_companies")
             .toCompanies()
 
+        val countries = buildList {
+            json.optJSONArray("production_countries")
+                ?.let { values ->
+                    for (index in 0 until values.length()) {
+                        values.optJSONObject(index)
+                            ?.let { country ->
+                                country.optString("iso_3166_1")
+                                    .trim()
+                                    .takeIf(String::isNotBlank)
+                                    ?.let(::add)
+                                country.optString("name")
+                                    .trim()
+                                    .takeIf(String::isNotBlank)
+                                    ?.let(::add)
+                            }
+                    }
+                }
+            json.optJSONArray("origin_country")
+                ?.let { values ->
+                    for (index in 0 until values.length()) {
+                        values.optString(index)
+                            .trim()
+                            .takeIf(String::isNotBlank)
+                            ?.let(::add)
+                    }
+                }
+        }.distinctBy { it.lowercase() }
+
         val networks = if (isSeries) {
             json.optJSONArray("networks").toCompanies()
         } else {
@@ -95,6 +123,15 @@ object RichDetailsClient {
             .takeIf { it.isFinite() && it > 0.0 }
 
         return media.copy(
+            originalLanguage =
+                media.originalLanguage
+                    ?: json.optString("original_language")
+                        .trim()
+                        .takeIf(String::isNotBlank),
+            countries =
+                (media.countries + countries)
+                    .filter(String::isNotBlank)
+                    .distinctBy { it.lowercase() },
             tmdbRating = tmdbRating ?: media.tmdbRating,
             runtimeMinutes = media.runtimeMinutes ?: runtime,
             certification = media.certification ?: certification,

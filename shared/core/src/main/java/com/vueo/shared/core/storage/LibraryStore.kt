@@ -213,11 +213,11 @@ class LibraryStore(
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
 
-        return ensureContinueWatchingMigrated()
+        return readContinueWatching()
+            .ifEmpty { history() }
             .filter {
-                isContinueWatchingEntry(
-                    it
-                )
+                it.positionMs > 5_000L &&
+                    !it.isCompleted
             }
             .filterNot {
                 continueWatchingTitleKey(
@@ -369,11 +369,6 @@ class LibraryStore(
             )
             .remove(
                 scopedKey(
-                    KEY_CONTINUE_WATCHING_MIGRATION_VERSION
-                )
-            )
-            .remove(
-                scopedKey(
                     dismissedContinueWatchingStorageKey
                 )
             )
@@ -389,12 +384,11 @@ class LibraryStore(
     fun clearContinueWatching() {
         writeDismissedContinueWatchingKeys(
             dismissedContinueWatchingKeys() +
-                ensureContinueWatchingMigrated()
+                history()
                     .asSequence()
                     .filter {
-                        isContinueWatchingEntry(
-                            it
-                        )
+                        it.positionMs > 5_000L &&
+                            !it.isCompleted
                     }
                     .map {
                         continueWatchingTitleKey(
@@ -511,155 +505,14 @@ class LibraryStore(
             }.getOrNull()
         }
 
-    private fun ensureContinueWatchingMigrated():
-        List<LibraryPlaybackEntry> {
-        val migrationKey =
-            scopedKey(
-                KEY_CONTINUE_WATCHING_MIGRATION_VERSION
-            )
-        val currentVersion =
-            prefs.getInt(
-                migrationKey,
-                0,
-            )
-
-        if (
-            currentVersion >=
-            CONTINUE_WATCHING_MIGRATION_VERSION
-        ) {
-            return readContinueWatching()
-        }
-
-        val stored =
-            readContinueWatching()
-        val storedEligible =
-            stored.filter {
-                isContinueWatchingEntry(
-                    it
-                )
-            }
-        val storedAuthoritativeTitleKeys =
-            stored
-                .asSequence()
-                .filter {
-                    isContinueWatchingEntry(
-                        it
-                    ) || it.isCompleted
-                }
-                .map {
-                    continueWatchingTitleKey(
-                        it.media
-                    )
-                }
-                .toSet()
-        val recovered =
-            history()
-                .asSequence()
-                .filter {
-                    isContinueWatchingEntry(
-                        it
-                    )
-                }
-                .filterNot {
-                    continueWatchingTitleKey(
-                        it.media
-                    ) in storedAuthoritativeTitleKeys
-                }
-                .distinctBy {
-                    continueWatchingTitleKey(
-                        it.media
-                    )
-                }
-                .toList()
-        val migrated =
-            (storedEligible + recovered)
-                .sortedByDescending {
-                    it.lastWatchedEpochMs
-                }
-                .distinctBy {
-                    continueWatchingTitleKey(
-                        it.media
-                    )
-                }
-
-        writeContinueWatchingEntries(
-            migrated
-        )
-        prefs.edit()
-            .putInt(
-                migrationKey,
-                CONTINUE_WATCHING_MIGRATION_VERSION,
-            )
-            .apply()
-
-        return migrated
-    }
-
-    private fun isContinueWatchingEntry(
-        entry: LibraryPlaybackEntry,
-    ): Boolean =
-        entry.positionMs > 5_000L &&
-            !entry.isCompleted
-
     private fun writeContinueWatching(
         entry: LibraryPlaybackEntry,
-    ) {
-        val entries =
-            ensureContinueWatchingMigrated()
-                .toMutableList()
-        val titleKey =
-            continueWatchingTitleKey(
-                entry.media
-            )
-
-        when {
-            entry.isCompleted -> {
-                entries.removeAll {
-                    continueWatchingTitleKey(
-                        it.media
-                    ) == titleKey
-                }
-            }
-
-            isContinueWatchingEntry(
-                entry
-            ) -> {
-                entries.removeAll {
-                    continueWatchingTitleKey(
-                        it.media
-                    ) == titleKey
-                }
-                entries.add(
-                    0,
-                    entry,
-                )
-            }
-
-            else -> {
-                return
-            }
-        }
-
-        writeContinueWatchingEntries(
-            entries
-                .sortedByDescending {
-                    it.lastWatchedEpochMs
-                }
-        )
-    }
-
-    private fun writeContinueWatchingEntries(
-        entries: List<LibraryPlaybackEntry>,
     ) {
         writeArray(
             scopedKey(
                 continueWatchingStorageKey
             ),
-            entries.map {
-                playbackToJson(
-                    it
-                )
-            },
+            listOf(playbackToJson(entry)),
         )
     }
 
@@ -840,6 +693,7 @@ class LibraryStore(
             .put("originalTitle", media.originalTitle)
             .put("aliases", JSONArray(media.aliases))
             .put("originalLanguage", media.originalLanguage)
+            .put("countries", JSONArray(media.countries))
             .put("genres", JSONArray(media.genres))
             .put(
                 "episodes",
@@ -889,6 +743,7 @@ class LibraryStore(
             originalTitle = json.optNullableString("originalTitle"),
             aliases = json.optJSONArray("aliases").toStringList(),
             originalLanguage = json.optNullableString("originalLanguage"),
+            countries = json.optJSONArray("countries").toStringList(),
             genres = json.optJSONArray("genres").toStringList(),
             episodes = json.optJSONArray("episodes").toEpisodes(),
             sourceExtensionId = json.optNullableString("sourceExtensionId"),
@@ -1041,12 +896,6 @@ class LibraryStore(
 
         private const val KEY_CONTINUE_WATCHING =
             "continue_watching"
-
-        private const val KEY_CONTINUE_WATCHING_MIGRATION_VERSION =
-            "continue_watching_migration_version"
-
-        private const val CONTINUE_WATCHING_MIGRATION_VERSION =
-            1
 
         private const val KEY_DISMISSED_CONTINUE_WATCHING =
             "dismissed_continue_watching"

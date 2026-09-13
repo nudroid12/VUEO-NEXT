@@ -1037,6 +1037,35 @@ object TmdbEnhancementClient {
                     ?: details.optNullableString(
                         "original_language"
                     ),
+            countries =
+                (
+                    item.countries +
+                        buildList {
+                            details.optJSONArray("production_countries")
+                                ?.let { values ->
+                                    for (index in 0 until values.length()) {
+                                        values.optJSONObject(index)
+                                            ?.let { country ->
+                                                country.optNullableString("iso_3166_1")
+                                                    ?.let(::add)
+                                                country.optNullableString("name")
+                                                    ?.let(::add)
+                                            }
+                                    }
+                                }
+                            details.optJSONArray("origin_country")
+                                ?.let { values ->
+                                    for (index in 0 until values.length()) {
+                                        values.optString(index)
+                                            .trim()
+                                            .takeIf(String::isNotBlank)
+                                            ?.let(::add)
+                                    }
+                                }
+                        }
+                )
+                    .filter(String::isNotBlank)
+                    .distinctBy { it.lowercase() },
         )
     }
 

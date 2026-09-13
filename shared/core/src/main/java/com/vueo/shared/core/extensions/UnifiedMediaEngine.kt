@@ -1452,6 +1452,10 @@ private fun mergeMediaMetadata(
                 .distinctBy { it.lowercase() },
         originalLanguage =
             current.originalLanguage ?: candidate.originalLanguage,
+        countries =
+            (current.countries + candidate.countries)
+                .filter(String::isNotBlank)
+                .distinctBy { it.lowercase() },
         genres = (current.genres + candidate.genres).distinct(),
         episodes = mergeMetadataEpisodes(
             current.episodes,

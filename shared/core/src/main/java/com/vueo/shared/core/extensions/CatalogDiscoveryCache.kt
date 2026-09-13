@@ -756,6 +756,12 @@ object CatalogDiscoveryCache {
             cast = cast,
             creators = creators,
             companies = companies,
+            language = relatedNormalizeLanguage(media.originalLanguage),
+            countries =
+                media.countries
+                    .map(::relatedNormalizeCountry)
+                    .filter(String::isNotBlank)
+                    .toSet(),
             year = relatedYear(media),
             quality =
                 relatedQualityScore(media),
@@ -838,6 +844,12 @@ object CatalogDiscoveryCache {
                 candidate = candidate,
             )
 
+        val regional =
+            relatedRegionalSimilarity(
+                target = target,
+                candidate = candidate,
+            )
+
         val yearAvailable =
             target.year != null &&
                 candidate.year != null
@@ -855,25 +867,28 @@ object CatalogDiscoveryCache {
         val weighted =
             buildList {
                 if (genreAvailable) {
-                    add(0.32 to genreScore)
+                    add(0.25 to genreScore)
                 }
                 if (topicAvailable) {
-                    add(0.23 to topicScore)
+                    add(0.20 to topicScore)
                 }
                 if (storyAvailable) {
-                    add(0.18 to storyScore)
+                    add(0.15 to storyScore)
                 }
                 if (relation.available) {
-                    add(0.10 to relation.score)
+                    add(0.12 to relation.score)
+                }
+                if (regional.available) {
+                    add(0.15 to regional.score)
                 }
                 if (yearAvailable) {
-                    add(0.07 to yearScore)
+                    add(0.05 to yearScore)
                 }
                 candidate.quality?.let {
-                    add(0.05 to it)
+                    add(0.04 to it)
                 }
                 candidate.popularity?.let {
-                    add(0.05 to it)
+                    add(0.04 to it)
                 }
             }
         val totalWeight =
@@ -918,6 +933,8 @@ object CatalogDiscoveryCache {
                     storyScore >= 0.11,
                 relation.available &&
                     relation.score >= 0.12,
+                regional.available &&
+                    regional.score >= 0.55,
             ).count { it }
 
         return RelatedSignals(
@@ -1112,7 +1129,7 @@ object CatalogDiscoveryCache {
                     candidate.cast.isNotEmpty()
                 ) {
                     add(
-                        0.55 to
+                        0.45 to
                             relatedSetSimilarity(
                                 target.cast,
                                 candidate.cast,
@@ -1124,7 +1141,7 @@ object CatalogDiscoveryCache {
                     candidate.creators.isNotEmpty()
                 ) {
                     add(
-                        0.30 to
+                        0.25 to
                             relatedSetSimilarity(
                                 target.creators,
                                 candidate.creators,
@@ -1136,7 +1153,7 @@ object CatalogDiscoveryCache {
                     candidate.companies.isNotEmpty()
                 ) {
                     add(
-                        0.15 to
+                        0.30 to
                             relatedSetSimilarity(
                                 target.companies,
                                 candidate.companies,
@@ -1156,6 +1173,55 @@ object CatalogDiscoveryCache {
                 score =
                     parts.sumOf {
                         (weight, score) ->
+                        weight * score
+                    } / totalWeight,
+                available = true,
+            )
+        }
+    }
+
+    private fun relatedRegionalSimilarity(
+        target: RelatedFeatures,
+        candidate: RelatedFeatures,
+    ): RelatedRelationSignal {
+        val parts =
+            buildList {
+                if (
+                    target.countries.isNotEmpty() &&
+                    candidate.countries.isNotEmpty()
+                ) {
+                    add(
+                        0.60 to
+                            relatedSetSimilarity(
+                                target.countries,
+                                candidate.countries,
+                            )
+                    )
+                }
+                if (
+                    target.language.isNotBlank() &&
+                    candidate.language.isNotBlank()
+                ) {
+                    add(
+                        0.40 to
+                            if (target.language == candidate.language) {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                    )
+                }
+            }
+        val totalWeight = parts.sumOf { it.first }
+        return if (totalWeight <= 0.0) {
+            RelatedRelationSignal(
+                score = 0.0,
+                available = false,
+            )
+        } else {
+            RelatedRelationSignal(
+                score =
+                    parts.sumOf { (weight, score) ->
                         weight * score
                     } / totalWeight,
                 available = true,
@@ -1724,6 +1790,52 @@ object CatalogDiscoveryCache {
                 " ",
             )
 
+    private fun relatedNormalizeLanguage(
+        raw: String?,
+    ): String {
+        val normalized =
+            raw.orEmpty()
+                .trim()
+                .lowercase()
+                .replace(Regex("""[^a-z]"""), "")
+        return when (normalized) {
+            "fil", "tl", "tgl", "tagalog", "filipino" -> "fil"
+            "en", "eng", "english" -> "en"
+            "ko", "kor", "korean" -> "ko"
+            "ja", "jpn", "japanese" -> "ja"
+            "zh", "zho", "chi", "chinese", "mandarin" -> "zh"
+            "es", "spa", "spanish" -> "es"
+            "fr", "fra", "fre", "french" -> "fr"
+            "de", "deu", "ger", "german" -> "de"
+            "id", "ind", "indonesian" -> "id"
+            "ms", "msa", "may", "malay" -> "ms"
+            "th", "tha", "thai" -> "th"
+            else -> normalized
+        }
+    }
+
+    private fun relatedNormalizeCountry(
+        raw: String,
+    ): String {
+        val normalized =
+            raw.trim()
+                .lowercase()
+                .replace("&", "and")
+                .replace(Regex("""[^a-z]"""), "")
+        return when (normalized) {
+            "ph", "philippines", "republicofthephilippines" -> "ph"
+            "us", "usa", "unitedstates", "unitedstatesofamerica" -> "us"
+            "gb", "uk", "unitedkingdom", "greatbritain" -> "gb"
+            "kr", "southkorea", "republicofkorea", "korea" -> "kr"
+            "jp", "japan" -> "jp"
+            "cn", "china", "peoplesrepublicofchina" -> "cn"
+            "id", "indonesia" -> "id"
+            "my", "malaysia" -> "my"
+            "th", "thailand" -> "th"
+            else -> normalized
+        }
+    }
+
     private fun relatedFranchiseStem(
         name: String,
     ): String {
@@ -1764,6 +1876,8 @@ object CatalogDiscoveryCache {
         val cast: Set<String>,
         val creators: Set<String>,
         val companies: Set<String>,
+        val language: String,
+        val countries: Set<String>,
         val year: Int?,
         val quality: Double?,
         val popularity: Double?,
@@ -2204,6 +2318,10 @@ private fun List<MediaItem>
                         item.originalLanguage,
                     )
                     .put(
+                        "countries",
+                        JSONArray(item.countries),
+                    )
+                    .put(
                         "genres",
                         JSONArray(
                             item.genres
@@ -2359,6 +2477,10 @@ private fun JSONArray?
                         json.optNullableString(
                             "originalLanguage"
                         ),
+                    countries =
+                        json.optJSONArray(
+                            "countries"
+                        ).toStringList(),
                     genres =
                         json.optJSONArray(
                             "genres"
