@@ -512,7 +512,7 @@ class LibraryStore(
             scopedKey(
                 continueWatchingStorageKey
             ),
-            listOf(entry),
+            listOf(playbackToJson(entry)),
         )
     }
 
