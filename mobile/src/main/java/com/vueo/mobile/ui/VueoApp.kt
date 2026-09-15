@@ -6234,6 +6234,13 @@ private fun MediaDetailsScreen(
 
     var selectedSeason by remember { mutableStateOf<Int?>(null) }
     var selectedEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
+    var episodeSelectionTouchedByUser by remember(
+        initialItem.id,
+        initialItem.type,
+        initialItem.sourceExtensionId,
+    ) {
+        mutableStateOf(false)
+    }
 
     var sourcePickerStreams by remember {
         mutableStateOf<List<StreamSource>?>(null)
@@ -6308,7 +6315,10 @@ private fun MediaDetailsScreen(
             return
         }
 
-        if (preserveCurrent) {
+        if (
+            preserveCurrent &&
+            episodeSelectionTouchedByUser
+        ) {
             val current =
                 selectedEpisode
                     ?.let { selected ->
@@ -6330,72 +6340,26 @@ private fun MediaDetailsScreen(
             }
         }
 
-        val resumeCandidate =
-            initialLibraryEntry
-                ?: libraryStore
-                    .continueWatching()
-                    .firstOrNull { entry ->
-                        entry.media.id ==
-                            media.id &&
-                            entry.media.type ==
-                                media.type &&
-                            entry.season != null &&
-                            entry.episode != null
-                    }
+        val playbackTarget =
+            detailsPlaybackTargetEpisode(
+                media = media,
+                entries =
+                    libraryStore
+                        .history(),
+                initialEntry =
+                    initialLibraryEntry,
+            )
 
-        val requestedSeason =
-            resumeCandidate
-                ?.season
-
-        val requestedEpisode =
-            resumeCandidate
-                ?.episode
-
-        val matched =
-            if (
-                requestedSeason != null &&
-                requestedEpisode != null
-            ) {
-                media.episodes
-                    .firstOrNull {
-                        it.season ==
-                            requestedSeason &&
-                            it.episode ==
-                            requestedEpisode
-                    }
-            } else {
-                null
-            }
-
-        val firstSeason =
-            matched?.season
-                ?: media.episodes
-                    .map {
-                        it.season
-                    }
-                    .distinct()
-                    .sorted()
-                    .firstOrNull {
-                        it > 0
-                    }
-                ?: media.episodes
-                    .map {
-                        it.season
-                    }
-                    .distinct()
-                    .sorted()
-                    .firstOrNull()
+        val target =
+            playbackTarget
+                ?: orderedDetailsEpisodes(
+                    media.episodes
+                ).firstOrNull()
 
         selectedSeason =
-            firstSeason
-
+            target?.season
         selectedEpisode =
-            matched
-                ?: media.episodes
-                    .firstOrNull {
-                        it.season ==
-                            firstSeason
-                    }
+            target
     }
 
     LaunchedEffect(
@@ -7598,13 +7562,20 @@ private fun MediaDetailsScreen(
                     selectedSeason =
                         selectedSeason,
                     onSelectSeason = { season ->
+                        episodeSelectionTouchedByUser =
+                            true
                         selectedSeason = season
                         selectedEpisode =
                             item.episodes
-                                .firstOrNull {
+                                .asSequence()
+                                .filter {
                                     it.season ==
                                         season
                                 }
+                                .sortedBy {
+                                    it.episode
+                                }
+                                .firstOrNull()
                         sourceStatus = null
                     },
                 )
@@ -7624,6 +7595,8 @@ private fun MediaDetailsScreen(
                     playbackEntries =
                         detailPlaybackEntries,
                     onEpisodeClick = { episode ->
+                        episodeSelectionTouchedByUser =
+                            true
                         selectedSeason =
                             episode.season
                         selectedEpisode =
@@ -8450,6 +8423,101 @@ private fun detailsPlaybackEntry(
                 true
             }
     }
+
+private fun orderedDetailsEpisodes(
+    episodes: List<EpisodeItem>,
+): List<EpisodeItem> {
+    val regularEpisodes =
+        episodes.filter {
+            it.season > 0
+        }
+
+    return (
+        if (regularEpisodes.isNotEmpty()) {
+            regularEpisodes
+        } else {
+            episodes
+        }
+    )
+        .sortedWith(
+            compareBy<EpisodeItem> {
+                it.season
+            }.thenBy {
+                it.episode
+            }
+        )
+        .distinctBy {
+            it.season to
+                it.episode
+        }
+}
+
+private fun detailsPlaybackTargetEpisode(
+    media: MediaItem,
+    entries: List<LibraryPlaybackEntry>,
+    initialEntry: LibraryPlaybackEntry?,
+): EpisodeItem? {
+    val orderedEpisodes =
+        orderedDetailsEpisodes(
+            media.episodes
+        )
+
+    if (orderedEpisodes.isEmpty()) {
+        return null
+    }
+
+    val latestPlayback =
+        (
+            entries +
+                listOfNotNull(
+                    initialEntry
+                )
+        )
+            .asSequence()
+            .filter { entry ->
+                entry.media.id ==
+                    media.id &&
+                    entry.media.type ==
+                        media.type &&
+                    entry.season != null &&
+                    entry.episode != null &&
+                    (
+                        entry.isCompleted ||
+                            entry.positionMs >
+                                15_000L
+                    )
+            }
+            .maxByOrNull {
+                it.lastWatchedEpochMs
+            }
+            ?: return null
+
+    val currentIndex =
+        orderedEpisodes
+            .indexOfFirst { episode ->
+                episode.season ==
+                    latestPlayback.season &&
+                    episode.episode ==
+                        latestPlayback.episode
+            }
+
+    if (currentIndex < 0) {
+        return null
+    }
+
+    if (!latestPlayback.isCompleted) {
+        return orderedEpisodes[
+            currentIndex
+        ]
+    }
+
+    return orderedEpisodes
+        .getOrNull(
+            currentIndex + 1
+        )
+        ?: orderedEpisodes
+            .firstOrNull()
+}
 
 private fun moreLikeThisAttribution(
     usesTmdb: Boolean,

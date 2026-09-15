@@ -67,6 +67,9 @@ fun TvDetailScreen(
     }
     var selectedSeason by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<Int?>(null) }
     var selectedEpisode by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<EpisodeItem?>(null) }
+    var episodeSelectionTouchedByUser by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(false)
+    }
 
     fun publishRatings(media: MediaItem) {
         ratings = (detailBaseRatings(media) + supplementalRatings)
@@ -78,7 +81,6 @@ fun TvDetailScreen(
     fun syncEpisodeSelection(
         media: MediaItem,
         preserveCurrent: Boolean,
-        restoringSameTitle: Boolean,
     ) {
         if (!media.isDetailSeries() || media.episodes.isEmpty()) {
             selectedSeason = null
@@ -88,10 +90,11 @@ fun TvDetailScreen(
             return
         }
 
-        if (preserveCurrent) {
+        if (preserveCurrent && episodeSelectionTouchedByUser) {
             val current = selectedEpisode?.let { selected ->
                 media.episodes.firstOrNull { candidate ->
-                    candidate.season == selected.season && candidate.episode == selected.episode
+                    candidate.season == selected.season &&
+                        candidate.episode == selected.episode
                 }
             }
             if (current != null) {
@@ -101,38 +104,18 @@ fun TvDetailScreen(
             }
         }
 
-        val history = runtime.libraryStore.history()
-        val resumeEntry = initialLibraryEntry ?: history.firstOrNull { entry ->
-            entry.media.id == media.id &&
-                entry.media.type == media.type &&
-                entry.season != null &&
-                entry.episode != null &&
-                detailCanResume(entry)
-        }
-        val resumeEpisode = resumeEntry?.let { entry ->
-            media.episodes.firstOrNull { episode ->
-                episode.season == entry.season && episode.episode == entry.episode
-            }
-        }
+        val playbackTarget = detailPlaybackTargetEpisode(
+            media = media,
+            entries = runtime.libraryStore.history(),
+            initialEntry = initialLibraryEntry,
+        )
+        val target = playbackTarget
+            ?: orderedDetailEpisodes(media.episodes).firstOrNull()
 
-        val seasonNumbers = media.episodes.map(EpisodeItem::season).distinct()
-        val orderedSeasons = seasonNumbers.filter { it > 0 }.sorted() + seasonNumbers.filter { it == 0 }
-        val rememberedSeason = VueoDetailFocusMemory.selectedSeason
-            ?.takeIf { restoringSameTitle && it in orderedSeasons }
-        val firstSeason = rememberedSeason ?: resumeEpisode?.season ?: orderedSeasons.firstOrNull()
-        val rememberedEpisode = VueoDetailFocusMemory.episodeId
-            ?.takeIf { restoringSameTitle }
-            ?.let { id ->
-                media.episodes.firstOrNull { episode ->
-                    episode.id == id && episode.season == firstSeason
-                }
-            }
-
-        selectedSeason = firstSeason
-        selectedEpisode = rememberedEpisode
-            ?: resumeEpisode?.takeIf { it.season == firstSeason }
-            ?: media.episodes.firstOrNull { it.season == firstSeason }
-        VueoDetailFocusMemory.selectedSeason = firstSeason
+        selectedSeason = target?.season
+        selectedEpisode = target
+        VueoDetailFocusMemory.selectedSeason = target?.season
+        VueoDetailFocusMemory.episodeId = null
     }
 
     LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
@@ -150,7 +133,7 @@ fun TvDetailScreen(
         publishRatings(shell)
         watchlisted = runtime.libraryStore.isWatchlisted(shell)
         movieWatched = runtime.libraryStore.isMarkedWatched(shell)
-        syncEpisodeSelection(shell, preserveCurrent = false, restoringSameTitle = restoringSameTitle)
+        syncEpisodeSelection(shell, preserveCurrent = false)
 
         // Actor Search / More Like This can produce tmdb:<id>. Resolve that identity before Stremio core.
         val prepared = runCatching { runtime.prepareDetailForCore(initial) }.getOrDefault(initial)
@@ -161,7 +144,7 @@ fun TvDetailScreen(
         publishRatings(core)
         watchlisted = runtime.libraryStore.isWatchlisted(core)
         movieWatched = runtime.libraryStore.isMarkedWatched(core)
-        syncEpisodeSelection(core, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+        syncEpisodeSelection(core, preserveCurrent = true)
 
         val localRelated = runtime.localRelatedTitles(core)
         related = localRelated
@@ -176,7 +159,7 @@ fun TvDetailScreen(
                 publishRatings(enriched)
                 watchlisted = runtime.libraryStore.isWatchlisted(enriched)
                 movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+                syncEpisodeSelection(enriched, preserveCurrent = true)
             }
             val rich = runCatching { runtime.enrichDetailRichDetails(enriched) }.getOrDefault(enriched)
             if (rich != enriched) {
@@ -185,7 +168,7 @@ fun TvDetailScreen(
                 publishRatings(enriched)
                 watchlisted = runtime.libraryStore.isWatchlisted(enriched)
                 movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(enriched, preserveCurrent = true, restoringSameTitle = restoringSameTitle)
+                syncEpisodeSelection(enriched, preserveCurrent = true)
             }
         }
 
@@ -280,18 +263,25 @@ fun TvDetailScreen(
             }
         },
         onSeasonSelected = { season ->
+            episodeSelectionTouchedByUser = true
             selectedSeason = season
-            selectedEpisode = item.episodes.firstOrNull { it.season == season }
+            selectedEpisode = item.episodes
+                .asSequence()
+                .filter { it.season == season }
+                .sortedBy(EpisodeItem::episode)
+                .firstOrNull()
             VueoDetailFocusMemory.selectedSeason = season
             VueoDetailFocusMemory.episodeId = null
         },
         onEpisodeFocused = { episode ->
+            episodeSelectionTouchedByUser = true
             selectedSeason = episode.season
             selectedEpisode = episode
             VueoDetailFocusMemory.selectedSeason = episode.season
             VueoDetailFocusMemory.episodeId = episode.id
         },
         onEpisodeSelected = { episode ->
+            episodeSelectionTouchedByUser = true
             selectedSeason = episode.season
             selectedEpisode = episode
             VueoDetailFocusMemory.selectedSeason = episode.season
@@ -323,6 +313,52 @@ internal data class TvDetailPresentationState(
     val related: List<MediaItem>,
     val primaryActionLabel: String,
 )
+
+private fun orderedDetailEpisodes(
+    episodes: List<EpisodeItem>,
+): List<EpisodeItem> {
+    val regularEpisodes = episodes.filter { it.season > 0 }
+    return (if (regularEpisodes.isNotEmpty()) regularEpisodes else episodes)
+        .sortedWith(
+            compareBy<EpisodeItem>(EpisodeItem::season)
+                .thenBy(EpisodeItem::episode)
+        )
+        .distinctBy { it.season to it.episode }
+}
+
+private fun detailPlaybackTargetEpisode(
+    media: MediaItem,
+    entries: List<LibraryPlaybackEntry>,
+    initialEntry: LibraryPlaybackEntry?,
+): EpisodeItem? {
+    val orderedEpisodes = orderedDetailEpisodes(media.episodes)
+    if (orderedEpisodes.isEmpty()) return null
+
+    val latestPlayback = (entries + listOfNotNull(initialEntry))
+        .asSequence()
+        .filter { entry ->
+            entry.media.id == media.id &&
+                entry.media.type == media.type &&
+                entry.season != null &&
+                entry.episode != null &&
+                (entry.isCompleted || entry.positionMs > 15_000L)
+        }
+        .maxByOrNull(LibraryPlaybackEntry::lastWatchedEpochMs)
+        ?: return null
+
+    val currentIndex = orderedEpisodes.indexOfFirst { episode ->
+        episode.season == latestPlayback.season &&
+            episode.episode == latestPlayback.episode
+    }
+    if (currentIndex < 0) return null
+
+    if (!latestPlayback.isCompleted) {
+        return orderedEpisodes[currentIndex]
+    }
+
+    return orderedEpisodes.getOrNull(currentIndex + 1)
+        ?: orderedEpisodes.firstOrNull()
+}
 
 internal fun detailPlaybackEntry(
     media: MediaItem,
