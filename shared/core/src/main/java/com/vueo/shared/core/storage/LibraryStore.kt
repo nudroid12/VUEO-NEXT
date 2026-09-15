@@ -213,21 +213,35 @@ class LibraryStore(
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
 
-        return readContinueWatching()
-            .ifEmpty { history() }
-            .filter {
-                it.positionMs > 5_000L &&
-                    !it.isCompleted
+        // History is the durable source of truth for playback progress.
+        // The legacy continue-watching cache only keeps the most recently
+        // written entry, so relying on it can make older valid titles vanish
+        // whenever another playback entry is recorded.
+        return history()
+            .groupBy {
+                continueWatchingTitleKey(
+                    it.media
+                )
+            }
+            .values
+            .mapNotNull { titleEntries ->
+                // Ignore very short opens when deciding the state of a title,
+                // but let a later completion suppress older unfinished entries.
+                titleEntries.firstOrNull {
+                    it.isCompleted ||
+                        it.positionMs > 5_000L
+                }
+            }
+            .filterNot {
+                it.isCompleted
             }
             .filterNot {
                 continueWatchingTitleKey(
                     it.media
                 ) in hiddenTitleKeys
             }
-            .distinctBy {
-                continueWatchingTitleKey(
-                    it.media
-                )
+            .sortedByDescending {
+                it.lastWatchedEpochMs
             }
     }
 
