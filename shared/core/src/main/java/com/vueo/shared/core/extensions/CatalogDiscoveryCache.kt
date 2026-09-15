@@ -437,6 +437,7 @@ object CatalogDiscoveryCache {
     }
 
     @Synchronized
+    @Synchronized
     fun companyTitles(
         companyName: String,
         networkOnly: Boolean = false,
@@ -714,6 +715,277 @@ object CatalogDiscoveryCache {
         }
 
         return relatedDiversityRerank(
+            scored = scored,
+            limit = limit,
+            documentCount =
+                documentCount,
+            genreFrequency =
+                genreFrequency,
+        )
+    }
+
+    /**
+     * Re-ranks local catalog matches together with TMDB discovery candidates.
+     *
+     * The final selection keeps VUEO relevance as the dominant signal:
+     * 70% local semantic relevance + 20% TMDB discovery confidence +
+     * 10% diversity, followed by the existing franchise repetition penalty.
+     */
+    @Synchronized
+    fun blendRelated(
+        item: MediaItem,
+        localItems: List<MediaItem>,
+        remoteItems: List<MediaItem>,
+        limit: Int = 18,
+    ): List<MediaItem> {
+        if (limit <= 0) {
+            return emptyList()
+        }
+
+        val targetType =
+            relatedCanonicalType(
+                item.type
+            )
+        val targetIdentity =
+            relatedIdentityKey(item)
+        val targetTitle =
+            relatedCanonicalTitle(
+                item.name,
+                targetType,
+            )
+        val targetYear =
+            relatedYear(item)
+
+        val preferredLocalIds =
+            localItems
+                .map {
+                    "${relatedCanonicalType(it.type)}:${it.id}"
+                }
+                .toSet()
+
+        val remoteConfidenceByIdentity =
+            buildMap<String, Double> {
+                val denominator =
+                    (remoteItems.size - 1)
+                        .coerceAtLeast(1)
+                        .toDouble()
+
+                remoteItems
+                    .forEachIndexed { index, candidate ->
+                        if (
+                            relatedCanonicalType(
+                                candidate.type
+                            ) != targetType ||
+                            relatedIsCurrentTitle(
+                                target = item,
+                                targetIdentity =
+                                    targetIdentity,
+                                targetTitle =
+                                    targetTitle,
+                                targetYear =
+                                    targetYear,
+                                candidate =
+                                    candidate,
+                            )
+                        ) {
+                            return@forEachIndexed
+                        }
+
+                        val rankConfidence =
+                            (
+                                1.0 -
+                                    0.45 *
+                                    (index / denominator)
+                            ).coerceIn(
+                                0.55,
+                                1.0,
+                            )
+                        val identity =
+                            relatedIdentityKey(
+                                candidate
+                            )
+                        put(
+                            identity,
+                            maxOf(
+                                get(identity) ?: 0.0,
+                                rankConfidence,
+                            ),
+                        )
+                    }
+            }
+
+        val candidates =
+            (localItems + remoteItems)
+                .asSequence()
+                .filter { candidate ->
+                    relatedCanonicalType(
+                        candidate.type
+                    ) == targetType &&
+                        !relatedIsCurrentTitle(
+                            target = item,
+                            targetIdentity =
+                                targetIdentity,
+                            targetTitle =
+                                targetTitle,
+                            targetYear =
+                                targetYear,
+                            candidate =
+                                candidate,
+                        )
+                }
+                .groupBy {
+                    relatedIdentityKey(it)
+                }
+                .values
+                .mapNotNull { duplicates ->
+                    relatedMergeBlendedDuplicates(
+                        duplicates = duplicates,
+                        preferredLocalIds =
+                            preferredLocalIds,
+                    )
+                }
+
+        if (candidates.isEmpty()) {
+            return emptyList()
+        }
+
+        val documents =
+            listOf(item) + candidates
+        val tokenSets =
+            documents.map {
+                relatedDocumentTokens(it)
+            }
+        val documentFrequency =
+            buildMap<String, Int> {
+                tokenSets.forEach { tokens ->
+                    tokens.forEach { token ->
+                        put(
+                            token,
+                            (get(token) ?: 0) + 1,
+                        )
+                    }
+                }
+            }
+        val documentCount =
+            documents.size
+                .coerceAtLeast(1)
+        val genreFrequency =
+            buildMap<String, Int> {
+                documents.forEach { media ->
+                    media.genres
+                        .map(::relatedNormalizeGenre)
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .forEach { genre ->
+                            put(
+                                genre,
+                                (get(genre) ?: 0) + 1,
+                            )
+                        }
+                }
+            }
+        val homePopularity =
+            homeRows
+                .asSequence()
+                .flatMap {
+                    it.items.asSequence()
+                }
+                .filter {
+                    relatedCanonicalType(
+                        it.type
+                    ) == targetType
+                }
+                .groupingBy {
+                    relatedIdentityKey(it)
+                }
+                .eachCount()
+        val maxHomePopularity =
+            homePopularity.values
+                .maxOrNull()
+                ?.coerceAtLeast(1)
+                ?: 1
+
+        val targetFeatures =
+            relatedBuildFeatures(
+                media = item,
+                documentFrequency =
+                    documentFrequency,
+                documentCount =
+                    documentCount,
+                homePopularity =
+                    homePopularity,
+                maxHomePopularity =
+                    maxHomePopularity,
+            )
+        val scored =
+            candidates.mapNotNull { candidate ->
+                val candidateFeatures =
+                    relatedBuildFeatures(
+                        media = candidate,
+                        documentFrequency =
+                            documentFrequency,
+                        documentCount =
+                            documentCount,
+                        homePopularity =
+                            homePopularity,
+                        maxHomePopularity =
+                            maxHomePopularity,
+                    )
+                val signals =
+                    relatedSignals(
+                        target = targetFeatures,
+                        candidate =
+                            candidateFeatures,
+                        genreFrequency =
+                            genreFrequency,
+                        documentCount =
+                            documentCount,
+                    )
+                val tmdbConfidence =
+                    remoteConfidenceByIdentity[
+                        relatedIdentityKey(
+                            candidate
+                        )
+                    ] ?: 0.0
+
+                if (
+                    !signals.passesRelevanceGate &&
+                    tmdbConfidence <= 0.0
+                ) {
+                    return@mapNotNull null
+                }
+
+                val vueoRelevance =
+                    if (signals.passesRelevanceGate) {
+                        signals.weightedScore
+                    } else {
+                        // Remote discovery can still contribute a candidate,
+                        // but weak year/region/rating-only matches must not
+                        // masquerade as strong VUEO semantic relevance.
+                        signals.weightedScore * 0.30
+                    }
+
+                RelatedCandidate(
+                    features =
+                        candidateFeatures,
+                    score =
+                        0.70 *
+                            vueoRelevance +
+                            0.20 *
+                            tmdbConfidence,
+                    genreScore =
+                        signals.genreScore,
+                    topicScore =
+                        signals.topicScore,
+                )
+            }
+
+        if (scored.isEmpty()) {
+            return localItems
+                .take(limit)
+        }
+
+        return relatedBlendedDiversityRerank(
             scored = scored,
             limit = limit,
             documentCount =
@@ -1338,6 +1610,84 @@ object CatalogDiscoveryCache {
         ).coerceIn(0.0, 1.0)
     }
 
+    private fun relatedBlendedDiversityRerank(
+        scored: List<RelatedCandidate>,
+        limit: Int,
+        documentCount: Int,
+        genreFrequency: Map<String, Int>,
+    ): List<MediaItem> {
+        val remaining =
+            scored.toMutableList()
+        val selected =
+            mutableListOf<RelatedCandidate>()
+        val franchiseCounts =
+            mutableMapOf<String, Int>()
+
+        while (
+            remaining.isNotEmpty() &&
+            selected.size < limit
+        ) {
+            val next =
+                remaining.maxByOrNull { candidate ->
+                    val diversity =
+                        if (selected.isEmpty()) {
+                            1.0
+                        } else {
+                            1.0 -
+                                selected.maxOf { chosen ->
+                                    relatedCandidateSimilarity(
+                                        left =
+                                            candidate.features,
+                                        right =
+                                            chosen.features,
+                                        documentCount =
+                                            documentCount,
+                                        genreFrequency =
+                                            genreFrequency,
+                                    )
+                                }
+                        }
+                    val franchise =
+                        candidate.features.franchise
+                    val sameFranchiseCount =
+                        if (franchise.isBlank()) {
+                            0
+                        } else {
+                            franchiseCounts[franchise] ?: 0
+                        }
+                    val franchisePenalty =
+                        when {
+                            sameFranchiseCount < 2 ->
+                                0.0
+                            sameFranchiseCount == 2 ->
+                                0.08
+                            sameFranchiseCount == 3 ->
+                                0.18
+                            else ->
+                                0.30 +
+                                    (sameFranchiseCount - 4) * 0.06
+                        }.coerceAtMost(0.48)
+
+                    candidate.score +
+                        0.10 * diversity -
+                        franchisePenalty
+                } ?: break
+
+            remaining.remove(next)
+            selected += next
+            next.features.franchise
+                .takeIf { it.isNotBlank() }
+                ?.let { stem ->
+                    franchiseCounts[stem] =
+                        (franchiseCounts[stem] ?: 0) + 1
+                }
+        }
+
+        return selected.map {
+            it.features.item
+        }
+    }
+
     private fun relatedDiversityRerank(
         scored: List<RelatedCandidate>,
         limit: Int,
@@ -1459,6 +1809,120 @@ object CatalogDiscoveryCache {
                 0.34 * topic +
                 if (sameFranchise) 0.08 else 0.0
         ).coerceIn(0.0, 1.0)
+    }
+
+    private fun relatedMergeBlendedDuplicates(
+        duplicates: List<MediaItem>,
+        preferredLocalIds: Set<String>,
+    ): MediaItem? {
+        if (duplicates.isEmpty()) {
+            return null
+        }
+
+        fun sourceKey(media: MediaItem): String =
+            "${relatedCanonicalType(media.type)}:${media.id}"
+
+        val primary =
+            duplicates
+                .filter {
+                    sourceKey(it) in
+                        preferredLocalIds
+                }
+                .maxByOrNull(
+                    ::relatedMetadataRichness
+                )
+                ?: duplicates.maxByOrNull(
+                    ::relatedMetadataRichness
+                )
+                ?: return null
+        val richest =
+            duplicates.maxByOrNull(
+                ::relatedMetadataRichness
+            ) ?: primary
+
+        return primary.copy(
+            poster =
+                primary.poster
+                    ?: richest.poster,
+            background =
+                primary.background
+                    ?: richest.background
+                    ?: primary.poster
+                    ?: richest.poster,
+            description =
+                primary.description
+                    ?.takeIf { it.isNotBlank() }
+                    ?: richest.description,
+            releaseInfo =
+                primary.releaseInfo
+                    ?: richest.releaseInfo,
+            originalTitle =
+                primary.originalTitle
+                    ?: richest.originalTitle,
+            aliases =
+                duplicates
+                    .flatMap { it.aliases }
+                    .plus(primary.name)
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            originalLanguage =
+                primary.originalLanguage
+                    ?: richest.originalLanguage,
+            countries =
+                duplicates
+                    .flatMap { it.countries }
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            genres =
+                duplicates
+                    .flatMap { it.genres }
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            catalogSources =
+                duplicates
+                    .flatMap { it.catalogSources }
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            imdbRating =
+                primary.imdbRating
+                    ?: richest.imdbRating,
+            tmdbRating =
+                primary.tmdbRating
+                    ?: richest.tmdbRating,
+            runtimeMinutes =
+                primary.runtimeMinutes
+                    ?: richest.runtimeMinutes,
+            certification =
+                primary.certification
+                    ?: richest.certification,
+            directors =
+                (primary.directors +
+                    richest.directors)
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            creators =
+                (primary.creators +
+                    richest.creators)
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            writers =
+                (primary.writers +
+                    richest.writers)
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase() },
+            cast =
+                (primary.cast +
+                    richest.cast)
+                    .distinctBy { it.name.lowercase() },
+            productionCompanies =
+                (primary.productionCompanies +
+                    richest.productionCompanies)
+                    .distinctBy { it.name.lowercase() },
+            networks =
+                (primary.networks +
+                    richest.networks)
+                    .distinctBy { it.name.lowercase() },
+        )
     }
 
     private fun relatedMergeDuplicates(
