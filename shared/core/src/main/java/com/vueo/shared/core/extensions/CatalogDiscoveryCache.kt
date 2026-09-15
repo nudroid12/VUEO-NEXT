@@ -436,7 +436,7 @@ object CatalogDiscoveryCache {
             .take(limit)
     }
 
-    @Synchronized
+    
     @Synchronized
     fun companyTitles(
         companyName: String,
