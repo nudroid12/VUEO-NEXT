@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
@@ -43,6 +44,7 @@ import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
+import com.vueo.tv.search.TvEntityResultsScreen
 import com.vueo.tv.settings.TvConfirmDialog
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
@@ -65,6 +67,7 @@ private enum class TvRoute {
     DNA,
     PROFILE,
     DETAIL,
+    ENTITY_RESULTS,
     SOURCE,
     PLAYER,
 }
@@ -77,6 +80,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
+    var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
     var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
     var selectedEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
     var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
@@ -438,7 +442,38 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 selectedEpisode = null
                                 initialPositionMs = 0L
                             },
+                            onOpenEntity = { target ->
+                                selectedEntityTarget = target
+                                route = TvRoute.ENTITY_RESULTS
+                            },
                             onLibraryChanged = { refreshToken++ },
+                        )
+                    }
+                }
+
+                TvRoute.ENTITY_RESULTS -> {
+                    val target = selectedEntityTarget
+                    if (target == null) {
+                        route = TvRoute.DETAIL
+                    } else {
+                        TvEntityResultsScreen(
+                            runtime = runtime,
+                            target = target,
+                            onBack = {
+                                selectedEntityTarget = null
+                                route = TvRoute.DETAIL
+                            },
+                            onOpenMedia = { next ->
+                                selectedMedia?.let { current ->
+                                    detailBackStack = detailBackStack + current
+                                }
+                                selectedMedia = next
+                                selectedLibraryEntry = null
+                                selectedEpisode = null
+                                initialPositionMs = 0L
+                                selectedEntityTarget = null
+                                route = TvRoute.DETAIL
+                            },
                         )
                     }
                 }

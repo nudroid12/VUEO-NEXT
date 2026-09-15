@@ -8,6 +8,19 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
+
+enum class MediaEntityKind {
+    ACTOR,
+    COMPANY,
+    NETWORK,
+}
+
+data class MediaEntityTarget(
+    val kind: MediaEntityKind,
+    val name: String,
+    val tmdbId: Long? = null,
+)
+
 object SearchOrchestrator {
     data class ActorAvailability(val addonSearch: Boolean, val tmdbSearch: Boolean) {
         val available: Boolean get() = addonSearch || tmdbSearch
@@ -61,4 +74,51 @@ object SearchOrchestrator {
         }
         providerJob.join(); tmdbJob.join(); merged()
     }
+
+    suspend fun entityResults(
+        engine: UnifiedMediaEngine,
+        target: MediaEntityTarget,
+        tmdbApiKey: String,
+        maxResults: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> {
+        return when (target.kind) {
+            MediaEntityKind.ACTOR ->
+                actorResults(
+                    engine = engine,
+                    query = target.name,
+                    tmdbApiKey = tmdbApiKey,
+                    maxResults = maxResults,
+                    onPartial = onPartial,
+                )
+
+            MediaEntityKind.COMPANY,
+            MediaEntityKind.NETWORK -> {
+                val network = target.kind == MediaEntityKind.NETWORK
+                val local = CatalogDiscoveryCache.companyTitles(
+                    companyName = target.name,
+                    networkOnly = network,
+                    limit = maxResults,
+                )
+                onPartial?.invoke(local)
+
+                val remote = try {
+                    TmdbEnhancementClient.companyFilmography(
+                        query = target.name,
+                        apiKey = tmdbApiKey,
+                        tmdbId = target.tmdbId,
+                        network = network,
+                        limit = maxResults,
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+
+                engine.mergeActorResults(remote + local, maxResults)
+            }
+        }
+    }
+
 }

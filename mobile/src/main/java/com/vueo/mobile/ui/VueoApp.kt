@@ -199,6 +199,8 @@ import com.vueo.shared.core.search.SearchResultOrderPolicy
 import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.search.SearchOrchestrator
+import com.vueo.shared.core.search.MediaEntityKind
+import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.mobile.core.dna.UserDnaEngine
@@ -267,6 +269,7 @@ private enum class AppSurface {
     ROOT,
     CATALOG,
     DETAILS,
+    ENTITY_RESULTS,
     PROFILES,
 }
 
@@ -409,6 +412,9 @@ fun VueoApp() {
     }
     var selectedMedia by remember {
         mutableStateOf<MediaItem?>(null)
+    }
+    var selectedEntityTarget by remember {
+        mutableStateOf<MediaEntityTarget?>(null)
     }
     var selectedCatalogRow by remember {
         mutableStateOf<CatalogRow?>(null)
@@ -567,6 +573,7 @@ fun VueoApp() {
         when {
             !startupDestinationResolved -> AppSurface.STARTUP
             showProfilePicker -> AppSurface.PROFILES
+            selectedEntityTarget != null -> AppSurface.ENTITY_RESULTS
             selectedMedia != null -> AppSurface.DETAILS
             selectedCatalogRow != null -> AppSurface.CATALOG
             else -> AppSurface.ROOT
@@ -607,6 +614,7 @@ fun VueoApp() {
                     profileVersion = profileVersion,
                     onProfileSelected = {
                         selectedMedia = null
+                        selectedEntityTarget = null
                         selectedCatalogRow = null
                         selectedLibraryEntry = null
                         mediaBackStack = emptyList()
@@ -650,6 +658,27 @@ fun VueoApp() {
                 }
             }
 
+            AppSurface.ENTITY_RESULTS -> {
+                selectedEntityTarget?.let { target ->
+                    MediaEntityResultsScreen(
+                        engine = engine,
+                        target = target,
+                        tmdbApiKey = pluginStore.tmdbApiKey(),
+                        onBack = {
+                            selectedEntityTarget = null
+                        },
+                        onMediaClick = { next ->
+                            selectedMedia?.let { current ->
+                                mediaBackStack = mediaBackStack + current
+                            }
+                            selectedLibraryEntry = null
+                            selectedMedia = next
+                            selectedEntityTarget = null
+                        },
+                    )
+                }
+            }
+
             AppSurface.DETAILS -> {
                 transitionMedia?.let { detailItem ->
                     MediaDetailsScreen(
@@ -681,6 +710,9 @@ fun VueoApp() {
 
                             selectedLibraryEntry = null
                             selectedMedia = next
+                        },
+                        onEntityClick = { target ->
+                            selectedEntityTarget = target
                         },
                     )
                 }
@@ -5879,6 +5911,128 @@ private fun playbackEntrySubtitle(
 
 
 @Composable
+private fun MediaEntityResultsScreen(
+    engine: UnifiedMediaEngine,
+    target: MediaEntityTarget,
+    tmdbApiKey: String,
+    onBack: () -> Unit,
+    onMediaClick: (MediaItem) -> Unit,
+) {
+    var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var loading by remember(target) { mutableStateOf(true) }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(target, tmdbApiKey) {
+        loading = true
+        results = emptyList()
+        results = SearchOrchestrator.entityResults(
+            engine = engine,
+            target = target,
+            tmdbApiKey = tmdbApiKey,
+            onPartial = { partial ->
+                if (partial.isNotEmpty()) results = partial
+            },
+        )
+        loading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(VueoPalette.Background)
+            .statusBarsPadding(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = target.name,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = when (target.kind) {
+                        MediaEntityKind.ACTOR -> "Cast titles"
+                        MediaEntityKind.COMPANY -> "Production titles"
+                        MediaEntityKind.NETWORK -> "Network titles"
+                    },
+                    color = VueoPalette.Muted,
+                    fontSize = 11.sp,
+                )
+            }
+        }
+
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.White,
+                trackColor = VueoPalette.SurfaceStrong,
+            )
+        }
+
+        when {
+            results.isNotEmpty() -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 112.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 12.dp,
+                        bottom = 28.dp,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    gridItems(
+                        items = results,
+                        key = { "entity:${target.kind}:${it.type}:${it.id}" },
+                    ) { item ->
+                        CatalogGridPoster(
+                            item = item,
+                            onClick = { onMediaClick(item) },
+                            onHold = { _ -> },
+                        )
+                    }
+                }
+            }
+            !loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(28.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = when (target.kind) {
+                            MediaEntityKind.ACTOR -> "No titles found for this cast member."
+                            MediaEntityKind.COMPANY -> "No titles found for this production company."
+                            MediaEntityKind.NETWORK -> "No titles found for this network."
+                        },
+                        color = VueoPalette.Muted,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MediaDetailsScreen(
     engine: UnifiedMediaEngine,
     settingsStore: SettingsStore,
@@ -5888,6 +6042,7 @@ private fun MediaDetailsScreen(
     onLibraryChanged: () -> Unit,
     onBack: () -> Unit,
     onMediaClick: (MediaItem) -> Unit,
+    onEntityClick: (MediaEntityTarget) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -7420,7 +7575,15 @@ private fun MediaDetailsScreen(
         if (detailCast.isNotEmpty()) {
             item {
                 MediaCastSection(
-                    cast = detailCast
+                    cast = detailCast,
+                    onPersonClick = { person ->
+                        onEntityClick(
+                            MediaEntityTarget(
+                                kind = MediaEntityKind.ACTOR,
+                                name = person.name,
+                            )
+                        )
+                    },
                 )
             }
         }
@@ -7563,6 +7726,19 @@ private fun MediaDetailsScreen(
                         },
                     companies =
                         featuredCompanies,
+                    onCompanyClick = { company ->
+                        onEntityClick(
+                            MediaEntityTarget(
+                                kind = if (item.type == "series") {
+                                    MediaEntityKind.NETWORK
+                                } else {
+                                    MediaEntityKind.COMPANY
+                                },
+                                name = company.name,
+                                tmdbId = company.tmdbId,
+                            )
+                        )
+                    },
                 )
             }
         }
@@ -8045,6 +8221,7 @@ private fun DetailsCreditLine(
 private fun MediaCompanySection(
     title: String,
     companies: List<MediaCompany>,
+    onCompanyClick: (MediaCompany) -> Unit,
 ) {
     Column(
         verticalArrangement =
@@ -8084,7 +8261,8 @@ private fun MediaCompanySection(
                     modifier =
                         Modifier
                             .width(116.dp)
-                            .height(66.dp),
+                            .height(66.dp)
+                            .clickable { onCompanyClick(company) },
                     shape =
                         RoundedCornerShape(
                             14.dp
@@ -8146,6 +8324,7 @@ private fun MediaCompanySection(
 @Composable
 private fun MediaCastSection(
     cast: List<MediaPerson>,
+    onPersonClick: (MediaPerson) -> Unit,
 ) {
     Column(
         verticalArrangement =
@@ -8183,9 +8362,9 @@ private fun MediaCastSection(
             ) { person ->
                 Column(
                     modifier =
-                        Modifier.width(
-                            78.dp
-                        ),
+                        Modifier
+                            .width(78.dp)
+                            .clickable { onPersonClick(person) },
                     horizontalAlignment =
                         Alignment.CenterHorizontally,
                     verticalArrangement =

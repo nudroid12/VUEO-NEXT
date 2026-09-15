@@ -76,6 +76,7 @@ internal fun VueoDetailPeopleSwitcher(
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
     onOpenRelated: (MediaItem) -> Unit,
+    onOpenCast: (MediaPerson) -> Unit,
     onTrailer: () -> Unit,
 ) {
     val available = remember(cast, related, trailerAvailable) {
@@ -130,6 +131,7 @@ internal fun VueoDetailPeopleSwitcher(
                     sectionRequester = castContentRequester,
                     upRequester = if (available.size > 1) tabsRequester else upRequester,
                     downRequester = downRequester,
+                    onOpen = onOpenCast,
                 )
 
                 VueoPeopleTab.RELATED -> VueoRelatedRow(
@@ -227,6 +229,7 @@ private fun VueoCastRow(
     sectionRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
+    onOpen: (MediaPerson) -> Unit,
 ) {
     val visible = remember(cast) { cast.take(20) }
     val requesters = remember(visible.map { it.name + "|" + it.character.orEmpty() }) {
@@ -247,6 +250,7 @@ private fun VueoCastRow(
                 requester = requesters.getValue(index),
                 upRequester = upRequester,
                 downRequester = downRequester,
+                onOpen = { onOpen(person) },
             )
         }
     }
@@ -258,6 +262,7 @@ private fun VueoCastMember(
     requester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
+    onOpen: () -> Unit,
 ) {
     var focused by remember(person.name, person.character) { mutableStateOf(false) }
     val role = person.character?.takeIf(String::isNotBlank)
@@ -271,6 +276,7 @@ private fun VueoCastMember(
                 downRequester?.let { down = it }
             }
             .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onOpen)
             .focusable(),
         horizontalAlignment = Alignment.Start,
     ) {
@@ -512,6 +518,7 @@ private fun VueoTrailerRow(
 internal fun VueoDetailCompanies(
     title: String,
     companies: List<MediaCompany>,
+    onOpenCompany: (MediaCompany) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -529,14 +536,20 @@ internal fun VueoDetailCompanies(
                 companies.take(14),
                 key = { index, company -> "$title:$index:${company.name}:${company.logo.orEmpty()}" },
             ) { _, company ->
-                VueoCompanyCard(company)
+                VueoCompanyCard(
+                    company = company,
+                    onOpen = { onOpenCompany(company) },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun VueoCompanyCard(company: MediaCompany) {
+private fun VueoCompanyCard(
+    company: MediaCompany,
+    onOpen: () -> Unit,
+) {
     var focused by remember(company.name) { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.03f else 1f,
@@ -556,6 +569,7 @@ private fun VueoCompanyCard(company: MediaCompany) {
                 scaleY = scale
             }
             .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onOpen)
             .focusable()
             .clip(RoundedCornerShape(8.dp))
             .background(Color.White)

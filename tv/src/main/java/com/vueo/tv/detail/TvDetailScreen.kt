@@ -15,6 +15,7 @@ import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.enrichDetailRichDetails
 import com.vueo.tv.core.enrichDetailTmdb
@@ -35,6 +36,7 @@ fun TvDetailScreen(
     onBack: () -> Unit,
     onWatch: (MediaItem, EpisodeItem?, Long) -> Unit,
     onOpenRelated: (MediaItem) -> Unit = {},
+    onOpenEntity: (MediaEntityTarget) -> Unit = {},
     onLibraryChanged: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -300,6 +302,7 @@ fun TvDetailScreen(
             onWatch(item, episode, startPositionMs)
         },
         onOpenRelated = onOpenRelated,
+        onOpenEntity = onOpenEntity,
     )
 }
 

@@ -97,6 +97,18 @@ object TmdbEnhancementClient {
                 size > MAX_CACHE_ENTRIES
         }
 
+    private val companyFilmographyCache =
+        object : LinkedHashMap<String, CacheEntry<List<MediaItem>>>(
+            32,
+            0.75f,
+            true,
+        ) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, CacheEntry<List<MediaItem>>>?,
+            ): Boolean =
+                size > MAX_CACHE_ENTRIES
+        }
+
     private val seasonEpisodesCache =
         object : LinkedHashMap<String, CacheEntry<List<TmdbEpisodeMetadata>>>(
             96,
@@ -462,6 +474,156 @@ object TmdbEnhancementClient {
         }
 
         return ranked
+    }
+
+    /**
+     * Resolve titles associated with a production company or TV network.
+     * Network discovery requires the TMDB network id captured from Details;
+     * production companies can also be resolved safely by exact company name.
+     */
+    suspend fun companyFilmography(
+        query: String,
+        apiKey: String,
+        tmdbId: Long? = null,
+        network: Boolean = false,
+        limit: Int = 80,
+    ): List<MediaItem> {
+        val cleanQuery = query.trim()
+        if (cleanQuery.length < 2 || apiKey.isBlank() || limit <= 0) return emptyList()
+
+        val associationId = when {
+            tmdbId != null && tmdbId > 0L -> tmdbId
+            network -> null
+            else -> resolveCompanyId(cleanQuery, apiKey)
+        } ?: return emptyList()
+
+        val cacheKey = "company-catalog-v1:${if (network) "network" else "company"}:$associationId:$limit"
+        cached(companyFilmographyCache, cacheKey)?.let { return it }
+
+        val collected = if (network) {
+            requestAssociationDiscoveryPages(
+                namespace = "tv",
+                parameter = "with_networks",
+                associationId = associationId,
+                type = "series",
+                apiKey = apiKey,
+                limit = limit,
+            )
+        } else {
+            coroutineScope {
+                val perTypeLimit = ((limit + 1) / 2).coerceAtLeast(20)
+                val movies = async {
+                    requestAssociationDiscoveryPages(
+                        namespace = "movie",
+                        parameter = "with_companies",
+                        associationId = associationId,
+                        type = "movie",
+                        apiKey = apiKey,
+                        limit = perTypeLimit,
+                    )
+                }
+                val series = async {
+                    requestAssociationDiscoveryPages(
+                        namespace = "tv",
+                        parameter = "with_companies",
+                        associationId = associationId,
+                        type = "series",
+                        apiKey = apiKey,
+                        limit = perTypeLimit,
+                    )
+                }
+                movies.await() + series.await()
+            }
+        }
+
+        val result = collected
+            .asSequence()
+            .distinctBy { "${it.type}:${it.id}" }
+            .sortedWith(
+                compareByDescending<MediaItem> { it.tmdbRating ?: 0.0 }
+                    .thenByDescending { it.releaseInfo?.toIntOrNull() ?: 0 }
+            )
+            .take(limit)
+            .toList()
+
+        synchronized(companyFilmographyCache) {
+            companyFilmographyCache[cacheKey] = CacheEntry(result, System.currentTimeMillis())
+        }
+        return result
+    }
+
+    private suspend fun resolveCompanyId(
+        query: String,
+        apiKey: String,
+    ): Long? {
+        val normalized = normalizePersonName(query)
+        if (normalized.isBlank()) return null
+        val url =
+            "$API_BASE/search/company" +
+                "?query=${Uri.encode(query)}" +
+                "&page=1" +
+                "&api_key=${Uri.encode(apiKey.trim())}"
+        val results = runCatching {
+            JSONObject(MetadataHttp.get(url)).optJSONArray("results")
+        }.getOrNull() ?: return null
+
+        return (0 until results.length())
+            .mapNotNull { index -> results.optJSONObject(index) }
+            .filter { normalizePersonName(it.optNullableString("name").orEmpty()) == normalized }
+            .maxByOrNull { it.optDouble("popularity", 0.0) }
+            ?.optLong("id", -1L)
+            ?.takeIf { it > 0L }
+    }
+
+    private suspend fun requestAssociationDiscoveryPages(
+        namespace: String,
+        parameter: String,
+        associationId: Long,
+        type: String,
+        apiKey: String,
+        limit: Int,
+    ): List<MediaItem> = coroutineScope {
+        val pageCount = ((limit + 19) / 20).coerceIn(1, 4)
+        (1..pageCount)
+            .map { page ->
+                async {
+                    requestAssociationDiscovery(
+                        namespace = namespace,
+                        parameter = parameter,
+                        associationId = associationId,
+                        type = type,
+                        apiKey = apiKey,
+                        page = page,
+                    )
+                }
+            }
+            .map { it.await() }
+            .flatten()
+            .take(limit)
+    }
+
+    private suspend fun requestAssociationDiscovery(
+        namespace: String,
+        parameter: String,
+        associationId: Long,
+        type: String,
+        apiKey: String,
+        page: Int = 1,
+    ): List<MediaItem> {
+        val url =
+            "$API_BASE/discover/$namespace" +
+                "?$parameter=$associationId" +
+                "&include_adult=false" +
+                "&language=en-US" +
+                "&page=${page.coerceAtLeast(1)}" +
+                "&sort_by=popularity.desc" +
+                "&api_key=${Uri.encode(apiKey.trim())}"
+
+        return runCatching {
+            JSONObject(MetadataHttp.get(url))
+                .optJSONArray("results")
+                .toMediaItems(type = type, sourceExtensionId = null)
+        }.getOrDefault(emptyList())
     }
 
     /**
@@ -1323,49 +1485,6 @@ object TmdbEnhancementClient {
     )
 }
 
-private val TMDB_MOVIE_GENRES =
-    mapOf(
-        28 to "Action",
-        12 to "Adventure",
-        16 to "Animation",
-        35 to "Comedy",
-        80 to "Crime",
-        99 to "Documentary",
-        18 to "Drama",
-        10751 to "Family",
-        14 to "Fantasy",
-        36 to "History",
-        27 to "Horror",
-        10402 to "Music",
-        9648 to "Mystery",
-        10749 to "Romance",
-        878 to "Science Fiction",
-        10770 to "TV Movie",
-        53 to "Thriller",
-        10752 to "War",
-        37 to "Western",
-    )
-
-private val TMDB_TV_GENRES =
-    mapOf(
-        10759 to "Action",
-        16 to "Animation",
-        35 to "Comedy",
-        80 to "Crime",
-        99 to "Documentary",
-        18 to "Drama",
-        10751 to "Family",
-        10762 to "Kids",
-        9648 to "Mystery",
-        10763 to "News",
-        10764 to "Reality",
-        10765 to "Science Fiction",
-        10766 to "Soap",
-        10767 to "Talk",
-        10768 to "War",
-        37 to "Western",
-    )
-
 private fun JSONArray?
     .toMediaItems(
         type: String,
@@ -1462,70 +1581,10 @@ private fun JSONArray?
                         json.optNullableString(
                             "original_language"
                         ),
-                    countries =
-                        json.optJSONArray(
-                            "origin_country"
-                        ).toStringValues(),
-                    genres =
-                        json.optJSONArray(
-                            "genre_ids"
-                        ).toIntValues()
-                            .mapNotNull { genreId ->
-                                if (type == "series") {
-                                    TMDB_TV_GENRES[
-                                        genreId
-                                    ]
-                                } else {
-                                    TMDB_MOVIE_GENRES[
-                                        genreId
-                                    ]
-                                }
-                            },
                     sourceExtensionId =
                         sourceExtensionId,
-                    tmdbRating =
-                        json.optDouble(
-                            "vote_average",
-                            0.0,
-                        ).takeIf { it > 0.0 },
                 )
             )
-        }
-    }
-}
-
-private fun JSONArray?
-    .toIntValues(): List<Int> {
-    if (this == null) {
-        return emptyList()
-    }
-
-    return buildList {
-        for (index in 0 until length()) {
-            val value =
-                optInt(
-                    index,
-                    Int.MIN_VALUE,
-                )
-            if (value != Int.MIN_VALUE) {
-                add(value)
-            }
-        }
-    }
-}
-
-private fun JSONArray?
-    .toStringValues(): List<String> {
-    if (this == null) {
-        return emptyList()
-    }
-
-    return buildList {
-        for (index in 0 until length()) {
-            optString(index)
-                .trim()
-                .takeIf { it.isNotBlank() }
-                ?.let(::add)
         }
     }
 }

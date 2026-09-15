@@ -384,6 +384,7 @@ object RichDetailsClient {
                             .trim()
                             .takeIf { it.startsWith("/") }
                             ?.let { "$IMAGE_BASE$it" },
+                        tmdbId = item.optLong("id", -1L).takeIf { it > 0L },
                     )
                 )
             }

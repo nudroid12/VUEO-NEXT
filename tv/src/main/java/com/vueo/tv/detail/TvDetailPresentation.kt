@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import com.vueo.shared.core.detail.DetailPeoplePolicy
+import com.vueo.shared.core.search.MediaEntityKind
+import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
@@ -46,6 +48,7 @@ internal fun TvDetailPresentation(
     onEpisodeFocused: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onEpisodeSelected: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onOpenRelated: (com.vueo.shared.core.media.MediaItem) -> Unit,
+    onOpenEntity: (MediaEntityTarget) -> Unit,
 ) {
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
@@ -210,6 +213,14 @@ internal fun TvDetailPresentation(
                         upRequester = peopleUp,
                         downRequester = null,
                         onOpenRelated = onOpenRelated,
+                        onOpenCast = { person ->
+                            onOpenEntity(
+                                MediaEntityTarget(
+                                    kind = MediaEntityKind.ACTOR,
+                                    name = person.name,
+                                )
+                            )
+                        },
                         onTrailer = onTrailer,
                     )
                 }
@@ -222,6 +233,15 @@ internal fun TvDetailPresentation(
                     VueoDetailCompanies(
                         title = if (networks.size == 1) "Network" else "Networks",
                         companies = networks,
+                        onOpenCompany = { company ->
+                            onOpenEntity(
+                                MediaEntityTarget(
+                                    kind = MediaEntityKind.NETWORK,
+                                    name = company.name,
+                                    tmdbId = company.tmdbId,
+                                )
+                            )
+                        },
                     )
                 }
             }
@@ -230,6 +250,15 @@ internal fun TvDetailPresentation(
                     VueoDetailCompanies(
                         title = "Production",
                         companies = production,
+                        onOpenCompany = { company ->
+                            onOpenEntity(
+                                MediaEntityTarget(
+                                    kind = MediaEntityKind.COMPANY,
+                                    name = company.name,
+                                    tmdbId = company.tmdbId,
+                                )
+                            )
+                        },
                     )
                 }
             }

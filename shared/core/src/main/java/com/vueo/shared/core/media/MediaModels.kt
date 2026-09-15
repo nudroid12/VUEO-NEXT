@@ -20,6 +20,7 @@ data class MediaPerson(
 data class MediaCompany(
     val name: String,
     val logo: String? = null,
+    val tmdbId: Long? = null,
 )
 
 data class MediaItem(
