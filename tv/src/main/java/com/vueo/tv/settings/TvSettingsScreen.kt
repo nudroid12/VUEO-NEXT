@@ -37,6 +37,7 @@ import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.SubtitleLanguage
 import com.vueo.shared.core.storage.SubtitleSize
+import com.vueo.shared.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.tv.BuildConfig
 import com.vueo.tv.core.TvRuntime
@@ -1135,6 +1136,7 @@ private fun TvSubtitleSettings(
     val store = runtime.settingsStore
     var primary by remember { mutableStateOf(store.preferredSubtitleLanguage()) }
     var secondary by remember { mutableStateOf(store.secondarySubtitleLanguage()) }
+    var visibility by remember { mutableStateOf(store.subtitleVisibility()) }
     var defaultOn by remember { mutableStateOf(store.subtitlesOnByDefault()) }
     var autoSelect by remember { mutableStateOf(store.autoSelectPreferredSubtitle()) }
     var embedded by remember { mutableStateOf(store.embeddedSubtitlePriority()) }
@@ -1148,6 +1150,8 @@ private fun TvSubtitleSettings(
         choiceEntry("primary", "Preferred Language", "First language VUEO should prefer when subtitle tracks are available.", primary.label, { primary = cycle(SubtitleLanguage.entries, primary, -1); store.setPreferredSubtitleLanguage(primary) }, { primary = cycle(SubtitleLanguage.entries, primary, 1); store.setPreferredSubtitleLanguage(primary) })
             .copy(section = "LANGUAGE & BEHAVIOR", icon = Icons.Default.VideoLibrary),
         choiceEntry("secondary", "Secondary Language", "Fallback language when the preferred language is unavailable.", secondary.label, { secondary = cycle(SubtitleLanguage.entries, secondary, -1); store.setSecondarySubtitleLanguage(secondary) }, { secondary = cycle(SubtitleLanguage.entries, secondary, 1); store.setSecondarySubtitleLanguage(secondary) })
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        choiceEntry("visibility", "Subtitle Visibility", "Choose whether the player lists only your preferred language or every discovered subtitle language.", visibility.label, { visibility = cycle(SubtitleVisibility.entries, visibility, -1); store.setSubtitleVisibility(visibility) }, { visibility = cycle(SubtitleVisibility.entries, visibility, 1); store.setSubtitleVisibility(visibility) })
             .copy(section = "LANGUAGE & BEHAVIOR"),
         toggleEntry("default", "Subtitles On by Default", "Prefer showing subtitles automatically when a suitable track exists.", defaultOn) { defaultOn = it; store.setSubtitlesOnByDefault(it) }
             .copy(section = "LANGUAGE & BEHAVIOR"),

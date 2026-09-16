@@ -98,6 +98,7 @@ import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRecoverySession
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.storage.PlayerVideoFit
+import com.vueo.shared.core.storage.SubtitleVisibility
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
 import com.vueo.tv.ui.TvDesign
@@ -1166,6 +1167,8 @@ fun TvPlayerScreen(
                 entryFocusRequester = subtitleWorkspaceRequester,
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
+                preferredLanguageOnly =
+                    settings.subtitleVisibility() == SubtitleVisibility.PREFERRED_ONLY,
                 subtitleDelayMs = subtitleDelayMs,
                 style = subtitleStyle,
                 onInteraction = ::noteInteraction,

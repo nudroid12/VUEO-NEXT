@@ -16,6 +16,35 @@ object PlayerTrackPolicy {
     fun externalSubtitleLabel(track: SubtitleTrack): String =
         "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
 
+    fun subtitleDisplayId(track: SubtitleTrack): String? {
+        val displayId = subtitleDisplayId(track.id) ?: return null
+        val idLanguage = LanguagePolicy.knownCode(displayId)
+        val trackLanguage = LanguagePolicy.canonicalCode(track.language)
+        return displayId.takeUnless {
+            idLanguage != null && idLanguage == trackLanguage
+        }
+    }
+
+    fun subtitleDisplayId(rawId: String?): String? {
+        val cleaned = rawId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val sourceId = Regex("^.+?:\\d+:(.+)$")
+            .matchEntire(cleaned)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: cleaned
+
+        return sourceId.takeIf { value ->
+            !value.startsWith(SUBTITLE_LABEL_PREFIX) &&
+                !value.startsWith("external:") &&
+                !Regex("^track\\s*\\d+$", RegexOption.IGNORE_CASE).matches(value)
+        }
+    }
+
     fun builtinSubtitleSelectionId(
         language: String?,
         formatLabel: String?,

@@ -6,6 +6,7 @@ typealias PreferredQuality = com.vueo.shared.core.storage.PreferredQuality
 typealias PlayerVideoFit = com.vueo.shared.core.storage.PlayerVideoFit
 typealias SubtitleLanguage = com.vueo.shared.core.storage.SubtitleLanguage
 typealias SubtitleSize = com.vueo.shared.core.storage.SubtitleSize
+typealias SubtitleVisibility = com.vueo.shared.core.storage.SubtitleVisibility
 typealias AppTheme = com.vueo.shared.core.storage.AppTheme
 typealias AppAccent = com.vueo.shared.core.storage.AppAccent
 typealias SettingsStore = com.vueo.shared.core.storage.SettingsStore

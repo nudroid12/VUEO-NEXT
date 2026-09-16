@@ -57,7 +57,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
 private val PanelShape = RoundedCornerShape(18.dp)
-private val SubtitleWorkspaceBottomClearance = 104.dp
+private val SubtitleWorkspaceBottomClearance = 48.dp
 
 @Composable
 internal fun VueoPlayerCompactOverlay(
@@ -706,6 +706,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     entryFocusRequester: FocusRequester,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
+    preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
     style: TvPlayerSubtitleStyleState,
     onInteraction: () -> Unit,
@@ -714,23 +715,49 @@ internal fun VueoPlayerSubtitleWorkspace(
     onSubtitleDelayChange: (Int) -> Unit,
     onStyleChange: (TvPlayerSubtitleStyleState) -> Unit,
 ) {
-    val groups = remember(tracks, preferredLanguageCode, secondaryLanguageCode) {
-        tvBuildSubtitleLanguageGroups(tracks, preferredLanguageCode, secondaryLanguageCode)
+    val preferredFilterCode = preferredLanguageCode
+        ?.let(::tvCanonicalLanguage)
+        ?.takeUnless { it == "und" }
+    val preferredFilterActive = preferredLanguageOnly && preferredFilterCode != null
+    val filteredTracks = remember(tracks, preferredFilterCode, preferredFilterActive) {
+        if (preferredFilterActive) {
+            tracks.filter {
+                tvCanonicalLanguage(it.language) == preferredFilterCode
+            }
+        } else {
+            tracks
+        }
+    }
+    val groups = remember(filteredTracks, preferredLanguageCode, secondaryLanguageCode) {
+        tvBuildSubtitleLanguageGroups(filteredTracks, preferredLanguageCode, secondaryLanguageCode)
     }
     val selectedTrack = tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
-    val hasSelectedSubtitle = !subtitlesDisabled && selectedLanguageCode != null
-    var activeLanguageCode by remember(selectedLanguageCode, subtitlesDisabled) {
-        mutableStateOf(selectedLanguageCode.takeIf { hasSelectedSubtitle })
+    val selectedLanguageVisible = selectedLanguageCode
+        ?.takeIf { code -> groups.any { it.code == code } }
+    val hasSelectedSubtitle = !subtitlesDisabled && selectedLanguageVisible != null
+    var activeLanguageCode by remember(
+        selectedLanguageVisible,
+        subtitlesDisabled,
+        preferredFilterActive,
+        groups.map { it.code },
+    ) {
+        mutableStateOf(
+            selectedLanguageVisible.takeIf { hasSelectedSubtitle }
+                ?: groups.singleOrNull()
+                    ?.code
+                    ?.takeIf { preferredFilterActive && !subtitlesDisabled }
+        )
     }
-    var styleOpen by remember(selectedLanguageCode, subtitlesDisabled) {
+    var styleOpen by remember(selectedLanguageVisible, subtitlesDisabled) {
         mutableStateOf(hasSelectedSubtitle)
     }
     val visibleTracks = groups.firstOrNull { it.code == activeLanguageCode }?.tracks.orEmpty()
     val entryLanguageIndex = when {
         subtitlesDisabled -> 0
-        selectedLanguageCode != null -> groups.indexOfFirst { it.code == selectedLanguageCode }
+        selectedLanguageVisible != null -> groups.indexOfFirst { it.code == selectedLanguageVisible }
             .let { if (it < 0) 0 else it + 1 }
+        preferredFilterActive && groups.isNotEmpty() -> 1
         else -> 0
     }
     val languageRequesters = remember(groups.map { it.code }, entryLanguageIndex, entryFocusRequester) {
@@ -920,20 +947,13 @@ internal fun VueoPlayerSubtitleWorkspace(
                             verticalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
                             itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
-                                val matchingLabels = visibleTracks.count {
-                                    it.label.equals(track.label, ignoreCase = true)
-                                }
-                                val matchingIndex = if (matchingLabels > 1) {
-                                    visibleTracks.take(index + 1).count {
-                                        it.label.equals(track.label, ignoreCase = true)
-                                    }
-                                } else 0
-                                val identity = if (matchingLabels > 1) "Track $matchingIndex" else ""
-
                                 VueoSubtitleTrackRow(
                                     title = track.label,
                                     provider = track.sourceLabel,
-                                    detail = identity,
+                                    detail = track.metadata
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { "ID: $it" }
+                                        .orEmpty(),
                                     selected = !subtitlesDisabled && track.selected,
                                     requester = trackRequesters[index],
                                     blockUp = index == 0,
@@ -949,7 +969,11 @@ internal fun VueoPlayerSubtitleWorkspace(
                             }
                         }
                         groups.isEmpty() -> VueoSubtitleEmpty(
-                            "No subtitles available. Try another source or install a subtitle addon."
+                            if (preferredFilterActive) {
+                                "No subtitle is available for your preferred language."
+                            } else {
+                                "No subtitles available. Try another source or install a subtitle addon."
+                            }
                         )
                         else -> VueoSubtitleEmpty("No subtitle track is available for this language.")
                     }

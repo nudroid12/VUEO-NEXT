@@ -11163,6 +11163,12 @@ private fun PlayerScreen(
             secondaryLanguageCode = settingsStore
                 .secondarySubtitleLanguage()
                 .languageCode,
+            visibilityPreferredLanguageCode = settingsStore
+                .preferredSubtitleLanguage()
+                .languageCode,
+            preferredLanguageOnly =
+                settingsStore.subtitleVisibility() ==
+                    com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY,
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
             onDisable = {
@@ -13189,7 +13195,9 @@ private fun playerTrackChoices(
                             sampleMimeType = format.sampleMimeType,
                         )
                     } else {
-                        friendlySubtitleLanguageName(trackLanguage)
+                        externalSubtitle
+                            ?.let { PlayerTrackPolicy.subtitleDisplayId(it) }
+                            ?: PlayerTrackPolicy.subtitleDisplayId(format.id)
                     },
                     selectionId = selectionId,
                 )

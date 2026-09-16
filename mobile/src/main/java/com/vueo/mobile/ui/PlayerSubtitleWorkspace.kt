@@ -92,6 +92,8 @@ internal fun PlayerSubtitleWorkspace(
     subtitlesDisabled: Boolean,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
+    visibilityPreferredLanguageCode: String?,
+    preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
     style: PlayerSubtitleStyleState,
     onDisable: () -> Unit,
@@ -101,13 +103,30 @@ internal fun PlayerSubtitleWorkspace(
     onOpenStyle: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val groups = remember(
+    val preferredFilterCode = visibilityPreferredLanguageCode
+        ?.let(::canonicalSubtitleLanguage)
+        ?.takeUnless { it == "und" }
+    val preferredFilterActive = preferredLanguageOnly && preferredFilterCode != null
+    val filteredTracks = remember(
         tracks,
+        preferredFilterCode,
+        preferredFilterActive,
+    ) {
+        if (preferredFilterActive) {
+            tracks.filter {
+                canonicalSubtitleLanguage(it.language) == preferredFilterCode
+            }
+        } else {
+            tracks
+        }
+    }
+    val groups = remember(
+        filteredTracks,
         preferredLanguageCode,
         secondaryLanguageCode,
     ) {
         buildSubtitleLanguageGroups(
-            tracks = tracks,
+            tracks = filteredTracks,
             preferredLanguageCode = preferredLanguageCode,
             secondaryLanguageCode = secondaryLanguageCode,
         )
@@ -115,18 +134,25 @@ internal fun PlayerSubtitleWorkspace(
     val selectedTrack = tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language
         ?.let(::canonicalSubtitleLanguage)
+    val selectedLanguageVisible = selectedLanguageCode
+        ?.takeIf { code -> groups.any { it.code == code } }
     val hasSelectedSubtitle =
-        !subtitlesDisabled && selectedLanguageCode != null
+        !subtitlesDisabled && selectedLanguageVisible != null
     var activeLanguageCode by remember(
-        selectedLanguageCode,
+        selectedLanguageVisible,
         subtitlesDisabled,
+        preferredFilterActive,
+        groups.map { it.code },
     ) {
         mutableStateOf(
-            selectedLanguageCode.takeIf { hasSelectedSubtitle }
+            selectedLanguageVisible.takeIf { hasSelectedSubtitle }
+                ?: groups.singleOrNull()
+                    ?.code
+                    ?.takeIf { preferredFilterActive && !subtitlesDisabled }
         )
     }
     var styleOpen by remember(
-        selectedLanguageCode,
+        selectedLanguageVisible,
         subtitlesDisabled,
     ) {
         mutableStateOf(hasSelectedSubtitle)
@@ -273,7 +299,11 @@ internal fun PlayerSubtitleWorkspace(
                                     }
                                     groups.isEmpty() ->
                                         SubtitleEmptyState(
-                                            "No subtitles available. Try another source or install a subtitle addon."
+                                            if (preferredFilterActive) {
+                                                "No subtitle is available for your preferred language."
+                                            } else {
+                                                "No subtitles available. Try another source or install a subtitle addon."
+                                            }
                                         )
                                     else -> SubtitleEmptyState(
                                         "No subtitle track is available for this language."
@@ -436,13 +466,17 @@ private fun SubtitleTrackRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            "${track.metadata ?: friendlySubtitleLanguageName(track.language)} (${track.sourceLabel})",
-            color = foreground.copy(alpha = .58f),
-            fontSize = 9.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        track.metadata
+            ?.takeIf { it.isNotBlank() }
+            ?.let { subtitleId ->
+                Text(
+                    "ID: $subtitleId",
+                    color = foreground.copy(alpha = .58f),
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
     }
 }
 

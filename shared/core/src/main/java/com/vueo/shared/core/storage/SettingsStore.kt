@@ -65,6 +65,13 @@ enum class SubtitleSize(
     LARGE("Large"),
 }
 
+enum class SubtitleVisibility(
+    val label: String,
+) {
+    PREFERRED_ONLY("Preferred language only"),
+    SHOW_ALL("Show all languages"),
+}
+
 
 enum class AppTheme(
     val label: String,
@@ -322,6 +329,23 @@ class SettingsStore(
         prefs.edit()
             .putString(
                 profileKey(KEY_SECONDARY_SUBTITLE_LANGUAGE),
+                value.name,
+            )
+            .apply()
+    }
+
+    fun subtitleVisibility(): SubtitleVisibility =
+        enumValue(
+            key = profileKey(KEY_SUBTITLE_VISIBILITY),
+            default = SubtitleVisibility.SHOW_ALL,
+        )
+
+    fun setSubtitleVisibility(
+        value: SubtitleVisibility,
+    ) {
+        prefs.edit()
+            .putString(
+                profileKey(KEY_SUBTITLE_VISIBILITY),
                 value.name,
             )
             .apply()
@@ -995,6 +1019,9 @@ class SettingsStore(
 
         private const val KEY_SECONDARY_SUBTITLE_LANGUAGE =
             "secondary_subtitle_language"
+
+        private const val KEY_SUBTITLE_VISIBILITY =
+            "subtitle_visibility"
 
         private const val KEY_SUBTITLES_ON_BY_DEFAULT =
             "subtitles_on_by_default"

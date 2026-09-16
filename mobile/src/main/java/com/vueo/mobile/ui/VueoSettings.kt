@@ -89,6 +89,7 @@ import com.vueo.mobile.core.storage.PlayerOrientation
 import com.vueo.mobile.core.storage.SettingsStore
 import com.vueo.mobile.core.storage.SubtitleLanguage
 import com.vueo.mobile.core.storage.SubtitleSize
+import com.vueo.mobile.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.mobile.core.update.VueoUpdateManager
 import com.vueo.mobile.core.update.VueoUpdateStore
@@ -1567,10 +1568,16 @@ internal fun SubtitleSettingsScreen(
     var size by remember {
         mutableStateOf(settingsStore.subtitleSize())
     }
+    var visibility by remember {
+        mutableStateOf(settingsStore.subtitleVisibility())
+    }
     var languageDialog by remember {
         mutableStateOf<SubtitleLanguageTarget?>(null)
     }
     var showSizeDialog by remember {
+        mutableStateOf(false)
+    }
+    var showVisibilityDialog by remember {
         mutableStateOf(false)
     }
 
@@ -1616,6 +1623,35 @@ internal fun SubtitleSettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { languageDialog = null }) {
+                    Text("Close")
+                }
+            },
+        )
+    }
+
+    if (showVisibilityDialog) {
+        AlertDialog(
+            onDismissRequest = { showVisibilityDialog = false },
+            title = { Text("Subtitle Visibility") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    SubtitleVisibility.values().forEach { option ->
+                        VueoChoiceRow(
+                            label = option.label,
+                            selected = visibility == option,
+                            onClick = {
+                                visibility = option
+                                settingsStore.setSubtitleVisibility(option)
+                                showVisibilityDialog = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showVisibilityDialog = false }) {
                     Text("Close")
                 }
             },
@@ -1675,6 +1711,15 @@ internal fun SubtitleSettingsScreen(
                 onClick = {
                     languageDialog = SubtitleLanguageTarget.SECONDARY
                 },
+            )
+        }
+
+        item {
+            VueoSettingsValueCard(
+                title = "Subtitle Visibility",
+                subtitle = "Choose whether the player lists only your preferred language or every discovered subtitle language.",
+                value = visibility.label,
+                onClick = { showVisibilityDialog = true },
             )
         }
 

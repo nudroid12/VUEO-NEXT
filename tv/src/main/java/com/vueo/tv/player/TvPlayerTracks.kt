@@ -106,11 +106,9 @@ internal fun tvPlayerTrackChoices(
                 metadata = if (trackType == C.TRACK_TYPE_AUDIO) {
                     tvBuildAudioTrackMetadata(format.label, format.channelCount, format.sampleMimeType)
                 } else {
-                    externalSubtitle?.id?.takeIf { it.isNotBlank() }
-                        ?: format.id?.takeIf { it.isNotBlank() }
-                        ?: format.label?.takeIf {
-                            it.isNotBlank() && !it.startsWith(TV_SUBTITLE_LABEL_PREFIX)
-                        }
+                    externalSubtitle
+                        ?.let { PlayerTrackPolicy.subtitleDisplayId(it) }
+                        ?: PlayerTrackPolicy.subtitleDisplayId(format.id)
                 },
                 selectionId = selectionId,
             )
