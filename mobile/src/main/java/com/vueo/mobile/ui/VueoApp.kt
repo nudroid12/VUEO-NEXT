@@ -9984,6 +9984,14 @@ private fun PlayerScreen(
     var currentPositionMs by remember {
         mutableStateOf(initialPlaybackPositionMs)
     }
+    var lastValidPlaybackPositionMs by remember(mediaKey) {
+        mutableStateOf(
+            maxOf(
+                initialPlaybackPositionMs,
+                savedPositionMs,
+            ).takeIf { it > 5_000L } ?: 0L
+        )
+    }
     var durationMs by remember {
         mutableStateOf(0L)
     }
@@ -10356,25 +10364,60 @@ private fun PlayerScreen(
         }
     }
 
-    fun recordLibraryProgress() {
+    fun stablePlaybackSnapshot(): Pair<Long, Long> {
+        val livePositionMs =
+            player.currentPosition.coerceAtLeast(0L)
+        val liveDurationMs =
+            player.duration.coerceAtLeast(0L)
+
+        if (livePositionMs > 5_000L) {
+            lastValidPlaybackPositionMs = livePositionMs
+        }
+
+        val stablePositionMs =
+            if (livePositionMs > 5_000L) {
+                livePositionMs
+            } else {
+                lastValidPlaybackPositionMs
+            }
+
+        return stablePositionMs to liveDurationMs
+    }
+
+    fun recordLibraryProgress(
+        positionMs: Long,
+        durationMs: Long,
+    ) {
         libraryStore.recordPlayback(
             media = media,
             videoId = videoId,
             episodeTitle = episode?.title,
             season = episode?.season,
             episode = episode?.episode,
-            positionMs = player.currentPosition,
-            durationMs = player.duration,
+            positionMs = positionMs,
+            durationMs = durationMs,
         )
     }
 
     fun savePosition() {
+        val (positionMs, durationMs) =
+            stablePlaybackSnapshot()
+
+        // Pause/exit/dispose can briefly report 0 ms. Never let that
+        // transient value clear an already-valid resume point.
+        if (positionMs <= 5_000L) {
+            return
+        }
+
         playbackStore.savePositionMs(
             mediaKey = mediaKey,
-            positionMs = player.currentPosition,
-            durationMs = player.duration,
+            positionMs = positionMs,
+            durationMs = durationMs,
         )
-        recordLibraryProgress()
+        recordLibraryProgress(
+            positionMs = positionMs,
+            durationMs = durationMs,
+        )
     }
 
     fun startNextEpisode() {
@@ -10980,21 +11023,37 @@ private fun PlayerScreen(
         var librarySaveTicks = 0
         while (true) {
             delay(500L)
-            currentPositionMs =
+            val sampledPositionMs =
                 player.currentPosition
                     .coerceAtLeast(0L)
-            durationMs =
+            val sampledDurationMs =
                 player.duration
                     .coerceAtLeast(0L)
 
+            currentPositionMs = sampledPositionMs
+            durationMs = sampledDurationMs
+
+            if (sampledPositionMs > 5_000L) {
+                lastValidPlaybackPositionMs =
+                    sampledPositionMs
+            }
+
             librarySaveTicks++
             if (librarySaveTicks >= 20) {
-                playbackStore.savePositionMs(
-                    mediaKey = mediaKey,
-                    positionMs =
-                        player.currentPosition,
-                    durationMs = player.duration,
-                )
+                val stablePositionMs =
+                    if (sampledPositionMs > 5_000L) {
+                        sampledPositionMs
+                    } else {
+                        lastValidPlaybackPositionMs
+                    }
+
+                if (stablePositionMs > 5_000L) {
+                    playbackStore.savePositionMs(
+                        mediaKey = mediaKey,
+                        positionMs = stablePositionMs,
+                        durationMs = sampledDurationMs,
+                    )
+                }
                 librarySaveTicks = 0
             }
         }
@@ -11107,6 +11166,7 @@ private fun PlayerScreen(
             },
             onStartOver = {
                 playbackStore.clearPosition(mediaKey)
+                lastValidPlaybackPositionMs = 0L
                 player.seekTo(0L)
                 player.playWhenReady = true
                 resumePromptVisible = false
