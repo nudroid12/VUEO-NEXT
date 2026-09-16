@@ -103,18 +103,23 @@ internal fun PlayerSubtitleWorkspace(
     onOpenStyle: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val preferredFilterCode = visibilityPreferredLanguageCode
-        ?.let(::canonicalSubtitleLanguage)
-        ?.takeUnless { it == "und" }
-    val preferredFilterActive = preferredLanguageOnly && preferredFilterCode != null
+    val preferredFilterCodes = listOfNotNull(
+        visibilityPreferredLanguageCode
+            ?.let(::canonicalSubtitleLanguage)
+            ?.takeUnless { it == "und" },
+        secondaryLanguageCode
+            ?.let(::canonicalSubtitleLanguage)
+            ?.takeUnless { it == "und" },
+    ).distinct()
+    val preferredFilterActive = preferredLanguageOnly && preferredFilterCodes.isNotEmpty()
     val filteredTracks = remember(
         tracks,
-        preferredFilterCode,
+        preferredFilterCodes,
         preferredFilterActive,
     ) {
         if (preferredFilterActive) {
             tracks.filter {
-                canonicalSubtitleLanguage(it.language) == preferredFilterCode
+                canonicalSubtitleLanguage(it.language) in preferredFilterCodes
             }
         } else {
             tracks

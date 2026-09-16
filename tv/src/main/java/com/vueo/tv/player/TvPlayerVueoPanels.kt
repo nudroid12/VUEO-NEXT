@@ -715,14 +715,19 @@ internal fun VueoPlayerSubtitleWorkspace(
     onSubtitleDelayChange: (Int) -> Unit,
     onStyleChange: (TvPlayerSubtitleStyleState) -> Unit,
 ) {
-    val preferredFilterCode = preferredLanguageCode
-        ?.let(::tvCanonicalLanguage)
-        ?.takeUnless { it == "und" }
-    val preferredFilterActive = preferredLanguageOnly && preferredFilterCode != null
-    val filteredTracks = remember(tracks, preferredFilterCode, preferredFilterActive) {
+    val preferredFilterCodes = listOfNotNull(
+        preferredLanguageCode
+            ?.let(::tvCanonicalLanguage)
+            ?.takeUnless { it == "und" },
+        secondaryLanguageCode
+            ?.let(::tvCanonicalLanguage)
+            ?.takeUnless { it == "und" },
+    ).distinct()
+    val preferredFilterActive = preferredLanguageOnly && preferredFilterCodes.isNotEmpty()
+    val filteredTracks = remember(tracks, preferredFilterCodes, preferredFilterActive) {
         if (preferredFilterActive) {
             tracks.filter {
-                tvCanonicalLanguage(it.language) == preferredFilterCode
+                tvCanonicalLanguage(it.language) in preferredFilterCodes
             }
         } else {
             tracks
