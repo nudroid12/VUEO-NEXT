@@ -167,7 +167,7 @@ internal fun VueoPlayerPresentation(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 48.dp, top = 32.dp),
+                    .padding(start = 32.dp, top = 32.dp),
             ) {
                 VueoContentWarningsOverlay(
                     warnings = contentWarnings,
