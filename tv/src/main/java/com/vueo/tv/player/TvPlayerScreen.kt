@@ -631,13 +631,18 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(playing, contentWarnings, contentWarningsEnabled, playerSessionId) {
-        if (!playing || !contentWarningsEnabled) {
+    LaunchedEffect(
+        hasRenderedFirstFrame,
+        contentWarnings,
+        contentWarningsEnabled,
+        playerSessionId,
+    ) {
+        if (!contentWarningsEnabled) {
             warningVisible = false
             return@LaunchedEffect
         }
 
-        if (contentWarnings.isNotEmpty() && !warningShown) {
+        if (hasRenderedFirstFrame && contentWarnings.isNotEmpty() && !warningShown) {
             warningShown = true
             warningVisible = true
         }
