@@ -135,8 +135,10 @@ internal fun VueoPlayerSourcesPanel(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = 48.dp),
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(520.dp)
+                .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
                 "Sources",
@@ -156,7 +158,7 @@ internal fun VueoPlayerSourcesPanel(
 
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(.62f)
+                    .fillMaxWidth()
                     .weight(1f)
                     .clip(PanelShape)
                     .background(cardBackground)
@@ -395,8 +397,10 @@ internal fun VueoPlayerEpisodesPanel(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = 48.dp),
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(520.dp)
+                .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
                 "Episodes",
@@ -1286,8 +1290,10 @@ internal fun VueoPlayerAudioWorkspace(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = 48.dp),
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(520.dp)
+                .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
                 "Audio",
@@ -1305,7 +1311,7 @@ internal fun VueoPlayerAudioWorkspace(
 
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(.62f)
+                    .fillMaxWidth()
                     .weight(1f)
                     .clip(PanelShape)
                     .background(cardBackground)

@@ -134,6 +134,7 @@ fun TvPlayerScreen(
     bundle: TvSourceBundle,
     source: StreamSource,
     initialPositionMs: Long,
+    playerSessionId: Int,
     onBack: () -> Unit,
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem) -> Unit = {},
@@ -250,8 +251,8 @@ fun TvPlayerScreen(
     var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
     var skipSegments by remember(mediaKey) { mutableStateOf<List<PlayerSkipSegment>>(emptyList()) }
     var contentWarnings by remember(mediaKey) { mutableStateOf<List<ContentWarning>>(emptyList()) }
-    var warningVisible by remember(mediaKey) { mutableStateOf(false) }
-    var warningShown by remember(mediaKey) { mutableStateOf(false) }
+    var warningVisible by remember(playerSessionId) { mutableStateOf(false) }
+    var warningShown by remember(playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var audioTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var subtitlesDisabled by remember(mediaKey) {
@@ -610,7 +611,7 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(resolvedImdbId, settings.contentWarningsEnabled()) {
+    LaunchedEffect(resolvedImdbId, settings.contentWarningsEnabled(), playerSessionId) {
         contentWarnings = emptyList()
         warningVisible = false
         warningShown = false
@@ -623,7 +624,7 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(playing, contentWarnings, settings.contentWarningsEnabled()) {
+    LaunchedEffect(playing, contentWarnings, settings.contentWarningsEnabled(), playerSessionId) {
         if (!playing || !settings.contentWarningsEnabled()) {
             warningVisible = false
             return@LaunchedEffect

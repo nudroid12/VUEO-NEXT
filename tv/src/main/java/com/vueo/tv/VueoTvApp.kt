@@ -86,6 +86,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
     var initialPositionMs by remember { mutableLongStateOf(0L) }
+    var playerSessionId by remember { mutableIntStateOf(0) }
     var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -503,6 +504,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             onPlay = { bundle, source ->
                                 sourceBundle = bundle
                                 selectedSource = source
+                                playerSessionId += 1
                                 route = TvRoute.PLAYER
                             },
                         )
@@ -523,6 +525,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             bundle = bundle,
                             source = source,
                             initialPositionMs = initialPositionMs,
+                            playerSessionId = playerSessionId,
                             onBack = {
                                 stopSourceDiscovery(markStopped = true)
                                 route = TvRoute.SOURCE
