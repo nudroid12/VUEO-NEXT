@@ -1345,11 +1345,10 @@ internal fun VueoPlayerMoreWorkspace(
                     VueoSubtitleColumnTitle("Playback")
                     Spacer(Modifier.height(18.dp))
                     VueoMoreLabel("Speed")
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp),
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        itemsIndexed(speeds) { index, speed ->
+                        speeds.forEachIndexed { index, speed ->
                             VueoMoreChoiceChip(
                                 label = formatMoreSpeed(speed),
                                 selected = playbackSpeed == speed,
@@ -1359,6 +1358,7 @@ internal fun VueoPlayerMoreWorkspace(
                                 leftRequester = if (index == 0) FocusRequester.Cancel else speedRequesters[index - 1],
                                 rightRequester = if (index == speeds.lastIndex) sleepReturnRequester else speedRequesters[index + 1],
                                 onInteraction = onInteraction,
+                                compact = true,
                             ) { onPlaybackSpeedChange(speed) }
                         }
                     }
@@ -1506,6 +1506,7 @@ private fun VueoMoreChoiceChip(
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
     onInteraction: () -> Unit,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
@@ -1548,12 +1549,15 @@ private fun VueoMoreChoiceChip(
                 },
                 shape,
             )
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(
+                horizontal = if (compact) 7.dp else 13.dp,
+                vertical = if (compact) 8.dp else 9.dp,
+            ),
     ) {
         Text(
             label,
             color = if (focused || selected) Color(0xFF151A11) else Color.White.copy(alpha = .74f),
-            fontSize = 10.sp,
+            fontSize = if (compact) 9.sp else 10.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
