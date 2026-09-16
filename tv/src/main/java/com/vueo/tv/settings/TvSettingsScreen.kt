@@ -42,6 +42,8 @@ import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.tv.BuildConfig
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.TvSidebarPreferences
+import com.vueo.tv.ui.TvSidebarStyle
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdateRelease
 import kotlinx.coroutines.launch
@@ -1200,9 +1202,11 @@ private fun TvAppearanceSettings(
     onProfile: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     val store = runtime.settingsStore
     var theme by remember { mutableStateOf(store.appTheme()) }
     var accent by remember { mutableStateOf(store.appAccent()) }
+    var sidebarStyle by remember { mutableStateOf(TvSidebarPreferences.style(context)) }
 
     val entries = listOf(
         choiceEntry("theme", "Theme", "Choose the dark cinematic base palette.", theme.label, {
@@ -1215,6 +1219,13 @@ private fun TvAppearanceSettings(
         }, {
             accent = cycle(AppAccent.entries, accent, 1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
         }).copy(section = "LOOK & FEEL"),
+        choiceEntry("sidebar-style", "Sidebar style", "Choose how the TV navigation rail is presented.", sidebarStyle.label, {
+            sidebarStyle = cycle(TvSidebarStyle.entries, sidebarStyle, -1)
+            TvSidebarPreferences.setStyle(context, sidebarStyle)
+        }, {
+            sidebarStyle = cycle(TvSidebarStyle.entries, sidebarStyle, 1)
+            TvSidebarPreferences.setStyle(context, sidebarStyle)
+        }).copy(section = "NAVIGATION"),
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }
