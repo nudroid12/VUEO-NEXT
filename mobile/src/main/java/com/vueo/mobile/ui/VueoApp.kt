@@ -9951,8 +9951,6 @@ private fun PlayerScreen(
 
     var resumePromptVisible by remember(
         mediaKey,
-        source.url,
-        initialPositionMs,
     ) {
         mutableStateOf(shouldPromptResume)
     }
