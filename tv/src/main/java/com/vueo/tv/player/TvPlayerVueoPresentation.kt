@@ -266,7 +266,7 @@ private fun VueoContentWarningsOverlay(
     val count = warnings.size
     if (count == 0) return
 
-    val totalLineHeight = (count * 19) + ((count - 1) * 4)
+    val totalLineHeight = (count * 16) + ((count - 1) * 3)
     val containerAlpha = remember { Animatable(0f) }
     val lineHeightFraction = remember { Animatable(0f) }
     val itemAlphas = remember(count) { List(count) { Animatable(0f) } }
@@ -312,14 +312,14 @@ private fun VueoContentWarningsOverlay(
     ) {
         Box(
             modifier = Modifier
-                .width(4.dp)
+                .width(3.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
                 .clip(RoundedCornerShape(50))
                 .background(Color(0xFFB9FF3A)),
         )
         Column(
-            modifier = Modifier.padding(start = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(start = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             warnings.forEachIndexed { index, warning ->
                 Row(
@@ -329,15 +329,15 @@ private fun VueoContentWarningsOverlay(
                     Text(
                         text = warning.label,
                         color = Color.White.copy(alpha = .92f),
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = " • ${warning.severity}",
                         color = Color.White.copy(alpha = .56f),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                     )
                 }
             }
@@ -385,9 +385,9 @@ private fun VueoPlayerControls(
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
 ) {
-    val title = episode?.let {
+    val episodeLine = episode?.let {
         "S${it.season} E${it.episode} • ${it.title.ifBlank { "Episode ${it.episode}" }}"
-    } ?: media.name
+    }
 
     val bottomActions = buildList {
         if (hasSubtitles) add(VueoPlayerChromeAction(Icons.Rounded.Subtitles, "Subs", subtitlesRequester, TvPlayerPanel.SUBTITLES))
@@ -410,16 +410,33 @@ private fun VueoPlayerControls(
             if (contentWarningVisible) {
                 Spacer(Modifier.weight(1f))
             } else {
-                Text(
-                    text = title,
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    lineHeight = 28.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(end = 24.dp),
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    Text(
+                        text = media.name,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    episodeLine?.let { line ->
+                        Text(
+                            text = line,
+                            color = Color.White.copy(alpha = .72f),
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
 
             Row(
