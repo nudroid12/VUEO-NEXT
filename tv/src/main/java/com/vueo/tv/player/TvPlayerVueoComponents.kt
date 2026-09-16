@@ -120,7 +120,7 @@ internal fun VueoPlayerTopAction(
     var focused by remember(label) { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(42.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = FocusRequester.Cancel
@@ -153,7 +153,7 @@ internal fun VueoPlayerTopAction(
                 focused -> Color.Black
                 else -> Color.White
             },
-            modifier = Modifier.size(25.dp),
+            modifier = Modifier.size(21.dp),
         )
     }
 }
@@ -170,7 +170,7 @@ internal fun VueoPlayerPillAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = Modifier
             .focusRequester(requester)
@@ -192,21 +192,21 @@ internal fun VueoPlayerPillAction(
             }
             .focusable()
             .background(if (focused) Color.White else Color.Transparent, shape)
-            .padding(horizontal = 11.dp, vertical = 7.dp),
+            .padding(horizontal = 9.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = if (focused) Color.Black else Color.White,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
         Text(
             text = label,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 6.dp),
+            modifier = Modifier.padding(start = 5.dp),
             maxLines = 1,
         )
     }

@@ -440,7 +440,7 @@ private fun VueoPlayerControls(
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 VueoPlayerTopAction(
@@ -491,34 +491,34 @@ private fun VueoPlayerControls(
             onTogglePlayback = onPlayPause,
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 vueoPlayerTime(positionMs),
                 color = Color.White.copy(alpha = .90f),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
             )
             Text(
                 vueoPlayerTime(durationMs),
                 color = Color.White.copy(alpha = .90f),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
             )
         }
 
         if (bottomActions.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(1.dp))
             Row(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .clip(RoundedCornerShape(26.dp))
+                    .clip(RoundedCornerShape(22.dp))
                     .background(Color(0xFF111316).copy(alpha = .88f))
-                    .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(26.dp))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(22.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 bottomActions.forEachIndexed { index, action ->
