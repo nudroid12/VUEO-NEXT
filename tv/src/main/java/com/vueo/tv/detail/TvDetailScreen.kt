@@ -21,7 +21,9 @@ import com.vueo.tv.core.enrichDetailRichDetails
 import com.vueo.tv.core.enrichDetailTmdb
 import com.vueo.tv.core.loadCoreDetail
 import com.vueo.tv.core.prepareDetailForCore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * TV Details follows Mobile's orchestration upstream:
@@ -64,6 +66,9 @@ fun TvDetailScreen(
     }
     var related by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaItem>>(emptyList())
+    }
+    var dnaMatch by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf<Int?>(null)
     }
     var selectedSeason by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<Int?>(null) }
     var selectedEpisode by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf<EpisodeItem?>(null) }
@@ -128,6 +133,7 @@ fun TvDetailScreen(
         item = shell
         loading = true
         related = emptyList()
+        dnaMatch = null
         vueoExtras = TvDetailVueoExtras()
         supplementalRatings = emptyList()
         publishRatings(shell)
@@ -146,11 +152,28 @@ fun TvDetailScreen(
         movieWatched = runtime.libraryStore.isMarkedWatched(core)
         syncEpisodeSelection(core, preserveCurrent = true)
 
-        val localRelated = runtime.localRelatedTitles(core)
-        related = localRelated
-
-        // Core metadata + local More Like This are enough to release Detail.
+        // Match Mobile's perceived-load flow: core metadata is enough to
+        // release Detail. Local/remote recommendations continue after the
+        // page is already visible.
         loading = false
+
+        launch {
+            val localRelated = runCatching {
+                withContext(Dispatchers.Default) {
+                    runtime.localRelatedTitles(core)
+                }
+            }.getOrDefault(emptyList())
+
+            related = localRelated
+            related = runCatching {
+                withContext(Dispatchers.Default) {
+                    runtime.relatedTitles(
+                        item = core,
+                        localItems = localRelated,
+                    )
+                }
+            }.getOrDefault(localRelated)
+        }
 
         launch {
             var enriched = runCatching { runtime.enrichDetailTmdb(core) }.getOrDefault(core)
@@ -179,15 +202,6 @@ fun TvDetailScreen(
         }
 
         launch {
-            related = runCatching {
-                runtime.relatedTitles(
-                    item = core,
-                    localItems = localRelated,
-                )
-            }.getOrDefault(localRelated)
-        }
-
-        launch {
             vueoExtras = runCatching {
                 loadTvDetailVueoExtras(
                     media = core,
@@ -212,8 +226,16 @@ fun TvDetailScreen(
     val episodesForSeason = remember(item.episodes, selectedSeason) {
         item.episodes.filter { it.season == selectedSeason }
     }
-    val dnaMatch = remember(item, loading) {
-        if (loading) null else runtime.dnaMatch(item)
+    LaunchedEffect(item, loading) {
+        if (loading) {
+            dnaMatch = null
+        } else {
+            dnaMatch = runCatching {
+                withContext(Dispatchers.Default) {
+                    runtime.dnaMatch(item)
+                }
+            }.getOrNull()
+        }
     }
     val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry) {
         detailPrimaryActionLabel(item, selectedEpisode, playbackEntry)
