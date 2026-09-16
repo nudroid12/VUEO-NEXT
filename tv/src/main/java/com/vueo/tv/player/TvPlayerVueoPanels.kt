@@ -1,6 +1,7 @@
 package com.vueo.tv.player
 
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -757,6 +758,9 @@ internal fun VueoPlayerSubtitleWorkspace(
     var styleOpen by remember(selectedLanguageVisible, subtitlesDisabled) {
         mutableStateOf(hasSelectedSubtitle)
     }
+    var styleFloatMode by remember { mutableStateOf(false) }
+    val showSubtitlesPanel = hasSelectedSubtitle || activeLanguageCode != null
+    val showStylePanel = styleOpen && !subtitlesDisabled
     val visibleTracks = groups.firstOrNull { it.code == activeLanguageCode }?.tracks.orEmpty()
     val entryLanguageIndex = when {
         subtitlesDisabled -> 0
@@ -773,6 +777,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val trackRequesters = remember(visibleTracks.map { it.key }) {
         List(visibleTracks.size.coerceAtLeast(1)) { FocusRequester() }
     }
+    val floatRequester = remember { FocusRequester() }
     val syncRequester = remember { FocusRequester() }
     val sizeRequester = remember { FocusRequester() }
     val boldRequester = remember { FocusRequester() }
@@ -791,9 +796,22 @@ internal fun VueoPlayerSubtitleWorkspace(
         mutableIntStateOf(selectedVisibleTrackIndex.coerceAtLeast(0))
     }
     var pendingTrackFocusLanguage by remember { mutableStateOf<String?>(null) }
-    val styleLeftRequester = trackRequesters.getOrNull(styleReturnTrackIndex)
-        ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
+    val styleLeftRequester = if (styleFloatMode) {
+        FocusRequester.Cancel
+    } else {
+        trackRequesters.getOrNull(styleReturnTrackIndex)
+            ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
+    }
     var initialFocusAssigned by remember { mutableStateOf(false) }
+
+    LaunchedEffect(styleOpen, subtitlesDisabled) {
+        if (!styleOpen || subtitlesDisabled) styleFloatMode = false
+    }
+
+    BackHandler(enabled = styleFloatMode) {
+        styleFloatMode = false
+        onInteraction()
+    }
 
     LaunchedEffect(groups, entryLanguageIndex, initialFocusAssigned) {
         if (initialFocusAssigned) return@LaunchedEffect
@@ -873,277 +891,306 @@ internal fun VueoPlayerSubtitleWorkspace(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(
-                    modifier = Modifier
-                        .weight(.30f)
-                        .fillMaxHeight()
-                        .clip(PanelShape)
-                        .background(cardBackground)
-                        .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                Box(
+                    modifier = Modifier.weight(.30f).fillMaxHeight(),
                 ) {
-                    VueoSubtitleColumnTitle("Languages")
-                    Spacer(Modifier.height(10.dp))
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    if (!styleFloatMode) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(PanelShape)
+                            .background(cardBackground)
+                            .border(1.dp, cardBorder, PanelShape)
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
                     ) {
-                        item(key = "subtitle:none") {
-                            VueoSubtitleLanguageRow(
-                                title = "Off",
-                                count = null,
-                                selected = subtitlesDisabled && activeLanguageCode == null,
-                                requester = languageRequesters[0],
-                                blockUp = true,
-                                blockDown = groups.isEmpty(),
-                                rightRequester = firstTrackRequester,
-                                onInteraction = onInteraction,
-                            ) {
-                                pendingTrackFocusLanguage = null
-                                activeLanguageCode = null
-                                styleOpen = false
-                                onDisable()
-                            }
-                        }
-                        itemsIndexed(groups, key = { _, group -> group.code }) { index, group ->
-                            VueoSubtitleLanguageRow(
-                                title = group.label,
-                                count = group.tracks.size,
-                                selected = group.code == activeLanguageCode ||
-                                    (activeLanguageCode == null && !subtitlesDisabled && group.code == selectedLanguageCode),
-                                requester = languageRequesters[index + 1],
-                                blockUp = false,
-                                blockDown = index == groups.lastIndex,
-                                rightRequester = if (group.code == activeLanguageCode) firstTrackRequester else FocusRequester.Cancel,
-                                onRight = if (group.code != activeLanguageCode && group.tracks.isNotEmpty()) {
-                                    {
-                                        activeLanguageCode = group.code
-                                        styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
-                                        pendingTrackFocusLanguage = group.code
-                                    }
-                                } else {
-                                    null
-                                },
-                                onInteraction = onInteraction,
-                            ) {
-                                pendingTrackFocusLanguage = null
-                                activeLanguageCode = group.code
-                                styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
-                            }
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .weight(.40f)
-                        .fillMaxHeight()
-                        .clip(PanelShape)
-                        .background(cardBackground)
-                        .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                ) {
-                    VueoSubtitleColumnTitle("Subtitles")
-                    Spacer(Modifier.height(10.dp))
-                    when {
-                        activeLanguageCode == null -> VueoSubtitleEmpty("Choose a language to see its exact subtitle tracks.")
-                        visibleTracks.isNotEmpty() -> LazyColumn(
+                        VueoSubtitleColumnTitle("Languages")
+                        Spacer(Modifier.height(10.dp))
+                        LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
-                            itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
-                                VueoSubtitleTrackRow(
-                                    title = track.label,
-                                    provider = track.sourceLabel,
-                                    detail = track.metadata
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?.let { "ID: $it" }
-                                        .orEmpty(),
-                                    selected = !subtitlesDisabled && track.selected,
-                                    requester = trackRequesters[index],
-                                    blockUp = index == 0,
-                                    blockDown = index == visibleTracks.lastIndex,
-                                    leftRequester = activeLanguageRequester,
-                                    rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
+                            item(key = "subtitle:none") {
+                                VueoSubtitleLanguageRow(
+                                    title = "Off",
+                                    count = null,
+                                    selected = subtitlesDisabled && activeLanguageCode == null,
+                                    requester = languageRequesters[0],
+                                    blockUp = true,
+                                    blockDown = groups.isEmpty(),
+                                    rightRequester = firstTrackRequester,
                                     onInteraction = onInteraction,
-                                    onFocused = { styleReturnTrackIndex = index },
                                 ) {
-                                    styleOpen = true
-                                    onSelect(track)
+                                    pendingTrackFocusLanguage = null
+                                    activeLanguageCode = null
+                                    styleOpen = false
+                                    onDisable()
+                                }
+                            }
+                            itemsIndexed(groups, key = { _, group -> group.code }) { index, group ->
+                                VueoSubtitleLanguageRow(
+                                    title = group.label,
+                                    count = group.tracks.size,
+                                    selected = group.code == activeLanguageCode ||
+                                        (activeLanguageCode == null && !subtitlesDisabled && group.code == selectedLanguageCode),
+                                    requester = languageRequesters[index + 1],
+                                    blockUp = false,
+                                    blockDown = index == groups.lastIndex,
+                                    rightRequester = if (group.code == activeLanguageCode) firstTrackRequester else FocusRequester.Cancel,
+                                    onRight = if (group.code != activeLanguageCode && group.tracks.isNotEmpty()) {
+                                        {
+                                            activeLanguageCode = group.code
+                                            styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
+                                            pendingTrackFocusLanguage = group.code
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                    onInteraction = onInteraction,
+                                ) {
+                                    pendingTrackFocusLanguage = null
+                                    activeLanguageCode = group.code
+                                    styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
                                 }
                             }
                         }
-                        groups.isEmpty() -> VueoSubtitleEmpty(
-                            if (preferredFilterActive) {
-                                "No subtitle is available for your preferred language."
-                            } else {
-                                "No subtitles available. Try another source or install a subtitle addon."
-                            }
-                        )
-                        else -> VueoSubtitleEmpty("No subtitle track is available for this language.")
+                    }
                     }
                 }
 
-                Column(
-                    modifier = Modifier
-                        .weight(.30f)
-                        .fillMaxHeight()
-                        .clip(PanelShape)
-                        .background(cardBackground)
-                        .border(1.dp, cardBorder, PanelShape)
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                Box(
+                    modifier = Modifier.weight(.40f).fillMaxHeight(),
                 ) {
-                    VueoSubtitleColumnTitle("Style")
-                    Spacer(Modifier.height(10.dp))
-                    if (styleOpen && !subtitlesDisabled) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .padding(bottom = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(11.dp),
-                        ) {
-                            VueoSubtitleStepperRow(
-                                title = "Sync",
-                                value = formatSubtitleDelayTv(subtitleDelayMs),
-                                requester = syncRequester,
-                                upRequester = FocusRequester.Cancel,
-                                downRequester = sizeRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                                onDecrease = {
-                                    onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
-                                },
-                                onIncrease = {
-                                    onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
-                                },
-                            )
-                            VueoSubtitleStepperRow(
-                                title = "Font Size",
-                                value = "${style.fontSizeSp}sp",
-                                requester = sizeRequester,
-                                upRequester = syncRequester,
-                                downRequester = boldRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                                onDecrease = {
-                                    onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
-                                },
-                                onIncrease = {
-                                    onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
-                                },
-                            )
-                            VueoSubtitleToggleRow(
-                                title = "Bold",
-                                enabled = style.bold,
-                                requester = boldRequester,
-                                upRequester = sizeRequester,
-                                downRequester = textColorRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                                onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
-                            )
-                            VueoSubtitleColorRow(
-                                title = "Text Color",
-                                colours = textColours,
-                                selectedColour = style.textColor,
-                                requester = textColorRequester,
-                                upRequester = boldRequester,
-                                downRequester = opacityRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                            ) { colour ->
-                                onStyleChange(
-                                    style.copy(
-                                        textColor = subtitleWithAlpha(colour, opacity)
-                                    )
-                                )
+                    if (!styleFloatMode && showSubtitlesPanel) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(PanelShape)
+                            .background(cardBackground)
+                            .border(1.dp, cardBorder, PanelShape)
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                    ) {
+                        VueoSubtitleColumnTitle("Subtitles")
+                        Spacer(Modifier.height(10.dp))
+                        when {
+                            activeLanguageCode == null -> VueoSubtitleEmpty("Choose a language to see its exact subtitle tracks.")
+                            visibleTracks.isNotEmpty() -> LazyColumn(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
+                                    VueoSubtitleTrackRow(
+                                        title = track.label,
+                                        provider = track.sourceLabel,
+                                        detail = track.metadata
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { "ID: $it" }
+                                            .orEmpty(),
+                                        selected = !subtitlesDisabled && track.selected,
+                                        requester = trackRequesters[index],
+                                        blockUp = index == 0,
+                                        blockDown = index == visibleTracks.lastIndex,
+                                        leftRequester = activeLanguageRequester,
+                                        rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
+                                        onInteraction = onInteraction,
+                                        onFocused = { styleReturnTrackIndex = index },
+                                    ) {
+                                        styleOpen = true
+                                        onSelect(track)
+                                    }
+                                }
                             }
-                            VueoSubtitleStepperRow(
-                                title = "Text Opacity",
-                                value = "$opacity%",
-                                requester = opacityRequester,
-                                upRequester = textColorRequester,
-                                downRequester = outlineRequester,
+                            groups.isEmpty() -> VueoSubtitleEmpty(
+                                if (preferredFilterActive) {
+                                    "No subtitle is available for your preferred language."
+                                } else {
+                                    "No subtitles available. Try another source or install a subtitle addon."
+                                }
+                            )
+                            else -> VueoSubtitleEmpty("No subtitle track is available for this language.")
+                        }
+                    }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier.weight(.30f).fillMaxHeight(),
+                ) {
+                    if (showStylePanel) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(PanelShape)
+                            .background(cardBackground)
+                            .border(1.dp, cardBorder, PanelShape)
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            VueoSubtitleColumnTitle("Style")
+                            Spacer(Modifier.weight(1f))
+                            VueoSubtitleFloatButton(
+                                requester = floatRequester,
+                                downRequester = syncRequester,
                                 leftRequester = styleLeftRequester,
                                 onInteraction = onInteraction,
-                                onDecrease = {
-                                    onStyleChange(
-                                        style.copy(
-                                            textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
-                                        )
-                                    )
-                                },
-                                onIncrease = {
-                                    onStyleChange(
-                                        style.copy(
-                                            textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
-                                        )
-                                    )
-                                },
-                            )
-                            VueoSubtitleToggleRow(
-                                title = "Outline",
-                                enabled = style.outlineEnabled,
-                                requester = outlineRequester,
-                                upRequester = opacityRequester,
-                                downRequester = if (style.outlineEnabled) outlineColorRequester else positionRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                                onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
-                            )
-                            if (style.outlineEnabled) {
+                            ) {
+                                styleFloatMode = true
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        if (styleOpen && !subtitlesDisabled) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(bottom = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(11.dp),
+                            ) {
+                                VueoSubtitleStepperRow(
+                                    title = "Sync",
+                                    value = formatSubtitleDelayTv(subtitleDelayMs),
+                                    requester = syncRequester,
+                                    upRequester = floatRequester,
+                                    downRequester = sizeRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
+                                    },
+                                    onIncrease = {
+                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
+                                    },
+                                )
+                                VueoSubtitleStepperRow(
+                                    title = "Font Size",
+                                    value = "${style.fontSizeSp}sp",
+                                    requester = sizeRequester,
+                                    upRequester = syncRequester,
+                                    downRequester = boldRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
+                                    },
+                                )
+                                VueoSubtitleToggleRow(
+                                    title = "Bold",
+                                    enabled = style.bold,
+                                    requester = boldRequester,
+                                    upRequester = sizeRequester,
+                                    downRequester = textColorRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
+                                )
                                 VueoSubtitleColorRow(
-                                    title = "Outline Color",
-                                    colours = outlineColours,
-                                    selectedColour = style.outlineColor,
-                                    requester = outlineColorRequester,
-                                    upRequester = outlineRequester,
-                                    downRequester = positionRequester,
+                                    title = "Text Color",
+                                    colours = textColours,
+                                    selectedColour = style.textColor,
+                                    requester = textColorRequester,
+                                    upRequester = boldRequester,
+                                    downRequester = opacityRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                 ) { colour ->
-                                    onStyleChange(style.copy(outlineColor = colour))
+                                    onStyleChange(
+                                        style.copy(
+                                            textColor = subtitleWithAlpha(colour, opacity)
+                                        )
+                                    )
+                                }
+                                VueoSubtitleStepperRow(
+                                    title = "Text Opacity",
+                                    value = "$opacity%",
+                                    requester = opacityRequester,
+                                    upRequester = textColorRequester,
+                                    downRequester = outlineRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
+                                            )
+                                        )
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
+                                            )
+                                        )
+                                    },
+                                )
+                                VueoSubtitleToggleRow(
+                                    title = "Outline",
+                                    enabled = style.outlineEnabled,
+                                    requester = outlineRequester,
+                                    upRequester = opacityRequester,
+                                    downRequester = if (style.outlineEnabled) outlineColorRequester else positionRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
+                                )
+                                if (style.outlineEnabled) {
+                                    VueoSubtitleColorRow(
+                                        title = "Outline Color",
+                                        colours = outlineColours,
+                                        selectedColour = style.outlineColor,
+                                        requester = outlineColorRequester,
+                                        upRequester = outlineRequester,
+                                        downRequester = positionRequester,
+                                        leftRequester = styleLeftRequester,
+                                        onInteraction = onInteraction,
+                                    ) { colour ->
+                                        onStyleChange(style.copy(outlineColor = colour))
+                                    }
+                                }
+                                VueoSubtitleStepperRow(
+                                    title = "Bottom Position",
+                                    value = "${style.bottomPaddingPercent}%",
+                                    requester = positionRequester,
+                                    upRequester = if (style.outlineEnabled) outlineColorRequester else outlineRequester,
+                                    downRequester = resetRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
+                                            )
+                                        )
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
+                                            )
+                                        )
+                                    },
+                                )
+                                VueoSubtitleActionRow(
+                                    title = "Reset Style",
+                                    detail = "White • 22sp • black outline • 8% bottom",
+                                    requester = resetRequester,
+                                    upRequester = positionRequester,
+                                    downRequester = FocusRequester.Cancel,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                ) {
+                                    onStyleChange(TvPlayerSubtitleStyleState())
                                 }
                             }
-                            VueoSubtitleStepperRow(
-                                title = "Bottom Position",
-                                value = "${style.bottomPaddingPercent}%",
-                                requester = positionRequester,
-                                upRequester = if (style.outlineEnabled) outlineColorRequester else outlineRequester,
-                                downRequester = resetRequester,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                                onDecrease = {
-                                    onStyleChange(
-                                        style.copy(
-                                            bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
-                                        )
-                                    )
-                                },
-                                onIncrease = {
-                                    onStyleChange(
-                                        style.copy(
-                                            bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
-                                        )
-                                    )
-                                },
-                            )
-                            VueoSubtitleActionRow(
-                                title = "Reset Style",
-                                detail = "White • 22sp • black outline • 8% bottom",
-                                requester = resetRequester,
-                                upRequester = positionRequester,
-                                downRequester = FocusRequester.Cancel,
-                                leftRequester = styleLeftRequester,
-                                onInteraction = onInteraction,
-                            ) {
-                                onStyleChange(TvPlayerSubtitleStyleState())
-                            }
+                        } else {
+                            VueoSubtitleEmpty("Select an exact subtitle track to adjust its style.")
                         }
-                    } else {
-                        VueoSubtitleEmpty("Select an exact subtitle track to adjust its style.")
+                    }
                     }
                 }
             }
@@ -1215,6 +1262,59 @@ internal fun VueoPlayerAudioWorkspace(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun VueoSubtitleFloatButton(
+    requester: FocusRequester,
+    downRequester: FocusRequester,
+    leftRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(999.dp)
+
+    Box(
+        modifier = Modifier
+            .height(30.dp)
+            .focusRequester(requester)
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = downRequester
+                left = leftRequester
+                right = FocusRequester.Cancel
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp) onClick()
+                true
+            }
+            .focusable()
+            .background(
+                if (focused) TvDesign.Accent.copy(alpha = .28f) else Color.White.copy(alpha = .08f),
+                shape,
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) TvDesign.Accent else Color.White.copy(alpha = .10f),
+                shape,
+            )
+            .padding(horizontal = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "Float",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

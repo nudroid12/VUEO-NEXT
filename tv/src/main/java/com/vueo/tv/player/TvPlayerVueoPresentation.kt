@@ -419,8 +419,8 @@ private fun VueoPlayerControls(
                     Text(
                         text = media.name,
                         color = Color.White,
-                        fontSize = 18.sp,
-                        lineHeight = 21.sp,
+                        fontSize = 20.sp,
+                        lineHeight = 23.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -429,8 +429,8 @@ private fun VueoPlayerControls(
                         Text(
                             text = line,
                             color = Color.White.copy(alpha = .72f),
-                            fontSize = 13.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 14.sp,
+                            lineHeight = 17.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
