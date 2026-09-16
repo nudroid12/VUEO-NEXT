@@ -2,6 +2,7 @@ package com.vueo.tv.player
 
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -272,6 +273,12 @@ fun TvPlayerScreen(
     }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
+    var sleepTimerOption by remember(bundle.videoId) { mutableStateOf(TvPlayerSleepTimerOption.OFF) }
+    var sleepTimerDeadlineMs by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
+    var sleepTimerRemainingSeconds by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
+    var autoPlayNextEpisode by remember { mutableStateOf(settings.autoPlayNextEpisodeEnabled()) }
+    var skipSegmentsEnabled by remember(mediaKey) { mutableStateOf(settings.skipSegmentsEnabled()) }
+    var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     val activeSkip = remember(positionMs, skipSegments) {
@@ -600,32 +607,32 @@ fun TvPlayerScreen(
         resolvedImdbId,
         episode?.season,
         episode?.episode,
-        settings.skipSegmentsEnabled(),
+        skipSegmentsEnabled,
     ) {
         skipSegments = emptyList()
         val imdbId = resolvedImdbId
-        if (settings.skipSegmentsEnabled() && episode != null && imdbId != null) {
+        if (skipSegmentsEnabled && episode != null && imdbId != null) {
             skipSegments = runCatching {
                 PlayerSkipRepository.segments(imdbId, episode.season, episode.episode)
             }.getOrDefault(emptyList())
         }
     }
 
-    LaunchedEffect(resolvedImdbId, settings.contentWarningsEnabled(), playerSessionId) {
+    LaunchedEffect(resolvedImdbId, contentWarningsEnabled, playerSessionId) {
         contentWarnings = emptyList()
         warningVisible = false
         warningShown = false
 
         val imdbId = resolvedImdbId
-        if (settings.contentWarningsEnabled() && imdbId != null) {
+        if (contentWarningsEnabled && imdbId != null) {
             contentWarnings = runCatching {
                 ContentWarningRepository.get(imdbId)
             }.getOrDefault(emptyList())
         }
     }
 
-    LaunchedEffect(playing, contentWarnings, settings.contentWarningsEnabled(), playerSessionId) {
-        if (!playing || !settings.contentWarningsEnabled()) {
+    LaunchedEffect(playing, contentWarnings, contentWarningsEnabled, playerSessionId) {
+        if (!playing || !contentWarningsEnabled) {
             warningVisible = false
             return@LaunchedEffect
         }
@@ -722,6 +729,36 @@ fun TvPlayerScreen(
         }
     }
 
+    LaunchedEffect(player, sleepTimerDeadlineMs) {
+        val deadline = sleepTimerDeadlineMs ?: return@LaunchedEffect
+        while (true) {
+            val remainingMs = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+            sleepTimerRemainingSeconds = (remainingMs + 999L) / 1_000L
+            if (remainingMs <= 0L) {
+                player.pause()
+                playing = false
+                sleepTimerOption = TvPlayerSleepTimerOption.OFF
+                sleepTimerDeadlineMs = null
+                sleepTimerRemainingSeconds = null
+                controlsVisible = true
+                break
+            }
+            delay(minOf(1_000L, remainingMs))
+        }
+    }
+
+    LaunchedEffect(ended, sleepTimerOption) {
+        if (!ended || sleepTimerOption != TvPlayerSleepTimerOption.END_OF_EPISODE) {
+            return@LaunchedEffect
+        }
+        autoNextCancelled = true
+        nextCountdown = 0
+        sleepTimerOption = TvPlayerSleepTimerOption.OFF
+        sleepTimerDeadlineMs = null
+        sleepTimerRemainingSeconds = null
+        controlsVisible = true
+    }
+
     LaunchedEffect(player, mediaKey) {
         while (true) {
             delay(10_000)
@@ -755,8 +792,14 @@ fun TvPlayerScreen(
         restorePanelFocus = null
     }
 
-    LaunchedEffect(ended, nextEpisode?.id, settings.autoPlayNextEpisodeEnabled(), autoNextCancelled) {
-        if (!ended || nextEpisode == null || !settings.autoPlayNextEpisodeEnabled() || autoNextCancelled) {
+    LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, autoNextCancelled, sleepTimerOption) {
+        if (
+            !ended ||
+            nextEpisode == null ||
+            !autoPlayNextEpisode ||
+            autoNextCancelled ||
+            sleepTimerOption == TvPlayerSleepTimerOption.END_OF_EPISODE
+        ) {
             nextCountdown = 0
             return@LaunchedEffect
         }
@@ -1000,28 +1043,7 @@ fun TvPlayerScreen(
                     } == true,
                 )
             }
-            TvPlayerPanel.MORE -> buildList {
-                listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                    add(
-                        TvPlayerOption(
-                            key = "speed:$speed",
-                            title = "Playback speed",
-                            meta = "${formatSpeed(speed)}x",
-                            selected = playbackSpeed == speed,
-                        )
-                    )
-                }
-                PlayerVideoFit.entries.forEach { fit ->
-                    add(
-                        TvPlayerOption(
-                            key = "fit:${fit.name}",
-                            title = "Video fit",
-                            meta = fit.name.lowercase().replaceFirstChar { it.uppercase() },
-                            selected = videoFit == fit,
-                        )
-                    )
-                }
-            }
+            TvPlayerPanel.MORE -> emptyList()
             TvPlayerPanel.NONE -> emptyList()
         }
 
@@ -1136,22 +1158,7 @@ fun TvPlayerScreen(
                             }
                         }
                     }
-                    TvPlayerPanel.MORE -> {
-                        when {
-                            option.key.startsWith("speed:") -> option.key.substringAfter(':').toFloatOrNull()?.let { speed ->
-                                playbackSpeed = speed
-                                player.setPlaybackSpeed(speed)
-                                settings.setPlayerPlaybackSpeed(speed)
-                            }
-                            option.key.startsWith("fit:") -> runCatching {
-                                PlayerVideoFit.valueOf(option.key.substringAfter(':'))
-                            }.getOrNull()?.let { fit ->
-                                videoFit = fit
-                                settings.setPlayerVideoFit(fit)
-                            }
-                        }
-                        noteInteraction()
-                    }
+                    TvPlayerPanel.MORE -> Unit
                     TvPlayerPanel.NONE -> Unit
                 }
             },
@@ -1229,6 +1236,76 @@ fun TvPlayerScreen(
                     settings.setAudioSelection(mediaKey, choice.selectionId)
                     settings.setLastAudioSelection(choice.selectionId)
                     closePanel()
+                },
+            )
+        }
+
+
+        AnimatedVisibility(
+            visible = activePanel == TvPlayerPanel.MORE,
+            enter = tvPanelEnter(),
+            exit = tvPanelExit(),
+        ) {
+            VueoPlayerMoreWorkspace(
+                playbackSpeed = playbackSpeed,
+                videoFit = videoFit,
+                sleepTimer = sleepTimerOption,
+                sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+                autoPlayNextEpisode = autoPlayNextEpisode,
+                skipSegmentsEnabled = skipSegmentsEnabled,
+                contentWarningsEnabled = contentWarningsEnabled,
+                onInteraction = ::noteInteraction,
+                onPlaybackSpeedChange = { speed ->
+                    playbackSpeed = speed
+                    player.setPlaybackSpeed(speed)
+                    settings.setPlayerPlaybackSpeed(speed)
+                },
+                onVideoFitChange = { fit ->
+                    videoFit = fit
+                    settings.setPlayerVideoFit(fit)
+                },
+                onSleepTimerChange = { option ->
+                    sleepTimerOption = option
+                    sleepTimerDeadlineMs = option.minutes?.let { minutes ->
+                        SystemClock.elapsedRealtime() + minutes * 60_000L
+                    }
+                    sleepTimerRemainingSeconds = option.minutes?.let { it * 60L }
+                    noteInteraction()
+                },
+                onAutoPlayNextEpisodeChange = { enabled ->
+                    autoPlayNextEpisode = enabled
+                    settings.setAutoPlayNextEpisodeEnabled(enabled)
+                    if (!enabled) nextCountdown = 0
+                    noteInteraction()
+                },
+                onSkipSegmentsChange = { enabled ->
+                    skipSegmentsEnabled = enabled
+                    settings.setSkipSegmentsEnabled(enabled)
+                    noteInteraction()
+                },
+                onContentWarningsChange = { enabled ->
+                    contentWarningsEnabled = enabled
+                    settings.setContentWarningsEnabled(enabled)
+                    if (!enabled) warningVisible = false
+                    noteInteraction()
+                },
+                onReset = {
+                    playbackSpeed = 1f
+                    player.setPlaybackSpeed(1f)
+                    settings.setPlayerPlaybackSpeed(1f)
+                    videoFit = PlayerVideoFit.FIT
+                    settings.setPlayerVideoFit(PlayerVideoFit.FIT)
+                    sleepTimerOption = TvPlayerSleepTimerOption.OFF
+                    sleepTimerDeadlineMs = null
+                    sleepTimerRemainingSeconds = null
+                    autoPlayNextEpisode = true
+                    settings.setAutoPlayNextEpisodeEnabled(true)
+                    autoNextCancelled = false
+                    skipSegmentsEnabled = true
+                    settings.setSkipSegmentsEnabled(true)
+                    contentWarningsEnabled = true
+                    settings.setContentWarningsEnabled(true)
+                    noteInteraction()
                 },
             )
         }

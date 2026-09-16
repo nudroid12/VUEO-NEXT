@@ -101,7 +101,6 @@ internal fun VueoPlayerPresentation(
     onPanelSelected: (TvPlayerOption) -> Unit,
 ) {
     val retainedPanelOptions = remember { mutableStateOf<List<TvPlayerOption>>(emptyList()) }
-    val moreLastFocusKey = remember { mutableStateOf<String?>(null) }
     LaunchedEffect(panelOptions) {
         if (panelOptions.isNotEmpty()) retainedPanelOptions.value = panelOptions
     }
@@ -214,20 +213,6 @@ internal fun VueoPlayerPresentation(
             }
         }
 
-        AnimatedVisibility(
-            visible = activePanel == TvPlayerPanel.MORE,
-            enter = tvPanelEnter(),
-            exit = tvPanelExit(),
-        ) {
-            VueoPlayerCompactOverlay(
-                panel = TvPlayerPanel.MORE,
-                options = displayedPanelOptions,
-                initialFocusKey = moreLastFocusKey.value,
-                onInteraction = onInteraction,
-                onFocused = { moreLastFocusKey.value = it.key },
-                onSelected = onPanelSelected,
-            )
-        }
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.SOURCES,
             enter = tvPanelEnter(),
