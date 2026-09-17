@@ -8,7 +8,7 @@
         android:icon="@drawable/ic_vueo"
         android:roundIcon="@drawable/ic_vueo"
         android:logo="@drawable/vueo_logo_mark"
-        android:label="VUEO"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VUEO"
         android:usesCleartextTraffic="false">
