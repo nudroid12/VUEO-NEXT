@@ -149,7 +149,7 @@ fun TvSidebar(
         label = "vueoSidebarPanelAlpha",
     )
     val pillOffsetX by animateDpAsState(
-        targetValue = if (expanded) 10.dp else (-64).dp,
+        targetValue = if (expanded) (-10).dp else 64.dp,
         animationSpec = tween(
             durationMillis = if (expanded) 180 else 145,
             easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
@@ -165,19 +165,24 @@ fun TvSidebar(
             .clipToBounds()
             .background(panelBrush)
 
-        TvSidebarStyle.PILL_ICONS -> {
-            val shape = RoundedCornerShape(28.dp)
-            modifier
-                .offset(x = pillOffsetX)
-                .width(width)
-                .clip(shape)
-                .background(panelBrush)
-                .border(1.dp, TvDesign.White.copy(alpha = .11f), shape)
-                .clipToBounds()
-        }
+        TvSidebarStyle.PILL_ICONS -> modifier.fillMaxWidth()
     }
 
     Box(modifier = containerModifier) {
+        val pillShape = RoundedCornerShape(28.dp)
+        val panelModifier = when (sidebarStyle) {
+            TvSidebarStyle.CLASSIC -> Modifier.fillMaxWidth()
+            TvSidebarStyle.PILL_ICONS -> Modifier
+                .align(Alignment.CenterEnd)
+                .offset(x = pillOffsetX)
+                .width(width)
+                .clip(pillShape)
+                .background(panelBrush)
+                .border(1.dp, TvDesign.White.copy(alpha = .11f), pillShape)
+                .clipToBounds()
+        }
+
+        Box(modifier = panelModifier) {
         val navColumnModifier = when (sidebarStyle) {
             TvSidebarStyle.CLASSIC -> Modifier
                 .align(Alignment.CenterStart)
@@ -187,7 +192,7 @@ fun TvSidebar(
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .padding(vertical = 28.dp)
+                .padding(vertical = 56.dp)
         }
 
         Column(
@@ -206,8 +211,12 @@ fun TvSidebar(
                     requester = navRequesters.getValue(label),
                     onFocused = onFocused,
                     onClick = { onNavigate(label) },
-                    onLeft = { true },
-                    onRight = onReturnToContent,
+                    onLeft = {
+                        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) onReturnToContent() else true
+                    },
+                    onRight = {
+                        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) true else onReturnToContent()
+                    },
                     onUp = {
                         if (index > 0) {
                             request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
@@ -224,6 +233,7 @@ fun TvSidebar(
                     },
                 )
             }
+        }
         }
     }
 }

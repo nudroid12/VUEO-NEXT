@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ fun TvHomeScreen(
     onOpenMedia: (MediaItem) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
     onProfile: () -> Unit,
+    onBack: () -> Unit,
 ) {
     var catalogRows by remember { mutableStateOf(runtime.cachedHomeRows()) }
     var loading by remember { mutableStateOf(catalogRows.isEmpty()) }
@@ -159,6 +161,15 @@ fun TvHomeScreen(
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     var navExpanded by remember { mutableStateOf(false) }
+
+    fun focusSidebar() {
+        navExpanded = true
+        runCatching { navRequesters.getValue("Home").requestFocus() }
+    }
+
+    BackHandler {
+        if (navExpanded) onBack() else focusSidebar()
+    }
 
     LaunchedEffect(rows.isEmpty(), loading, error) {
         if (rows.isEmpty() && !loading) {

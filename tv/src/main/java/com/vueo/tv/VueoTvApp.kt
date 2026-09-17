@@ -1,18 +1,12 @@
 package com.vueo.tv
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,13 +19,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -49,7 +40,6 @@ import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.search.TvEntityResultsScreen
-import com.vueo.tv.settings.TvConfirmDialog
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
@@ -92,7 +82,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var initialPositionMs by remember { mutableLongStateOf(0L) }
     var playerSessionId by remember { mutableIntStateOf(0) }
     var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
-    var showExitConfirm by remember { mutableStateOf(false) }
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
@@ -311,12 +300,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         }
     }
 
-    BackHandler(
-        enabled = route == TvRoute.HOME && updatePromptRelease == null && !showExitConfirm,
-    ) {
-        showExitConfirm = true
-    }
-
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = TvDesign.White,
@@ -341,25 +324,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 when (displayedRoute) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            Image(
-                                painter = painterResource(R.drawable.vueo_tv_logo),
-                                contentDescription = "VUEO",
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(126.dp),
-                            )
-                            Spacer(Modifier.width(36.dp))
-                            Text(
-                                text = "VUEO",
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 80.sp,
-                                letterSpacing = 10.sp,
-                            )
-                        }
+                        Image(
+                            painter = painterResource(R.drawable.vueo_tv_logo),
+                            contentDescription = "VUEO",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.width(320.dp),
+                        )
                     }
                 }
 
@@ -371,6 +341,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },
                         onResume = { openPlaybackDetail(it, TvRoute.HOME) },
                         onProfile = { openDna(TvRoute.HOME) },
+                        onBack = onExit,
                     )
                 }
 
@@ -382,7 +353,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SEARCH) },
                         onOpenMedia = { openDetail(it, TvRoute.SEARCH) },
-                        onBack = { route = TvRoute.HOME },
+                        onBack = onExit,
                     )
                 }
 
@@ -394,7 +365,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onProfile = { openDna(TvRoute.LIBRARY) },
                         onOpenMedia = { openDetail(it, TvRoute.LIBRARY) },
                         onResume = { openPlaybackDetail(it, TvRoute.LIBRARY) },
-                        onBack = { route = TvRoute.HOME },
+                        onBack = onExit,
                     )
                 }
 
@@ -403,7 +374,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         runtime = runtime,
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SETTINGS) },
-                        onBack = { route = TvRoute.HOME },
+                        onBack = onExit,
                         onDataChanged = { refreshToken++ },
                     )
                 }
@@ -568,18 +539,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 )
             }
 
-            if (showExitConfirm) {
-                TvConfirmDialog(
-                    title = "Exit VUEO?",
-                    message = "Close VUEO on this TV?",
-                    confirmLabel = "Exit",
-                    onDismiss = { showExitConfirm = false },
-                    onConfirm = {
-                        showExitConfirm = false
-                        onExit()
-                    },
-                )
-            }
         }
     }
 }

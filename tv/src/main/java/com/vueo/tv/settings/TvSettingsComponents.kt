@@ -219,9 +219,9 @@ internal fun TvSettingsMasterDetailShell(
 
     BackHandler {
         when {
+            navExpanded -> onBack()
             panelHasBack -> onPanelBack()
-            lastPane == "panel" -> focusSelectedCategory()
-            else -> onBack()
+            else -> focusGlobalNav()
         }
     }
 

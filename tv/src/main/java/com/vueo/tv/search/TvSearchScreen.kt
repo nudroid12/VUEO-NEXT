@@ -418,7 +418,14 @@ internal fun TvSearchScreen(
     }
 
     BackHandler(enabled = choiceDialog != null) { dismissChoiceDialog() }
-    BackHandler(enabled = choiceDialog == null, onBack = onBack)
+    BackHandler(enabled = choiceDialog == null) {
+        if (navExpanded) {
+            onBack()
+        } else {
+            navExpanded = true
+            runCatching { navRequesters.getValue("Search").requestFocus() }
+        }
+    }
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
 

@@ -96,8 +96,6 @@ fun TvLibraryScreen(
     onResume: (LibraryPlaybackEntry) -> Unit,
     onBack: () -> Unit,
 ) {
-    BackHandler(onBack = onBack)
-
     // Mobile parity: Library's visible content is My List. Continue Watching
     // and History remain shared LibraryStore data, but they are not Library UI
     // sections here.
@@ -151,6 +149,10 @@ fun TvLibraryScreen(
     fun focusSidebar() {
         navExpanded = true
         runCatching { navRequesters.getValue("Library").requestFocus() }
+    }
+
+    BackHandler {
+        if (navExpanded) onBack() else focusSidebar()
     }
 
     fun requestSelectedTabFocus(): Boolean =
