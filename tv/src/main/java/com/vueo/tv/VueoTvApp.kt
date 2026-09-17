@@ -4,8 +4,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -337,12 +341,25 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 when (displayedRoute) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Image(
-                            painter = painterResource(R.drawable.vueo_tv_logo),
-                            contentDescription = "VUEO",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.width(320.dp),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.vueo_tv_logo),
+                                contentDescription = "VUEO",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(126.dp),
+                            )
+                            Spacer(Modifier.width(36.dp))
+                            Text(
+                                text = "VUEO",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 80.sp,
+                                letterSpacing = 10.sp,
+                            )
+                        }
                     }
                 }
 

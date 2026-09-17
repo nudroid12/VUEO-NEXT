@@ -187,7 +187,7 @@ fun TvSidebar(
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .padding(vertical = 8.dp)
+                .padding(vertical = 28.dp)
         }
 
         Column(
