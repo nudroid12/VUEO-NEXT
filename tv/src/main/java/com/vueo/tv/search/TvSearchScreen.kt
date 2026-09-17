@@ -76,6 +76,7 @@ import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -419,6 +420,8 @@ internal fun TvSearchScreen(
     BackHandler(enabled = choiceDialog != null) { dismissChoiceDialog() }
     BackHandler(enabled = choiceDialog == null, onBack = onBack)
 
+    val contentStartPadding = tvSidebarContentStartPadding(96.dp)
+
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
         Column(
             modifier = Modifier
@@ -426,7 +429,7 @@ internal fun TvSearchScreen(
                 .padding(top = 46.dp),
         ) {
             Column(
-                modifier = Modifier.padding(start = 96.dp, end = 52.dp),
+                modifier = Modifier.padding(start = contentStartPadding, end = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(

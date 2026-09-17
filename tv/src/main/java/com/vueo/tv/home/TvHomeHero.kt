@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
 
 /**
@@ -45,6 +46,7 @@ internal fun TvModernHomeHero(
     rowsViewportHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     Box(modifier = modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -86,7 +88,7 @@ internal fun TvModernHomeHero(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
-                    start = MODERN_HOME_CONTENT_START_PADDING,
+                    start = contentStartPadding,
                     end = 48.dp,
                     bottom = rowsViewportHeight + 16.dp,
                 )

@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -116,6 +117,7 @@ internal fun TvSettingsMasterDetailShell(
 ) {
     if (categories.isEmpty()) return
 
+    val contentStartPadding = tvSidebarContentStartPadding(100.dp)
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     val categoryRequesters = remember(categories.map { it.id }) {
@@ -245,7 +247,7 @@ internal fun TvSettingsMasterDetailShell(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 100.dp, end = 42.dp, top = 34.dp, bottom = 28.dp)
+                .padding(start = contentStartPadding, end = 42.dp, top = 34.dp, bottom = 28.dp)
                 .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(22.dp))
                 .border(1.dp, TvDesign.White.copy(alpha = .12f), RoundedCornerShape(22.dp))
                 .padding(20.dp),
@@ -764,6 +766,7 @@ internal fun TvSettingsListScreen(
 
     BackHandler(onBack = onBack)
 
+    val contentStartPadding = tvSidebarContentStartPadding(112.dp)
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     val rowRequesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -817,7 +820,7 @@ internal fun TvSettingsListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 112.dp, end = 48.dp, top = 38.dp, bottom = 28.dp),
+                .padding(start = contentStartPadding, end = 48.dp, top = 38.dp, bottom = 28.dp),
         ) {
             if (!topLabel.isNullOrBlank()) {
                 Text(

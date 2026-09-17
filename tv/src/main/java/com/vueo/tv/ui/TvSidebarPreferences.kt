@@ -1,9 +1,13 @@
 package com.vueo.tv.ui
 
 import android.content.Context
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 enum class TvSidebarStyle(
     val label: String,
@@ -43,4 +47,14 @@ internal object TvSidebarPreferences {
             .apply()
         TvSidebarStyleState.value = style
     }
+}
+
+@Composable
+internal fun tvSidebarContentStartPadding(
+    classic: Dp,
+    pill: Dp = 28.dp,
+): Dp {
+    val context = LocalContext.current
+    val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
+    return if (style == TvSidebarStyle.PILL_ICONS) pill else classic
 }

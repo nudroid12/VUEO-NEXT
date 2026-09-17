@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -84,15 +85,15 @@ private fun sidebarMetrics(style: TvSidebarStyle): SidebarMetrics = when (style)
     )
 
     TvSidebarStyle.PILL_ICONS -> SidebarMetrics(
-        collapsedWidth = 68.dp,
-        expandedWidth = 68.dp,
-        collapsedItemWidth = 52.dp,
-        expandedItemWidth = 52.dp,
-        iconColumnWidth = 52.dp,
+        collapsedWidth = 54.dp,
+        expandedWidth = 54.dp,
+        collapsedItemWidth = 42.dp,
+        expandedItemWidth = 42.dp,
+        iconColumnWidth = 42.dp,
         iconSize = 24.dp,
-        itemHeight = 46.dp,
-        itemSpacing = 6.dp,
-        expandedStartPadding = 8.dp,
+        itemHeight = 42.dp,
+        itemSpacing = 4.dp,
+        expandedStartPadding = 6.dp,
     )
 }
 
@@ -148,7 +149,7 @@ fun TvSidebar(
         label = "vueoSidebarPanelAlpha",
     )
     val pillOffsetX by animateDpAsState(
-        targetValue = if (expanded) 14.dp else (-82).dp,
+        targetValue = if (expanded) 10.dp else (-64).dp,
         animationSpec = tween(
             durationMillis = if (expanded) 180 else 145,
             easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
@@ -165,7 +166,7 @@ fun TvSidebar(
             .background(panelBrush)
 
         TvSidebarStyle.PILL_ICONS -> {
-            val shape = RoundedCornerShape(34.dp)
+            val shape = RoundedCornerShape(28.dp)
             modifier
                 .offset(x = pillOffsetX)
                 .width(width)
@@ -186,7 +187,7 @@ fun TvSidebar(
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .padding(vertical = 10.dp)
+                .padding(vertical = 8.dp)
         }
 
         Column(
@@ -282,7 +283,7 @@ private fun SidebarNavigationItem(
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = sidebarItemBrush(style, expanded, selected, focused)
-    val itemShape = RoundedCornerShape(if (style == TvSidebarStyle.PILL_ICONS) 18.dp else 14.dp)
+    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) CircleShape else RoundedCornerShape(14.dp)
 
     Row(
         modifier = Modifier

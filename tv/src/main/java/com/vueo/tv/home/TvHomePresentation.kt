@@ -22,6 +22,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.delay
 
 @Composable
@@ -36,6 +37,7 @@ internal fun TvHomePresentation(
 ) {
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
+    val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
 
     val allEntries = remember(rows) { rows.flatMap(TvHomeRow::entries) }
 
@@ -95,7 +97,7 @@ internal fun TvHomePresentation(
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
+                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -115,7 +117,7 @@ internal fun TvHomePresentation(
                     fontSize = 14.sp,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
+                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
                 )
             }
 
@@ -126,7 +128,7 @@ internal fun TvHomePresentation(
                     fontSize = 14.sp,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = MODERN_HOME_CONTENT_START_PADDING, bottom = rowsViewportHeight * .18f),
+                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
                 )
             }
         }

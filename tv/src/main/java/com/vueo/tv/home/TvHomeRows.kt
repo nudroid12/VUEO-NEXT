@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -67,7 +68,6 @@ private val PosterWidth = 114.dp
 private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
-private val RowHorizontalPadding = MODERN_HOME_CONTENT_START_PADDING
 private val RowHeaderFocusInset = 40.dp
 private const val FocusedCardScale = 1.022f
 
@@ -173,9 +173,15 @@ private fun TvModernHomeRow(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
+    val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
 
-    val horizontalBringIntoViewSpec = remember(density, layoutDirection, defaultBringIntoViewSpec) {
-        val startInsetPx = with(density) { RowHorizontalPadding.toPx() }
+    val horizontalBringIntoViewSpec = remember(
+        density,
+        layoutDirection,
+        defaultBringIntoViewSpec,
+        rowHorizontalPadding,
+    ) {
+        val startInsetPx = with(density) { rowHorizontalPadding.toPx() }
         val rtl = layoutDirection == LayoutDirection.Rtl
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
@@ -212,7 +218,7 @@ private fun TvModernHomeRow(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = RowHorizontalPadding, end = 32.dp),
+            modifier = Modifier.padding(start = rowHorizontalPadding, end = 32.dp),
         )
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalBringIntoViewSpec) {
@@ -227,7 +233,7 @@ private fun TvModernHomeRow(
                             ?: FocusRequester.Default
                     }
                     .focusGroup(),
-                contentPadding = PaddingValues(horizontal = RowHorizontalPadding),
+                contentPadding = PaddingValues(start = rowHorizontalPadding, end = 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 itemsIndexed(

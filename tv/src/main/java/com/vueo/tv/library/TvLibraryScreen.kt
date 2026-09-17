@@ -60,6 +60,7 @@ import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
+import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -236,12 +237,14 @@ fun TvLibraryScreen(
         }
     }
 
+    val contentStartPadding = tvSidebarContentStartPadding(96.dp)
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        val availableWidthDp = (maxWidth.value - 148f).coerceAtLeast(420f)
+        val availableWidthDp = (maxWidth.value - contentStartPadding.value - 52f).coerceAtLeast(420f)
         val gridColumns =
             ((availableWidthDp + LIBRARY_GRID_GAP_DP) /
                 (LIBRARY_TARGET_POSTER_WIDTH_DP + LIBRARY_GRID_GAP_DP))
@@ -253,7 +256,7 @@ fun TvLibraryScreen(
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 96.dp,
+                start = contentStartPadding,
                 end = 52.dp,
                 top = 82.dp,
                 bottom = 48.dp,
