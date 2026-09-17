@@ -9,8 +9,7 @@ enum class TvSidebarStyle(
     val label: String,
 ) {
     CLASSIC("Classic"),
-    FLOATING_GLASS("Floating Glass Rail"),
-    MINIMAL_EDGE("Minimal Edge"),
+    PILL_ICONS("Pill Icons"),
 }
 
 internal object TvSidebarStyleState {
@@ -24,9 +23,13 @@ internal object TvSidebarPreferences {
     fun style(context: Context): TvSidebarStyle {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val stored = prefs.getString(KEY_STYLE, TvSidebarStyle.CLASSIC.name)
-        return runCatching {
-            enumValueOf<TvSidebarStyle>(stored ?: TvSidebarStyle.CLASSIC.name)
-        }.getOrDefault(TvSidebarStyle.CLASSIC)
+        return when (stored) {
+            TvSidebarStyle.PILL_ICONS.name -> TvSidebarStyle.PILL_ICONS
+            TvSidebarStyle.CLASSIC.name -> TvSidebarStyle.CLASSIC
+            // Migrate the two experimental styles from the previous patch.
+            "FLOATING_GLASS", "MINIMAL_EDGE" -> TvSidebarStyle.CLASSIC
+            else -> TvSidebarStyle.CLASSIC
+        }
     }
 
     fun setStyle(
