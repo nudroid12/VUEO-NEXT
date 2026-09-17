@@ -65,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.R as SharedR
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.profile.ProfileAvatarSpec
 import com.vueo.shared.core.storage.ProfileStore
@@ -734,14 +735,14 @@ private fun TvProfileBrand() {
         horizontalArrangement = Arrangement.Start,
     ) {
         Image(
-            painter = painterResource(R.drawable.vueo_tv_logo),
-            contentDescription = "VUEO",
+            painter = painterResource(SharedR.drawable.vueo_logo_mark),
+            contentDescription = "Vueo",
             contentScale = ContentScale.Fit,
             modifier = Modifier.size(42.dp),
         )
         Spacer(Modifier.width(13.dp))
         Text(
-            text = "VUEO",
+            text = "Vueo",
             color = Color.White,
             fontWeight = FontWeight.SemiBold,
             fontSize = 27.sp,
