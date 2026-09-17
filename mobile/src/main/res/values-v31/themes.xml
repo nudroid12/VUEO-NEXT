@@ -2,7 +2,7 @@
 <resources>
     <style
         name="Theme.VUEO"
-        parent="@style/Theme.VUEO.Foundation">
+        parent="@style/Theme.VUEOBase">
         <item name="android:windowSplashScreenBackground">#050706</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/vueo_splash_logo</item>
         <item name="android:windowSplashScreenIconBackgroundColor">#050706</item>
