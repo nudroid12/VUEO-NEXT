@@ -13,6 +13,6 @@
     <style
         name="Theme.VUEOTV"
         parent="@style/Theme.VUEOTVBase">
-        <item name="android:windowBackground">#050706</item>
+        <item name="android:windowBackground">@drawable/vueo_tv_launch_background</item>
     </style>
 </resources>

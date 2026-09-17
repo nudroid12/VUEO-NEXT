@@ -5,7 +5,6 @@
         parent="@style/Theme.VUEOTVBase">
         <item name="android:windowSplashScreenBackground">#050706</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/vueo_tv_splash_logo</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">#050706</item>
         <item name="android:windowSplashScreenAnimationDuration">250</item>
         <item name="android:windowBackground">#050706</item>
     </style>

@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
-import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
@@ -44,7 +43,6 @@ import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
-import com.vueo.tv.search.TvEntityResultsScreen
 import com.vueo.tv.settings.TvConfirmDialog
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
@@ -67,7 +65,6 @@ private enum class TvRoute {
     DNA,
     PROFILE,
     DETAIL,
-    ENTITY_RESULTS,
     SOURCE,
     PLAYER,
 }
@@ -80,13 +77,11 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
-    var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
     var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
     var selectedEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
     var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
     var initialPositionMs by remember { mutableLongStateOf(0L) }
-    var playerSessionId by remember { mutableIntStateOf(0) }
     var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
@@ -338,10 +333,10 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Image(
-                            painter = painterResource(R.drawable.vueo_tv_banner_art),
-                            contentDescription = "Vueo",
+                            painter = painterResource(R.drawable.vueo_tv_logo),
+                            contentDescription = "VUEO",
                             contentScale = ContentScale.Fit,
-                            modifier = Modifier.width(220.dp),
+                            modifier = Modifier.width(320.dp),
                         )
                     }
                 }
@@ -443,38 +438,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 selectedEpisode = null
                                 initialPositionMs = 0L
                             },
-                            onOpenEntity = { target ->
-                                selectedEntityTarget = target
-                                route = TvRoute.ENTITY_RESULTS
-                            },
                             onLibraryChanged = { refreshToken++ },
-                        )
-                    }
-                }
-
-                TvRoute.ENTITY_RESULTS -> {
-                    val target = selectedEntityTarget
-                    if (target == null) {
-                        route = TvRoute.DETAIL
-                    } else {
-                        TvEntityResultsScreen(
-                            runtime = runtime,
-                            target = target,
-                            onBack = {
-                                selectedEntityTarget = null
-                                route = TvRoute.DETAIL
-                            },
-                            onOpenMedia = { next ->
-                                selectedMedia?.let { current ->
-                                    detailBackStack = detailBackStack + current
-                                }
-                                selectedMedia = next
-                                selectedLibraryEntry = null
-                                selectedEpisode = null
-                                initialPositionMs = 0L
-                                selectedEntityTarget = null
-                                route = TvRoute.DETAIL
-                            },
                         )
                     }
                 }
@@ -504,7 +468,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             onPlay = { bundle, source ->
                                 sourceBundle = bundle
                                 selectedSource = source
-                                playerSessionId += 1
                                 route = TvRoute.PLAYER
                             },
                         )
@@ -525,7 +488,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             bundle = bundle,
                             source = source,
                             initialPositionMs = initialPositionMs,
-                            playerSessionId = playerSessionId,
                             onBack = {
                                 stopSourceDiscovery(markStopped = true)
                                 route = TvRoute.SOURCE
