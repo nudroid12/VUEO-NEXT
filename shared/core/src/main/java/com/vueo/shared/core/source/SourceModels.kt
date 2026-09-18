@@ -29,6 +29,7 @@ data class SourceCandidate(
     val rankBoost: Int = 0,
     val providerId: String,
     val providerName: String,
+    val serverName: String? = null,
 ) {
     /**
      * Keep the same security baseline as current VUEO Mobile: only HTTPS
