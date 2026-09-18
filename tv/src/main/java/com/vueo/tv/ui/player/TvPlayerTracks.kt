@@ -23,7 +23,7 @@ private const val TV_SUBTITLE_LABEL_PREFIX = PlayerTrackPolicy.SUBTITLE_LABEL_PR
 internal data class TvPlayerTrackChoice(
     val key: String,
     val label: String,
-    val override: TrackSelectionOverride,
+    val override: TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -118,6 +118,29 @@ internal fun tvPlayerTrackChoices(
     return result
 }
 
+internal fun tvIndependentSubtitleTrackChoices(
+    subtitles: List<SubtitleTrack>,
+    selectedSelectionId: String?,
+): List<TvPlayerTrackChoice> =
+    subtitles
+        .filter { it.url.startsWith("https://") }
+        .distinctBy { it.url }
+        .map { subtitle ->
+            val selectionId = tvExternalSubtitleSelectionId(subtitle)
+            TvPlayerTrackChoice(
+                key = "independent:$selectionId",
+                label = subtitle.name
+                    ?.takeIf { it.isNotBlank() }
+                    ?: tvFriendlyLanguage(subtitle.language),
+                override = null,
+                selected = selectionId == selectedSelectionId,
+                language = subtitle.language,
+                sourceLabel = subtitle.providerName,
+                metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
+                selectionId = selectionId,
+            )
+        }
+
 internal fun tvBuildSubtitleLanguageGroups(
     tracks: List<TvPlayerTrackChoice>,
     preferredLanguageCode: String?,
@@ -164,10 +187,11 @@ internal fun tvApplyTrackChoice(
     trackType: Int,
     choice: TvPlayerTrackChoice,
 ) {
+    val override = choice.override ?: return
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .setTrackTypeDisabled(trackType, false)
         .clearOverridesOfType(trackType)
-        .setOverrideForType(choice.override)
+        .setOverrideForType(override)
         .build()
 }
 

@@ -225,6 +225,8 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.IndependentSubtitleRepository
+import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -875,12 +877,24 @@ internal fun PlayerScreen(
             }
     }
 
-    var appliedSubtitleUrls by remember(player) {
-        mutableStateOf(
-            subtitles
-                .map { it.url }
-                .distinct()
-        )
+    val mediaItemSubtitleUrls = remember(player) {
+        subtitles
+            .map { it.url }
+            .toSet()
+    }
+    val independentSubtitleTracks = remember(
+        subtitles,
+        mediaItemSubtitleUrls,
+    ) {
+        subtitles
+            .filter { it.url !in mediaItemSubtitleUrls }
+            .distinctBy { it.url }
+    }
+    var selectedIndependentSubtitleSelectionId by remember(player) {
+        mutableStateOf<String?>(null)
+    }
+    var independentSubtitleCues by remember(player) {
+        mutableStateOf<List<TimedSubtitleCue>>(emptyList())
     }
     var subtitlePreferenceRestored by remember(player) {
         mutableStateOf(false)
@@ -893,56 +907,27 @@ internal fun PlayerScreen(
     }
 
     LaunchedEffect(
-        player,
+        selectedIndependentSubtitleSelectionId,
         subtitles,
     ) {
-        val latestSubtitleUrls =
-            subtitles
-                .map { it.url }
-                .distinct()
-
-        if (latestSubtitleUrls != appliedSubtitleUrls) {
-            val currentIndex = player.currentMediaItemIndex
-            if (currentIndex == C.INDEX_UNSET || player.mediaItemCount == 0) {
-                return@LaunchedEffect
-            }
-
-            audioPreferenceRestored = false
-            subtitlePreferenceRestored = false
-
-            player.replaceMediaItem(
-                currentIndex,
-                buildPlayerMediaItem(
-                    sourceUrl = requireNotNull(source.url),
-                    subtitles = subtitles,
-                    preferredLanguageCode =
-                        playerPreferredSubtitleLanguageCode(
-                            settingsStore
-                        ),
-                    secondaryLanguageCode =
-                        settingsStore
-                            .secondarySubtitleLanguage()
-                            .languageCode,
-                    subtitlesOnByDefault =
-                        !subtitlesDisabled,
-                    autoSelectPreferred =
-                        settingsStore
-                            .autoSelectPreferredSubtitle(),
-                    embeddedPriority =
-                        settingsStore
-                            .embeddedSubtitlePriority(),
-                ),
-            )
-            player.trackSelectionParameters =
-                player.trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(
-                        C.TRACK_TYPE_TEXT,
-                        subtitlesDisabled,
-                    )
-                    .build()
-            appliedSubtitleUrls = latestSubtitleUrls
+        val selectedId =
+            selectedIndependentSubtitleSelectionId
+                ?: run {
+                    independentSubtitleCues = emptyList()
+                    return@LaunchedEffect
+                }
+        val track = subtitles.firstOrNull {
+            PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
+        } ?: run {
+            independentSubtitleCues = emptyList()
+            selectedIndependentSubtitleSelectionId = null
+            return@LaunchedEffect
         }
+
+        independentSubtitleCues = emptyList()
+        independentSubtitleCues = runCatching {
+            IndependentSubtitleRepository.load(track.url)
+        }.getOrDefault(emptyList())
     }
 
     fun stablePlaybackSnapshot(): Pair<Long, Long> {
@@ -1077,6 +1062,37 @@ internal fun PlayerScreen(
         }
     }
 
+    fun selectSubtitleChoiceForPlayer(
+        choice: PlayerTrackChoice,
+    ) {
+        if (choice.override == null) {
+            clearTrackOverride(
+                player = player,
+                trackType = C.TRACK_TYPE_TEXT,
+                disable = true,
+            )
+            selectedIndependentSubtitleSelectionId =
+                choice.selectionId
+            textTracks = textTracks.map { track ->
+                track.copy(
+                    selected =
+                        track.selectionId == choice.selectionId
+                )
+            }
+            selectedSubtitleIsExternal = true
+        } else {
+            selectedIndependentSubtitleSelectionId = null
+            applyTrackChoice(
+                player = player,
+                trackType = C.TRACK_TYPE_TEXT,
+                choice = choice,
+            )
+            selectedSubtitleIsExternal =
+                choice.selectionId.startsWith("external:")
+        }
+        subtitlesDisabled = false
+    }
+
     fun refreshTrackChoices(
         tracks: Tracks = player.currentTracks,
     ) {
@@ -1086,17 +1102,29 @@ internal fun PlayerScreen(
             tracks = tracks,
             trackType = C.TRACK_TYPE_AUDIO,
         )
-        textTracks = playerTrackChoices(
+        val playerTextTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_TEXT,
             externalSubtitles = externalSubtitles,
         )
+        val independentTextTracks =
+            independentSubtitleTrackChoices(
+                subtitles = independentSubtitleTracks,
+                selectedSelectionId =
+                    selectedIndependentSubtitleSelectionId,
+            )
+        textTracks =
+            (playerTextTracks + independentTextTracks)
+                .distinctBy { it.selectionId }
         selectedSubtitleIsExternal =
             !subtitlesDisabled &&
-            textTracks
-                .firstOrNull { it.selected }
-                ?.selectionId
-                ?.startsWith("external:") == true
+                (
+                    selectedIndependentSubtitleSelectionId != null ||
+                        playerTextTracks
+                            .firstOrNull { it.selected }
+                            ?.selectionId
+                            ?.startsWith("external:") == true
+                )
 
         if (!audioPreferenceRestored && audioTracks.isNotEmpty()) {
             val globalSelection =
@@ -1188,6 +1216,7 @@ internal fun PlayerScreen(
                         )
                     }
                     subtitlePreferenceRestored = true
+                    selectedIndependentSubtitleSelectionId = null
                     clearTrackOverride(
                         player = player,
                         trackType = C.TRACK_TYPE_TEXT,
@@ -1206,19 +1235,30 @@ internal fun PlayerScreen(
                         )
                     }
                     subtitlePreferenceRestored = true
-                    applyTrackChoice(
-                        player = player,
-                        trackType = C.TRACK_TYPE_TEXT,
-                        choice = savedTrack,
-                    )
-                    subtitlesDisabled = false
-                    selectedSubtitleIsExternal =
-                        savedTrack.selectionId
-                            .startsWith("external:")
+                    selectSubtitleChoiceForPlayer(savedTrack)
                 }
 
                 savedSelection == null -> {
+                    val preferredLanguage =
+                        playerPreferredSubtitleLanguageCode(settingsStore)
+                    val preferredIndependent =
+                        if (
+                            !subtitlesDisabled &&
+                            settingsStore.autoSelectPreferredSubtitle() &&
+                            !settingsStore.embeddedSubtitlePriority() &&
+                            textTracks.none { it.selected }
+                        ) {
+                            independentTextTracks.firstOrNull { track ->
+                                canonicalSubtitleLanguage(track.language) ==
+                                    canonicalSubtitleLanguage(preferredLanguage)
+                            }
+                        } else {
+                            null
+                        }
                     subtitlePreferenceRestored = true
+                    if (preferredIndependent != null) {
+                        selectSubtitleChoiceForPlayer(preferredIndependent)
+                    }
                 }
 
                 subtitles.isNotEmpty() -> {
@@ -1226,6 +1266,15 @@ internal fun PlayerScreen(
                 }
             }
         }
+    }
+
+    LaunchedEffect(
+        independentSubtitleTracks.map { it.url },
+    ) {
+        if (independentSubtitleTracks.isNotEmpty()) {
+            subtitlePreferenceRestored = false
+        }
+        refreshTrackChoices()
     }
 
     LaunchedEffect(mediaKey) {
@@ -1811,11 +1860,14 @@ internal fun PlayerScreen(
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
             onDisable = {
+                selectedIndependentSubtitleSelectionId = null
+                independentSubtitleCues = emptyList()
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
                     disable = true,
                 )
+                textTracks = textTracks.map { it.copy(selected = false) }
                 subtitlesDisabled = true
                 selectedSubtitleIsExternal = false
                 settingsStore.setSubtitleSelection(
@@ -1827,15 +1879,7 @@ internal fun PlayerScreen(
                 )
             },
             onSelect = { choice ->
-                applyTrackChoice(
-                    player = player,
-                    trackType = C.TRACK_TYPE_TEXT,
-                    choice = choice,
-                )
-                subtitlesDisabled = false
-                selectedSubtitleIsExternal =
-                    choice.selectionId
-                        .startsWith("external:")
+                selectSubtitleChoiceForPlayer(choice)
                 settingsStore.setSubtitleSelection(
                     contentId = mediaKey,
                     selectionId = choice.selectionId,
@@ -2106,6 +2150,16 @@ internal fun PlayerScreen(
                 )
                 view.resizeMode = videoFit.toMedia3ResizeMode()
             },
+        )
+
+        IndependentSubtitleOverlay(
+            player = player,
+            cues = independentSubtitleCues,
+            delayMs = subtitleDelayMs,
+            style = subtitleStyle,
+            visible =
+                !subtitlesDisabled &&
+                    selectedIndependentSubtitleSelectionId != null,
         )
 
         if (!controlsLocked) {
