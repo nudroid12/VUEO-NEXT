@@ -470,16 +470,16 @@ internal data class PlayerTrackChoice(
     val selectionId: String,
 )
 
-private const val PLAYER_SUBTITLE_LABEL_PREFIX =
+internal const val PLAYER_SUBTITLE_LABEL_PREFIX =
     PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
 
-private const val PLAYER_SUBTITLE_OFF =
+internal const val PLAYER_SUBTITLE_OFF =
     PlayerTrackPolicy.SUBTITLE_OFF
 
-private const val PLAYER_SUBTITLE_LANGUAGE_PREFIX =
+internal const val PLAYER_SUBTITLE_LANGUAGE_PREFIX =
     PlayerTrackPolicy.SUBTITLE_LANGUAGE_PREFIX
 
-private const val PLAYER_AUDIO_AUTO =
+internal const val PLAYER_AUDIO_AUTO =
     PlayerTrackPolicy.AUDIO_AUTO
 
 internal fun playerPreferredSubtitleLanguageCode(
