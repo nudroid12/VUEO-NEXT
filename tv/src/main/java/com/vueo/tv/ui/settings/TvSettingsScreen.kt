@@ -150,6 +150,36 @@ fun TvSettingsScreen(
         panelAutoFocusToken += 1
     }
 
+    // Content Manager destinations behave like dedicated pages, matching Mobile:
+    // enter the selected section, then Back returns to the Content Manager hub.
+    when (page) {
+        TvSettingsPage.CONTENT_ADDONS -> {
+            TvAddonSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            return
+        }
+        TvSettingsPage.CONTENT_PROVIDERS -> {
+            TvProviderSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            return
+        }
+        TvSettingsPage.CONTENT_PROVIDER_HEALTH -> {
+            TvProviderHealthOverview(
+                runtime, onNavigate, onProfile, ::backPanel
+            )
+            return
+        }
+        TvSettingsPage.CONTENT_CATALOGS -> {
+            TvCatalogSettings(
+                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+            )
+            return
+        }
+        else -> Unit
+    }
+
     TvSettingsMasterDetailShell(
         categories = TvSettingsRootDestinations.map { TvSettingsNavItem(it.id, it.title, it.section) },
         selectedCategoryId = selectedRoot.id,
