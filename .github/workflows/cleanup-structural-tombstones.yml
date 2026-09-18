@@ -1,0 +1,37 @@
+name: Cleanup structural tombstones
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove verified tombstones
+        shell: bash
+        run: |
+          chmod +x scripts/cleanup_structural_tombstones.sh
+          ./scripts/cleanup_structural_tombstones.sh
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          if git diff --cached --quiet; then
+            echo "No tombstones to remove."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git commit -m "chore: remove structural tombstones"
+          git push
