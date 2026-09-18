@@ -397,7 +397,7 @@ internal fun PlayerScreen(
     source: StreamSource,
     availableSources: List<StreamSource>,
     sourceProviderOrder: List<String>,
-    subtitles: List<SubtitleTrack>,
+    availableSubtitles: List<SubtitleTrack>,
     initialPositionMs: Long,
     episodeSwitchingTo: EpisodeItem?,
     episodeSwitchFailed: Boolean,
@@ -828,7 +828,7 @@ internal fun PlayerScreen(
                             requireNotNull(
                                 source.url
                             ),
-                        subtitles = subtitles,
+                        subtitles = emptyList(),
                         preferredLanguageCode =
                             playerPreferredSubtitleLanguageCode(
                                 settingsStore
@@ -877,17 +877,9 @@ internal fun PlayerScreen(
             }
     }
 
-    val mediaItemSubtitleUrls = remember(player) {
-        subtitles
-            .map { it.url }
-            .toSet()
-    }
-    val independentSubtitleTracks = remember(
-        subtitles,
-        mediaItemSubtitleUrls,
-    ) {
-        subtitles
-            .filter { it.url !in mediaItemSubtitleUrls }
+    val independentSubtitleTracks = remember(availableSubtitles) {
+        availableSubtitles
+            .filter { it.url.startsWith("https://") }
             .distinctBy { it.url }
     }
     var selectedIndependentSubtitleSelectionId by remember(player) {
@@ -908,7 +900,7 @@ internal fun PlayerScreen(
 
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
-        subtitles,
+        availableSubtitles,
     ) {
         val selectedId =
             selectedIndependentSubtitleSelectionId
@@ -916,7 +908,7 @@ internal fun PlayerScreen(
                     independentSubtitleCues = emptyList()
                     return@LaunchedEffect
                 }
-        val track = subtitles.firstOrNull {
+        val track = availableSubtitles.firstOrNull {
             PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
         } ?: run {
             independentSubtitleCues = emptyList()
@@ -1096,8 +1088,6 @@ internal fun PlayerScreen(
     fun refreshTrackChoices(
         tracks: Tracks = player.currentTracks,
     ) {
-        val externalSubtitles =
-            subtitles.associateBy { it.id }
         audioTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_AUDIO,
@@ -1105,7 +1095,6 @@ internal fun PlayerScreen(
         val playerTextTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_TEXT,
-            externalSubtitles = externalSubtitles,
         )
         val independentTextTracks =
             independentSubtitleTrackChoices(
@@ -1261,7 +1250,7 @@ internal fun PlayerScreen(
                     }
                 }
 
-                subtitles.isNotEmpty() -> {
+                availableSubtitles.isNotEmpty() -> {
                     subtitlePreferenceRestored = true
                 }
             }

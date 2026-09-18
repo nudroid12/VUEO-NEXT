@@ -1,6 +1,8 @@
 package com.vueo.shared.core.player
 
 import com.vueo.shared.core.plugin.PluginHttp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,7 +26,9 @@ object IndependentSubtitleRepository {
     suspend fun load(url: String): List<TimedSubtitleCue> {
         cache[url]?.let { return it }
         val body = PluginHttp.getText(url)
-        val parsed = IndependentSubtitleParser.parse(body)
+        val parsed = withContext(Dispatchers.Default) {
+            IndependentSubtitleParser.parse(body)
+        }
         synchronized(cacheLock) {
             if (!cache.containsKey(url)) {
                 cache[url] = parsed

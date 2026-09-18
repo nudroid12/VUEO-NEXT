@@ -135,6 +135,7 @@ fun TvPlayerScreen(
     media: VueoMediaItem,
     episode: EpisodeItem?,
     bundle: TvSourceBundle,
+    availableSubtitles: List<SubtitleTrack>,
     source: StreamSource,
     initialPositionMs: Long,
     playerSessionId: Int,
@@ -175,11 +176,8 @@ fun TvPlayerScreen(
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
-    val externalSubtitlesBySelectionId = remember(bundle.subtitles) {
-        bundle.subtitles.associateBy(::tvExternalSubtitleSelectionId)
-    }
     val latestExternalSubtitlesBySelectionId =
-        androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
+        androidx.compose.runtime.rememberUpdatedState(emptyMap<String, SubtitleTrack>())
     var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
@@ -270,12 +268,9 @@ fun TvPlayerScreen(
     var audioAutomaticSelected by remember(mediaKey) { mutableStateOf(true) }
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
-    val mediaItemSubtitleUrls = remember(bundle.videoId, activeSource.url) {
-        bundle.subtitles.map { it.url }.toSet()
-    }
-    val independentSubtitleTracks = remember(bundle.subtitles, mediaItemSubtitleUrls) {
-        bundle.subtitles
-            .filter { it.url !in mediaItemSubtitleUrls }
+    val independentSubtitleTracks = remember(availableSubtitles) {
+        availableSubtitles
+            .filter { it.url.startsWith("https://") }
             .distinctBy { it.url }
     }
     val latestIndependentSubtitleTracks =
@@ -301,7 +296,7 @@ fun TvPlayerScreen(
             positionMs in segment.startMs until segment.endMs && segment.endMs - positionMs > 800L
         }
     }
-    val hasSubtitleControl = textTracks.isNotEmpty() || bundle.subtitles.isNotEmpty()
+    val hasSubtitleControl = textTracks.isNotEmpty() || availableSubtitles.isNotEmpty()
     val hasAudioControl = audioTracks.isNotEmpty() || !activeSource.audio.isNullOrBlank()
     val hasSourcesControl = playableSources.isNotEmpty()
     val hasEpisodesControl = media.episodes.isNotEmpty()
@@ -483,7 +478,7 @@ fun TvPlayerScreen(
         player.setMediaItem(
             buildMediaItem(
                 sourceUrl = url,
-                subtitles = bundle.subtitles,
+                subtitles = emptyList(),
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
@@ -507,7 +502,7 @@ fun TvPlayerScreen(
 
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
-        bundle.subtitles,
+        availableSubtitles,
     ) {
         val selectedId =
             selectedIndependentSubtitleSelectionId
@@ -515,7 +510,7 @@ fun TvPlayerScreen(
                     independentSubtitleCues = emptyList()
                     return@LaunchedEffect
                 }
-        val track = bundle.subtitles.firstOrNull {
+        val track = availableSubtitles.firstOrNull {
             PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
         } ?: run {
             independentSubtitleCues = emptyList()
