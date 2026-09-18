@@ -1,5 +1,6 @@
 package com.vueo.shared.core.player
 
+import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.plugin.PluginHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,23 +24,86 @@ object IndependentSubtitleRepository {
     private val cacheOrder = ArrayDeque<String>()
     private val cacheLock = Any()
 
-    suspend fun load(url: String): List<TimedSubtitleCue> {
-        cache[url]?.let { return it }
-        val body = PluginHttp.getText(url)
+    suspend fun load(
+        track: SubtitleTrack,
+        fallbackHeaders: Map<String, String> = emptyMap(),
+    ): List<TimedSubtitleCue> {
+        val requestHeaders = mergeRequestHeaders(
+            fallbackHeaders = fallbackHeaders,
+            trackHeaders = track.headers,
+        )
+        val cacheKey = buildCacheKey(track.url, requestHeaders)
+        cache[cacheKey]?.let { return it }
+
+        val body = PluginHttp.getText(
+            url = track.url,
+            headers = requestHeaders,
+        )
         val parsed = withContext(Dispatchers.Default) {
             IndependentSubtitleParser.parse(body)
         }
         synchronized(cacheLock) {
-            if (!cache.containsKey(url)) {
-                cache[url] = parsed
-                cacheOrder.remove(url)
-                cacheOrder.addLast(url)
+            if (!cache.containsKey(cacheKey)) {
+                cache[cacheKey] = parsed
+                cacheOrder.remove(cacheKey)
+                cacheOrder.addLast(cacheKey)
                 while (cacheOrder.size > MAX_CACHED_TRACKS) {
                     cache.remove(cacheOrder.removeFirst())
                 }
             }
         }
-        return cache[url] ?: parsed
+        return cache[cacheKey] ?: parsed
+    }
+
+    private fun mergeRequestHeaders(
+        fallbackHeaders: Map<String, String>,
+        trackHeaders: Map<String, String>,
+    ): Map<String, String> = buildMap {
+        fallbackHeaders.forEach { (key, value) ->
+            if (key.isSafeFallbackHeader() && value.isNotBlank()) {
+                put(key, value)
+            }
+        }
+        trackHeaders.forEach { (key, value) ->
+            if (key.isSafeSidecarHeader() && value.isNotBlank()) {
+                val existingKey = keys.firstOrNull {
+                    it.equals(key, ignoreCase = true)
+                }
+                if (existingKey != null) remove(existingKey)
+                put(key, value)
+            }
+        }
+    }
+
+    private fun String.isSafeFallbackHeader(): Boolean =
+        lowercase() in setOf(
+            "referer",
+            "origin",
+            "user-agent",
+        )
+
+    private fun String.isSafeSidecarHeader(): Boolean =
+        lowercase() !in setOf(
+            "host",
+            "content-length",
+            "connection",
+            "accept-encoding",
+            "range",
+        )
+
+    private fun buildCacheKey(
+        url: String,
+        headers: Map<String, String>,
+    ): String = buildString {
+        append(url)
+        headers.entries
+            .sortedBy { it.key.lowercase() }
+            .forEach { (key, value) ->
+                append('\u0000')
+                append(key.lowercase())
+                append('=')
+                append(value)
+            }
     }
 
     fun activeTexts(

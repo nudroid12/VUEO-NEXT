@@ -117,6 +117,7 @@ class StremioAddonExtension private constructor(
                 providerId = subtitle.providerId,
                 providerName = subtitle.providerName,
                 name = subtitle.name,
+                headers = subtitle.headers,
             )
         }
 

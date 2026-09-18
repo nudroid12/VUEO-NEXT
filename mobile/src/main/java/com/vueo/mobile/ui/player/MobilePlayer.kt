@@ -918,7 +918,10 @@ internal fun PlayerScreen(
 
         independentSubtitleCues = emptyList()
         independentSubtitleCues = runCatching {
-            IndependentSubtitleRepository.load(track.url)
+            IndependentSubtitleRepository.load(
+                track = track,
+                fallbackHeaders = source.headers,
+            )
         }.getOrDefault(emptyList())
     }
 

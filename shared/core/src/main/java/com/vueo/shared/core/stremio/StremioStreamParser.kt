@@ -91,6 +91,18 @@ object StremioStreamParser {
             val sourceId = item.optString("id", language)
                 .trim()
                 .ifBlank { language }
+            val behaviorHints = item.optJSONObject("behaviorHints")
+            val headers = buildMap {
+                putAll(
+                    behaviorHints
+                        ?.optJSONObject("proxyHeaders")
+                        ?.optJSONObject("request")
+                        .toStringMap()
+                )
+                putAll(item.optJSONObject("headers").toStringMap())
+                putAll(item.optJSONObject("requestHeaders").toStringMap())
+                putAll(item.optJSONObject("httpHeaders").toStringMap())
+            }
 
             SubtitleCandidate(
                 id = "${manifest.id}:$index:$sourceId",
@@ -102,6 +114,7 @@ object StremioStreamParser {
                     "title",
                     item.optString("name"),
                 ).takeIf { it.isNotBlank() },
+                headers = headers,
             )
         }
     }

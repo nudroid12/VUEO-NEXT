@@ -29,7 +29,6 @@ data class SourceCandidate(
     val rankBoost: Int = 0,
     val providerId: String,
     val providerName: String,
-    val serverName: String? = null,
 ) {
     /**
      * Keep the same security baseline as current VUEO Mobile: only HTTPS
@@ -49,6 +48,7 @@ data class SubtitleCandidate(
     val providerId: String,
     val providerName: String,
     val name: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 enum class SourceQuality(

@@ -81,7 +81,6 @@ data class StreamSource(
     val rankBoost: Int = 0,
     val providerId: String,
     val providerName: String,
-    val serverName: String? = null,
 ) {
     val isDirectPlayable: Boolean
         get() = url?.startsWith("https://") == true
@@ -94,6 +93,7 @@ data class SubtitleTrack(
     val providerId: String,
     val providerName: String,
     val name: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 data class CatalogPage(

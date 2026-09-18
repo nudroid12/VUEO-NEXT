@@ -71,15 +71,25 @@ object PluginHttp {
             .build()
     }
 
-    suspend fun getText(url: String): String = withContext(Dispatchers.IO) {
+    suspend fun getText(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): String = withContext(Dispatchers.IO) {
         requireHttps(url)
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .header("Accept", "*/*")
-            .header("User-Agent", "VUEO/0.9.6")
-            .build()
 
-        client.newCall(request).execute().use { response ->
+        headers.forEach { (key, value) ->
+            if (key.lowercase() !in BLOCKED_REQUEST_HEADERS && value.isNotBlank()) {
+                requestBuilder.header(key, value)
+            }
+        }
+        if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+            requestBuilder.header("User-Agent", "VUEO/0.9.6")
+        }
+
+        client.newCall(requestBuilder.build()).execute().use { response ->
             if (!response.isSuccessful) {
                 error("HTTP ${response.code} from ${response.request.url.host}")
             }

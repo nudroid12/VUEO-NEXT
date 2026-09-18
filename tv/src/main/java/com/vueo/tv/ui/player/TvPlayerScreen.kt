@@ -520,7 +520,10 @@ fun TvPlayerScreen(
 
         independentSubtitleCues = emptyList()
         independentSubtitleCues = runCatching {
-            IndependentSubtitleRepository.load(track.url)
+            IndependentSubtitleRepository.load(
+                track = track,
+                fallbackHeaders = activeSource.headers,
+            )
         }.getOrDefault(emptyList())
     }
 
