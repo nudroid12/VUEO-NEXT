@@ -902,16 +902,16 @@ internal fun PlayerScreen(
                 .distinct()
 
         if (latestSubtitleUrls != appliedSubtitleUrls) {
-            val positionMs =
-                player.currentPosition
-                    .coerceAtLeast(0L)
-            val continuePlaying =
-                player.playWhenReady
+            val currentIndex = player.currentMediaItemIndex
+            if (currentIndex == C.INDEX_UNSET || player.mediaItemCount == 0) {
+                return@LaunchedEffect
+            }
 
             audioPreferenceRestored = false
             subtitlePreferenceRestored = false
 
-            player.setMediaItem(
+            player.replaceMediaItem(
+                currentIndex,
                 buildPlayerMediaItem(
                     sourceUrl = requireNotNull(source.url),
                     subtitles = subtitles,
@@ -932,7 +932,6 @@ internal fun PlayerScreen(
                         settingsStore
                             .embeddedSubtitlePriority(),
                 ),
-                positionMs,
             )
             player.trackSelectionParameters =
                 player.trackSelectionParameters
@@ -942,8 +941,6 @@ internal fun PlayerScreen(
                         subtitlesDisabled,
                     )
                     .build()
-            player.prepare()
-            player.playWhenReady = continuePlaying
             appliedSubtitleUrls = latestSubtitleUrls
         }
     }

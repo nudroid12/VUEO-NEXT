@@ -465,14 +465,15 @@ fun TvPlayerScreen(
         val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
-        val currentPosition = player.currentPosition.coerceAtLeast(0L)
-        val continuePlaying = player.playWhenReady
+        val currentIndex = player.currentMediaItemIndex
+        if (currentIndex == C.INDEX_UNSET || player.mediaItemCount == 0) return@LaunchedEffect
         val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
         audioPreferenceRestored = false
         subtitlePreferenceRestored = false
-        player.setMediaItem(
+        player.replaceMediaItem(
+            currentIndex,
             buildMediaItem(
                 sourceUrl = url,
                 subtitles = bundle.subtitles,
@@ -480,7 +481,7 @@ fun TvPlayerScreen(
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
                 preferEmbedded = settings.embeddedSubtitlePriority(),
-            ), currentPosition,
+            ),
         )
         var params = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -489,8 +490,6 @@ fun TvPlayerScreen(
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
         PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { params = params.setPreferredAudioLanguages(it) }
         player.trackSelectionParameters = params.build()
-        player.prepare()
-        player.playWhenReady = continuePlaying
         appliedSubtitleUrls = latestSubtitleUrls
     }
 
