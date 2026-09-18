@@ -222,6 +222,33 @@ private fun VueoPeopleTabs(
     }
 }
 
+@Composable
+internal fun VueoDetailCastSection(
+    cast: List<MediaPerson>,
+    sectionRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester?,
+    onOpen: (MediaPerson) -> Unit,
+) {
+    if (cast.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        VueoDetailSectionTitle("Cast")
+        VueoCastRow(
+            cast = cast,
+            sectionRequester = sectionRequester,
+            upRequester = upRequester,
+            downRequester = downRequester,
+            onOpen = onOpen,
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 private fun VueoCastRow(
@@ -341,7 +368,7 @@ private fun VueoCastMember(
 private fun VueoRelatedRow(
     items: List<MediaItem>,
     sectionRequester: FocusRequester,
-    upRequester: FocusRequester,
+    upRequester: FocusRequester?,
     downRequester: FocusRequester?,
     onOpen: (MediaItem) -> Unit,
 ) {
@@ -374,7 +401,7 @@ private fun VueoRelatedRow(
 private fun VueoRelatedCard(
     item: MediaItem,
     requester: FocusRequester,
-    upRequester: FocusRequester,
+    upRequester: FocusRequester?,
     downRequester: FocusRequester?,
     onOpen: () -> Unit,
 ) {
@@ -398,7 +425,7 @@ private fun VueoRelatedCard(
             }
             .focusRequester(requester)
             .focusProperties {
-                up = upRequester
+                upRequester?.let { up = it }
                 downRequester?.let { down = it }
             }
             .onFocusChanged { focused = it.isFocused }
@@ -511,6 +538,46 @@ private fun VueoTrailerRow(
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+@Composable
+internal fun VueoDetailRelatedSection(
+    items: List<MediaItem>,
+    sectionRequester: FocusRequester,
+    upRequester: FocusRequester?,
+    usesTmdb: Boolean,
+    onOpen: (MediaItem) -> Unit,
+) {
+    if (items.isEmpty()) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 15.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        VueoDetailSectionTitle("More Like This")
+        VueoRelatedRow(
+            items = items,
+            sectionRequester = sectionRequester,
+            upRequester = upRequester,
+            downRequester = null,
+            onOpen = onOpen,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = VueoDetailHorizontalPadding),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Text(
+                text = if (usesTmdb) "Powered by TMDB" else "Powered by VUEO",
+                color = TvDesign.White.copy(alpha = .44f),
+                fontSize = 9.sp,
+                maxLines = 1,
+            )
+        }
     }
 }
 

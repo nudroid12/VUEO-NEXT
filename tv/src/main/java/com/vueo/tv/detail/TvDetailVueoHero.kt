@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -64,7 +63,6 @@ internal fun VueoDetailHero(
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
     onToggleWatched: () -> Unit,
-    onTrailer: () -> Unit,
 ) {
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
@@ -114,9 +112,7 @@ internal fun VueoDetailHero(
         Spacer(Modifier.height(18.dp))
 
         val watchedRequester = remember(item.id, item.type) { FocusRequester() }
-        val trailerRequester = remember(item.id, item.type) { FocusRequester() }
         val showWatched = !item.isDetailSeries()
-        val showTrailer = !state.vueoExtras.trailerUrl.isNullOrBlank()
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -136,11 +132,7 @@ internal fun VueoDetailHero(
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = when {
-                    showWatched -> watchedRequester
-                    showTrailer -> trailerRequester
-                    else -> null
-                },
+                rightRequester = if (showWatched) watchedRequester else null,
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
@@ -151,21 +143,9 @@ internal fun VueoDetailHero(
                     selected = state.movieWatched,
                     requester = watchedRequester,
                     leftRequester = listRequester,
-                    rightRequester = if (showTrailer) trailerRequester else null,
-                    downRequester = downRequester,
-                    onClick = onToggleWatched,
-                )
-            }
-            if (showTrailer) {
-                VueoCircleAction(
-                    icon = Icons.Default.SmartDisplay,
-                    contentDescription = "Play trailer",
-                    selected = false,
-                    requester = trailerRequester,
-                    leftRequester = if (showWatched) watchedRequester else listRequester,
                     rightRequester = null,
                     downRequester = downRequester,
-                    onClick = onTrailer,
+                    onClick = onToggleWatched,
                 )
             }
         }

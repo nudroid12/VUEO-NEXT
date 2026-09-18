@@ -43,7 +43,6 @@ internal fun TvDetailPresentation(
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
     onToggleWatched: () -> Unit,
-    onTrailer: () -> Unit,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeFocused: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onEpisodeSelected: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
@@ -57,45 +56,44 @@ internal fun TvDetailPresentation(
     val listRequester = remember(mediaKey) { FocusRequester() }
     val seasonRequester = remember(mediaKey) { FocusRequester() }
     val episodeRequester = remember(mediaKey) { FocusRequester() }
-    val peopleTabsRequester = remember(mediaKey) { FocusRequester() }
     val peopleContentRequester = remember(mediaKey) { FocusRequester() }
     val relatedContentRequester = remember(mediaKey) { FocusRequester() }
-    val trailerContentRequester = remember(mediaKey) { FocusRequester() }
 
     val people = remember(state.item) {
         DetailPeoplePolicy.cast(state.item)
     }
     val hasCast = people.isNotEmpty()
     val hasRelated = state.related.isNotEmpty()
-    val hasTrailer = !state.vueoExtras.trailerUrl.isNullOrBlank()
-    val peopleSectionCount = listOf(hasCast, hasRelated, hasTrailer).count { it }
-    val hasPeopleSection = peopleSectionCount > 0
-    val hasPeopleTabs = peopleSectionCount > 1
-    val peopleEntryRequester = when {
-        hasPeopleTabs -> peopleTabsRequester
-        hasCast -> peopleContentRequester
-        hasRelated -> relatedContentRequester
-        else -> trailerContentRequester
-    }
+    val hasCompanies = state.item.networks.isNotEmpty() || state.item.productionCompanies.isNotEmpty()
     val hasSeasons = state.item.isDetailSeries() && state.seasons.isNotEmpty()
     val hasEpisodes = state.item.isDetailSeries() && state.episodes.isNotEmpty()
 
     val firstBelowHero = when {
         hasSeasons -> seasonRequester
         hasEpisodes -> episodeRequester
-        hasPeopleSection -> peopleEntryRequester
+        hasCast -> peopleContentRequester
+        !hasCompanies && hasRelated -> relatedContentRequester
         else -> null
     }
     val firstBelowSeasons = when {
         hasEpisodes -> episodeRequester
-        hasPeopleSection -> peopleEntryRequester
+        hasCast -> peopleContentRequester
+        !hasCompanies && hasRelated -> relatedContentRequester
         else -> null
     }
     val firstBelowEpisodes = when {
-        hasPeopleSection -> peopleEntryRequester
+        hasCast -> peopleContentRequester
+        !hasCompanies && hasRelated -> relatedContentRequester
         else -> null
     }
     val peopleUp = when {
+        hasEpisodes -> episodeRequester
+        hasSeasons -> seasonRequester
+        else -> playRequester
+    }
+    val relatedUpRequester = when {
+        hasCompanies -> null
+        hasCast -> peopleContentRequester
         hasEpisodes -> episodeRequester
         hasSeasons -> seasonRequester
         else -> playRequester
@@ -162,7 +160,6 @@ internal fun TvDetailPresentation(
                     onPlay = onPlay,
                     onToggleList = onToggleList,
                     onToggleWatched = onToggleWatched,
-                    onTrailer = onTrailer,
                 )
             }
 
@@ -199,21 +196,14 @@ internal fun TvDetailPresentation(
                 }
             }
 
-            if (hasPeopleSection) {
-                item(key = "vueo-people:$mediaKey") {
-                    VueoDetailPeopleSwitcher(
-                        media = state.item,
+            if (hasCast) {
+                item(key = "vueo-cast:$mediaKey") {
+                    VueoDetailCastSection(
                         cast = people,
-                        related = state.related,
-                        trailerAvailable = hasTrailer,
-                        tabsRequester = peopleTabsRequester,
-                        castContentRequester = peopleContentRequester,
-                        relatedContentRequester = relatedContentRequester,
-                        trailerContentRequester = trailerContentRequester,
+                        sectionRequester = peopleContentRequester,
                         upRequester = peopleUp,
-                        downRequester = null,
-                        onOpenRelated = onOpenRelated,
-                        onOpenCast = { person ->
+                        downRequester = if (!hasCompanies && hasRelated) relatedContentRequester else null,
+                        onOpen = { person ->
                             onOpenEntity(
                                 MediaEntityTarget(
                                     kind = MediaEntityKind.ACTOR,
@@ -221,7 +211,6 @@ internal fun TvDetailPresentation(
                                 )
                             )
                         },
-                        onTrailer = onTrailer,
                     )
                 }
             }
@@ -259,6 +248,18 @@ internal fun TvDetailPresentation(
                                 )
                             )
                         },
+                    )
+                }
+            }
+
+            if (hasRelated) {
+                item(key = "vueo-related:$mediaKey") {
+                    VueoDetailRelatedSection(
+                        items = state.related,
+                        sectionRequester = relatedContentRequester,
+                        upRequester = relatedUpRequester,
+                        usesTmdb = state.tmdbMoreLikeThisEnabled,
+                        onOpen = onOpenRelated,
                     )
                 }
             }

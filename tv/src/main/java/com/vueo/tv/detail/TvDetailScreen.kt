@@ -1,7 +1,5 @@
 package com.vueo.tv.detail
 
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
@@ -42,7 +39,6 @@ fun TvDetailScreen(
     onLibraryChanged: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
-    val context = LocalContext.current
     val initialShell = remember(initial) {
         DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
     }
@@ -66,6 +62,9 @@ fun TvDetailScreen(
     }
     var related by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaItem>>(emptyList())
+    }
+    var tmdbMoreLikeThisEnabled by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(false)
     }
     var dnaMatch by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<Int?>(null)
@@ -133,6 +132,11 @@ fun TvDetailScreen(
         item = shell
         loading = true
         related = emptyList()
+        tmdbMoreLikeThisEnabled = runtime.pluginStore.tmdbApiKey().isNotBlank() &&
+            (
+                runtime.settingsStore.tmdbRecommendationsEnabled() ||
+                    runtime.settingsStore.tmdbSimilarTitlesEnabled()
+            )
         dnaMatch = null
         vueoExtras = TvDetailVueoExtras()
         supplementalRatings = emptyList()
@@ -257,6 +261,7 @@ fun TvDetailScreen(
             history = history,
             playbackEntry = playbackEntry,
             related = related,
+            tmdbMoreLikeThisEnabled = tmdbMoreLikeThisEnabled,
             primaryActionLabel = primaryActionLabel,
         ),
         onPlay = {
@@ -275,13 +280,6 @@ fun TvDetailScreen(
                 movieWatched = !movieWatched
                 runtime.libraryStore.setMarkedWatched(item, movieWatched)
                 onLibraryChanged()
-            }
-        },
-        onTrailer = {
-            vueoExtras.trailerUrl?.let { url ->
-                runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }
             }
         },
         onSeasonSelected = { season ->
@@ -333,6 +331,7 @@ internal data class TvDetailPresentationState(
     val history: List<LibraryPlaybackEntry>,
     val playbackEntry: LibraryPlaybackEntry?,
     val related: List<MediaItem>,
+    val tmdbMoreLikeThisEnabled: Boolean,
     val primaryActionLabel: String,
 )
 
