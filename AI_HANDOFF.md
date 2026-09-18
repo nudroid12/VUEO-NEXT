@@ -21,7 +21,7 @@ Source code is authoritative for exact signatures. `PROJECT_CONTEXT.md` is autho
 Current Mobile stabilisation rules:
 
 - Do not let Home render before the startup destination gate resolves Who's Watching.
-- Mobile Content Manager presentation now lives in `ui/VueoContentManager.kt`; do not copy it back into `VueoApp.kt`.
+- Mobile Content Manager presentation now lives in `ui/content/VueoContentManager.kt`; do not copy it back into `VueoApp.kt`.
 - Per-catalog enable/disable is real persisted state and must continue filtering Home discovery/cache results.
 - Provider diagnostics should be compact in the list but must preserve useful request/failure/error/HTTP/timing/result/raw evidence when expanded.
 - User-facing Content Manager copy should avoid third-party platform branding. Internal protocol/runtime names may remain in implementation code.

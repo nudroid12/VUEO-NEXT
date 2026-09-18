@@ -1,10 +1,3 @@
-package com.vueo.tv.detail
-
-import com.vueo.shared.core.detail.DetailSupplementalClient
-import com.vueo.shared.core.detail.DetailSupplementalInfo
-import com.vueo.shared.core.media.MediaItem
-
-internal typealias TvDetailVueoExtras = DetailSupplementalInfo
-
-internal suspend fun loadTvDetailVueoExtras(media: MediaItem, tmdbApiKey: String): TvDetailVueoExtras =
-    DetailSupplementalClient.load(media, tmdbApiKey)
+// Structural tombstone: implementation moved to
+// tv/src/main/java/com/vueo/tv/ui/detail/TvDetailVueoExtras.kt
+// Kept inert because replacement ZIP overlays cannot delete tracked paths.

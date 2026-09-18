@@ -188,7 +188,7 @@ Mobile is now in a stabilisation phase. Avoid adding new Mobile features unless 
 
 Architecture cleanup started in 28F. The Content Manager UI family was extracted from the oversized `VueoApp.kt` into:
 
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoContentManager.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/content/VueoContentManager.kt`
 
 This extraction is presentation-only. Content Manager data models, stores, provider runtime and Shared Core contracts were not rewritten. Continue reducing `VueoApp.kt` only in small, behaviour-preserving slices. Do not move startup/profile/player logic during unrelated cleanup.
 
@@ -422,33 +422,30 @@ Accent applies to product accents/progress/status. White + scale focus remains t
 
 High-value Mobile UI entry points now include:
 
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoApp.kt`
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoContentManager.kt`
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoSettings.kt`
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoProfiles.kt`
-- `mobile/src/main/java/com/vueo/mobile/ui/VueoDesign.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/app/VueoApp.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/content/VueoContentManager.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/profile/VueoProfiles.kt`
+- `mobile/src/main/java/com/vueo/mobile/ui/theme/VueoDesign.kt`
 
 `VueoApp.kt` is still large. Extract only coherent screen families, keep navigation contracts stable, and validate regression-sensitive flows after each extraction.
 
 ## 15. Current important TV files
 
-Key TV entry points include:
+Key TV entry points are now grouped under `core/` and `ui/`:
 
-- `tv/src/main/java/com/vueo/tv/VueoTvApp.kt`
-- `tv/src/main/java/com/vueo/tv/data/TvUnifiedDiscovery.kt`
-- `tv/src/main/java/com/vueo/tv/detail/TvDetailScreen.kt`
-- `tv/src/main/java/com/vueo/tv/search/TvSearchScreen.kt`
-- `tv/src/main/java/com/vueo/tv/content/TvContentManagerScreen.kt`
-- `tv/src/main/java/com/vueo/tv/player/TvPlayerScreen.kt`
-- `tv/src/main/java/com/vueo/tv/player/TvSourceEngine.kt`
-- `tv/src/main/java/com/vueo/tv/player/TvSourcePickerScreen.kt`
-- `tv/src/main/java/com/vueo/tv/library/TvLibraryScreen.kt`
-- `tv/src/main/java/com/vueo/tv/profile/TvFunctionalSettings.kt`
-- `tv/src/main/java/com/vueo/tv/profile/TvProfileDnaPanel.kt`
-- `tv/src/main/java/com/vueo/tv/profile/TvProfilePickerScreen.kt`
-- `tv/src/main/java/com/vueo/tv/profile/TvUserHubScreen.kt`
-- `tv/src/main/java/com/vueo/tv/ui/focus/TvFocus.kt`
-- `tv/src/main/java/com/vueo/tv/ui/theme/TvAppearance.kt`
+- `tv/src/main/java/com/vueo/tv/MainActivity.kt`
+- `tv/src/main/java/com/vueo/tv/ui/app/VueoTvApp.kt`
+- `tv/src/main/java/com/vueo/tv/core/runtime/TvRuntime.kt`
+- `tv/src/main/java/com/vueo/tv/ui/home/TvHomeScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/detail/TvDetailScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/search/TvSearchScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/library/TvLibraryScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/source/TvSourceScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/settings/TvSettingsScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/profile/TvProfilePickerScreen.kt`
+- `tv/src/main/java/com/vueo/tv/ui/sidebar/TvTopBar.kt`
 
 Inspect the current implementation before editing. This document describes design intent and architecture, but source code is the authority for exact APIs and signatures.
 
@@ -530,6 +527,10 @@ GitHub Actions is the authoritative full build when local/network constraints pr
 A previous handoff environment could not resolve `services.gradle.org`, so static Kotlin syntax checks and ZIP integrity checks were used there. Do not interpret inability to reach Gradle servers as a source-code failure.
 
 When changing Shared Core, validate both applications because both depend on it.
+
+## 18A. Source tree organisation checkpoint
+
+Mobile and TV app-specific source is now physically grouped under top-level `core/` and `ui/` trees. UI is further grouped by feature (`home`, `detail`, `player`, `settings`, etc.). Shared cross-platform logic remains in `shared/core`. Kotlin packages were intentionally not renamed during this phase; the cleanup is path-only to preserve behavior. Because replacement ZIPs cannot delete tracked paths, previous locations are inert structural tombstones that point to the live file. See `CODE_STRUCTURE.md`.
 
 ## 19. Patch workflow rules
 

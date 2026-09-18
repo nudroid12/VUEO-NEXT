@@ -46,7 +46,7 @@ Mobile remains a single Compose application surface, but large screen families m
 
 Current extracted family:
 
-- `ui/VueoContentManager.kt` contains Content Manager, Addons, Plugins/Providers, Catalog Order and Provider Diagnostics presentation.
+- `ui/content/VueoContentManager.kt` contains Content Manager, Addons, Plugins/Providers, Catalog Order and Provider Diagnostics presentation.
 
 This is a file-level decomposition only. Stores, Shared Core runtime and navigation behaviour remain unchanged. Avoid broad rewrites during decomposition.
 

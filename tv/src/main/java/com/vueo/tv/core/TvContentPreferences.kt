@@ -1,4 +1,3 @@
-package com.vueo.tv.core
-
-/** TV compatibility alias. Canonical content-manager state lives in shared/core. */
-typealias TvContentPreferences = com.vueo.shared.core.storage.ContentManagerStore
+// Structural tombstone: implementation moved to
+// tv/src/main/java/com/vueo/tv/core/preferences/TvContentPreferences.kt
+// Kept inert because replacement ZIP overlays cannot delete tracked paths.
