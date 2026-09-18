@@ -383,7 +383,7 @@ internal fun ContentManagerScreen(
                         .padding(top = 4.dp)
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(VueoPalette.BrandLime.copy(alpha = .75f))
+                        .background(VueoPalette.Accent.copy(alpha = .75f))
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -636,7 +636,7 @@ private fun ContentMetric(
     ) {
         Text(
             value,
-            color = VueoPalette.BrandLime,
+            color = VueoPalette.Accent,
             fontSize = 18.sp,
             fontWeight =
                 FontWeight.Black,

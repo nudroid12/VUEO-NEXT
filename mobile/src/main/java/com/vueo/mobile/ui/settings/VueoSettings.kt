@@ -481,7 +481,7 @@ internal fun VueoSettingsHub(
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text("⇄", color = VueoPalette.BrandLime, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                                        Text("⇄", color = VueoPalette.Accent, fontSize = 15.sp, fontWeight = FontWeight.Black)
                                         Spacer(Modifier.width(8.dp))
                                         Text("Switch Profiles", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }

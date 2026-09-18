@@ -807,7 +807,7 @@ private fun VueoThemeOption(
                     .background(Brush.linearGradient(preview))
                     .border(
                         width = if (selected) 1.5.dp else 1.dp,
-                        color = if (selected) VueoPalette.BrandLime else Color.White.copy(alpha = .08f),
+                        color = if (selected) VueoPalette.Accent else Color.White.copy(alpha = .08f),
                         shape = RoundedCornerShape(11.dp),
                     )
             )
@@ -821,7 +821,7 @@ private fun VueoThemeOption(
 
             Text(
                 if (selected) "Selected" else "Tap to use",
-                color = if (selected) VueoPalette.BrandLime else VueoPalette.Muted,
+                color = if (selected) VueoPalette.Accent else VueoPalette.Muted,
                 fontSize = 9.sp,
             )
         }

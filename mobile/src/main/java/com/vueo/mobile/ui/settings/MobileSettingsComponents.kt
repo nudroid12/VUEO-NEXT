@@ -162,7 +162,7 @@ internal fun VueoProfileContextStrip(
                 )
                 Text(
                     text = status,
-                    color = VueoPalette.BrandLime,
+                    color = VueoPalette.Accent,
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -236,7 +236,7 @@ internal fun VueoCompactInfo(
                 .padding(top = 4.dp)
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(VueoPalette.BrandLime.copy(alpha = .75f))
+                .background(VueoPalette.Accent.copy(alpha = .75f))
         )
         Spacer(Modifier.width(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

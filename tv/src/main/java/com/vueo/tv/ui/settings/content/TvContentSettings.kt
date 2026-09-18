@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.vueo.shared.core.dna.UserDnaPreferences
 import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.extensions.primaryAddonCategory
 import com.vueo.shared.core.enrichment.MdblistClient
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
@@ -125,6 +126,7 @@ internal fun TvContentManagerHub(
             onActivate = { onOpen(TvSettingsPage.CONTENT_ADDONS) },
             section = "CONTENT",
             icon = Icons.Default.Extension,
+            accented = true,
         ),
         TvSettingsEntry(
             "providers", "Plugins & Providers", "Repositories, runtime providers, health and diagnostics.",
@@ -132,6 +134,7 @@ internal fun TvContentManagerHub(
             onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDERS) },
             section = "CONTENT",
             icon = Icons.Default.SettingsInputComponent,
+            accented = true,
         ),
         TvSettingsEntry(
             "provider-health", "Provider Health",
@@ -140,6 +143,7 @@ internal fun TvContentManagerHub(
             onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDER_HEALTH) },
             section = "CONTENT",
             icon = Icons.Default.SettingsInputComponent,
+            accented = true,
         ),
         TvSettingsEntry(
             "catalogs", "Catalog Order", "Choose the order catalogs appear on Home.",
@@ -147,6 +151,7 @@ internal fun TvContentManagerHub(
             onActivate = { onOpen(TvSettingsPage.CONTENT_CATALOGS) },
             section = "CONTENT",
             icon = Icons.Default.VideoLibrary,
+            accented = true,
         ),
     )
     TvSettingsListScreen(
@@ -182,6 +187,10 @@ internal fun TvAddonSettings(
     var status by remember { mutableStateOf<String?>(null) }
     var refreshingAddons by remember { mutableStateOf(false) }
     val manifests = remember(revision) { runtime.content.manifestUrls() }
+    val installedAddons = remember(revision) { runtime.engine.stremioAddons() }
+    val addonByManifest = remember(installedAddons) {
+        installedAddons.associateBy { it.descriptor.baseUrl.trim() }
+    }
 
     if (showAdd) {
         TvTextEntryDialog(
@@ -207,7 +216,7 @@ internal fun TvAddonSettings(
     removeUrl?.let { url ->
         TvConfirmDialog(
             title = "Remove addon?",
-            message = "Remove ${shortUrl(url)} from VUEO?",
+            message = "Remove ${addonByManifest[url.trim()]?.descriptor?.name ?: shortUrl(url)} from VUEO?",
             confirmLabel = "Remove",
             onDismiss = { removeUrl = null },
             onConfirm = {
@@ -222,12 +231,22 @@ internal fun TvAddonSettings(
     }
 
     val entries = buildList {
-        add(TvSettingsEntry("add", "Add Addon", "Install an HTTPS addon manifest URL.", onActivate = { showAdd = true }, section = "ADDONS", icon = Icons.Default.Extension))
+        add(
+            TvSettingsEntry(
+                id = "add",
+                title = "Add Addon",
+                subtitle = "Install an HTTPS addon manifest URL.",
+                onActivate = { showAdd = true },
+                section = "ADDONS",
+                icon = Icons.Default.Extension,
+                accented = true,
+            )
+        )
         add(
             TvSettingsEntry(
                 id = "refresh-addons",
                 title = "Refresh Addons",
-                subtitle = "Reload installed addon manifests on demand. Normal enable/disable changes stay local and do not refetch manifests.",
+                subtitle = "Reload installed manifests while keeping your enable and disable choices.",
                 value = if (refreshingAddons) "Refreshing…" else "Refresh",
                 onActivate = {
                     if (!refreshingAddons) {
@@ -243,29 +262,75 @@ internal fun TvAddonSettings(
                 },
                 section = "ADDONS",
                 icon = Icons.Default.Refresh,
+                accented = true,
             )
         )
-        manifests.forEachIndexed { index, url ->
+
+        val orderedManifests = manifests
+            .map { url -> url to addonByManifest[url.trim()] }
+            .sortedWith(
+                compareBy<Pair<String, com.vueo.shared.core.extensions.MediaExtension?>> { (_, addon) ->
+                    addon?.descriptor?.primaryAddonCategory()?.ordinal ?: Int.MAX_VALUE
+                }.thenBy { (url, addon) ->
+                    addon?.descriptor?.name?.lowercase() ?: url.lowercase()
+                }
+            )
+
+        orderedManifests.forEachIndexed { index, (url, addon) ->
+            val descriptor = addon?.descriptor
             val enabled = runtime.content.isAddonEnabled(url)
             add(
                 TvSettingsEntry(
                     id = "addon-$index-${url.hashCode()}",
-                    title = shortUrl(url),
-                    subtitle = "$url  •  OK enable or disable  •  → remove",
+                    title = descriptor?.name ?: shortUrl(url),
+                    subtitle = if (descriptor != null) {
+                        "v${descriptor.version} • ${descriptor.catalogs.size} catalogs • ${descriptor.resources.size} resources"
+                    } else {
+                        shortUrl(url)
+                    },
+                    detail = descriptor?.description
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: url,
                     value = if (enabled) "On" else "Off",
                     onActivate = {
-                        scope.launch { runtime.setAddonEnabled(url, !enabled); revision++; onDataChanged() }
+                        scope.launch {
+                            runtime.setAddonEnabled(url, !enabled)
+                            revision++
+                            onDataChanged()
+                        }
                     },
-                    section = "INSTALLED ADDONS",
+                    section = descriptor?.primaryAddonCategory()?.label?.uppercase() ?: "INSTALLED ADDONS",
                     icon = Icons.Default.Extension,
                     onRightAction = { removeUrl = url },
+                    accented = true,
+                    rightActionLabel = "Remove",
                 )
             )
         }
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
-    TvSettingsListScreen("Addons", "Install, disable or remove open content addons.", entries, onNavigate, onProfile, onBack, topLabel = "Content Manager")
+    val enabledCount = manifests.count { runtime.content.isAddonEnabled(it) }
+    val catalogCount = installedAddons.sumOf { it.descriptor.catalogs.size }
+    val resourceCount = installedAddons.sumOf { it.descriptor.resources.size }
+
+    TvSettingsListScreen(
+        title = "Addons",
+        subtitle = "Catalogs, metadata, streams and subtitles.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Content Manager",
+        metrics = listOf(
+            TvSettingsMetric(manifests.size.toString(), "Installed"),
+            TvSettingsMetric(enabledCount.toString(), "Enabled"),
+            TvSettingsMetric(catalogCount.toString(), "Catalogs"),
+            TvSettingsMetric(resourceCount.toString(), "Resources"),
+        ),
+        footer = "Select an addon to enable or disable it. Press right on an addon for Remove.",
+    )
 }
 
 @Composable
@@ -351,8 +416,22 @@ internal fun TvProviderSettings(
             runtime.pluginStore.setPluginsEnabled(it)
             revision++
             onDataChanged()
-        }.copy(section = "PROVIDER SYSTEM", icon = Icons.Default.SettingsInputComponent))
-        add(TvSettingsEntry("add-repo", "Add Repository", "Install an HTTPS provider repository manifest.", onActivate = { showAdd = true }, section = "PROVIDER SYSTEM"))
+        }.copy(
+            section = "PROVIDER SYSTEM",
+            icon = Icons.Default.SettingsInputComponent,
+            accented = true,
+        ))
+        add(
+            TvSettingsEntry(
+                id = "add-repo",
+                title = "Add Repository",
+                subtitle = "Install an HTTPS provider repository manifest.",
+                onActivate = { showAdd = true },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.SettingsInputComponent,
+                accented = true,
+            )
+        )
         add(
             TvSettingsEntry(
                 id = "refresh-repositories",
@@ -382,6 +461,7 @@ internal fun TvProviderSettings(
                 },
                 section = "PROVIDER SYSTEM",
                 icon = Icons.Default.Refresh,
+                accented = true,
             )
         )
         add(
@@ -392,6 +472,8 @@ internal fun TvProviderSettings(
                 value = "Open",
                 onActivate = { showRuntimeDiagnostics = true },
                 section = "PROVIDER SYSTEM",
+                icon = Icons.Default.SettingsInputComponent,
+                accented = true,
             )
         )
         repositories.forEach { repository ->
@@ -401,7 +483,8 @@ internal fun TvProviderSettings(
                 TvSettingsEntry(
                     id = "repo-${repository.manifestUrl.hashCode()}",
                     title = repository.name,
-                    subtitle = "${repository.version} • ${repository.providers.size} providers • $readyProviders ready • OK enable or disable • → remove",
+                    subtitle = "v${repository.version} • ${repository.providers.size} providers • $readyProviders ready",
+                    detail = repository.description?.trim()?.takeIf { it.isNotBlank() } ?: shortUrl(repository.manifestUrl),
                     value = if (repoEnabled) "On" else "Off",
                     onActivate = {
                         runtime.pluginStore.setRepositoryEnabled(repository, !repoEnabled)
@@ -411,6 +494,8 @@ internal fun TvProviderSettings(
                     section = "REPOSITORIES",
                     icon = Icons.Default.SettingsInputComponent,
                     onRightAction = { removeRepo = repository },
+                    accented = true,
+                    rightActionLabel = "Remove",
                 )
             )
             val rankedProviders =
@@ -439,11 +524,12 @@ internal fun TvProviderSettings(
                         title = provider.name,
                         subtitle = buildString {
                             append(health?.status?.label ?: "No diagnostic yet")
-                            provider.description?.takeIf { it.isNotBlank() }?.let {
-                                append(" • ").append(it)
+                            append(" • v").append(provider.version)
+                            provider.supportedTypes.takeIf { it.isNotEmpty() }?.let { types ->
+                                append(" • ").append(types.joinToString(" / ") { it.replaceFirstChar { char -> char.uppercase() } })
                             }
-                            append(" • OK enable or disable • → diagnostics")
                         },
+                        detail = provider.description?.trim()?.takeIf { it.isNotBlank() },
                         value = if (enabled) "On" else "Off",
                         enabled = repoEnabled && pluginsEnabled,
                         onActivate = {
@@ -451,8 +537,11 @@ internal fun TvProviderSettings(
                             revision++
                             onDataChanged()
                         },
-                        section = "PROVIDERS",
+                        section = "${repository.name.uppercase()} PROVIDERS",
+                        icon = Icons.Default.SettingsInputComponent,
                         onRightAction = { diagnosticTarget = repository to provider },
+                        accented = true,
+                        rightActionLabel = "Diagnostics",
                     )
                 )
             }
@@ -460,14 +549,27 @@ internal fun TvProviderSettings(
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
+    val providerCount = repositories.sumOf { it.providers.size }
+    val enabledProviderCount = repositories.sumOf { repository ->
+        repository.providers.count { runtime.pluginStore.isProviderEnabled(repository, it) }
+    }
+    val readyProviderCount = repositories.sumOf { providerCodeStore.readyCount(it) }
+
     TvSettingsListScreen(
-        "Plugins & Providers",
-        "Repositories, runtime providers, health and diagnostics.",
-        entries,
-        onNavigate,
-        onProfile,
-        onBack,
+        title = "Plugins & Providers",
+        subtitle = "Repositories, runtime providers, health and diagnostics.",
+        entries = entries,
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
         topLabel = "Content Manager",
+        metrics = listOf(
+            TvSettingsMetric(repositories.size.toString(), "Repos"),
+            TvSettingsMetric(providerCount.toString(), "Providers"),
+            TvSettingsMetric(enabledProviderCount.toString(), "Enabled"),
+            TvSettingsMetric(readyProviderCount.toString(), "Ready"),
+        ),
+        footer = "Select a repository or provider to enable or disable it. Press right for contextual actions.",
     )
 }
 
@@ -479,22 +581,30 @@ internal fun TvCatalogSettings(
     onDataChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var rows by remember { mutableStateOf(emptyMap<String, String>()) }
+    var rows by remember { mutableStateOf(emptyMap<String, com.vueo.shared.core.media.CatalogRow>()) }
     var order by remember { mutableStateOf(runtime.content.catalogOrder()) }
     var revision by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(revision) {
         val loaded = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
-        rows = loaded.associate { it.id to it.title }
+        rows = loaded.associateBy { it.id }
         order = runtime.content.reconcileCatalogOrder(loaded.map { it.id })
     }
 
     val entries = order.mapIndexed { index, key ->
+        val row = rows[key]
         val enabled = runtime.content.isCatalogEnabled(key)
+        val type = key.split(':').getOrNull(1)
+            ?.replaceFirstChar { char -> char.uppercase() }
+            .orEmpty()
         TvSettingsEntry(
             id = "catalog-$key",
-            title = rows[key] ?: key,
-            subtitle = "${index + 1} of ${order.size} • ←/→ reorder • OK show/hide",
+            title = row?.title ?: key,
+            subtitle = listOfNotNull(
+                row?.providerName?.takeIf { it.isNotBlank() },
+                type.takeIf { it.isNotBlank() },
+            ).joinToString(" • ").ifBlank { "Home catalog" },
+            detail = "D-pad left/right reorders • OK ${if (enabled) "hide" else "show"}",
             value = if (enabled) "Shown" else "Hidden",
             onPrevious = {
                 if (index > 0) {
@@ -518,15 +628,36 @@ internal fun TvCatalogSettings(
                 onDataChanged()
             },
             section = "HOME CATALOGS",
-            icon = Icons.Default.VideoLibrary,
+            badge = "${index + 1}",
+            accented = true,
         )
     }
 
+    val shownCount = order.count { runtime.content.isCatalogEnabled(it) }
+
     TvSettingsListScreen(
-        "Catalog Order",
-        "Control Home visibility and ordering. Hidden catalogs keep their position.",
-        entries.ifEmpty { listOf(TvSettingsEntry("loading", "Catalogs", "Open Home once if no catalogs have been discovered yet.", enabled = false)) },
-        onNavigate, onProfile, onBack, topLabel = "Content Manager",
+        title = "Catalog Order",
+        subtitle = "Control Home visibility and ordering. Hidden catalogs keep their position.",
+        entries = entries.ifEmpty {
+            listOf(
+                TvSettingsEntry(
+                    "loading",
+                    "No catalogs discovered",
+                    "Open Home once so VUEO can discover available catalogs.",
+                    enabled = false,
+                )
+            )
+        },
+        onNavigate = onNavigate,
+        onProfile = onProfile,
+        onBack = onBack,
+        topLabel = "Content Manager",
+        metrics = listOf(
+            TvSettingsMetric(order.size.toString(), "Catalogs"),
+            TvSettingsMetric(shownCount.toString(), "Shown"),
+            TvSettingsMetric((order.size - shownCount).toString(), "Hidden"),
+        ),
+        footer = "The numbered badge is the Home position. Hidden catalogs keep their saved place in the order.",
     )
 }
 

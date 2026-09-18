@@ -1,7 +1,5 @@
 package com.vueo.tv.settings
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.SettingsInputComponent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,12 +73,14 @@ internal fun TvProviderHealthOverview(
         } else "No scan history yet"
         TvSettingsEntry(
             id = "provider-health-${entry.repository.manifestUrl.hashCode()}-${entry.provider.id}",
-            title = "#${index + 1} ${entry.provider.name}",
-            subtitle = "${entry.repository.name} • $history • OK diagnostics",
+            title = entry.provider.name,
+            subtitle = entry.repository.name,
+            detail = history,
             value = "Score ${performance.score} • ${status.label}",
             onActivate = { diagnosticTarget = entry },
             section = "PROVIDER RANKING",
-            icon = Icons.Default.SettingsInputComponent,
+            badge = "#${index + 1}",
+            accented = true,
         )
     }
 

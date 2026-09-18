@@ -75,6 +75,10 @@ internal data class TvSettingsEntry(
     val section: String? = null,
     val icon: ImageVector? = null,
     val onRightAction: (() -> Unit)? = null,
+    val badge: String? = null,
+    val detail: String? = null,
+    val accented: Boolean = false,
+    val rightActionLabel: String? = null,
 )
 
 internal data class TvSettingsNavItem(
@@ -1042,6 +1046,13 @@ private fun TvSettingsRow(
 ) {
     var focused by remember(entry.id) { mutableStateOf(false) }
     val canAdjust = entry.onPrevious != null || entry.onNext != null
+    val shape = RoundedCornerShape(
+        when {
+            entry.accented -> 15.dp
+            grouped -> 14.dp
+            else -> 11.dp
+        },
+    )
 
     Row(
         modifier = Modifier
@@ -1098,44 +1109,77 @@ private fun TvSettingsRow(
             .background(
                 color = when {
                     !entry.enabled -> TvDesign.Surface.copy(alpha = if (grouped) .10f else .18f)
+                    focused && entry.accented -> TvDesign.Accent.copy(alpha = .12f)
                     focused -> TvDesign.White.copy(alpha = .10f)
                     grouped -> TvDesign.White.copy(alpha = .015f)
+                    entry.accented -> TvDesign.Surface.copy(alpha = .44f)
                     else -> TvDesign.Surface.copy(alpha = .36f)
                 },
-                shape = RoundedCornerShape(if (grouped) 14.dp else 11.dp),
+                shape = shape,
             )
             .border(
                 width = if (focused) 1.5.dp else if (grouped) 0.dp else 1.dp,
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
+                    focused && entry.accented -> TvDesign.Accent.copy(alpha = .90f)
                     focused -> TvDesign.White.copy(alpha = .88f)
                     grouped -> TvDesign.White.copy(alpha = 0f)
+                    entry.accented -> TvDesign.Accent.copy(alpha = .12f)
                     else -> TvDesign.White.copy(alpha = .045f)
                 },
-                shape = RoundedCornerShape(if (grouped) 14.dp else 11.dp),
+                shape = shape,
             )
             .focusable(enabled = entry.enabled)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        entry.icon?.let { icon ->
+        if (!entry.badge.isNullOrBlank()) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .background(
-                        color = if (focused) TvDesign.White.copy(alpha = .10f) else TvDesign.SurfaceRaised.copy(alpha = .62f),
-                        shape = RoundedCornerShape(12.dp),
-                    ),
+                    .background(TvDesign.Accent.copy(alpha = .12f), RoundedCornerShape(13.dp))
+                    .border(1.dp, TvDesign.Accent.copy(alpha = .28f), RoundedCornerShape(13.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (entry.enabled) TvDesign.White.copy(alpha = .92f) else TvDesign.Dim,
-                    modifier = Modifier.size(23.dp),
+                Text(
+                    text = entry.badge.orEmpty(),
+                    color = TvDesign.Accent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                 )
             }
             Spacer(Modifier.width(14.dp))
+        } else {
+            entry.icon?.let { icon ->
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = if (entry.accented) {
+                                TvDesign.Accent.copy(alpha = if (focused) .16f else .09f)
+                            } else if (focused) {
+                                TvDesign.White.copy(alpha = .10f)
+                            } else {
+                                TvDesign.SurfaceRaised.copy(alpha = .62f)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = when {
+                            !entry.enabled -> TvDesign.Dim
+                            entry.accented -> TvDesign.Accent
+                            else -> TvDesign.White.copy(alpha = .92f)
+                        },
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+            }
         }
 
         Column(
@@ -1158,36 +1202,71 @@ private fun TvSettingsRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            entry.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                Text(
+                    text = detail,
+                    color = if (entry.enabled) TvDesign.Dim else TvDesign.Dim.copy(alpha = .52f),
+                    fontSize = 9.5.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         Spacer(Modifier.width(14.dp))
 
-        if (entry.value.isNotBlank()) {
-            Text(
-                text = buildString {
-                    if (canAdjust && focused) append("‹  ")
-                    append(entry.value)
-                    if (canAdjust && focused) append("  ›")
-                },
-                color = if (focused) TvDesign.White else TvDesign.Muted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .background(
-                        color = if (focused) TvDesign.White.copy(alpha = .10f) else TvDesign.White.copy(alpha = .045f),
-                        shape = RoundedCornerShape(50),
-                    )
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
-        } else if (entry.onActivate != null) {
-            Text(
-                text = "›",
-                color = if (focused) TvDesign.White else TvDesign.Dim,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Light,
-            )
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            if (entry.value.isNotBlank()) {
+                Text(
+                    text = buildString {
+                        if (canAdjust && focused) append("‹  ")
+                        append(entry.value)
+                        if (canAdjust && focused) append("  ›")
+                    },
+                    color = when {
+                        !entry.enabled -> TvDesign.Dim
+                        entry.accented -> TvDesign.Accent
+                        focused -> TvDesign.White
+                        else -> TvDesign.Muted
+                    },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .background(
+                            color = if (entry.accented) {
+                                TvDesign.Accent.copy(alpha = if (focused) .16f else .08f)
+                            } else if (focused) {
+                                TvDesign.White.copy(alpha = .10f)
+                            } else {
+                                TvDesign.White.copy(alpha = .045f)
+                            },
+                            shape = RoundedCornerShape(50),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            } else if (entry.onActivate != null && entry.rightActionLabel.isNullOrBlank()) {
+                Text(
+                    text = "›",
+                    color = if (focused && entry.accented) TvDesign.Accent else if (focused) TvDesign.White else TvDesign.Dim,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Light,
+                )
+            }
+
+            if (focused && !entry.rightActionLabel.isNullOrBlank()) {
+                Text(
+                    text = "${entry.rightActionLabel}  ›",
+                    color = if (entry.accented) TvDesign.Accent else TvDesign.White.copy(alpha = .86f),
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
