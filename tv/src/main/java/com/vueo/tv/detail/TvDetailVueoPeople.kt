@@ -568,7 +568,7 @@ internal fun VueoDetailRelatedSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = VueoDetailHorizontalPadding),
+                .padding(end = 18.dp),
             horizontalArrangement = Arrangement.End,
         ) {
             Text(

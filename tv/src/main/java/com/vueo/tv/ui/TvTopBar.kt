@@ -176,6 +176,7 @@ fun TvSidebar(
                 .align(Alignment.CenterEnd)
                 .offset(x = pillOffsetX)
                 .width(width)
+                .height(292.dp)
                 .clip(pillShape)
                 .background(panelBrush)
                 .border(1.dp, TvDesign.White.copy(alpha = .11f), pillShape)
@@ -192,12 +193,16 @@ fun TvSidebar(
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .padding(vertical = 56.dp)
+                .fillMaxHeight()
         }
 
         Column(
             modifier = navColumnModifier,
-            verticalArrangement = Arrangement.spacedBy(metrics.itemSpacing),
+            verticalArrangement = if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
+                Arrangement.SpaceEvenly
+            } else {
+                Arrangement.spacedBy(metrics.itemSpacing)
+            },
         ) {
             TvPrimaryDestinations.forEachIndexed { index, label ->
                 SidebarNavigationItem(
@@ -329,7 +334,7 @@ private fun SidebarNavigationItem(
                     KeyEvent.KEYCODE_DPAD_RIGHT -> onRight()
                     KeyEvent.KEYCODE_DPAD_UP -> onUp()
                     KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
-                    KeyEvent.KEYCODE_BACK -> onRight()
+                    KeyEvent.KEYCODE_BACK -> false
                     else -> false
                 }
             }
