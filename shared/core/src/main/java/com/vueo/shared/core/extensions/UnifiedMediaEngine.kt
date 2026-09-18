@@ -1627,6 +1627,7 @@ private fun StreamSource.toSourceCandidate(): SourceCandidate =
         rankBoost = rankBoost,
         providerId = providerId,
         providerName = providerName,
+        serverName = serverName,
     )
 
 
@@ -1671,6 +1672,8 @@ object SourceCleaner {
                 ?: duplicate.audio,
             language = primary.language?.takeIf { it.isNotBlank() }
                 ?: duplicate.language,
+            serverName = primary.serverName?.takeIf { it.isNotBlank() }
+                ?: duplicate.serverName,
             sizeBytes = primary.sizeBytes ?: duplicate.sizeBytes,
             headers = mergeHeaders(primary.headers, duplicate.headers),
         )

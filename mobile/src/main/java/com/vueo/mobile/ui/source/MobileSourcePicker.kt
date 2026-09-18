@@ -629,6 +629,16 @@ internal fun SourcePickerScreen(
                             )
                         }
 
+                        sourceTitleDisplayName(best)?.let { sourceTitle ->
+                            Text(
+                                sourceTitle,
+                                color = Color.White.copy(alpha = .55f),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -818,13 +828,44 @@ private fun sourceRepositoryDisplayName(
         ?.trim()
         ?.takeIf { it.isNotBlank() }
 
+private fun sourceServerDisplayName(
+    source: StreamSource,
+): String? =
+    source.serverName
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+
+private fun sourceTitleDisplayName(
+    source: StreamSource,
+): String? {
+    val title = source.name.trim()
+    if (title.isBlank() ||
+        title.startsWith("http://", ignoreCase = true) ||
+        title.startsWith("https://", ignoreCase = true)
+    ) {
+        return null
+    }
+
+    val provider = sourceProviderTabDisplayName(
+        sourceProviderTabKey(source)
+    )
+    val server = sourceServerDisplayName(source)
+    return title.takeUnless {
+        it.equals(provider, ignoreCase = true) ||
+            server?.let { serverName ->
+                it.equals(serverName, ignoreCase = true)
+            } == true
+    }
+}
+
 private fun sourceMetadataLine(
     source: StreamSource,
     assessment: PlayerSourceAssessment,
     compactAudioLabel: Boolean = false,
 ): String =
     listOfNotNull(
-        sourceRepositoryDisplayName(source),
+        sourceServerDisplayName(source)
+            ?: sourceRepositoryDisplayName(source),
         when (assessment.audioMatch) {
             PlayerSourceAudioMatch.ORIGINAL ->
                 if (compactAudioLabel) "Original" else "Original audio"
@@ -842,7 +883,11 @@ private fun sourceMetadataLine(
             PlayerSourceAudioMatch.UNKNOWN ->
                 null
         },
-        assessment.summary,
+        assessment.summary
+            .split(" • ")
+            .filterNot { it.equals("Unknown", ignoreCase = true) }
+            .joinToString(" • ")
+            .takeIf { it.isNotBlank() },
         source.hdr,
         source.audio,
     )
@@ -983,12 +1028,13 @@ private fun StreamSourceCard(
                 )
             }
 
+            val sourceTitle = sourceTitleDisplayName(source)
             if (
-                showTechnicalDetails &&
-                source.name.isNotBlank()
+                sourceTitle != null &&
+                (showTechnicalDetails || sourceServerDisplayName(source) != null)
             ) {
                 Text(
-                    source.name,
+                    sourceTitle,
                     color = Color.White.copy(alpha = .55f),
                     fontSize = 10.sp,
                     maxLines = 1,

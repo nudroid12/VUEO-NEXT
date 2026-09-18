@@ -781,9 +781,13 @@ private fun SourceCard(
                 )
             }
 
-            if (showTechnicalDetails && source.name.isNotBlank()) {
+            val sourceTitle = sourceTitleDisplayName(source)
+            if (
+                sourceTitle != null &&
+                (showTechnicalDetails || sourceServerDisplayName(source) != null)
+            ) {
                 Text(
-                    text = source.name,
+                    text = sourceTitle,
                     color = TvDesign.Dim,
                     fontSize = 10.sp,
                     maxLines = 1,
@@ -806,10 +810,23 @@ private fun SourceCard(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            SourceBadge(
-                text = source.quality?.takeIf(String::isNotBlank) ?: assessment.quality.label,
-                focused = focused,
-            )
+            val qualityBadge =
+                source.quality
+                    ?.trim()
+                    ?.takeIf {
+                        it.isNotBlank() &&
+                            !it.equals("Unknown", ignoreCase = true) &&
+                            !it.equals("Other", ignoreCase = true)
+                    }
+                    ?: assessment.quality.label
+                        .takeUnless { it.equals("Unknown", ignoreCase = true) }
+
+            qualityBadge?.let { label ->
+                SourceBadge(
+                    text = label,
+                    focused = focused,
+                )
+            }
             source.sizeBytes?.takeIf { it > 0L }?.let { bytes ->
                 Text(
                     text = formatSourceBytes(bytes),

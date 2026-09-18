@@ -27,6 +27,7 @@ fun StreamSource.toSourceCandidate(): SourceCandidate =
         rankBoost = rankBoost,
         providerId = providerId,
         providerName = providerName,
+        serverName = serverName,
     )
 
 fun SourceCandidate.toStreamSource(): StreamSource =
@@ -45,4 +46,5 @@ fun SourceCandidate.toStreamSource(): StreamSource =
         rankBoost = rankBoost,
         providerId = providerId,
         providerName = providerName,
+        serverName = serverName,
     )

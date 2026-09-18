@@ -66,19 +66,48 @@ private fun sourceRepositoryDisplayName(source: StreamSource): String? =
         ?.trim()
         ?.takeIf(String::isNotBlank)
 
+internal fun sourceServerDisplayName(source: StreamSource): String? =
+    source.serverName
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
+internal fun sourceTitleDisplayName(source: StreamSource): String? {
+    val title = source.name.trim()
+    if (title.isBlank() ||
+        title.startsWith("http://", ignoreCase = true) ||
+        title.startsWith("https://", ignoreCase = true)
+    ) {
+        return null
+    }
+
+    val provider = sourceProviderDisplayName(sourceProviderKey(source))
+    val server = sourceServerDisplayName(source)
+    return title.takeUnless {
+        it.equals(provider, ignoreCase = true) ||
+            server?.let { serverName ->
+                it.equals(serverName, ignoreCase = true)
+            } == true
+    }
+}
+
 internal fun sourceMetadataLine(
     source: StreamSource,
     assessment: PlayerSourceAssessment,
 ): String =
     listOfNotNull(
-        sourceRepositoryDisplayName(source),
+        sourceServerDisplayName(source)
+            ?: sourceRepositoryDisplayName(source),
         when (assessment.audioMatch) {
             PlayerSourceAudioMatch.ORIGINAL -> "Original audio"
             PlayerSourceAudioMatch.MULTI_WITH_ORIGINAL -> "Original in multi audio"
             PlayerSourceAudioMatch.FOREIGN_DUB -> "Dub"
             PlayerSourceAudioMatch.UNKNOWN -> null
         },
-        assessment.summary,
+        assessment.summary
+            .split(" • ")
+            .filterNot { it.equals("Unknown", ignoreCase = true) }
+            .joinToString(" • ")
+            .takeIf(String::isNotBlank),
         source.hdr,
         source.audio,
     )

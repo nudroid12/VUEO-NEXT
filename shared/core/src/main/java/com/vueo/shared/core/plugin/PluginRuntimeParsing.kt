@@ -109,16 +109,44 @@ internal fun parseProviderStreams(
                         it.isNotBlank()
                     }
 
-            val displayName =
+            val title =
                 item.optString("title")
-                    .takeIf {
-                        it.isNotBlank()
-                    }
-                    ?: item.optString("name")
-                        .takeIf {
-                            it.isNotBlank()
-                        }
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+
+            val itemName =
+                item.optString("name")
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+
+            val displayName =
+                title
+                    ?: itemName
                     ?: provider.name
+
+            val serverName =
+                listOf(
+                    "server",
+                    "extractor",
+                    "host",
+                    "embedder",
+                ).firstNotNullOfOrNull { field ->
+                    item.metadataLabel(field)
+                }
+                    ?.takeUnless { candidate ->
+                        candidate.equals(displayName, ignoreCase = true) ||
+                            candidate.equals(provider.name, ignoreCase = true)
+                    }
+                    ?: itemName?.takeIf { candidate ->
+                        title != null &&
+                            !candidate.equals(title, ignoreCase = true) &&
+                            !candidate.equals(provider.name, ignoreCase = true)
+                    }
+                    ?: item.metadataLabel("source")
+                        ?.takeUnless { candidate ->
+                            candidate.equals(displayName, ignoreCase = true) ||
+                                candidate.equals(provider.name, ignoreCase = true)
+                        }
 
             SourceCandidate(
                 id =
@@ -163,8 +191,36 @@ internal fun parseProviderStreams(
                 providerName =
                     "${repository.name} / " +
                     provider.name,
+                serverName =
+                    serverName,
             )
         }
+}
+
+private fun JSONObject.metadataLabel(
+    field: String,
+): String? {
+    val value = opt(field)
+    val label = when (value) {
+        is String -> value
+        is JSONObject ->
+            listOf("name", "title", "label", "id")
+                .firstNotNullOfOrNull { key ->
+                    value.optString(key)
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                }
+        else -> null
+    }
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    return label.takeIf { candidate ->
+        candidate.length <= 80 &&
+            !candidate.startsWith("http://", ignoreCase = true) &&
+            !candidate.startsWith("https://", ignoreCase = true)
+    }
 }
 
 internal fun JSONObject?.toStringMap():
