@@ -305,7 +305,7 @@ internal fun JSONObject
         }
 }
 
-internal fun JSONArray?
+private fun JSONArray?
     .toStringList():
     List<String> {
     if (this == null) {
