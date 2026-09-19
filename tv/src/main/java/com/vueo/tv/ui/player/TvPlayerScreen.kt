@@ -1075,6 +1075,9 @@ fun TvPlayerScreen(
             baseSubtitleBottomPaddingFraction
         }
 
+        var nativePlayerView by remember(exoPlayer) {
+            mutableStateOf<PlayerView?>(null)
+        }
         AndroidView(
             factory = { viewContext ->
                 PlayerView(viewContext).apply {
@@ -1090,29 +1093,30 @@ fun TvPlayerScreen(
                     subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
                     subtitleView?.setStyle(appliedSubtitleStyle)
                     subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
+                    nativePlayerView = this
                 }
             },
-            update = {
-                it.player = exoPlayer
-                it.isFocusable = false
-                it.isFocusableInTouchMode = false
-                it.keepScreenOn = true
-                it.resizeMode = resizeMode
-                it.subtitleView?.setApplyEmbeddedStyles(false)
-                it.subtitleView?.setApplyEmbeddedFontSizes(false)
-                it.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
-                it.subtitleView?.setStyle(appliedSubtitleStyle)
-                it.subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
+            update = { view ->
+                if (view.player !== exoPlayer) view.player = exoPlayer
+                if (nativePlayerView !== view) nativePlayerView = view
+                view.isFocusable = false
+                view.isFocusableInTouchMode = false
+                view.keepScreenOn = true
+                view.resizeMode = resizeMode
+                view.subtitleView?.setApplyEmbeddedStyles(false)
+                view.subtitleView?.setApplyEmbeddedFontSizes(false)
+                view.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
+                view.subtitleView?.setStyle(appliedSubtitleStyle)
+                view.subtitleView?.setBottomPaddingFraction(subtitleBottomPaddingFraction)
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        TvIndependentSubtitleOverlay(
+        TvBindIndependentSubtitleCues(
+            playerView = nativePlayerView,
             player = exoPlayer,
             cues = independentSubtitleCues,
             delayMs = subtitleDelayMs,
-            style = subtitleStyle,
-            bottomPaddingFraction = subtitleBottomPaddingFraction,
             visible =
                 !subtitlesDisabled &&
                     selectedIndependentSubtitleSelectionId != null,

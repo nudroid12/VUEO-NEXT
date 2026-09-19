@@ -2119,6 +2119,9 @@ internal fun PlayerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
     ) {
+        var nativePlayerView by remember(player) {
+            mutableStateOf<PlayerView?>(null)
+        }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { playerContext ->
@@ -2131,10 +2134,12 @@ internal fun PlayerScreen(
                         fontScale = 1f,
                     )
                     resizeMode = videoFit.toMedia3ResizeMode()
+                    nativePlayerView = this
                 }
             },
             update = { view ->
-                view.player = player
+                if (view.player !== player) view.player = player
+                if (nativePlayerView !== view) nativePlayerView = view
                 view.useController = false
                 view.applyVueoSubtitleStyle(
                     style = subtitleStyle,
@@ -2144,11 +2149,11 @@ internal fun PlayerScreen(
             },
         )
 
-        IndependentSubtitleOverlay(
+        BindIndependentSubtitleCues(
+            playerView = nativePlayerView,
             player = player,
             cues = independentSubtitleCues,
             delayMs = subtitleDelayMs,
-            style = subtitleStyle,
             visible =
                 !subtitlesDisabled &&
                     selectedIndependentSubtitleSelectionId != null,
