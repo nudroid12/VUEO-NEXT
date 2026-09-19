@@ -510,7 +510,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             runtime = runtime,
                             media = media,
                             episode = selectedEpisode,
-                            bundle = bundle.copy(subtitles = emptyList()),
+                            bundle = bundle,
                             availableSubtitles = bundle.subtitles,
                             source = source,
                             initialPositionMs = initialPositionMs,

@@ -780,6 +780,15 @@ internal fun PlayerScreen(
         }
     }
 
+    // Freeze only subtitles already available at video-source creation. New
+    // addon/AI subtitles remain sidecar-only and never rebuild the video.
+    val initialMediaSubtitles = remember(
+        source.url,
+        source.headers,
+        mediaKey,
+        initialPositionMs,
+    ) { availableSubtitles.toList() }
+
     val player = remember(
         source.url,
         source.headers,
@@ -828,7 +837,7 @@ internal fun PlayerScreen(
                             requireNotNull(
                                 source.url
                             ),
-                        subtitles = emptyList(),
+                        subtitles = initialMediaSubtitles,
                         preferredLanguageCode =
                             playerPreferredSubtitleLanguageCode(
                                 settingsStore
@@ -877,9 +886,12 @@ internal fun PlayerScreen(
             }
     }
 
-    val independentSubtitleTracks = remember(availableSubtitles) {
+    val initialSubtitleUrls = remember(initialMediaSubtitles) {
+        initialMediaSubtitles.map { it.url }.toSet()
+    }
+    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleUrls) {
         availableSubtitles
-            .filter { it.url.startsWith("https://") }
+            .filter { it.url.startsWith("https://") && it.url !in initialSubtitleUrls }
             .distinctBy { it.url }
     }
     var selectedIndependentSubtitleSelectionId by remember(player) {
@@ -1098,6 +1110,7 @@ internal fun PlayerScreen(
         val playerTextTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = initialMediaSubtitles.associateBy { it.id },
         )
         val independentTextTracks =
             independentSubtitleTrackChoices(

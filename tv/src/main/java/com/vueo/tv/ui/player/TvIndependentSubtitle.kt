@@ -2,6 +2,10 @@ package com.vueo.tv.player
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.media3.common.text.Cue
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -18,12 +22,19 @@ internal fun TvBindIndependentSubtitleCues(
     delayMs: Int,
     visible: Boolean,
 ) {
+    // Restore native cues only when sidecar previously owned this view.
+    // A native-only session must NEVER receive setCues() from sidecar code.
+    var sidecarOwnedView by remember(playerView) { mutableStateOf(false) }
     LaunchedEffect(playerView, player, cues, delayMs, visible) {
         val subtitleView = playerView?.subtitleView ?: return@LaunchedEffect
         if (!visible) {
-            subtitleView.setCues(player.currentCues.cues)
+            if (sidecarOwnedView) {
+                sidecarOwnedView = false
+                subtitleView.setCues(player.currentCues.cues)
+            }
             return@LaunchedEffect
         }
+        sidecarOwnedView = true
 
         var lastTexts: List<String>? = null
         var ticks = 0

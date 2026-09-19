@@ -176,8 +176,14 @@ fun TvPlayerScreen(
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
+    val initialMediaSubtitles = remember(bundle.videoId, source.url, playerSessionId) {
+        bundle.subtitles.toList()
+    }
+    val externalSubtitlesBySelectionId = remember(initialMediaSubtitles) {
+        initialMediaSubtitles.associateBy(::tvExternalSubtitleSelectionId)
+    }
     val latestExternalSubtitlesBySelectionId =
-        androidx.compose.runtime.rememberUpdatedState(emptyMap<String, SubtitleTrack>())
+        androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
     var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
@@ -268,9 +274,12 @@ fun TvPlayerScreen(
     var audioAutomaticSelected by remember(mediaKey) { mutableStateOf(true) }
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
-    val independentSubtitleTracks = remember(availableSubtitles) {
+    val initialSubtitleUrls = remember(initialMediaSubtitles) {
+        initialMediaSubtitles.map { it.url }.toSet()
+    }
+    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleUrls) {
         availableSubtitles
-            .filter { it.url.startsWith("https://") }
+            .filter { it.url.startsWith("https://") && it.url !in initialSubtitleUrls }
             .distinctBy { it.url }
     }
     val latestIndependentSubtitleTracks =
@@ -478,7 +487,7 @@ fun TvPlayerScreen(
         player.setMediaItem(
             buildMediaItem(
                 sourceUrl = url,
-                subtitles = emptyList(),
+                subtitles = initialMediaSubtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
