@@ -18,6 +18,12 @@ data class TimedSubtitleCue(
     val text: String,
 )
 
+/** Session-owned subtitle data. Large translated cue lists do not enter Compose state. */
+class IndependentSubtitleCueChannel {
+    @Volatile
+    var cues: List<TimedSubtitleCue> = emptyList()
+}
+
 object IndependentSubtitleRepository {
     private const val MAX_CACHED_TRACKS = 12
     private val cache = ConcurrentHashMap<String, List<TimedSubtitleCue>>()

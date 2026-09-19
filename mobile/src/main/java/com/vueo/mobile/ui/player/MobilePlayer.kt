@@ -225,6 +225,7 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.IndependentSubtitleCueChannel
 import com.vueo.shared.core.player.IndependentSubtitleRepository
 import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
@@ -902,8 +903,10 @@ internal fun PlayerScreen(
     var selectedIndependentSubtitleSelectionId by remember(player) {
         mutableStateOf<String?>(null)
     }
-    var independentSubtitleCues by remember(player) {
-        mutableStateOf<List<TimedSubtitleCue>>(emptyList())
+    // Keep translated cue lists out of player-wide Compose state. The bound
+    // subtitle view reads this session channel without recreating ExoPlayer.
+    val independentSubtitleCueChannel = remember(player) {
+        IndependentSubtitleCueChannel()
     }
     var subtitlePreferenceRestored by remember(player) {
         mutableStateOf(false)
@@ -931,13 +934,13 @@ internal fun PlayerScreen(
         selectedIndependentTrack?.headers,
     ) {
         val track = selectedIndependentTrack ?: run {
-            independentSubtitleCues = emptyList()
+            independentSubtitleCueChannel.cues = emptyList()
             subtitleLoadingSelectionId = null
             subtitleLoadError = null
             return@LaunchedEffect
         }
 
-        independentSubtitleCues = emptyList()
+        independentSubtitleCueChannel.cues = emptyList()
         subtitleLoadError = null
         subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
         try {
@@ -945,7 +948,7 @@ internal fun PlayerScreen(
                 track = track,
                 fallbackHeaders = source.headers,
             )
-            independentSubtitleCues = loaded
+            independentSubtitleCueChannel.cues = loaded
             if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -1897,7 +1900,7 @@ internal fun PlayerScreen(
             loadError = subtitleLoadError,
             onDisable = {
                 selectedIndependentSubtitleSelectionId = null
-                independentSubtitleCues = emptyList()
+                independentSubtitleCueChannel.cues = emptyList()
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
@@ -2196,7 +2199,7 @@ internal fun PlayerScreen(
         BindIndependentSubtitleCues(
             playerView = nativePlayerView,
             player = player,
-            cues = independentSubtitleCues,
+            cueChannel = independentSubtitleCueChannel,
             delayMs = subtitleDelayMs,
             visible =
                 !subtitlesDisabled &&

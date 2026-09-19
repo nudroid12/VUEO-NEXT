@@ -9,8 +9,8 @@ import androidx.compose.runtime.setValue
 import androidx.media3.common.text.Cue
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.vueo.shared.core.player.IndependentSubtitleCueChannel
 import com.vueo.shared.core.player.IndependentSubtitleRepository
-import com.vueo.shared.core.player.TimedSubtitleCue
 import kotlinx.coroutines.delay
 
 /** Sidecar cues share PlayerView's native subtitle layer with embedded tracks. */
@@ -18,14 +18,14 @@ import kotlinx.coroutines.delay
 internal fun TvBindIndependentSubtitleCues(
     playerView: PlayerView?,
     player: ExoPlayer,
-    cues: List<TimedSubtitleCue>,
+    cueChannel: IndependentSubtitleCueChannel,
     delayMs: Int,
     visible: Boolean,
 ) {
     // Restore native cues only when sidecar previously owned this view.
     // A native-only session must NEVER receive setCues() from sidecar code.
     var sidecarOwnedView by remember(playerView) { mutableStateOf(false) }
-    LaunchedEffect(playerView, player, cues, delayMs, visible) {
+    LaunchedEffect(playerView, player, cueChannel, delayMs, visible) {
         val subtitleView = playerView?.subtitleView ?: return@LaunchedEffect
         if (!visible) {
             if (sidecarOwnedView) {
@@ -42,7 +42,7 @@ internal fun TvBindIndependentSubtitleCues(
             val subtitlePositionMs =
                 (player.currentPosition - delayMs.toLong()).coerceAtLeast(0L)
             val texts = IndependentSubtitleRepository.activeTexts(
-                cues = cues,
+                cues = cueChannel.cues,
                 positionMs = subtitlePositionMs,
             )
             if (texts != lastTexts || ticks % 8 == 0) {

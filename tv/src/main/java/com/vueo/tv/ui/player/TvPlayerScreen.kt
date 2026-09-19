@@ -89,6 +89,7 @@ import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.IndependentSubtitleCueChannel
 import com.vueo.shared.core.player.IndependentSubtitleRepository
 import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.shared.core.player.PlayerSkipRepository
@@ -290,13 +291,14 @@ fun TvPlayerScreen(
     var selectedIndependentSubtitleSelectionId by remember(bundle.videoId, activeSource.url) {
         mutableStateOf<String?>(null)
     }
-    var independentSubtitleCues by remember(bundle.videoId, activeSource.url) {
-        mutableStateOf<List<TimedSubtitleCue>>(emptyList())
+    // Sidecar cues belong to this ExoPlayer session, not the video MediaItem
+    // or player-wide Compose state.
+    val independentSubtitleCueChannel = remember(player) {
+        IndependentSubtitleCueChannel()
     }
-
     var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
     var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
-    
+    var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
     var sleepTimerOption by remember(bundle.videoId) { mutableStateOf(TvPlayerSleepTimerOption.OFF) }
@@ -528,8 +530,6 @@ fun TvPlayerScreen(
         PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
             selectedIndependentSubtitleSelectionId
     }
-    
-    var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
         subtitleLoadRetryToken,
@@ -537,13 +537,13 @@ fun TvPlayerScreen(
         selectedIndependentTrack?.headers,
     ) {
         val track = selectedIndependentTrack ?: run {
-            independentSubtitleCues = emptyList()
+            independentSubtitleCueChannel.cues = emptyList()
             subtitleLoadingSelectionId = null
             subtitleLoadError = null
             return@LaunchedEffect
         }
 
-        independentSubtitleCues = emptyList()
+        independentSubtitleCueChannel.cues = emptyList()
         subtitleLoadError = null
         subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
         try {
@@ -551,7 +551,7 @@ fun TvPlayerScreen(
                 track = track,
                 fallbackHeaders = activeSource.headers,
             )
-            independentSubtitleCues = loaded
+            independentSubtitleCueChannel.cues = loaded
             if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -1154,7 +1154,7 @@ fun TvPlayerScreen(
         TvBindIndependentSubtitleCues(
             playerView = nativePlayerView,
             player = exoPlayer,
-            cues = independentSubtitleCues,
+            cueChannel = independentSubtitleCueChannel,
             delayMs = subtitleDelayMs,
             visible =
                 !subtitlesDisabled &&
@@ -1325,7 +1325,7 @@ fun TvPlayerScreen(
                 onInteraction = ::noteInteraction,
                 onDisable = {
                     selectedIndependentSubtitleSelectionId = null
-                    independentSubtitleCues = emptyList()
+                    independentSubtitleCueChannel.cues = emptyList()
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     textTracks = textTracks.map { it.copy(selected = false) }
                     subtitlesDisabled = true
