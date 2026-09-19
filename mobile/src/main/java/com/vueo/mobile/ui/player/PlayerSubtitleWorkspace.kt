@@ -98,6 +98,8 @@ internal fun PlayerSubtitleWorkspace(
     style: PlayerSubtitleStyleState,
     loadingSelectionId: String?,
     loadError: String?,
+    diagnosticReport: String?,
+    onShareDiagnostic: () -> Unit,
     onDisable: () -> Unit,
     onSelect: (PlayerTrackChoice) -> Unit,
     onSubtitleDelayChange: (Int) -> Unit,
@@ -215,6 +217,16 @@ internal fun PlayerSubtitleWorkspace(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 2.dp),
                 )
+                if (loadError != null && diagnosticReport != null) {
+                    Text(
+                        text = "Share subtitle diagnostic",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .clickable(onClick = onShareDiagnostic),
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.weight(1f),

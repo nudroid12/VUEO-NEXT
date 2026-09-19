@@ -91,6 +91,7 @@ import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.IndependentSubtitleCueChannel
 import com.vueo.shared.core.player.IndependentSubtitleRepository
+import com.vueo.shared.core.player.SubtitleLoadDiagnostic
 import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
@@ -299,6 +300,7 @@ fun TvPlayerScreen(
     var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
     var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
     var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
+    var subtitleDiagnosticReport by remember(player) { mutableStateOf<String?>(null) }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
     var sleepTimerOption by remember(bundle.videoId) { mutableStateOf(TvPlayerSleepTimerOption.OFF) }
@@ -540,23 +542,31 @@ fun TvPlayerScreen(
             independentSubtitleCueChannel.cues = emptyList()
             subtitleLoadingSelectionId = null
             subtitleLoadError = null
+            subtitleDiagnosticReport = null
             return@LaunchedEffect
         }
 
         independentSubtitleCueChannel.cues = emptyList()
         subtitleLoadError = null
+        subtitleDiagnosticReport = null
         subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
+        val diagnostic = SubtitleLoadDiagnostic()
         try {
             val loaded = IndependentSubtitleRepository.load(
                 track = track,
                 fallbackHeaders = activeSource.headers,
+                diagnostic = diagnostic,
             )
             independentSubtitleCueChannel.cues = loaded
-            if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
+            if (loaded.isEmpty()) {
+                subtitleLoadError = diagnostic.summary(null)
+                subtitleDiagnosticReport = diagnostic.report("TV", null)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
-            subtitleLoadError = "Unable to load subtitle"
+        } catch (failure: Throwable) {
+            subtitleLoadError = diagnostic.summary(failure)
+            subtitleDiagnosticReport = diagnostic.report("TV", failure)
         } finally {
             subtitleLoadingSelectionId = null
         }
@@ -1322,6 +1332,20 @@ fun TvPlayerScreen(
                 style = subtitleStyle,
                 loadingSelectionId = subtitleLoadingSelectionId,
                 loadError = subtitleLoadError,
+            diagnosticReport = subtitleDiagnosticReport,
+            onShareDiagnostic = {
+                subtitleDiagnosticReport?.let { report ->
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, report)
+                    }
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent.createChooser(intent, "Share subtitle diagnostic")
+                        )
+                    }
+                }
+            },
                 onInteraction = ::noteInteraction,
                 onDisable = {
                     selectedIndependentSubtitleSelectionId = null

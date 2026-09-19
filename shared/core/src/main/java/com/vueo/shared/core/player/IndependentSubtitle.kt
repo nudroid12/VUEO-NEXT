@@ -24,6 +24,74 @@ class IndependentSubtitleCueChannel {
     var cues: List<TimedSubtitleCue> = emptyList()
 }
 
+/** Only non-sensitive request/parse diagnostics are retained. URLs, headers and subtitle text are never logged. */
+class SubtitleLoadDiagnostic {
+    private val startedNs = System.nanoTime()
+    var stage: String = "Selecting track"
+        private set
+    var format: String = "Not received"
+        private set
+    var responseCharacters: Int = 0
+        private set
+    var parsedCues: Int = 0
+        private set
+    var cacheHit: Boolean = false
+        private set
+
+    fun downloading() { stage = "Downloading subtitle" }
+    fun response(body: String) {
+        stage = "Parsing subtitle"
+        responseCharacters = body.length
+        val start = body.trimStart().take(64)
+        format = when {
+            start.startsWith("WEBVTT", ignoreCase = true) -> "VTT"
+            start.startsWith("[Script Info]", ignoreCase = true) ||
+                start.startsWith("[Events]", ignoreCase = true) -> "ASS/SSA"
+            start.startsWith("<tt", ignoreCase = true) ||
+                start.startsWith("<?xml", ignoreCase = true) -> "XML/TTML"
+            start.startsWith("<!doctype html", ignoreCase = true) ||
+                start.startsWith("<html", ignoreCase = true) -> "HTML (not subtitles)"
+            start.startsWith("{", ignoreCase = true) || start.startsWith("[") -> "JSON or unsupported"
+            start.isBlank() -> "Empty response"
+            else -> "SRT or unknown"
+        }
+    }
+    fun parsed(count: Int) {
+        stage = "Rendering subtitle"
+        parsedCues = count
+    }
+    fun cached(count: Int) {
+        cacheHit = true
+        format = "Cached"
+        parsed(count)
+    }
+
+    fun summary(error: Throwable?): String = when {
+        error == null && parsedCues == 0 -> "No cues • $format"
+        error == null -> "Loaded $parsedCues cues"
+        Regex("\\bHTTP (\\d{3})\\b").find(error.message.orEmpty()) != null ->
+            "HTTP ${Regex("\\bHTTP (\\d{3})\\b").find(error.message.orEmpty())!!.groupValues[1]} • $stage"
+        error is java.net.SocketTimeoutException ||
+            error is java.io.InterruptedIOException -> "Network timeout • $stage"
+        error is java.net.UnknownHostException -> "DNS unavailable • $stage"
+        error is javax.net.ssl.SSLException -> "TLS failure • $stage"
+        error is java.io.IOException -> "Network failure • $stage"
+        else -> "${error.javaClass.simpleName.take(36)} • $stage"
+    }
+
+    fun report(platform: String, error: Throwable?): String = buildString {
+        appendLine("VUEO Subtitle Diagnostic v1")
+        appendLine("Platform: $platform")
+        appendLine("Result: ${summary(error)}")
+        appendLine("Stage: $stage")
+        appendLine("Response: $responseCharacters characters; $format")
+        appendLine("Parsed cues: $parsedCues")
+        appendLine("Cache: ${if (cacheHit) "hit" else "miss"}")
+        appendLine("Elapsed: ${(System.nanoTime() - startedNs) / 1_000_000} ms")
+        append("No URLs, subtitle text, header values or tokens included.")
+    }
+}
+
 object IndependentSubtitleRepository {
     private const val MAX_CACHED_TRACKS = 12
     private val cache = ConcurrentHashMap<String, List<TimedSubtitleCue>>()
@@ -33,6 +101,7 @@ object IndependentSubtitleRepository {
     suspend fun load(
         track: SubtitleTrack,
         fallbackHeaders: Map<String, String> = emptyMap(),
+        diagnostic: SubtitleLoadDiagnostic? = null,
     ): List<TimedSubtitleCue> {
         val requestHeaders = mergeRequestHeaders(
             fallbackHeaders = fallbackHeaders,
@@ -40,15 +109,21 @@ object IndependentSubtitleRepository {
         )
         val cacheKey = PlayerTrackPolicy.externalSubtitleKey(track) +
             "\u0000" + buildCacheKey(track.url, requestHeaders)
-        cache[cacheKey]?.let { return it }
+        cache[cacheKey]?.let { cached ->
+            diagnostic?.cached(cached.size)
+            return cached
+        }
 
+        diagnostic?.downloading()
         val body = PluginHttp.getText(
             url = track.url,
             headers = requestHeaders,
         )
+        diagnostic?.response(body)
         val parsed = withContext(Dispatchers.Default) {
             IndependentSubtitleParser.parse(body)
         }
+        diagnostic?.parsed(parsed.size)
         synchronized(cacheLock) {
             // A pending AI translation may return an empty response; retry on
             // the next explicit selection instead of caching that empty state.

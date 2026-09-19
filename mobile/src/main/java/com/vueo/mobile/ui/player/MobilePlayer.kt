@@ -227,6 +227,7 @@ import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.IndependentSubtitleCueChannel
 import com.vueo.shared.core.player.IndependentSubtitleRepository
+import com.vueo.shared.core.player.SubtitleLoadDiagnostic
 import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
@@ -927,6 +928,7 @@ internal fun PlayerScreen(
     var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
     var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
     var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
+    var subtitleDiagnosticReport by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
         subtitleLoadRetryToken,
@@ -937,23 +939,31 @@ internal fun PlayerScreen(
             independentSubtitleCueChannel.cues = emptyList()
             subtitleLoadingSelectionId = null
             subtitleLoadError = null
+            subtitleDiagnosticReport = null
             return@LaunchedEffect
         }
 
         independentSubtitleCueChannel.cues = emptyList()
         subtitleLoadError = null
+        subtitleDiagnosticReport = null
         subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
+        val diagnostic = SubtitleLoadDiagnostic()
         try {
             val loaded = IndependentSubtitleRepository.load(
                 track = track,
                 fallbackHeaders = source.headers,
+                diagnostic = diagnostic,
             )
             independentSubtitleCueChannel.cues = loaded
-            if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
+            if (loaded.isEmpty()) {
+                subtitleLoadError = diagnostic.summary(null)
+                subtitleDiagnosticReport = diagnostic.report("Mobile", null)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
-            subtitleLoadError = "Unable to load subtitle"
+        } catch (failure: Throwable) {
+            subtitleLoadError = diagnostic.summary(failure)
+            subtitleDiagnosticReport = diagnostic.report("Mobile", failure)
         } finally {
             subtitleLoadingSelectionId = null
         }
@@ -1898,6 +1908,20 @@ internal fun PlayerScreen(
             style = subtitleStyle,
             loadingSelectionId = subtitleLoadingSelectionId,
             loadError = subtitleLoadError,
+            diagnosticReport = subtitleDiagnosticReport,
+            onShareDiagnostic = {
+                subtitleDiagnosticReport?.let { report ->
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, report)
+                    }
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent.createChooser(intent, "Share subtitle diagnostic")
+                        )
+                    }
+                }
+            },
             onDisable = {
                 selectedIndependentSubtitleSelectionId = null
                 independentSubtitleCueChannel.cues = emptyList()
