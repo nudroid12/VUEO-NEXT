@@ -293,6 +293,10 @@ fun TvPlayerScreen(
     var independentSubtitleCues by remember(bundle.videoId, activeSource.url) {
         mutableStateOf<List<TimedSubtitleCue>>(emptyList())
     }
+
+    var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
+    var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
+    
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
     var sleepTimerOption by remember(bundle.videoId) { mutableStateOf(TvPlayerSleepTimerOption.OFF) }
@@ -524,8 +528,7 @@ fun TvPlayerScreen(
         PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
             selectedIndependentSubtitleSelectionId
     }
-    var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
-    var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
+    
     var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
