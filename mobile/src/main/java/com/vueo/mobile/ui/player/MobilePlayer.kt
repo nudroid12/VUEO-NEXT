@@ -225,10 +225,6 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
-import com.vueo.shared.core.player.IndependentSubtitleCueChannel
-import com.vueo.shared.core.player.IndependentSubtitleRepository
-import com.vueo.shared.core.player.SubtitleLoadDiagnostic
-import com.vueo.shared.core.player.TimedSubtitleCue
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -399,7 +395,7 @@ internal fun PlayerScreen(
     source: StreamSource,
     availableSources: List<StreamSource>,
     sourceProviderOrder: List<String>,
-    availableSubtitles: List<SubtitleTrack>,
+    subtitles: List<SubtitleTrack>,
     initialPositionMs: Long,
     episodeSwitchingTo: EpisodeItem?,
     episodeSwitchFailed: Boolean,
@@ -782,19 +778,6 @@ internal fun PlayerScreen(
         }
     }
 
-    // Freeze only subtitles already available at video-source creation. New
-    // addon/AI subtitles remain sidecar-only and never rebuild the video.
-    val initialMediaSubtitles = remember(
-        source.url,
-        source.headers,
-        mediaKey,
-        initialPositionMs,
-    ) {
-        availableSubtitles
-            .filterNot(PlayerTrackPolicy::isOnDemandTranslation)
-            .toList()
-    }
-
     val player = remember(
         source.url,
         source.headers,
@@ -843,7 +826,7 @@ internal fun PlayerScreen(
                             requireNotNull(
                                 source.url
                             ),
-                        subtitles = initialMediaSubtitles,
+                        subtitles = subtitles,
                         preferredLanguageCode =
                             playerPreferredSubtitleLanguageCode(
                                 settingsStore
@@ -892,22 +875,12 @@ internal fun PlayerScreen(
             }
     }
 
-    val initialSubtitleKeys = remember(initialMediaSubtitles) {
-        initialMediaSubtitles.map(PlayerTrackPolicy::externalSubtitleKey).toSet()
-    }
-    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleKeys) {
-        availableSubtitles
-            .filter { it.url.startsWith("https://") &&
-                PlayerTrackPolicy.externalSubtitleKey(it) !in initialSubtitleKeys }
-            .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
-    }
-    var selectedIndependentSubtitleSelectionId by remember(player) {
-        mutableStateOf<String?>(null)
-    }
-    // Keep translated cue lists out of player-wide Compose state. The bound
-    // subtitle view reads this session channel without recreating ExoPlayer.
-    val independentSubtitleCueChannel = remember(player) {
-        IndependentSubtitleCueChannel()
+    var appliedSubtitleUrls by remember(player) {
+        mutableStateOf(
+            subtitles
+                .map { it.url }
+                .distinct()
+        )
     }
     var subtitlePreferenceRestored by remember(player) {
         mutableStateOf(false)
@@ -919,53 +892,59 @@ internal fun PlayerScreen(
         mutableStateOf(true)
     }
 
-    // Discovery updates may arrive while AI is translating. Select the exact
-    // track once; unrelated addon list changes must not cancel its download.
-    val selectedIndependentTrack = availableSubtitles.firstOrNull { track ->
-        PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
-            selectedIndependentSubtitleSelectionId
-    }
-    var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
-    var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
-    var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
-    var subtitleDiagnosticReport by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
-        selectedIndependentSubtitleSelectionId,
-        subtitleLoadRetryToken,
-        selectedIndependentTrack?.url,
-        selectedIndependentTrack?.headers,
+        player,
+        subtitles,
     ) {
-        val track = selectedIndependentTrack ?: run {
-            independentSubtitleCueChannel.cues = emptyList()
-            subtitleLoadingSelectionId = null
-            subtitleLoadError = null
-            subtitleDiagnosticReport = null
-            return@LaunchedEffect
-        }
+        val latestSubtitleUrls =
+            subtitles
+                .map { it.url }
+                .distinct()
 
-        independentSubtitleCueChannel.cues = emptyList()
-        subtitleLoadError = null
-        subtitleDiagnosticReport = null
-        subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
-        val diagnostic = SubtitleLoadDiagnostic()
-        try {
-            val loaded = IndependentSubtitleRepository.load(
-                track = track,
-                fallbackHeaders = source.headers,
-                diagnostic = diagnostic,
+        if (latestSubtitleUrls != appliedSubtitleUrls) {
+            val positionMs =
+                player.currentPosition
+                    .coerceAtLeast(0L)
+            val continuePlaying =
+                player.playWhenReady
+
+            audioPreferenceRestored = false
+            subtitlePreferenceRestored = false
+
+            player.setMediaItem(
+                buildPlayerMediaItem(
+                    sourceUrl = requireNotNull(source.url),
+                    subtitles = subtitles,
+                    preferredLanguageCode =
+                        playerPreferredSubtitleLanguageCode(
+                            settingsStore
+                        ),
+                    secondaryLanguageCode =
+                        settingsStore
+                            .secondarySubtitleLanguage()
+                            .languageCode,
+                    subtitlesOnByDefault =
+                        !subtitlesDisabled,
+                    autoSelectPreferred =
+                        settingsStore
+                            .autoSelectPreferredSubtitle(),
+                    embeddedPriority =
+                        settingsStore
+                            .embeddedSubtitlePriority(),
+                ),
+                positionMs,
             )
-            independentSubtitleCueChannel.cues = loaded
-            if (loaded.isEmpty()) {
-                subtitleLoadError = diagnostic.summary(null)
-                subtitleDiagnosticReport = diagnostic.report("Mobile", null)
-            }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (failure: Throwable) {
-            subtitleLoadError = diagnostic.summary(failure)
-            subtitleDiagnosticReport = diagnostic.report("Mobile", failure)
-        } finally {
-            subtitleLoadingSelectionId = null
+            player.trackSelectionParameters =
+                player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(
+                        C.TRACK_TYPE_TEXT,
+                        subtitlesDisabled,
+                    )
+                    .build()
+            player.prepare()
+            player.playWhenReady = continuePlaying
+            appliedSubtitleUrls = latestSubtitleUrls
         }
     }
 
@@ -1101,73 +1080,26 @@ internal fun PlayerScreen(
         }
     }
 
-    fun selectSubtitleChoiceForPlayer(
-        choice: PlayerTrackChoice,
-    ) {
-        if (choice.override == null) {
-            clearTrackOverride(
-                player = player,
-                trackType = C.TRACK_TYPE_TEXT,
-                disable = true,
-            )
-            // Re-selecting the same AI track retries a failed/pending download.
-            if (selectedIndependentSubtitleSelectionId == choice.selectionId &&
-                subtitleLoadingSelectionId == null
-            ) {
-                subtitleLoadRetryToken++
-            }
-            selectedIndependentSubtitleSelectionId =
-                choice.selectionId
-            textTracks = textTracks.map { track ->
-                track.copy(
-                    selected =
-                        track.selectionId == choice.selectionId
-                )
-            }
-            selectedSubtitleIsExternal = true
-        } else {
-            selectedIndependentSubtitleSelectionId = null
-            applyTrackChoice(
-                player = player,
-                trackType = C.TRACK_TYPE_TEXT,
-                choice = choice,
-            )
-            selectedSubtitleIsExternal =
-                choice.selectionId.startsWith("external:")
-        }
-        subtitlesDisabled = false
-    }
-
     fun refreshTrackChoices(
         tracks: Tracks = player.currentTracks,
     ) {
+        val externalSubtitles =
+            subtitles.associateBy { it.id }
         audioTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_AUDIO,
         )
-        val playerTextTracks = playerTrackChoices(
+        textTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_TEXT,
-            externalSubtitles = initialMediaSubtitles.associateBy { it.id },
+            externalSubtitles = externalSubtitles,
         )
-        val independentTextTracks =
-            independentSubtitleTrackChoices(
-                subtitles = independentSubtitleTracks,
-                selectedSelectionId =
-                    selectedIndependentSubtitleSelectionId,
-            )
-        textTracks =
-            (playerTextTracks + independentTextTracks)
-                .distinctBy { it.selectionId }
         selectedSubtitleIsExternal =
             !subtitlesDisabled &&
-                (
-                    selectedIndependentSubtitleSelectionId != null ||
-                        playerTextTracks
-                            .firstOrNull { it.selected }
-                            ?.selectionId
-                            ?.startsWith("external:") == true
-                )
+            textTracks
+                .firstOrNull { it.selected }
+                ?.selectionId
+                ?.startsWith("external:") == true
 
         if (!audioPreferenceRestored && audioTracks.isNotEmpty()) {
             val globalSelection =
@@ -1259,7 +1191,6 @@ internal fun PlayerScreen(
                         )
                     }
                     subtitlePreferenceRestored = true
-                    selectedIndependentSubtitleSelectionId = null
                     clearTrackOverride(
                         player = player,
                         trackType = C.TRACK_TYPE_TEXT,
@@ -1278,50 +1209,26 @@ internal fun PlayerScreen(
                         )
                     }
                     subtitlePreferenceRestored = true
-                    selectSubtitleChoiceForPlayer(savedTrack)
+                    applyTrackChoice(
+                        player = player,
+                        trackType = C.TRACK_TYPE_TEXT,
+                        choice = savedTrack,
+                    )
+                    subtitlesDisabled = false
+                    selectedSubtitleIsExternal =
+                        savedTrack.selectionId
+                            .startsWith("external:")
                 }
 
                 savedSelection == null -> {
-                    val preferredLanguage =
-                        playerPreferredSubtitleLanguageCode(settingsStore)
-                    val preferredIndependent =
-                        if (
-                            !subtitlesDisabled &&
-                            settingsStore.autoSelectPreferredSubtitle() &&
-                            !settingsStore.embeddedSubtitlePriority() &&
-                            textTracks.none { it.selected }
-                        ) {
-                            independentTextTracks.firstOrNull { track ->
-                                canonicalSubtitleLanguage(track.language) ==
-                                    canonicalSubtitleLanguage(preferredLanguage)
-                            }
-                        } else {
-                            null
-                        }
                     subtitlePreferenceRestored = true
-                    if (preferredIndependent != null && independentSubtitleTracks.none { track ->
-                            PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
-                                preferredIndependent.selectionId &&
-                                PlayerTrackPolicy.isOnDemandTranslation(track)
-                        }) {
-                        selectSubtitleChoiceForPlayer(preferredIndependent)
-                    }
                 }
 
-                availableSubtitles.isNotEmpty() -> {
+                subtitles.isNotEmpty() -> {
                     subtitlePreferenceRestored = true
                 }
             }
         }
-    }
-
-    LaunchedEffect(
-        independentSubtitleTracks.map(PlayerTrackPolicy::externalSubtitleKey),
-    ) {
-        if (independentSubtitleTracks.isNotEmpty()) {
-            subtitlePreferenceRestored = false
-        }
-        refreshTrackChoices()
     }
 
     LaunchedEffect(mediaKey) {
@@ -1906,31 +1813,12 @@ internal fun PlayerScreen(
                     com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY,
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
-            loadingSelectionId = subtitleLoadingSelectionId,
-            loadError = subtitleLoadError,
-            diagnosticReport = subtitleDiagnosticReport,
-            onShareDiagnostic = {
-                subtitleDiagnosticReport?.let { report ->
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_TEXT, report)
-                    }
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent.createChooser(intent, "Share subtitle diagnostic")
-                        )
-                    }
-                }
-            },
             onDisable = {
-                selectedIndependentSubtitleSelectionId = null
-                independentSubtitleCueChannel.cues = emptyList()
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
                     disable = true,
                 )
-                textTracks = textTracks.map { it.copy(selected = false) }
                 subtitlesDisabled = true
                 selectedSubtitleIsExternal = false
                 settingsStore.setSubtitleSelection(
@@ -1942,7 +1830,15 @@ internal fun PlayerScreen(
                 )
             },
             onSelect = { choice ->
-                selectSubtitleChoiceForPlayer(choice)
+                applyTrackChoice(
+                    player = player,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    choice = choice,
+                )
+                subtitlesDisabled = false
+                selectedSubtitleIsExternal =
+                    choice.selectionId
+                        .startsWith("external:")
                 settingsStore.setSubtitleSelection(
                     contentId = mediaKey,
                     selectionId = choice.selectionId,
@@ -2190,9 +2086,6 @@ internal fun PlayerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
     ) {
-        var nativePlayerView by remember(player) {
-            mutableStateOf<PlayerView?>(null)
-        }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { playerContext ->
@@ -2205,12 +2098,10 @@ internal fun PlayerScreen(
                         fontScale = 1f,
                     )
                     resizeMode = videoFit.toMedia3ResizeMode()
-                    nativePlayerView = this
                 }
             },
             update = { view ->
-                if (view.player !== player) view.player = player
-                if (nativePlayerView !== view) nativePlayerView = view
+                view.player = player
                 view.useController = false
                 view.applyVueoSubtitleStyle(
                     style = subtitleStyle,
@@ -2218,16 +2109,6 @@ internal fun PlayerScreen(
                 )
                 view.resizeMode = videoFit.toMedia3ResizeMode()
             },
-        )
-
-        BindIndependentSubtitleCues(
-            playerView = nativePlayerView,
-            player = player,
-            cueChannel = independentSubtitleCueChannel,
-            delayMs = subtitleDelayMs,
-            visible =
-                !subtitlesDisabled &&
-                    selectedIndependentSubtitleSelectionId != null,
         )
 
         if (!controlsLocked) {

@@ -1056,7 +1056,7 @@ internal fun MediaDetailsScreen(
                         availableSources = transitionSourceStreams,
                         sourceProviderOrder =
                             sourcePickerProviderOrder,
-                        availableSubtitles = sourcePickerSubtitles,
+                        subtitles = sourcePickerSubtitles,
                         initialPositionMs =
                             selectedPlaybackStartPositionMs,
                         episodeSwitchingTo =

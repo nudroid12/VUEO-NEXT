@@ -68,10 +68,6 @@ internal fun VueoPlayerSubtitleWorkspace(
     preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
     style: TvPlayerSubtitleStyleState,
-    loadingSelectionId: String?,
-    loadError: String?,
-    diagnosticReport: String?,
-    onShareDiagnostic: () -> Unit,
     onInteraction: () -> Unit,
     onDisable: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
@@ -247,28 +243,6 @@ internal fun VueoPlayerSubtitleWorkspace(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal,
             )
-            if (loadError != null && diagnosticReport != null) {
-                // The report is also readable on TV when no share app is installed.
-                Text(
-                    text = diagnosticReport,
-                    color = Color.White.copy(alpha = .75f),
-                    fontSize = 9.sp,
-                    lineHeight = 11.sp,
-                    maxLines = 8,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-                Text(
-                    text = "Share diagnostic",
-                    color = TvDesign.Accent,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .clickable {
-                            onInteraction()
-                            onShareDiagnostic()
-                        }
-                        .focusable(),
-                )
-            }
             Spacer(Modifier.height(14.dp))
 
             Row(
@@ -365,14 +339,10 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     VueoSubtitleTrackRow(
                                         title = track.label,
                                         provider = track.sourceLabel,
-                                        detail = when {
-                                            track.selectionId == loadingSelectionId -> "Translating / loading…"
-                                            track.selected && loadError != null -> loadError
-                                            else -> track.metadata
-                                                ?.takeIf { it.isNotBlank() }
-                                                ?.let { "ID: $it" }
-                                                .orEmpty()
-                                        },
+                                        detail = track.metadata
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { "ID: $it" }
+                                            .orEmpty(),
                                         selected = !subtitlesDisabled && track.selected,
                                         requester = trackRequesters[index],
                                         blockUp = index == 0,

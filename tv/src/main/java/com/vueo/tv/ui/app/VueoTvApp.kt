@@ -511,7 +511,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             media = media,
                             episode = selectedEpisode,
                             bundle = bundle,
-                            availableSubtitles = bundle.subtitles,
                             source = source,
                             initialPositionMs = initialPositionMs,
                             playerSessionId = playerSessionId,

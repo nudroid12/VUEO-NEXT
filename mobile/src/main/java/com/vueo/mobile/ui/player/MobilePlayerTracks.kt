@@ -462,7 +462,7 @@ internal data class PlayerTrackChoice(
     val key: String,
     val label: String,
     val override:
-        TrackSelectionOverride?,
+        TrackSelectionOverride,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -642,30 +642,6 @@ internal fun playerTrackChoices(
     return result
 }
 
-internal fun independentSubtitleTrackChoices(
-    subtitles: List<SubtitleTrack>,
-    selectedSelectionId: String?,
-): List<PlayerTrackChoice> =
-    subtitles
-        .filter { it.url.startsWith("https://") }
-        .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
-        .map { subtitle ->
-            val selectionId =
-                PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)
-            PlayerTrackChoice(
-                key = "independent:$selectionId",
-                label = subtitle.name
-                    ?.takeIf { it.isNotBlank() }
-                    ?: friendlySubtitleLanguageName(subtitle.language),
-                override = null,
-                selected = selectionId == selectedSelectionId,
-                language = subtitle.language,
-                sourceLabel = subtitle.providerName,
-                metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
-                selectionId = selectionId,
-            )
-        }
-
 internal fun buildAudioTrackLabel(
     formatLabel: String?,
     language: String?,
@@ -807,7 +783,6 @@ internal fun applyTrackChoice(
     trackType: Int,
     choice: PlayerTrackChoice,
 ) {
-    val override = choice.override ?: return
     player.trackSelectionParameters =
         player
             .trackSelectionParameters
@@ -820,7 +795,7 @@ internal fun applyTrackChoice(
                 trackType
             )
             .setOverrideForType(
-                override
+                choice.override
             )
             .build()
 }

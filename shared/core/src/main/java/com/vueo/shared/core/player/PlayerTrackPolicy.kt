@@ -13,18 +13,6 @@ object PlayerTrackPolicy {
     fun externalSubtitleSelectionId(track: SubtitleTrack): String =
         "external:${track.providerId}:${track.id}:${track.url.hashCode()}"
 
-    /** Preserve distinct choices sharing one subtitle download/translation endpoint. */
-    fun externalSubtitleKey(track: SubtitleTrack): String =
-        "${track.providerId}|${track.id}|${track.url}"
-
-    /** AI addons expose a selectable track before its file is generated. */
-    fun isOnDemandTranslation(track: SubtitleTrack): Boolean {
-        val marker = listOf(track.providerId, track.providerName, track.name.orEmpty(), track.id)
-            .joinToString(" ").lowercase()
-        return "smartsubs" in marker || "subtito" in marker ||
-            "translat" in marker || Regex("\\bai[- _]*(subtitle|subs)\\b").containsMatchIn(marker)
-    }
-
     fun externalSubtitleLabel(track: SubtitleTrack): String =
         "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
 
