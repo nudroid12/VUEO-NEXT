@@ -648,7 +648,7 @@ internal fun independentSubtitleTrackChoices(
 ): List<PlayerTrackChoice> =
     subtitles
         .filter { it.url.startsWith("https://") }
-        .distinctBy { it.url }
+        .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
         .map { subtitle ->
             val selectionId =
                 PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)

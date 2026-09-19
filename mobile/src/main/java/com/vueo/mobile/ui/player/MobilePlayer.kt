@@ -787,7 +787,11 @@ internal fun PlayerScreen(
         source.headers,
         mediaKey,
         initialPositionMs,
-    ) { availableSubtitles.toList() }
+    ) {
+        availableSubtitles
+            .filterNot(PlayerTrackPolicy::isOnDemandTranslation)
+            .toList()
+    }
 
     val player = remember(
         source.url,
@@ -886,13 +890,14 @@ internal fun PlayerScreen(
             }
     }
 
-    val initialSubtitleUrls = remember(initialMediaSubtitles) {
-        initialMediaSubtitles.map { it.url }.toSet()
+    val initialSubtitleKeys = remember(initialMediaSubtitles) {
+        initialMediaSubtitles.map(PlayerTrackPolicy::externalSubtitleKey).toSet()
     }
-    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleUrls) {
+    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleKeys) {
         availableSubtitles
-            .filter { it.url.startsWith("https://") && it.url !in initialSubtitleUrls }
-            .distinctBy { it.url }
+            .filter { it.url.startsWith("https://") &&
+                PlayerTrackPolicy.externalSubtitleKey(it) !in initialSubtitleKeys }
+            .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
     }
     var selectedIndependentSubtitleSelectionId by remember(player) {
         mutableStateOf<String?>(null)
@@ -910,31 +915,45 @@ internal fun PlayerScreen(
         mutableStateOf(true)
     }
 
+    // Discovery updates may arrive while AI is translating. Select the exact
+    // track once; unrelated addon list changes must not cancel its download.
+    val selectedIndependentTrack = availableSubtitles.firstOrNull { track ->
+        PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
+            selectedIndependentSubtitleSelectionId
+    }
+    var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
+    var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
+    var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
-        availableSubtitles,
+        subtitleLoadRetryToken,
+        selectedIndependentTrack?.url,
+        selectedIndependentTrack?.headers,
     ) {
-        val selectedId =
-            selectedIndependentSubtitleSelectionId
-                ?: run {
-                    independentSubtitleCues = emptyList()
-                    return@LaunchedEffect
-                }
-        val track = availableSubtitles.firstOrNull {
-            PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
-        } ?: run {
+        val track = selectedIndependentTrack ?: run {
             independentSubtitleCues = emptyList()
-            selectedIndependentSubtitleSelectionId = null
+            subtitleLoadingSelectionId = null
+            subtitleLoadError = null
             return@LaunchedEffect
         }
 
         independentSubtitleCues = emptyList()
-        independentSubtitleCues = runCatching {
-            IndependentSubtitleRepository.load(
+        subtitleLoadError = null
+        subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
+        try {
+            val loaded = IndependentSubtitleRepository.load(
                 track = track,
                 fallbackHeaders = source.headers,
             )
-        }.getOrDefault(emptyList())
+            independentSubtitleCues = loaded
+            if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            subtitleLoadError = "Unable to load subtitle"
+        } finally {
+            subtitleLoadingSelectionId = null
+        }
     }
 
     fun stablePlaybackSnapshot(): Pair<Long, Long> {
@@ -1078,6 +1097,12 @@ internal fun PlayerScreen(
                 trackType = C.TRACK_TYPE_TEXT,
                 disable = true,
             )
+            // Re-selecting the same AI track retries a failed/pending download.
+            if (selectedIndependentSubtitleSelectionId == choice.selectionId &&
+                subtitleLoadingSelectionId == null
+            ) {
+                subtitleLoadRetryToken++
+            }
             selectedIndependentSubtitleSelectionId =
                 choice.selectionId
             textTracks = textTracks.map { track ->
@@ -1261,7 +1286,11 @@ internal fun PlayerScreen(
                             null
                         }
                     subtitlePreferenceRestored = true
-                    if (preferredIndependent != null) {
+                    if (preferredIndependent != null && independentSubtitleTracks.none { track ->
+                            PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
+                                preferredIndependent.selectionId &&
+                                PlayerTrackPolicy.isOnDemandTranslation(track)
+                        }) {
                         selectSubtitleChoiceForPlayer(preferredIndependent)
                     }
                 }
@@ -1274,7 +1303,7 @@ internal fun PlayerScreen(
     }
 
     LaunchedEffect(
-        independentSubtitleTracks.map { it.url },
+        independentSubtitleTracks.map(PlayerTrackPolicy::externalSubtitleKey),
     ) {
         if (independentSubtitleTracks.isNotEmpty()) {
             subtitlePreferenceRestored = false
@@ -1864,6 +1893,8 @@ internal fun PlayerScreen(
                     com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY,
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
+            loadingSelectionId = subtitleLoadingSelectionId,
+            loadError = subtitleLoadError,
             onDisable = {
                 selectedIndependentSubtitleSelectionId = null
                 independentSubtitleCues = emptyList()

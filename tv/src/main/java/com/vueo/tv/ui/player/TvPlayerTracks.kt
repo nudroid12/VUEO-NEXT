@@ -124,7 +124,7 @@ internal fun tvIndependentSubtitleTrackChoices(
 ): List<TvPlayerTrackChoice> =
     subtitles
         .filter { it.url.startsWith("https://") }
-        .distinctBy { it.url }
+        .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
         .map { subtitle ->
             val selectionId = tvExternalSubtitleSelectionId(subtitle)
             TvPlayerTrackChoice(

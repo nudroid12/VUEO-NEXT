@@ -68,6 +68,8 @@ internal fun VueoPlayerSubtitleWorkspace(
     preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
     style: TvPlayerSubtitleStyleState,
+    loadingSelectionId: String?,
+    loadError: String?,
     onInteraction: () -> Unit,
     onDisable: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
@@ -339,10 +341,14 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     VueoSubtitleTrackRow(
                                         title = track.label,
                                         provider = track.sourceLabel,
-                                        detail = track.metadata
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?.let { "ID: $it" }
-                                            .orEmpty(),
+                                        detail = when {
+                                            track.selectionId == loadingSelectionId -> "Translating / loading…"
+                                            track.selected && loadError != null -> loadError
+                                            else -> track.metadata
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?.let { "ID: $it" }
+                                                .orEmpty()
+                                        },
                                         selected = !subtitlesDisabled && track.selected,
                                         requester = trackRequesters[index],
                                         blockUp = index == 0,

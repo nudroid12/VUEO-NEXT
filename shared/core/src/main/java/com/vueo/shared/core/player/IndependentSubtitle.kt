@@ -32,7 +32,8 @@ object IndependentSubtitleRepository {
             fallbackHeaders = fallbackHeaders,
             trackHeaders = track.headers,
         )
-        val cacheKey = buildCacheKey(track.url, requestHeaders)
+        val cacheKey = PlayerTrackPolicy.externalSubtitleKey(track) +
+            "\u0000" + buildCacheKey(track.url, requestHeaders)
         cache[cacheKey]?.let { return it }
 
         val body = PluginHttp.getText(
@@ -43,7 +44,9 @@ object IndependentSubtitleRepository {
             IndependentSubtitleParser.parse(body)
         }
         synchronized(cacheLock) {
-            if (!cache.containsKey(cacheKey)) {
+            // A pending AI translation may return an empty response; retry on
+            // the next explicit selection instead of caching that empty state.
+            if (parsed.isNotEmpty() && !cache.containsKey(cacheKey)) {
                 cache[cacheKey] = parsed
                 cacheOrder.remove(cacheKey)
                 cacheOrder.addLast(cacheKey)

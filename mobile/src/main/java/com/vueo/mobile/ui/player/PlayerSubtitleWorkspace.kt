@@ -96,6 +96,8 @@ internal fun PlayerSubtitleWorkspace(
     preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
     style: PlayerSubtitleStyleState,
+    loadingSelectionId: String?,
+    loadError: String?,
     onDisable: () -> Unit,
     onSelect: (PlayerTrackChoice) -> Unit,
     onSubtitleDelayChange: (Int) -> Unit,
@@ -294,6 +296,11 @@ internal fun PlayerSubtitleWorkspace(
                                                     selected =
                                                         !subtitlesDisabled &&
                                                             track.selected,
+                                                    status = when {
+                                                        track.selectionId == loadingSelectionId -> "Translating / loading…"
+                                                        track.selected && loadError != null -> loadError
+                                                        else -> null
+                                                    },
                                                     onClick = {
                                                         styleOpen = true
                                                         onSelect(track)
@@ -430,6 +437,7 @@ private fun LanguageRow(
 private fun SubtitleTrackRow(
     track: PlayerTrackChoice,
     selected: Boolean,
+    status: String?,
     onClick: () -> Unit,
 ) {
     val foreground = Color.White.copy(alpha = if (selected) .98f else .86f)
@@ -471,6 +479,15 @@ private fun SubtitleTrackRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        status?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                color = if (selected) SubtitleAccent else foreground.copy(alpha = .65f),
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         track.metadata
             ?.takeIf { it.isNotBlank() }
             ?.let { subtitleId ->

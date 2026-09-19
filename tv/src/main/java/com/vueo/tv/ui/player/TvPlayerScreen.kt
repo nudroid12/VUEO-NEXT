@@ -177,7 +177,9 @@ fun TvPlayerScreen(
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
     val initialMediaSubtitles = remember(bundle.videoId, source.url, playerSessionId) {
-        bundle.subtitles.toList()
+        bundle.subtitles
+            .filterNot(PlayerTrackPolicy::isOnDemandTranslation)
+            .toList()
     }
     val externalSubtitlesBySelectionId = remember(initialMediaSubtitles) {
         initialMediaSubtitles.associateBy(::tvExternalSubtitleSelectionId)
@@ -274,13 +276,14 @@ fun TvPlayerScreen(
     var audioAutomaticSelected by remember(mediaKey) { mutableStateOf(true) }
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
-    val initialSubtitleUrls = remember(initialMediaSubtitles) {
-        initialMediaSubtitles.map { it.url }.toSet()
+    val initialSubtitleKeys = remember(initialMediaSubtitles) {
+        initialMediaSubtitles.map(PlayerTrackPolicy::externalSubtitleKey).toSet()
     }
-    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleUrls) {
+    val independentSubtitleTracks = remember(availableSubtitles, initialSubtitleKeys) {
         availableSubtitles
-            .filter { it.url.startsWith("https://") && it.url !in initialSubtitleUrls }
-            .distinctBy { it.url }
+            .filter { it.url.startsWith("https://") &&
+                PlayerTrackPolicy.externalSubtitleKey(it) !in initialSubtitleKeys }
+            .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
     }
     val latestIndependentSubtitleTracks =
         androidx.compose.runtime.rememberUpdatedState(independentSubtitleTracks)
@@ -390,6 +393,12 @@ fun TvPlayerScreen(
                 trackType = C.TRACK_TYPE_TEXT,
                 disable = true,
             )
+            // Re-selecting the same AI track retries a failed/pending download.
+            if (selectedIndependentSubtitleSelectionId == choice.selectionId &&
+                subtitleLoadingSelectionId == null
+            ) {
+                subtitleLoadRetryToken++
+            }
             selectedIndependentSubtitleSelectionId =
                 choice.selectionId
             textTracks = textTracks.map { track ->
@@ -509,35 +518,49 @@ fun TvPlayerScreen(
         player.playWhenReady = true
     }
 
+    // Discovery updates may arrive while AI is translating. Select the exact
+    // track once; unrelated addon list changes must not cancel its download.
+    val selectedIndependentTrack = availableSubtitles.firstOrNull { track ->
+        PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
+            selectedIndependentSubtitleSelectionId
+    }
+    var subtitleLoadRetryToken by remember(player) { mutableIntStateOf(0) }
+    var subtitleLoadingSelectionId by remember(player) { mutableStateOf<String?>(null) }
+    var subtitleLoadError by remember(player) { mutableStateOf<String?>(null) }
     LaunchedEffect(
         selectedIndependentSubtitleSelectionId,
-        availableSubtitles,
+        subtitleLoadRetryToken,
+        selectedIndependentTrack?.url,
+        selectedIndependentTrack?.headers,
     ) {
-        val selectedId =
-            selectedIndependentSubtitleSelectionId
-                ?: run {
-                    independentSubtitleCues = emptyList()
-                    return@LaunchedEffect
-                }
-        val track = availableSubtitles.firstOrNull {
-            PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
-        } ?: run {
+        val track = selectedIndependentTrack ?: run {
             independentSubtitleCues = emptyList()
-            selectedIndependentSubtitleSelectionId = null
+            subtitleLoadingSelectionId = null
+            subtitleLoadError = null
             return@LaunchedEffect
         }
 
         independentSubtitleCues = emptyList()
-        independentSubtitleCues = runCatching {
-            IndependentSubtitleRepository.load(
+        subtitleLoadError = null
+        subtitleLoadingSelectionId = selectedIndependentSubtitleSelectionId
+        try {
+            val loaded = IndependentSubtitleRepository.load(
                 track = track,
                 fallbackHeaders = activeSource.headers,
             )
-        }.getOrDefault(emptyList())
+            independentSubtitleCues = loaded
+            if (loaded.isEmpty()) subtitleLoadError = "Subtitle file is empty or unsupported"
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            subtitleLoadError = "Unable to load subtitle"
+        } finally {
+            subtitleLoadingSelectionId = null
+        }
     }
 
     LaunchedEffect(
-        independentSubtitleTracks.map { it.url },
+        independentSubtitleTracks.map(PlayerTrackPolicy::externalSubtitleKey),
     ) {
         if (independentSubtitleTracks.isNotEmpty()) {
             subtitlePreferenceRestored = false
@@ -813,7 +836,11 @@ fun TvPlayerScreen(
                             } else {
                                 null
                             }
-                        if (preferredIndependent != null) {
+                        if (preferredIndependent != null && independentSubtitleTracks.none { track ->
+                                PlayerTrackPolicy.externalSubtitleSelectionId(track) ==
+                                    preferredIndependent.selectionId &&
+                                    PlayerTrackPolicy.isOnDemandTranslation(track)
+                            }) {
                             selectSubtitleChoiceForPlayer(preferredIndependent)
                         }
                     }
@@ -1290,6 +1317,8 @@ fun TvPlayerScreen(
                     settings.subtitleVisibility() == SubtitleVisibility.PREFERRED_ONLY,
                 subtitleDelayMs = subtitleDelayMs,
                 style = subtitleStyle,
+                loadingSelectionId = subtitleLoadingSelectionId,
+                loadError = subtitleLoadError,
                 onInteraction = ::noteInteraction,
                 onDisable = {
                     selectedIndependentSubtitleSelectionId = null
@@ -1466,7 +1495,7 @@ private fun buildMediaItem(
 
     val ordered = subtitles
         .filter { it.url.startsWith("https://") }
-        .distinctBy { it.url }
+        .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
         .sortedBy { subtitle ->
             normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language))
                 .let { if (it < 0) Int.MAX_VALUE else it }

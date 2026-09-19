@@ -6,6 +6,7 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRanker as CoreSourceRanker
@@ -1380,6 +1381,54 @@ class UnifiedMediaEngine {
         }
     }
 
+    /**
+     * Subtitle-only discovery. AI-translating addons may not respond within
+     * the standard 8-second addon budget; return each completed provider's
+     * tracks to the active player without touching its media source.
+     */
+    suspend fun resolveSubtitlesProgressive(
+        type: String,
+        videoId: String,
+        onUpdate: (List<SubtitleTrack>) -> Unit,
+    ): List<SubtitleTrack> = coroutineScope {
+        val mergeLock = Mutex()
+        val discovered = linkedMapOf<String, SubtitleTrack>()
+        val providers = extensions.filter { extension ->
+            isExtensionEnabled(extension.descriptor.id) &&
+                "subtitles" in extension.descriptor.resources
+        }
+
+        providers.map { extension ->
+            async {
+                val result = try {
+                    withTimeoutOrNull(SUBTITLE_REQUEST_TIMEOUT_MS) {
+                        extension.subtitles(type, videoId)
+                    }.orEmpty()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    emptyList()
+                }
+                if (result.isNotEmpty()) {
+                    mergeLock.withLock {
+                        var changed = false
+                        result.forEach { subtitle ->
+                            if (
+                                subtitle.url.startsWith("https://") &&
+                                discovered.putIfAbsent(PlayerTrackPolicy.externalSubtitleKey(subtitle), subtitle) == null
+                            ) {
+                                changed = true
+                            }
+                        }
+                        if (changed) onUpdate(discovered.values.toList())
+                    }
+                }
+            }
+        }.awaitAll()
+
+        mergeLock.withLock { discovered.values.toList() }
+    }
+
     suspend fun resolveSubtitles(
         type: String,
         videoId: String,
@@ -1412,9 +1461,14 @@ class UnifiedMediaEngine {
             .awaitAll()
             .flatten()
             .filter { it.url.startsWith("https://") }
-            .distinctBy { it.url }
+            .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
     }
     companion object {
+        // AI translation may complete well after ordinary source discovery.
+        // This budget applies ONLY to subtitles, not stream/provider loading.
+        private const val SUBTITLE_REQUEST_TIMEOUT_MS =
+            120_000L
+
         private const val ADDON_REQUEST_TIMEOUT_MS =
             8_000L
 

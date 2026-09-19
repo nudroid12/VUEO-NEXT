@@ -380,9 +380,7 @@ internal fun buildPlayerMediaItem(
                     "https://"
                 )
             }
-            .distinctBy {
-                it.url
-            }
+            .distinctBy(PlayerTrackPolicy::externalSubtitleKey)
             .sortedBy {
                 subtitle ->
 

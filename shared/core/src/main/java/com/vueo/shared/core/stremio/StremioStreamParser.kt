@@ -2,6 +2,7 @@ package com.vueo.shared.core.stremio
 
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
+import com.vueo.shared.core.language.LanguagePolicy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -77,7 +78,7 @@ object StremioStreamParser {
                 .trim()
                 .takeIf(String::isNotBlank)
                 ?: return@mapNotNull null
-            val language = listOf(
+            val reportedLanguage = listOf(
                 "lang",
                 "language",
                 "languageCode",
@@ -88,6 +89,18 @@ object StremioStreamParser {
                     .trim()
                     .takeIf { it.isNotBlank() }
             } ?: "und"
+            // Some translation addons identify the target language in the
+            // choice title rather than lang. Keep the offer selectable in a
+            // preferred-language workspace before the subtitle file exists.
+            val language = if (reportedLanguage.equals("und", ignoreCase = true) ||
+                reportedLanguage.equals("unknown", ignoreCase = true)
+            ) {
+                LanguagePolicy.detectCodes(
+                    item.optString("title", item.optString("name"))
+                ).singleOrNull() ?: reportedLanguage
+            } else {
+                reportedLanguage
+            }
             val sourceId = item.optString("id", language)
                 .trim()
                 .ifBlank { language }
