@@ -1798,10 +1798,6 @@ internal fun PlayerScreen(
             visible = showSubtitleDialog,
             tracks = textTracks,
             subtitlesDisabled = subtitlesDisabled,
-            preferredLanguageCode =
-                playerPreferredSubtitleLanguageCode(
-                    settingsStore
-                ),
             secondaryLanguageCode = settingsStore
                 .secondarySubtitleLanguage()
                 .languageCode,
@@ -2942,4 +2938,3 @@ internal fun PlayerScreen(
         }
     }
 }
-

@@ -90,7 +90,6 @@ internal fun PlayerSubtitleWorkspace(
     visible: Boolean,
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
-    preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
@@ -127,12 +126,12 @@ internal fun PlayerSubtitleWorkspace(
     }
     val groups = remember(
         filteredTracks,
-        preferredLanguageCode,
+        visibilityPreferredLanguageCode,
         secondaryLanguageCode,
     ) {
         buildSubtitleLanguageGroups(
             tracks = filteredTracks,
-            preferredLanguageCode = preferredLanguageCode,
+            preferredLanguageCode = visibilityPreferredLanguageCode,
             secondaryLanguageCode = secondaryLanguageCode,
         )
     }
@@ -215,13 +214,15 @@ internal fun PlayerSubtitleWorkspace(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     horizontalArrangement =
                         Arrangement.spacedBy(10.dp),
                 ) {
                     SubtitleSectionCard(
                         title = "Languages",
-                        width = 190.dp,
+                        modifier = Modifier.weight(3f),
                     ) {
                         LazyColumn(
                             verticalArrangement =
@@ -271,13 +272,13 @@ internal fun PlayerSubtitleWorkspace(
 
                     Box(
                         modifier = Modifier
-                            .width(260.dp)
+                            .weight(4f)
                             .fillMaxHeight(),
                     ) {
                         if (activeLanguageCode != null) {
                             SubtitleSectionCard(
                                 title = "Subtitles",
-                                width = 260.dp,
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 when {
                                     visibleTracks.isNotEmpty() -> {
@@ -320,7 +321,7 @@ internal fun PlayerSubtitleWorkspace(
 
                     Box(
                         modifier = Modifier
-                            .width(220.dp)
+                            .weight(3f)
                             .fillMaxHeight(),
                     ) {
                         if (styleOpen && !subtitlesDisabled) {
@@ -343,12 +344,11 @@ internal fun PlayerSubtitleWorkspace(
 @Composable
 private fun SubtitleSectionCard(
     title: String,
-    width: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
-        modifier = Modifier
-            .width(width)
+        modifier = modifier
             .fillMaxHeight()
             .clickable(
                 interactionSource = remember {
@@ -519,7 +519,7 @@ private fun SubtitleStyleCard(
 ) {
     Surface(
         modifier = Modifier
-            .width(220.dp)
+            .fillMaxWidth()
             .fillMaxHeight()
             .clickable(
                 interactionSource = remember {
