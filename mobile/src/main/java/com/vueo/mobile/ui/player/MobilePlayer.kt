@@ -648,6 +648,9 @@ internal fun PlayerScreen(
                 }
         )
     }
+    var translatingSubtitleSelectionId by remember(mediaKey) {
+        mutableStateOf<String?>(null)
+    }
     var subtitlePreparationJob by remember(mediaKey) {
         mutableStateOf<kotlinx.coroutines.Job?>(null)
     }
@@ -1230,6 +1233,7 @@ internal fun PlayerScreen(
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
                     pendingSubtitleSelectionId = null
+                    translatingSubtitleSelectionId = null
                 }
 
                 savedTrack?.externalSubtitle != null -> {
@@ -1241,10 +1245,16 @@ internal fun PlayerScreen(
                     )
                     subtitlesDisabled = false
                     pendingSubtitleSelectionId = savedTrack.selectionId
+                    translatingSubtitleSelectionId = null
                     subtitlePreparationJob?.cancel()
                     subtitlePreparationJob = subtitleSelectionScope.launch {
                         val ready = SubtitleReadinessProbe.awaitReady(
-                            requireNotNull(savedTrack.externalSubtitle).url
+                            url = requireNotNull(savedTrack.externalSubtitle).url,
+                            onWaiting = {
+                                if (pendingSubtitleSelectionId == savedTrack.selectionId) {
+                                    translatingSubtitleSelectionId = savedTrack.selectionId
+                                }
+                            },
                         )
                         var refreshWaitAttempts = 0
                         while (
@@ -1275,8 +1285,12 @@ internal fun PlayerScreen(
                                 choice = latestChoice,
                             )
                             pendingSubtitleSelectionId = null
+                            translatingSubtitleSelectionId = null
                             subtitlesDisabled = false
                             selectedSubtitleIsExternal = true
+                        }
+                        if (translatingSubtitleSelectionId == savedTrack.selectionId) {
+                            translatingSubtitleSelectionId = null
                         }
                         subtitlePreparationJob = null
                     }
@@ -1292,6 +1306,7 @@ internal fun PlayerScreen(
                     }
                     subtitlePreferenceRestored = true
                     pendingSubtitleSelectionId = null
+                    translatingSubtitleSelectionId = null
                     applyTrackChoice(
                         player = player,
                         trackType = C.TRACK_TYPE_TEXT,
@@ -1848,6 +1863,7 @@ internal fun PlayerScreen(
             tracks = textTracks,
             subtitlesDisabled = subtitlesDisabled,
             pendingSelectionId = pendingSubtitleSelectionId,
+            translatingSelectionId = translatingSubtitleSelectionId,
             secondaryLanguageCode = settingsStore
                 .secondarySubtitleLanguage()
                 .languageCode,
@@ -1863,6 +1879,7 @@ internal fun PlayerScreen(
                 subtitlePreparationJob?.cancel()
                 subtitlePreparationJob = null
                 pendingSubtitleSelectionId = null
+                translatingSubtitleSelectionId = null
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
@@ -1904,9 +1921,11 @@ internal fun PlayerScreen(
                 if (externalSubtitle == null) {
                     subtitlePreparationJob = null
                     pendingSubtitleSelectionId = null
+                    translatingSubtitleSelectionId = null
                     commitSelection(choice)
                 } else {
                     pendingSubtitleSelectionId = choice.selectionId
+                    translatingSubtitleSelectionId = null
                     subtitlesDisabled = false
                     settingsStore.setSubtitleSelection(
                         contentId = mediaKey,
@@ -1918,7 +1937,14 @@ internal fun PlayerScreen(
                         )
                     )
                     subtitlePreparationJob = subtitleSelectionScope.launch {
-                        val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
+                        val ready = SubtitleReadinessProbe.awaitReady(
+                            url = externalSubtitle.url,
+                            onWaiting = {
+                                if (pendingSubtitleSelectionId == choice.selectionId) {
+                                    translatingSubtitleSelectionId = choice.selectionId
+                                }
+                            },
+                        )
                         var refreshWaitAttempts = 0
                         while (
                             ready &&
@@ -1944,6 +1970,10 @@ internal fun PlayerScreen(
                         ) {
                             commitSelection(latestChoice)
                             pendingSubtitleSelectionId = null
+                            translatingSubtitleSelectionId = null
+                        }
+                        if (translatingSubtitleSelectionId == choice.selectionId) {
+                            translatingSubtitleSelectionId = null
                         }
                         subtitlePreparationJob = null
                     }

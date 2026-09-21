@@ -18,6 +18,7 @@ object SubtitleReadinessProbe {
     suspend fun awaitReady(
         url: String,
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        onWaiting: suspend () -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
         val nowMs = System.currentTimeMillis()
         readyAtMs[url]
@@ -25,6 +26,7 @@ object SubtitleReadinessProbe {
             ?.let { return@withContext true }
 
         val deadlineNs = System.nanoTime() + timeoutMs.coerceAtLeast(1L) * 1_000_000L
+        var waitingReported = false
 
         while (System.nanoTime() < deadlineNs) {
             coroutineContext.ensureActive()
@@ -35,7 +37,15 @@ object SubtitleReadinessProbe {
                     return@withContext true
                 }
                 ProbeResult.FAILED -> return@withContext false
-                ProbeResult.RETRY -> delay(RETRY_DELAY_MS)
+                ProbeResult.RETRY -> {
+                    if (!waitingReported) {
+                        waitingReported = true
+                        withContext(Dispatchers.Main.immediate) {
+                            onWaiting()
+                        }
+                    }
+                    delay(RETRY_DELAY_MS)
+                }
             }
         }
 

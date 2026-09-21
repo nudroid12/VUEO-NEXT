@@ -63,6 +63,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     tracks: List<TvPlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
+    translatingSelectionId: String?,
     entryFocusRequester: FocusRequester,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -346,7 +347,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         title = track.label,
                                         provider = track.sourceLabel,
                                         detail = if (
-                                            track.selectionId == pendingSelectionId
+                                            track.selectionId == translatingSelectionId
                                         ) {
                                             "Translating…"
                                         } else {

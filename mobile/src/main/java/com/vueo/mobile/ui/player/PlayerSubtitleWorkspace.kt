@@ -91,6 +91,7 @@ internal fun PlayerSubtitleWorkspace(
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
+    translatingSelectionId: String?,
     secondaryLanguageCode: String?,
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
@@ -296,7 +297,7 @@ internal fun PlayerSubtitleWorkspace(
                                                 SubtitleTrackRow(
                                                     track = track,
                                                     pending =
-                                                        track.selectionId == pendingSelectionId,
+                                                        track.selectionId == translatingSelectionId,
                                                     selected =
                                                         !subtitlesDisabled &&
                                                             (
