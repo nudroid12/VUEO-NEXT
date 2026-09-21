@@ -229,6 +229,9 @@ fun TvPlayerScreen(
     var translatingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf<String?>(null)
     }
+    var requestedSubtitleSelectionId by remember(mediaKey) {
+        mutableStateOf<String?>(null)
+    }
     var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
     val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
@@ -535,6 +538,15 @@ fun TvPlayerScreen(
                 }
                 val effectiveTextTracks =
                     if (keepPreviousTextTracks) textTracks else currentTextTracks
+                val confirmedSubtitleSelectionId = effectiveTextTracks
+                    .firstOrNull { it.selected }
+                    ?.selectionId
+                if (
+                    requestedSubtitleSelectionId != null &&
+                    requestedSubtitleSelectionId == confirmedSubtitleSelectionId
+                ) {
+                    requestedSubtitleSelectionId = null
+                }
                 audioTracks = tvPlayerTrackChoices(
                     tracks = tracks,
                     trackType = C.TRACK_TYPE_AUDIO,
@@ -563,6 +575,15 @@ fun TvPlayerScreen(
                             externalSubtitles = latestExternalSubtitlesBySelectionId.value,
                         )
                         textTracks = finalTextTracks
+                        val confirmedSubtitleSelectionId = finalTextTracks
+                            .firstOrNull { it.selected }
+                            ?.selectionId
+                        if (
+                            requestedSubtitleSelectionId != null &&
+                            requestedSubtitleSelectionId == confirmedSubtitleSelectionId
+                        ) {
+                            requestedSubtitleSelectionId = null
+                        }
                         selectedSubtitleIsExternal =
                             !subtitlesDisabled &&
                                 finalTextTracks
@@ -775,6 +796,7 @@ fun TvPlayerScreen(
                         selectedSubtitleIsExternal = false
                         pendingSubtitleSelectionId = null
                         translatingSubtitleSelectionId = null
+                        requestedSubtitleSelectionId = null
                     }
 
                     savedTrack?.externalSubtitle != null -> {
@@ -813,6 +835,7 @@ fun TvPlayerScreen(
                                 pendingSubtitleSelectionId == savedTrack.selectionId &&
                                 latestChoice != null
                             ) {
+                                requestedSubtitleSelectionId = latestChoice.selectionId
                                 tvApplyTrackChoice(
                                     player,
                                     C.TRACK_TYPE_TEXT,
@@ -833,6 +856,7 @@ fun TvPlayerScreen(
                     savedTrack != null -> {
                         pendingSubtitleSelectionId = null
                         translatingSubtitleSelectionId = null
+                        requestedSubtitleSelectionId = savedTrack.selectionId
                         tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, savedTrack)
                         subtitlesDisabled = false
                         selectedSubtitleIsExternal = savedTrack.selectionId.startsWith("external:")
@@ -1263,6 +1287,7 @@ fun TvPlayerScreen(
                 subtitlesDisabled = subtitlesDisabled,
                 pendingSelectionId = pendingSubtitleSelectionId,
                 translatingSelectionId = translatingSubtitleSelectionId,
+                requestedSelectionId = requestedSubtitleSelectionId,
                 entryFocusRequester = subtitleWorkspaceRequester,
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
@@ -1276,6 +1301,7 @@ fun TvPlayerScreen(
                     subtitlePreparationJob = null
                     pendingSubtitleSelectionId = null
                     translatingSubtitleSelectionId = null
+                    requestedSubtitleSelectionId = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
@@ -1283,6 +1309,7 @@ fun TvPlayerScreen(
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
                 onSelect = { choice ->
+                    requestedSubtitleSelectionId = choice.selectionId
                     fun commitSelection(selected: TvPlayerTrackChoice) {
                         tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
                         subtitlesDisabled = false

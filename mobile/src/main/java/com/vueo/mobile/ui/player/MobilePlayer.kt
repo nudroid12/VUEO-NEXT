@@ -651,6 +651,9 @@ internal fun PlayerScreen(
     var translatingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf<String?>(null)
     }
+    var requestedSubtitleSelectionId by remember(mediaKey) {
+        mutableStateOf<String?>(null)
+    }
     var subtitlePreparationJob by remember(mediaKey) {
         mutableStateOf<kotlinx.coroutines.Job?>(null)
     }
@@ -1125,6 +1128,15 @@ internal fun PlayerScreen(
             } else {
                 refreshedTextTracks
             }
+        val confirmedSubtitleSelectionId = effectiveTextTracks
+            .firstOrNull { it.selected }
+            ?.selectionId
+        if (
+            requestedSubtitleSelectionId != null &&
+            requestedSubtitleSelectionId == confirmedSubtitleSelectionId
+        ) {
+            requestedSubtitleSelectionId = null
+        }
         selectedSubtitleIsExternal =
             !subtitlesDisabled &&
             effectiveTextTracks
@@ -1234,6 +1246,7 @@ internal fun PlayerScreen(
                     selectedSubtitleIsExternal = false
                     pendingSubtitleSelectionId = null
                     translatingSubtitleSelectionId = null
+                    requestedSubtitleSelectionId = null
                 }
 
                 savedTrack?.externalSubtitle != null -> {
@@ -1279,6 +1292,7 @@ internal fun PlayerScreen(
                             pendingSubtitleSelectionId == savedTrack.selectionId &&
                             latestChoice != null
                         ) {
+                            requestedSubtitleSelectionId = latestChoice.selectionId
                             applyTrackChoice(
                                 player = player,
                                 trackType = C.TRACK_TYPE_TEXT,
@@ -1307,6 +1321,7 @@ internal fun PlayerScreen(
                     subtitlePreferenceRestored = true
                     pendingSubtitleSelectionId = null
                     translatingSubtitleSelectionId = null
+                    requestedSubtitleSelectionId = savedTrack.selectionId
                     applyTrackChoice(
                         player = player,
                         trackType = C.TRACK_TYPE_TEXT,
@@ -1864,6 +1879,7 @@ internal fun PlayerScreen(
             subtitlesDisabled = subtitlesDisabled,
             pendingSelectionId = pendingSubtitleSelectionId,
             translatingSelectionId = translatingSubtitleSelectionId,
+            requestedSelectionId = requestedSubtitleSelectionId,
             secondaryLanguageCode = settingsStore
                 .secondarySubtitleLanguage()
                 .languageCode,
@@ -1880,6 +1896,7 @@ internal fun PlayerScreen(
                 subtitlePreparationJob = null
                 pendingSubtitleSelectionId = null
                 translatingSubtitleSelectionId = null
+                requestedSubtitleSelectionId = null
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
@@ -1896,6 +1913,7 @@ internal fun PlayerScreen(
                 )
             },
             onSelect = { choice ->
+                requestedSubtitleSelectionId = choice.selectionId
                 fun commitSelection(selected: PlayerTrackChoice) {
                     applyTrackChoice(
                         player = player,

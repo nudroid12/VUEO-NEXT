@@ -64,6 +64,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
     translatingSelectionId: String?,
+    requestedSelectionId: String?,
     entryFocusRequester: FocusRequester,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -97,8 +98,9 @@ internal fun VueoPlayerSubtitleWorkspace(
     val groups = remember(filteredTracks, preferredLanguageCode, secondaryLanguageCode) {
         tvBuildSubtitleLanguageGroups(filteredTracks, preferredLanguageCode, secondaryLanguageCode)
     }
+    val uiSelectionId = requestedSelectionId ?: pendingSelectionId
     val selectedTrack = tracks.firstOrNull {
-        it.selectionId == pendingSelectionId
+        it.selectionId == uiSelectionId
     } ?: tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
     val selectedLanguageVisible = selectedLanguageCode
@@ -154,7 +156,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     ) ?: languageRequesters.first()
     val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else FocusRequester.Cancel
     val selectedVisibleTrackIndex = visibleTracks
-        .indexOfFirst { it.selectionId == pendingSelectionId }
+        .indexOfFirst { it.selectionId == uiSelectionId }
         .takeIf { it >= 0 }
         ?: visibleTracks.indexOfFirst { it.selected }
     var styleReturnTrackIndex by remember(visibleTracks.map { it.key }) {
@@ -358,9 +360,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         },
                                         selected = !subtitlesDisabled &&
                                             (
-                                                track.selectionId == pendingSelectionId ||
+                                                track.selectionId == uiSelectionId ||
                                                     (
-                                                        pendingSelectionId == null &&
+                                                        uiSelectionId == null &&
                                                             track.selected
                                                         )
                                                 ),

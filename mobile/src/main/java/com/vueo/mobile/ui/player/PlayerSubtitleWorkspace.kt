@@ -92,6 +92,7 @@ internal fun PlayerSubtitleWorkspace(
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
     translatingSelectionId: String?,
+    requestedSelectionId: String?,
     secondaryLanguageCode: String?,
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
@@ -137,8 +138,9 @@ internal fun PlayerSubtitleWorkspace(
             secondaryLanguageCode = secondaryLanguageCode,
         )
     }
+    val uiSelectionId = requestedSelectionId ?: pendingSelectionId
     val selectedTrack = tracks.firstOrNull {
-        it.selectionId == pendingSelectionId
+        it.selectionId == uiSelectionId
     } ?: tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language
         ?.let(::canonicalSubtitleLanguage)
@@ -301,9 +303,9 @@ internal fun PlayerSubtitleWorkspace(
                                                     selected =
                                                         !subtitlesDisabled &&
                                                             (
-                                                                track.selectionId == pendingSelectionId ||
+                                                                track.selectionId == uiSelectionId ||
                                                                     (
-                                                                        pendingSelectionId == null &&
+                                                                        uiSelectionId == null &&
                                                                             track.selected
                                                                         )
                                                                 ),
