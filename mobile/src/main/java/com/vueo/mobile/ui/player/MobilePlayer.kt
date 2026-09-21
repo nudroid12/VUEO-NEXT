@@ -10,7 +10,6 @@ import android.media.AudioManager
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.os.Build
-import android.os.SystemClock
 import android.widget.Toast
 import android.view.View
 import android.view.WindowInsets
@@ -671,15 +670,6 @@ internal fun PlayerScreen(
         mutableStateOf(
             settingsStore.playerPlaybackSpeed()
         )
-    }
-    var sleepTimerOption by remember {
-        mutableStateOf(PlayerSleepTimerOption.OFF)
-    }
-    var sleepTimerDeadlineMs by remember {
-        mutableStateOf<Long?>(null)
-    }
-    var sleepTimerRemainingSeconds by remember {
-        mutableStateOf<Long?>(null)
     }
     var nextEpisodeCountdown by remember {
         mutableStateOf<Int?>(null)
@@ -1383,17 +1373,6 @@ internal fun PlayerScreen(
                         playbackState ==
                             Player.STATE_ENDED
                     ) {
-                        val sleepAfterEpisode =
-                            sleepTimerOption ==
-                                PlayerSleepTimerOption.END_OF_EPISODE
-                        if (sleepAfterEpisode) {
-                            sleepTimerOption =
-                                PlayerSleepTimerOption.OFF
-                            sleepTimerDeadlineMs = null
-                            sleepTimerRemainingSeconds = null
-                            nextEpisodeCountdown = null
-                            gestureMessage = "Sleep timer ended"
-                        }
                         playbackStore.clearPosition(
                             mediaKey
                         )
@@ -1571,33 +1550,6 @@ internal fun PlayerScreen(
         playbackSpeed,
     ) {
         player.setPlaybackSpeed(playbackSpeed)
-    }
-
-    LaunchedEffect(
-        player,
-        sleepTimerDeadlineMs,
-    ) {
-        val deadline = sleepTimerDeadlineMs
-            ?: return@LaunchedEffect
-
-        while (true) {
-            val remainingMs =
-                (deadline - SystemClock.elapsedRealtime())
-                    .coerceAtLeast(0L)
-            sleepTimerRemainingSeconds =
-                (remainingMs + 999L) / 1_000L
-
-            if (remainingMs <= 0L) {
-                player.pause()
-                sleepTimerOption = PlayerSleepTimerOption.OFF
-                sleepTimerDeadlineMs = null
-                sleepTimerRemainingSeconds = null
-                gestureMessage = "Sleep timer ended"
-                controlsVisible = true
-                break
-            }
-            delay(minOf(1_000L, remainingMs))
-        }
     }
 
     LaunchedEffect(
@@ -2006,9 +1958,6 @@ internal fun PlayerScreen(
             visible = showMoreDialog,
             playbackSpeed = playbackSpeed,
             videoFit = videoFit,
-            sleepTimer = sleepTimerOption,
-            sleepTimerRemainingSeconds =
-                sleepTimerRemainingSeconds,
             autoPlayNextEpisode = autoPlayNextEpisode,
             skipSegmentsEnabled = skipSegmentsEnabled,
             contentWarningsEnabled = contentWarningsEnabled,
@@ -2020,23 +1969,6 @@ internal fun PlayerScreen(
             onVideoFitChange = { fit ->
                 videoFit = fit
                 settingsStore.setPlayerVideoFit(fit)
-            },
-            onSleepTimerChange = { option ->
-                sleepTimerOption = option
-                sleepTimerDeadlineMs = option.minutes?.let { minutes ->
-                    SystemClock.elapsedRealtime() +
-                        minutes * 60_000L
-                }
-                sleepTimerRemainingSeconds = option.minutes?.let {
-                    it * 60L
-                }
-                gestureMessage = when (option) {
-                    PlayerSleepTimerOption.OFF ->
-                        "Sleep timer off"
-                    PlayerSleepTimerOption.END_OF_EPISODE ->
-                        "Sleep after this episode"
-                    else -> "Sleep timer ${option.label}"
-                }
             },
             onAutoPlayNextEpisodeChange = { enabled ->
                 autoPlayNextEpisode = enabled
@@ -2062,9 +1994,6 @@ internal fun PlayerScreen(
                 settingsStore.setPlayerPlaybackSpeed(1f)
                 videoFit = PlayerVideoFit.FIT
                 settingsStore.setPlayerVideoFit(PlayerVideoFit.FIT)
-                sleepTimerOption = PlayerSleepTimerOption.OFF
-                sleepTimerDeadlineMs = null
-                sleepTimerRemainingSeconds = null
                 autoPlayNextEpisode = true
                 settingsStore.setAutoPlayNextEpisodeEnabled(true)
                 skipSegmentsEnabled = true

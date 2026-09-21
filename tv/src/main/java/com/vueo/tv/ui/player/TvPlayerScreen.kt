@@ -2,7 +2,6 @@ package com.vueo.tv.player
 
 import android.graphics.Typeface
 import android.net.Uri
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -273,9 +272,6 @@ fun TvPlayerScreen(
     }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
-    var sleepTimerOption by remember(bundle.videoId) { mutableStateOf(TvPlayerSleepTimerOption.OFF) }
-    var sleepTimerDeadlineMs by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
-    var sleepTimerRemainingSeconds by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
     var autoPlayNextEpisode by remember { mutableStateOf(settings.autoPlayNextEpisodeEnabled()) }
     var skipSegmentsEnabled by remember(mediaKey) { mutableStateOf(settings.skipSegmentsEnabled()) }
     var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
@@ -734,36 +730,6 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(player, sleepTimerDeadlineMs) {
-        val deadline = sleepTimerDeadlineMs ?: return@LaunchedEffect
-        while (true) {
-            val remainingMs = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-            sleepTimerRemainingSeconds = (remainingMs + 999L) / 1_000L
-            if (remainingMs <= 0L) {
-                player.pause()
-                playing = false
-                sleepTimerOption = TvPlayerSleepTimerOption.OFF
-                sleepTimerDeadlineMs = null
-                sleepTimerRemainingSeconds = null
-                controlsVisible = true
-                break
-            }
-            delay(minOf(1_000L, remainingMs))
-        }
-    }
-
-    LaunchedEffect(ended, sleepTimerOption) {
-        if (!ended || sleepTimerOption != TvPlayerSleepTimerOption.END_OF_EPISODE) {
-            return@LaunchedEffect
-        }
-        autoNextCancelled = true
-        nextCountdown = 0
-        sleepTimerOption = TvPlayerSleepTimerOption.OFF
-        sleepTimerDeadlineMs = null
-        sleepTimerRemainingSeconds = null
-        controlsVisible = true
-    }
-
     LaunchedEffect(player, mediaKey) {
         while (true) {
             delay(10_000)
@@ -797,13 +763,12 @@ fun TvPlayerScreen(
         restorePanelFocus = null
     }
 
-    LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, autoNextCancelled, sleepTimerOption) {
+    LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, autoNextCancelled) {
         if (
             !ended ||
             nextEpisode == null ||
             !autoPlayNextEpisode ||
-            autoNextCancelled ||
-            sleepTimerOption == TvPlayerSleepTimerOption.END_OF_EPISODE
+            autoNextCancelled
         ) {
             nextCountdown = 0
             return@LaunchedEffect
@@ -1254,8 +1219,6 @@ fun TvPlayerScreen(
             VueoPlayerMoreWorkspace(
                 playbackSpeed = playbackSpeed,
                 videoFit = videoFit,
-                sleepTimer = sleepTimerOption,
-                sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
                 autoPlayNextEpisode = autoPlayNextEpisode,
                 skipSegmentsEnabled = skipSegmentsEnabled,
                 contentWarningsEnabled = contentWarningsEnabled,
@@ -1268,14 +1231,6 @@ fun TvPlayerScreen(
                 onVideoFitChange = { fit ->
                     videoFit = fit
                     settings.setPlayerVideoFit(fit)
-                },
-                onSleepTimerChange = { option ->
-                    sleepTimerOption = option
-                    sleepTimerDeadlineMs = option.minutes?.let { minutes ->
-                        SystemClock.elapsedRealtime() + minutes * 60_000L
-                    }
-                    sleepTimerRemainingSeconds = option.minutes?.let { it * 60L }
-                    noteInteraction()
                 },
                 onAutoPlayNextEpisodeChange = { enabled ->
                     autoPlayNextEpisode = enabled
@@ -1300,9 +1255,6 @@ fun TvPlayerScreen(
                     settings.setPlayerPlaybackSpeed(1f)
                     videoFit = PlayerVideoFit.FIT
                     settings.setPlayerVideoFit(PlayerVideoFit.FIT)
-                    sleepTimerOption = TvPlayerSleepTimerOption.OFF
-                    sleepTimerDeadlineMs = null
-                    sleepTimerRemainingSeconds = null
                     autoPlayNextEpisode = true
                     settings.setAutoPlayNextEpisodeEnabled(true)
                     autoNextCancelled = false

@@ -229,7 +229,7 @@ Player behaviour from the earlier TV behaviour work remains important underneath
 - audio/subtitle preference reapplication
 - playback speed
 - Fit/Fill/Zoom
-- sleep timer
+- right-aligned single-card More workspace
 - subtitle styling/sync
 - provider filter
 
