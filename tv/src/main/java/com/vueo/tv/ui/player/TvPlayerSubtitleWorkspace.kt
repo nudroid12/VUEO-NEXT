@@ -55,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.storage.PlayerVideoFit
-import com.vueo.shared.core.player.SubtitlePreparationState
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
@@ -63,8 +62,6 @@ import com.vueo.tv.ui.TvNetworkImage
 internal fun VueoPlayerSubtitleWorkspace(
     tracks: List<TvPlayerTrackChoice>,
     subtitlesDisabled: Boolean,
-    selectedSubtitleSelectionId: String?,
-    preparationStates: Map<String, SubtitlePreparationState>,
     entryFocusRequester: FocusRequester,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -98,11 +95,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val groups = remember(filteredTracks, preferredLanguageCode, secondaryLanguageCode) {
         tvBuildSubtitleLanguageGroups(filteredTracks, preferredLanguageCode, secondaryLanguageCode)
     }
-    val selectedTrack = tracks.firstOrNull {
-        selectedSubtitleSelectionId?.let { selectedId ->
-            it.selectionId == selectedId
-        } ?: it.selected
-    }
+    val selectedTrack = tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
     val selectedLanguageVisible = selectedLanguageCode
         ?.takeIf { code -> groups.any { it.code == code } }
@@ -156,11 +149,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         groups.indexOfFirst { it.code == activeLanguageCode }.let { if (it < 0) 0 else it + 1 }
     ) ?: languageRequesters.first()
     val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else FocusRequester.Cancel
-    val selectedVisibleTrackIndex = visibleTracks.indexOfFirst {
-        selectedSubtitleSelectionId?.let { selectedId ->
-            it.selectionId == selectedId
-        } ?: it.selected
-    }
+    val selectedVisibleTrackIndex = visibleTracks.indexOfFirst { it.selected }
     var styleReturnTrackIndex by remember(visibleTracks.map { it.key }) {
         mutableIntStateOf(selectedVisibleTrackIndex.coerceAtLeast(0))
     }
@@ -350,21 +339,11 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     VueoSubtitleTrackRow(
                                         title = track.label,
                                         provider = track.sourceLabel,
-                                        detail = when (preparationStates[track.selectionId]) {
-                                            SubtitlePreparationState.TRANSLATING -> "Translating…"
-                                            SubtitlePreparationState.READY -> "Ready"
-                                            SubtitlePreparationState.FAILED -> "Failed • Select to retry"
-                                            null -> track.metadata
-                                                ?.takeIf { it.isNotBlank() }
-                                                ?.let { "ID: $it" }
-                                                .orEmpty()
-                                        },
-                                        selected = !subtitlesDisabled &&
-                                            (
-                                                selectedSubtitleSelectionId?.let {
-                                                    selectedId -> track.selectionId == selectedId
-                                                } ?: track.selected
-                                            ),
+                                        detail = track.metadata
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { "ID: $it" }
+                                            .orEmpty(),
+                                        selected = !subtitlesDisabled && track.selected,
                                         requester = trackRequesters[index],
                                         blockUp = index == 0,
                                         blockDown = index == visibleTracks.lastIndex,
@@ -1240,3 +1219,4 @@ private fun formatSubtitleDelayTv(value: Int): String {
     val seconds = value / 1000.0
     return java.lang.String.format(java.util.Locale.US, if (value > 0) "+%.2fs" else "%.2fs", seconds)
 }
+
