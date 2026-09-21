@@ -4,7 +4,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.util.TypedValue
 import android.view.KeyEvent
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -91,6 +90,7 @@ import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 import com.vueo.shared.core.player.SubtitleReadinessProbe
+import com.vueo.shared.core.player.SubtitlePreparationState
 import com.vueo.shared.core.player.SubtitleFormat
 import com.vueo.shared.core.player.SubtitleFormatPolicy
 import com.vueo.shared.core.player.PlayerSkipRepository
@@ -218,7 +218,21 @@ fun TvPlayerScreen(
         )
     }
     var selectedSubtitleIsExternal by remember(mediaKey) { mutableStateOf(false) }
-    var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
+    val subtitlePreparationJobs = remember(mediaKey, activeSource.url) {
+        mutableMapOf<String, Job>()
+    }
+    var subtitlePreparationStates by remember(mediaKey, activeSource.url) {
+        mutableStateOf<Map<String, SubtitlePreparationState>>(emptyMap())
+    }
+    var uiSelectedSubtitleSelectionId by remember(mediaKey, activeSource.url) {
+        mutableStateOf<String?>(null)
+    }
+    DisposableEffect(mediaKey, activeSource.url, subtitlePreparationJobs) {
+        onDispose {
+            subtitlePreparationJobs.values.forEach { it.cancel() }
+            subtitlePreparationJobs.clear()
+        }
+    }
     val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
     val httpFactory = remember(bundle.videoId) {
@@ -978,7 +992,7 @@ fun TvPlayerScreen(
                     isFocusableInTouchMode = false
                     keepScreenOn = true
                     this.player = exoPlayer
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     this.resizeMode = resizeMode
                     subtitleView?.setApplyEmbeddedStyles(false)
                     subtitleView?.setApplyEmbeddedFontSizes(false)
@@ -1036,6 +1050,7 @@ fun TvPlayerScreen(
             controlsVisible = controlsVisible,
             activePanel = activePanel,
             playing = playing,
+            isBuffering = isBuffering,
             positionMs = positionMs,
             durationMs = durationMs,
             nextEpisode = nextEpisode,
@@ -1154,6 +1169,8 @@ fun TvPlayerScreen(
             VueoPlayerSubtitleWorkspace(
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
+                selectedSubtitleSelectionId = uiSelectedSubtitleSelectionId,
+                preparationStates = subtitlePreparationStates,
                 entryFocusRequester = subtitleWorkspaceRequester,
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
@@ -1163,16 +1180,16 @@ fun TvPlayerScreen(
                 style = subtitleStyle,
                 onInteraction = ::noteInteraction,
                 onDisable = {
-                    subtitlePreparationJob?.cancel()
-                    subtitlePreparationJob = null
+                    uiSelectedSubtitleSelectionId = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
                     settings.setSubtitleSelection(mediaKey, TV_SUBTITLE_OFF)
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
-                onSelect = { choice ->
+                onSelect = onSelect@{ choice ->
                     fun commitSelection(selected: TvPlayerTrackChoice) {
+                        uiSelectedSubtitleSelectionId = selected.selectionId
                         tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
                         subtitlesDisabled = false
                         selectedSubtitleIsExternal = selected.selectionId.startsWith("external:")
@@ -1182,37 +1199,55 @@ fun TvPlayerScreen(
                         )
                     }
 
-                    subtitlePreparationJob?.cancel()
                     val externalSubtitle = choice.externalSubtitle
                     if (externalSubtitle == null) {
-                        subtitlePreparationJob = null
                         commitSelection(choice)
                     } else {
-                        Toast.makeText(
-                            context,
-                            "Preparing subtitle… video will keep playing.",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        subtitlePreparationJob = focusScope.launch {
+                        uiSelectedSubtitleSelectionId = choice.selectionId
+                        subtitlesDisabled = false
+                        selectedSubtitleIsExternal = true
+                        settings.setSubtitleSelection(mediaKey, choice.selectionId)
+                        settings.setLastSubtitleSelection(
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
+                        )
+
+                        if (subtitlePreparationStates[choice.selectionId] ==
+                            SubtitlePreparationState.READY
+                        ) {
+                            commitSelection(choice)
+                            return@onSelect
+                        }
+
+                        tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
+                        subtitlePreparationStates = subtitlePreparationStates +
+                            (choice.selectionId to SubtitlePreparationState.TRANSLATING)
+
+                        if (subtitlePreparationJobs[choice.selectionId]?.isActive == true) {
+                            return@onSelect
+                        }
+
+                        subtitlePreparationJobs[choice.selectionId] = focusScope.launch {
                             val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
+                            subtitlePreparationStates = subtitlePreparationStates +
+                                (
+                                    choice.selectionId to if (ready) {
+                                        SubtitlePreparationState.READY
+                                    } else {
+                                        SubtitlePreparationState.FAILED
+                                    }
+                                )
+                            subtitlePreparationJobs.remove(choice.selectionId)
                             val latestChoice = textTracks.firstOrNull {
                                 it.selectionId == choice.selectionId
                             }
-                            if (ready && latestChoice != null) {
+                            if (
+                                ready &&
+                                latestChoice != null &&
+                                uiSelectedSubtitleSelectionId == choice.selectionId &&
+                                !subtitlesDisabled
+                            ) {
                                 commitSelection(latestChoice)
-                                Toast.makeText(
-                                    context,
-                                    "Subtitle ready.",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            } else if (!ready) {
-                                Toast.makeText(
-                                    context,
-                                    "Subtitle is not ready yet. Please try again.",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
                             }
-                            subtitlePreparationJob = null
                         }
                     }
                 },
