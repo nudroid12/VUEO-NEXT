@@ -65,7 +65,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.vueo.shared.core.language.LanguagePolicy
-import com.vueo.shared.core.player.SubtitlePreparationState
 import kotlin.math.roundToInt
 
 internal data class PlayerSubtitleStyleState(
@@ -91,8 +90,6 @@ internal fun PlayerSubtitleWorkspace(
     visible: Boolean,
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
-    selectedSubtitleSelectionId: String?,
-    preparationStates: Map<String, SubtitlePreparationState>,
     secondaryLanguageCode: String?,
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
@@ -138,11 +135,7 @@ internal fun PlayerSubtitleWorkspace(
             secondaryLanguageCode = secondaryLanguageCode,
         )
     }
-    val selectedTrack = tracks.firstOrNull {
-        selectedSubtitleSelectionId?.let { selectedId ->
-            it.selectionId == selectedId
-        } ?: it.selected
-    }
+    val selectedTrack = tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language
         ?.let(::canonicalSubtitleLanguage)
     val selectedLanguageVisible = selectedLanguageCode
@@ -301,13 +294,7 @@ internal fun PlayerSubtitleWorkspace(
                                                     track = track,
                                                     selected =
                                                         !subtitlesDisabled &&
-                                                            (
-                                                                selectedSubtitleSelectionId?.let {
-                                                                    selectedId -> track.selectionId == selectedId
-                                                                } ?: track.selected
-                                                            ),
-                                                    preparationState =
-                                                        preparationStates[track.selectionId],
+                                                            track.selected,
                                                     onClick = {
                                                         styleOpen = true
                                                         onSelect(track)
@@ -443,7 +430,6 @@ private fun LanguageRow(
 private fun SubtitleTrackRow(
     track: PlayerTrackChoice,
     selected: Boolean,
-    preparationState: SubtitlePreparationState?,
     onClick: () -> Unit,
 ) {
     val foreground = Color.White.copy(alpha = if (selected) .98f else .86f)
@@ -485,23 +471,12 @@ private fun SubtitleTrackRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        val detail = when (preparationState) {
-            SubtitlePreparationState.TRANSLATING -> "Translating…"
-            SubtitlePreparationState.READY -> "Ready"
-            SubtitlePreparationState.FAILED -> "Failed • Tap to retry"
-            null -> track.metadata
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "ID: $it" }
-        }
-        detail?.let {
+        track.metadata
+            ?.takeIf { it.isNotBlank() }
+            ?.let { subtitleId ->
                 Text(
-                    it,
-                    color = when (preparationState) {
-                        SubtitlePreparationState.TRANSLATING -> SubtitleAccent.copy(alpha = .78f)
-                        SubtitlePreparationState.READY -> SubtitleAccent.copy(alpha = .90f)
-                        SubtitlePreparationState.FAILED -> Color(0xFFFF8A8A)
-                        null -> foreground.copy(alpha = .58f)
-                    },
+                    "ID: $subtitleId",
+                    color = foreground.copy(alpha = .58f),
                     fontSize = 9.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

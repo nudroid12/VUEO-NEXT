@@ -225,7 +225,6 @@ import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 import com.vueo.shared.core.player.SubtitleReadinessProbe
-import com.vueo.shared.core.player.SubtitlePreparationState
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -639,23 +638,8 @@ internal fun PlayerScreen(
         mutableStateOf(false)
     }
     val subtitleSelectionScope = rememberCoroutineScope()
-    val subtitlePreparationJobs = remember(mediaKey, source.url) {
-        mutableMapOf<String, Job>()
-    }
-    var subtitlePreparationStates by remember(mediaKey, source.url) {
-        mutableStateOf<Map<String, SubtitlePreparationState>>(emptyMap())
-    }
-    var uiSelectedSubtitleSelectionId by remember(mediaKey, source.url) {
-        mutableStateOf<String?>(null)
-    }
-    var subtitleReadyNoticeVisible by remember(mediaKey, source.url) {
-        mutableStateOf(false)
-    }
-    DisposableEffect(mediaKey, source.url, subtitlePreparationJobs) {
-        onDispose {
-            subtitlePreparationJobs.values.forEach { it.cancel() }
-            subtitlePreparationJobs.clear()
-        }
+    var subtitlePreparationJob by remember(mediaKey) {
+        mutableStateOf<kotlinx.coroutines.Job?>(null)
     }
     val latestSelectedSubtitleIsExternal =
         rememberUpdatedState(selectedSubtitleIsExternal)
@@ -1777,8 +1761,6 @@ internal fun PlayerScreen(
             visible = showSubtitleDialog,
             tracks = textTracks,
             subtitlesDisabled = subtitlesDisabled,
-            selectedSubtitleSelectionId = uiSelectedSubtitleSelectionId,
-            preparationStates = subtitlePreparationStates,
             secondaryLanguageCode = settingsStore
                 .secondarySubtitleLanguage()
                 .languageCode,
@@ -1791,8 +1773,8 @@ internal fun PlayerScreen(
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
             onDisable = {
-                uiSelectedSubtitleSelectionId = null
-                subtitleReadyNoticeVisible = false
+                subtitlePreparationJob?.cancel()
+                subtitlePreparationJob = null
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
@@ -1808,9 +1790,8 @@ internal fun PlayerScreen(
                     PLAYER_SUBTITLE_OFF
                 )
             },
-            onSelect = onSelect@{ choice ->
+            onSelect = { choice ->
                 fun commitSelection(selected: PlayerTrackChoice) {
-                    uiSelectedSubtitleSelectionId = selected.selectionId
                     applyTrackChoice(
                         player = player,
                         trackType = C.TRACK_TYPE_TEXT,
@@ -1830,66 +1811,21 @@ internal fun PlayerScreen(
                     )
                 }
 
+                subtitlePreparationJob?.cancel()
                 val externalSubtitle = choice.externalSubtitle
                 if (externalSubtitle == null) {
-                    subtitleReadyNoticeVisible = false
+                    subtitlePreparationJob = null
                     commitSelection(choice)
                 } else {
-                    uiSelectedSubtitleSelectionId = choice.selectionId
-                    subtitlesDisabled = false
-                    selectedSubtitleIsExternal = true
-                    settingsStore.setSubtitleSelection(
-                        contentId = mediaKey,
-                        selectionId = choice.selectionId,
-                    )
-                    settingsStore.setLastSubtitleSelection(
-                        PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
-                    )
-
-                    if (subtitlePreparationStates[choice.selectionId] ==
-                        SubtitlePreparationState.READY
-                    ) {
-                        commitSelection(choice)
-                        return@onSelect
-                    }
-
-                    clearTrackOverride(
-                        player = player,
-                        trackType = C.TRACK_TYPE_TEXT,
-                        disable = true,
-                    )
-                    subtitlePreparationStates = subtitlePreparationStates +
-                        (choice.selectionId to SubtitlePreparationState.TRANSLATING)
-
-                    if (subtitlePreparationJobs[choice.selectionId]?.isActive == true) {
-                        return@onSelect
-                    }
-
-                    subtitlePreparationJobs[choice.selectionId] = subtitleSelectionScope.launch {
+                    subtitlePreparationJob = subtitleSelectionScope.launch {
                         val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
-                        subtitlePreparationStates = subtitlePreparationStates +
-                            (
-                                choice.selectionId to if (ready) {
-                                    SubtitlePreparationState.READY
-                                } else {
-                                    SubtitlePreparationState.FAILED
-                                }
-                            )
-                        subtitlePreparationJobs.remove(choice.selectionId)
                         val latestChoice = textTracks.firstOrNull {
                             it.selectionId == choice.selectionId
                         }
-                        if (
-                            ready &&
-                            latestChoice != null &&
-                            uiSelectedSubtitleSelectionId == choice.selectionId &&
-                            !subtitlesDisabled
-                        ) {
+                        if (ready && latestChoice != null) {
                             commitSelection(latestChoice)
-                            subtitleReadyNoticeVisible = true
-                            delay(1_600L)
-                            subtitleReadyNoticeVisible = false
                         }
+                        subtitlePreparationJob = null
                     }
                 }
             },
@@ -2516,22 +2452,18 @@ internal fun PlayerScreen(
                     )
                 }
 
-                val playerStatusLabel = when {
+                if (
                     playbackPhase == PlayerPlaybackPhase.LOADING ||
-                        playbackPhase == PlayerPlaybackPhase.BUFFERING ||
-                        playbackPhase == PlayerPlaybackPhase.RECOVERING ->
+                    playbackPhase == PlayerPlaybackPhase.BUFFERING ||
+                    playbackPhase == PlayerPlaybackPhase.RECOVERING
+                ) {
+                    Text(
                         when (playbackPhase) {
                             PlayerPlaybackPhase.LOADING -> "LOADING SOURCE"
                             PlayerPlaybackPhase.BUFFERING -> "BUFFERING"
                             PlayerPlaybackPhase.RECOVERING -> "TRYING NEXT SOURCE"
-                            else -> null
-                        }
-                    subtitleReadyNoticeVisible -> "SUBTITLE READY"
-                    else -> null
-                }
-                playerStatusLabel?.let { statusLabel ->
-                    Text(
-                        statusLabel,
+                            else -> ""
+                        },
                         color = VueoPalette.Accent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
