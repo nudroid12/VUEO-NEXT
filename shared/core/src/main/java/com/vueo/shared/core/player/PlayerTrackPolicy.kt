@@ -10,8 +10,14 @@ object PlayerTrackPolicy {
     const val SUBTITLE_LANGUAGE_PREFIX = "subtitle-language:"
     const val AUDIO_AUTO = "audio:auto"
 
-    fun externalSubtitleSelectionId(track: SubtitleTrack): String =
-        "external:${track.providerId}:${track.id}:${track.url.hashCode()}"
+    fun externalSubtitleSelectionId(track: SubtitleTrack): String {
+        val providerId = track.providerId.trim().ifBlank { "unknown" }
+        val trackId = track.id.trim()
+        val stableTrackId = trackId.ifBlank {
+            "${LanguagePolicy.canonicalOrUnknown(track.language)}:${track.url.hashCode()}"
+        }
+        return "external:$providerId:$stableTrackId"
+    }
 
     fun externalSubtitleLabel(track: SubtitleTrack): String =
         "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"

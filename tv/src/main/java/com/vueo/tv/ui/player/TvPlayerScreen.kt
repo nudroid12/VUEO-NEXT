@@ -275,6 +275,9 @@ fun TvPlayerScreen(
     var appliedSubtitleUrls by remember(bundle.videoId, activeSource.url) {
         mutableStateOf(PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles))
     }
+    var subtitleTrackRefreshInProgress by remember(bundle.videoId, activeSource.url) {
+        mutableStateOf(false)
+    }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
     var autoPlayNextEpisode by remember { mutableStateOf(settings.autoPlayNextEpisodeEnabled()) }
@@ -486,6 +489,7 @@ fun TvPlayerScreen(
         val currentIndex = player.currentMediaItemIndex
             .takeIf { it in 0 until player.mediaItemCount }
             ?: 0
+        subtitleTrackRefreshInProgress = true
         player.replaceMediaItem(currentIndex, updatedMediaItem)
         player.seekTo(currentIndex, currentPosition)
         var params = player.trackSelectionParameters.buildUpon()
@@ -506,14 +510,20 @@ fun TvPlayerScreen(
                     trackType = C.TRACK_TYPE_TEXT,
                     externalSubtitles = latestExternalSubtitlesBySelectionId.value,
                 )
-                textTracks = currentTextTracks
+                val keepPreviousTextTracks =
+                    subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
+                if (!keepPreviousTextTracks) {
+                    textTracks = currentTextTracks
+                }
+                val effectiveTextTracks =
+                    if (keepPreviousTextTracks) textTracks else currentTextTracks
                 audioTracks = tvPlayerTrackChoices(
                     tracks = tracks,
                     trackType = C.TRACK_TYPE_AUDIO,
                 )
                 selectedSubtitleIsExternal =
                     !subtitlesDisabled &&
-                        currentTextTracks
+                        effectiveTextTracks
                             .firstOrNull { it.selected }
                             ?.selectionId
                             ?.startsWith("external:") == true
@@ -527,6 +537,21 @@ fun TvPlayerScreen(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
+                    if (subtitleTrackRefreshInProgress) {
+                        subtitleTrackRefreshInProgress = false
+                        val finalTextTracks = tvPlayerTrackChoices(
+                            tracks = player.currentTracks,
+                            trackType = C.TRACK_TYPE_TEXT,
+                            externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                        )
+                        textTracks = finalTextTracks
+                        selectedSubtitleIsExternal =
+                            !subtitlesDisabled &&
+                                finalTextTracks
+                                    .firstOrNull { it.selected }
+                                    ?.selectionId
+                                    ?.startsWith("external:") == true
+                    }
                     sourceRecoverySession.markReady()
                     recoveryInProgress = false
                     playbackError = null
@@ -669,11 +694,17 @@ fun TvPlayerScreen(
                 tracks = player.currentTracks,
                 trackType = C.TRACK_TYPE_AUDIO,
             )
-            textTracks = currentTextTracks
+            val keepPreviousTextTracks =
+                subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
+            if (!keepPreviousTextTracks) {
+                textTracks = currentTextTracks
+            }
+            val effectiveTextTracks =
+                if (keepPreviousTextTracks) textTracks else currentTextTracks
             audioTracks = currentAudioTracks
             selectedSubtitleIsExternal =
                 !subtitlesDisabled &&
-                    currentTextTracks
+                    effectiveTextTracks
                         .firstOrNull { it.selected }
                         ?.selectionId
                         ?.startsWith("external:") == true
@@ -1190,7 +1221,20 @@ fun TvPlayerScreen(
                     } else {
                         subtitlePreparationJob = focusScope.launch {
                             val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
-                            val latestChoice = textTracks.firstOrNull {
+                            var refreshWaitAttempts = 0
+                            while (
+                                ready &&
+                                subtitleTrackRefreshInProgress &&
+                                refreshWaitAttempts < 200
+                            ) {
+                                delay(50L)
+                                refreshWaitAttempts += 1
+                            }
+                            val latestChoice = tvPlayerTrackChoices(
+                                tracks = player.currentTracks,
+                                trackType = C.TRACK_TYPE_TEXT,
+                                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                            ).firstOrNull {
                                 it.selectionId == choice.selectionId
                             }
                             if (ready && latestChoice != null) {

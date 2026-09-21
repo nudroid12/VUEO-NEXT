@@ -1,6 +1,7 @@
 package com.vueo.shared.core.player
 
 import com.vueo.shared.core.language.LanguagePolicy
+import com.vueo.shared.core.media.SubtitleTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -44,4 +45,31 @@ class PlayerTrackPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun externalTrackIdSurvivesTranslatedUrlChange() {
+        val preparing = externalSubtitle(
+            id = "smartsubs-auto-1",
+            url = "https://subs.example/preparing/1",
+        )
+        val ready = preparing.copy(
+            url = "https://subs.example/ready/1.srt",
+        )
+
+        assertEquals(
+            PlayerTrackPolicy.externalSubtitleSelectionId(preparing),
+            PlayerTrackPolicy.externalSubtitleSelectionId(ready),
+        )
+    }
+
+    private fun externalSubtitle(
+        id: String,
+        url: String,
+    ) = SubtitleTrack(
+        id = id,
+        language = "ms",
+        url = url,
+        providerId = "smartsubs",
+        providerName = "SmartSubs",
+    )
 }
