@@ -94,6 +94,7 @@ data class SubtitleTrack(
     val providerId: String,
     val providerName: String,
     val name: String? = null,
+    val mimeType: String? = null,
 )
 
 data class CatalogPage(

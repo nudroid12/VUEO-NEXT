@@ -49,6 +49,7 @@ data class SubtitleCandidate(
     val providerId: String,
     val providerName: String,
     val name: String? = null,
+    val mimeType: String? = null,
 )
 
 enum class SourceQuality(

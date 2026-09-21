@@ -225,6 +225,9 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.SubtitleFormat
+import com.vueo.shared.core.player.SubtitleFormatPolicy
+import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -366,12 +369,10 @@ internal fun buildPlayerMediaItem(
     embeddedPriority: Boolean,
 ): Media3MediaItem {
     val normalizedPreferred =
-        preferredLanguageCode
-            ?.lowercase()
+        LanguagePolicy.canonicalCode(preferredLanguageCode)
 
     val normalizedSecondary =
-        secondaryLanguageCode
-            ?.lowercase()
+        LanguagePolicy.canonicalCode(secondaryLanguageCode)
 
     val orderedSubtitles =
         subtitles
@@ -411,18 +412,18 @@ internal fun buildPlayerMediaItem(
                             )
                         )
                         .setId(
-                            subtitle.id
+                            PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)
                         )
                         .setLabel(
-                            PLAYER_SUBTITLE_LABEL_PREFIX +
-                                subtitle.id
+                            PlayerTrackPolicy.externalSubtitleLabel(subtitle)
                         )
                         .setLanguage(
-                            subtitle.language
+                            LanguagePolicy.canonicalCode(subtitle.language)
                         )
                         .setMimeType(
                             subtitleMimeType(
-                                subtitle.url
+                                url = subtitle.url,
+                                declaredMimeType = subtitle.mimeType,
                             )
                         )
 
@@ -471,9 +472,7 @@ internal fun subtitleLanguagePriority(
     secondary: String?,
 ): Int {
     val normalized =
-        language
-            .trim()
-            .lowercase()
+        LanguagePolicy.canonicalOrUnknown(language)
 
     return when {
         preferred != null &&
@@ -498,28 +497,13 @@ internal fun subtitleLanguagePriority(
 
 internal fun subtitleMimeType(
     url: String,
+    declaredMimeType: String? = null,
 ): String =
-    when (
-        url.substringBefore("?")
-            .substringAfterLast(
-                ".",
-                "",
-            )
-            .lowercase()
-    ) {
-        "vtt" ->
-            MimeTypes.TEXT_VTT
-
-        "ssa",
-        "ass" ->
-            MimeTypes.TEXT_SSA
-
-        "ttml",
-        "xml" ->
-            MimeTypes.APPLICATION_TTML
-
-        else ->
-            MimeTypes.APPLICATION_SUBRIP
+    when (SubtitleFormatPolicy.detect(url, declaredMimeType)) {
+        SubtitleFormat.WEBVTT -> MimeTypes.TEXT_VTT
+        SubtitleFormat.SSA -> MimeTypes.TEXT_SSA
+        SubtitleFormat.TTML -> MimeTypes.APPLICATION_TTML
+        SubtitleFormat.SUBRIP -> MimeTypes.APPLICATION_SUBRIP
     }
 
 internal fun selectedVideoId(
@@ -541,4 +525,3 @@ internal fun playbackTitle(
     } else {
         "${media.name} • S${episode.season}E${episode.episode} • ${episode.title}"
     }
-

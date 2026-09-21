@@ -15,6 +15,7 @@ object LanguagePolicy {
         if ("malay" in words || "melayu" in words) return "ms"
 
         knownCode(normalized)?.let { return it }
+        detectCodes(normalized).singleOrNull()?.let { return it }
 
         val primary = normalized.substringBefore('-')
         return primary.takeIf {

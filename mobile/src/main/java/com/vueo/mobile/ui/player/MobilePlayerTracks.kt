@@ -599,6 +599,8 @@ internal fun playerTrackChoices(
                 PlayerTrackPolicy.builtinSubtitleSelectionId(
                     language = trackLanguage,
                     formatLabel = format.label,
+                    trackId = format.id,
+                    groupIndex = groupIndex,
                     trackIndex = trackIndex,
                 )
             }
@@ -828,4 +830,3 @@ internal fun PlayerVideoFit.toMedia3ResizeMode(): Int =
         PlayerVideoFit.ZOOM ->
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     }
-

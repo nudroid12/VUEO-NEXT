@@ -88,6 +88,8 @@ import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.SubtitleFormat
+import com.vueo.shared.core.player.SubtitleFormatPolicy
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.player.PlayerSourcePolicy
@@ -695,7 +697,10 @@ fun TvPlayerScreen(
             if (tracksBelongToActiveSource && !subtitlePreferenceRestored && currentTextTracks.isNotEmpty()) {
                 val globalSelection = settings.lastSubtitleSelection()
                 val contentSelection = settings.subtitleSelection(mediaKey)
-                val savedSelection = contentSelection ?: globalSelection
+                val savedSelection = PlayerTrackPolicy.resolvedSubtitleSelection(
+                    globalSelection = globalSelection,
+                    contentSelection = contentSelection,
+                )
                 val savedLanguage = (globalSelection ?: contentSelection)
                     ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
                     ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
@@ -1323,7 +1328,7 @@ private fun buildMediaItem(
             .setId(selectionId)
             .setLanguage(tvCanonicalLanguage(subtitle.language).takeUnless { it == "und" })
             .setLabel(tvExternalSubtitleLabel(subtitle))
-            .setMimeType(subtitleMimeType(subtitle.url))
+            .setMimeType(subtitleMimeType(subtitle.url, subtitle.mimeType))
             .setSelectionFlags(
                 if (subtitlesOnByDefault && autoSelectPreferred && !preferEmbedded && (
                     normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language)) == 0 ||
@@ -1362,12 +1367,12 @@ private fun withAlpha(argb: Int, percent: Int): Int {
 private fun alphaPercent(argb: Int): Int =
     (((argb ushr 24) * 100) + 127) / 255
 
-private fun subtitleMimeType(url: String): String =
-    when (url.substringBefore("?").substringAfterLast(".", "").lowercase()) {
-        "vtt" -> MimeTypes.TEXT_VTT
-        "ssa", "ass" -> MimeTypes.TEXT_SSA
-        "ttml", "xml" -> MimeTypes.APPLICATION_TTML
-        else -> MimeTypes.APPLICATION_SUBRIP
+private fun subtitleMimeType(url: String, declaredMimeType: String? = null): String =
+    when (SubtitleFormatPolicy.detect(url, declaredMimeType)) {
+        SubtitleFormat.WEBVTT -> MimeTypes.TEXT_VTT
+        SubtitleFormat.SSA -> MimeTypes.TEXT_SSA
+        SubtitleFormat.TTML -> MimeTypes.APPLICATION_TTML
+        SubtitleFormat.SUBRIP -> MimeTypes.APPLICATION_SUBRIP
     }
 
 private fun playbackTitle(media: VueoMediaItem, episode: EpisodeItem?): String =

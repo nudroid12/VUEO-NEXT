@@ -91,6 +91,15 @@ object StremioStreamParser {
             val sourceId = item.optString("id", language)
                 .trim()
                 .ifBlank { language }
+            val mimeType = listOf(
+                "mimeType",
+                "mime",
+                "format",
+            ).firstNotNullOfOrNull { field ->
+                item.optString(field)
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+            }
 
             SubtitleCandidate(
                 id = "${manifest.id}:$index:$sourceId",
@@ -102,6 +111,7 @@ object StremioStreamParser {
                     "title",
                     item.optString("name"),
                 ).takeIf { it.isNotBlank() },
+                mimeType = mimeType,
             )
         }
     }

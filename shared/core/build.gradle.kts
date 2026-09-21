@@ -28,4 +28,6 @@ dependencies {
 
     // Kept in shared core for the provider compatibility bridge migration.
     implementation("org.jsoup:jsoup:1.23.2")
+
+    testImplementation("junit:junit:4.13.2")
 }

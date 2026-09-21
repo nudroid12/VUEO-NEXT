@@ -87,6 +87,8 @@ internal fun tvPlayerTrackChoices(
                 else -> PlayerTrackPolicy.builtinSubtitleSelectionId(
                     language = trackLanguage,
                     formatLabel = format.label,
+                    trackId = format.id,
+                    groupIndex = groupIndex,
                     trackIndex = trackIndex,
                 )
             }

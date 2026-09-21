@@ -48,12 +48,30 @@ object PlayerTrackPolicy {
     fun builtinSubtitleSelectionId(
         language: String?,
         formatLabel: String?,
+        trackId: String?,
+        groupIndex: Int,
         trackIndex: Int,
-    ): String =
-        "builtin:${LanguagePolicy.canonicalOrUnknown(language)}:${formatLabel.orEmpty()}:$trackIndex"
+    ): String = listOf(
+        "builtin",
+        LanguagePolicy.canonicalOrUnknown(language),
+        formatLabel.orEmpty().trim().lowercase(),
+        trackId.orEmpty().trim().lowercase(),
+        groupIndex.toString(),
+        trackIndex.toString(),
+    ).joinToString(":")
 
     fun subtitleLanguageSelectionId(language: String?): String =
         SUBTITLE_LANGUAGE_PREFIX + LanguagePolicy.canonicalOrUnknown(language)
+
+    fun resolvedSubtitleSelection(
+        globalSelection: String?,
+        contentSelection: String?,
+    ): String? =
+        if (globalSelection == SUBTITLE_OFF) {
+            SUBTITLE_OFF
+        } else {
+            contentSelection ?: globalSelection
+        }
 
     fun audioSelectionId(
         language: String?,

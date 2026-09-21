@@ -847,9 +847,20 @@ internal fun PlayerScreen(
                         .buildUpon()
                         .setTrackTypeDisabled(
                             C.TRACK_TYPE_TEXT,
-                            !settingsStore
-                                .subtitlesOnByDefault(),
+                            subtitlesDisabled,
                         )
+                if (settingsStore.autoSelectPreferredSubtitle()) {
+                    val preferredTextLanguages = listOfNotNull(
+                        playerPreferredSubtitleLanguageCode(settingsStore),
+                        settingsStore.secondarySubtitleLanguage().languageCode,
+                    ).mapNotNull(com.vueo.shared.core.language.LanguagePolicy::canonicalCode)
+                        .distinct()
+                    if (preferredTextLanguages.isNotEmpty()) {
+                        initialTrackParameters.setPreferredTextLanguages(
+                            *preferredTextLanguages.toTypedArray()
+                        )
+                    }
+                }
                 PlayerSourcePolicy
                     .canonicalLanguageCode(media.originalLanguage)
                     ?.let {
@@ -1074,7 +1085,7 @@ internal fun PlayerScreen(
         tracks: Tracks = player.currentTracks,
     ) {
         val externalSubtitles =
-            subtitles.associateBy { it.id }
+            subtitles.associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
         audioTracks = playerTrackChoices(
             tracks = tracks,
             trackType = C.TRACK_TYPE_AUDIO,
@@ -1145,7 +1156,10 @@ internal fun PlayerScreen(
             val contentSelection =
                 settingsStore.subtitleSelection(mediaKey)
             val savedSelection =
-                contentSelection ?: globalSelection
+                PlayerTrackPolicy.resolvedSubtitleSelection(
+                    globalSelection = globalSelection,
+                    contentSelection = contentSelection,
+                )
             val savedLanguage =
                 (globalSelection ?: contentSelection)
                 ?.takeIf {
