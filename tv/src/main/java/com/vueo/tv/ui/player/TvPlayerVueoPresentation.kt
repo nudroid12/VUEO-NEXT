@@ -62,6 +62,7 @@ internal fun VueoPlayerPresentation(
     controlsVisible: Boolean,
     activePanel: TvPlayerPanel,
     playing: Boolean,
+    isBuffering: Boolean,
     positionMs: Long,
     durationMs: Long,
     nextEpisode: EpisodeItem?,
@@ -138,6 +139,7 @@ internal fun VueoPlayerPresentation(
                 activeSource = activeSource,
                 contentWarningVisible = warningVisible,
                 playing = playing,
+                isBuffering = isBuffering,
                 positionMs = positionMs,
                 durationMs = durationMs,
                 nextEpisode = nextEpisode,
@@ -347,6 +349,7 @@ private fun VueoPlayerControls(
     activeSource: StreamSource,
     contentWarningVisible: Boolean,
     playing: Boolean,
+    isBuffering: Boolean,
     positionMs: Long,
     durationMs: Long,
     nextEpisode: EpisodeItem?,
@@ -428,6 +431,16 @@ private fun VueoPlayerControls(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (isBuffering) {
+                    Text(
+                        text = "BUFFERING",
+                        color = Color.White.copy(alpha = .90f),
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(end = 2.dp),
+                    )
+                }
                 VueoPlayerTopAction(
                     icon = Icons.Rounded.Replay,
                     label = "Restart",
