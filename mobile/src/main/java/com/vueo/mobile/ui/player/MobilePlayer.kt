@@ -224,6 +224,8 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
+import com.vueo.shared.core.player.SubtitleReadinessProbe
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -636,6 +638,10 @@ internal fun PlayerScreen(
     var selectedSubtitleIsExternal by remember(mediaKey) {
         mutableStateOf(false)
     }
+    val subtitleSelectionScope = rememberCoroutineScope()
+    var subtitlePreparationJob by remember(mediaKey) {
+        mutableStateOf<kotlinx.coroutines.Job?>(null)
+    }
     val latestSelectedSubtitleIsExternal =
         rememberUpdatedState(selectedSubtitleIsExternal)
     var showAudioDialog by remember {
@@ -878,9 +884,7 @@ internal fun PlayerScreen(
 
     var appliedSubtitleUrls by remember(player) {
         mutableStateOf(
-            subtitles
-                .map { it.url }
-                .distinct()
+            PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
         )
     }
     var subtitlePreferenceRestored by remember(player) {
@@ -898,22 +902,18 @@ internal fun PlayerScreen(
         subtitles,
     ) {
         val latestSubtitleUrls =
-            subtitles
-                .map { it.url }
-                .distinct()
+            PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
 
         if (latestSubtitleUrls != appliedSubtitleUrls) {
-            val positionMs =
-                player.currentPosition
-                    .coerceAtLeast(0L)
-            val continuePlaying =
-                player.playWhenReady
+            val positionMs = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
+                currentPositionMs = player.currentPosition,
+                lastKnownPositionMs = lastValidPlaybackPositionMs,
+            )
 
             audioPreferenceRestored = false
             subtitlePreferenceRestored = false
 
-            player.setMediaItem(
-                buildPlayerMediaItem(
+            val updatedMediaItem = buildPlayerMediaItem(
                     sourceUrl = requireNotNull(source.url),
                     subtitles = subtitles,
                     preferredLanguageCode =
@@ -932,9 +932,12 @@ internal fun PlayerScreen(
                     embeddedPriority =
                         settingsStore
                             .embeddedSubtitlePriority(),
-                ),
-                positionMs,
-            )
+                )
+            val currentIndex = player.currentMediaItemIndex
+                .takeIf { it in 0 until player.mediaItemCount }
+                ?: 0
+            player.replaceMediaItem(currentIndex, updatedMediaItem)
+            player.seekTo(currentIndex, positionMs)
             player.trackSelectionParameters =
                 player.trackSelectionParameters
                     .buildUpon()
@@ -943,8 +946,6 @@ internal fun PlayerScreen(
                         subtitlesDisabled,
                     )
                     .build()
-            player.prepare()
-            player.playWhenReady = continuePlaying
             appliedSubtitleUrls = latestSubtitleUrls
         }
     }
@@ -1773,6 +1774,8 @@ internal fun PlayerScreen(
             subtitleDelayMs = subtitleDelayMs,
             style = subtitleStyle,
             onDisable = {
+                subtitlePreparationJob?.cancel()
+                subtitlePreparationJob = null
                 clearTrackOverride(
                     player = player,
                     trackType = C.TRACK_TYPE_TEXT,
@@ -1789,24 +1792,59 @@ internal fun PlayerScreen(
                 )
             },
             onSelect = { choice ->
-                applyTrackChoice(
-                    player = player,
-                    trackType = C.TRACK_TYPE_TEXT,
-                    choice = choice,
-                )
-                subtitlesDisabled = false
-                selectedSubtitleIsExternal =
-                    choice.selectionId
-                        .startsWith("external:")
-                settingsStore.setSubtitleSelection(
-                    contentId = mediaKey,
-                    selectionId = choice.selectionId,
-                )
-                settingsStore.setLastSubtitleSelection(
-                    PlayerTrackPolicy.subtitleLanguageSelectionId(
-                        choice.language
+                fun commitSelection(selected: PlayerTrackChoice) {
+                    applyTrackChoice(
+                        player = player,
+                        trackType = C.TRACK_TYPE_TEXT,
+                        choice = selected,
                     )
-                )
+                    subtitlesDisabled = false
+                    selectedSubtitleIsExternal =
+                        selected.selectionId.startsWith("external:")
+                    settingsStore.setSubtitleSelection(
+                        contentId = mediaKey,
+                        selectionId = selected.selectionId,
+                    )
+                    settingsStore.setLastSubtitleSelection(
+                        PlayerTrackPolicy.subtitleLanguageSelectionId(
+                            selected.language
+                        )
+                    )
+                }
+
+                subtitlePreparationJob?.cancel()
+                val externalSubtitle = choice.externalSubtitle
+                if (externalSubtitle == null) {
+                    subtitlePreparationJob = null
+                    commitSelection(choice)
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Preparing subtitle… video will keep playing.",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    subtitlePreparationJob = subtitleSelectionScope.launch {
+                        val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
+                        val latestChoice = textTracks.firstOrNull {
+                            it.selectionId == choice.selectionId
+                        }
+                        if (ready && latestChoice != null) {
+                            commitSelection(latestChoice)
+                            Toast.makeText(
+                                context,
+                                "Subtitle ready.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else if (!ready) {
+                            Toast.makeText(
+                                context,
+                                "Subtitle is not ready yet. Please try again.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        subtitlePreparationJob = null
+                    }
+                }
             },
             onSubtitleDelayChange = { delayMs ->
                 subtitleDelayMs =

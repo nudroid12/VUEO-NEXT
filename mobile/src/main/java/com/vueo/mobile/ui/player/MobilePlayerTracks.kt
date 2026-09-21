@@ -468,6 +468,7 @@ internal data class PlayerTrackChoice(
     val sourceLabel: String,
     val metadata: String?,
     val selectionId: String,
+    val externalSubtitle: SubtitleTrack? = null,
 )
 
 internal const val PLAYER_SUBTITLE_LABEL_PREFIX =
@@ -637,6 +638,7 @@ internal fun playerTrackChoices(
                             ?: PlayerTrackPolicy.subtitleDisplayId(format.id)
                     },
                     selectionId = selectionId,
+                    externalSubtitle = externalSubtitle,
                 )
         }
     }

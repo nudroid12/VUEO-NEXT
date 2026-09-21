@@ -1,0 +1,96 @@
+package com.vueo.shared.core.player
+
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
+
+/**
+ * Warms a slow generated subtitle before its Media3 text track is selected.
+ * This keeps a translating endpoint from putting the whole player into BUFFERING.
+ */
+object SubtitleReadinessProbe {
+    suspend fun awaitReady(
+        url: String,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val nowMs = System.currentTimeMillis()
+        readyAtMs[url]
+            ?.takeIf { nowMs - it <= READY_CACHE_MS }
+            ?.let { return@withContext true }
+
+        val deadlineNs = System.nanoTime() + timeoutMs.coerceAtLeast(1L) * 1_000_000L
+
+        while (System.nanoTime() < deadlineNs) {
+            coroutineContext.ensureActive()
+            val result = probeOnce(url)
+            when (result) {
+                ProbeResult.READY -> {
+                    readyAtMs[url] = System.currentTimeMillis()
+                    return@withContext true
+                }
+                ProbeResult.FAILED -> return@withContext false
+                ProbeResult.RETRY -> delay(RETRY_DELAY_MS)
+            }
+        }
+
+        false
+    }
+
+    private fun probeOnce(url: String): ProbeResult {
+        val connection = try {
+            URL(url).openConnection() as HttpURLConnection
+        } catch (_: Throwable) {
+            return ProbeResult.FAILED
+        }
+
+        return try {
+            connection.instanceFollowRedirects = true
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "text/vtt,text/plain,application/x-subrip,*/*")
+            connection.setRequestProperty("User-Agent", "VUEO subtitle preflight")
+
+            when (connection.responseCode) {
+                in 200..201, in 203..299 -> {
+                    connection.inputStream.use { input ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        while (input.read(buffer) >= 0) {
+                            // Drain the generated subtitle so the provider can cache it.
+                        }
+                    }
+                    ProbeResult.READY
+                }
+
+                202, 425, 429, 503 -> ProbeResult.RETRY
+                else -> ProbeResult.FAILED
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            ProbeResult.RETRY
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private enum class ProbeResult {
+        READY,
+        RETRY,
+        FAILED,
+    }
+
+    private const val DEFAULT_TIMEOUT_MS = 60_000L
+    private const val CONNECT_TIMEOUT_MS = 10_000
+    private const val READ_TIMEOUT_MS = 35_000
+    private const val RETRY_DELAY_MS = 1_000L
+    private const val BUFFER_SIZE = 16 * 1024
+    private const val READY_CACHE_MS = 15 * 60 * 1_000L
+    private val readyAtMs = ConcurrentHashMap<String, Long>()
+}

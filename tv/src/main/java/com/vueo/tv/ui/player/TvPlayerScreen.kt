@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.util.TypedValue
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -88,6 +89,8 @@ import com.vueo.shared.core.media.MediaItem as VueoMediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
+import com.vueo.shared.core.player.SubtitleReadinessProbe
 import com.vueo.shared.core.player.SubtitleFormat
 import com.vueo.shared.core.player.SubtitleFormatPolicy
 import com.vueo.shared.core.player.PlayerSkipRepository
@@ -215,6 +218,7 @@ fun TvPlayerScreen(
         )
     }
     var selectedSubtitleIsExternal by remember(mediaKey) { mutableStateOf(false) }
+    var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
     val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
     val httpFactory = remember(bundle.videoId) {
@@ -270,7 +274,7 @@ fun TvPlayerScreen(
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var appliedSubtitleUrls by remember(bundle.videoId, activeSource.url) {
-        mutableStateOf(bundle.subtitles.map { it.url }.distinct())
+        mutableStateOf(PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles))
     }
     var playbackSpeed by remember(bundle.videoId) { mutableStateOf(settings.playerPlaybackSpeed()) }
     var videoFit by remember(bundle.videoId) { mutableStateOf(settings.playerVideoFit()) }
@@ -455,31 +459,36 @@ fun TvPlayerScreen(
         player.setPlaybackSpeed(playbackSpeed)
         player.prepare()
         player.playWhenReady = true
-        appliedSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
+        appliedSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles)
     }
 
     LaunchedEffect(player, activeSource.url, bundle.subtitles) {
         val url = activeSource.url ?: return@LaunchedEffect
-        val latestSubtitleUrls = bundle.subtitles.map { it.url }.distinct()
+        val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles)
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
-        val currentPosition = player.currentPosition.coerceAtLeast(0L)
-        val continuePlaying = player.playWhenReady
+        val currentPosition = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
+            currentPositionMs = player.currentPosition,
+            lastKnownPositionMs = positionMs,
+        )
         val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
         audioPreferenceRestored = false
         subtitlePreferenceRestored = false
-        player.setMediaItem(
-            buildMediaItem(
+        val updatedMediaItem = buildMediaItem(
                 sourceUrl = url,
                 subtitles = bundle.subtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
                 preferEmbedded = settings.embeddedSubtitlePriority(),
-            ), currentPosition,
-        )
+            )
+        val currentIndex = player.currentMediaItemIndex
+            .takeIf { it in 0 until player.mediaItemCount }
+            ?: 0
+        player.replaceMediaItem(currentIndex, updatedMediaItem)
+        player.seekTo(currentIndex, currentPosition)
         var params = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
@@ -487,8 +496,6 @@ fun TvPlayerScreen(
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
         PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { params = params.setPreferredAudioLanguages(it) }
         player.trackSelectionParameters = params.build()
-        player.prepare()
-        player.playWhenReady = continuePlaying
         appliedSubtitleUrls = latestSubtitleUrls
     }
 
@@ -1156,6 +1163,8 @@ fun TvPlayerScreen(
                 style = subtitleStyle,
                 onInteraction = ::noteInteraction,
                 onDisable = {
+                    subtitlePreparationJob?.cancel()
+                    subtitlePreparationJob = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
@@ -1163,13 +1172,49 @@ fun TvPlayerScreen(
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
                 onSelect = { choice ->
-                    tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, choice)
-                    subtitlesDisabled = false
-                    selectedSubtitleIsExternal = choice.selectionId.startsWith("external:")
-                    settings.setSubtitleSelection(mediaKey, choice.selectionId)
-                    settings.setLastSubtitleSelection(
-                        PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
-                    )
+                    fun commitSelection(selected: TvPlayerTrackChoice) {
+                        tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
+                        subtitlesDisabled = false
+                        selectedSubtitleIsExternal = selected.selectionId.startsWith("external:")
+                        settings.setSubtitleSelection(mediaKey, selected.selectionId)
+                        settings.setLastSubtitleSelection(
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(selected.language)
+                        )
+                    }
+
+                    subtitlePreparationJob?.cancel()
+                    val externalSubtitle = choice.externalSubtitle
+                    if (externalSubtitle == null) {
+                        subtitlePreparationJob = null
+                        commitSelection(choice)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Preparing subtitle… video will keep playing.",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        subtitlePreparationJob = focusScope.launch {
+                            val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
+                            val latestChoice = textTracks.firstOrNull {
+                                it.selectionId == choice.selectionId
+                            }
+                            if (ready && latestChoice != null) {
+                                commitSelection(latestChoice)
+                                Toast.makeText(
+                                    context,
+                                    "Subtitle ready.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            } else if (!ready) {
+                                Toast.makeText(
+                                    context,
+                                    "Subtitle is not ready yet. Please try again.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            subtitlePreparationJob = null
+                        }
+                    }
                 },
                 onSubtitleDelayChange = { updated ->
                     subtitleDelayMs = updated.coerceIn(-60_000, 60_000)

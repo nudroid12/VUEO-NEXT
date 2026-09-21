@@ -29,6 +29,7 @@ internal data class TvPlayerTrackChoice(
     val sourceLabel: String,
     val metadata: String?,
     val selectionId: String,
+    val externalSubtitle: SubtitleTrack? = null,
 )
 
 internal data class TvSubtitleLanguageGroup(
@@ -113,6 +114,7 @@ internal fun tvPlayerTrackChoices(
                         ?: PlayerTrackPolicy.subtitleDisplayId(format.id)
                 },
                 selectionId = selectionId,
+                externalSubtitle = externalSubtitle,
             )
         }
     }
