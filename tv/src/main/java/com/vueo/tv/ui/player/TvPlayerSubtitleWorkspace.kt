@@ -62,6 +62,7 @@ import com.vueo.tv.ui.TvNetworkImage
 internal fun VueoPlayerSubtitleWorkspace(
     tracks: List<TvPlayerTrackChoice>,
     subtitlesDisabled: Boolean,
+    pendingSelectionId: String?,
     entryFocusRequester: FocusRequester,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -95,7 +96,9 @@ internal fun VueoPlayerSubtitleWorkspace(
     val groups = remember(filteredTracks, preferredLanguageCode, secondaryLanguageCode) {
         tvBuildSubtitleLanguageGroups(filteredTracks, preferredLanguageCode, secondaryLanguageCode)
     }
-    val selectedTrack = tracks.firstOrNull { it.selected }
+    val selectedTrack = tracks.firstOrNull {
+        it.selectionId == pendingSelectionId
+    } ?: tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
     val selectedLanguageVisible = selectedLanguageCode
         ?.takeIf { code -> groups.any { it.code == code } }
@@ -149,7 +152,10 @@ internal fun VueoPlayerSubtitleWorkspace(
         groups.indexOfFirst { it.code == activeLanguageCode }.let { if (it < 0) 0 else it + 1 }
     ) ?: languageRequesters.first()
     val firstTrackRequester = if (visibleTracks.isNotEmpty()) trackRequesters.first() else FocusRequester.Cancel
-    val selectedVisibleTrackIndex = visibleTracks.indexOfFirst { it.selected }
+    val selectedVisibleTrackIndex = visibleTracks
+        .indexOfFirst { it.selectionId == pendingSelectionId }
+        .takeIf { it >= 0 }
+        ?: visibleTracks.indexOfFirst { it.selected }
     var styleReturnTrackIndex by remember(visibleTracks.map { it.key }) {
         mutableIntStateOf(selectedVisibleTrackIndex.coerceAtLeast(0))
     }
@@ -339,11 +345,24 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     VueoSubtitleTrackRow(
                                         title = track.label,
                                         provider = track.sourceLabel,
-                                        detail = track.metadata
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?.let { "ID: $it" }
-                                            .orEmpty(),
-                                        selected = !subtitlesDisabled && track.selected,
+                                        detail = if (
+                                            track.selectionId == pendingSelectionId
+                                        ) {
+                                            "Translating…"
+                                        } else {
+                                            track.metadata
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?.let { "ID: $it" }
+                                                .orEmpty()
+                                        },
+                                        selected = !subtitlesDisabled &&
+                                            (
+                                                track.selectionId == pendingSelectionId ||
+                                                    (
+                                                        pendingSelectionId == null &&
+                                                            track.selected
+                                                        )
+                                                ),
                                         requester = trackRequesters[index],
                                         blockUp = index == 0,
                                         blockDown = index == visibleTracks.lastIndex,

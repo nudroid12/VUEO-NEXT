@@ -90,6 +90,7 @@ internal fun PlayerSubtitleWorkspace(
     visible: Boolean,
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
+    pendingSelectionId: String?,
     secondaryLanguageCode: String?,
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
@@ -135,7 +136,9 @@ internal fun PlayerSubtitleWorkspace(
             secondaryLanguageCode = secondaryLanguageCode,
         )
     }
-    val selectedTrack = tracks.firstOrNull { it.selected }
+    val selectedTrack = tracks.firstOrNull {
+        it.selectionId == pendingSelectionId
+    } ?: tracks.firstOrNull { it.selected }
     val selectedLanguageCode = selectedTrack?.language
         ?.let(::canonicalSubtitleLanguage)
     val selectedLanguageVisible = selectedLanguageCode
@@ -292,9 +295,17 @@ internal fun PlayerSubtitleWorkspace(
                                             ) { track ->
                                                 SubtitleTrackRow(
                                                     track = track,
+                                                    pending =
+                                                        track.selectionId == pendingSelectionId,
                                                     selected =
                                                         !subtitlesDisabled &&
-                                                            track.selected,
+                                                            (
+                                                                track.selectionId == pendingSelectionId ||
+                                                                    (
+                                                                        pendingSelectionId == null &&
+                                                                            track.selected
+                                                                        )
+                                                                ),
                                                     onClick = {
                                                         styleOpen = true
                                                         onSelect(track)
@@ -429,6 +440,7 @@ private fun LanguageRow(
 @Composable
 private fun SubtitleTrackRow(
     track: PlayerTrackChoice,
+    pending: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -471,17 +483,23 @@ private fun SubtitleTrackRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        track.metadata
-            ?.takeIf { it.isNotBlank() }
-            ?.let { subtitleId ->
-                Text(
-                    "ID: $subtitleId",
-                    color = foreground.copy(alpha = .58f),
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        val detail = if (pending) {
+            "Translating…"
+        } else {
+            track.metadata
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "ID: $it" }
+        }
+        detail?.let {
+            Text(
+                it,
+                color = if (pending) SubtitleAccent.copy(alpha = .82f)
+                else foreground.copy(alpha = .58f),
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

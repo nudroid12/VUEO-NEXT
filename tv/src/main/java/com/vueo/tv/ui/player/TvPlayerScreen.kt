@@ -217,6 +217,15 @@ fun TvPlayerScreen(
         )
     }
     var selectedSubtitleIsExternal by remember(mediaKey) { mutableStateOf(false) }
+    var pendingSubtitleSelectionId by remember(mediaKey) {
+        mutableStateOf(
+            settings.subtitleSelection(mediaKey)
+                ?.takeIf {
+                    settings.lastSubtitleSelection() != TV_SUBTITLE_OFF &&
+                        it.startsWith("external:")
+                }
+        )
+    }
     var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
     val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
@@ -450,7 +459,10 @@ fun TvPlayerScreen(
             resumeTargetMs.coerceAtLeast(0L),
         )
         var params = player.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitlesDisabled)
+            .setTrackTypeDisabled(
+                C.TRACK_TYPE_TEXT,
+                subtitlesDisabled || pendingSubtitleSelectionId != null,
+            )
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) {
             params = params.setPreferredTextLanguages(*languages.toTypedArray())
         }
@@ -495,7 +507,10 @@ fun TvPlayerScreen(
         var params = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, subtitlesDisabled)
+            .setTrackTypeDisabled(
+                C.TRACK_TYPE_TEXT,
+                subtitlesDisabled || pendingSubtitleSelectionId != null,
+            )
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
         PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { params = params.setPreferredAudioLanguages(it) }
         player.trackSelectionParameters = params.build()
@@ -755,8 +770,54 @@ fun TvPlayerScreen(
                         tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                         subtitlesDisabled = true
                         selectedSubtitleIsExternal = false
+                        pendingSubtitleSelectionId = null
                     }
+
+                    savedTrack?.externalSubtitle != null -> {
+                        tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
+                        subtitlesDisabled = false
+                        pendingSubtitleSelectionId = savedTrack.selectionId
+                        subtitlePreparationJob?.cancel()
+                        subtitlePreparationJob = focusScope.launch {
+                            val ready = SubtitleReadinessProbe.awaitReady(
+                                requireNotNull(savedTrack.externalSubtitle).url
+                            )
+                            var refreshWaitAttempts = 0
+                            while (
+                                ready &&
+                                subtitleTrackRefreshInProgress &&
+                                refreshWaitAttempts < 200
+                            ) {
+                                delay(50L)
+                                refreshWaitAttempts += 1
+                            }
+                            val latestChoice = tvPlayerTrackChoices(
+                                tracks = player.currentTracks,
+                                trackType = C.TRACK_TYPE_TEXT,
+                                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                            ).firstOrNull {
+                                it.selectionId == savedTrack.selectionId
+                            }
+                            if (
+                                ready &&
+                                pendingSubtitleSelectionId == savedTrack.selectionId &&
+                                latestChoice != null
+                            ) {
+                                tvApplyTrackChoice(
+                                    player,
+                                    C.TRACK_TYPE_TEXT,
+                                    latestChoice,
+                                )
+                                pendingSubtitleSelectionId = null
+                                subtitlesDisabled = false
+                                selectedSubtitleIsExternal = true
+                            }
+                            subtitlePreparationJob = null
+                        }
+                    }
+
                     savedTrack != null -> {
+                        pendingSubtitleSelectionId = null
                         tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, savedTrack)
                         subtitlesDisabled = false
                         selectedSubtitleIsExternal = savedTrack.selectionId.startsWith("external:")
@@ -1185,6 +1246,7 @@ fun TvPlayerScreen(
             VueoPlayerSubtitleWorkspace(
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
+                pendingSelectionId = pendingSubtitleSelectionId,
                 entryFocusRequester = subtitleWorkspaceRequester,
                 preferredLanguageCode = settings.preferredSubtitleLanguage().languageCode,
                 secondaryLanguageCode = settings.secondarySubtitleLanguage().languageCode,
@@ -1196,6 +1258,7 @@ fun TvPlayerScreen(
                 onDisable = {
                     subtitlePreparationJob?.cancel()
                     subtitlePreparationJob = null
+                    pendingSubtitleSelectionId = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
@@ -1217,8 +1280,15 @@ fun TvPlayerScreen(
                     val externalSubtitle = choice.externalSubtitle
                     if (externalSubtitle == null) {
                         subtitlePreparationJob = null
+                        pendingSubtitleSelectionId = null
                         commitSelection(choice)
                     } else {
+                        pendingSubtitleSelectionId = choice.selectionId
+                        subtitlesDisabled = false
+                        settings.setSubtitleSelection(mediaKey, choice.selectionId)
+                        settings.setLastSubtitleSelection(
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
+                        )
                         subtitlePreparationJob = focusScope.launch {
                             val ready = SubtitleReadinessProbe.awaitReady(externalSubtitle.url)
                             var refreshWaitAttempts = 0
@@ -1237,8 +1307,13 @@ fun TvPlayerScreen(
                             ).firstOrNull {
                                 it.selectionId == choice.selectionId
                             }
-                            if (ready && latestChoice != null) {
+                            if (
+                                ready &&
+                                pendingSubtitleSelectionId == choice.selectionId &&
+                                latestChoice != null
+                            ) {
                                 commitSelection(latestChoice)
+                                pendingSubtitleSelectionId = null
                             }
                             subtitlePreparationJob = null
                         }
