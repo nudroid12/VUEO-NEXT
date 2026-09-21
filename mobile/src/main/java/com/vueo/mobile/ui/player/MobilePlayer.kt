@@ -1397,10 +1397,7 @@ internal fun PlayerScreen(
                         ) {
                             showNextEpisodeCard = true
                             nextEpisodeCountdown =
-                                if (
-                                    autoPlayNextEpisode &&
-                                    !sleepAfterEpisode
-                                ) {
+                                if (autoPlayNextEpisode) {
                                     8
                                 } else {
                                     null
