@@ -524,352 +524,155 @@ internal fun DataStorageSettingsScreen(
 }
 
 @Composable
-internal fun UpdatesSettingsScreen(
-    settingsStore: SettingsStore,
+internal fun AboutVueoSettingsScreen(
     onBack: () -> Unit,
 ) {
-    val context =
-        LocalContext.current
-    val scope =
-        rememberCoroutineScope()
-    val updateStore =
-        remember(context) {
-            VueoUpdateStore(
-                context.applicationContext
-            )
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val updateStore = remember(context) { VueoUpdateStore(context.applicationContext) }
+    var release by remember { mutableStateOf(updateStore.latestRelease()) }
+    var checking by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0) }
+    var updateMessage by remember { mutableStateOf<String?>(updateStore.lastError()) }
+    val availableRelease = release?.takeIf { it.isNewerThanCurrent() }
+
+    val updateAction: () -> Unit = updateAction@{
+        if (checking || downloading) return@updateAction
+
+        if (availableRelease != null) {
+            if (VueoUpdateManager.needsInstallPermission(context)) {
+                VueoUpdateManager.openInstallPermissionSettings(context)
+                updateMessage = "Allow installs for VUEO, then tap Update again."
+                return@updateAction
+            }
+
+            downloading = true
+            downloadProgress = 0
+            updateMessage = null
+            scope.launch {
+                VueoUpdateManager.downloadAndInstall(
+                    context = context.applicationContext,
+                    release = availableRelease,
+                    onProgress = { downloadProgress = it },
+                ).onFailure {
+                    updateMessage = it.message ?: "Unable to install update."
+                }
+                downloading = false
+            }
+            return@updateAction
         }
 
-    var automaticChecks by remember {
-        mutableStateOf(
-            settingsStore
-                .automaticUpdateChecksEnabled()
-        )
+        checking = true
+        updateMessage = null
+        scope.launch {
+            val result = VueoUpdateManager.check(
+                context = context.applicationContext,
+                force = true,
+            )
+            release = result.release
+            checking = false
+            updateMessage = when {
+                result.error != null -> result.error
+                result.release?.isNewerThanCurrent() == true ->
+                    "VUEO ${result.release.versionName} is ready to install."
+                else -> "You're up to date."
+            }
+        }
     }
-    var release by remember {
-        mutableStateOf(
-            updateStore.latestRelease()
-        )
-    }
-    var checking by remember {
-        mutableStateOf(false)
-    }
-    var downloading by remember {
-        mutableStateOf(false)
-    }
-    var downloadProgress by remember {
-        mutableStateOf(0)
-    }
-    var statusMessage by remember {
-        mutableStateOf<String?>(
-            null
-        )
-    }
-    var errorMessage by remember {
-        mutableStateOf<String?>(
-            updateStore.lastError()
-        )
-    }
-
-    val updateAvailable: Boolean =
-        release
-            ?.isNewerThanCurrent()
-            ?: false
 
     VueoSettingsPage(
-        title = "Updates",
-        subtitle =
-            "Fast VUEO development updates.",
+        title = "About VUEO",
+        subtitle = "Version, updates and app information.",
         onBack = onBack,
     ) {
         item {
-            VueoStatusCard(
-                title =
-                    "Current Version",
-                value =
-                    BuildConfig.VERSION_NAME,
-                text =
-                    "Build ${BuildConfig.VERSION_CODE}. Updates install over the existing app and keep local VUEO data.",
-            )
-        }
-
-        item {
-            VueoSettingsToggleCard(
-                title =
-                    "Automatic Update Checks",
-                subtitle =
-                    "Check the VUEO Dev channel in the background. Checks are rate-limited to avoid unnecessary network use.",
-                checked =
-                    automaticChecks,
-                onCheckedChange = {
-                    automaticChecks = it
-                    settingsStore
-                        .setAutomaticUpdateChecksEnabled(
-                            it
-                        )
-                },
-            )
-        }
-
-        item {
-            VueoSettingsActionCard(
-                title =
-                    "Check for Updates",
-                subtitle =
-                    if (
-                        updateAvailable
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = VueoPalette.Surface,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        "VUEO ${release?.versionName} is available."
-                    } else {
-                        "Check the latest green VUEO Dev build."
-                    },
-                action =
-                    if (checking) {
-                        "Checking..."
-                    } else {
-                        "Check"
-                    },
-                onClick = {
-                    if (
-                        !checking
-                    ) {
-                        checking = true
-                        statusMessage =
-                            null
-                        errorMessage =
-                            null
-
-                        scope.launch {
-                            val result =
-                                VueoUpdateManager
-                                    .check(
-                                        context =
-                                            context.applicationContext,
-                                        force =
-                                            true,
-                                    )
-
-                            release =
-                                result.release
-                            checking = false
-
-                            val hasNewerRelease: Boolean =
-                                result.release
-                                    ?.isNewerThanCurrent()
-                                    ?: false
-
-                            if (
-                                result.error !=
-                                null
-                            ) {
-                                errorMessage =
-                                    result.error
-                            } else if (
-                                hasNewerRelease
-                            ) {
-                                statusMessage =
-                                    "Update ready."
-                            } else {
-                                statusMessage =
-                                    "You're up to date."
-                            }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("VUEO", modifier = Modifier.weight(1f), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(BuildConfig.VERSION_NAME, color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
+                        Text("A universal media player.", color = VueoPalette.Muted, fontSize = 10.5.sp)
                     }
-                },
-            )
-        }
 
-        val availableRelease =
-            release
-                ?.takeIf {
-                    it.isNewerThanCurrent()
-                }
-
-        if (
-            availableRelease != null
-        ) {
-            item {
-                VueoStatusCard(
-                    title =
-                        "Update Available",
-                    value =
-                        availableRelease
-                            .versionName,
-                    text =
-                        availableRelease
-                            .changelog
-                            .take(4)
-                            .takeIf {
-                                it.isNotEmpty()
-                            }
-                            ?.joinToString(
-                                "\n• ",
-                                prefix = "• ",
-                            )
-                            ?: "Latest green VUEO development build.",
-                )
-            }
-
-            item {
-                VueoSettingsActionCard(
-                    title =
-                        "Download & Install",
-                    subtitle =
-                        if (
-                            downloading
-                        ) {
-                            "Downloading signed APK. Keep VUEO open until Android's installer appears."
-                        } else {
-                            "Download the verified APK and hand it to Android's system installer."
+                    VueoAboutDivider()
+                    VueoAboutRow(
+                        title = "Check for updates",
+                        detail = updateMessage,
+                        value = when {
+                            checking -> "Checking…"
+                            downloading -> "$downloadProgress%"
+                            availableRelease != null && VueoUpdateManager.needsInstallPermission(context) -> "Allow"
+                            availableRelease != null -> "Update ${availableRelease.versionName}"
+                            else -> "Up to date"
                         },
-                    action =
-                        when {
-                            downloading ->
-                                "$downloadProgress%"
-
-                            VueoUpdateManager
-                                .needsInstallPermission(
-                                    context
-                                ) ->
-                                "Allow"
-
-                            else ->
-                                "Update"
-                        },
-                    onClick = downloadClick@{
-                        if (downloading) {
-                            return@downloadClick
-                        }
-
-                        if (
-                            VueoUpdateManager
-                                .needsInstallPermission(
-                                    context
-                                )
-                        ) {
-                            VueoUpdateManager
-                                .openInstallPermissionSettings(
-                                    context
-                                )
-                            statusMessage =
-                                "Allow installs for VUEO, then return and tap Update again."
-                            return@downloadClick
-                        }
-
-                        val target =
-                            availableRelease
-
-                        downloading =
-                            true
-                        downloadProgress =
-                            0
-                        errorMessage =
-                            null
-                        statusMessage =
-                            null
-
-                        scope.launch {
-                            val result =
-                                VueoUpdateManager
-                                    .downloadAndInstall(
-                                        context =
-                                            context.applicationContext,
-                                        release =
-                                            target,
-                                        onProgress = {
-                                            progress ->
-                                            downloadProgress =
-                                                progress
-                                        },
-                                    )
-
-                            downloading =
-                                false
-
-                            result
-                                .onFailure {
-                                    failure ->
-                                    errorMessage =
-                                        failure.message
-                                            ?: "Unable to install update."
-                                }
-                        }
-                    },
-                )
-            }
-        }
-
-        statusMessage
-            ?.let {
-                message ->
-                item {
-                    VueoInfoCard(
-                        title = "Status",
-                        text = message,
+                        onClick = updateAction,
+                    )
+                    VueoAboutDivider()
+                    VueoAboutRow(
+                        title = "Privacy",
+                        detail = "Settings and API keys stay on this device. API keys are excluded from backups unless you include them.",
+                    )
+                    VueoAboutDivider()
+                    VueoAboutRow(
+                        title = "TMDB Attribution",
+                        detail = "This product uses the TMDB API but is not endorsed or certified by TMDB.",
                     )
                 }
             }
-
-        errorMessage
-            ?.let {
-                message ->
-                item {
-                    VueoInfoCard(
-                        title =
-                            "Update Error",
-                        text =
-                            message,
-                    )
-                }
-            }
-
-        item {
-            VueoInfoCard(
-                title =
-                    "Android confirmation",
-                text =
-                    "Android requires a final system confirmation before an APK update is installed. The first update may also ask you to allow installs from VUEO.",
-            )
         }
     }
 }
 
 @Composable
-internal fun AboutVueoSettingsScreen(
-    onBack: () -> Unit,
+private fun VueoAboutDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .height(1.dp)
+            .background(VueoPalette.Stroke.copy(alpha = .55f))
+    )
+}
+
+@Composable
+private fun VueoAboutRow(
+    title: String,
+    detail: String? = null,
+    value: String? = null,
+    onClick: (() -> Unit)? = null,
 ) {
-    VueoSettingsPage(
-        title = "About VUEO",
-        subtitle = "App and architecture information.",
-        onBack = onBack,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        item {
-            VueoStatusCard(
-                title = "VUEO",
-                value = BuildConfig.VERSION_NAME,
-                text = "A universal media frontend built around open content sources, progressive source discovery, and direct playback.",
-            )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(title, color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+            detail?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = VueoPalette.Muted, fontSize = 10.sp, lineHeight = 14.sp, maxLines = 2)
+            }
         }
-
-        item {
-            VueoInfoCard(
-                title = "Architecture",
-                text = "Built-in VUEO features, addons, provider plugins, Unified Source Engine, Smart Source Ranking, and modern playback.",
-            )
-        }
-
-        item {
-            VueoInfoCard(
-                title = "Privacy",
-                text = "Settings and API keys are stored locally on the device. VUEO backups exclude API keys by default and include them only when the user explicitly enables that option.",
-            )
-        }
-
-        item {
-            VueoInfoCard(
-                title = "TMDB Attribution",
-                text = "This product uses the TMDB API but is not endorsed or certified by TMDB.",
-            )
+        value?.let {
+            Spacer(Modifier.width(10.dp))
+            Text(it, color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
-

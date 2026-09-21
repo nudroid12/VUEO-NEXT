@@ -293,7 +293,6 @@ private enum class SettingsPage {
     SOURCES,
     APPEARANCE,
     DATA_STORAGE,
-    UPDATES,
     ABOUT,
 }
 
@@ -988,9 +987,6 @@ fun VueoApp() {
                             onDataStorage = {
                                 settingsPage = SettingsPage.DATA_STORAGE
                             },
-                            onUpdates = {
-                                settingsPage = SettingsPage.UPDATES
-                            },
                             onAbout = {
                                 settingsPage = SettingsPage.ABOUT
                             },
@@ -1169,14 +1165,6 @@ fun VueoApp() {
                                 libraryVersion++
                                 profileVersion++
                             },
-                            onBack = {
-                                settingsPage = SettingsPage.ROOT
-                            },
-                        )
-
-                    SettingsPage.UPDATES ->
-                        UpdatesSettingsScreen(
-                            settingsStore = settingsStore,
                             onBack = {
                                 settingsPage = SettingsPage.ROOT
                             },
@@ -1425,4 +1413,3 @@ private fun RowScope.ProfileBottomTab(
                 ),
     )
 }
-

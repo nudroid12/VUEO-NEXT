@@ -166,7 +166,6 @@ internal fun VueoSettingsHub(
     onSources: () -> Unit,
     onAppearance: () -> Unit,
     onDataStorage: () -> Unit,
-    onUpdates: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -184,12 +183,6 @@ internal fun VueoSettingsHub(
         pluginStore.tmdbApiKey().isNotBlank()
     val mdblistConfigured =
         settingsStore.mdblistApiKey().isNotBlank()
-    val updateStore = remember {
-        VueoUpdateStore(context.applicationContext)
-    }
-    val latestUpdate =
-        updateStore.latestRelease()
-
     val activeProfile =
         remember(
             profileVersion
@@ -543,13 +536,7 @@ internal fun VueoSettingsHub(
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow("Data & Storage", "Backup, history, cache & app data.", "Local device data", Icons.Default.VideoLibrary, onDataStorage)
                             VueoSettingsHubDivider()
-                            VueoSettingsHubRow(
-                                "Updates", "Version & update preferences.",
-                                if (latestUpdate?.isNewerThanCurrent() == true) "Update ${latestUpdate.versionName} available" else "Up to date",
-                                Icons.Default.Refresh, onUpdates,
-                            )
-                            VueoSettingsHubDivider()
-                            VueoSettingsHubRow("About VUEO", "Privacy, architecture & build information.", "Local-first app info", Icons.Default.Settings, onAbout)
+                            VueoSettingsHubRow("About VUEO", "Version, updates, privacy & attribution.", BuildConfig.VERSION_NAME, Icons.Default.Settings, onAbout)
                         }
                     }
 
@@ -632,4 +619,3 @@ internal fun VueoSettingsHubRow(
         Text("›", color = VueoPalette.Muted, fontSize = 22.sp, fontWeight = FontWeight.Medium)
     }
 }
-

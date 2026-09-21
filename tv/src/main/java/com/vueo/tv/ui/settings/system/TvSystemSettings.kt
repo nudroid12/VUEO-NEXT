@@ -159,8 +159,7 @@ internal fun TvDataStorageSettings(
 }
 
 @Composable
-internal fun TvUpdatesSettings(
-    runtime: TvRuntime,
+internal fun TvAboutSettings(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
@@ -170,18 +169,33 @@ internal fun TvUpdatesSettings(
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
     val installPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) {
-        restoreSettingsFocus()
-    }
-    var autoChecks by remember { mutableStateOf(runtime.settingsStore.automaticUpdateChecksEnabled()) }
+    ) { restoreSettingsFocus() }
     var checking by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
     var release by remember { mutableStateOf<TvUpdateRelease?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
+    val available = release?.takeIf { it.isNewerThanCurrent() }
 
-    fun checkNow() {
-        if (checking) return
+    fun updateAction() {
+        if (checking || downloading) return
+        if (available != null) {
+            if (TvUpdateManager.needsInstallPermission(context)) {
+                TvUpdateManager.installPermissionIntent(context)?.let { installPermissionLauncher.launch(it) }
+                status = "Allow installs for VUEO, then choose Update again."
+                return
+            }
+            downloading = true
+            progress = 0
+            status = null
+            scope.launch {
+                TvUpdateManager.downloadAndInstall(context.applicationContext, available) { progress = it }
+                    .onFailure { status = it.message ?: "Unable to install update." }
+                downloading = false
+            }
+            return
+        }
+
         checking = true
         status = null
         scope.launch {
@@ -190,67 +204,31 @@ internal fun TvUpdatesSettings(
             checking = false
             status = when {
                 result.error != null -> result.error
-                result.release?.isNewerThanCurrent() == true -> "VUEO ${result.release.versionName} is available."
+                result.release?.isNewerThanCurrent() == true -> "VUEO ${result.release.versionName} is ready to install."
                 else -> "You're up to date."
             }
         }
     }
 
-    val available = release?.takeIf { it.isNewerThanCurrent() }
-    val entries = buildList {
-        add(TvSettingsEntry("version", "Current Version", "Build ${BuildConfig.VERSION_CODE}. Updates install over the existing app and keep local VUEO data.", BuildConfig.VERSION_NAME, enabled = false, section = "VERSION", icon = Icons.Default.Refresh))
-        add(toggleEntry("auto", "Automatic Update Checks", "Check the VUEO Dev channel in the background with rate limiting.", autoChecks) {
-            autoChecks = it
-            runtime.settingsStore.setAutomaticUpdateChecksEnabled(it)
-        }.copy(section = "UPDATES"))
-        add(TvSettingsEntry("check", "Check for Updates", "Check the latest green VUEO development build.", if (checking) "Checking…" else "Check", onActivate = ::checkNow, section = "UPDATES"))
-        if (available != null) {
-            add(
-                TvSettingsEntry(
-                    "install", "Download & Install", available.title,
-                    when {
-                        downloading -> "$progress%"
-                        TvUpdateManager.needsInstallPermission(context) -> "Allow"
-                        else -> "Update"
-                    },
-                    onActivate = {
-                        if (!downloading) {
-                            if (TvUpdateManager.needsInstallPermission(context)) {
-                                TvUpdateManager.installPermissionIntent(context)?.let { installPermissionLauncher.launch(it) }
-                                status = "Allow installs for VUEO, then return and choose Update again."
-                            } else {
-                                downloading = true
-                                progress = 0
-                                scope.launch {
-                                    TvUpdateManager.downloadAndInstall(context.applicationContext, available) { progress = it }
-                                        .onFailure { status = it.message ?: "Unable to install update." }
-                                    downloading = false
-                                }
-                            }
-                        }
-                    },
-                    section = "UPDATES",
-                )
-            )
-        }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
-    }
-
-    TvSettingsListScreen("Updates", "Fast VUEO development updates.", entries, onNavigate, onProfile, onBack, footer = "Android requires a final system confirmation before an APK update is installed.")
-}
-
-@Composable
-internal fun TvAboutSettings(
-    onNavigate: (String) -> Unit,
-    onProfile: () -> Unit,
-    onBack: () -> Unit,
-) {
     val entries = listOf(
-        TvSettingsEntry("vueo", "VUEO", "Universal media frontend built around open content sources, progressive discovery and direct playback.", BuildConfig.VERSION_NAME, enabled = false, section = "APP", icon = Icons.Default.Settings),
-        TvSettingsEntry("architecture", "Architecture", "Shared Core owns data and behavior; TV owns the 10-foot experience.", "Shared Core + TV", enabled = false, section = "APP"),
-        TvSettingsEntry("privacy", "Privacy", "Profiles, settings and API keys are stored locally on the device. Credentials are excluded from backups by default.", "Local-first", enabled = false, section = "PRIVACY"),
-        TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB", enabled = false, section = "ATTRIBUTION"),
+        TvSettingsEntry("vueo", "VUEO", "A universal media player.", BuildConfig.VERSION_NAME, enabled = false, section = "ABOUT", icon = Icons.Default.Settings),
+        TvSettingsEntry(
+            "update",
+            "Check for Updates",
+            status ?: "Check and install the latest VUEO build.",
+            when {
+                checking -> "Checking…"
+                downloading -> "$progress%"
+                available != null && TvUpdateManager.needsInstallPermission(context) -> "Allow"
+                available != null -> "Update ${available.versionName}"
+                else -> "Up to date"
+            },
+            onActivate = ::updateAction,
+            section = "ABOUT",
+            icon = Icons.Default.Refresh,
+        ),
+        TvSettingsEntry("privacy", "Privacy", "Settings and API keys stay on this device. API keys are excluded from backups unless you include them.", "Local", enabled = false, section = "ABOUT"),
+        TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB", enabled = false, section = "ABOUT"),
     )
-    TvSettingsListScreen("About VUEO", "App, privacy and architecture information.", entries, onNavigate, onProfile, onBack)
+    TvSettingsListScreen("About VUEO", "Version, updates and app information.", entries, onNavigate, onProfile, onBack)
 }
-
