@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -1285,6 +1286,10 @@ internal fun TvTextEntryDialog(
     initialValue: String,
     secret: Boolean = false,
     placeholder: String = "",
+    confirmLabel: String = "Save",
+    busy: Boolean = false,
+    message: String? = null,
+    restoreOnSave: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
@@ -1297,27 +1302,38 @@ internal fun TvTextEntryDialog(
     }
 
     fun saveAndRestore() {
+        if (busy || value.isBlank()) return
         onSave(value.trim())
-        restoreSettingsFocus()
+        if (restoreOnSave) restoreSettingsFocus()
     }
 
     AlertDialog(
-        onDismissRequest = ::dismissAndRestore,
+        onDismissRequest = { if (!busy) dismissAndRestore() },
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                singleLine = true,
-                placeholder = { if (placeholder.isNotBlank()) Text(placeholder) },
-                visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    enabled = !busy,
+                    singleLine = true,
+                    placeholder = { if (placeholder.isNotBlank()) Text(placeholder) },
+                    visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                )
+                message?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, color = TvDesign.Muted, fontSize = 12.sp)
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
         },
         confirmButton = {
-            TextButton(onClick = ::saveAndRestore) { Text("Save") }
+            TextButton(
+                enabled = !busy && value.isNotBlank(),
+                onClick = ::saveAndRestore,
+            ) { Text(if (busy) "Working…" else confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = ::dismissAndRestore) { Text("Cancel") }
+            TextButton(enabled = !busy, onClick = ::dismissAndRestore) { Text("Cancel") }
         },
     )
 }

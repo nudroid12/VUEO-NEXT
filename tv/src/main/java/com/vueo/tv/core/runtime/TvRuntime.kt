@@ -233,6 +233,14 @@ class TvRuntime(context: Context) {
     suspend fun refreshPluginRepositories(): PluginRepositoryRefreshSummary =
         pluginRepositoryManager.refreshInstalled(forceCodeRefresh = true)
 
+    suspend fun refreshPluginRepository(
+        repository: PluginRepositoryDescriptor,
+    ): PluginRepositoryDescriptor =
+        pluginRepositoryManager.installOrRefresh(
+            inputUrl = repository.manifestUrl,
+            forceCodeRefresh = true,
+        ).repository
+
     suspend fun removePluginRepository(repository: PluginRepositoryDescriptor) {
         pluginHealthStore.removeRepository(repository.manifestUrl)
         pluginStore.remove(repository.manifestUrl)
