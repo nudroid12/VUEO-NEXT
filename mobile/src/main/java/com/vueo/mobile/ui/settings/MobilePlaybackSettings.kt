@@ -88,7 +88,6 @@ import com.vueo.mobile.core.storage.PreferredQuality
 import com.vueo.mobile.core.storage.PlayerOrientation
 import com.vueo.mobile.core.storage.SettingsStore
 import com.vueo.mobile.core.storage.SubtitleLanguage
-import com.vueo.mobile.core.storage.SubtitleDiscoveryMode
 import com.vueo.mobile.core.storage.SubtitleSize
 import com.vueo.mobile.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
@@ -405,9 +404,6 @@ internal fun SubtitleSettingsScreen(
     var visibility by remember {
         mutableStateOf(settingsStore.subtitleVisibility())
     }
-    var discoveryMode by remember {
-        mutableStateOf(settingsStore.subtitleDiscoveryMode())
-    }
     var languageDialog by remember {
         mutableStateOf<SubtitleLanguageTarget?>(null)
     }
@@ -415,9 +411,6 @@ internal fun SubtitleSettingsScreen(
         mutableStateOf(false)
     }
     var showVisibilityDialog by remember {
-        mutableStateOf(false)
-    }
-    var showDiscoveryDialog by remember {
         mutableStateOf(false)
     }
 
@@ -498,33 +491,6 @@ internal fun SubtitleSettingsScreen(
         )
     }
 
-    if (showDiscoveryDialog) {
-        AlertDialog(
-            onDismissRequest = { showDiscoveryDialog = false },
-            title = { Text("Subtitle Discovery") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SubtitleDiscoveryMode.values().forEach { option ->
-                        VueoChoiceRow(
-                            label = option.label,
-                            selected = discoveryMode == option,
-                            onClick = {
-                                discoveryMode = option
-                                settingsStore.setSubtitleDiscoveryMode(option)
-                                showDiscoveryDialog = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDiscoveryDialog = false }) {
-                    Text("Close")
-                }
-            },
-        )
-    }
-
     if (showSizeDialog) {
         AlertDialog(
             onDismissRequest = { showSizeDialog = false },
@@ -587,15 +553,6 @@ internal fun SubtitleSettingsScreen(
                 subtitle = "Choose whether the player lists only your preferred language or every discovered subtitle language.",
                 value = visibility.label,
                 onClick = { showVisibilityDialog = true },
-            )
-        }
-
-        item {
-            VueoSettingsValueCard(
-                title = "Subtitle Discovery",
-                subtitle = "Choose whether external subtitles are requested with sources or only when you open subtitle controls.",
-                value = discoveryMode.label,
-                onClick = { showDiscoveryDialog = true },
             )
         }
 

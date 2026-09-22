@@ -28,7 +28,6 @@ import com.vueo.shared.core.storage.LibraryStore
 import com.vueo.shared.core.storage.PlaybackStore
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.SettingsStore
-import com.vueo.shared.core.storage.SubtitleDiscoveryMode
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -256,9 +255,6 @@ class TvRuntime(context: Context) {
                 episode = episode,
                 videoId = videoId,
                 preferredQuality = settingsStore.preferredQuality().rankKey,
-                discoverSubtitles =
-                    settingsStore.subtitleDiscoveryMode() ==
-                        SubtitleDiscoveryMode.AUTOMATIC,
             ),
         ) { snapshot ->
             onProgress(snapshot.progress)

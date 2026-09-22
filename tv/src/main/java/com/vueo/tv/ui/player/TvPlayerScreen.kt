@@ -104,7 +104,6 @@ import com.vueo.shared.core.source.SourceRecoverySession
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.SubtitleVisibility
-import com.vueo.shared.core.storage.SubtitleDiscoveryMode
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
 import com.vueo.tv.ui.TvDesign
@@ -244,8 +243,6 @@ fun TvPlayerScreen(
         mutableStateOf<String?>(null)
     }
     var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
-    var subtitleDiscoveryJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
-    var subtitleDiscoveryRequested by remember(mediaKey) { mutableStateOf(false) }
     val latestSelectedSubtitleIsExternal = androidx.compose.runtime.rememberUpdatedState(selectedSubtitleIsExternal)
 
     val httpFactory = remember(bundle.videoId) {
@@ -338,35 +335,6 @@ fun TvPlayerScreen(
 
     val focusScope = rememberCoroutineScope()
     var pendingFocusJob by remember { mutableStateOf<Job?>(null) }
-
-    fun requestSubtitleDiscovery(
-        allowAutomaticRetry: Boolean = false,
-    ) {
-        if (subtitleDiscoveryRequested || subtitleDiscoveryJob?.isActive == true) return
-        if (
-            settings.subtitleDiscoveryMode() != SubtitleDiscoveryMode.ON_DEMAND &&
-            !allowAutomaticRetry
-        ) return
-        subtitleDiscoveryRequested = true
-        subtitleDiscoveryJob = focusScope.launch {
-            try {
-                val discovered = runtime.discoverSubtitles(
-                    type = media.type,
-                    videoId = bundle.videoId,
-                ) { update ->
-                    liveSubtitles = (liveSubtitles + update).distinctBy { it.url }
-                }
-                liveSubtitles = (liveSubtitles + discovered).distinctBy { it.url }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                subtitleDiscoveryRequested = false
-                throw cancelled
-            } catch (_: Throwable) {
-                subtitleDiscoveryRequested = false
-            } finally {
-                subtitleDiscoveryJob = null
-            }
-        }
-    }
 
     fun noteInteraction() {
         interactionToken += 1
@@ -961,12 +929,6 @@ fun TvPlayerScreen(
         restorePanelFocus = null
     }
 
-    LaunchedEffect(activePanel, bundle.videoId) {
-        if (activePanel == TvPlayerPanel.SUBTITLES) {
-            requestSubtitleDiscovery()
-        }
-    }
-
     LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, autoNextCancelled) {
         if (
             !ended ||
@@ -1465,7 +1427,17 @@ fun TvPlayerScreen(
                         settings.setLastSubtitleSelection(
                             PlayerTrackPolicy.subtitleLanguageSelectionId(deferredLanguage)
                         )
-                        requestSubtitleDiscovery(allowAutomaticRetry = true)
+                        focusScope.launch {
+                            val discovered = runtime.discoverSubtitles(
+                                type = media.type,
+                                videoId = bundle.videoId,
+                            ) { update ->
+                                liveSubtitles =
+                                    (liveSubtitles + update).distinctBy { it.url }
+                            }
+                            liveSubtitles =
+                                (liveSubtitles + discovered).distinctBy { it.url }
+                        }
                     } else {
                         requestSubtitleChoice(choice)
                     }

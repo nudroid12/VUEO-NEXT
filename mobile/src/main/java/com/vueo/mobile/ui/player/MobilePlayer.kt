@@ -406,7 +406,6 @@ internal fun PlayerScreen(
     onSwitchSource: (StreamSource, Long) -> Unit,
     onNextEpisode: (EpisodeItem) -> Unit,
     onEpisodeSelected: (EpisodeItem) -> Unit,
-    onSubtitleWorkspaceOpened: () -> Unit,
     onDeferredSubtitleRequested: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -1984,10 +1983,6 @@ internal fun PlayerScreen(
                 canonicalSubtitleLanguage(language)
         } ?: return@LaunchedEffect
         requestSubtitleChoice(resolved)
-    }
-
-    LaunchedEffect(showSubtitleDialog, videoId) {
-        if (showSubtitleDialog) onSubtitleWorkspaceOpened()
     }
 
     PlayerSubtitleWorkspace(
