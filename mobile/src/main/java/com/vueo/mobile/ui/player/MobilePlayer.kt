@@ -225,6 +225,7 @@ import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 import com.vueo.shared.core.player.SubtitleReadinessProbe
+import com.vueo.shared.core.player.SubtitleSessionDataSource
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -405,6 +406,7 @@ internal fun PlayerScreen(
     onSwitchSource: (StreamSource, Long) -> Unit,
     onNextEpisode: (EpisodeItem) -> Unit,
     onEpisodeSelected: (EpisodeItem) -> Unit,
+    onSubtitleWorkspaceOpened: () -> Unit,
     onDeferredSubtitleRequested: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -821,7 +823,7 @@ internal fun PlayerScreen(
 
         val mediaSourceFactory =
             DefaultMediaSourceFactory(context)
-                .setDataSourceFactory(httpFactory)
+                .setDataSourceFactory(SubtitleSessionDataSource.Factory(httpFactory))
 
         ExoPlayer.Builder(
             context,
@@ -1982,6 +1984,10 @@ internal fun PlayerScreen(
                 canonicalSubtitleLanguage(language)
         } ?: return@LaunchedEffect
         requestSubtitleChoice(resolved)
+    }
+
+    LaunchedEffect(showSubtitleDialog, videoId) {
+        if (showSubtitleDialog) onSubtitleWorkspaceOpened()
     }
 
     PlayerSubtitleWorkspace(

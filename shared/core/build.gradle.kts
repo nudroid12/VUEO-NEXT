@@ -17,6 +17,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.media3:media3-datasource:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.4.0")
 

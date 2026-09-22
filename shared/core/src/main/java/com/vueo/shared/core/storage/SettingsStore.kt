@@ -72,6 +72,13 @@ enum class SubtitleVisibility(
     SHOW_ALL("Show all languages"),
 }
 
+enum class SubtitleDiscoveryMode(
+    val label: String,
+) {
+    AUTOMATIC("Automatic"),
+    ON_DEMAND("On demand"),
+}
+
 
 enum class AppTheme(
     val label: String,
@@ -346,6 +353,23 @@ class SettingsStore(
         prefs.edit()
             .putString(
                 profileKey(KEY_SUBTITLE_VISIBILITY),
+                value.name,
+            )
+            .apply()
+    }
+
+    fun subtitleDiscoveryMode(): SubtitleDiscoveryMode =
+        enumValue(
+            key = profileKey(KEY_SUBTITLE_DISCOVERY_MODE),
+            default = SubtitleDiscoveryMode.ON_DEMAND,
+        )
+
+    fun setSubtitleDiscoveryMode(
+        value: SubtitleDiscoveryMode,
+    ) {
+        prefs.edit()
+            .putString(
+                profileKey(KEY_SUBTITLE_DISCOVERY_MODE),
                 value.name,
             )
             .apply()
@@ -1022,6 +1046,9 @@ class SettingsStore(
 
         private const val KEY_SUBTITLE_VISIBILITY =
             "subtitle_visibility"
+
+        private const val KEY_SUBTITLE_DISCOVERY_MODE =
+            "subtitle_discovery_mode"
 
         private const val KEY_SUBTITLES_ON_BY_DEFAULT =
             "subtitles_on_by_default"

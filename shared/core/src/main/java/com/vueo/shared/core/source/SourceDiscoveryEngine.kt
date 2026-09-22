@@ -57,7 +57,7 @@ class SourceDiscoveryEngine(
 
         val startedAtNs = System.nanoTime()
         var subtitles = emptyList<SubtitleTrack>()
-        var subtitlesResolved = false
+        var subtitlesResolved = !request.discoverSubtitles
         var freshAddonStreams = emptyList<StreamSource>()
         var freshPluginStreams = emptyList<StreamSource>()
         var addonRawCount = 0
@@ -154,7 +154,7 @@ class SourceDiscoveryEngine(
 
         publish(latestProgress, streams = cachedStreams)
 
-        val subtitlesUpdateDeferred = async {
+        val subtitlesUpdateDeferred = if (request.discoverSubtitles) async {
             try {
                 subtitles = mediaEngine.resolveSubtitles(
                     type = item.type,
@@ -178,7 +178,7 @@ class SourceDiscoveryEngine(
                     publish(latestProgress)
                 }
             }
-        }
+        } else null
 
         val addonsDeferred = async {
             try {
@@ -242,7 +242,7 @@ class SourceDiscoveryEngine(
 
         freshAddonStreams = addonsDeferred.await()
         val pluginResult = pluginsDeferred.await()
-        subtitlesUpdateDeferred.await()
+        subtitlesUpdateDeferred?.await()
 
         if (pluginResult != null) {
             freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
@@ -384,6 +384,7 @@ data class SourceDiscoveryRequest(
     val episode: EpisodeItem?,
     val videoId: String,
     val preferredQuality: String? = null,
+    val discoverSubtitles: Boolean = true,
 )
 
 data class SourceDiscoverySnapshot(

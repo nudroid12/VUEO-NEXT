@@ -36,6 +36,7 @@ import com.vueo.shared.core.storage.AppTheme
 import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.shared.core.storage.PreferredQuality
 import com.vueo.shared.core.storage.SubtitleLanguage
+import com.vueo.shared.core.storage.SubtitleDiscoveryMode
 import com.vueo.shared.core.storage.SubtitleSize
 import com.vueo.shared.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
@@ -103,6 +104,7 @@ internal fun TvSubtitleSettings(
     var primary by remember { mutableStateOf(store.preferredSubtitleLanguage()) }
     var secondary by remember { mutableStateOf(store.secondarySubtitleLanguage()) }
     var visibility by remember { mutableStateOf(store.subtitleVisibility()) }
+    var discoveryMode by remember { mutableStateOf(store.subtitleDiscoveryMode()) }
     var defaultOn by remember { mutableStateOf(store.subtitlesOnByDefault()) }
     var autoSelect by remember { mutableStateOf(store.autoSelectPreferredSubtitle()) }
     var embedded by remember { mutableStateOf(store.embeddedSubtitlePriority()) }
@@ -118,6 +120,8 @@ internal fun TvSubtitleSettings(
         choiceEntry("secondary", "Secondary Language", "Fallback language when the preferred language is unavailable.", secondary.label, { secondary = cycle(SubtitleLanguage.entries, secondary, -1); store.setSecondarySubtitleLanguage(secondary) }, { secondary = cycle(SubtitleLanguage.entries, secondary, 1); store.setSecondarySubtitleLanguage(secondary) })
             .copy(section = "LANGUAGE & BEHAVIOR"),
         choiceEntry("visibility", "Subtitle Visibility", "Choose whether the player lists only your preferred language or every discovered subtitle language.", visibility.label, { visibility = cycle(SubtitleVisibility.entries, visibility, -1); store.setSubtitleVisibility(visibility) }, { visibility = cycle(SubtitleVisibility.entries, visibility, 1); store.setSubtitleVisibility(visibility) })
+            .copy(section = "LANGUAGE & BEHAVIOR"),
+        choiceEntry("discovery", "Subtitle Discovery", "Request external subtitles automatically with sources or only when subtitle controls are opened.", discoveryMode.label, { discoveryMode = cycle(SubtitleDiscoveryMode.entries, discoveryMode, -1); store.setSubtitleDiscoveryMode(discoveryMode) }, { discoveryMode = cycle(SubtitleDiscoveryMode.entries, discoveryMode, 1); store.setSubtitleDiscoveryMode(discoveryMode) })
             .copy(section = "LANGUAGE & BEHAVIOR"),
         toggleEntry("default", "Subtitles On by Default", "Prefer showing subtitles automatically when a suitable track exists.", defaultOn) { defaultOn = it; store.setSubtitlesOnByDefault(it) }
             .copy(section = "LANGUAGE & BEHAVIOR"),
@@ -193,4 +197,3 @@ internal fun TvAppearanceSettings(
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }
-

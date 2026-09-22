@@ -217,6 +217,7 @@ import com.vueo.mobile.core.storage.PreferredQuality
 import com.vueo.mobile.core.storage.PlayerOrientation
 import com.vueo.mobile.core.storage.PlayerVideoFit
 import com.vueo.mobile.core.storage.SettingsStore
+import com.vueo.mobile.core.storage.SubtitleDiscoveryMode
 import com.vueo.mobile.core.player.PlayerSkipKind
 import com.vueo.mobile.core.player.PlayerSkipRepository
 import com.vueo.mobile.core.player.PlayerSkipSegment
@@ -496,6 +497,9 @@ internal fun MediaDetailsScreen(
     }
     var deferredSubtitleDiscoveryJob by remember {
         mutableStateOf<Job?>(null)
+    }
+    var subtitleDiscoveryRequestedVideoId by remember {
+        mutableStateOf<String?>(null)
     }
     var selectedPlaybackSource by remember {
         mutableStateOf<StreamSource?>(null)
@@ -844,6 +848,7 @@ internal fun MediaDetailsScreen(
 
         sourceDiscoveryJob?.cancel()
         deferredSubtitleDiscoveryJob?.cancel()
+        subtitleDiscoveryRequestedVideoId = null
 
         var autoPlayCommitted = false
         var subtitlesResolved = false
@@ -905,6 +910,9 @@ internal fun MediaDetailsScreen(
                         episode = targetEpisode,
                         videoId = targetVideoId,
                         preferredQuality = preferredSourceQuality,
+                        discoverSubtitles =
+                            settingsStore.subtitleDiscoveryMode() ==
+                                SubtitleDiscoveryMode.AUTOMATIC,
                     ),
                 ) { snapshot ->
                     sourcePickerStreams = snapshot.bundle.sources
@@ -946,21 +954,40 @@ internal fun MediaDetailsScreen(
         }
     }
 
-    fun requestDeferredSubtitles() {
+    fun requestDeferredSubtitles(
+        allowAutomaticRetry: Boolean = false,
+    ) {
         val targetVideoId = selectedPlaybackVideoId ?: return
-        deferredSubtitleDiscoveryJob?.cancel()
+        if (
+            subtitleDiscoveryRequestedVideoId == targetVideoId ||
+            deferredSubtitleDiscoveryJob?.isActive == true
+        ) return
+        if (
+            settingsStore.subtitleDiscoveryMode() != SubtitleDiscoveryMode.ON_DEMAND &&
+            !allowAutomaticRetry
+        ) return
+        subtitleDiscoveryRequestedVideoId = targetVideoId
         deferredSubtitleDiscoveryJob = scope.launch {
-            sourceDiscoveryEngine.discoverSubtitles(
-                type = item.type,
-                videoId = targetVideoId,
-            ) { discovered ->
-                sourcePickerSubtitles =
-                    (sourcePickerSubtitles + discovered)
-                        .distinctBy { it.url }
-            }.also { discovered ->
-                sourcePickerSubtitles =
-                    (sourcePickerSubtitles + discovered)
-                        .distinctBy { it.url }
+            try {
+                sourceDiscoveryEngine.discoverSubtitles(
+                    type = item.type,
+                    videoId = targetVideoId,
+                ) { discovered ->
+                    sourcePickerSubtitles =
+                        (sourcePickerSubtitles + discovered)
+                            .distinctBy { it.url }
+                }.also { discovered ->
+                    sourcePickerSubtitles =
+                        (sourcePickerSubtitles + discovered)
+                            .distinctBy { it.url }
+                }
+            } catch (cancelled: CancellationException) {
+                subtitleDiscoveryRequestedVideoId = null
+                throw cancelled
+            } catch (_: Throwable) {
+                subtitleDiscoveryRequestedVideoId = null
+            } finally {
+                deferredSubtitleDiscoveryJob = null
             }
         }
     }
@@ -1130,8 +1157,11 @@ internal fun MediaDetailsScreen(
                                 autoPlayFirst = true,
                             )
                         },
-                        onDeferredSubtitleRequested = {
+                        onSubtitleWorkspaceOpened = {
                             requestDeferredSubtitles()
+                        },
+                        onDeferredSubtitleRequested = {
+                            requestDeferredSubtitles(allowAutomaticRetry = true)
                         },
                         onBack = {
                             sourceDiscoveryJob?.cancel()

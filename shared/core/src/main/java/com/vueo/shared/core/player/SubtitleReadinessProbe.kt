@@ -2,6 +2,7 @@ package com.vueo.shared.core.player
 
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -71,8 +72,19 @@ object SubtitleReadinessProbe {
                 in 200..201, in 203..299 -> {
                     connection.inputStream.use { input ->
                         val buffer = ByteArray(BUFFER_SIZE)
-                        while (input.read(buffer) >= 0) {
-                            // Drain the generated subtitle so the provider can cache it.
+                        val output = ByteArrayOutputStream()
+                        var cacheable = true
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (cacheable && output.size() + count <= MAX_CACHE_BYTES) {
+                                output.write(buffer, 0, count)
+                            } else {
+                                cacheable = false
+                            }
+                        }
+                        if (cacheable && output.size() > 0) {
+                            SubtitleSessionCache.put(url, output.toByteArray())
                         }
                     }
                     ProbeResult.READY
@@ -101,6 +113,7 @@ object SubtitleReadinessProbe {
     private const val READ_TIMEOUT_MS = 35_000
     private const val RETRY_DELAY_MS = 1_000L
     private const val BUFFER_SIZE = 16 * 1024
+    private const val MAX_CACHE_BYTES = 8 * 1024 * 1024
     private const val READY_CACHE_MS = 15 * 60 * 1_000L
     private val readyAtMs = ConcurrentHashMap<String, Long>()
 }
