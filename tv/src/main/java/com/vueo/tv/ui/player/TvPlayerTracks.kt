@@ -23,7 +23,7 @@ private const val TV_SUBTITLE_LABEL_PREFIX = PlayerTrackPolicy.SUBTITLE_LABEL_PR
 internal data class TvPlayerTrackChoice(
     val key: String,
     val label: String,
-    val override: TrackSelectionOverride,
+    val override: TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -31,6 +31,34 @@ internal data class TvPlayerTrackChoice(
     val selectionId: String,
     val externalSubtitle: SubtitleTrack? = null,
 )
+
+internal fun tvWithDeferredSubtitleLanguages(
+    tracks: List<TvPlayerTrackChoice>,
+    languageCodes: List<String?>,
+    pendingLanguageCode: String?,
+): List<TvPlayerTrackChoice> {
+    val existingLanguages = tracks
+        .mapTo(mutableSetOf()) { tvCanonicalLanguage(it.language) }
+    val deferred = languageCodes
+        .mapNotNull(LanguagePolicy::canonicalCode)
+        .distinct()
+        .filter { it !in existingLanguages }
+        .map { language ->
+            val selectionId = PlayerTrackPolicy.deferredSubtitleSelectionId(language)
+            TvPlayerTrackChoice(
+                key = selectionId,
+                label = tvFriendlyLanguage(language),
+                override = null,
+                selected = tvCanonicalLanguage(pendingLanguageCode) == language,
+                language = language,
+                sourceLabel = "AI subtitle",
+                metadata = null,
+                selectionId = selectionId,
+            )
+        }
+
+    return tracks + deferred
+}
 
 internal data class TvSubtitleLanguageGroup(
     val code: String,
@@ -168,10 +196,11 @@ internal fun tvApplyTrackChoice(
     trackType: Int,
     choice: TvPlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .setTrackTypeDisabled(trackType, false)
         .clearOverridesOfType(trackType)
-        .setOverrideForType(choice.override)
+        .setOverrideForType(trackOverride)
         .build()
 }
 

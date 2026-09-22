@@ -8,6 +8,16 @@ import org.junit.Test
 
 class PlayerTrackPolicyTest {
     @Test
+    fun `deferred subtitle language round trips without provider identity`() {
+        val selectionId = PlayerTrackPolicy.deferredSubtitleSelectionId("msa")
+
+        assertEquals(
+            "ms",
+            PlayerTrackPolicy.deferredSubtitleLanguage(selectionId),
+        )
+    }
+
+    @Test
     fun languageAliasesResolveToSameCanonicalCode() {
         assertEquals("en", LanguagePolicy.canonicalCode("English"))
         assertEquals("en", LanguagePolicy.canonicalCode("eng"))

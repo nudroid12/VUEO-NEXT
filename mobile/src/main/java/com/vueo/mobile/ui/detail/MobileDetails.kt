@@ -494,6 +494,9 @@ internal fun MediaDetailsScreen(
     var sourceDiscoveryJob by remember {
         mutableStateOf<Job?>(null)
     }
+    var deferredSubtitleDiscoveryJob by remember {
+        mutableStateOf<Job?>(null)
+    }
     var selectedPlaybackSource by remember {
         mutableStateOf<StreamSource?>(null)
     }
@@ -840,6 +843,7 @@ internal fun MediaDetailsScreen(
         ) ?: return
 
         sourceDiscoveryJob?.cancel()
+        deferredSubtitleDiscoveryJob?.cancel()
 
         var autoPlayCommitted = false
         var subtitlesResolved = false
@@ -905,7 +909,9 @@ internal fun MediaDetailsScreen(
                 ) { snapshot ->
                     sourcePickerStreams = snapshot.bundle.sources
                     sourcePickerProviderOrder = snapshot.providerOrder
-                    sourcePickerSubtitles = snapshot.bundle.subtitles
+                    sourcePickerSubtitles =
+                        (sourcePickerSubtitles + snapshot.bundle.subtitles)
+                            .distinctBy { it.url }
                     sourcePickerRawCount = snapshot.rawCount
                     sourcePickerNotice = snapshot.notice
                     sourcePickerSearching = snapshot.searching
@@ -936,6 +942,25 @@ internal fun MediaDetailsScreen(
                     candidates = latestAutoPlayCandidates,
                     allowLowQualityFallback = true,
                 )
+            }
+        }
+    }
+
+    fun requestDeferredSubtitles() {
+        val targetVideoId = selectedPlaybackVideoId ?: return
+        deferredSubtitleDiscoveryJob?.cancel()
+        deferredSubtitleDiscoveryJob = scope.launch {
+            sourceDiscoveryEngine.discoverSubtitles(
+                type = item.type,
+                videoId = targetVideoId,
+            ) { discovered ->
+                sourcePickerSubtitles =
+                    (sourcePickerSubtitles + discovered)
+                        .distinctBy { it.url }
+            }.also { discovered ->
+                sourcePickerSubtitles =
+                    (sourcePickerSubtitles + discovered)
+                        .distinctBy { it.url }
             }
         }
     }
@@ -1105,9 +1130,14 @@ internal fun MediaDetailsScreen(
                                 autoPlayFirst = true,
                             )
                         },
+                        onDeferredSubtitleRequested = {
+                            requestDeferredSubtitles()
+                        },
                         onBack = {
                             sourceDiscoveryJob?.cancel()
                             sourceDiscoveryJob = null
+                            deferredSubtitleDiscoveryJob?.cancel()
+                            deferredSubtitleDiscoveryJob = null
                             sourcePickerSearching = false
                             sourcePickerStreams = null
                             loadingStreams = false
@@ -2045,4 +2075,3 @@ internal fun MediaDetailsScreen(
         }
     }
 }
-

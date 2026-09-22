@@ -462,7 +462,7 @@ internal data class PlayerTrackChoice(
     val key: String,
     val label: String,
     val override:
-        TrackSelectionOverride,
+        TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -470,6 +470,34 @@ internal data class PlayerTrackChoice(
     val selectionId: String,
     val externalSubtitle: SubtitleTrack? = null,
 )
+
+internal fun withDeferredSubtitleLanguages(
+    tracks: List<PlayerTrackChoice>,
+    languageCodes: List<String?>,
+    pendingLanguageCode: String?,
+): List<PlayerTrackChoice> {
+    val existingLanguages = tracks
+        .mapTo(mutableSetOf()) { canonicalSubtitleLanguage(it.language) }
+    val deferred = languageCodes
+        .mapNotNull(com.vueo.shared.core.language.LanguagePolicy::canonicalCode)
+        .distinct()
+        .filter { it !in existingLanguages }
+        .map { language ->
+            val selectionId = PlayerTrackPolicy.deferredSubtitleSelectionId(language)
+            PlayerTrackChoice(
+                key = selectionId,
+                label = friendlySubtitleLanguageName(language),
+                override = null,
+                selected = canonicalSubtitleLanguage(pendingLanguageCode) == language,
+                language = language,
+                sourceLabel = "AI subtitle",
+                metadata = null,
+                selectionId = selectionId,
+            )
+        }
+
+    return tracks + deferred
+}
 
 internal const val PLAYER_SUBTITLE_LABEL_PREFIX =
     PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
@@ -787,6 +815,7 @@ internal fun applyTrackChoice(
     trackType: Int,
     choice: PlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters =
         player
             .trackSelectionParameters
@@ -799,7 +828,7 @@ internal fun applyTrackChoice(
                 trackType
             )
             .setOverrideForType(
-                choice.override
+                trackOverride
             )
             .build()
 }

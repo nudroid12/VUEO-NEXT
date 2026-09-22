@@ -8,6 +8,7 @@ object PlayerTrackPolicy {
     const val SUBTITLE_LABEL_PREFIX = "vueo-subtitle:"
     const val SUBTITLE_OFF = "subtitle:off"
     const val SUBTITLE_LANGUAGE_PREFIX = "subtitle-language:"
+    const val SUBTITLE_DEFERRED_LANGUAGE_PREFIX = "subtitle-deferred-language:"
     const val AUDIO_AUTO = "audio:auto"
 
     fun externalSubtitleSelectionId(track: SubtitleTrack): String {
@@ -68,6 +69,15 @@ object PlayerTrackPolicy {
 
     fun subtitleLanguageSelectionId(language: String?): String =
         SUBTITLE_LANGUAGE_PREFIX + LanguagePolicy.canonicalOrUnknown(language)
+
+    fun deferredSubtitleSelectionId(language: String?): String =
+        SUBTITLE_DEFERRED_LANGUAGE_PREFIX + LanguagePolicy.canonicalOrUnknown(language)
+
+    fun deferredSubtitleLanguage(selectionId: String?): String? =
+        selectionId
+            ?.takeIf { it.startsWith(SUBTITLE_DEFERRED_LANGUAGE_PREFIX) }
+            ?.removePrefix(SUBTITLE_DEFERRED_LANGUAGE_PREFIX)
+            ?.takeIf { it.isNotBlank() && it != "und" }
 
     fun resolvedSubtitleSelection(
         globalSelection: String?,

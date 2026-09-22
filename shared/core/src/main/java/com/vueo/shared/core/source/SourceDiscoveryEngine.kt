@@ -25,6 +25,17 @@ class SourceDiscoveryEngine(
     private val pluginEngine: PluginSourceEngine,
     private val pluginStore: PluginStore,
 ) {
+    suspend fun discoverSubtitles(
+        type: String,
+        videoId: String,
+        onUpdate: (List<SubtitleTrack>) -> Unit = {},
+    ): List<SubtitleTrack> =
+        mediaEngine.resolveSubtitles(
+            type = type,
+            videoId = videoId,
+            onProgress = onUpdate,
+        )
+
     suspend fun discover(
         request: SourceDiscoveryRequest,
         onUpdate: (SourceDiscoverySnapshot) -> Unit = {},

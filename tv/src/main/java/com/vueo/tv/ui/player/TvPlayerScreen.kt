@@ -176,8 +176,14 @@ fun TvPlayerScreen(
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
-    val externalSubtitlesBySelectionId = remember(bundle.subtitles) {
-        bundle.subtitles.associateBy(::tvExternalSubtitleSelectionId)
+    var liveSubtitles by remember(bundle.videoId) {
+        mutableStateOf(bundle.subtitles)
+    }
+    LaunchedEffect(bundle.subtitles) {
+        liveSubtitles = (liveSubtitles + bundle.subtitles).distinctBy { it.url }
+    }
+    val externalSubtitlesBySelectionId = remember(liveSubtitles) {
+        liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)
     }
     val latestExternalSubtitlesBySelectionId =
         androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
@@ -225,6 +231,9 @@ fun TvPlayerScreen(
                         it.startsWith("external:")
                 }
         )
+    }
+    var pendingDeferredSubtitleLanguage by remember(mediaKey) {
+        mutableStateOf<String?>(null)
     }
     var translatingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf<String?>(null)
@@ -275,6 +284,16 @@ fun TvPlayerScreen(
     var warningShown by remember(playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var audioTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
+    val subtitleWorkspaceTracks = remember(
+        textTracks,
+        pendingDeferredSubtitleLanguage,
+    ) {
+        tvWithDeferredSubtitleLanguages(
+            tracks = textTracks,
+            languageCodes = listOf("ms"),
+            pendingLanguageCode = pendingDeferredSubtitleLanguage,
+        )
+    }
     var subtitlesDisabled by remember(mediaKey) {
         mutableStateOf(
             when (settings.lastSubtitleSelection()) {
@@ -288,7 +307,7 @@ fun TvPlayerScreen(
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var appliedSubtitleUrls by remember(bundle.videoId, activeSource.url) {
-        mutableStateOf(PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles))
+        mutableStateOf(PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles))
     }
     var subtitleTrackRefreshInProgress by remember(bundle.videoId, activeSource.url) {
         mutableStateOf(false)
@@ -305,7 +324,7 @@ fun TvPlayerScreen(
             positionMs in segment.startMs until segment.endMs && segment.endMs - positionMs > 800L
         }
     }
-    val hasSubtitleControl = textTracks.isNotEmpty() || bundle.subtitles.isNotEmpty()
+    val hasSubtitleControl = subtitleWorkspaceTracks.isNotEmpty()
     val hasAudioControl = audioTracks.isNotEmpty() || !activeSource.audio.isNullOrBlank()
     val hasSourcesControl = playableSources.isNotEmpty()
     val hasEpisodesControl = media.episodes.isNotEmpty()
@@ -456,7 +475,7 @@ fun TvPlayerScreen(
         player.setMediaItem(
             buildMediaItem(
                 sourceUrl = url,
-                subtitles = bundle.subtitles,
+                subtitles = liveSubtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
@@ -479,12 +498,12 @@ fun TvPlayerScreen(
         player.setPlaybackSpeed(playbackSpeed)
         player.prepare()
         player.playWhenReady = true
-        appliedSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles)
+        appliedSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
     }
 
-    LaunchedEffect(player, activeSource.url, bundle.subtitles) {
+    LaunchedEffect(player, activeSource.url, liveSubtitles) {
         val url = activeSource.url ?: return@LaunchedEffect
-        val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles)
+        val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
         delay(350L)
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
@@ -499,7 +518,7 @@ fun TvPlayerScreen(
         subtitlePreferenceRestored = false
         val updatedMediaItem = buildMediaItem(
                 sourceUrl = url,
-                subtitles = bundle.subtitles,
+                subtitles = liveSubtitles,
                 preferredLanguages = languages,
                 subtitlesOnByDefault = !subtitlesDisabled,
                 autoSelectPreferred = settings.autoSelectPreferredSubtitle(),
@@ -1278,13 +1297,91 @@ fun TvPlayerScreen(
             },
         )
 
+        fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
+            pendingDeferredSubtitleLanguage = null
+            requestedSubtitleSelectionId = choice.selectionId
+            fun commitSelection(selected: TvPlayerTrackChoice) {
+                tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
+                subtitlesDisabled = false
+                selectedSubtitleIsExternal = selected.selectionId.startsWith("external:")
+                settings.setSubtitleSelection(mediaKey, selected.selectionId)
+                settings.setLastSubtitleSelection(
+                    PlayerTrackPolicy.subtitleLanguageSelectionId(selected.language)
+                )
+            }
+
+            subtitlePreparationJob?.cancel()
+            val externalSubtitle = choice.externalSubtitle
+            if (externalSubtitle == null) {
+                subtitlePreparationJob = null
+                pendingSubtitleSelectionId = null
+                translatingSubtitleSelectionId = null
+                commitSelection(choice)
+            } else {
+                pendingSubtitleSelectionId = choice.selectionId
+                translatingSubtitleSelectionId = null
+                subtitlesDisabled = false
+                settings.setSubtitleSelection(mediaKey, choice.selectionId)
+                settings.setLastSubtitleSelection(
+                    PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
+                )
+                subtitlePreparationJob = focusScope.launch {
+                    val ready = SubtitleReadinessProbe.awaitReady(
+                        url = externalSubtitle.url,
+                        onWaiting = {
+                            if (pendingSubtitleSelectionId == choice.selectionId) {
+                                translatingSubtitleSelectionId = choice.selectionId
+                            }
+                        },
+                    )
+                    var refreshWaitAttempts = 0
+                    while (
+                        ready &&
+                        subtitleTrackRefreshInProgress &&
+                        refreshWaitAttempts < 200
+                    ) {
+                        delay(50L)
+                        refreshWaitAttempts += 1
+                    }
+                    val latestChoice = tvPlayerTrackChoices(
+                        tracks = player.currentTracks,
+                        trackType = C.TRACK_TYPE_TEXT,
+                        externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                    ).firstOrNull {
+                        it.selectionId == choice.selectionId
+                    }
+                    if (
+                        ready &&
+                        pendingSubtitleSelectionId == choice.selectionId &&
+                        latestChoice != null
+                    ) {
+                        commitSelection(latestChoice)
+                        pendingSubtitleSelectionId = null
+                        translatingSubtitleSelectionId = null
+                    }
+                    if (translatingSubtitleSelectionId == choice.selectionId) {
+                        translatingSubtitleSelectionId = null
+                    }
+                    subtitlePreparationJob = null
+                }
+            }
+        }
+
+        LaunchedEffect(textTracks, pendingDeferredSubtitleLanguage) {
+            val language = pendingDeferredSubtitleLanguage ?: return@LaunchedEffect
+            val resolved = textTracks.firstOrNull {
+                tvCanonicalLanguage(it.language) == tvCanonicalLanguage(language)
+            } ?: return@LaunchedEffect
+            requestSubtitleChoice(resolved)
+        }
+
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.SUBTITLES,
             enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
             exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerSubtitleWorkspace(
-                tracks = textTracks,
+                tracks = subtitleWorkspaceTracks,
                 subtitlesDisabled = subtitlesDisabled,
                 pendingSelectionId = pendingSubtitleSelectionId,
                 translatingSelectionId = translatingSubtitleSelectionId,
@@ -1303,6 +1400,7 @@ fun TvPlayerScreen(
                     pendingSubtitleSelectionId = null
                     translatingSubtitleSelectionId = null
                     requestedSubtitleSelectionId = null
+                    pendingDeferredSubtitleLanguage = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
                     selectedSubtitleIsExternal = false
@@ -1310,71 +1408,34 @@ fun TvPlayerScreen(
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
                 onSelect = { choice ->
-                    requestedSubtitleSelectionId = choice.selectionId
-                    fun commitSelection(selected: TvPlayerTrackChoice) {
-                        tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
-                        subtitlesDisabled = false
-                        selectedSubtitleIsExternal = selected.selectionId.startsWith("external:")
-                        settings.setSubtitleSelection(mediaKey, selected.selectionId)
-                        settings.setLastSubtitleSelection(
-                            PlayerTrackPolicy.subtitleLanguageSelectionId(selected.language)
-                        )
-                    }
-
-                    subtitlePreparationJob?.cancel()
-                    val externalSubtitle = choice.externalSubtitle
-                    if (externalSubtitle == null) {
+                    val deferredLanguage =
+                        PlayerTrackPolicy.deferredSubtitleLanguage(choice.selectionId)
+                    if (deferredLanguage != null) {
+                        subtitlePreparationJob?.cancel()
                         subtitlePreparationJob = null
                         pendingSubtitleSelectionId = null
-                        translatingSubtitleSelectionId = null
-                        commitSelection(choice)
-                    } else {
-                        pendingSubtitleSelectionId = choice.selectionId
-                        translatingSubtitleSelectionId = null
+                        translatingSubtitleSelectionId = choice.selectionId
+                        requestedSubtitleSelectionId = choice.selectionId
+                        pendingDeferredSubtitleLanguage = deferredLanguage
                         subtitlesDisabled = false
-                        settings.setSubtitleSelection(mediaKey, choice.selectionId)
+                        selectedSubtitleIsExternal = false
+                        tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                         settings.setLastSubtitleSelection(
-                            PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(deferredLanguage)
                         )
-                        subtitlePreparationJob = focusScope.launch {
-                            val ready = SubtitleReadinessProbe.awaitReady(
-                                url = externalSubtitle.url,
-                                onWaiting = {
-                                    if (pendingSubtitleSelectionId == choice.selectionId) {
-                                        translatingSubtitleSelectionId = choice.selectionId
-                                    }
-                                },
-                            )
-                            var refreshWaitAttempts = 0
-                            while (
-                                ready &&
-                                subtitleTrackRefreshInProgress &&
-                                refreshWaitAttempts < 200
-                            ) {
-                                delay(50L)
-                                refreshWaitAttempts += 1
+                        focusScope.launch {
+                            val discovered = runtime.discoverSubtitles(
+                                type = media.type,
+                                videoId = bundle.videoId,
+                            ) { update ->
+                                liveSubtitles =
+                                    (liveSubtitles + update).distinctBy { it.url }
                             }
-                            val latestChoice = tvPlayerTrackChoices(
-                                tracks = player.currentTracks,
-                                trackType = C.TRACK_TYPE_TEXT,
-                                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
-                            ).firstOrNull {
-                                it.selectionId == choice.selectionId
-                            }
-                            if (
-                                ready &&
-                                pendingSubtitleSelectionId == choice.selectionId &&
-                                latestChoice != null
-                            ) {
-                                commitSelection(latestChoice)
-                                pendingSubtitleSelectionId = null
-                                translatingSubtitleSelectionId = null
-                            }
-                            if (translatingSubtitleSelectionId == choice.selectionId) {
-                                translatingSubtitleSelectionId = null
-                            }
-                            subtitlePreparationJob = null
+                            liveSubtitles =
+                                (liveSubtitles + discovered).distinctBy { it.url }
                         }
+                    } else {
+                        requestSubtitleChoice(choice)
                     }
                 },
                 onSubtitleDelayChange = { updated ->
