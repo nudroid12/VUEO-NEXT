@@ -225,6 +225,7 @@ import com.vueo.mobile.core.player.PlayerSourceAssessment
 import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
 import com.vueo.mobile.core.player.PLAYER_REBUFFER_TIMEOUT_MS
 import com.vueo.mobile.core.player.PLAYER_RECOVERY_SOURCE_TIMEOUT_MS
@@ -462,7 +463,7 @@ internal data class PlayerTrackChoice(
     val key: String,
     val label: String,
     val override:
-        TrackSelectionOverride,
+        TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -470,6 +471,43 @@ internal data class PlayerTrackChoice(
     val selectionId: String,
     val externalSubtitle: SubtitleTrack? = null,
 )
+
+/**
+ * Keeps discovered external subtitles visible while Media3 is still rebuilding
+ * its text-track groups. This is especially important when a late subtitle is
+ * the first track for a language: the workspace must be able to create that
+ * language section without waiting for another subtitle to act as an anchor.
+ */
+internal fun mergeDiscoveredSubtitleChoices(
+    tracks: List<PlayerTrackChoice>,
+    discovered: List<SubtitleTrack>,
+): List<PlayerTrackChoice> {
+    val presentSelectionIds = tracks.mapTo(mutableSetOf()) { it.selectionId }
+    val pendingChoices = PlayerSubtitleUpdatePolicy.pendingExternalTracks(
+        discovered = discovered,
+        materializedSelectionIds = presentSelectionIds,
+    )
+        .asSequence()
+        .map { subtitle ->
+            val selectionId = PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)
+            PlayerTrackChoice(
+                key = "discovered:$selectionId",
+                label = subtitle.name
+                    ?.takeIf { it.isNotBlank() }
+                    ?: friendlySubtitleLanguageName(subtitle.language),
+                override = null,
+                selected = false,
+                language = subtitle.language,
+                sourceLabel = subtitle.providerName,
+                metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
+                selectionId = selectionId,
+                externalSubtitle = subtitle,
+            )
+        }
+        .toList()
+
+    return tracks + pendingChoices
+}
 
 internal const val PLAYER_SUBTITLE_LABEL_PREFIX =
     PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
@@ -787,6 +825,7 @@ internal fun applyTrackChoice(
     trackType: Int,
     choice: PlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters =
         player
             .trackSelectionParameters
@@ -799,7 +838,7 @@ internal fun applyTrackChoice(
                 trackType
             )
             .setOverrideForType(
-                choice.override
+                trackOverride
             )
             .build()
 }

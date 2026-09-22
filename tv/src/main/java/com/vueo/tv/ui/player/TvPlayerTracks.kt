@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
+import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 
 internal const val TV_SUBTITLE_OFF = PlayerTrackPolicy.SUBTITLE_OFF
 internal const val TV_SUBTITLE_LANGUAGE_PREFIX = PlayerTrackPolicy.SUBTITLE_LANGUAGE_PREFIX
@@ -23,7 +24,7 @@ private const val TV_SUBTITLE_LABEL_PREFIX = PlayerTrackPolicy.SUBTITLE_LABEL_PR
 internal data class TvPlayerTrackChoice(
     val key: String,
     val label: String,
-    val override: TrackSelectionOverride,
+    val override: TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -31,6 +32,39 @@ internal data class TvPlayerTrackChoice(
     val selectionId: String,
     val externalSubtitle: SubtitleTrack? = null,
 )
+
+/** See the mobile equivalent: late discovery must be visible before Media3's
+ * replacement media item has finished exposing its new text-track group. */
+internal fun tvMergeDiscoveredSubtitleChoices(
+    tracks: List<TvPlayerTrackChoice>,
+    discovered: List<SubtitleTrack>,
+): List<TvPlayerTrackChoice> {
+    val presentSelectionIds = tracks.mapTo(mutableSetOf()) { it.selectionId }
+    val pendingChoices = PlayerSubtitleUpdatePolicy.pendingExternalTracks(
+        discovered = discovered,
+        materializedSelectionIds = presentSelectionIds,
+    )
+        .asSequence()
+        .map { subtitle ->
+            val selectionId = tvExternalSubtitleSelectionId(subtitle)
+            TvPlayerTrackChoice(
+                key = "discovered:$selectionId",
+                label = subtitle.name
+                    ?.takeIf { it.isNotBlank() }
+                    ?: tvFriendlyLanguage(subtitle.language),
+                override = null,
+                selected = false,
+                language = subtitle.language,
+                sourceLabel = subtitle.providerName,
+                metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
+                selectionId = selectionId,
+                externalSubtitle = subtitle,
+            )
+        }
+        .toList()
+
+    return tracks + pendingChoices
+}
 
 internal data class TvSubtitleLanguageGroup(
     val code: String,
@@ -168,10 +202,11 @@ internal fun tvApplyTrackChoice(
     trackType: Int,
     choice: TvPlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .setTrackTypeDisabled(trackType, false)
         .clearOverridesOfType(trackType)
-        .setOverrideForType(choice.override)
+        .setOverrideForType(trackOverride)
         .build()
 }
 

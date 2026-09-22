@@ -609,6 +609,12 @@ internal fun PlayerScreen(
             emptyList()
         )
     }
+    val subtitleWorkspaceTracks = remember(textTracks, subtitles) {
+        mergeDiscoveredSubtitleChoices(
+            tracks = textTracks,
+            discovered = subtitles,
+        )
+    }
     var subtitleStyle by remember {
         mutableStateOf(
             PlayerSubtitleStyleState(
@@ -1876,7 +1882,7 @@ internal fun PlayerScreen(
 
     PlayerSubtitleWorkspace(
             visible = showSubtitleDialog,
-            tracks = textTracks,
+            tracks = subtitleWorkspaceTracks,
             subtitlesDisabled = subtitlesDisabled,
             pendingSelectionId = pendingSubtitleSelectionId,
             translatingSelectionId = translatingSubtitleSelectionId,
@@ -1965,22 +1971,25 @@ internal fun PlayerScreen(
                             },
                         )
                         var refreshWaitAttempts = 0
+                        var latestChoice: PlayerTrackChoice? = null
                         while (
                             ready &&
-                            subtitleTrackRefreshInProgress &&
+                            pendingSubtitleSelectionId == choice.selectionId &&
+                            latestChoice == null &&
                             refreshWaitAttempts < 200
                         ) {
+                            val latestExternalSubtitles = latestSubtitles.value
+                                .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+                            latestChoice = playerTrackChoices(
+                                tracks = player.currentTracks,
+                                trackType = C.TRACK_TYPE_TEXT,
+                                externalSubtitles = latestExternalSubtitles,
+                            ).firstOrNull {
+                                it.selectionId == choice.selectionId
+                            }
+                            if (latestChoice != null) break
                             delay(50L)
                             refreshWaitAttempts += 1
-                        }
-                        val latestExternalSubtitles = latestSubtitles.value
-                            .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
-                        val latestChoice = playerTrackChoices(
-                            tracks = player.currentTracks,
-                            trackType = C.TRACK_TYPE_TEXT,
-                            externalSubtitles = latestExternalSubtitles,
-                        ).firstOrNull {
-                            it.selectionId == choice.selectionId
                         }
                         if (
                             ready &&

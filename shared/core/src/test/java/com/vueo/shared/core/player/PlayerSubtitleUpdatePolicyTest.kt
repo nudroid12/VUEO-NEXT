@@ -38,6 +38,37 @@ class PlayerSubtitleUpdatePolicyTest {
         )
     }
 
+    @Test
+    fun `late track remains pending when it introduces a new language`() {
+        val english = subtitle("en", "https://subs.example/en.srt")
+        val malayAi = subtitle("ms", "https://subs.example/ai-ms.vtt")
+
+        assertEquals(
+            listOf(malayAi),
+            PlayerSubtitleUpdatePolicy.pendingExternalTracks(
+                discovered = listOf(english, malayAi),
+                materializedSelectionIds = setOf(
+                    PlayerTrackPolicy.externalSubtitleSelectionId(english),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `materialized external track is not duplicated`() {
+        val malayAi = subtitle("ms", "https://subs.example/ai-ms.vtt")
+
+        assertEquals(
+            emptyList<SubtitleTrack>(),
+            PlayerSubtitleUpdatePolicy.pendingExternalTracks(
+                discovered = listOf(malayAi, malayAi),
+                materializedSelectionIds = setOf(
+                    PlayerTrackPolicy.externalSubtitleSelectionId(malayAi),
+                ),
+            ),
+        )
+    }
+
     private fun subtitle(language: String, url: String) =
         SubtitleTrack(
             id = url,
