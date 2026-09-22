@@ -1486,7 +1486,7 @@ class UnifiedMediaEngine {
             750L
 
         private const val SUBTITLE_RETRY_TIMEOUT_MS =
-            30_000L
+            15_000L
 
         private const val METADATA_FALLBACK_TIMEOUT_MS =
             4_000L
