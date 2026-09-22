@@ -262,17 +262,6 @@ class TvRuntime(context: Context) {
         }
     }
 
-    suspend fun discoverSubtitles(
-        type: String,
-        videoId: String,
-        onUpdate: (List<com.vueo.shared.core.media.SubtitleTrack>) -> Unit = {},
-    ): List<com.vueo.shared.core.media.SubtitleTrack> =
-        sourceDiscoveryEngine.discoverSubtitles(
-            type = type,
-            videoId = videoId,
-            onUpdate = onUpdate,
-        )
-
     fun localRelatedTitles(item: MediaItem): List<MediaItem> =
         RelatedContentOrchestrator.local(
             item = item,

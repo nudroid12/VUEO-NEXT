@@ -121,8 +121,7 @@ internal fun PlayerSubtitleWorkspace(
     ) {
         if (preferredFilterActive) {
             tracks.filter {
-                val language = canonicalSubtitleLanguage(it.language)
-                language in preferredFilterCodes || language == "ms"
+                canonicalSubtitleLanguage(it.language) in preferredFilterCodes
             }
         } else {
             tracks

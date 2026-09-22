@@ -89,8 +89,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val filteredTracks = remember(tracks, preferredFilterCodes, preferredFilterActive) {
         if (preferredFilterActive) {
             tracks.filter {
-                val language = tvCanonicalLanguage(it.language)
-                language in preferredFilterCodes || language == "ms"
+                tvCanonicalLanguage(it.language) in preferredFilterCodes
             }
         } else {
             tracks
