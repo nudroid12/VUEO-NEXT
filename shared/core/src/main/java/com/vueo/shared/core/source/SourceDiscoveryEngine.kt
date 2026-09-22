@@ -143,20 +143,30 @@ class SourceDiscoveryEngine(
 
         publish(latestProgress, streams = cachedStreams)
 
-        val subtitlesDeferred = async {
+        val subtitlesUpdateDeferred = async {
             try {
-                mediaEngine.resolveSubtitles(item.type, videoId)
+                subtitles = mediaEngine.resolveSubtitles(
+                    type = item.type,
+                    videoId = videoId,
+                    onProgress = { discovered ->
+                        subtitles = discovered
+                        publish(latestProgress)
+                    },
+                    onInitialPassComplete = {
+                        subtitlesResolved = true
+                        publish(latestProgress)
+                    },
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                emptyList()
+                subtitles = emptyList()
+            } finally {
+                if (!subtitlesResolved) {
+                    subtitlesResolved = true
+                    publish(latestProgress)
+                }
             }
-        }
-
-        val subtitlesUpdateDeferred = async {
-            subtitles = subtitlesDeferred.await()
-            subtitlesResolved = true
-            publish(latestProgress)
         }
 
         val addonsDeferred = async {

@@ -924,6 +924,7 @@ internal fun PlayerScreen(
             PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
 
         if (latestSubtitleUrls != appliedSubtitleUrls) {
+            delay(350L)
             val positionMs = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
                 currentPositionMs = player.currentPosition,
                 lastKnownPositionMs = lastValidPlaybackPositionMs,

@@ -486,6 +486,7 @@ fun TvPlayerScreen(
         val url = activeSource.url ?: return@LaunchedEffect
         val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(bundle.subtitles)
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
+        delay(350L)
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
         val currentPosition = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
             currentPositionMs = player.currentPosition,

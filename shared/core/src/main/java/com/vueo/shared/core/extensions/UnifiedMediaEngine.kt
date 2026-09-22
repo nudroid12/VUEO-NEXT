@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -1383,8 +1384,10 @@ class UnifiedMediaEngine {
     suspend fun resolveSubtitles(
         type: String,
         videoId: String,
+        onProgress: (List<SubtitleTrack>) -> Unit = {},
+        onInitialPassComplete: () -> Unit = {},
     ): List<SubtitleTrack> = coroutineScope {
-        extensions
+        val providers = extensions
             .filter {
                 isExtensionEnabled(
                     it.descriptor.id
@@ -1392,9 +1395,36 @@ class UnifiedMediaEngine {
                     "subtitles" in
                         it.descriptor.resources
             }
+
+        if (providers.isEmpty()) {
+            onInitialPassComplete()
+            return@coroutineScope emptyList()
+        }
+
+        val mutex = Mutex()
+        val discovered = mutableListOf<SubtitleTrack>()
+        val discoveredUrls = mutableSetOf<String>()
+
+        suspend fun mergeAndPublish(tracks: List<SubtitleTrack>) {
+            val snapshot = mutex.withLock {
+                var changed = false
+                tracks
+                    .filter { it.url.startsWith("https://") }
+                    .forEach { track ->
+                        if (discoveredUrls.add(track.url)) {
+                            discovered += track
+                            changed = true
+                        }
+                    }
+                discovered.toList().takeIf { changed }
+            }
+            snapshot?.let(onProgress)
+        }
+
+        val timedOutProviders = providers
             .map { extension ->
                 async {
-                    runCatching {
+                    val result = try {
                         withTimeoutOrNull(
                             ADDON_REQUEST_TIMEOUT_MS
                         ) {
@@ -1403,20 +1433,60 @@ class UnifiedMediaEngine {
                                 videoId,
                             )
                         }
-                            ?: emptyList()
-                    }.getOrDefault(
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
                         emptyList()
-                    )
+                    }
+
+                    if (result == null) {
+                        extension
+                    } else {
+                        mergeAndPublish(result)
+                        null
+                    }
                 }
             }
             .awaitAll()
-            .flatten()
-            .filter { it.url.startsWith("https://") }
-            .distinctBy { it.url }
+            .filterNotNull()
+
+        onInitialPassComplete()
+
+        timedOutProviders
+            .map { extension ->
+                async {
+                    delay(SUBTITLE_RETRY_DELAY_MS)
+                    val retry = try {
+                        withTimeoutOrNull(
+                            SUBTITLE_RETRY_TIMEOUT_MS
+                        ) {
+                            extension.subtitles(
+                                type,
+                                videoId,
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
+                    retry?.let { mergeAndPublish(it) }
+                }
+            }
+            .awaitAll()
+
+        mutex.withLock { discovered.toList() }
     }
+
     companion object {
         private const val ADDON_REQUEST_TIMEOUT_MS =
             8_000L
+
+        private const val SUBTITLE_RETRY_DELAY_MS =
+            750L
+
+        private const val SUBTITLE_RETRY_TIMEOUT_MS =
+            15_000L
 
         private const val METADATA_FALLBACK_TIMEOUT_MS =
             4_000L
