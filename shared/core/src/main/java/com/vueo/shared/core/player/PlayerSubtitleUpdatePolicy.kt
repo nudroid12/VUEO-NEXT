@@ -33,24 +33,5 @@ object PlayerSubtitleUpdatePolicy {
             ?: current
     }
 
-    /**
-     * External tracks already discovered by VUEO but not exposed by Media3 yet.
-     * The UI uses these as selectable rows while a replacement media item is
-     * still publishing its text-track groups.
-     */
-    fun pendingExternalTracks(
-        discovered: List<SubtitleTrack>,
-        materializedSelectionIds: Set<String>,
-    ): List<SubtitleTrack> =
-        discovered
-            .asSequence()
-            .filter { it.url.startsWith("https://") }
-            .distinctBy(PlayerTrackPolicy::externalSubtitleSelectionId)
-            .filter {
-                PlayerTrackPolicy.externalSubtitleSelectionId(it) !in
-                    materializedSelectionIds
-            }
-            .toList()
-
     private const val MIN_STABLE_POSITION_MS = 1_000L
 }

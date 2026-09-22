@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
 
 class UnifiedMediaEngine {
     private val extensions = CopyOnWriteArrayList<MediaExtension>()
@@ -1421,12 +1422,28 @@ class UnifiedMediaEngine {
             snapshot?.let(onProgress)
         }
 
-        val timedOutProviders = providers
+        val initialPassPublished = AtomicBoolean(false)
+
+        fun publishInitialPassOnce() {
+            if (initialPassPublished.compareAndSet(false, true)) {
+                onInitialPassComplete()
+            }
+        }
+
+        // The initial-pass deadline controls when playback may continue. It
+        // must not cancel slower subtitle providers: their eventual result is
+        // still useful to an already-playing session.
+        val initialPassDeadline = async {
+            delay(SUBTITLE_INITIAL_PASS_MS)
+            publishInitialPassOnce()
+        }
+
+        providers
             .map { extension ->
                 async {
                     val result = try {
                         withTimeoutOrNull(
-                            ADDON_REQUEST_TIMEOUT_MS
+                            SUBTITLE_PROVIDER_TIMEOUT_MS
                         ) {
                             extension.subtitles(
                                 type,
@@ -1439,41 +1456,13 @@ class UnifiedMediaEngine {
                         emptyList()
                     }
 
-                    if (result == null) {
-                        extension
-                    } else {
-                        mergeAndPublish(result)
-                        null
-                    }
+                    result?.let { mergeAndPublish(it) }
                 }
             }
             .awaitAll()
-            .filterNotNull()
 
-        onInitialPassComplete()
-
-        timedOutProviders
-            .map { extension ->
-                async {
-                    delay(SUBTITLE_RETRY_DELAY_MS)
-                    val retry = try {
-                        withTimeoutOrNull(
-                            SUBTITLE_RETRY_TIMEOUT_MS
-                        ) {
-                            extension.subtitles(
-                                type,
-                                videoId,
-                            )
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Throwable) {
-                        emptyList()
-                    }
-                    retry?.let { mergeAndPublish(it) }
-                }
-            }
-            .awaitAll()
+        publishInitialPassOnce()
+        initialPassDeadline.cancel()
 
         mutex.withLock { discovered.toList() }
     }
@@ -1482,11 +1471,11 @@ class UnifiedMediaEngine {
         private const val ADDON_REQUEST_TIMEOUT_MS =
             8_000L
 
-        private const val SUBTITLE_RETRY_DELAY_MS =
-            750L
+        private const val SUBTITLE_INITIAL_PASS_MS =
+            ADDON_REQUEST_TIMEOUT_MS
 
-        private const val SUBTITLE_RETRY_TIMEOUT_MS =
-            15_000L
+        private const val SUBTITLE_PROVIDER_TIMEOUT_MS =
+            30_000L
 
         private const val METADATA_FALLBACK_TIMEOUT_MS =
             4_000L

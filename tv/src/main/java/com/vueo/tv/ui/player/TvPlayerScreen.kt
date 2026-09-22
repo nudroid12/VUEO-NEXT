@@ -275,12 +275,6 @@ fun TvPlayerScreen(
     var warningShown by remember(playerSessionId) { mutableStateOf(false) }
     var textTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
     var audioTracks by remember(bundle.videoId) { mutableStateOf<List<TvPlayerTrackChoice>>(emptyList()) }
-    val subtitleWorkspaceTracks = remember(textTracks, bundle.subtitles) {
-        tvMergeDiscoveredSubtitleChoices(
-            tracks = textTracks,
-            discovered = bundle.subtitles,
-        )
-    }
     var subtitlesDisabled by remember(mediaKey) {
         mutableStateOf(
             when (settings.lastSubtitleSelection()) {
@@ -1290,7 +1284,7 @@ fun TvPlayerScreen(
             exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerSubtitleWorkspace(
-                tracks = subtitleWorkspaceTracks,
+                tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
                 pendingSelectionId = pendingSubtitleSelectionId,
                 translatingSelectionId = translatingSubtitleSelectionId,
@@ -1352,23 +1346,20 @@ fun TvPlayerScreen(
                                 },
                             )
                             var refreshWaitAttempts = 0
-                            var latestChoice: TvPlayerTrackChoice? = null
                             while (
                                 ready &&
-                                pendingSubtitleSelectionId == choice.selectionId &&
-                                latestChoice == null &&
+                                subtitleTrackRefreshInProgress &&
                                 refreshWaitAttempts < 200
                             ) {
-                                latestChoice = tvPlayerTrackChoices(
-                                    tracks = player.currentTracks,
-                                    trackType = C.TRACK_TYPE_TEXT,
-                                    externalSubtitles = latestExternalSubtitlesBySelectionId.value,
-                                ).firstOrNull {
-                                    it.selectionId == choice.selectionId
-                                }
-                                if (latestChoice != null) break
                                 delay(50L)
                                 refreshWaitAttempts += 1
+                            }
+                            val latestChoice = tvPlayerTrackChoices(
+                                tracks = player.currentTracks,
+                                trackType = C.TRACK_TYPE_TEXT,
+                                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                            ).firstOrNull {
+                                it.selectionId == choice.selectionId
                             }
                             if (
                                 ready &&
