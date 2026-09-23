@@ -94,6 +94,7 @@ internal fun VueoPlayerPresentation(
     onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
     onSeekBy: (Long) -> Unit,
+    onSeekCommit: () -> Unit,
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
     onDismissPanel: () -> Unit,
@@ -160,6 +161,7 @@ internal fun VueoPlayerPresentation(
                 onPlayPause = onPlayPause,
                 onRestart = onRestart,
                 onSeekBy = onSeekBy,
+                onSeekCommit = onSeekCommit,
                 onNext = onNext,
                 onOpenPanel = onOpenPanel,
             )
@@ -370,6 +372,7 @@ private fun VueoPlayerControls(
     onPlayPause: () -> Unit,
     onRestart: () -> Unit,
     onSeekBy: (Long) -> Unit,
+    onSeekCommit: () -> Unit,
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
 ) {
@@ -486,6 +489,7 @@ private fun VueoPlayerControls(
             downRequester = bottomDefaultRequester,
             onInteraction = onInteraction,
             onSeekBy = onSeekBy,
+            onSeekCommit = onSeekCommit,
             onTogglePlayback = onPlayPause,
         )
         Row(

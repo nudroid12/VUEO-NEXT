@@ -1,6 +1,10 @@
 package com.vueo.tv.player
 
 import android.view.KeyEvent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -30,6 +34,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -40,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotion
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -53,18 +59,32 @@ internal fun VueoPlayerProgressRail(
     downRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSeekBy: (Long) -> Unit,
+    onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val progress = if (durationMs > 0L) {
+    val targetProgress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = tween(durationMillis = 380, easing = LinearEasing),
+        label = "playerProgress",
+    )
+    val railHeight by animateDpAsState(
+        targetValue = if (focused) 5.dp else 3.dp,
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
+        label = "playerProgressHeight",
+    )
     val shape = RoundedCornerShape(50)
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (focused) 5.dp else 3.dp)
+            .height(railHeight)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -82,6 +102,12 @@ internal fun VueoPlayerProgressRail(
                     }
                     event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
                         onSeekBy(10_000L)
+                        true
+                    }
+                    event.type == KeyEventType.KeyUp &&
+                        (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) -> {
+                        onSeekCommit()
                         true
                     }
                     event.isVueoActivationKey() -> {
@@ -118,9 +144,21 @@ internal fun VueoPlayerTopAction(
     enabled: Boolean = true,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused && enabled) 1.08f else 1f,
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
+        label = "playerTopActionScale",
+    )
     Box(
         modifier = Modifier
             .size(42.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .focusRequester(requester)
             .focusProperties {
                 up = FocusRequester.Cancel
@@ -170,9 +208,21 @@ internal fun VueoPlayerPillAction(
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.035f else 1f,
+        animationSpec = tween(
+            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            easing = TvMotion.EaseOut,
+        ),
+        label = "playerPillActionScale",
+    )
     val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester

@@ -2,6 +2,7 @@ package com.vueo.tv.player
 
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
@@ -313,6 +314,10 @@ fun TvPlayerScreen(
     var skipSegmentsEnabled by remember(mediaKey) { mutableStateOf(settings.skipSegmentsEnabled()) }
     var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
     var resumeAfterLifecyclePause by remember(playerSessionId) { mutableStateOf(false) }
+    var pendingSeekPositionMs by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
+    val seekCommitJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
+    val seekAnchorClearJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
+    var controlFocusHandoffPending by remember { mutableStateOf(true) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     val activeSkip = remember(positionMs, skipSegments) {
@@ -327,8 +332,12 @@ fun TvPlayerScreen(
 
     val focusScope = rememberCoroutineScope()
     var pendingFocusJob by remember { mutableStateOf<Job?>(null) }
+    val lastInteractionElapsedMs = remember { longArrayOf(0L) }
 
     fun noteInteraction() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastInteractionElapsedMs[0] < 24L) return
+        lastInteractionElapsedMs[0] = now
         interactionToken += 1
     }
 
@@ -347,18 +356,46 @@ fun TvPlayerScreen(
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
         controlsVisible = true
+        controlFocusHandoffPending = true
         noteInteraction()
-        requestFocusReliably(requester)
+        pendingFocusJob?.cancel()
+        pendingFocusJob = focusScope.launch {
+            controlFocusHandoffPending = !requester.requestTvFocus()
+        }
+    }
+
+    fun commitPendingSeek() {
+        seekCommitJob[0]?.cancel()
+        seekCommitJob[0] = null
+        val target = pendingSeekPositionMs ?: return
+        player.seekTo(target)
+        positionMs = target
+        seekAnchorClearJob[0]?.cancel()
+        seekAnchorClearJob[0] = focusScope.launch {
+            delay(650L)
+            if (pendingSeekPositionMs == target) {
+                pendingSeekPositionMs = null
+            }
+        }
     }
 
     fun seekBy(deltaMs: Long) {
-        val target = player.currentPosition + deltaMs
         val max = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }
-        player.seekTo(
-            if (max != null) target.coerceIn(0L, max)
-            else target.coerceAtLeast(0L),
-        )
-        positionMs = player.currentPosition.coerceAtLeast(0L)
+        val base = pendingSeekPositionMs ?: player.currentPosition.coerceAtLeast(0L)
+        val target = if (max != null) {
+            (base + deltaMs).coerceIn(0L, max)
+        } else {
+            (base + deltaMs).coerceAtLeast(0L)
+        }
+        seekAnchorClearJob[0]?.cancel()
+        seekAnchorClearJob[0] = null
+        pendingSeekPositionMs = target
+        positionMs = target
+        seekCommitJob[0]?.cancel()
+        seekCommitJob[0] = focusScope.launch {
+            delay(600L)
+            commitPendingSeek()
+        }
         noteInteraction()
     }
 
@@ -387,6 +424,7 @@ fun TvPlayerScreen(
     fun closePanel(restoreFocus: Boolean = true) {
         val closingPanel = activePanel
         activePanel = TvPlayerPanel.NONE
+        controlFocusHandoffPending = restoreFocus
         noteInteraction()
         restorePanelFocus = closingPanel.takeIf { restoreFocus && it != TvPlayerPanel.NONE }
     }
@@ -733,9 +771,9 @@ fun TvPlayerScreen(
     }
 
     LaunchedEffect(player, activeSource.url, bundle.videoId) {
-        requestFocusNow(progressRequester)
+        controlFocusHandoffPending = !requestFocusNow(progressRequester)
         while (true) {
-            positionMs = player.currentPosition.coerceAtLeast(0L)
+            positionMs = pendingSeekPositionMs ?: player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
             playing = player.isPlaying
             ended = player.playbackState == Player.STATE_ENDED
@@ -915,9 +953,12 @@ fun TvPlayerScreen(
             TvPlayerPanel.NONE -> progressRequester
         }
         val restored = requestFocusNow(requester)
-        if (!restored && requester != progressRequester) {
+        val fallbackRestored = if (!restored && requester != progressRequester) {
             requestFocusNow(progressRequester)
+        } else {
+            restored
         }
+        controlFocusHandoffPending = !fallbackRestored
         restorePanelFocus = null
     }
 
@@ -947,9 +988,9 @@ fun TvPlayerScreen(
     LaunchedEffect(playbackError) {
         if (playbackError == null) return@LaunchedEffect
         controlsVisible = true
-        if (!requestFocusNow(errorRequester)) {
-            requestFocusNow(progressRequester)
-        }
+        controlFocusHandoffPending = true
+        val restored = requestFocusNow(errorRequester) || requestFocusNow(progressRequester)
+        controlFocusHandoffPending = !restored
     }
 
     LaunchedEffect(ended, activePanel, playbackError) {
@@ -965,7 +1006,9 @@ fun TvPlayerScreen(
             return@LaunchedEffect
         }
         controlsVisible = true
+        controlFocusHandoffPending = true
         endedFocusAssigned = requestFocusNow(progressRequester)
+        controlFocusHandoffPending = !endedFocusAssigned
     }
 
     LaunchedEffect(nextCountdown, ended, activePanel, playbackError) {
@@ -976,9 +1019,9 @@ fun TvPlayerScreen(
             playbackError == null
         ) {
             controlsVisible = true
-            if (!requestFocusNow(nextContextRequester)) {
-                requestFocusNow(progressRequester)
-            }
+            controlFocusHandoffPending = true
+            val restored = requestFocusNow(nextContextRequester) || requestFocusNow(progressRequester)
+            controlFocusHandoffPending = !restored
         }
     }
 
@@ -988,6 +1031,7 @@ fun TvPlayerScreen(
             delay(4_500)
             if (token == interactionToken && activePanel == TvPlayerPanel.NONE) {
                 controlsVisible = false
+                controlFocusHandoffPending = false
                 requestFocusReliably(rootRequester)
             }
         }
@@ -1027,8 +1071,16 @@ fun TvPlayerScreen(
             .background(Color.Black)
             .focusRequester(rootRequester)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val code = event.nativeKeyEvent.keyCode
+                if (
+                    event.type == KeyEventType.KeyUp &&
+                    controlFocusHandoffPending &&
+                    (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+                ) {
+                    commitPendingSeek()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (
                     controlsVisible || activePanel != TvPlayerPanel.NONE
                 ) {
@@ -1068,7 +1120,10 @@ fun TvPlayerScreen(
                         true
                     }
                     else -> {
-                        if (activePanel != TvPlayerPanel.NONE || controlsVisible) {
+                        if (
+                            activePanel != TvPlayerPanel.NONE ||
+                            (controlsVisible && !controlFocusHandoffPending)
+                        ) {
                             false
                         } else {
                             when (code) {
@@ -1079,9 +1134,14 @@ fun TvPlayerScreen(
                                     )
                                     true
                                 }
-                                KeyEvent.KEYCODE_DPAD_LEFT,
+                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    requestControlFocus(progressRequester)
+                                    seekBy(-10_000L)
+                                    true
+                                }
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                                     requestControlFocus(progressRequester)
+                                    seekBy(10_000L)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP -> {
@@ -1111,7 +1171,8 @@ fun TvPlayerScreen(
                 }
             }
             .focusable(
-                enabled = !controlsVisible && activePanel == TvPlayerPanel.NONE,
+                enabled = activePanel == TvPlayerPanel.NONE &&
+                    (!controlsVisible || controlFocusHandoffPending),
             ),
     ) {
         val exoPlayer = player
@@ -1246,6 +1307,9 @@ fun TvPlayerScreen(
                 requestControlFocus(progressRequester)
             },
             onRestart = {
+                seekCommitJob[0]?.cancel()
+                seekAnchorClearJob[0]?.cancel()
+                pendingSeekPositionMs = null
                 autoNextCancelled = false
                 player.seekTo(0L)
                 positionMs = 0L
@@ -1254,6 +1318,7 @@ fun TvPlayerScreen(
                 noteInteraction()
             },
             onSeekBy = ::seekBy,
+            onSeekCommit = ::commitPendingSeek,
             onNext = {
                 nextEpisode?.let {
                     saveProgress()
