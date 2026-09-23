@@ -121,6 +121,7 @@ fun TvSettingsScreen(
     onProfile: () -> Unit,
     onBack: () -> Unit,
     onDataChanged: () -> Unit = {},
+    onResetComplete: () -> Unit = {},
 ) {
     var page by remember { mutableStateOf(TvSettingsPage.PROFILE) }
     var panelAutoFocusToken by remember { mutableIntStateOf(0) }
@@ -248,7 +249,7 @@ fun TvSettingsScreen(
                 runtime, onNavigate, onProfile, onBack
             )
             TvSettingsPage.DATA_STORAGE -> TvDataStorageSettings(
-                runtime, onNavigate, onProfile, onDataChanged, onBack
+                runtime, onNavigate, onProfile, onDataChanged, onResetComplete, onBack
             )
             TvSettingsPage.ABOUT -> TvAboutSettings(
                 onNavigate, onProfile, onBack

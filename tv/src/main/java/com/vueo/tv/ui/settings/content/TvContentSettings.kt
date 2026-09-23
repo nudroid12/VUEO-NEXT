@@ -105,8 +105,13 @@ internal fun TvContentManagerHub(
     val context = LocalContext.current
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val repositories = runtime.pluginStore.repositories()
+    val activeRepositories = if (runtime.pluginStore.pluginsEnabled()) {
+        repositories.filter(runtime.pluginStore::isRepositoryEnabled)
+    } else {
+        emptyList()
+    }
     val healthSummary = healthStore.summary(
-        repositories = repositories,
+        repositories = activeRepositories,
         pluginStore = runtime.pluginStore,
     )
     val onlineCount = healthSummary.online
@@ -256,7 +261,15 @@ internal fun TvAddonSettings(
                         status = null
                         scope.launch {
                             runCatching { runtime.refreshAddons() }
-                                .onSuccess { revision++; status = "Addon manifests refreshed."; onDataChanged() }
+                                .onSuccess { summary ->
+                                    revision++
+                                    status = when {
+                                        summary.failed == 0 -> "${summary.refreshed} addon manifests refreshed."
+                                        summary.refreshed == 0 -> "Refresh failed for ${summary.failed} addons. Existing runtime copies were kept."
+                                        else -> "${summary.refreshed} refreshed • ${summary.failed} failed; existing copies were kept."
+                                    }
+                                    onDataChanged()
+                                }
                                 .onFailure { error -> status = error.message ?: "Unable to refresh addons." }
                             refreshingAddons = false
                         }
@@ -624,7 +637,7 @@ internal fun TvProviderSettings(
     }
 
     val providerCount = repositories.sumOf { it.providers.size }
-    val enabledProviderCount = runtime.pluginStore.enabledProviderCount()
+    val enabledProviderCount = if (pluginsEnabled) runtime.pluginStore.enabledProviderCount() else 0
     val readyProviderCount = repositories.sumOf { providerCodeStore.readyCount(it) }
 
     TvSettingsListScreen(
@@ -645,7 +658,7 @@ internal fun TvProviderSettings(
             listOf(
                 TvSettingsMetric(repositories.size.toString(), "Repos"),
                 TvSettingsMetric(providerCount.toString(), "Providers"),
-                TvSettingsMetric(enabledProviderCount.toString(), "Enabled"),
+                TvSettingsMetric(enabledProviderCount.toString(), "Active"),
                 TvSettingsMetric(readyProviderCount.toString(), "Ready"),
             )
         } else {
@@ -665,6 +678,7 @@ internal fun TvProviderSettings(
         } else {
             "OK changes a saved preference. Press right on a provider for diagnostics. Parent switches control discovery only."
         },
+        preferredFocusId = selectedRepository?.let { "repo-${it.manifestUrl.hashCode()}" },
     )
 }
 
@@ -676,28 +690,49 @@ internal fun TvCatalogSettings(
     onDataChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var rows by remember { mutableStateOf(emptyMap<String, com.vueo.shared.core.media.CatalogRow>()) }
     var order by remember { mutableStateOf(runtime.content.catalogOrder()) }
     var revision by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(revision) {
-        val loaded = runCatching { runtime.homeRows(forceRefresh = false) }.getOrDefault(emptyList())
-        rows = loaded.associateBy { it.id }
-        order = runtime.content.reconcileCatalogOrder(loaded.map { it.id })
+    val addonRuntimeReady = runtime.isHomeCatalogRuntimeReady()
+    val installedAddons = runtime.engine.stremioAddons()
+    val availableCatalogs = remember(revision, installedAddons) {
+        installedAddons.flatMap { extension ->
+            extension.descriptor.catalogs
+                .filter { it.canLoadWithoutExtras }
+                .map { catalog ->
+                    TvCatalogDescriptorEntry(
+                        key = "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
+                        title = catalog.name ?: catalog.id,
+                        providerName = extension.descriptor.name,
+                        type = catalog.type.replaceFirstChar { it.uppercase() },
+                    )
+                }
+        }
+    }
+    val availableByKey = availableCatalogs.associateBy(TvCatalogDescriptorEntry::key)
+    val availableKeys = availableCatalogs.map(TvCatalogDescriptorEntry::key)
+
+    LaunchedEffect(availableKeys, addonRuntimeReady) {
+        // Startup prepares addon manifests in the background. Never reconcile
+        // against a temporary empty runtime or valid saved order/hidden state
+        // would be erased before the manifests finish loading.
+        if (
+            addonRuntimeReady &&
+            (availableKeys.isNotEmpty() || runtime.content.manifestUrls().isEmpty())
+        ) {
+            order = runtime.content.reconcileCatalogOrder(availableKeys)
+        }
     }
 
     val entries = order.mapIndexed { index, key ->
-        val row = rows[key]
+        val catalog = availableByKey[key]
         val enabled = runtime.content.isCatalogEnabled(key)
-        val type = key.split(':').getOrNull(1)
-            ?.replaceFirstChar { char -> char.uppercase() }
-            .orEmpty()
         TvSettingsEntry(
             id = "catalog-$key",
-            title = row?.title ?: key,
+            title = catalog?.title ?: key,
             subtitle = listOfNotNull(
-                row?.providerName?.takeIf { it.isNotBlank() },
-                type.takeIf { it.isNotBlank() },
+                catalog?.providerName?.takeIf { it.isNotBlank() },
+                catalog?.type?.takeIf { it.isNotBlank() },
             ).joinToString(" • ").ifBlank { "Home catalog" },
             detail = "D-pad left/right reorders • OK ${if (enabled) "hide" else "show"}",
             value = if (enabled) "Shown" else "Hidden",
@@ -737,8 +772,12 @@ internal fun TvCatalogSettings(
             listOf(
                 TvSettingsEntry(
                     "loading",
-                    "No catalogs discovered",
-                    "Open Home once so VUEO can discover available catalogs.",
+                    if (addonRuntimeReady) "No catalogs available" else "Loading addon catalogs",
+                    if (addonRuntimeReady) {
+                        "Refresh installed addons if their manifests are temporarily unavailable."
+                    } else {
+                        "Installed addon manifests are still being prepared."
+                    },
                     enabled = false,
                 )
             )
@@ -755,6 +794,13 @@ internal fun TvCatalogSettings(
         footer = "The numbered badge is the Home position. Hidden catalogs keep their saved place in the order.",
     )
 }
+
+private data class TvCatalogDescriptorEntry(
+    val key: String,
+    val title: String,
+    val providerName: String,
+    val type: String,
+)
 
 @Composable
 internal fun TvEnhancementSettings(

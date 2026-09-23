@@ -148,44 +148,67 @@ class TvRuntime(context: Context) {
         return applyCatalogPreferences(fresh.ifEmpty { staleCached })
     }
 
-    suspend fun refreshAddons() {
+    suspend fun refreshAddons(pruneRemoved: Boolean = false): TvAddonRefreshSummary {
         addonLoadMutex.lock()
         addonsPrepared = false
         try {
-            engine.installed().map { it.descriptor.id }.forEach(engine::uninstall)
-            installConfiguredAddons()
+            if (pruneRemoved) {
+                val configured = content.manifestUrls().map { it.trim() }.toSet()
+                engine.stremioAddons()
+                    .filter { it.descriptor.baseUrl.trim() !in configured }
+                    .forEach { engine.uninstall(it.descriptor.id) }
+            }
+            val summary = installConfiguredAddons()
             CatalogDiscoveryCache.clearAll(appContext)
+            return summary
         } finally {
             addonsPrepared = true
             addonLoadMutex.unlock()
         }
     }
 
-    private suspend fun installConfiguredAddons() {
+    private suspend fun installConfiguredAddons(): TvAddonRefreshSummary =
         coroutineScope {
-            content.manifestUrls()
+            val results = content.manifestUrls()
                 .map { manifestUrl ->
                     async {
-                        runCatching {
+                        manifestUrl to runCatching {
                             require(manifestUrl.startsWith("https://"))
                             StremioAddonExtension.fromManifestUrl(manifestUrl)
-                        }.onSuccess { extension ->
-                            engine.install(extension)
-                            engine.setExtensionEnabled(
-                                id = extension.descriptor.id,
-                                enabled = content.isAddonEnabled(manifestUrl),
-                            )
                         }
                     }
                 }
                 .awaitAll()
+
+            results.forEach { (manifestUrl, result) ->
+                result.onSuccess { extension ->
+                    // Only replace the previous runtime copy after the refreshed
+                    // manifest is valid. A temporary network/provider failure must
+                    // never erase a previously working addon.
+                    engine.stremioAddons()
+                        .filter {
+                            it.descriptor.baseUrl.trim() == manifestUrl.trim() &&
+                                it.descriptor.id != extension.descriptor.id
+                        }
+                        .forEach { engine.uninstall(it.descriptor.id) }
+                    engine.install(extension)
+                    engine.setExtensionEnabled(
+                        id = extension.descriptor.id,
+                        enabled = content.isAddonEnabled(manifestUrl),
+                    )
+                }
+            }
+
+            TvAddonRefreshSummary(
+                refreshed = results.count { it.second.isSuccess },
+                failed = results.count { it.second.isFailure },
+            )
         }
-    }
 
     suspend fun reloadPersistentConfiguration() {
         content.seedDevelopmentDefaultsIfNeeded()
         pluginStore.seedDevelopmentDefaultsIfNeeded()
-        refreshAddons()
+        refreshAddons(pruneRemoved = true)
         providerSync.syncMissing(pluginStore.repositories())
         profileStore.ensureDefaultProfile()
         SourceDiscoveryCache.clearAll()
@@ -321,6 +344,11 @@ class TvRuntime(context: Context) {
         )
 
 }
+
+data class TvAddonRefreshSummary(
+    val refreshed: Int,
+    val failed: Int,
+)
 
 typealias TvSourceDiscoverySnapshot = com.vueo.shared.core.source.SourceDiscoverySnapshot
 typealias TvSourceBundle = com.vueo.shared.core.source.SourceDiscoveryBundle

@@ -58,6 +58,7 @@ internal fun TvDataStorageSettings(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onDataChanged: () -> Unit,
+    onResetComplete: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -89,6 +90,7 @@ internal fun TvDataStorageSettings(
                 .onSuccess {
                     TvDesign.applyTheme(runtime.settingsStore.appTheme())
                     TvDesign.applyAccent(runtime.settingsStore.appAccent())
+                    includeCredentials = runtime.settingsStore.includeCredentialsInBackup()
                     status = "Backup restored: ${it.valueCount} values."
                     onDataChanged()
                 }
@@ -123,6 +125,7 @@ internal fun TvDataStorageSettings(
                             runtime.reloadPersistentConfiguration()
                             TvDesign.applyTheme(runtime.settingsStore.appTheme())
                             TvDesign.applyAccent(runtime.settingsStore.appAccent())
+                            includeCredentials = runtime.settingsStore.includeCredentialsInBackup()
                         }
                     }
                     status = when (action) {
@@ -132,6 +135,7 @@ internal fun TvDataStorageSettings(
                         else -> "VUEO local data reset."
                     }
                     onDataChanged()
+                    if (action == "reset") onResetComplete()
                 }
             },
         )
@@ -221,7 +225,8 @@ internal fun TvAboutSettings(
                 downloading -> "$progress%"
                 available != null && TvUpdateManager.needsInstallPermission(context) -> "Allow"
                 available != null -> "Update ${available.versionName}"
-                else -> "Up to date"
+                status == "You're up to date." -> "Up to date"
+                else -> "Check"
             },
             onActivate = ::updateAction,
             section = "ABOUT",

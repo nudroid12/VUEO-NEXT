@@ -1,6 +1,7 @@
 package com.vueo.tv.update
 
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -66,6 +67,10 @@ fun TvUpdatePrompt(
     var status by remember(release.versionCode) { mutableStateOf<String?>(null) }
 
     val canDownload = release.downloadUrl != null
+
+    BackHandler {
+        if (!downloading) onLater()
+    }
 
     LaunchedEffect(release.versionCode, canDownload) {
         if (canDownload) updateRequester.requestFocus() else laterRequester.requestFocus()

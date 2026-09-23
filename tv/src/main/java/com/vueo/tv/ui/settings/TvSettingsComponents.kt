@@ -754,6 +754,7 @@ internal fun TvSettingsListScreen(
     topLabel: String? = null,
     footer: String? = null,
     metrics: List<TvSettingsMetric> = emptyList(),
+    preferredFocusId: String? = null,
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -784,8 +785,10 @@ internal fun TvSettingsListScreen(
     var navExpanded by remember { mutableStateOf(false) }
     var sidebarFocusIntent by remember { mutableStateOf(false) }
 
-    LaunchedEffect(focusableIds) {
+    LaunchedEffect(focusableIds, preferredFocusId) {
         if (focusableIds.isEmpty()) return@LaunchedEffect
+
+        preferredFocusId?.takeIf { it in focusableIds }?.let { lastFocusedId = it }
 
         if (lastFocusedId !in focusableIds) {
             val previousIndex = previousFocusableIds.indexOf(lastFocusedId)

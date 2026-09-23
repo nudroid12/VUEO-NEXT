@@ -67,6 +67,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -145,6 +148,7 @@ fun TvPlayerScreen(
     onPlayNextEpisode: (EpisodeItem) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = context as? LifecycleOwner
     val rootRequester = remember { FocusRequester() }
     val restartRequester = remember { FocusRequester() }
     val progressRequester = remember { FocusRequester() }
@@ -308,6 +312,7 @@ fun TvPlayerScreen(
     var autoPlayNextEpisode by remember { mutableStateOf(settings.autoPlayNextEpisodeEnabled()) }
     var skipSegmentsEnabled by remember(mediaKey) { mutableStateOf(settings.skipSegmentsEnabled()) }
     var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
+    var resumeAfterLifecyclePause by remember(playerSessionId) { mutableStateOf(false) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     val activeSkip = remember(positionMs, skipSegments) {
@@ -993,6 +998,27 @@ fun TvPlayerScreen(
             runCatching { saveProgress() }
             player.release()
         }
+    }
+
+    DisposableEffect(player, lifecycleOwner, mediaKey) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    resumeAfterLifecyclePause = player.playWhenReady
+                    if (player.playWhenReady) player.pause()
+                    runCatching { saveProgress() }
+                }
+                Lifecycle.Event.ON_START -> {
+                    if (resumeAfterLifecyclePause) {
+                        resumeAfterLifecyclePause = false
+                        player.play()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
     }
 
     Box(

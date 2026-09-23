@@ -32,9 +32,11 @@ internal fun TvProviderHealthOverview(
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
     val repositories = runtime.pluginStore.repositories()
+    val pluginsEnabled = runtime.pluginStore.pluginsEnabled()
+    val activeRepositories = if (pluginsEnabled) repositories.filter(runtime.pluginStore::isRepositoryEnabled) else emptyList()
     val knownHealth = remember(repositories) { healthStore.records().associateBy { it.repositoryManifestUrl to it.providerId } }
-    val rankedProviders = remember(repositories, knownHealth) {
-        repositories.filter(runtime.pluginStore::isRepositoryEnabled).flatMap { repository ->
+    val rankedProviders = remember(activeRepositories, knownHealth) {
+        activeRepositories.flatMap { repository ->
             repository.providers.filter { runtime.pluginStore.isProviderEnabled(repository, it) }.map { provider ->
                 TvRankedProviderHealthEntry(repository, provider, knownHealth[repository.manifestUrl to provider.id])
             }
@@ -46,7 +48,7 @@ internal fun TvProviderHealthOverview(
                 .thenBy { it.provider.name.lowercase() }
         )
     }
-    val summary = remember(repositories, knownHealth) { healthStore.summary(repositories, runtime.pluginStore) }
+    val summary = remember(activeRepositories, knownHealth) { healthStore.summary(activeRepositories, runtime.pluginStore) }
     val measuredProviders = rankedProviders.count { healthStore.performance(it.health).historyRuns > 0 }
     var diagnosticTarget by remember { mutableStateOf<TvRankedProviderHealthEntry?>(null) }
 

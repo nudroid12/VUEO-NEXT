@@ -376,6 +376,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onProfile = { openDna(TvRoute.SETTINGS) },
                         onBack = onExit,
                         onDataChanged = { refreshToken++ },
+                        onResetComplete = { openProfilePicker(TvRoute.HOME) },
                     )
                 }
 
@@ -532,7 +533,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 }
             }
 
-            updatePromptRelease?.let { release ->
+            updatePromptRelease?.takeIf { route != TvRoute.PLAYER }?.let { release ->
                 TvUpdatePrompt(
                     release = release,
                     onLater = { updatePromptRelease = null },
