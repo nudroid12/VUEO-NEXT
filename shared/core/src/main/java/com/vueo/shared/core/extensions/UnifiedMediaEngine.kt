@@ -1313,6 +1313,7 @@ class UnifiedMediaEngine {
     suspend fun resolveStreamsProgressive(
         type: String,
         videoId: String,
+        onActivity: (AddonRequestActivity) -> Unit = {},
         onProgress: suspend (AddonStreamProgress) -> Unit,
     ): List<StreamSource> = coroutineScope {
         val providers =
@@ -1336,20 +1337,47 @@ class UnifiedMediaEngine {
 
         providers.map { extension ->
             async {
-                val result =
-                    runCatching {
-                        withTimeoutOrNull(
-                            ADDON_STREAM_TIMEOUT_MS
-                        ) {
-                            extension.streams(
-                                type,
-                                videoId,
-                            )
-                        }
-                            ?: emptyList()
-                    }.getOrDefault(
-                        emptyList()
+                val providerName = extension.descriptor.name
+                val startedAtNs = System.nanoTime()
+                onActivity(
+                    AddonRequestActivity(
+                        providerName = providerName,
+                        resource = "sources",
+                        phase = "started",
                     )
+                )
+                var phase = "completed"
+                var errorType: String? = null
+                val result = try {
+                    withTimeoutOrNull(
+                        ADDON_STREAM_TIMEOUT_MS
+                    ) {
+                        extension.streams(
+                            type,
+                            videoId,
+                        )
+                    } ?: run {
+                        phase = "timeout"
+                        emptyList()
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    phase = "failed"
+                    errorType = error::class.java.simpleName
+                    emptyList()
+                }
+                onActivity(
+                    AddonRequestActivity(
+                        providerName = providerName,
+                        resource = "sources",
+                        phase = phase,
+                        resultCount = result.size,
+                        elapsedMs =
+                            (System.nanoTime() - startedAtNs) / 1_000_000L,
+                        errorType = errorType,
+                    )
+                )
 
                 val progress =
                     mutex.withLock {
@@ -1386,6 +1414,7 @@ class UnifiedMediaEngine {
         videoId: String,
         onProgress: (List<SubtitleTrack>) -> Unit = {},
         onInitialPassComplete: () -> Unit = {},
+        onActivity: (AddonRequestActivity) -> Unit = {},
     ): List<SubtitleTrack> = coroutineScope {
         val providers = extensions
             .filter {
@@ -1424,6 +1453,16 @@ class UnifiedMediaEngine {
         val timedOutProviders = providers
             .map { extension ->
                 async {
+                    val providerName = extension.descriptor.name
+                    val startedAtNs = System.nanoTime()
+                    onActivity(
+                        AddonRequestActivity(
+                            providerName = providerName,
+                            resource = "subtitles",
+                            phase = "started",
+                        )
+                    )
+                    var errorType: String? = null
                     val result = try {
                         withTimeoutOrNull(
                             ADDON_REQUEST_TIMEOUT_MS
@@ -1435,9 +1474,26 @@ class UnifiedMediaEngine {
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Throwable) {
+                    } catch (error: Throwable) {
+                        errorType = error::class.java.simpleName
                         emptyList()
                     }
+
+                    onActivity(
+                        AddonRequestActivity(
+                            providerName = providerName,
+                            resource = "subtitles",
+                            phase = when {
+                                result == null -> "timeout"
+                                errorType != null -> "failed"
+                                else -> "completed"
+                            },
+                            resultCount = result?.size ?: 0,
+                            elapsedMs =
+                                (System.nanoTime() - startedAtNs) / 1_000_000L,
+                            errorType = errorType,
+                        )
+                    )
 
                     if (result == null) {
                         extension
@@ -1456,6 +1512,17 @@ class UnifiedMediaEngine {
             .map { extension ->
                 async {
                     delay(SUBTITLE_RETRY_DELAY_MS)
+                    val providerName = extension.descriptor.name
+                    val startedAtNs = System.nanoTime()
+                    onActivity(
+                        AddonRequestActivity(
+                            providerName = providerName,
+                            resource = "subtitles",
+                            phase = "retrying",
+                            attempt = 2,
+                        )
+                    )
+                    var errorType: String? = null
                     val retry = try {
                         withTimeoutOrNull(
                             SUBTITLE_RETRY_TIMEOUT_MS
@@ -1467,9 +1534,26 @@ class UnifiedMediaEngine {
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (_: Throwable) {
+                    } catch (error: Throwable) {
+                        errorType = error::class.java.simpleName
                         emptyList()
                     }
+                    onActivity(
+                        AddonRequestActivity(
+                            providerName = providerName,
+                            resource = "subtitles",
+                            phase = when {
+                                retry == null -> "timeout"
+                                errorType != null -> "failed"
+                                else -> "completed"
+                            },
+                            resultCount = retry?.size ?: 0,
+                            elapsedMs =
+                                (System.nanoTime() - startedAtNs) / 1_000_000L,
+                            attempt = 2,
+                            errorType = errorType,
+                        )
+                    )
                     retry?.let { mergeAndPublish(it) }
                 }
             }
@@ -1652,6 +1736,16 @@ data class AddonStreamProgress(
     val rawCount: Int,
     val completedAddons: Int,
     val totalAddons: Int,
+)
+
+data class AddonRequestActivity(
+    val providerName: String,
+    val resource: String,
+    val phase: String,
+    val resultCount: Int = 0,
+    val elapsedMs: Long = 0L,
+    val attempt: Int = 1,
+    val errorType: String? = null,
 )
 
 object SourceRanker {

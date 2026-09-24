@@ -202,6 +202,7 @@ import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.source.SourceDiscoveryEngine
+import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.mobile.core.dna.UserDnaEngine
 import com.vueo.mobile.core.dna.UserDnaPreferences
@@ -266,6 +267,7 @@ internal fun SourcePickerScreen(
     notice: String?,
     searching: Boolean,
     progressText: String,
+    activityLog: List<SourceDiscoveryActivity>,
     firstResultMs: Long?,
     providerOrder: List<String>,
     originalLanguage: String?,
@@ -314,6 +316,30 @@ internal fun SourcePickerScreen(
     }
     var showEngineDetails by remember(mediaTitle) {
         mutableStateOf(false)
+    }
+    var clearedActivityCount by remember(mediaTitle) {
+        mutableIntStateOf(0)
+    }
+
+    LaunchedEffect(activityLog.size) {
+        if (activityLog.size < clearedActivityCount) {
+            clearedActivityCount = 0
+        }
+    }
+
+    if (showEngineDetails) {
+        SourceActivityLogDialog(
+            mediaTitle = mediaTitle,
+            searching = searching,
+            progressText = progressText,
+            rawCount = rawCount,
+            uniqueCount = streams.size,
+            firstResultMs = firstResultMs,
+            notice = notice,
+            entries = activityLog.drop(clearedActivityCount),
+            onClear = { clearedActivityCount = activityLog.size },
+            onDismiss = { showEngineDetails = false },
+        )
     }
 
     LaunchedEffect(visibleProviders) {
@@ -502,11 +528,7 @@ internal fun SourcePickerScreen(
                         )
 
                         Text(
-                            if (showEngineDetails) {
-                                "Hide details"
-                            } else {
-                                "Details"
-                            },
+                            "Details",
                             color = VueoPalette.Accent,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -522,46 +544,6 @@ internal fun SourcePickerScreen(
                         )
                     }
 
-                    if (showEngineDetails) {
-                        HorizontalDivider(
-                            color = VueoPalette.Stroke.copy(alpha = .35f)
-                        )
-
-                        Text(
-                            progressText,
-                            color = Color.White.copy(alpha = .72f),
-                            fontSize = 10.sp,
-                            lineHeight = 15.sp,
-                        )
-
-                        firstResultMs?.let {
-                            Text(
-                                "First source in $it ms",
-                                color = VueoPalette.Muted,
-                                fontSize = 10.sp,
-                            )
-                        }
-
-                        if (rawCount > streams.size) {
-                            Text(
-                                "$rawCount raw results analysed • " +
-                                    "${rawCount - streams.size} duplicates removed",
-                                color = VueoPalette.Muted,
-                                fontSize = 10.sp,
-                            )
-                        }
-
-                        notice
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let {
-                                Text(
-                                    it,
-                                    color = VueoPalette.Muted,
-                                    fontSize = 10.sp,
-                                    lineHeight = 15.sp,
-                                )
-                            }
-                    }
                 }
             }
         }
@@ -812,6 +794,283 @@ internal fun SourcePickerScreen(
             }
         }
         }
+    }
+}
+
+private enum class SourceLogFilter(val label: String) {
+    ALL("All"), REQUESTS("Requests"), SOURCES("Sources"),
+    SUBTITLES("Subtitles"), ERRORS("Errors"),
+}
+
+@Composable
+private fun SourceActivityLogDialog(
+    mediaTitle: String,
+    searching: Boolean,
+    progressText: String,
+    rawCount: Int,
+    uniqueCount: Int,
+    firstResultMs: Long?,
+    notice: String?,
+    entries: List<SourceDiscoveryActivity>,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var selectedFilter by remember { mutableStateOf(SourceLogFilter.ALL) }
+    val listState = rememberLazyListState()
+    val filteredEntries = remember(entries, selectedFilter) {
+        entries.filter { entry ->
+            when (selectedFilter) {
+                SourceLogFilter.ALL -> true
+                SourceLogFilter.REQUESTS -> entry.category == "requests"
+                SourceLogFilter.SOURCES -> entry.category == "sources"
+                SourceLogFilter.SUBTITLES -> entry.category == "subtitles"
+                SourceLogFilter.ERRORS ->
+                    entry.level == "error" || entry.level == "warning"
+            }
+        }
+    }
+
+    LaunchedEffect(filteredEntries.size) {
+        if (filteredEntries.isNotEmpty()) {
+            listState.animateScrollToItem(filteredEntries.lastIndex)
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp)
+                .heightIn(max = 650.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = VueoPalette.SurfaceElevated
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                VueoPalette.Stroke.copy(alpha = .55f),
+            ),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Live Activity Log",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                        Text(
+                            mediaTitle,
+                            color = VueoPalette.Muted,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (searching) {
+                            VueoPalette.Accent.copy(alpha = .14f)
+                        } else {
+                            VueoPalette.SurfaceStrong
+                        },
+                    ) {
+                        Text(
+                            if (searching) "LIVE" else "COMPLETE",
+                            modifier = Modifier.padding(
+                                horizontal = 10.dp,
+                                vertical = 6.dp,
+                            ),
+                            color = if (searching) {
+                                VueoPalette.Accent
+                            } else {
+                                Color.White.copy(alpha = .72f)
+                            },
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close activity log",
+                            tint = Color.White,
+                        )
+                    }
+                }
+
+                Text(
+                    progressText,
+                    color = Color.White.copy(alpha = .8f),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
+
+                Text(
+                    buildString {
+                        append("$rawCount raw • $uniqueCount unique")
+                        firstResultMs?.let { append(" • first source ${it} ms") }
+                        notice?.takeIf { it.isNotBlank() }?.let {
+                            append("\n")
+                            append(it)
+                        }
+                    },
+                    color = VueoPalette.Muted,
+                    fontSize = 9.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    items(SourceLogFilter.values().toList()) { filter ->
+                        FilterChip(
+                            selected = selectedFilter == filter,
+                            onClick = { selectedFilter = filter },
+                            label = { Text(filter.label, fontSize = 10.sp) },
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 220.dp, max = 430.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = VueoPalette.Background.copy(alpha = .72f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        VueoPalette.Stroke.copy(alpha = .35f),
+                    ),
+                ) {
+                    if (filteredEntries.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                if (entries.isEmpty()) {
+                                    "Waiting for discovery activity…"
+                                } else {
+                                    "No events in this filter."
+                                },
+                                color = VueoPalette.Muted,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(11.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(filteredEntries) { entry ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Text(
+                                        formatSourceLogTime(entry.elapsedMs),
+                                        modifier = Modifier.width(72.dp),
+                                        color = VueoPalette.Muted,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                    )
+                                    Text(
+                                        entry.message,
+                                        modifier = Modifier.weight(1f),
+                                        color = when (entry.level) {
+                                            "error" -> Color(0xFFFF7D7D)
+                                            "warning" -> Color(0xFFFFC46B)
+                                            else -> Color.White.copy(alpha = .86f)
+                                        },
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                        lineHeight = 14.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onClear,
+                        enabled = entries.isNotEmpty(),
+                    ) { Text("Clear") }
+                    TextButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(
+                                Context.CLIPBOARD_SERVICE
+                            ) as ClipboardManager
+                            clipboard.setPrimaryClip(
+                                ClipData.newPlainText(
+                                    "VUEO source activity log",
+                                    buildSourceActivityExport(
+                                        mediaTitle,
+                                        progressText,
+                                        entries,
+                                    ),
+                                )
+                            )
+                            Toast.makeText(
+                                context,
+                                "Source activity log copied",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        enabled = entries.isNotEmpty(),
+                    ) { Text("Copy log") }
+                }
+            }
+        }
+    }
+}
+
+private fun formatSourceLogTime(elapsedMs: Long): String {
+    val minutes = elapsedMs / 60_000L
+    val seconds = (elapsedMs / 1_000L) % 60L
+    val millis = elapsedMs % 1_000L
+    return "[%02d:%02d.%03d]".format(minutes, seconds, millis)
+}
+
+private fun buildSourceActivityExport(
+    mediaTitle: String,
+    progressText: String,
+    entries: List<SourceDiscoveryActivity>,
+): String = buildString {
+    appendLine("VUEO Source Activity Log")
+    appendLine("Title: $mediaTitle")
+    appendLine("Status: $progressText")
+    appendLine()
+    entries.forEach { entry ->
+        append(formatSourceLogTime(entry.elapsedMs))
+        append(' ')
+        append(entry.category.uppercase())
+        append(' ')
+        appendLine(entry.message)
     }
 }
 

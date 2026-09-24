@@ -202,6 +202,7 @@ import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.source.SourceDiscoveryEngine
+import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.mobile.core.dna.UserDnaEngine
 import com.vueo.mobile.core.dna.UserDnaPreferences
@@ -484,6 +485,9 @@ internal fun MediaDetailsScreen(
     }
     var sourcePickerProgress by remember {
         mutableStateOf("Ready")
+    }
+    var sourcePickerActivityLog by remember {
+        mutableStateOf<List<SourceDiscoveryActivity>>(emptyList())
     }
     var sourcePickerFirstResultMs by remember {
         mutableStateOf<Long?>(null)
@@ -900,6 +904,7 @@ internal fun MediaDetailsScreen(
         sourcePickerSearching = true
         sourcePickerFirstResultMs = null
         sourcePickerProgress = "Starting source discovery…"
+        sourcePickerActivityLog = emptyList()
         loadingStreams = true
         sourceStatus = null
 
@@ -925,6 +930,7 @@ internal fun MediaDetailsScreen(
                         sourcePickerSearching = snapshot.searching
                         sourcePickerFirstResultMs = snapshot.firstResultMs
                         sourcePickerProgress = snapshot.progress
+                        sourcePickerActivityLog = snapshot.activityLog
                         loadingStreams = snapshot.searching
 
                         sourceDiscoveryCompleted = !snapshot.searching
@@ -1175,6 +1181,7 @@ internal fun MediaDetailsScreen(
                     notice = sourcePickerNotice,
                     searching = sourcePickerSearching,
                     progressText = sourcePickerProgress,
+                    activityLog = sourcePickerActivityLog,
                     firstResultMs = sourcePickerFirstResultMs,
                     providerOrder = sourcePickerProviderOrder,
                     originalLanguage = item.originalLanguage,
