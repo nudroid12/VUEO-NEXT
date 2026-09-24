@@ -269,6 +269,7 @@ internal fun SourcePickerScreen(
     providerOrder: List<String>,
     originalLanguage: String?,
     showTechnicalDetails: Boolean,
+    onRetry: () -> Unit,
     onBack: () -> Unit,
     onPlay: (StreamSource) -> Unit,
 ) {
@@ -679,17 +680,29 @@ internal fun SourcePickerScreen(
                     shape = RoundedCornerShape(18.dp),
                     color = VueoPalette.SurfaceElevated,
                 ) {
-                    Text(
-                        if (streams.isEmpty()) {
-                            "No sources were returned for this title."
-                        } else {
-                            "Sources were found, but none are directly playable by the current VUEO player."
-                        },
+                    Column(
                         modifier = Modifier.padding(16.dp),
-                        color = VueoPalette.Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                    )
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            if (streams.isEmpty()) {
+                                "No sources were returned for this title."
+                            } else {
+                                "Sources were found, but none are directly playable by the current VUEO player."
+                            },
+                            color = VueoPalette.Muted,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                        )
+                        Button(onClick = onRetry) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Retry")
+                        }
+                    }
                 }
             }
         }
@@ -1044,5 +1057,4 @@ private fun StreamSourceCard(
         }
     }
 }
-
 

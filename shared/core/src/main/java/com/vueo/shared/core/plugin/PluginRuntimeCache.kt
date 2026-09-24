@@ -113,6 +113,12 @@ internal object PluginRuntimeCache {
         entries.clear()
     }
 
+    /** Remove only one media/episode result so an explicit Retry runs providers again. */
+    @Synchronized
+    fun invalidate(key: String) {
+        entries.remove(key)
+    }
+
     fun key(
         store: PluginStore,
         tmdbId: String,

@@ -449,6 +449,9 @@ private fun SourceResultsSection(
                         } else {
                             "Sources were found, but none can be played directly by VUEO."
                         },
+                        actionLabel = "Retry",
+                        actionRequester = retryRequester,
+                        onAction = onRefresh,
                     )
                 }
 

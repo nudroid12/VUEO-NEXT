@@ -151,6 +151,7 @@ suspend fun discoverProgressive(
     mediaYear: String? = null,
     mediaExternalId: String? = null,
     mediaOriginalLanguage: String? = null,
+    forceRefresh: Boolean = false,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
     supervisorScope {
@@ -252,6 +253,10 @@ suspend fun discoverProgressive(
                 season = season,
                 episode = episode,
             )
+
+        if (forceRefresh) {
+            PluginRuntimeCache.invalidate(cacheKey)
+        }
 
         PluginRuntimeCache.get(cacheKey)
             ?.let { cached ->
@@ -501,7 +506,16 @@ suspend fun discoverProgressive(
                     )
                 }
 
-            if (completedWithinBudget) {
+            val cacheableResult =
+                result.streams.isNotEmpty() ||
+                    (
+                        result.diagnostics.isNotEmpty() &&
+                            result.diagnostics.all { diagnostic ->
+                                diagnostic.status == ProviderHealthStatus.NO_RESULTS
+                            }
+                    )
+
+            if (completedWithinBudget && cacheableResult) {
                 PluginRuntimeCache.put(
                     key = cacheKey,
                     result = result,
@@ -3556,5 +3570,3 @@ private fun emptyDiscoveryResult():
             1000
     }
 }
-
-

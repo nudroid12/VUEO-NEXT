@@ -494,6 +494,12 @@ internal fun MediaDetailsScreen(
     var sourceDiscoveryJob by remember {
         mutableStateOf<Job?>(null)
     }
+    var sourceDiscoveryGeneration by remember {
+        mutableIntStateOf(0)
+    }
+    var failedSourceVideoIds by remember {
+        mutableStateOf<Set<String>>(emptySet())
+    }
     var selectedPlaybackSource by remember {
         mutableStateOf<StreamSource?>(null)
     }
@@ -831,6 +837,7 @@ internal fun MediaDetailsScreen(
         targetEpisode: EpisodeItem?,
         startPositionMs: Long = 0L,
         autoPlayFirst: Boolean = false,
+        forceRefresh: Boolean = false,
     ) {
         selectedPlaybackStartPositionMs = startPositionMs.coerceAtLeast(0L)
 
@@ -838,11 +845,14 @@ internal fun MediaDetailsScreen(
             media = item,
             episode = targetEpisode,
         ) ?: return
+        val effectiveForceRefresh =
+            forceRefresh || targetVideoId in failedSourceVideoIds
 
+        sourceDiscoveryGeneration += 1
+        val discoveryGeneration = sourceDiscoveryGeneration
         sourceDiscoveryJob?.cancel()
 
         var autoPlayCommitted = false
-        var subtitlesResolved = false
         var sourceDiscoveryCompleted = false
         var latestAutoPlayCandidates = emptyList<StreamSource>()
 
@@ -851,7 +861,7 @@ internal fun MediaDetailsScreen(
             allowLowQualityFallback: Boolean = false,
         ) {
             latestAutoPlayCandidates = candidates
-            if (!autoPlayFirst || autoPlayCommitted || !subtitlesResolved) return
+            if (!autoPlayFirst || autoPlayCommitted) return
 
             val directCandidates = candidates
                 .filter { it.isDirectPlayable }
@@ -901,29 +911,43 @@ internal fun MediaDetailsScreen(
                         episode = targetEpisode,
                         videoId = targetVideoId,
                         preferredQuality = preferredSourceQuality,
+                        forceRefresh = effectiveForceRefresh,
                     ),
-                ) { snapshot ->
-                    sourcePickerStreams = snapshot.bundle.sources
-                    sourcePickerProviderOrder = snapshot.providerOrder
-                    sourcePickerSubtitles = snapshot.bundle.subtitles
-                    sourcePickerRawCount = snapshot.rawCount
-                    sourcePickerNotice = snapshot.notice
-                    sourcePickerSearching = snapshot.searching
-                    sourcePickerFirstResultMs = snapshot.firstResultMs
-                    sourcePickerProgress = snapshot.progress
-                    loadingStreams = snapshot.searching
+                    onUpdate = sourceUpdate@ { snapshot ->
+                        if (sourceDiscoveryGeneration != discoveryGeneration) {
+                            return@sourceUpdate
+                        }
+                        sourcePickerStreams = snapshot.bundle.sources
+                        sourcePickerProviderOrder = snapshot.providerOrder
+                        sourcePickerSubtitles = snapshot.bundle.subtitles
+                        sourcePickerRawCount = snapshot.rawCount
+                        sourcePickerNotice = snapshot.notice
+                        sourcePickerSearching = snapshot.searching
+                        sourcePickerFirstResultMs = snapshot.firstResultMs
+                        sourcePickerProgress = snapshot.progress
+                        loadingStreams = snapshot.searching
 
-                    subtitlesResolved = snapshot.subtitlesResolved
-                    sourceDiscoveryCompleted = !snapshot.searching
-                    commitAutoPlayIfReady(
-                        candidates = snapshot.bundle.sources,
-                        allowLowQualityFallback = sourceDiscoveryCompleted,
-                    )
-                }
+                        sourceDiscoveryCompleted = !snapshot.searching
+                        if (sourceDiscoveryCompleted) {
+                            failedSourceVideoIds =
+                                if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
+                                    failedSourceVideoIds - targetVideoId
+                                } else {
+                                    failedSourceVideoIds + targetVideoId
+                                }
+                        }
+                        commitAutoPlayIfReady(
+                            candidates = snapshot.bundle.sources,
+                            allowLowQualityFallback = sourceDiscoveryCompleted,
+                        )
+                    },
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
+                if (sourceDiscoveryGeneration != discoveryGeneration) return@launch
                 sourceDiscoveryCompleted = true
+                failedSourceVideoIds = failedSourceVideoIds + targetVideoId
                 sourcePickerSearching = false
                 loadingStreams = false
                 sourcePickerProgress =
@@ -936,6 +960,10 @@ internal fun MediaDetailsScreen(
                     candidates = latestAutoPlayCandidates,
                     allowLowQualityFallback = true,
                 )
+            } finally {
+                if (sourceDiscoveryGeneration == discoveryGeneration) {
+                    sourceDiscoveryJob = null
+                }
             }
         }
     }
@@ -948,6 +976,7 @@ internal fun MediaDetailsScreen(
             playbackSource == null &&
                 sourcePickerStreams == null,
     ) {
+        sourceDiscoveryGeneration += 1
         sourceDiscoveryJob?.cancel()
         sourceDiscoveryJob = null
         loadingStreams = false
@@ -1098,14 +1127,28 @@ internal fun MediaDetailsScreen(
                             )
                         },
                         onEpisodeSelected = { selected ->
+                            val retryingFailedEpisode =
+                                pendingPlaybackEpisode?.id == selected.id &&
+                                    (
+                                        pendingPlaybackFailed ||
+                                            (
+                                                !sourcePickerSearching &&
+                                                    sourcePickerStreams != null &&
+                                                    sourcePickerStreams
+                                                        .orEmpty()
+                                                        .none { it.isDirectPlayable }
+                                            )
+                                    )
                             pendingPlaybackEpisode = selected
                             pendingPlaybackFailed = false
                             startSourceDiscovery(
                                 targetEpisode = selected,
                                 autoPlayFirst = true,
+                                forceRefresh = retryingFailedEpisode,
                             )
                         },
                         onBack = {
+                            sourceDiscoveryGeneration += 1
                             sourceDiscoveryJob?.cancel()
                             sourceDiscoveryJob = null
                             sourcePickerSearching = false
@@ -1137,7 +1180,15 @@ internal fun MediaDetailsScreen(
                     originalLanguage = item.originalLanguage,
                     showTechnicalDetails =
                         showSourceTechnicalDetails,
+                    onRetry = {
+                        startSourceDiscovery(
+                            targetEpisode = selectedEpisode,
+                            startPositionMs = selectedPlaybackStartPositionMs,
+                            forceRefresh = true,
+                        )
+                    },
                     onBack = {
+                        sourceDiscoveryGeneration += 1
                         sourceDiscoveryJob?.cancel()
                         sourceDiscoveryJob = null
                         sourcePickerSearching = false

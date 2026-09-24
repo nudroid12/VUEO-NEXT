@@ -95,6 +95,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoveryKey by remember { mutableStateOf<String?>(null) }
     var sourceDiscoveryJob by remember { mutableStateOf<Job?>(null) }
     var sourceDiscoveryGeneration by remember { mutableIntStateOf(0) }
+    var failedSourceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(runtime) {
         TvDesign.applyTheme(runtime.settingsStore.appTheme())
@@ -232,8 +233,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         force: Boolean = false,
     ) {
         val key = sourceSessionKey(media, episode)
+        val effectiveForce = force || key in failedSourceKeys
         if (
-            !force &&
+            !effectiveForce &&
             sourceDiscoveryKey == key &&
             (sourceDiscoveryJob?.isActive == true || sourceDiscoverySnapshot != null)
         ) {
@@ -254,6 +256,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 val finalBundle = runtime.discover(
                     item = media,
                     episode = episode,
+                    forceRefresh = effectiveForce,
                     onUpdate = { snapshot ->
                         if (
                             sourceDiscoveryGeneration == generation &&
@@ -261,6 +264,14 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         ) {
                             sourceDiscoverySnapshot = snapshot
                             sourceBundle = snapshot.bundle
+                            if (!snapshot.searching) {
+                                failedSourceKeys =
+                                    if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
+                                        failedSourceKeys - key
+                                    } else {
+                                        failedSourceKeys + key
+                                    }
+                            }
                         }
                     },
                 )
@@ -279,6 +290,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 ) {
                     sourceDiscoveryError = throwable.message ?: "Source discovery failed"
                     sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(searching = false)
+                    failedSourceKeys = failedSourceKeys + key
                 }
             } finally {
                 if (sourceDiscoveryGeneration == generation) {

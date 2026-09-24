@@ -272,6 +272,7 @@ class TvRuntime(context: Context) {
     suspend fun discover(
         item: MediaItem,
         episode: EpisodeItem?,
+        forceRefresh: Boolean = false,
         onProgress: (String) -> Unit = {},
         onUpdate: (TvSourceDiscoverySnapshot) -> Unit = {},
     ): TvSourceBundle {
@@ -286,6 +287,7 @@ class TvRuntime(context: Context) {
                 episode = episode,
                 videoId = videoId,
                 preferredQuality = settingsStore.preferredQuality().rankKey,
+                forceRefresh = forceRefresh,
             ),
         ) { snapshot ->
             onProgress(snapshot.progress)

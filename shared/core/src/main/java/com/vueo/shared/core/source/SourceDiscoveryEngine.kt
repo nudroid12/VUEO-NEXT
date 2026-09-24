@@ -106,7 +106,7 @@ class SourceDiscoveryEngine(
                     originalLanguage = item.originalLanguage,
                 )
             } else {
-                fresh
+                fresh.ifEmpty { cachedStreams }
             }
 
             recordProviders(display)
@@ -226,12 +226,12 @@ class SourceDiscoveryEngine(
                         )
                     )
                 },
+                forceRefresh = request.forceRefresh,
             )
         }
 
         freshAddonStreams = addonsDeferred.await()
         val pluginResult = pluginsDeferred.await()
-        subtitlesUpdateDeferred.await()
 
         if (pluginResult != null) {
             freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
@@ -253,7 +253,8 @@ class SourceDiscoveryEngine(
         } else {
             "Search complete • ${finalStreams.size} unique sources"
         }
-        val finalBundle = SourceDiscoveryBundle(
+        latestProgress = finalProgress
+        var finalBundle = SourceDiscoveryBundle(
             videoId = videoId,
             sources = finalStreams,
             subtitles = subtitles,
@@ -278,6 +279,25 @@ class SourceDiscoveryEngine(
                 firstResultMs = firstResultMs,
                 providerOrder = providerOrder,
                 fromCache = cachedStreams.isNotEmpty(),
+                subtitlesResolved = subtitlesResolved,
+            )
+        )
+
+        // Streams are complete independently from subtitle addons. Publish the
+        // playable result now; slow subtitle retries may continue and merge into
+        // the active player without holding source selection or next-episode play.
+        subtitlesUpdateDeferred.await()
+        finalBundle = finalBundle.copy(subtitles = subtitles)
+        onUpdate(
+            SourceDiscoverySnapshot(
+                bundle = finalBundle,
+                rawCount = rawCount,
+                notice = notice,
+                searching = false,
+                progress = finalProgress,
+                firstResultMs = firstResultMs,
+                providerOrder = providerOrder,
+                fromCache = cachedStreams.isNotEmpty(),
                 subtitlesResolved = true,
             )
         )
@@ -288,6 +308,7 @@ class SourceDiscoveryEngine(
         request: SourceDiscoveryRequest,
         onSkipped: (String) -> Unit,
         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
+        forceRefresh: Boolean,
     ): PluginDiscoveryResult? {
         if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty()) {
             return null
@@ -326,6 +347,7 @@ class SourceDiscoveryEngine(
                 mediaYear = item.releaseInfo,
                 mediaExternalId = item.id,
                 mediaOriginalLanguage = item.originalLanguage,
+                forceRefresh = forceRefresh,
             ) { progress ->
                 onProgress(
                     progress.result,
@@ -373,6 +395,7 @@ data class SourceDiscoveryRequest(
     val episode: EpisodeItem?,
     val videoId: String,
     val preferredQuality: String? = null,
+    val forceRefresh: Boolean = false,
 )
 
 data class SourceDiscoverySnapshot(
