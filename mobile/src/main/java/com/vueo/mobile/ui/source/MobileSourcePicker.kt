@@ -352,6 +352,9 @@ internal fun SourcePickerScreen(
         onRefresh = {
             if (!searching) onRefresh()
         },
+        // Source Engine already communicates discovery progress. Keep the
+        // pull gesture, but suppress Material's second loading indicator.
+        indicator = {},
         modifier = Modifier
             .fillMaxSize()
             .background(VueoPalette.Background),
