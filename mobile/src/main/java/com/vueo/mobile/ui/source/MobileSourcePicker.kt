@@ -81,7 +81,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -114,6 +113,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
@@ -257,6 +257,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SourcePickerScreen(
     mediaTitle: String,
@@ -269,7 +270,7 @@ internal fun SourcePickerScreen(
     providerOrder: List<String>,
     originalLanguage: String?,
     showTechnicalDetails: Boolean,
-    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
     onBack: () -> Unit,
     onPlay: (StreamSource) -> Unit,
 ) {
@@ -346,14 +347,23 @@ internal fun SourcePickerScreen(
         else -> sourceProviderTabDisplayName(selected)
     }
 
-    LazyColumn(
+    PullToRefreshBox(
+        isRefreshing = searching,
+        onRefresh = {
+            if (!searching) onRefresh()
+        },
         modifier = Modifier
             .fillMaxSize()
-            .background(VueoPalette.Background)
-            .navigationBarsPadding(),
-        contentPadding = PaddingValues(bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .background(VueoPalette.Background),
+        enabled = !searching,
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
         item(key = "source-picker-header") {
             Row(
                 modifier = Modifier
@@ -680,29 +690,17 @@ internal fun SourcePickerScreen(
                     shape = RoundedCornerShape(18.dp),
                     color = VueoPalette.SurfaceElevated,
                 ) {
-                    Column(
+                    Text(
+                        if (streams.isEmpty()) {
+                            "No sources were returned for this title. Pull down to refresh."
+                        } else {
+                            "Sources were found, but none are directly playable by the current VUEO player. Pull down to refresh."
+                        },
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            if (streams.isEmpty()) {
-                                "No sources were returned for this title."
-                            } else {
-                                "Sources were found, but none are directly playable by the current VUEO player."
-                            },
-                            color = VueoPalette.Muted,
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp,
-                        )
-                        Button(onClick = onRetry) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = null,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("Retry")
-                        }
-                    }
+                        color = VueoPalette.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                    )
                 }
             }
         }
@@ -810,6 +808,7 @@ internal fun SourcePickerScreen(
                     fontSize = 11.sp,
                 )
             }
+        }
         }
     }
 }
@@ -1057,4 +1056,3 @@ private fun StreamSourceCard(
         }
     }
 }
-

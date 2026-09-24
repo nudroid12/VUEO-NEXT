@@ -1180,7 +1180,7 @@ internal fun MediaDetailsScreen(
                     originalLanguage = item.originalLanguage,
                     showTechnicalDetails =
                         showSourceTechnicalDetails,
-                    onRetry = {
+                    onRefresh = {
                         startSourceDiscovery(
                             targetEpisode = selectedEpisode,
                             startPositionMs = selectedPlaybackStartPositionMs,
