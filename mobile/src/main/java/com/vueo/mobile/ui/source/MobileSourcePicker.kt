@@ -355,7 +355,6 @@ internal fun SourcePickerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(VueoPalette.Background),
-        enabled = !searching,
     ) {
         LazyColumn(
             modifier = Modifier
