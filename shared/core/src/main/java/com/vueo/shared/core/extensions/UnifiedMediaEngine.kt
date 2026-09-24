@@ -6,6 +6,7 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceSelector
 import com.vueo.shared.core.source.SourceRanker as CoreSourceRanker
@@ -1412,6 +1413,7 @@ class UnifiedMediaEngine {
     suspend fun resolveSubtitles(
         type: String,
         videoId: String,
+        allowedLanguageCodes: Set<String>? = null,
         onProgress: (List<SubtitleTrack>) -> Unit = {},
         onInitialPassComplete: () -> Unit = {},
         onActivity: (AddonRequestActivity) -> Unit = {},
@@ -1489,6 +1491,14 @@ class UnifiedMediaEngine {
                                 else -> "completed"
                             },
                             resultCount = result?.size ?: 0,
+                            acceptedCount = result
+                                ?.let {
+                                    filterSubtitleTracksByLanguage(
+                                        tracks = it,
+                                        allowedLanguageCodes = allowedLanguageCodes,
+                                    ).size
+                                }
+                                ?: 0,
                             elapsedMs =
                                 (System.nanoTime() - startedAtNs) / 1_000_000L,
                             errorType = errorType,
@@ -1498,7 +1508,12 @@ class UnifiedMediaEngine {
                     if (result == null) {
                         extension
                     } else {
-                        mergeAndPublish(result)
+                        mergeAndPublish(
+                            filterSubtitleTracksByLanguage(
+                                tracks = result,
+                                allowedLanguageCodes = allowedLanguageCodes,
+                            )
+                        )
                         null
                     }
                 }
@@ -1548,13 +1563,28 @@ class UnifiedMediaEngine {
                                 else -> "completed"
                             },
                             resultCount = retry?.size ?: 0,
+                            acceptedCount = retry
+                                ?.let {
+                                    filterSubtitleTracksByLanguage(
+                                        tracks = it,
+                                        allowedLanguageCodes = allowedLanguageCodes,
+                                    ).size
+                                }
+                                ?: 0,
                             elapsedMs =
                                 (System.nanoTime() - startedAtNs) / 1_000_000L,
                             attempt = 2,
                             errorType = errorType,
                         )
                     )
-                    retry?.let { mergeAndPublish(it) }
+                    retry?.let {
+                        mergeAndPublish(
+                            filterSubtitleTracksByLanguage(
+                                tracks = it,
+                                allowedLanguageCodes = allowedLanguageCodes,
+                            )
+                        )
+                    }
                 }
             }
             .awaitAll()
@@ -1743,10 +1773,26 @@ data class AddonRequestActivity(
     val resource: String,
     val phase: String,
     val resultCount: Int = 0,
+    val acceptedCount: Int? = null,
     val elapsedMs: Long = 0L,
     val attempt: Int = 1,
     val errorType: String? = null,
 )
+
+internal fun filterSubtitleTracksByLanguage(
+    tracks: List<SubtitleTrack>,
+    allowedLanguageCodes: Set<String>?,
+): List<SubtitleTrack> {
+    val allowed = allowedLanguageCodes
+        ?.mapNotNull(LanguagePolicy::canonicalCode)
+        ?.toSet()
+        .orEmpty()
+    if (allowed.isEmpty()) return tracks
+
+    return tracks.filter { track ->
+        LanguagePolicy.canonicalCode(track.language) in allowed
+    }
+}
 
 object SourceRanker {
     fun comparator(

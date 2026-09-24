@@ -104,7 +104,15 @@ class SourceDiscoveryEngine(
                 "retrying" -> "${event.providerName} → Retrying subtitle request"
                 "timeout" -> "${event.providerName} → ${event.resource.replaceFirstChar { it.uppercase() }} timed out after ${event.elapsedMs} ms"
                 "failed" -> "${event.providerName} → ${event.resource.replaceFirstChar { it.uppercase() }} failed (${event.errorType ?: "unknown error"})"
-                else -> "${event.providerName} ← ${event.resultCount} ${event.resource} received in ${event.elapsedMs} ms"
+                else -> buildString {
+                    append("${event.providerName} ← ${event.resultCount} ${event.resource} received")
+                    event.acceptedCount
+                        ?.takeIf { it != event.resultCount }
+                        ?.let { accepted ->
+                            append(" • $accepted preferred accepted")
+                        }
+                    append(" in ${event.elapsedMs} ms")
+                }
             }
             activity(category, level, message)
         }
@@ -193,11 +201,20 @@ class SourceDiscoveryEngine(
 
         val subtitlesUpdateDeferred = async {
             activity("subtitles", message = "Subtitle discovery started in parallel")
+            request.subtitleLanguageCodes
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { codes ->
+                    activity(
+                        "subtitles",
+                        message = "Preferred-language filter active • ${codes.sorted().joinToString(", ")}",
+                    )
+                }
             publish(latestProgress)
             try {
                 subtitles = mediaEngine.resolveSubtitles(
                     type = item.type,
                     videoId = videoId,
+                    allowedLanguageCodes = request.subtitleLanguageCodes,
                     onProgress = { discovered ->
                         subtitles = discovered
                         activity(
@@ -528,6 +545,7 @@ data class SourceDiscoveryRequest(
     val videoId: String,
     val preferredQuality: String? = null,
     val forceRefresh: Boolean = false,
+    val subtitleLanguageCodes: Set<String>? = null,
 )
 
 data class SourceDiscoverySnapshot(

@@ -917,6 +917,22 @@ internal fun MediaDetailsScreen(
                         videoId = targetVideoId,
                         preferredQuality = preferredSourceQuality,
                         forceRefresh = effectiveForceRefresh,
+                        subtitleLanguageCodes =
+                            if (
+                                settingsStore.subtitleVisibility() ==
+                                com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY
+                            ) {
+                                setOfNotNull(
+                                    settingsStore
+                                        .preferredSubtitleLanguage()
+                                        .languageCode,
+                                    settingsStore
+                                        .secondarySubtitleLanguage()
+                                        .languageCode,
+                                ).takeIf { it.isNotEmpty() }
+                            } else {
+                                null
+                            },
                     ),
                     onUpdate = sourceUpdate@ { snapshot ->
                         if (sourceDiscoveryGeneration != discoveryGeneration) {
