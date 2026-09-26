@@ -2006,6 +2006,14 @@ internal fun PlayerScreen(
             pendingSubtitleSelectionId = choice.selectionId
             translatingSubtitleSelectionId = null
             subtitlesDisabled = false
+            // Keep Media3 away from a not-yet-ready external URL. The shared
+            // readiness probe owns the single network request and the track is
+            // enabled only after its bytes have entered the session cache.
+            clearTrackOverride(
+                player = player,
+                trackType = C.TRACK_TYPE_TEXT,
+                disable = true,
+            )
             settingsStore.setSubtitleSelection(
                 contentId = mediaKey,
                 selectionId = choice.selectionId,

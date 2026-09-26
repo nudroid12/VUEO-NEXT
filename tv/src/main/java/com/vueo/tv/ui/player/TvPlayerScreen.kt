@@ -1402,6 +1402,14 @@ fun TvPlayerScreen(
                 pendingSubtitleSelectionId = choice.selectionId
                 translatingSubtitleSelectionId = null
                 subtitlesDisabled = false
+                // Prevent Media3 from opening the generated subtitle URL in
+                // parallel with the shared readiness probe. The track is
+                // enabled after the prepared bytes are available in cache.
+                tvClearTrackOverride(
+                    player = player,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    disable = true,
+                )
                 settings.setSubtitleSelection(mediaKey, choice.selectionId)
                 settings.setLastSubtitleSelection(
                     PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)

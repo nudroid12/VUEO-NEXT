@@ -8,8 +8,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
+import kotlin.math.min
 
 /**
  * Warms a slow generated subtitle before its Media3 text track is selected.
@@ -21,39 +24,86 @@ object SubtitleReadinessProbe {
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
         onWaiting: suspend () -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
+        val normalizedUrl = url.trim()
+        if (normalizedUrl.isEmpty()) return@withContext false
+
+        val timeoutNs = timeoutMs.coerceAtLeast(1L) * NANOS_PER_MILLISECOND
+        val deadlineNs = System.nanoTime() + timeoutNs
         val nowMs = System.currentTimeMillis()
-        readyAtMs[url]
+        readyAtMs[normalizedUrl]
             ?.takeIf { nowMs - it <= READY_CACHE_MS }
             ?.let { return@withContext true }
 
-        val deadlineNs = System.nanoTime() + timeoutMs.coerceAtLeast(1L) * 1_000_000L
+        val probeLock = probeLocks.computeIfAbsent(normalizedUrl) { Mutex() }
         var waitingReported = false
-
-        while (System.nanoTime() < deadlineNs) {
-            coroutineContext.ensureActive()
-            val result = probeOnce(url)
-            when (result) {
-                ProbeResult.READY -> {
-                    readyAtMs[url] = System.currentTimeMillis()
-                    return@withContext true
-                }
-                ProbeResult.FAILED -> return@withContext false
-                ProbeResult.RETRY -> {
-                    if (!waitingReported) {
-                        waitingReported = true
-                        withContext(Dispatchers.Main.immediate) {
-                            onWaiting()
-                        }
-                    }
-                    delay(RETRY_DELAY_MS)
-                }
+        if (probeLock.isLocked) {
+            waitingReported = true
+            withContext(Dispatchers.Main.immediate) {
+                onWaiting()
             }
         }
 
-        false
+        probeLock.withLock {
+            // Another caller may have completed the same URL while this caller
+            // was waiting for the per-URL single-flight lock.
+            val cachedAtMs = readyAtMs[normalizedUrl]
+            if (
+                cachedAtMs != null &&
+                System.currentTimeMillis() - cachedAtMs <= READY_CACHE_MS
+            ) {
+                return@withContext true
+            }
+
+            while (System.nanoTime() < deadlineNs) {
+                coroutineContext.ensureActive()
+                val remainingMs = remainingMillis(deadlineNs)
+                if (remainingMs <= 0L) break
+
+                val connectTimeoutMs =
+                    min(CONNECT_TIMEOUT_MS.toLong(), remainingMs)
+                        .coerceAtLeast(1L)
+                        .toInt()
+                val readBudgetMs =
+                    (remainingMs - connectTimeoutMs)
+                        .coerceAtLeast(1L)
+                val readTimeoutMs =
+                    min(READ_TIMEOUT_MS.toLong(), readBudgetMs)
+                        .coerceAtLeast(1L)
+                        .toInt()
+                val result = probeOnce(
+                    url = normalizedUrl,
+                    connectTimeoutMs = connectTimeoutMs,
+                    readTimeoutMs = readTimeoutMs,
+                )
+                when (result) {
+                    ProbeResult.READY -> {
+                        readyAtMs[normalizedUrl] = System.currentTimeMillis()
+                        return@withContext true
+                    }
+                    ProbeResult.FAILED -> return@withContext false
+                    ProbeResult.RETRY -> {
+                        if (!waitingReported) {
+                            waitingReported = true
+                            withContext(Dispatchers.Main.immediate) {
+                                onWaiting()
+                            }
+                        }
+                        val retryWaitMs =
+                            min(RETRY_DELAY_MS, remainingMillis(deadlineNs))
+                        if (retryWaitMs > 0L) delay(retryWaitMs)
+                    }
+                }
+            }
+
+            false
+        }
     }
 
-    private fun probeOnce(url: String): ProbeResult {
+    private fun probeOnce(
+        url: String,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+    ): ProbeResult {
         val connection = try {
             URL(url).openConnection() as HttpURLConnection
         } catch (_: Throwable) {
@@ -62,8 +112,8 @@ object SubtitleReadinessProbe {
 
         return try {
             connection.instanceFollowRedirects = true
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
+            connection.connectTimeout = connectTimeoutMs
+            connection.readTimeout = readTimeoutMs
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "text/vtt,text/plain,application/x-subrip,*/*")
             connection.setRequestProperty("User-Agent", "VUEO subtitle preflight")
@@ -108,12 +158,18 @@ object SubtitleReadinessProbe {
         FAILED,
     }
 
-    private const val DEFAULT_TIMEOUT_MS = 60_000L
+    private fun remainingMillis(deadlineNs: Long): Long =
+        ((deadlineNs - System.nanoTime()) / NANOS_PER_MILLISECOND)
+            .coerceAtLeast(0L)
+
+    private const val NANOS_PER_MILLISECOND = 1_000_000L
+    private const val DEFAULT_TIMEOUT_MS = 90_000L
     private const val CONNECT_TIMEOUT_MS = 10_000
-    private const val READ_TIMEOUT_MS = 35_000
-    private const val RETRY_DELAY_MS = 1_000L
+    private const val READ_TIMEOUT_MS = 60_000
+    private const val RETRY_DELAY_MS = 3_000L
     private const val BUFFER_SIZE = 16 * 1024
     private const val MAX_CACHE_BYTES = 8 * 1024 * 1024
     private const val READY_CACHE_MS = 15 * 60 * 1_000L
     private val readyAtMs = ConcurrentHashMap<String, Long>()
+    private val probeLocks = ConcurrentHashMap<String, Mutex>()
 }
