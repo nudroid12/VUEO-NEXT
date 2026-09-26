@@ -462,7 +462,7 @@ internal data class PlayerTrackChoice(
     val key: String,
     val label: String,
     val override:
-        TrackSelectionOverride,
+        TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -470,6 +470,58 @@ internal data class PlayerTrackChoice(
     val selectionId: String,
     val externalSubtitle: SubtitleTrack? = null,
 )
+
+/**
+ * External subtitles are discovered independently from ExoPlayer's track
+ * timeline. Keep them visible in the workspace as soon as discovery publishes
+ * them, even if ExoPlayer has not exposed the matching text group yet.
+ *
+ * A provisional choice has no override. Selection code resolves it back to a
+ * real player track before applying it.
+ */
+internal fun mergeDiscoveredSubtitleChoices(
+    playerChoices: List<PlayerTrackChoice>,
+    discoveredSubtitles: List<SubtitleTrack>,
+): List<PlayerTrackChoice> {
+    val knownSelectionIds =
+        playerChoices
+            .asSequence()
+            .map { it.selectionId }
+            .toMutableSet()
+    val result = playerChoices.toMutableList()
+
+    discoveredSubtitles.forEach { subtitle ->
+        val selectionId =
+            PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)
+        if (
+            !subtitle.url.startsWith("https://") ||
+            !knownSelectionIds.add(selectionId)
+        ) {
+            return@forEach
+        }
+
+        result +=
+            PlayerTrackChoice(
+                key = "discovered:$selectionId",
+                label =
+                    subtitle.name
+                        ?.takeIf { it.isNotBlank() }
+                        ?: friendlySubtitleLanguageName(subtitle.language),
+                override = null,
+                selected = false,
+                language = subtitle.language,
+                sourceLabel =
+                    subtitle.providerName
+                        .takeIf { it.isNotBlank() }
+                        ?: "External",
+                metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
+                selectionId = selectionId,
+                externalSubtitle = subtitle,
+            )
+    }
+
+    return result
+}
 
 internal const val PLAYER_SUBTITLE_LABEL_PREFIX =
     PlayerTrackPolicy.SUBTITLE_LABEL_PREFIX
@@ -787,6 +839,7 @@ internal fun applyTrackChoice(
     trackType: Int,
     choice: PlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters =
         player
             .trackSelectionParameters
@@ -799,7 +852,7 @@ internal fun applyTrackChoice(
                 trackType
             )
             .setOverrideForType(
-                choice.override
+                trackOverride
             )
             .build()
 }

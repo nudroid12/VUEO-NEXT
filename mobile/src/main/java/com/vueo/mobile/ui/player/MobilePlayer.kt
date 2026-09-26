@@ -920,6 +920,25 @@ internal fun PlayerScreen(
         mutableStateOf(true)
     }
 
+    // The subtitle workspace is a discovery UI, not an ExoPlayer track
+    // inspector. Publish newly discovered external choices immediately;
+    // ExoPlayer may expose their TrackGroups a little later.
+    LaunchedEffect(player, subtitles) {
+        val discoveredBySelectionId =
+            subtitles.associateBy(
+                PlayerTrackPolicy::externalSubtitleSelectionId
+            )
+        val availablePlayerChoices = playerTrackChoices(
+            tracks = player.currentTracks,
+            trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = discoveredBySelectionId,
+        )
+        textTracks = mergeDiscoveredSubtitleChoices(
+            playerChoices = availablePlayerChoices,
+            discoveredSubtitles = subtitles,
+        )
+    }
+
     LaunchedEffect(
         player,
         subtitles,
@@ -994,9 +1013,10 @@ internal fun PlayerScreen(
                     externalSubtitles = latestExternalSubtitles,
                 )
 
-                if (refreshedTextTracks.isNotEmpty()) {
-                    textTracks = refreshedTextTracks
-                }
+                textTracks = mergeDiscoveredSubtitleChoices(
+                    playerChoices = refreshedTextTracks,
+                    discoveredSubtitles = latestSubtitles.value,
+                )
 
                 val visibleExternalSelectionIds =
                     refreshedTextTracks
@@ -1027,9 +1047,10 @@ internal fun PlayerScreen(
                 trackType = C.TRACK_TYPE_TEXT,
                 externalSubtitles = finalExternalSubtitles,
             )
-            if (finalTextTracks.isNotEmpty()) {
-                textTracks = finalTextTracks
-            }
+            textTracks = mergeDiscoveredSubtitleChoices(
+                playerChoices = finalTextTracks,
+                discoveredSubtitles = latestSubtitles.value,
+            )
         }
     }
 
@@ -1181,8 +1202,12 @@ internal fun PlayerScreen(
             trackType = C.TRACK_TYPE_TEXT,
             externalSubtitles = externalSubtitles,
         )
-        if (refreshedTextTracks.isNotEmpty() || acceptEmptyTextTracks) {
-            textTracks = refreshedTextTracks
+        val workspaceTextTracks = mergeDiscoveredSubtitleChoices(
+            playerChoices = refreshedTextTracks,
+            discoveredSubtitles = latestSubtitles.value,
+        )
+        if (workspaceTextTracks.isNotEmpty() || acceptEmptyTextTracks) {
+            textTracks = workspaceTextTracks
         }
         val effectiveTextTracks =
             if (refreshedTextTracks.isEmpty() && !acceptEmptyTextTracks) {
@@ -1340,14 +1365,27 @@ internal fun PlayerScreen(
                             delay(50L)
                             refreshWaitAttempts += 1
                         }
-                        val latestExternalSubtitles = latestSubtitles.value
-                            .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
-                        val latestChoice = playerTrackChoices(
-                            tracks = player.currentTracks,
-                            trackType = C.TRACK_TYPE_TEXT,
-                            externalSubtitles = latestExternalSubtitles,
-                        ).firstOrNull {
-                            it.selectionId == savedTrack.selectionId
+                        var latestChoice: PlayerTrackChoice? = null
+                        var trackWaitAttempts = 0
+                        while (
+                            ready &&
+                            pendingSubtitleSelectionId == savedTrack.selectionId &&
+                            latestChoice == null &&
+                            trackWaitAttempts < 200
+                        ) {
+                            val latestExternalSubtitles = latestSubtitles.value
+                                .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+                            latestChoice = playerTrackChoices(
+                                tracks = player.currentTracks,
+                                trackType = C.TRACK_TYPE_TEXT,
+                                externalSubtitles = latestExternalSubtitles,
+                            ).firstOrNull {
+                                it.selectionId == savedTrack.selectionId
+                            }
+                            if (latestChoice == null) {
+                                delay(50L)
+                                trackWaitAttempts += 1
+                            }
                         }
                         if (
                             ready &&
@@ -1995,14 +2033,27 @@ internal fun PlayerScreen(
                     delay(50L)
                     refreshWaitAttempts += 1
                 }
-                val latestExternalSubtitles = latestSubtitles.value
-                    .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
-                val latestChoice = playerTrackChoices(
-                    tracks = player.currentTracks,
-                    trackType = C.TRACK_TYPE_TEXT,
-                    externalSubtitles = latestExternalSubtitles,
-                ).firstOrNull {
-                    it.selectionId == choice.selectionId
+                var latestChoice: PlayerTrackChoice? = null
+                var trackWaitAttempts = 0
+                while (
+                    ready &&
+                    pendingSubtitleSelectionId == choice.selectionId &&
+                    latestChoice == null &&
+                    trackWaitAttempts < 200
+                ) {
+                    val latestExternalSubtitles = latestSubtitles.value
+                        .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+                    latestChoice = playerTrackChoices(
+                        tracks = player.currentTracks,
+                        trackType = C.TRACK_TYPE_TEXT,
+                        externalSubtitles = latestExternalSubtitles,
+                    ).firstOrNull {
+                        it.selectionId == choice.selectionId
+                    }
+                    if (latestChoice == null) {
+                        delay(50L)
+                        trackWaitAttempts += 1
+                    }
                 }
                 if (
                     ready &&
