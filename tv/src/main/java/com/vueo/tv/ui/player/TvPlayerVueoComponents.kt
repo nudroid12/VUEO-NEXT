@@ -97,11 +97,21 @@ internal fun VueoPlayerProgressRail(
             .onPreviewKeyEvent { event ->
                 when {
                     event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        onSeekBy(-10_000L)
+                        onSeekBy(
+                            tvLongPressSeekDeltaMs(
+                                direction = -1,
+                                repeatCount = event.nativeKeyEvent.repeatCount,
+                            )
+                        )
                         true
                     }
                     event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        onSeekBy(10_000L)
+                        onSeekBy(
+                            tvLongPressSeekDeltaMs(
+                                direction = 1,
+                                repeatCount = event.nativeKeyEvent.repeatCount,
+                            )
+                        )
                         true
                     }
                     event.type == KeyEventType.KeyUp &&

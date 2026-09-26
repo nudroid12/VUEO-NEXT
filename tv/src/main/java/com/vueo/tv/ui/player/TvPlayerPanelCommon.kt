@@ -65,3 +65,16 @@ internal fun androidx.compose.ui.input.key.KeyEvent.isTvPanelActivationKey(): Bo
     nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+internal fun tvLongPressSeekDeltaMs(
+    direction: Int,
+    repeatCount: Int,
+): Long {
+    val stepMs = when {
+        repeatCount <= 0 -> 10_000L
+        repeatCount <= 5 -> 5_000L
+        repeatCount <= 12 -> 10_000L
+        else -> 20_000L
+    }
+    return if (direction < 0) -stepMs else stepMs
+}

@@ -401,7 +401,9 @@ fun TvPlayerScreen(
         positionMs = target
         seekCommitJob[0]?.cancel()
         seekCommitJob[0] = focusScope.launch {
-            delay(600L)
+            // KeyUp normally commits immediately. This longer fallback only
+            // protects against remotes that occasionally omit the release event.
+            delay(1_200L)
             commitPendingSeek()
         }
         noteInteraction()
@@ -1082,8 +1084,13 @@ fun TvPlayerScreen(
                 val code = event.nativeKeyEvent.keyCode
                 if (
                     event.type == KeyEventType.KeyUp &&
-                    controlFocusHandoffPending &&
-                    (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)
+                    pendingSeekPositionMs != null &&
+                    (
+                        code == KeyEvent.KEYCODE_DPAD_LEFT ||
+                            code == KeyEvent.KEYCODE_DPAD_RIGHT ||
+                            code == KeyEvent.KEYCODE_MEDIA_REWIND ||
+                            code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
+                    )
                 ) {
                     commitPendingSeek()
                     return@onPreviewKeyEvent true
@@ -1120,11 +1127,21 @@ fun TvPlayerScreen(
                         true
                     }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                        seekBy(-10_000L)
+                        seekBy(
+                            tvLongPressSeekDeltaMs(
+                                direction = -1,
+                                repeatCount = event.nativeKeyEvent.repeatCount,
+                            )
+                        )
                         true
                     }
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        seekBy(10_000L)
+                        seekBy(
+                            tvLongPressSeekDeltaMs(
+                                direction = 1,
+                                repeatCount = event.nativeKeyEvent.repeatCount,
+                            )
+                        )
                         true
                     }
                     else -> {
@@ -1144,12 +1161,22 @@ fun TvPlayerScreen(
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                                     requestControlFocus(progressRequester)
-                                    seekBy(-10_000L)
+                                    seekBy(
+                                        tvLongPressSeekDeltaMs(
+                                            direction = -1,
+                                            repeatCount = event.nativeKeyEvent.repeatCount,
+                                        )
+                                    )
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                                     requestControlFocus(progressRequester)
-                                    seekBy(10_000L)
+                                    seekBy(
+                                        tvLongPressSeekDeltaMs(
+                                            direction = 1,
+                                            repeatCount = event.nativeKeyEvent.repeatCount,
+                                        )
+                                    )
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP -> {
