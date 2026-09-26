@@ -471,9 +471,10 @@ internal fun MediaDetailsScreen(
     var sourcePickerStreams by remember {
         mutableStateOf<List<StreamSource>?>(null)
     }
-    var sourcePickerSubtitles by remember {
+    val sourcePickerSubtitlesState = remember {
         mutableStateOf<List<SubtitleTrack>>(emptyList())
     }
+    var sourcePickerSubtitles by sourcePickerSubtitlesState
     var sourcePickerNotice by remember {
         mutableStateOf<String?>(null)
     }
@@ -1107,7 +1108,7 @@ internal fun MediaDetailsScreen(
                         availableSources = transitionSourceStreams,
                         sourceProviderOrder =
                             sourcePickerProviderOrder,
-                        subtitles = sourcePickerSubtitles,
+                        subtitlesState = sourcePickerSubtitlesState,
                         initialPositionMs =
                             selectedPlaybackStartPositionMs,
                         episodeSwitchingTo =

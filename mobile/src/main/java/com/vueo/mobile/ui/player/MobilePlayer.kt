@@ -116,6 +116,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -399,7 +400,7 @@ internal fun PlayerScreen(
     source: StreamSource,
     availableSources: List<StreamSource>,
     sourceProviderOrder: List<String>,
-    subtitles: List<SubtitleTrack>,
+    subtitlesState: State<List<SubtitleTrack>>,
     initialPositionMs: Long,
     episodeSwitchingTo: EpisodeItem?,
     episodeSwitchFailed: Boolean,
@@ -411,6 +412,10 @@ internal fun PlayerScreen(
     onEpisodeSelected: (EpisodeItem) -> Unit,
     onBack: () -> Unit,
 ) {
+    // Read the discovery state inside the active player composition. This
+    // avoids AnimatedContent retaining the subtitle list that existed when
+    // quick play first entered the player.
+    val subtitles by subtitlesState
     val context = LocalContext.current
     val activity = context as? Activity
     val entryConfigurationOrientation = remember {
