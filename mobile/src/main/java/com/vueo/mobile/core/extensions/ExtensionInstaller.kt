@@ -8,6 +8,6 @@ object ExtensionInstaller {
         require(url.startsWith("https://")) {
             "Only HTTPS addon manifest URLs are accepted."
         }
-        return StremioAddonProvider.fromManifestUrl(url)
+        return StremioAddonProvider.fromManifestUrlWithRetry(url)
     }
 }

@@ -77,7 +77,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
     var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
     var selectedEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
-    var sourceBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
+    val sourceBundleState = remember { mutableStateOf<TvSourceBundle?>(null) }
+    var sourceBundle by sourceBundleState
     var selectedSource by remember { mutableStateOf<StreamSource?>(null) }
     var initialPositionMs by remember { mutableLongStateOf(0L) }
     var playerSessionId by remember { mutableIntStateOf(0) }
@@ -524,6 +525,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             media = media,
                             episode = selectedEpisode,
                             bundle = bundle,
+                            bundleState = sourceBundleState,
                             source = source,
                             initialPositionMs = initialPositionMs,
                             playerSessionId = playerSessionId,

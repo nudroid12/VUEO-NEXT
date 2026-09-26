@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -141,6 +142,7 @@ fun TvPlayerScreen(
     media: VueoMediaItem,
     episode: EpisodeItem?,
     bundle: TvSourceBundle,
+    bundleState: State<TvSourceBundle?>,
     source: StreamSource,
     initialPositionMs: Long,
     playerSessionId: Int,
@@ -182,11 +184,17 @@ fun TvPlayerScreen(
             .distinctBy { SourceSelector.identityKey(it.toSourceCandidateForPlayer()) }
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
+    val latestBundle by bundleState
     var liveSubtitles by remember(bundle.videoId) {
         mutableStateOf(bundle.subtitles)
     }
-    LaunchedEffect(bundle.subtitles) {
-        liveSubtitles = (liveSubtitles + bundle.subtitles).distinctBy { it.url }
+    val latestDiscoveredSubtitles = latestBundle
+        ?.takeIf { it.videoId == bundle.videoId }
+        ?.subtitles
+        .orEmpty()
+    LaunchedEffect(latestDiscoveredSubtitles) {
+        liveSubtitles = (liveSubtitles + latestDiscoveredSubtitles)
+            .distinctBy { it.url }
     }
     val externalSubtitlesBySelectionId = remember(liveSubtitles) {
         liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)

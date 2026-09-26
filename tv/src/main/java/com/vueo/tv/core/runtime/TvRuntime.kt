@@ -174,7 +174,7 @@ class TvRuntime(context: Context) {
                     async {
                         manifestUrl to runCatching {
                             require(manifestUrl.startsWith("https://"))
-                            StremioAddonExtension.fromManifestUrl(manifestUrl)
+                            StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
                         }
                     }
                 }

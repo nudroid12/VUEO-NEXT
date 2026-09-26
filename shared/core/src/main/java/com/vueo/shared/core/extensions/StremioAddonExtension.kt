@@ -14,6 +14,8 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 /**
  * Canonical Stremio MediaExtension used by both Mobile and TV.
@@ -122,6 +124,29 @@ class StremioAddonExtension private constructor(
         }
 
     companion object {
+        suspend fun fromManifestUrlWithRetry(
+            manifestUrl: String,
+            maxAttempts: Int = 3,
+            retryDelayMs: Long = 1_000L,
+            httpClient: StremioHttpClient = DefaultStremioHttpClient,
+        ): StremioAddonExtension {
+            require(maxAttempts > 0) { "maxAttempts must be greater than zero." }
+            var lastFailure: Throwable? = null
+            repeat(maxAttempts) { attempt ->
+                try {
+                    return fromManifestUrl(manifestUrl, httpClient)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    lastFailure = failure
+                    if (attempt < maxAttempts - 1) {
+                        delay(retryDelayMs * (attempt + 1L))
+                    }
+                }
+            }
+            throw checkNotNull(lastFailure)
+        }
+
         suspend fun fromManifestUrl(
             manifestUrl: String,
             httpClient: StremioHttpClient = DefaultStremioHttpClient,
