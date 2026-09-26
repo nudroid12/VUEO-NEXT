@@ -17,6 +17,18 @@ class PlayerSubtitleUpdatePolicyTest {
     }
 
     @Test
+    fun `subtitle source keys change when a late language arrives`() {
+        val english = subtitle("en", "https://subs.example/en.srt")
+        val malay = subtitle("ms", "https://subs.example/ms.srt")
+
+        val initial = PlayerSubtitleUpdatePolicy.sourceKeys(listOf(english))
+        val updated = PlayerSubtitleUpdatePolicy.sourceKeys(listOf(english, malay))
+
+        assertEquals(false, initial == updated)
+        assertEquals(2, updated.size)
+    }
+
+    @Test
     fun `stable resume uses last known position during transient reset`() {
         assertEquals(
             82_000L,

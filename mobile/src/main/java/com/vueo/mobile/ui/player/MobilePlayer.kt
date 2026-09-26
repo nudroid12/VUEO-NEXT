@@ -283,6 +283,9 @@ private fun Context.setPlayerSubtitleDelayMs(
         .apply()
 }
 
+private const val LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS = 60
+private const val LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS = 100L
+
 @Composable
 private fun PlayerContentWarningsOverlay(
     warnings: List<ContentWarning>,
@@ -970,6 +973,63 @@ internal fun PlayerScreen(
                     )
                     .build()
             appliedSubtitleUrls = latestSubtitleUrls
+
+            // ExoPlayer can publish an empty/intermediate track snapshot when
+            // external subtitles are added to the currently playing item.
+            // onTracksChanged is therefore not sufficient on its own: keep
+            // reconciling the workspace until every late subtitle is visible,
+            // while the video continues from the preserved position above.
+            val expectedExternalSelectionIds =
+                subtitles
+                    .map(PlayerTrackPolicy::externalSubtitleSelectionId)
+                    .toSet()
+            var refreshAttempts = 0
+            while (refreshAttempts < LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS) {
+                val latestExternalSubtitles =
+                    latestSubtitles.value
+                        .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+                val refreshedTextTracks = playerTrackChoices(
+                    tracks = player.currentTracks,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    externalSubtitles = latestExternalSubtitles,
+                )
+
+                if (refreshedTextTracks.isNotEmpty()) {
+                    textTracks = refreshedTextTracks
+                }
+
+                val visibleExternalSelectionIds =
+                    refreshedTextTracks
+                        .asSequence()
+                        .filter { it.externalSubtitle != null }
+                        .map { it.selectionId }
+                        .toSet()
+                if (
+                    expectedExternalSelectionIds.isEmpty() ||
+                    expectedExternalSelectionIds.all(visibleExternalSelectionIds::contains)
+                ) {
+                    break
+                }
+
+                delay(LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS)
+                refreshAttempts += 1
+            }
+
+            subtitleTrackRefreshInProgress = false
+
+            // One final read covers devices that publish their last Tracks
+            // snapshot on the same frame as the final polling interval.
+            val finalExternalSubtitles =
+                latestSubtitles.value
+                    .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+            val finalTextTracks = playerTrackChoices(
+                tracks = player.currentTracks,
+                trackType = C.TRACK_TYPE_TEXT,
+                externalSubtitles = finalExternalSubtitles,
+            )
+            if (finalTextTracks.isNotEmpty()) {
+                textTracks = finalTextTracks
+            }
         }
     }
 
