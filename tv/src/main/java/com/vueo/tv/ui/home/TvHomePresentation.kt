@@ -33,6 +33,7 @@ internal fun TvHomePresentation(
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
+    onLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
@@ -89,6 +90,7 @@ internal fun TvHomePresentation(
                         focusedEntry = entry
                     },
                     onOpen = onOpen,
+                    onLongClick = onLongClick,
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
             }

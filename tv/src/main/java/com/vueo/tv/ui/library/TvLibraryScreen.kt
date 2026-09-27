@@ -57,9 +57,11 @@ import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
+import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -99,7 +101,11 @@ fun TvLibraryScreen(
     // Mobile parity: Library's visible content is My List. Continue Watching
     // and History remain shared LibraryStore data, but they are not Library UI
     // sections here.
-    val watchlist = remember(refreshToken) { runtime.libraryStore.watchlist() }
+    var libraryRevision by remember { mutableStateOf(0) }
+    var actionMedia by remember { mutableStateOf<MediaItem?>(null) }
+    val watchlist = remember(refreshToken, libraryRevision) {
+        runtime.libraryStore.watchlist()
+    }
     val context = LocalContext.current
     val libraryUiPreferences = remember {
         context.getSharedPreferences(LIBRARY_UI_PREFS, Context.MODE_PRIVATE)
@@ -414,6 +420,7 @@ fun TvLibraryScreen(
                                     rememberTarget("item", key)
                                     onOpenMedia(media)
                                 },
+                                onLongClick = { actionMedia = media },
                                 onUpFromFirstRow = if (index < gridColumns) {
                                     {
                                         requestSelectedTabFocus()
@@ -452,6 +459,7 @@ fun TvLibraryScreen(
                                     rememberTarget("item", key)
                                     onOpenMedia(media)
                                 },
+                                onLongClick = { actionMedia = media },
                                 onLeft = ::focusSidebar,
                                 onUpFromFirst = if (index == 0) {
                                     { requestSelectedTabFocus() }
@@ -473,6 +481,16 @@ fun TvLibraryScreen(
             onProfile = onProfile,
             onReturnToContent = ::restoreContentFocus,
             modifier = Modifier.align(Alignment.CenterStart),
+        )
+    }
+
+    actionMedia?.let { media ->
+        TvPosterActionDialog(
+            media = media,
+            libraryStore = runtime.libraryStore,
+            onOpenDetails = { onOpenMedia(media) },
+            onChanged = { libraryRevision += 1 },
+            onDismiss = { actionMedia = null },
         )
     }
 
@@ -670,6 +688,7 @@ private fun LibraryPosterCard(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onUpFromFirstRow: (() -> Unit)?,
     onLeftFromFirstColumn: (() -> Unit)?,
     blockRight: Boolean,
@@ -719,14 +738,13 @@ private fun LibraryPosterCard(
                         code == KeyEvent.KEYCODE_DPAD_RIGHT &&
                         blockRight -> true
 
-                    event.isTvActivationKey() -> {
-                        if (event.type == KeyEventType.KeyUp) onClick()
-                        true
-                    }
-
                     else -> false
                 }
             }
+            .tvPosterActivation(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .clickable(onClick = onClick),
     ) {
         TvNetworkImage(
@@ -773,6 +791,7 @@ private fun LibraryListRow(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onLeft: () -> Unit,
     onUpFromFirst: (() -> Unit)?,
 ) {
@@ -813,13 +832,13 @@ private fun LibraryListRow(
                         true
                     }
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
-                    event.isTvActivationKey() -> {
-                        if (event.type == KeyEventType.KeyUp) onClick()
-                        true
-                    }
                     else -> false
                 }
             }
+            .tvPosterActivation(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .background(
                 color = if (focused) {
                     TvDesign.White.copy(alpha = .11f)

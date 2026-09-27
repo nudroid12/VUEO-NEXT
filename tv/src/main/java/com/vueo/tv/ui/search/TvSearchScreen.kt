@@ -73,6 +73,8 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.TvPosterActionDialog
+import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
@@ -141,6 +143,7 @@ internal fun TvSearchScreen(
     var navExpanded by remember { mutableStateOf(false) }
     var lastContentTarget by remember { mutableStateOf("field") }
     var choiceDialog by remember { mutableStateOf<SearchChoice?>(null) }
+    var actionMedia by remember { mutableStateOf<MediaItem?>(null) }
     var dialogReturnFocus by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val fieldRequester = remember { FocusRequester() }
@@ -696,6 +699,7 @@ internal fun TvSearchScreen(
                                     session.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
                                     onOpenMedia(item)
                                 },
+                                onLongClick = { actionMedia = item },
                                 onUpFromFirstRow = if (index < SEARCH_COLUMNS) {
                                     { runCatching { typeRequester.requestFocus() } }
                                 } else null,
@@ -754,6 +758,16 @@ internal fun TvSearchScreen(
         choiceDialog?.let { dialog ->
             TvSearchChoiceDialog(dialog = dialog)
         }
+    }
+
+    actionMedia?.let { media ->
+        TvPosterActionDialog(
+            media = media,
+            libraryStore = runtime.libraryStore,
+            onOpenDetails = { onOpenMedia(media) },
+            onChanged = {},
+            onDismiss = { actionMedia = null },
+        )
     }
 }
 
@@ -1057,6 +1071,7 @@ private fun TvSearchPosterTile(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onUpFromFirstRow: (() -> Unit)?,
     onLeftFromFirstColumn: (() -> Unit)?,
     blockRight: Boolean,
@@ -1099,13 +1114,13 @@ private fun TvSearchPosterTile(
                         true
                     }
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT && blockRight -> true
-                    event.isTvActivationKey() -> {
-                        if (event.type == KeyEventType.KeyUp) onClick()
-                        true
-                    }
                     else -> false
                 }
             }
+            .tvPosterActivation(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .clickable(onClick = onClick),
     ) {
         TvNetworkImage(

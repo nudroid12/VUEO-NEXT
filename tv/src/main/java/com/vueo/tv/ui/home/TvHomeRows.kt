@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
@@ -80,6 +81,7 @@ internal fun TvModernHomeRows(
     onContentFocused: () -> Unit,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
+    onLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val verticalState = rememberLazyListState()
@@ -253,6 +255,7 @@ private fun TvModernHomeRow(
                             onFocused(row, index, entry)
                         },
                         onOpen = { onOpen(entry) },
+                        onLongClick = { onLongClick(entry) },
                     )
                 }
             }
@@ -267,6 +270,7 @@ private fun TvModernHomeCard(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     var focused by remember(entry.key) { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(
@@ -303,6 +307,10 @@ private fun TvModernHomeCard(
                 width = if (focused) 2.dp else 0.dp,
                 color = if (focused) TvDesign.White.copy(alpha = .96f) else Color.Transparent,
                 shape = shape,
+            )
+            .tvPosterActivation(
+                onClick = onOpen,
+                onLongClick = onLongClick,
             )
             .clickable(onClick = onOpen),
     ) {

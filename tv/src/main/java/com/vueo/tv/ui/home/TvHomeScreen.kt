@@ -18,6 +18,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvPrimaryDestinations
+import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.TvSidebar
 
 /**
@@ -40,6 +41,8 @@ fun TvHomeScreen(
     var catalogRows by remember { mutableStateOf(runtime.cachedHomeRows()) }
     var loading by remember { mutableStateOf(catalogRows.isEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
+    var libraryRevision by remember { mutableStateOf(0) }
 
     LaunchedEffect(runtime, refreshToken) {
         loading = catalogRows.isEmpty()
@@ -54,10 +57,10 @@ fun TvHomeScreen(
         loading = catalogRows.isEmpty() && !runtime.isHomeCatalogRuntimeReady()
     }
 
-    val continueWatching = remember(refreshToken) {
+    val continueWatching = remember(refreshToken, libraryRevision) {
         runtime.libraryStore.continueWatching().take(12)
     }
-    val watchHistory = remember(refreshToken) {
+    val watchHistory = remember(refreshToken, libraryRevision) {
         runtime.libraryStore.history()
     }
     val activeProfileId = remember(refreshToken) {
@@ -186,6 +189,7 @@ fun TvHomeScreen(
             contentFocusRequester = contentFocusRequester,
             onContentFocused = { navExpanded = false },
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },
+            onLongClick = { entry -> actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -202,6 +206,17 @@ fun TvHomeScreen(
                 runCatching { contentFocusRequester.requestFocus() }.isSuccess
             },
             modifier = Modifier.align(Alignment.CenterStart),
+        )
+    }
+
+    actionEntry?.let { entry ->
+        TvPosterActionDialog(
+            media = entry.media,
+            libraryStore = runtime.libraryStore,
+            continueEntry = (entry as? TvHomeEntry.Resume)?.playback,
+            onOpenDetails = { onOpenMedia(entry.media) },
+            onChanged = { libraryRevision += 1 },
+            onDismiss = { actionEntry = null },
         )
     }
 }
