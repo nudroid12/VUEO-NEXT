@@ -90,7 +90,7 @@ internal fun TvHomePresentation(
                         focusedEntry = entry
                     },
                     onOpen = onOpen,
-                    onLongClick = onLongClick,
+                    onPosterLongClick = onLongClick,
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
             }

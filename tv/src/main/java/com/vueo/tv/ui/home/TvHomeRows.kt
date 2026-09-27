@@ -81,7 +81,7 @@ internal fun TvModernHomeRows(
     onContentFocused: () -> Unit,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
-    onLongClick: (TvHomeEntry) -> Unit,
+    onPosterLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val verticalState = rememberLazyListState()
@@ -243,6 +243,7 @@ private fun TvModernHomeRow(
                     key = { _, entry -> entry.key },
                 ) { index, entry ->
                     val itemRequester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
+                    val openPosterActions = { onPosterLongClick(entry) }
                     TvModernHomeCard(
                         entry = entry,
                         kind = row.kind,
@@ -255,7 +256,7 @@ private fun TvModernHomeRow(
                             onFocused(row, index, entry)
                         },
                         onOpen = { onOpen(entry) },
-                        onLongClick = { onLongClick(entry) },
+                        onHold = openPosterActions,
                     )
                 }
             }
@@ -270,7 +271,7 @@ private fun TvModernHomeCard(
     requester: FocusRequester,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
-    onLongClick: () -> Unit,
+    onHold: () -> Unit,
 ) {
     var focused by remember(entry.key) { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(
@@ -310,7 +311,7 @@ private fun TvModernHomeCard(
             )
             .tvPosterActivation(
                 onClick = onOpen,
-                onLongClick = onLongClick,
+                onLongClick = onHold,
             )
             .clickable(onClick = onOpen),
     ) {
