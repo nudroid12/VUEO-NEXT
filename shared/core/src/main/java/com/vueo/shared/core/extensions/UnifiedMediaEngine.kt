@@ -1418,6 +1418,7 @@ class UnifiedMediaEngine {
         onInitialPassComplete: () -> Unit = {},
         onActivity: (AddonRequestActivity) -> Unit = {},
     ): List<SubtitleTrack> = coroutineScope {
+        val discoveryStartedAtNs = System.nanoTime()
         val providers = extensions
             .filter {
                 isExtensionEnabled(
@@ -1452,69 +1453,81 @@ class UnifiedMediaEngine {
             snapshot?.let(onProgress)
         }
 
-        val timedOutProviders = providers
+        fun remainingDiscoveryWindowMs(): Long =
+            (
+                SUBTITLE_DISCOVERY_WINDOW_MS -
+                    (System.nanoTime() - discoveryStartedAtNs) / 1_000_000L
+            ).coerceAtLeast(0L)
+
+        suspend fun requestProvider(
+            extension: MediaExtension,
+            attempt: Int,
+            timeoutMs: Long,
+        ): Boolean {
+            val providerName = extension.descriptor.name
+            val startedAtNs = System.nanoTime()
+            onActivity(
+                AddonRequestActivity(
+                    providerName = providerName,
+                    resource = "subtitles",
+                    phase = if (attempt == 1) "started" else "retrying",
+                    attempt = attempt,
+                )
+            )
+            var errorType: String? = null
+            val result = try {
+                withTimeoutOrNull(timeoutMs.coerceAtLeast(1L)) {
+                    extension.subtitles(type, videoId)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                errorType = error::class.java.simpleName
+                emptyList()
+            }
+            val accepted = result
+                ?.let {
+                    filterSubtitleTracksByLanguage(
+                        tracks = it,
+                        allowedLanguageCodes = allowedLanguageCodes,
+                    )
+                }
+                .orEmpty()
+            onActivity(
+                AddonRequestActivity(
+                    providerName = providerName,
+                    resource = "subtitles",
+                    phase = when {
+                        result == null -> "timeout"
+                        errorType != null -> "failed"
+                        else -> "completed"
+                    },
+                    resultCount = result?.size ?: 0,
+                    acceptedCount = accepted.size,
+                    elapsedMs =
+                        (System.nanoTime() - startedAtNs) / 1_000_000L,
+                    attempt = attempt,
+                    errorType = errorType,
+                )
+            )
+            if (accepted.isNotEmpty()) {
+                mergeAndPublish(accepted)
+            }
+
+            // Successful providers stop here. Empty, failed and timed-out
+            // providers remain eligible for bounded late-result checks.
+            return errorType == null && !result.isNullOrEmpty()
+        }
+
+        var pendingProviders = providers
             .map { extension ->
                 async {
-                    val providerName = extension.descriptor.name
-                    val startedAtNs = System.nanoTime()
-                    onActivity(
-                        AddonRequestActivity(
-                            providerName = providerName,
-                            resource = "subtitles",
-                            phase = "started",
+                    extension.takeUnless {
+                        requestProvider(
+                            extension = extension,
+                            attempt = 1,
+                            timeoutMs = ADDON_REQUEST_TIMEOUT_MS,
                         )
-                    )
-                    var errorType: String? = null
-                    val result = try {
-                        withTimeoutOrNull(
-                            ADDON_REQUEST_TIMEOUT_MS
-                        ) {
-                            extension.subtitles(
-                                type,
-                                videoId,
-                            )
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Throwable) {
-                        errorType = error::class.java.simpleName
-                        emptyList()
-                    }
-
-                    onActivity(
-                        AddonRequestActivity(
-                            providerName = providerName,
-                            resource = "subtitles",
-                            phase = when {
-                                result == null -> "timeout"
-                                errorType != null -> "failed"
-                                else -> "completed"
-                            },
-                            resultCount = result?.size ?: 0,
-                            acceptedCount = result
-                                ?.let {
-                                    filterSubtitleTracksByLanguage(
-                                        tracks = it,
-                                        allowedLanguageCodes = allowedLanguageCodes,
-                                    ).size
-                                }
-                                ?: 0,
-                            elapsedMs =
-                                (System.nanoTime() - startedAtNs) / 1_000_000L,
-                            errorType = errorType,
-                        )
-                    )
-
-                    if (result == null) {
-                        extension
-                    } else {
-                        mergeAndPublish(
-                            filterSubtitleTracksByLanguage(
-                                tracks = result,
-                                allowedLanguageCodes = allowedLanguageCodes,
-                            )
-                        )
-                        null
                     }
                 }
             }
@@ -1523,71 +1536,41 @@ class UnifiedMediaEngine {
 
         onInitialPassComplete()
 
-        timedOutProviders
-            .map { extension ->
-                async {
-                    delay(SUBTITLE_RETRY_DELAY_MS)
-                    val providerName = extension.descriptor.name
-                    val startedAtNs = System.nanoTime()
-                    onActivity(
-                        AddonRequestActivity(
-                            providerName = providerName,
-                            resource = "subtitles",
-                            phase = "retrying",
-                            attempt = 2,
-                        )
-                    )
-                    var errorType: String? = null
-                    val retry = try {
-                        withTimeoutOrNull(
-                            SUBTITLE_RETRY_TIMEOUT_MS
-                        ) {
-                            extension.subtitles(
-                                type,
-                                videoId,
+        var attempt = 2
+        while (
+            pendingProviders.isNotEmpty() &&
+            attempt <= SUBTITLE_MAX_ATTEMPTS &&
+            remainingDiscoveryWindowMs() > 0L
+        ) {
+            val remainingBeforeDelay = remainingDiscoveryWindowMs()
+            val delayMs = minOf(
+                SUBTITLE_RETRY_DELAY_MS,
+                (remainingBeforeDelay - 1L).coerceAtLeast(0L),
+            )
+            if (delayMs > 0L) delay(delayMs)
+
+            val remainingForRequest = remainingDiscoveryWindowMs()
+            if (remainingForRequest <= 0L) break
+            val timeoutMs = minOf(
+                SUBTITLE_RETRY_TIMEOUT_MS,
+                remainingForRequest,
+            )
+            pendingProviders = pendingProviders
+                .map { extension ->
+                    async {
+                        extension.takeUnless {
+                            requestProvider(
+                                extension = extension,
+                                attempt = attempt,
+                                timeoutMs = timeoutMs,
                             )
                         }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Throwable) {
-                        errorType = error::class.java.simpleName
-                        emptyList()
-                    }
-                    onActivity(
-                        AddonRequestActivity(
-                            providerName = providerName,
-                            resource = "subtitles",
-                            phase = when {
-                                retry == null -> "timeout"
-                                errorType != null -> "failed"
-                                else -> "completed"
-                            },
-                            resultCount = retry?.size ?: 0,
-                            acceptedCount = retry
-                                ?.let {
-                                    filterSubtitleTracksByLanguage(
-                                        tracks = it,
-                                        allowedLanguageCodes = allowedLanguageCodes,
-                                    ).size
-                                }
-                                ?: 0,
-                            elapsedMs =
-                                (System.nanoTime() - startedAtNs) / 1_000_000L,
-                            attempt = 2,
-                            errorType = errorType,
-                        )
-                    )
-                    retry?.let {
-                        mergeAndPublish(
-                            filterSubtitleTracksByLanguage(
-                                tracks = it,
-                                allowedLanguageCodes = allowedLanguageCodes,
-                            )
-                        )
                     }
                 }
-            }
-            .awaitAll()
+                .awaitAll()
+                .filterNotNull()
+            attempt += 1
+        }
 
         mutex.withLock { discovered.toList() }
     }
@@ -1597,10 +1580,16 @@ class UnifiedMediaEngine {
             8_000L
 
         private const val SUBTITLE_RETRY_DELAY_MS =
-            750L
+            10_000L
 
         private const val SUBTITLE_RETRY_TIMEOUT_MS =
             15_000L
+
+        private const val SUBTITLE_DISCOVERY_WINDOW_MS =
+            60_000L
+
+        private const val SUBTITLE_MAX_ATTEMPTS =
+            6
 
         private const val METADATA_FALLBACK_TIMEOUT_MS =
             4_000L
