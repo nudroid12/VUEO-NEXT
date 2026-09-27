@@ -152,6 +152,7 @@ internal fun TvModernHomeRows(
                     onContentFocused = onContentFocused,
                     onFocused = onFocused,
                     onOpen = onOpen,
+                    onPosterLongClick = onPosterLongClick,
                 )
             }
         }
@@ -166,6 +167,7 @@ private fun TvModernHomeRow(
     onContentFocused: () -> Unit,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
+    onPosterLongClick: (TvHomeEntry) -> Unit,
 ) {
     val savedIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
         .coerceIn(0, row.entries.lastIndex)
