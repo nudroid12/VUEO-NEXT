@@ -649,11 +649,28 @@ internal fun PlayerScreen(
     val subtitleSelectionScope = rememberCoroutineScope()
     val latestSubtitles = rememberUpdatedState(subtitles)
     var pendingSubtitleSelectionId by remember(mediaKey) {
+        val contentSelection = settingsStore.subtitleSelection(mediaKey)
+        val globalSelection = settingsStore.lastSubtitleSelection()
+        val savedLanguage = globalSelection
+            ?.takeIf { it.startsWith(PLAYER_SUBTITLE_LANGUAGE_PREFIX) }
+            ?.removePrefix(PLAYER_SUBTITLE_LANGUAGE_PREFIX)
         mutableStateOf(
-            settingsStore.subtitleSelection(mediaKey)
+            contentSelection
                 ?.takeIf {
-                    settingsStore.lastSubtitleSelection() != PLAYER_SUBTITLE_OFF &&
+                    globalSelection != PLAYER_SUBTITLE_OFF &&
                         it.startsWith("external:")
+                }
+                ?: if (
+                    contentSelection == null &&
+                    globalSelection != PLAYER_SUBTITLE_OFF &&
+                    savedLanguage != null
+                ) {
+                    subtitles.firstOrNull { subtitle ->
+                        canonicalSubtitleLanguage(subtitle.language) ==
+                            canonicalSubtitleLanguage(savedLanguage)
+                    }?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                } else {
+                    null
                 }
         )
     }
@@ -961,6 +978,31 @@ internal fun PlayerScreen(
             audioPreferenceRestored = false
             subtitlePreferenceRestored = false
 
+            if (pendingSubtitleSelectionId == null) {
+                val contentSelection = settingsStore.subtitleSelection(mediaKey)
+                val globalSelection = settingsStore.lastSubtitleSelection()
+                val savedLanguage = globalSelection
+                    ?.takeIf { it.startsWith(PLAYER_SUBTITLE_LANGUAGE_PREFIX) }
+                    ?.removePrefix(PLAYER_SUBTITLE_LANGUAGE_PREFIX)
+                pendingSubtitleSelectionId = contentSelection
+                    ?.takeIf {
+                        globalSelection != PLAYER_SUBTITLE_OFF &&
+                            it.startsWith("external:")
+                    }
+                    ?: if (
+                        contentSelection == null &&
+                        globalSelection != PLAYER_SUBTITLE_OFF &&
+                        savedLanguage != null
+                    ) {
+                        subtitles.firstOrNull { subtitle ->
+                            canonicalSubtitleLanguage(subtitle.language) ==
+                                canonicalSubtitleLanguage(savedLanguage)
+                        }?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                    } else {
+                        null
+                    }
+            }
+
             val updatedMediaItem = buildPlayerMediaItem(
                     sourceUrl = requireNotNull(source.url),
                     subtitles = subtitles,
@@ -985,8 +1027,9 @@ internal fun PlayerScreen(
                 .takeIf { it in 0 until player.mediaItemCount }
                 ?: 0
             subtitleTrackRefreshInProgress = true
-            player.replaceMediaItem(currentIndex, updatedMediaItem)
-            player.seekTo(currentIndex, positionMs)
+            // Lock text selection before replacing the playing item. Doing it
+            // afterwards leaves a small window where Media3 can request a slow
+            // external subtitle while the readiness probe requests it too.
             player.trackSelectionParameters =
                 player.trackSelectionParameters
                     .buildUpon()
@@ -996,6 +1039,8 @@ internal fun PlayerScreen(
                             pendingSubtitleSelectionId != null,
                     )
                     .build()
+            player.replaceMediaItem(currentIndex, updatedMediaItem)
+            player.seekTo(currentIndex, positionMs)
             appliedSubtitleUrls = latestSubtitleUrls
 
             // ExoPlayer can publish an empty/intermediate track snapshot when

@@ -238,11 +238,28 @@ fun TvPlayerScreen(
     }
     var selectedSubtitleIsExternal by remember(mediaKey) { mutableStateOf(false) }
     var pendingSubtitleSelectionId by remember(mediaKey) {
+        val contentSelection = settings.subtitleSelection(mediaKey)
+        val globalSelection = settings.lastSubtitleSelection()
+        val savedLanguage = globalSelection
+            ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
+            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
         mutableStateOf(
-            settings.subtitleSelection(mediaKey)
+            contentSelection
                 ?.takeIf {
-                    settings.lastSubtitleSelection() != TV_SUBTITLE_OFF &&
+                    globalSelection != TV_SUBTITLE_OFF &&
                         it.startsWith("external:")
+                }
+                ?: if (
+                    contentSelection == null &&
+                    globalSelection != TV_SUBTITLE_OFF &&
+                    savedLanguage != null
+                ) {
+                    liveSubtitles.firstOrNull { subtitle ->
+                        tvCanonicalLanguage(subtitle.language) ==
+                            tvCanonicalLanguage(savedLanguage)
+                    }?.let(::tvExternalSubtitleSelectionId)
+                } else {
+                    null
                 }
         )
     }
@@ -560,6 +577,30 @@ fun TvPlayerScreen(
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
         audioPreferenceRestored = false
         subtitlePreferenceRestored = false
+        if (pendingSubtitleSelectionId == null) {
+            val contentSelection = settings.subtitleSelection(mediaKey)
+            val globalSelection = settings.lastSubtitleSelection()
+            val savedLanguage = globalSelection
+                ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
+                ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
+            pendingSubtitleSelectionId = contentSelection
+                ?.takeIf {
+                    globalSelection != TV_SUBTITLE_OFF &&
+                        it.startsWith("external:")
+                }
+                ?: if (
+                    contentSelection == null &&
+                    globalSelection != TV_SUBTITLE_OFF &&
+                    savedLanguage != null
+                ) {
+                    liveSubtitles.firstOrNull { subtitle ->
+                        tvCanonicalLanguage(subtitle.language) ==
+                            tvCanonicalLanguage(savedLanguage)
+                    }?.let(::tvExternalSubtitleSelectionId)
+                } else {
+                    null
+                }
+        }
         val updatedMediaItem = buildMediaItem(
                 sourceUrl = url,
                 subtitles = liveSubtitles,
@@ -572,8 +613,6 @@ fun TvPlayerScreen(
             .takeIf { it in 0 until player.mediaItemCount }
             ?: 0
         subtitleTrackRefreshInProgress = true
-        player.replaceMediaItem(currentIndex, updatedMediaItem)
-        player.seekTo(currentIndex, currentPosition)
         var params = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
@@ -584,6 +623,10 @@ fun TvPlayerScreen(
         if (settings.autoSelectPreferredSubtitle() && languages.isNotEmpty()) params = params.setPreferredTextLanguages(*languages.toTypedArray())
         PlayerSourcePolicy.canonicalLanguageCode(media.originalLanguage)?.let { params = params.setPreferredAudioLanguages(it) }
         player.trackSelectionParameters = params.build()
+        // Apply the text-track lock before replacing the playing item so
+        // Media3 cannot race the readiness probe to the external URL.
+        player.replaceMediaItem(currentIndex, updatedMediaItem)
+        player.seekTo(currentIndex, currentPosition)
         appliedSubtitleUrls = latestSubtitleUrls
     }
 
