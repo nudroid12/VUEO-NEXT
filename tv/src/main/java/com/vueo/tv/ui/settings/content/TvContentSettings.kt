@@ -1,6 +1,5 @@
 package com.vueo.tv.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
@@ -139,15 +138,6 @@ internal fun TvContentManagerHub(
             "providers", "Plugins & Providers", "Repositories, runtime providers, health and diagnostics.",
             "$repositoryCount repos • $providerCount providers",
             onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDERS) },
-            section = "CONTENT",
-            icon = Icons.Default.SettingsInputComponent,
-            accented = true,
-        ),
-        TvSettingsEntry(
-            "provider-health", "Provider Health",
-            "Historical performance, ranking, hit rate, timing and current status.",
-            "${healthSummary.online} online • ${healthSummary.slow} slow • ${healthSummary.noResults} no results",
-            onActivate = { onOpen(TvSettingsPage.CONTENT_PROVIDER_HEALTH) },
             section = "CONTENT",
             icon = Icons.Default.SettingsInputComponent,
             accented = true,
@@ -354,6 +344,7 @@ internal fun TvProviderSettings(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onDataChanged: () -> Unit,
+    onOpenProviderHealth: () -> Unit,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -364,7 +355,9 @@ internal fun TvProviderSettings(
     var showAdd by remember { mutableStateOf(false) }
     var addBusy by remember { mutableStateOf(false) }
     var addMessage by remember { mutableStateOf<String?>(null) }
-    var selectedRepositoryUrl by remember { mutableStateOf<String?>(null) }
+    var selectedRepositoryUrl by remember {
+        mutableStateOf(runtime.pluginStore.repositories().firstOrNull()?.manifestUrl)
+    }
     var removeRepo by remember { mutableStateOf<PluginRepositoryDescriptor?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     val repositories = remember(revision) { runtime.pluginStore.repositories() }
@@ -372,18 +365,25 @@ internal fun TvProviderSettings(
     val context = LocalContext.current
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
+    val activeRepositories = if (pluginsEnabled) {
+        repositories.filter(runtime.pluginStore::isRepositoryEnabled)
+    } else {
+        emptyList()
+    }
+    val healthSummary = healthStore.summary(
+        repositories = activeRepositories,
+        pluginStore = runtime.pluginStore,
+    )
     var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
     var showRuntimeDiagnostics by remember { mutableStateOf(false) }
     var refreshingRepositoryUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(repositories, selectedRepositoryUrl) {
-        if (selectedRepositoryUrl != null && selectedRepository == null) {
+        if (repositories.isEmpty()) {
             selectedRepositoryUrl = null
+        } else if (selectedRepository == null) {
+            selectedRepositoryUrl = repositories.first().manifestUrl
         }
-    }
-
-    BackHandler(enabled = selectedRepositoryUrl != null) {
-        selectedRepositoryUrl = null
     }
 
     if (showAdd) {
@@ -438,10 +438,8 @@ internal fun TvProviderSettings(
                 removeRepo = null
                 scope.launch {
                     runtime.removePluginRepository(repository)
-                    if (selectedRepositoryUrl == repository.manifestUrl) {
-                        selectedRepositoryUrl = null
-                    }
                     revision++
+                    selectedRepositoryUrl = runtime.pluginStore.repositories().firstOrNull()?.manifestUrl
                     status = "Removed ${repository.name}."
                     onDataChanged()
                 }
@@ -467,69 +465,92 @@ internal fun TvProviderSettings(
     }
 
     val entries = buildList {
-        if (selectedRepository == null) {
-            add(toggleEntry("plugins-master", "Provider Plugins", "Master switch for plugin provider discovery.", pluginsEnabled) {
-                pluginsEnabled = it
-                runtime.pluginStore.setPluginsEnabled(it)
-                revision++
-                onDataChanged()
-            }.copy(
+        add(toggleEntry("plugins-master", "Providers", "Master switch for plugin provider discovery.", pluginsEnabled) {
+            pluginsEnabled = it
+            runtime.pluginStore.setPluginsEnabled(it)
+            revision++
+            onDataChanged()
+        }.copy(
+            section = "PROVIDER SYSTEM",
+            icon = Icons.Default.SettingsInputComponent,
+            accented = true,
+        ))
+        add(
+            TvSettingsEntry(
+                id = "provider-health",
+                title = "Provider Health",
+                subtitle = "${healthSummary.online} online • ${healthSummary.slow} slow • " +
+                    "${healthSummary.noResults} no results • " +
+                    "${healthSummary.failed + healthSummary.blocked + healthSummary.unavailable + healthSummary.timeout} failed",
+                value = "Open",
+                onActivate = onOpenProviderHealth,
                 section = "PROVIDER SYSTEM",
                 icon = Icons.Default.SettingsInputComponent,
                 accented = true,
-            ))
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "runtime-diagnostics",
+                title = "Performance & Crash Diagnostics",
+                subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
+                value = "Open",
+                onActivate = { showRuntimeDiagnostics = true },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.SettingsInputComponent,
+                accented = true,
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "add-repo",
+                title = "Add Repository",
+                subtitle = "Install an HTTPS provider repository manifest.",
+                onActivate = {
+                    addMessage = null
+                    showAdd = true
+                },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.SettingsInputComponent,
+                accented = true,
+            )
+        )
+
+        if (repositories.isEmpty()) {
             add(
                 TvSettingsEntry(
-                    id = "add-repo",
-                    title = "Add Repository",
-                    subtitle = "Install an HTTPS provider repository manifest.",
-                    onActivate = {
-                        addMessage = null
-                        showAdd = true
-                    },
-                    section = "PROVIDER SYSTEM",
-                    icon = Icons.Default.SettingsInputComponent,
-                    accented = true,
+                    id = "no-repositories",
+                    title = "No plugin repositories",
+                    subtitle = "Add a provider repository URL to begin.",
+                    enabled = false,
+                    section = "REPOSITORIES",
                 )
             )
-            add(
-                TvSettingsEntry(
-                    id = "runtime-diagnostics",
-                    title = "Performance & Crash Diagnostics",
-                    subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
-                    value = "Open",
-                    onActivate = { showRuntimeDiagnostics = true },
-                    section = "PROVIDER SYSTEM",
-                    icon = Icons.Default.SettingsInputComponent,
-                    accented = true,
-                )
-            )
-            repositories.forEach { repository ->
-                val repoEnabled = runtime.pluginStore.isRepositoryEnabled(repository)
-                val readyProviders = providerCodeStore.readyCount(repository)
-                add(
-                    TvSettingsEntry(
-                        id = "repo-${repository.manifestUrl.hashCode()}",
-                        title = repository.name,
-                        subtitle = "v${repository.version} • ${repository.providers.size} providers • $readyProviders ready",
-                        detail = repository.description?.trim()?.takeIf { it.isNotBlank() }
-                            ?: shortUrl(repository.manifestUrl),
-                        value = if (repoEnabled) "On" else "Off",
-                        onActivate = {
-                            selectedRepositoryUrl = repository.manifestUrl
-                        },
-                        section = "REPOSITORIES",
-                        icon = Icons.Default.SettingsInputComponent,
-                        onRightAction = { removeRepo = repository },
-                        accented = true,
-                        rightActionLabel = "Remove",
-                    )
-                )
-            }
         } else {
-            val repository = selectedRepository
+            val repository = selectedRepository ?: repositories.first()
+            val repositoryIndex = repositories.indexOfFirst { it.manifestUrl == repository.manifestUrl }
             val repoEnabled = runtime.pluginStore.isRepositoryEnabled(repository)
             val refreshing = refreshingRepositoryUrl == repository.manifestUrl
+
+            add(
+                TvSettingsEntry(
+                    id = "repository-selector",
+                    title = "Repositories",
+                    subtitle = "Use D-pad left/right to choose a repository.",
+                    onPrevious = {
+                        val previous = (repositoryIndex - 1).coerceAtLeast(0)
+                        selectedRepositoryUrl = repositories[previous].manifestUrl
+                    },
+                    onNext = {
+                        val next = (repositoryIndex + 1).coerceAtMost(repositories.lastIndex)
+                        selectedRepositoryUrl = repositories[next].manifestUrl
+                    },
+                    section = "REPOSITORIES",
+                    accented = true,
+                    choices = repositories.map { it.name },
+                    selectedChoiceIndex = repositoryIndex,
+                )
+            )
 
             add(toggleEntry(
                 id = "repo-${repository.manifestUrl.hashCode()}",
@@ -545,7 +566,7 @@ internal fun TvProviderSettings(
                 revision++
                 onDataChanged()
             }.copy(
-                section = "REPOSITORY",
+                section = "SELECTED REPOSITORY",
                 icon = Icons.Default.SettingsInputComponent,
                 accented = true,
                 detail = "v${repository.version} • ${repository.providers.size} providers • ${providerCodeStore.readyCount(repository)} ready",
@@ -573,7 +594,7 @@ internal fun TvProviderSettings(
                             }
                         }
                     },
-                    section = "REPOSITORY",
+                    section = "SELECTED REPOSITORY",
                     icon = Icons.Default.Refresh,
                     accented = true,
                 )
@@ -585,7 +606,7 @@ internal fun TvProviderSettings(
                     subtitle = "Remove this repository, provider code and saved repository configuration.",
                     value = "Remove",
                     onActivate = { removeRepo = repository },
-                    section = "REPOSITORY",
+                    section = "SELECTED REPOSITORY",
                     icon = Icons.Default.SettingsInputComponent,
                 )
             )
@@ -641,44 +662,21 @@ internal fun TvProviderSettings(
     val readyProviderCount = repositories.sumOf { providerCodeStore.readyCount(it) }
 
     TvSettingsListScreen(
-        title = selectedRepository?.name ?: "Plugins & Providers",
-        subtitle = if (selectedRepository == null) {
-            "Repositories, runtime providers and diagnostics."
-        } else {
-            "Repository controls and saved provider preferences."
-        },
+        title = "Plugins & Providers",
+        subtitle = "Repositories, runtime providers and diagnostics.",
         entries = entries,
         onNavigate = onNavigate,
         onProfile = onProfile,
-        onBack = {
-            if (selectedRepositoryUrl != null) selectedRepositoryUrl = null else onBack()
-        },
+        onBack = onBack,
         topLabel = "Content Manager",
-        metrics = if (selectedRepository == null) {
-            listOf(
-                TvSettingsMetric(repositories.size.toString(), "Repos"),
-                TvSettingsMetric(providerCount.toString(), "Providers"),
-                TvSettingsMetric(enabledProviderCount.toString(), "Active"),
-                TvSettingsMetric(readyProviderCount.toString(), "Ready"),
-            )
-        } else {
-            listOf(
-                TvSettingsMetric(selectedRepository.providers.size.toString(), "Providers"),
-                TvSettingsMetric(
-                    selectedRepository.providers.count {
-                        runtime.pluginStore.isProviderEnabled(selectedRepository, it)
-                    }.toString(),
-                    "Enabled",
-                ),
-                TvSettingsMetric(providerCodeStore.readyCount(selectedRepository).toString(), "Ready"),
-            )
-        },
-        footer = if (selectedRepository == null) {
-            "OK opens a repository. Press right to remove it."
-        } else {
-            "OK changes a saved preference. Press right on a provider for diagnostics. Parent switches control discovery only."
-        },
-        preferredFocusId = selectedRepository?.let { "repo-${it.manifestUrl.hashCode()}" },
+        metrics = listOf(
+            TvSettingsMetric(repositories.size.toString(), "Repos"),
+            TvSettingsMetric(providerCount.toString(), "Providers"),
+            TvSettingsMetric(enabledProviderCount.toString(), "Active"),
+            TvSettingsMetric(readyProviderCount.toString(), "Ready"),
+        ),
+        footer = "Left/right changes repository. OK changes a saved preference. Press right on a provider for diagnostics.",
+        preferredFocusId = "repository-selector",
     )
 }
 

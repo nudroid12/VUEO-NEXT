@@ -80,6 +80,8 @@ internal data class TvSettingsEntry(
     val detail: String? = null,
     val accented: Boolean = false,
     val rightActionLabel: String? = null,
+    val choices: List<String> = emptyList(),
+    val selectedChoiceIndex: Int = -1,
 )
 
 internal data class TvSettingsNavItem(
@@ -1206,6 +1208,39 @@ private fun TvSettingsRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (entry.choices.isNotEmpty()) {
+                val selectedIndex = entry.selectedChoiceIndex.coerceIn(0, entry.choices.lastIndex)
+                val firstVisible = (selectedIndex - 1)
+                    .coerceAtLeast(0)
+                    .coerceAtMost((entry.choices.size - 3).coerceAtLeast(0))
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    entry.choices.drop(firstVisible).take(3).forEachIndexed { offset, choice ->
+                        val choiceIndex = firstVisible + offset
+                        val selected = choiceIndex == selectedIndex
+                        Text(
+                            text = choice,
+                            color = if (selected) TvDesign.White else TvDesign.Muted,
+                            fontSize = 11.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .background(
+                                    if (selected) TvDesign.Accent.copy(alpha = .28f)
+                                    else TvDesign.White.copy(alpha = .045f),
+                                    RoundedCornerShape(50),
+                                )
+                                .border(
+                                    1.dp,
+                                    if (selected) TvDesign.Accent.copy(alpha = .72f)
+                                    else TvDesign.White.copy(alpha = .12f),
+                                    RoundedCornerShape(50),
+                                )
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                        )
+                    }
+                }
+            }
             entry.detail?.takeIf { it.isNotBlank() }?.let { detail ->
                 Text(
                     text = detail,

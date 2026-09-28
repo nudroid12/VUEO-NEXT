@@ -138,45 +138,15 @@ fun TvSettingsScreen(
     fun backPanel() {
         page = when (page) {
             TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
+            TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvSettingsPage.CONTENT_PROVIDERS
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
-            TvSettingsPage.CONTENT_PROVIDER_HEALTH,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
             TvSettingsPage.ENHANCEMENT_TMDB,
             TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
             else -> page
         }
         panelAutoFocusToken += 1
-    }
-
-    // Content Manager destinations behave like dedicated pages, matching Mobile:
-    // enter the selected section, then Back returns to the Content Manager hub.
-    when (page) {
-        TvSettingsPage.CONTENT_ADDONS -> {
-            TvAddonSettings(
-                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
-            )
-            return
-        }
-        TvSettingsPage.CONTENT_PROVIDERS -> {
-            TvProviderSettings(
-                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
-            )
-            return
-        }
-        TvSettingsPage.CONTENT_PROVIDER_HEALTH -> {
-            TvProviderHealthOverview(
-                runtime, onNavigate, onProfile, ::backPanel
-            )
-            return
-        }
-        TvSettingsPage.CONTENT_CATALOGS -> {
-            TvCatalogSettings(
-                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
-            )
-            return
-        }
-        else -> Unit
     }
 
     TvSettingsMasterDetailShell(
@@ -219,7 +189,14 @@ fun TvSettingsScreen(
                 runtime, onNavigate, onProfile, onDataChanged, ::backPanel
             )
             TvSettingsPage.CONTENT_PROVIDERS -> TvProviderSettings(
-                runtime, onNavigate, onProfile, onDataChanged, ::backPanel
+                runtime = runtime,
+                onNavigate = onNavigate,
+                onProfile = onProfile,
+                onDataChanged = onDataChanged,
+                onOpenProviderHealth = {
+                    openPanel(TvSettingsPage.CONTENT_PROVIDER_HEALTH)
+                },
+                onBack = ::backPanel,
             )
             TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvProviderHealthOverview(
                 runtime, onNavigate, onProfile, ::backPanel
