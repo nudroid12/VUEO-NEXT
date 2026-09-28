@@ -102,6 +102,7 @@ private sealed interface TvEditorPinFlow {
 fun TvProfilePickerScreen(
     profileStore: ProfileStore,
     onProfileSelected: (String) -> Unit,
+    onBack: () -> Unit,
     onProfilesChanged: () -> Unit = {},
 ) {
     var revision by remember { mutableIntStateOf(0) }
@@ -118,7 +119,7 @@ fun TvProfilePickerScreen(
         when {
             editor != null -> editor = null
             mode == ProfilePickerMode.MANAGE -> mode = ProfilePickerMode.WATCHING
-            else -> Unit
+            else -> onBack()
         }
     }
 

@@ -86,6 +86,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
+    var profilePickerOpenedFromApp by remember { mutableStateOf(false) }
     var dnaReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
@@ -163,6 +164,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
     fun openProfilePicker(from: TvRoute) {
         profileReturnRoute = from
+        profilePickerOpenedFromApp = true
         route = TvRoute.PROFILE
     }
 
@@ -366,7 +368,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SEARCH) },
                         onOpenMedia = { openDetail(it, TvRoute.SEARCH) },
-                        onBack = onExit,
+                        onBack = { route = TvRoute.HOME },
                     )
                 }
 
@@ -378,7 +380,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onProfile = { openDna(TvRoute.LIBRARY) },
                         onOpenMedia = { openDetail(it, TvRoute.LIBRARY) },
                         onResume = { openPlaybackDetail(it, TvRoute.LIBRARY) },
-                        onBack = onExit,
+                        onBack = { route = TvRoute.HOME },
                     )
                 }
 
@@ -387,7 +389,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         runtime = runtime,
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SETTINGS) },
-                        onBack = onExit,
+                        onBack = { route = TvRoute.HOME },
                         onDataChanged = { refreshToken++ },
                         onResetComplete = { openProfilePicker(TvRoute.HOME) },
                     )
@@ -411,10 +413,19 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         profileStore = runtime.profileStore,
                         onProfileSelected = {
                             refreshToken++
-                                                route = profileReturnRoute
+                            profilePickerOpenedFromApp = false
+                            route = profileReturnRoute
                         },
                         onProfilesChanged = {
                             refreshToken++
+                        },
+                        onBack = {
+                            if (profilePickerOpenedFromApp) {
+                                profilePickerOpenedFromApp = false
+                                route = profileReturnRoute
+                            } else {
+                                onExit()
+                            }
                         },
                     )
                 }
