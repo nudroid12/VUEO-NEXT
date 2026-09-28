@@ -2065,24 +2065,10 @@ internal fun PlayerScreen(
         } else {
             pendingSubtitleSelectionId = choice.selectionId
             translatingSubtitleSelectionId = null
-            subtitlesDisabled = false
-            // Keep Media3 away from a not-yet-ready external URL. The shared
-            // readiness probe owns the single network request and the track is
-            // enabled only after its bytes have entered the session cache.
-            clearTrackOverride(
-                player = player,
-                trackType = C.TRACK_TYPE_TEXT,
-                disable = true,
-            )
-            settingsStore.setSubtitleSelection(
-                contentId = mediaKey,
-                selectionId = choice.selectionId,
-            )
-            settingsStore.setLastSubtitleSelection(
-                PlayerTrackPolicy.subtitleLanguageSelectionId(
-                    choice.language
-                )
-            )
+            // Keep the currently selected subtitle active while the requested
+            // external track is being prepared. The readiness probe does not
+            // select the new track, so Media3 keeps rendering the old one until
+            // the prepared choice is applied and confirmed below.
             subtitlePreparationJob = subtitleSelectionScope.launch {
                 val ready = SubtitleReadinessProbe.awaitReady(
                     url = externalSubtitle.url,
@@ -2123,14 +2109,16 @@ internal fun PlayerScreen(
                         trackWaitAttempts += 1
                     }
                 }
+                var selectionConfirmed = false
+                val preparedChoice = latestChoice
                 if (
                     ready &&
                     pendingSubtitleSelectionId == choice.selectionId &&
-                    latestChoice != null
+                    preparedChoice != null
                 ) {
                     val confirmed = applyAndConfirmMobileSubtitleChoice(
                         player = player,
-                        selectionId = latestChoice.selectionId,
+                        selectionId = preparedChoice.selectionId,
                         externalSubtitles = {
                             latestSubtitles.value.associateBy(
                                 PlayerTrackPolicy::externalSubtitleSelectionId
@@ -2140,13 +2128,30 @@ internal fun PlayerScreen(
                             pendingSubtitleSelectionId == choice.selectionId
                         },
                     )
+                    selectionConfirmed = confirmed
                     if (confirmed) {
                         subtitlesDisabled = false
                         selectedSubtitleIsExternal = true
+                        settingsStore.setSubtitleSelection(
+                            contentId = mediaKey,
+                            selectionId = preparedChoice.selectionId,
+                        )
+                        settingsStore.setLastSubtitleSelection(
+                            PlayerTrackPolicy.subtitleLanguageSelectionId(
+                                preparedChoice.language
+                            )
+                        )
                         pendingSubtitleSelectionId = null
                         translatingSubtitleSelectionId = null
                         requestedSubtitleSelectionId = null
                     }
+                }
+                if (
+                    pendingSubtitleSelectionId == choice.selectionId &&
+                    !selectionConfirmed
+                ) {
+                    pendingSubtitleSelectionId = null
+                    requestedSubtitleSelectionId = null
                 }
                 if (translatingSubtitleSelectionId == choice.selectionId) {
                     translatingSubtitleSelectionId = null

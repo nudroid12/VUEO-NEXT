@@ -1500,19 +1500,9 @@ fun TvPlayerScreen(
             } else {
                 pendingSubtitleSelectionId = choice.selectionId
                 translatingSubtitleSelectionId = null
-                subtitlesDisabled = false
-                // Prevent Media3 from opening the generated subtitle URL in
-                // parallel with the shared readiness probe. The track is
-                // enabled after the prepared bytes are available in cache.
-                tvClearTrackOverride(
-                    player = player,
-                    trackType = C.TRACK_TYPE_TEXT,
-                    disable = true,
-                )
-                settings.setSubtitleSelection(mediaKey, choice.selectionId)
-                settings.setLastSubtitleSelection(
-                    PlayerTrackPolicy.subtitleLanguageSelectionId(choice.language)
-                )
+                // Keep the current subtitle visible while the requested
+                // external track is prepared, then replace it only after the
+                // player confirms the new selection.
                 subtitlePreparationJob = focusScope.launch {
                     val ready = SubtitleReadinessProbe.awaitReady(
                         url = externalSubtitle.url,
@@ -1551,14 +1541,16 @@ fun TvPlayerScreen(
                             trackWaitAttempts += 1
                         }
                     }
+                    var selectionConfirmed = false
+                    val preparedChoice = latestChoice
                     if (
                         ready &&
                         pendingSubtitleSelectionId == choice.selectionId &&
-                        latestChoice != null
+                        preparedChoice != null
                     ) {
                         val confirmed = applyAndConfirmTvSubtitleChoice(
                             player = player,
-                            selectionId = latestChoice.selectionId,
+                            selectionId = preparedChoice.selectionId,
                             externalSubtitles = {
                                 latestExternalSubtitlesBySelectionId.value
                             },
@@ -1566,13 +1558,25 @@ fun TvPlayerScreen(
                                 pendingSubtitleSelectionId == choice.selectionId
                             },
                         )
+                        selectionConfirmed = confirmed
                         if (confirmed) {
                             subtitlesDisabled = false
                             selectedSubtitleIsExternal = true
+                            settings.setSubtitleSelection(mediaKey, preparedChoice.selectionId)
+                            settings.setLastSubtitleSelection(
+                                PlayerTrackPolicy.subtitleLanguageSelectionId(preparedChoice.language)
+                            )
                             pendingSubtitleSelectionId = null
                             translatingSubtitleSelectionId = null
                             requestedSubtitleSelectionId = null
                         }
+                    }
+                    if (
+                        pendingSubtitleSelectionId == choice.selectionId &&
+                        !selectionConfirmed
+                    ) {
+                        pendingSubtitleSelectionId = null
+                        requestedSubtitleSelectionId = null
                     }
                     if (translatingSubtitleSelectionId == choice.selectionId) {
                         translatingSubtitleSelectionId = null
