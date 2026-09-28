@@ -1443,15 +1443,25 @@ internal fun PlayerScreen(
                             latestChoice != null
                         ) {
                             requestedSubtitleSelectionId = latestChoice.selectionId
-                            applyTrackChoice(
+                            val confirmed = applyAndConfirmMobileSubtitleChoice(
                                 player = player,
-                                trackType = C.TRACK_TYPE_TEXT,
-                                choice = latestChoice,
+                                selectionId = latestChoice.selectionId,
+                                externalSubtitles = {
+                                    latestSubtitles.value.associateBy(
+                                        PlayerTrackPolicy::externalSubtitleSelectionId
+                                    )
+                                },
+                                stillRequested = {
+                                    pendingSubtitleSelectionId == savedTrack.selectionId
+                                },
                             )
-                            pendingSubtitleSelectionId = null
-                            translatingSubtitleSelectionId = null
-                            subtitlesDisabled = false
-                            selectedSubtitleIsExternal = true
+                            if (confirmed) {
+                                pendingSubtitleSelectionId = null
+                                translatingSubtitleSelectionId = null
+                                requestedSubtitleSelectionId = null
+                                subtitlesDisabled = false
+                                selectedSubtitleIsExternal = true
+                            }
                         }
                         if (translatingSubtitleSelectionId == savedTrack.selectionId) {
                             translatingSubtitleSelectionId = null
@@ -2118,9 +2128,25 @@ internal fun PlayerScreen(
                     pendingSubtitleSelectionId == choice.selectionId &&
                     latestChoice != null
                 ) {
-                    commitSelection(latestChoice)
-                    pendingSubtitleSelectionId = null
-                    translatingSubtitleSelectionId = null
+                    val confirmed = applyAndConfirmMobileSubtitleChoice(
+                        player = player,
+                        selectionId = latestChoice.selectionId,
+                        externalSubtitles = {
+                            latestSubtitles.value.associateBy(
+                                PlayerTrackPolicy::externalSubtitleSelectionId
+                            )
+                        },
+                        stillRequested = {
+                            pendingSubtitleSelectionId == choice.selectionId
+                        },
+                    )
+                    if (confirmed) {
+                        subtitlesDisabled = false
+                        selectedSubtitleIsExternal = true
+                        pendingSubtitleSelectionId = null
+                        translatingSubtitleSelectionId = null
+                        requestedSubtitleSelectionId = null
+                    }
                 }
                 if (translatingSubtitleSelectionId == choice.selectionId) {
                     translatingSubtitleSelectionId = null
@@ -3242,3 +3268,48 @@ internal fun PlayerScreen(
         }
     }
 }
+
+private suspend fun applyAndConfirmMobileSubtitleChoice(
+    player: ExoPlayer,
+    selectionId: String,
+    externalSubtitles: () -> Map<String, SubtitleTrack>,
+    stillRequested: () -> Boolean,
+): Boolean {
+    var attempt = 0
+    while (
+        attempt < SUBTITLE_SELECTION_CONFIRM_ATTEMPTS &&
+        stillRequested()
+    ) {
+        val currentChoice = playerTrackChoices(
+            tracks = player.currentTracks,
+            trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = externalSubtitles(),
+        ).firstOrNull { it.selectionId == selectionId }
+
+        if (currentChoice?.selected == true) return true
+
+        if (
+            currentChoice != null &&
+            attempt in SUBTITLE_SELECTION_REAPPLY_ATTEMPTS
+        ) {
+            applyTrackChoice(
+                player = player,
+                trackType = C.TRACK_TYPE_TEXT,
+                choice = currentChoice,
+            )
+        }
+
+        delay(SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS)
+        attempt += 1
+    }
+
+    return playerTrackChoices(
+        tracks = player.currentTracks,
+        trackType = C.TRACK_TYPE_TEXT,
+        externalSubtitles = externalSubtitles(),
+    ).any { it.selectionId == selectionId && it.selected }
+}
+
+private const val SUBTITLE_SELECTION_CONFIRM_ATTEMPTS = 60
+private const val SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS = 50L
+private val SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)

@@ -930,12 +930,25 @@ fun TvPlayerScreen(
                                 delay(50L)
                                 refreshWaitAttempts += 1
                             }
-                            val latestChoice = tvPlayerTrackChoices(
-                                tracks = player.currentTracks,
-                                trackType = C.TRACK_TYPE_TEXT,
-                                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
-                            ).firstOrNull {
-                                it.selectionId == savedTrack.selectionId
+                            var latestChoice: TvPlayerTrackChoice? = null
+                            var trackWaitAttempts = 0
+                            while (
+                                ready &&
+                                pendingSubtitleSelectionId == savedTrack.selectionId &&
+                                latestChoice == null &&
+                                trackWaitAttempts < 200
+                            ) {
+                                latestChoice = tvPlayerTrackChoices(
+                                    tracks = player.currentTracks,
+                                    trackType = C.TRACK_TYPE_TEXT,
+                                    externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                                ).firstOrNull {
+                                    it.selectionId == savedTrack.selectionId
+                                }
+                                if (latestChoice == null) {
+                                    delay(50L)
+                                    trackWaitAttempts += 1
+                                }
                             }
                             if (
                                 ready &&
@@ -943,15 +956,23 @@ fun TvPlayerScreen(
                                 latestChoice != null
                             ) {
                                 requestedSubtitleSelectionId = latestChoice.selectionId
-                                tvApplyTrackChoice(
-                                    player,
-                                    C.TRACK_TYPE_TEXT,
-                                    latestChoice,
+                                val confirmed = applyAndConfirmTvSubtitleChoice(
+                                    player = player,
+                                    selectionId = latestChoice.selectionId,
+                                    externalSubtitles = {
+                                        latestExternalSubtitlesBySelectionId.value
+                                    },
+                                    stillRequested = {
+                                        pendingSubtitleSelectionId == savedTrack.selectionId
+                                    },
                                 )
-                                pendingSubtitleSelectionId = null
-                                translatingSubtitleSelectionId = null
-                                subtitlesDisabled = false
-                                selectedSubtitleIsExternal = true
+                                if (confirmed) {
+                                    pendingSubtitleSelectionId = null
+                                    translatingSubtitleSelectionId = null
+                                    requestedSubtitleSelectionId = null
+                                    subtitlesDisabled = false
+                                    selectedSubtitleIsExternal = true
+                                }
                             }
                             if (translatingSubtitleSelectionId == savedTrack.selectionId) {
                                 translatingSubtitleSelectionId = null
@@ -1510,21 +1531,48 @@ fun TvPlayerScreen(
                         delay(50L)
                         refreshWaitAttempts += 1
                     }
-                    val latestChoice = tvPlayerTrackChoices(
-                        tracks = player.currentTracks,
-                        trackType = C.TRACK_TYPE_TEXT,
-                        externalSubtitles = latestExternalSubtitlesBySelectionId.value,
-                    ).firstOrNull {
-                        it.selectionId == choice.selectionId
+                    var latestChoice: TvPlayerTrackChoice? = null
+                    var trackWaitAttempts = 0
+                    while (
+                        ready &&
+                        pendingSubtitleSelectionId == choice.selectionId &&
+                        latestChoice == null &&
+                        trackWaitAttempts < 200
+                    ) {
+                        latestChoice = tvPlayerTrackChoices(
+                            tracks = player.currentTracks,
+                            trackType = C.TRACK_TYPE_TEXT,
+                            externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                        ).firstOrNull {
+                            it.selectionId == choice.selectionId
+                        }
+                        if (latestChoice == null) {
+                            delay(50L)
+                            trackWaitAttempts += 1
+                        }
                     }
                     if (
                         ready &&
                         pendingSubtitleSelectionId == choice.selectionId &&
                         latestChoice != null
                     ) {
-                        commitSelection(latestChoice)
-                        pendingSubtitleSelectionId = null
-                        translatingSubtitleSelectionId = null
+                        val confirmed = applyAndConfirmTvSubtitleChoice(
+                            player = player,
+                            selectionId = latestChoice.selectionId,
+                            externalSubtitles = {
+                                latestExternalSubtitlesBySelectionId.value
+                            },
+                            stillRequested = {
+                                pendingSubtitleSelectionId == choice.selectionId
+                            },
+                        )
+                        if (confirmed) {
+                            subtitlesDisabled = false
+                            selectedSubtitleIsExternal = true
+                            pendingSubtitleSelectionId = null
+                            translatingSubtitleSelectionId = null
+                            requestedSubtitleSelectionId = null
+                        }
                     }
                     if (translatingSubtitleSelectionId == choice.selectionId) {
                         translatingSubtitleSelectionId = null
@@ -1698,6 +1746,51 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
         providerId = providerId,
         providerName = providerName,
     )
+
+private suspend fun applyAndConfirmTvSubtitleChoice(
+    player: ExoPlayer,
+    selectionId: String,
+    externalSubtitles: () -> Map<String, SubtitleTrack>,
+    stillRequested: () -> Boolean,
+): Boolean {
+    var attempt = 0
+    while (
+        attempt < TV_SUBTITLE_SELECTION_CONFIRM_ATTEMPTS &&
+        stillRequested()
+    ) {
+        val currentChoice = tvPlayerTrackChoices(
+            tracks = player.currentTracks,
+            trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = externalSubtitles(),
+        ).firstOrNull { it.selectionId == selectionId }
+
+        if (currentChoice?.selected == true) return true
+
+        if (
+            currentChoice != null &&
+            attempt in TV_SUBTITLE_SELECTION_REAPPLY_ATTEMPTS
+        ) {
+            tvApplyTrackChoice(
+                player = player,
+                trackType = C.TRACK_TYPE_TEXT,
+                choice = currentChoice,
+            )
+        }
+
+        delay(TV_SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS)
+        attempt += 1
+    }
+
+    return tvPlayerTrackChoices(
+        tracks = player.currentTracks,
+        trackType = C.TRACK_TYPE_TEXT,
+        externalSubtitles = externalSubtitles(),
+    ).any { it.selectionId == selectionId && it.selected }
+}
+
+private const val TV_SUBTITLE_SELECTION_CONFIRM_ATTEMPTS = 60
+private const val TV_SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS = 50L
+private val TV_SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)
 
 private fun buildMediaItem(
     sourceUrl: String,
