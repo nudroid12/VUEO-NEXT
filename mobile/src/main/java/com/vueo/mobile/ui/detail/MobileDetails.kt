@@ -508,6 +508,9 @@ internal fun MediaDetailsScreen(
     var selectedPlaybackSource by remember {
         mutableStateOf<StreamSource?>(null)
     }
+    var returnToSourcesOnPlayerExit by remember {
+        mutableStateOf(false)
+    }
     var selectedPlaybackVideoId by remember {
         mutableStateOf<String?>(null)
     }
@@ -845,6 +848,7 @@ internal fun MediaDetailsScreen(
         forceRefresh: Boolean = false,
     ) {
         selectedPlaybackStartPositionMs = startPositionMs.coerceAtLeast(0L)
+        if (autoPlayFirst) returnToSourcesOnPlayerExit = false
 
         val targetVideoId = selectedVideoId(
             media = item,
@@ -894,6 +898,7 @@ internal fun MediaDetailsScreen(
             selectedSeason = targetEpisode?.season ?: selectedSeason
             selectedEpisode = targetEpisode
             selectedPlaybackVideoId = targetVideoId
+            returnToSourcesOnPlayerExit = false
             selectedPlaybackSource = candidate
         }
 
@@ -1175,13 +1180,16 @@ internal fun MediaDetailsScreen(
                             sourceDiscoveryJob?.cancel()
                             sourceDiscoveryJob = null
                             sourcePickerSearching = false
-                            sourcePickerStreams = null
+                            if (!returnToSourcesOnPlayerExit) {
+                                sourcePickerStreams = null
+                            }
                             loadingStreams = false
                             pendingPlaybackEpisode = null
                             pendingPlaybackFailed = false
                             selectedPlaybackSource = null
                             selectedPlaybackVideoId = null
                             selectedPlaybackStartPositionMs = 0L
+                            returnToSourcesOnPlayerExit = false
                         },
                     )
                 }
@@ -1219,7 +1227,7 @@ internal fun MediaDetailsScreen(
                         loadingStreams = false
                         sourcePickerStreams = null
                     },
-                    onPlay = { source ->
+                    onPlay = { source, returnToSources ->
                         sourcePickerSearching = false
 
                         val videoId =
@@ -1233,6 +1241,7 @@ internal fun MediaDetailsScreen(
                                 selectedPlaybackStartPositionMs
                                     .coerceAtLeast(0L)
                             selectedPlaybackVideoId = videoId
+                            returnToSourcesOnPlayerExit = returnToSources
                             selectedPlaybackSource = source
                         }
                     },

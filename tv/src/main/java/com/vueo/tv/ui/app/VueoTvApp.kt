@@ -90,6 +90,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var dnaReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
+    var playerReturnRoute by remember { mutableStateOf(TvRoute.SOURCE) }
     val searchSession = remember { TvSearchSession() }
     val sourceDiscoveryScope = rememberCoroutineScope()
     var sourceDiscoverySnapshot by remember { mutableStateOf<TvSourceDiscoverySnapshot?>(null) }
@@ -517,6 +518,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             onPlay = { bundle, source ->
                                 sourceBundle = bundle
                                 selectedSource = source
+                                playerReturnRoute = TvRoute.SOURCE
                                 playerSessionId += 1
                                 route = TvRoute.PLAYER
                             },
@@ -542,7 +544,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             playerSessionId = playerSessionId,
                             onBack = {
                                 stopSourceDiscovery(markStopped = true)
-                                route = TvRoute.SOURCE
+                                route = playerReturnRoute
                             },
                             onLibraryChanged = { refreshToken++ },
                             onPlayNextEpisode = { nextEpisode ->

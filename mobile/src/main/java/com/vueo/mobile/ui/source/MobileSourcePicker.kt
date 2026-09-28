@@ -274,7 +274,7 @@ internal fun SourcePickerScreen(
     showTechnicalDetails: Boolean,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
-    onPlay: (StreamSource) -> Unit,
+    onPlay: (source: StreamSource, returnToSources: Boolean) -> Unit,
 ) {
     BackHandler { onBack() }
 
@@ -638,7 +638,7 @@ internal fun SourcePickerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(42.dp)
-                                .clickable { onPlay(best) },
+                                .clickable { onPlay(best, false) },
                             shape = RoundedCornerShape(50),
                             color = VueoPalette.Accent,
                         ) {
@@ -777,7 +777,7 @@ internal fun SourcePickerScreen(
                     source = source,
                     originalLanguage = originalLanguage,
                     showTechnicalDetails = showTechnicalDetails,
-                    onClick = { onPlay(source) },
+                    onClick = { onPlay(source, true) },
                 )
             }
         } else if (searching) {
