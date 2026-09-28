@@ -44,6 +44,9 @@ internal data class TvPlayerSubtitleStyleState(
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
     val outlineColor: Int = 0xFF000000.toInt(),
+    val backgroundEnabled: Boolean = false,
+    val backgroundColor: Int = 0xFF000000.toInt(),
+    val backgroundOpacityPercent: Int = 60,
     val bottomPaddingPercent: Int = 8,
 )
 

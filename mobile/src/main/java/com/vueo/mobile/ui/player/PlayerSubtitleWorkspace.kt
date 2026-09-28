@@ -73,6 +73,9 @@ internal data class PlayerSubtitleStyleState(
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
     val outlineColor: Int = 0xFF000000.toInt(),
+    val backgroundEnabled: Boolean = false,
+    val backgroundColor: Int = 0xFF000000.toInt(),
+    val backgroundOpacityPercent: Int = 60,
     val bottomPaddingPercent: Int = 22,
 )
 
@@ -845,6 +848,54 @@ private fun SubtitleStyleControls(
                     ),
                     onSelect = {
                         onStyleChange(style.copy(outlineColor = it))
+                    },
+                )
+            }
+        }
+        item {
+            StyleToggle("Background", style.backgroundEnabled) {
+                onStyleChange(
+                    style.copy(backgroundEnabled = !style.backgroundEnabled)
+                )
+            }
+        }
+        if (style.backgroundEnabled) {
+            item {
+                StyleColorPicker(
+                    label = "Background Color",
+                    selected = style.backgroundColor,
+                    colours = listOf(
+                        0xFF000000.toInt(),
+                        0xFF202124.toInt(),
+                        0xFF263238.toInt(),
+                        0xFF3B1F2B.toInt(),
+                    ),
+                    onSelect = {
+                        onStyleChange(style.copy(backgroundColor = it))
+                    },
+                )
+            }
+            item {
+                StyleStepper(
+                    label = "Background Opacity",
+                    value = "${style.backgroundOpacityPercent}%",
+                    onDecrease = {
+                        onStyleChange(
+                            style.copy(
+                                backgroundOpacityPercent =
+                                    (style.backgroundOpacityPercent - 10)
+                                        .coerceAtLeast(10)
+                            )
+                        )
+                    },
+                    onIncrease = {
+                        onStyleChange(
+                            style.copy(
+                                backgroundOpacityPercent =
+                                    (style.backgroundOpacityPercent + 10)
+                                        .coerceAtMost(100)
+                            )
+                        )
                     },
                 )
             }

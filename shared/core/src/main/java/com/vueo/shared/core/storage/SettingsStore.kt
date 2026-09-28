@@ -596,6 +596,51 @@ class SettingsStore(
             .apply()
     }
 
+    fun subtitleBackgroundEnabled(): Boolean =
+        prefs.getBoolean(
+            profileKey(KEY_SUBTITLE_BACKGROUND_ENABLED),
+            false,
+        )
+
+    fun setSubtitleBackgroundEnabled(enabled: Boolean) {
+        prefs.edit()
+            .putBoolean(
+                profileKey(KEY_SUBTITLE_BACKGROUND_ENABLED),
+                enabled,
+            )
+            .apply()
+    }
+
+    fun subtitleBackgroundColor(): Int =
+        prefs.getInt(
+            profileKey(KEY_SUBTITLE_BACKGROUND_COLOR),
+            0xFF000000.toInt(),
+        )
+
+    fun setSubtitleBackgroundColor(value: Int) {
+        prefs.edit()
+            .putInt(
+                profileKey(KEY_SUBTITLE_BACKGROUND_COLOR),
+                value or 0xFF000000.toInt(),
+            )
+            .apply()
+    }
+
+    fun subtitleBackgroundOpacityPercent(): Int =
+        prefs.getInt(
+            profileKey(KEY_SUBTITLE_BACKGROUND_OPACITY_PERCENT),
+            60,
+        ).coerceIn(10, 100)
+
+    fun setSubtitleBackgroundOpacityPercent(value: Int) {
+        prefs.edit()
+            .putInt(
+                profileKey(KEY_SUBTITLE_BACKGROUND_OPACITY_PERCENT),
+                value.coerceIn(10, 100),
+            )
+            .apply()
+    }
+
     fun subtitleDelayMs(contentId: String): Int =
         prefs.getInt(
             profileKey("$KEY_SUBTITLE_DELAY_MS|${contentId.trim()}"),
@@ -1062,6 +1107,15 @@ class SettingsStore(
 
         private const val KEY_SUBTITLE_TEXT_OPACITY_PERCENT =
             "subtitle_text_opacity_percent"
+
+        private const val KEY_SUBTITLE_BACKGROUND_ENABLED =
+            "subtitle_background_enabled"
+
+        private const val KEY_SUBTITLE_BACKGROUND_COLOR =
+            "subtitle_background_color"
+
+        private const val KEY_SUBTITLE_BACKGROUND_OPACITY_PERCENT =
+            "subtitle_background_opacity_percent"
 
         private const val KEY_SUBTITLE_DELAY_MS =
             "subtitle_delay_ms"

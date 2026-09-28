@@ -413,6 +413,27 @@ internal fun SubtitleSettingsScreen(
     var showVisibilityDialog by remember {
         mutableStateOf(false)
     }
+    var backgroundEnabled by remember {
+        mutableStateOf(settingsStore.subtitleBackgroundEnabled())
+    }
+    var backgroundColor by remember {
+        mutableStateOf(settingsStore.subtitleBackgroundColor())
+    }
+    var backgroundOpacity by remember {
+        mutableStateOf(settingsStore.subtitleBackgroundOpacityPercent())
+    }
+    var showBackgroundColorDialog by remember {
+        mutableStateOf(false)
+    }
+    var showBackgroundOpacityDialog by remember {
+        mutableStateOf(false)
+    }
+    val backgroundColours = listOf(
+        "Black" to 0xFF000000.toInt(),
+        "Charcoal" to 0xFF202124.toInt(),
+        "Blue Black" to 0xFF263238.toInt(),
+        "Wine Black" to 0xFF3B1F2B.toInt(),
+    )
 
     languageDialog?.let { target ->
         AlertDialog(
@@ -520,6 +541,61 @@ internal fun SubtitleSettingsScreen(
         )
     }
 
+    if (showBackgroundColorDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundColorDialog = false },
+            title = { Text("Subtitle Background Color") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    backgroundColours.forEach { (label, colour) ->
+                        VueoChoiceRow(
+                            label = label,
+                            selected = (backgroundColor and 0x00FFFFFF) ==
+                                (colour and 0x00FFFFFF),
+                            onClick = {
+                                backgroundColor = colour
+                                settingsStore.setSubtitleBackgroundColor(colour)
+                                showBackgroundColorDialog = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundColorDialog = false }) {
+                    Text("Close")
+                }
+            },
+        )
+    }
+
+    if (showBackgroundOpacityDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundOpacityDialog = false },
+            title = { Text("Background Opacity") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(20, 40, 60, 80, 100).forEach { option ->
+                        VueoChoiceRow(
+                            label = "$option%",
+                            selected = backgroundOpacity == option,
+                            onClick = {
+                                backgroundOpacity = option
+                                settingsStore.setSubtitleBackgroundOpacityPercent(option)
+                                showBackgroundOpacityDialog = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundOpacityDialog = false }) {
+                    Text("Close")
+                }
+            },
+        )
+    }
+
     VueoSettingsPage(
         title = "Subtitles",
         subtitle = "Subtitle behavior is separate from subtitle providers in Content Manager.",
@@ -599,6 +675,41 @@ internal fun SubtitleSettingsScreen(
                 value = size.label,
                 onClick = { showSizeDialog = true },
             )
+        }
+
+        item {
+            VueoSettingsToggleCard(
+                title = "Subtitle Background",
+                subtitle = "Show a solid background behind subtitle text for stronger contrast.",
+                checked = backgroundEnabled,
+                onCheckedChange = {
+                    backgroundEnabled = it
+                    settingsStore.setSubtitleBackgroundEnabled(it)
+                },
+            )
+        }
+
+        if (backgroundEnabled) {
+            item {
+                VueoSettingsValueCard(
+                    title = "Background Color",
+                    subtitle = "Choose the subtitle background colour.",
+                    value = backgroundColours.firstOrNull {
+                        (it.second and 0x00FFFFFF) ==
+                            (backgroundColor and 0x00FFFFFF)
+                    }?.first ?: "Custom",
+                    onClick = { showBackgroundColorDialog = true },
+                )
+            }
+
+            item {
+                VueoSettingsValueCard(
+                    title = "Background Opacity",
+                    subtitle = "Control how strongly the video is darkened behind subtitle text.",
+                    value = "$backgroundOpacity%",
+                    onClick = { showBackgroundOpacityDialog = true },
+                )
+            }
         }
 
         item {

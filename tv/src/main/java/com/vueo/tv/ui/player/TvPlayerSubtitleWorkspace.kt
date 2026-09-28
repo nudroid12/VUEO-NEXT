@@ -149,6 +149,9 @@ internal fun VueoPlayerSubtitleWorkspace(
     val opacityRequester = remember { FocusRequester() }
     val outlineRequester = remember { FocusRequester() }
     val outlineColorRequester = remember { FocusRequester() }
+    val backgroundRequester = remember { FocusRequester() }
+    val backgroundColorRequester = remember { FocusRequester() }
+    val backgroundOpacityRequester = remember { FocusRequester() }
     val positionRequester = remember { FocusRequester() }
     val resetRequester = remember { FocusRequester() }
     val activeLanguageRequester = languageRequesters.getOrNull(
@@ -215,6 +218,14 @@ internal fun VueoPlayerSubtitleWorkspace(
             0xFFFFFFFF.toInt(),
             0xFF18C7F5.toInt(),
             0xFFFF6B86.toInt(),
+        )
+    }
+    val backgroundColours = remember {
+        listOf(
+            0xFF000000.toInt(),
+            0xFF202124.toInt(),
+            0xFF263238.toInt(),
+            0xFF3B1F2B.toInt(),
         )
     }
     val opacity = subtitleAlphaPercent(style.textColor)
@@ -513,7 +524,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     enabled = style.outlineEnabled,
                                     requester = outlineRequester,
                                     upRequester = opacityRequester,
-                                    downRequester = if (style.outlineEnabled) outlineColorRequester else positionRequester,
+                                    downRequester = if (style.outlineEnabled) outlineColorRequester else backgroundRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
@@ -525,18 +536,76 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         selectedColour = style.outlineColor,
                                         requester = outlineColorRequester,
                                         upRequester = outlineRequester,
-                                        downRequester = positionRequester,
+                                        downRequester = backgroundRequester,
                                         leftRequester = styleLeftRequester,
                                         onInteraction = onInteraction,
                                     ) { colour ->
                                         onStyleChange(style.copy(outlineColor = colour))
                                     }
                                 }
+                                VueoSubtitleToggleRow(
+                                    title = "Background",
+                                    enabled = style.backgroundEnabled,
+                                    requester = backgroundRequester,
+                                    upRequester = if (style.outlineEnabled) outlineColorRequester else outlineRequester,
+                                    downRequester = if (style.backgroundEnabled) backgroundColorRequester else positionRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = {
+                                        onStyleChange(
+                                            style.copy(backgroundEnabled = !style.backgroundEnabled)
+                                        )
+                                    },
+                                )
+                                if (style.backgroundEnabled) {
+                                    VueoSubtitleColorRow(
+                                        title = "Background Color",
+                                        colours = backgroundColours,
+                                        selectedColour = style.backgroundColor,
+                                        requester = backgroundColorRequester,
+                                        upRequester = backgroundRequester,
+                                        downRequester = backgroundOpacityRequester,
+                                        leftRequester = styleLeftRequester,
+                                        onInteraction = onInteraction,
+                                    ) { colour ->
+                                        onStyleChange(style.copy(backgroundColor = colour))
+                                    }
+                                    VueoSubtitleStepperRow(
+                                        title = "Background Opacity",
+                                        value = "${style.backgroundOpacityPercent}%",
+                                        requester = backgroundOpacityRequester,
+                                        upRequester = backgroundColorRequester,
+                                        downRequester = positionRequester,
+                                        leftRequester = styleLeftRequester,
+                                        onInteraction = onInteraction,
+                                        onDecrease = {
+                                            onStyleChange(
+                                                style.copy(
+                                                    backgroundOpacityPercent =
+                                                        (style.backgroundOpacityPercent - 10)
+                                                            .coerceAtLeast(10)
+                                                )
+                                            )
+                                        },
+                                        onIncrease = {
+                                            onStyleChange(
+                                                style.copy(
+                                                    backgroundOpacityPercent =
+                                                        (style.backgroundOpacityPercent + 10)
+                                                            .coerceAtMost(100)
+                                                )
+                                            )
+                                        },
+                                    )
+                                }
                                 VueoSubtitleStepperRow(
                                     title = "Bottom Position",
                                     value = "${style.bottomPaddingPercent}%",
                                     requester = positionRequester,
-                                    upRequester = if (style.outlineEnabled) outlineColorRequester else outlineRequester,
+                                    upRequester = when {
+                                        style.backgroundEnabled -> backgroundOpacityRequester
+                                        else -> backgroundRequester
+                                    },
                                     downRequester = resetRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
@@ -557,7 +626,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                 )
                                 VueoSubtitleActionRow(
                                     title = "Reset Style",
-                                    detail = "White • 22sp • black outline • 8% bottom",
+                                    detail = "White • 22sp • black outline • background off • 8% bottom",
                                     requester = resetRequester,
                                     upRequester = positionRequester,
                                     downRequester = FocusRequester.Cancel,

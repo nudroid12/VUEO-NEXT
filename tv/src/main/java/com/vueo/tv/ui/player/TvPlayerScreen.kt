@@ -232,6 +232,10 @@ fun TvPlayerScreen(
                 },
                 outlineEnabled = settings.subtitleOutlineEnabled(),
                 outlineColor = settings.subtitleOutlineColor(),
+                backgroundEnabled = settings.subtitleBackgroundEnabled(),
+                backgroundColor = settings.subtitleBackgroundColor(),
+                backgroundOpacityPercent =
+                    settings.subtitleBackgroundOpacityPercent(),
                 bottomPaddingPercent = storedSubtitleBottomPaddingPercent,
             )
         )
@@ -1277,7 +1281,14 @@ fun TvPlayerScreen(
         val exoPlayer = player
         val appliedSubtitleStyle = CaptionStyleCompat(
             subtitleStyle.textColor,
-            android.graphics.Color.TRANSPARENT,
+            if (subtitleStyle.backgroundEnabled) {
+                withAlpha(
+                    subtitleStyle.backgroundColor,
+                    subtitleStyle.backgroundOpacityPercent,
+                )
+            } else {
+                android.graphics.Color.TRANSPARENT
+            },
             android.graphics.Color.TRANSPARENT,
             if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
             subtitleStyle.outlineColor,
@@ -1632,6 +1643,11 @@ fun TvPlayerScreen(
                     settings.setSubtitleTextOpacityPercent(alphaPercent(updated.textColor))
                     settings.setSubtitleOutlineEnabled(updated.outlineEnabled)
                     settings.setSubtitleOutlineColor(updated.outlineColor)
+                    settings.setSubtitleBackgroundEnabled(updated.backgroundEnabled)
+                    settings.setSubtitleBackgroundColor(updated.backgroundColor)
+                    settings.setSubtitleBackgroundOpacityPercent(
+                        updated.backgroundOpacityPercent
+                    )
                     settings.setSubtitleBottomPaddingPercent(updated.bottomPaddingPercent)
                 },
             )

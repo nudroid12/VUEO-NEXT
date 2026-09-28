@@ -275,7 +275,14 @@ internal fun PlayerView.applyVueoSubtitleStyle(
         setStyle(
             CaptionStyleCompat(
                 style.textColor,
-                android.graphics.Color.TRANSPARENT,
+                if (style.backgroundEnabled) {
+                    withSubtitleAlpha(
+                        style.backgroundColor,
+                        style.backgroundOpacityPercent,
+                    )
+                } else {
+                    android.graphics.Color.TRANSPARENT
+                },
                 android.graphics.Color.TRANSPARENT,
                 if (style.outlineEnabled) {
                     CaptionStyleCompat.EDGE_TYPE_OUTLINE
@@ -291,6 +298,11 @@ internal fun PlayerView.applyVueoSubtitleStyle(
             )
         )
     }
+}
+
+private fun withSubtitleAlpha(colour: Int, opacityPercent: Int): Int {
+    val alpha = (opacityPercent.coerceIn(0, 100) * 255 + 50) / 100
+    return (colour and 0x00FFFFFF) or (alpha shl 24)
 }
 
 @androidx.annotation.OptIn(

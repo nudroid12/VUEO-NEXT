@@ -111,6 +111,22 @@ internal fun TvSubtitleSettings(
     var outline by remember { mutableStateOf(store.subtitleOutlineEnabled()) }
     var bottomPadding by remember { mutableIntStateOf(store.subtitleBottomPaddingPercent()) }
     var opacity by remember { mutableIntStateOf(store.subtitleTextOpacityPercent()) }
+    var backgroundEnabled by remember { mutableStateOf(store.subtitleBackgroundEnabled()) }
+    var backgroundColor by remember { mutableIntStateOf(store.subtitleBackgroundColor()) }
+    var backgroundOpacity by remember {
+        mutableIntStateOf(store.subtitleBackgroundOpacityPercent())
+    }
+    val backgroundColours = listOf(
+        0xFF000000.toInt() to "Black",
+        0xFF202124.toInt() to "Charcoal",
+        0xFF263238.toInt() to "Blue Black",
+        0xFF3B1F2B.toInt() to "Wine Black",
+    )
+    fun updateBackgroundColour(direction: Int) {
+        val colours = backgroundColours.map { it.first }
+        backgroundColor = cycle(colours, backgroundColor, direction)
+        store.setSubtitleBackgroundColor(backgroundColor)
+    }
 
     val entries = listOf(
         choiceEntry("primary", "Preferred Language", "First language VUEO should prefer when subtitle tracks are available.", primary.label, { primary = cycle(SubtitleLanguage.entries, primary, -1); store.setPreferredSubtitleLanguage(primary) }, { primary = cycle(SubtitleLanguage.entries, primary, 1); store.setPreferredSubtitleLanguage(primary) })
@@ -135,6 +151,30 @@ internal fun TvSubtitleSettings(
             .copy(section = "DISPLAY"),
         choiceEntry("opacity", "Text Opacity", "Subtitle text opacity.", "$opacity%", { opacity = (opacity - 10).coerceAtLeast(20); store.setSubtitleTextOpacityPercent(opacity) }, { opacity = (opacity + 10).coerceAtMost(100); store.setSubtitleTextOpacityPercent(opacity) })
             .copy(section = "DISPLAY"),
+        toggleEntry("background", "Subtitle Background", "Show a background behind subtitle text for stronger contrast.", backgroundEnabled) { backgroundEnabled = it; store.setSubtitleBackgroundEnabled(it) }
+            .copy(section = "DISPLAY"),
+        choiceEntry(
+            "background-color",
+            "Background Color",
+            "Choose the subtitle background colour.",
+            backgroundColours.firstOrNull { it.first == backgroundColor }?.second ?: "Custom",
+            { updateBackgroundColour(-1) },
+            { updateBackgroundColour(1) },
+        ).copy(section = "DISPLAY", enabled = backgroundEnabled),
+        choiceEntry(
+            "background-opacity",
+            "Background Opacity",
+            "Control how strongly the video is darkened behind subtitle text.",
+            "$backgroundOpacity%",
+            {
+                backgroundOpacity = (backgroundOpacity - 10).coerceAtLeast(10)
+                store.setSubtitleBackgroundOpacityPercent(backgroundOpacity)
+            },
+            {
+                backgroundOpacity = (backgroundOpacity + 10).coerceAtMost(100)
+                store.setSubtitleBackgroundOpacityPercent(backgroundOpacity)
+            },
+        ).copy(section = "DISPLAY", enabled = backgroundEnabled),
     )
 
     TvSettingsListScreen("Subtitles", "Subtitle behavior is separate from subtitle providers in Content Manager.", entries, onNavigate, onProfile, onBack)

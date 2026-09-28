@@ -626,6 +626,10 @@ internal fun PlayerScreen(
                 textColor = settingsStore.subtitleTextColor(),
                 outlineEnabled = settingsStore.subtitleOutlineEnabled(),
                 outlineColor = settingsStore.subtitleOutlineColor(),
+                backgroundEnabled = settingsStore.subtitleBackgroundEnabled(),
+                backgroundColor = settingsStore.subtitleBackgroundColor(),
+                backgroundOpacityPercent =
+                    settingsStore.subtitleBackgroundOpacityPercent(),
                 bottomPaddingPercent =
                     settingsStore.subtitleBottomPaddingPercent(),
             )
@@ -2228,6 +2232,15 @@ internal fun PlayerScreen(
                 settingsStore.setSubtitleOutlineColor(
                     updated.outlineColor
                 )
+                settingsStore.setSubtitleBackgroundEnabled(
+                    updated.backgroundEnabled
+                )
+                settingsStore.setSubtitleBackgroundColor(
+                    updated.backgroundColor
+                )
+                settingsStore.setSubtitleBackgroundOpacityPercent(
+                    updated.backgroundOpacityPercent
+                )
                 settingsStore.setSubtitleBottomPaddingPercent(
                     updated.bottomPaddingPercent
                 )
@@ -2262,6 +2275,11 @@ internal fun PlayerScreen(
                 settingsStore.setSubtitleTextColor(updated.textColor)
                 settingsStore.setSubtitleOutlineEnabled(updated.outlineEnabled)
                 settingsStore.setSubtitleOutlineColor(updated.outlineColor)
+                settingsStore.setSubtitleBackgroundEnabled(updated.backgroundEnabled)
+                settingsStore.setSubtitleBackgroundColor(updated.backgroundColor)
+                settingsStore.setSubtitleBackgroundOpacityPercent(
+                    updated.backgroundOpacityPercent
+                )
                 settingsStore.setSubtitleBottomPaddingPercent(
                     updated.bottomPaddingPercent
                 )
