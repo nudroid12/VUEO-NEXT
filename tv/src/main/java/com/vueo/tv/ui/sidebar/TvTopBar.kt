@@ -171,7 +171,9 @@ fun TvSidebar(
     Box(modifier = containerModifier) {
         val pillShape = RoundedCornerShape(28.dp)
         val panelModifier = when (sidebarStyle) {
-            TvSidebarStyle.CLASSIC -> Modifier.fillMaxWidth()
+            TvSidebarStyle.CLASSIC -> Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .align(Alignment.CenterEnd)
                 .offset(x = pillOffsetX)
@@ -187,7 +189,6 @@ fun TvSidebar(
         val navColumnModifier = when (sidebarStyle) {
             TvSidebarStyle.CLASSIC -> Modifier
                 .align(Alignment.CenterStart)
-                .offset(y = 10.dp)
                 .fillMaxWidth()
 
             TvSidebarStyle.PILL_ICONS -> Modifier
