@@ -24,6 +24,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -122,14 +126,12 @@ internal fun TvSourcePresentation(
         return true
     }
 
-    LaunchedEffect(state.filteredSources, state.rememberedSourceKey, sourceFocusAssigned, userInteracted) {
-        if (sourceFocusAssigned || userInteracted || state.filteredSources.isEmpty()) return@LaunchedEffect
-        val rememberedIndex = state.filteredSources.indexOfFirst {
-            sourceStableKey(it) == state.rememberedSourceKey
+    LaunchedEffect(state.searching, state.filteredSources, sourceFocusAssigned) {
+        if (sourceFocusAssigned || state.searching || state.filteredSources.isEmpty()) {
+            return@LaunchedEffect
         }
-        val targetIndex = rememberedIndex.takeIf { it >= 0 } ?: 0
-        val target = state.filteredSources[targetIndex]
-        listState.scrollToItem(targetIndex)
+        val target = state.filteredSources.first()
+        listState.scrollToItem(0)
         delay(90)
         runCatching { sourceRequester(target).requestFocus() }
         sourceFocusAssigned = true
@@ -165,6 +167,9 @@ internal fun TvSourcePresentation(
         Row(Modifier.fillMaxSize()) {
             SourceIdentitySection(
                 state = state,
+                detailsRequester = detailsRequester,
+                refreshRequester = refreshRequester,
+                onToggleDetails = onToggleDetails,
                 modifier = Modifier
                     .weight(.40f)
                     .fillMaxHeight(),
@@ -176,13 +181,11 @@ internal fun TvSourcePresentation(
                 refreshRequester = refreshRequester,
                 retryRequester = retryRequester,
                 allRequester = allRequester,
-                detailsRequester = detailsRequester,
                 providerRequester = ::providerRequester,
                 sourceRequester = ::sourceRequester,
                 selectedProviderRequester = ::selectedProviderRequester,
                 onInteraction = { userInteracted = true },
                 onSelectProvider = onSelectProvider,
-                onToggleDetails = onToggleDetails,
                 onRefresh = {
                     userInteracted = true
                     sourceFocusAssigned = false
@@ -257,6 +260,9 @@ private fun SourceBackdrop(
 @Composable
 private fun SourceIdentitySection(
     state: TvSourcePresentationState,
+    detailsRequester: FocusRequester,
+    refreshRequester: FocusRequester,
+    onToggleDetails: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val episodeLabel = sourceEpisodeLabel(state.episode)
@@ -317,7 +323,73 @@ private fun SourceIdentitySection(
 
             Spacer(Modifier.height(28.dp))
             SourceDiscoveryStatus(state)
+
+            Spacer(Modifier.height(15.dp))
+            SourceDetailsButton(
+                selected = state.showEngineDetails,
+                requester = detailsRequester,
+                rightRequester = refreshRequester,
+                onClick = onToggleDetails,
+            )
         }
+    }
+}
+
+@Composable
+private fun SourceDetailsButton(
+    selected: Boolean,
+    requester: FocusRequester,
+    rightRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .height(34.dp)
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (
+                    event.type == KeyEventType.KeyDown &&
+                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                ) {
+                    runCatching { rightRequester.requestFocus() }
+                    true
+                } else {
+                    false
+                }
+            }
+            .background(
+                color = when {
+                    focused -> TvDesign.White.copy(alpha = .18f)
+                    selected -> TvDesign.Accent.copy(alpha = .14f)
+                    else -> TvDesign.Surface.copy(alpha = .72f)
+                },
+                shape = SourceChipShape,
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = when {
+                    focused -> TvDesign.White.copy(alpha = .92f)
+                    selected -> TvDesign.Accent.copy(alpha = .46f)
+                    else -> TvDesign.White.copy(alpha = .10f)
+                },
+                shape = SourceChipShape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 15.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "Details",
+            color = when {
+                focused -> TvDesign.White
+                selected -> TvDesign.Accent
+                else -> TvDesign.White.copy(alpha = .72f)
+            },
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -384,13 +456,11 @@ private fun SourceResultsSection(
     refreshRequester: FocusRequester,
     retryRequester: FocusRequester,
     allRequester: FocusRequester,
-    detailsRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
     sourceRequester: (StreamSource) -> FocusRequester,
     selectedProviderRequester: () -> FocusRequester,
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
-    onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
     onSourceFocused: (StreamSource) -> Unit,
     onCycleProvider: (Int) -> Boolean,
@@ -408,16 +478,19 @@ private fun SourceResultsSection(
             state = state,
             refreshRequester = refreshRequester,
             allRequester = allRequester,
-            detailsRequester = detailsRequester,
             providerRequester = providerRequester,
             firstSourceRequester = state.filteredSources.firstOrNull()?.let { sourceRequester(it) },
             onInteraction = onInteraction,
             onSelectProvider = onSelectProvider,
-            onToggleDetails = onToggleDetails,
             onRefresh = onRefresh,
         )
 
-        Spacer(Modifier.height(14.dp))
+        if (state.searching) {
+            SourceLoadingStatus(state.progress)
+            Spacer(Modifier.height(8.dp))
+        } else {
+            Spacer(Modifier.height(14.dp))
+        }
 
         Box(
             modifier = Modifier
@@ -484,16 +557,13 @@ private fun SourceFilterRow(
     state: TvSourcePresentationState,
     refreshRequester: FocusRequester,
     allRequester: FocusRequester,
-    detailsRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
     firstSourceRequester: FocusRequester?,
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
-    onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val chips = buildList {
-        add(SourceChip("refresh", "Refresh", false, refreshRequester, onRefresh))
         if (state.rankedSources.isNotEmpty()) {
             add(
                 SourceChip(
@@ -516,28 +586,132 @@ private fun SourceFilterRow(
                 )
             }
         }
-        add(SourceChip("details", "Details", state.showEngineDetails, detailsRequester, onToggleDetails))
     }
 
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(40.dp),
-        contentPadding = PaddingValues(horizontal = 1.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        itemsIndexed(chips, key = { _, chip -> chip.id }) { index, chip ->
-            SourceFilterChip(
-                label = chip.label,
-                selected = chip.selected,
-                requester = chip.requester,
-                leftRequester = chips.getOrNull(index - 1)?.requester,
-                rightRequester = chips.getOrNull(index + 1)?.requester,
-                downRequester = firstSourceRequester,
-                onInteraction = onInteraction,
-                onClick = chip.action,
+        SourceRefreshButton(
+            searching = state.searching,
+            requester = refreshRequester,
+            rightRequester = chips.firstOrNull()?.requester,
+            downRequester = firstSourceRequester,
+            onInteraction = onInteraction,
+            onClick = onRefresh,
+        )
+        Spacer(Modifier.width(8.dp))
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 1.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            itemsIndexed(chips, key = { _, chip -> chip.id }) { index, chip ->
+                SourceFilterChip(
+                    label = chip.label,
+                    selected = chip.selected,
+                    requester = chip.requester,
+                    leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
+                    rightRequester = chips.getOrNull(index + 1)?.requester,
+                    downRequester = firstSourceRequester,
+                    onInteraction = onInteraction,
+                    onClick = chip.action,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceRefreshButton(
+    searching: Boolean,
+    requester: FocusRequester,
+    rightRequester: FocusRequester?,
+    downRequester: FocusRequester?,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .width(38.dp)
+            .height(34.dp)
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> rightRequester?.let {
+                        onInteraction()
+                        runCatching { it.requestFocus() }
+                        true
+                    } ?: false
+                    KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
+                        onInteraction()
+                        runCatching { it.requestFocus() }
+                        true
+                    } ?: false
+                    else -> false
+                }
+            }
+            .background(
+                color = if (focused) TvDesign.White.copy(alpha = .18f)
+                else TvDesign.Surface.copy(alpha = .74f),
+                shape = SourceChipShape,
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) TvDesign.White.copy(alpha = .92f)
+                else TvDesign.White.copy(alpha = .10f),
+                shape = SourceChipShape,
+            )
+            .clickable(enabled = !searching) {
+                onInteraction()
+                onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (searching) {
+            CircularProgressIndicator(
+                modifier = Modifier.width(15.dp).height(15.dp),
+                color = TvDesign.Accent,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Refresh sources",
+                tint = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .72f),
+                modifier = Modifier.width(17.dp).height(17.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun SourceLoadingStatus(progress: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.width(12.dp).height(12.dp),
+            color = TvDesign.Accent,
+            strokeWidth = 1.5.dp,
+        )
+        Text(
+            text = progress.ifBlank { "Searching sources…" },
+            color = TvDesign.White.copy(alpha = .72f),
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -568,20 +742,22 @@ private fun SourceFilterChip(
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_DPAD_LEFT -> leftRequester?.let {
+                        onInteraction()
                         runCatching { it.requestFocus() }
                         true
                     } ?: false
                     KeyEvent.KEYCODE_DPAD_RIGHT -> rightRequester?.let {
+                        onInteraction()
                         runCatching { it.requestFocus() }
                         true
                     } ?: false
                     KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
+                        onInteraction()
                         runCatching { it.requestFocus() }
                         true
                     } ?: false
@@ -605,7 +781,10 @@ private fun SourceFilterChip(
                 },
                 shape = SourceChipShape,
             )
-            .clickable(onClick = onClick)
+            .clickable {
+                onInteraction()
+                onClick()
+            }
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -668,6 +847,7 @@ private fun SourceList(
                 originalLanguage = state.media.originalLanguage,
                 preferredQuality = state.preferredQuality,
                 showTechnicalDetails = state.showTechnicalDetails,
+                showEngineDetails = state.showEngineDetails,
                 recommended = sourceStableKey(source) == state.recommendedSourceKey,
                 requester = sourceRequester(source),
                 onFocused = {
@@ -692,6 +872,7 @@ private fun SourceCard(
     originalLanguage: String?,
     preferredQuality: String?,
     showTechnicalDetails: Boolean,
+    showEngineDetails: Boolean,
     recommended: Boolean,
     requester: FocusRequester,
     onFocused: () -> Unit,
@@ -746,7 +927,7 @@ private fun SourceCard(
                 shape = SourceCardShape,
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 17.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -785,10 +966,7 @@ private fun SourceCard(
             }
 
             val sourceTitle = sourceTitleDisplayName(source)
-            if (
-                sourceTitle != null &&
-                (showTechnicalDetails || sourceServerDisplayName(source) != null)
-            ) {
+            if (sourceTitle != null) {
                 Text(
                     text = sourceTitle,
                     color = TvDesign.Dim,
@@ -798,7 +976,10 @@ private fun SourceCard(
                 )
             }
 
-            source.url?.takeIf(String::isNotBlank)?.let { url ->
+            source.url
+                ?.takeIf(String::isNotBlank)
+                ?.takeIf { showTechnicalDetails || showEngineDetails }
+                ?.let { url ->
                 Text(
                     text = url,
                     color = if (focused) TvDesign.White.copy(alpha = .58f) else TvDesign.Dim,
