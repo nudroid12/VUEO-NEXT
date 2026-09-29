@@ -3,6 +3,11 @@ package com.vueo.tv.source
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -127,8 +132,8 @@ internal fun TvSourcePresentation(
         return true
     }
 
-    LaunchedEffect(state.searching, state.filteredSources, sourceFocusAssigned) {
-        if (sourceFocusAssigned || state.searching || state.filteredSources.isEmpty()) {
+    LaunchedEffect(state.filteredSources, sourceFocusAssigned) {
+        if (sourceFocusAssigned || state.filteredSources.isEmpty()) {
             return@LaunchedEffect
         }
         val target = state.filteredSources.first()
@@ -171,11 +176,6 @@ internal fun TvSourcePresentation(
                 detailsRequester = detailsRequester,
                 refreshRequester = refreshRequester,
                 onToggleDetails = onToggleDetails,
-                onRefresh = {
-                    userInteracted = true
-                    sourceFocusAssigned = false
-                    onRefresh()
-                },
                 modifier = Modifier
                     .weight(.40f)
                     .fillMaxHeight(),
@@ -184,6 +184,7 @@ internal fun TvSourcePresentation(
             SourceResultsSection(
                 state = state,
                 listState = listState,
+                refreshRequester = refreshRequester,
                 retryRequester = retryRequester,
                 allRequester = allRequester,
                 providerRequester = ::providerRequester,
@@ -268,7 +269,6 @@ private fun SourceIdentitySection(
     detailsRequester: FocusRequester,
     refreshRequester: FocusRequester,
     onToggleDetails: () -> Unit,
-    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val episodeLabel = sourceEpisodeLabel(state.episode)
@@ -331,20 +331,12 @@ private fun SourceIdentitySection(
             SourceDiscoveryStatus(state)
 
             Spacer(Modifier.height(15.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SourceDetailsButton(
-                    selected = state.showEngineDetails,
-                    requester = detailsRequester,
-                    rightRequester = refreshRequester,
-                    onClick = onToggleDetails,
-                )
-                SourceRefreshButton(
-                    searching = state.searching,
-                    requester = refreshRequester,
-                    leftRequester = detailsRequester,
-                    onClick = onRefresh,
-                )
-            }
+            SourceDetailsButton(
+                selected = state.showEngineDetails,
+                requester = detailsRequester,
+                rightRequester = refreshRequester,
+                onClick = onToggleDetails,
+            )
         }
     }
 }
@@ -467,6 +459,7 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
 private fun SourceResultsSection(
     state: TvSourcePresentationState,
     listState: androidx.compose.foundation.lazy.LazyListState,
+    refreshRequester: FocusRequester,
     retryRequester: FocusRequester,
     allRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
@@ -489,11 +482,13 @@ private fun SourceResultsSection(
     ) {
         SourceFilterRow(
             state = state,
+            refreshRequester = refreshRequester,
             allRequester = allRequester,
             providerRequester = providerRequester,
             firstSourceRequester = state.filteredSources.firstOrNull()?.let { sourceRequester(it) },
             onInteraction = onInteraction,
             onSelectProvider = onSelectProvider,
+            onRefresh = onRefresh,
         )
 
         if (state.searching) {
@@ -539,12 +534,6 @@ private fun SourceResultsSection(
                     )
                 }
 
-                state.selectedProvider in state.loadingProviders && state.filteredSources.isEmpty() -> {
-                    SourceProviderLoadingState(
-                        provider = sourceProviderDisplayName(state.selectedProvider),
-                    )
-                }
-
                 state.filteredSources.isEmpty() -> {
                     SourceMessageState(
                         title = "No sources from this provider",
@@ -570,43 +559,23 @@ private fun SourceResultsSection(
 }
 
 @Composable
-private fun SourceProviderLoadingState(provider: String) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.width(24.dp).height(24.dp),
-            color = TvDesign.Accent,
-            strokeWidth = 2.dp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Searching $provider…",
-            color = TvDesign.White.copy(alpha = .78f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
 private fun SourceFilterRow(
     state: TvSourcePresentationState,
+    refreshRequester: FocusRequester,
     allRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
     firstSourceRequester: FocusRequester?,
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
+    onRefresh: () -> Unit,
 ) {
     val chips = buildList {
-        if (state.searching || state.visibleProviders.isNotEmpty() || state.rankedSources.isNotEmpty()) {
+        if (state.rankedSources.isNotEmpty()) {
             add(
                 SourceChip(
                     id = SOURCE_PROVIDER_ALL,
                     label = "All",
                     selected = state.selectedProvider == SOURCE_PROVIDER_ALL,
-                    loading = false,
                     requester = allRequester,
                     action = { onSelectProvider(SOURCE_PROVIDER_ALL) },
                 )
@@ -617,7 +586,6 @@ private fun SourceFilterRow(
                         id = provider,
                         label = sourceProviderDisplayName(provider),
                         selected = state.selectedProvider == provider,
-                        loading = provider in state.loadingProviders,
                         requester = providerRequester(provider),
                         action = { onSelectProvider(provider) },
                     )
@@ -632,8 +600,17 @@ private fun SourceFilterRow(
             .height(40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        SourceRefreshButton(
+            searching = state.searching,
+            requester = refreshRequester,
+            rightRequester = chips.firstOrNull()?.requester,
+            downRequester = firstSourceRequester,
+            onInteraction = onInteraction,
+            onClick = onRefresh,
+        )
+        Spacer(Modifier.width(8.dp))
         LazyRow(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 1.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -641,9 +618,8 @@ private fun SourceFilterRow(
                 SourceFilterChip(
                     label = chip.label,
                     selected = chip.selected,
-                    loading = chip.loading,
                     requester = chip.requester,
-                    leftRequester = chips.getOrNull(index - 1)?.requester,
+                    leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
                     rightRequester = chips.getOrNull(index + 1)?.requester,
                     downRequester = firstSourceRequester,
                     onInteraction = onInteraction,
@@ -659,10 +635,22 @@ private fun SourceFilterRow(
 private fun SourceRefreshButton(
     searching: Boolean,
     requester: FocusRequester,
-    leftRequester: FocusRequester,
+    rightRequester: FocusRequester?,
+    downRequester: FocusRequester?,
+    onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val infiniteTransition = rememberInfiniteTransition(label = "sourceRefreshRotation")
+    val animatedRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "sourceRefreshSpin",
+    )
     Box(
         modifier = Modifier
             .width(38.dp)
@@ -672,10 +660,16 @@ private fun SourceRefreshButton(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> leftRequester.let {
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> rightRequester?.let {
+                        onInteraction()
                         runCatching { it.requestFocus() }
                         true
-                    }
+                    } ?: false
+                    KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
+                        onInteraction()
+                        runCatching { it.requestFocus() }
+                        true
+                    } ?: false
                     else -> false
                 }
             }
@@ -691,24 +685,26 @@ private fun SourceRefreshButton(
                 shape = SourceChipShape,
             )
             .clickable(enabled = !searching) {
+                onInteraction()
                 onClick()
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (searching) {
-            CircularProgressIndicator(
-                modifier = Modifier.width(15.dp).height(15.dp),
-                color = TvDesign.Accent,
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = "Refresh sources",
-                tint = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .72f),
-                modifier = Modifier.width(17.dp).height(17.dp),
-            )
-        }
+        Icon(
+            imageVector = Icons.Default.Refresh,
+            contentDescription = if (searching) "Loading sources" else "Refresh sources",
+            tint = when {
+                searching -> TvDesign.Accent
+                focused -> TvDesign.White
+                else -> TvDesign.White.copy(alpha = .72f)
+            },
+            modifier = Modifier
+                .width(17.dp)
+                .height(17.dp)
+                .graphicsLayer {
+                    rotationZ = if (searching) animatedRotation else 0f
+                },
+        )
     }
 }
 
@@ -741,7 +737,6 @@ private data class SourceChip(
     val id: String,
     val label: String,
     val selected: Boolean,
-    val loading: Boolean,
     val requester: FocusRequester,
     val action: () -> Unit,
 )
@@ -750,7 +745,6 @@ private data class SourceChip(
 private fun SourceFilterChip(
     label: String,
     selected: Boolean,
-    loading: Boolean,
     requester: FocusRequester,
     leftRequester: FocusRequester?,
     rightRequester: FocusRequester?,
@@ -815,28 +809,15 @@ private fun SourceFilterChip(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.width(12.dp).height(12.dp),
-                    color = if (focused || selected) TvDesign.Black.copy(alpha = .62f)
-                    else TvDesign.White.copy(alpha = .58f),
-                    strokeWidth = 1.5.dp,
-                )
-            }
-            Text(
-                text = label,
-                color = if (focused || selected) TvDesign.Black.copy(alpha = .78f)
-                else TvDesign.White.copy(alpha = .72f),
-                fontSize = 11.sp,
-                fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            text = label,
+            color = if (focused || selected) TvDesign.Black.copy(alpha = .78f)
+            else TvDesign.White.copy(alpha = .72f),
+            fontSize = 11.sp,
+            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

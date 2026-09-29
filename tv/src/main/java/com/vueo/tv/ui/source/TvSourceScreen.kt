@@ -9,7 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.core.TvRuntime
@@ -48,7 +47,6 @@ fun TvSourceScreen(
     val notice = discovery?.notice
     val firstResultMs = discovery?.firstResultMs
     val providerOrder = discovery?.providerOrder.orEmpty()
-    val activityLog = discovery?.activityLog.orEmpty()
     val fromCache = discovery?.fromCache ?: false
     val error = discoveryError
     var selectedProvider by remember(memoryKey) {
@@ -77,80 +75,9 @@ fun TvSourceScreen(
             .distinct()
             .toList()
     }
-    val activityStates = remember(activityLog) {
-        sourceProviderActivityStates(activityLog)
-    }
-    val configuredPluginProviders = remember(media.type) {
-        if (!runtime.pluginStore.pluginsEnabled()) {
-            emptyList()
-        } else {
-            val pluginType = MediaTypePolicy.pluginType(media.type)
-            runtime.pluginStore.repositories()
-                .filter(runtime.pluginStore::isRepositoryEnabled)
-                .flatMap { repository ->
-                    repository.providers
-                        .filter { provider ->
-                            runtime.pluginStore.isProviderEnabled(repository, provider)
-                        }
-                        .filter { provider ->
-                            provider.supportedTypes.isEmpty() ||
-                                pluginType in provider.supportedTypes.map { it.lowercase() }
-                        }
-                        .filter { provider ->
-                            "android" !in provider.disabledPlatforms.map { it.lowercase() }
-                        }
-                        .map { provider -> "${repository.name} / ${provider.name}" }
-                }
-        }
-    }
-    val completedActivityNames = remember(activityStates) {
-        activityStates.filterValues { loading -> !loading }.keys
-    }
-    val loadingProviders = remember(
-        searching,
-        activityStates,
-        configuredPluginProviders,
-        completedActivityNames,
-        currentProviders,
-    ) {
-        if (!searching) {
-            emptySet()
-        } else {
-            buildSet {
-                activityStates.filterValues { it }.keys.forEach(::add)
-                configuredPluginProviders.forEach { provider ->
-                    val displayName = sourceProviderDisplayName(provider)
-                    val completed = completedActivityNames.any {
-                        sourceProviderDisplayName(it).equals(displayName, ignoreCase = true)
-                    }
-                    val hasResult = currentProviders.any {
-                        sourceProviderDisplayName(it).equals(displayName, ignoreCase = true)
-                    }
-                    if (!completed && !hasResult) add(provider)
-                }
-            }
-        }
-    }
-    val liveProviderOrder = remember(
-        providerOrder,
-        activityStates,
-        configuredPluginProviders,
-        currentProviders,
-    ) {
-        (activityStates.keys + configuredPluginProviders + providerOrder + currentProviders)
-            .distinct()
-    }
-    val visibleProviders = remember(
-        liveProviderOrder,
-        currentProviders,
-        loadingProviders,
-        selectedProvider,
-    ) {
-        liveProviderOrder.filter { provider ->
-            provider in currentProviders ||
-                provider in loadingProviders ||
-                provider == selectedProvider
-        }
+    val visibleProviders = remember(providerOrder, currentProviders) {
+        (providerOrder.filter { it in currentProviders } +
+            currentProviders.filter { it !in providerOrder })
             .distinct()
     }
 
@@ -185,7 +112,6 @@ fun TvSourceScreen(
             rankedSources = rankedSources,
             filteredSources = filteredSources,
             visibleProviders = visibleProviders,
-            loadingProviders = loadingProviders,
             selectedProvider = selectedProvider,
             preferredQuality = preferredQuality,
             showTechnicalDetails = showTechnicalDetails,
