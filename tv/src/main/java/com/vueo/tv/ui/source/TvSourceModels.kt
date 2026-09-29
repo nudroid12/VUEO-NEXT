@@ -5,6 +5,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourceAssessment
 import com.vueo.shared.core.player.PlayerSourceAudioMatch
+import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.tv.core.TvSourceBundle
 
 internal const val SOURCE_PROVIDER_ALL = "__vueo_all_sources__"
@@ -23,12 +24,11 @@ internal data class TvSourcePresentationState(
     val rankedSources: List<StreamSource>,
     val filteredSources: List<StreamSource>,
     val visibleProviders: List<String>,
+    val loadingProviders: Set<String>,
     val selectedProvider: String,
     val preferredQuality: String?,
     val showTechnicalDetails: Boolean,
     val showEngineDetails: Boolean,
-    val recommendedSourceKey: String?,
-    val rememberedSourceKey: String?,
 )
 
 internal data class SourceUiMemoryState(
@@ -36,6 +36,41 @@ internal data class SourceUiMemoryState(
     var focusedSourceKey: String? = null,
     var showEngineDetails: Boolean = false,
 )
+
+internal fun sourceProviderActivityStates(
+    activityLog: List<SourceDiscoveryActivity>,
+): LinkedHashMap<String, Boolean> {
+    val states = linkedMapOf<String, Boolean>()
+    activityLog.forEach { entry ->
+        val message = entry.message
+        when {
+            message.endsWith(" → Requesting sources") -> {
+                message.substringBefore(" → ").trim()
+                    .takeIf(String::isNotBlank)
+                    ?.let { states[it] = true }
+            }
+            " sources received" in message && " ← " in message -> {
+                message.substringBefore(" ← ").trim()
+                    .takeIf(String::isNotBlank)
+                    ?.let { states[it] = false }
+            }
+            " → Sources timed out" in message ||
+                " → Sources failed" in message ||
+                " → sources timed out" in message ||
+                " → sources failed" in message -> {
+                message.substringBefore(" → ").trim()
+                    .takeIf(String::isNotBlank)
+                    ?.let { states[it] = false }
+            }
+            " ← " in message && " sources • " in message -> {
+                message.substringBefore(" ← ").trim()
+                    .takeIf(String::isNotBlank)
+                    ?.let { states[it] = false }
+            }
+        }
+    }
+    return states
+}
 
 internal object TvSourceUiMemory {
     private const val MAX_ENTRIES = 20

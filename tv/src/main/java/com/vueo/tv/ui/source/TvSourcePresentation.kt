@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.ui.TvDesign
@@ -170,6 +171,11 @@ internal fun TvSourcePresentation(
                 detailsRequester = detailsRequester,
                 refreshRequester = refreshRequester,
                 onToggleDetails = onToggleDetails,
+                onRefresh = {
+                    userInteracted = true
+                    sourceFocusAssigned = false
+                    onRefresh()
+                },
                 modifier = Modifier
                     .weight(.40f)
                     .fillMaxHeight(),
@@ -178,7 +184,6 @@ internal fun TvSourcePresentation(
             SourceResultsSection(
                 state = state,
                 listState = listState,
-                refreshRequester = refreshRequester,
                 retryRequester = retryRequester,
                 allRequester = allRequester,
                 providerRequester = ::providerRequester,
@@ -263,6 +268,7 @@ private fun SourceIdentitySection(
     detailsRequester: FocusRequester,
     refreshRequester: FocusRequester,
     onToggleDetails: () -> Unit,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val episodeLabel = sourceEpisodeLabel(state.episode)
@@ -325,12 +331,20 @@ private fun SourceIdentitySection(
             SourceDiscoveryStatus(state)
 
             Spacer(Modifier.height(15.dp))
-            SourceDetailsButton(
-                selected = state.showEngineDetails,
-                requester = detailsRequester,
-                rightRequester = refreshRequester,
-                onClick = onToggleDetails,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SourceDetailsButton(
+                    selected = state.showEngineDetails,
+                    requester = detailsRequester,
+                    rightRequester = refreshRequester,
+                    onClick = onToggleDetails,
+                )
+                SourceRefreshButton(
+                    searching = state.searching,
+                    requester = refreshRequester,
+                    leftRequester = detailsRequester,
+                    onClick = onRefresh,
+                )
+            }
         }
     }
 }
@@ -453,7 +467,6 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
 private fun SourceResultsSection(
     state: TvSourcePresentationState,
     listState: androidx.compose.foundation.lazy.LazyListState,
-    refreshRequester: FocusRequester,
     retryRequester: FocusRequester,
     allRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
@@ -476,13 +489,11 @@ private fun SourceResultsSection(
     ) {
         SourceFilterRow(
             state = state,
-            refreshRequester = refreshRequester,
             allRequester = allRequester,
             providerRequester = providerRequester,
             firstSourceRequester = state.filteredSources.firstOrNull()?.let { sourceRequester(it) },
             onInteraction = onInteraction,
             onSelectProvider = onSelectProvider,
-            onRefresh = onRefresh,
         )
 
         if (state.searching) {
@@ -528,6 +539,12 @@ private fun SourceResultsSection(
                     )
                 }
 
+                state.selectedProvider in state.loadingProviders && state.filteredSources.isEmpty() -> {
+                    SourceProviderLoadingState(
+                        provider = sourceProviderDisplayName(state.selectedProvider),
+                    )
+                }
+
                 state.filteredSources.isEmpty() -> {
                     SourceMessageState(
                         title = "No sources from this provider",
@@ -553,23 +570,43 @@ private fun SourceResultsSection(
 }
 
 @Composable
+private fun SourceProviderLoadingState(provider: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.width(24.dp).height(24.dp),
+            color = TvDesign.Accent,
+            strokeWidth = 2.dp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Searching $provider…",
+            color = TvDesign.White.copy(alpha = .78f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
 private fun SourceFilterRow(
     state: TvSourcePresentationState,
-    refreshRequester: FocusRequester,
     allRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
     firstSourceRequester: FocusRequester?,
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
-    onRefresh: () -> Unit,
 ) {
     val chips = buildList {
-        if (state.rankedSources.isNotEmpty()) {
+        if (state.searching || state.visibleProviders.isNotEmpty() || state.rankedSources.isNotEmpty()) {
             add(
                 SourceChip(
                     id = SOURCE_PROVIDER_ALL,
                     label = "All",
                     selected = state.selectedProvider == SOURCE_PROVIDER_ALL,
+                    loading = false,
                     requester = allRequester,
                     action = { onSelectProvider(SOURCE_PROVIDER_ALL) },
                 )
@@ -580,6 +617,7 @@ private fun SourceFilterRow(
                         id = provider,
                         label = sourceProviderDisplayName(provider),
                         selected = state.selectedProvider == provider,
+                        loading = provider in state.loadingProviders,
                         requester = providerRequester(provider),
                         action = { onSelectProvider(provider) },
                     )
@@ -594,17 +632,8 @@ private fun SourceFilterRow(
             .height(40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SourceRefreshButton(
-            searching = state.searching,
-            requester = refreshRequester,
-            rightRequester = chips.firstOrNull()?.requester,
-            downRequester = firstSourceRequester,
-            onInteraction = onInteraction,
-            onClick = onRefresh,
-        )
-        Spacer(Modifier.width(8.dp))
         LazyRow(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 1.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -612,11 +641,13 @@ private fun SourceFilterRow(
                 SourceFilterChip(
                     label = chip.label,
                     selected = chip.selected,
+                    loading = chip.loading,
                     requester = chip.requester,
-                    leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
+                    leftRequester = chips.getOrNull(index - 1)?.requester,
                     rightRequester = chips.getOrNull(index + 1)?.requester,
                     downRequester = firstSourceRequester,
                     onInteraction = onInteraction,
+                    onFocused = chip.action,
                     onClick = chip.action,
                 )
             }
@@ -628,9 +659,7 @@ private fun SourceFilterRow(
 private fun SourceRefreshButton(
     searching: Boolean,
     requester: FocusRequester,
-    rightRequester: FocusRequester?,
-    downRequester: FocusRequester?,
-    onInteraction: () -> Unit,
+    leftRequester: FocusRequester,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -643,16 +672,10 @@ private fun SourceRefreshButton(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> rightRequester?.let {
-                        onInteraction()
+                    KeyEvent.KEYCODE_DPAD_LEFT -> leftRequester.let {
                         runCatching { it.requestFocus() }
                         true
-                    } ?: false
-                    KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
-                        onInteraction()
-                        runCatching { it.requestFocus() }
-                        true
-                    } ?: false
+                    }
                     else -> false
                 }
             }
@@ -668,7 +691,6 @@ private fun SourceRefreshButton(
                 shape = SourceChipShape,
             )
             .clickable(enabled = !searching) {
-                onInteraction()
                 onClick()
             },
         contentAlignment = Alignment.Center,
@@ -719,6 +741,7 @@ private data class SourceChip(
     val id: String,
     val label: String,
     val selected: Boolean,
+    val loading: Boolean,
     val requester: FocusRequester,
     val action: () -> Unit,
 )
@@ -727,11 +750,13 @@ private data class SourceChip(
 private fun SourceFilterChip(
     label: String,
     selected: Boolean,
+    loading: Boolean,
     requester: FocusRequester,
     leftRequester: FocusRequester?,
     rightRequester: FocusRequester?,
     downRequester: FocusRequester?,
     onInteraction: () -> Unit,
+    onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
@@ -742,6 +767,10 @@ private fun SourceFilterChip(
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
+                if (it.isFocused) {
+                    onInteraction()
+                    onFocused()
+                }
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -766,8 +795,7 @@ private fun SourceFilterChip(
             }
             .background(
                 color = when {
-                    focused -> TvDesign.White.copy(alpha = .18f)
-                    selected -> TvDesign.Accent.copy(alpha = .14f)
+                    focused || selected -> TvDesign.White
                     else -> TvDesign.Surface.copy(alpha = .74f)
                 },
                 shape = SourceChipShape,
@@ -775,8 +803,7 @@ private fun SourceFilterChip(
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
-                    focused -> TvDesign.White.copy(alpha = .92f)
-                    selected -> TvDesign.Accent.copy(alpha = .46f)
+                    focused || selected -> TvDesign.White
                     else -> TvDesign.White.copy(alpha = .10f)
                 },
                 shape = SourceChipShape,
@@ -788,18 +815,28 @@ private fun SourceFilterChip(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = when {
-                focused -> TvDesign.White
-                selected -> TvDesign.Accent
-                else -> TvDesign.White.copy(alpha = .72f)
-            },
-            fontSize = 11.sp,
-            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.width(12.dp).height(12.dp),
+                    color = if (focused || selected) TvDesign.Black.copy(alpha = .62f)
+                    else TvDesign.White.copy(alpha = .58f),
+                    strokeWidth = 1.5.dp,
+                )
+            }
+            Text(
+                text = label,
+                color = if (focused || selected) TvDesign.Black.copy(alpha = .78f)
+                else TvDesign.White.copy(alpha = .72f),
+                fontSize = 11.sp,
+                fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -844,11 +881,14 @@ private fun SourceList(
         ) { index, source ->
             SourceCard(
                 source = source,
+                mediaName = state.media.name,
+                releaseInfo = state.media.releaseInfo,
+                episode = state.episode,
+                runtimeMinutes = state.media.runtimeMinutes,
                 originalLanguage = state.media.originalLanguage,
                 preferredQuality = state.preferredQuality,
                 showTechnicalDetails = state.showTechnicalDetails,
                 showEngineDetails = state.showEngineDetails,
-                recommended = sourceStableKey(source) == state.recommendedSourceKey,
                 requester = sourceRequester(source),
                 onFocused = {
                     onInteraction()
@@ -869,11 +909,14 @@ private fun SourceList(
 @Composable
 private fun SourceCard(
     source: StreamSource,
+    mediaName: String,
+    releaseInfo: String?,
+    episode: EpisodeItem?,
+    runtimeMinutes: Int?,
     originalLanguage: String?,
     preferredQuality: String?,
     showTechnicalDetails: Boolean,
     showEngineDetails: Boolean,
-    recommended: Boolean,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onUpFromFirst: (() -> Unit)?,
@@ -887,7 +930,40 @@ private fun SourceCard(
             originalLanguage = originalLanguage,
         )
     }
-    val metadata = remember(source, assessment) { sourceMetadataLine(source, assessment) }
+    val providerName = remember(source) {
+        sourceProviderDisplayName(sourceProviderKey(source))
+    }
+    val serverName = remember(source) {
+        sourceServerDisplayName(source) ?: sourceTitleDisplayName(source)
+    }
+    val mediaLabel = remember(mediaName, releaseInfo, episode) {
+        buildString {
+            append(mediaName.uppercase())
+            releaseInfo?.trim()?.takeIf(String::isNotBlank)?.let { year ->
+                append(" (")
+                append(year)
+                append(")")
+            }
+            episode?.let {
+                append(" S")
+                append(it.season.toString().padStart(2, '0'))
+                append("E")
+                append(it.episode.toString().padStart(2, '0'))
+            }
+        }
+    }
+    val qualityLabel = remember(source, assessment) {
+        source.quality
+            ?.trim()
+            ?.takeIf {
+                it.isNotBlank() &&
+                    !it.equals("Unknown", ignoreCase = true) &&
+                    !it.equals("Other", ignoreCase = true)
+            }
+            ?: assessment.quality.label.takeUnless {
+                it.equals("Unknown", ignoreCase = true)
+            }
+    }
 
     Row(
         modifier = Modifier
@@ -927,52 +1003,60 @@ private fun SourceCard(
                 shape = SourceCardShape,
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
+            .padding(horizontal = 18.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = sourceProviderDisplayName(sourceProviderKey(source)),
-                    color = TvDesign.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (recommended) {
-                    Spacer(Modifier.width(9.dp))
-                    SourceBadge(
-                        text = "RECOMMENDED",
-                        focused = focused,
-                        accent = true,
-                    )
-                }
-            }
+            Text(
+                text = providerName,
+                color = TvDesign.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
 
-            if (metadata.isNotBlank()) {
+            serverName?.let { server ->
                 Text(
-                    text = metadata,
-                    color = if (focused) TvDesign.White.copy(alpha = .78f) else TvDesign.Muted,
-                    fontSize = 10.sp,
+                    text = server,
+                    color = if (focused) TvDesign.White.copy(alpha = .86f) else TvDesign.Muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
                     lineHeight = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            val sourceTitle = sourceTitleDisplayName(source)
-            if (sourceTitle != null) {
+            Text(
+                text = mediaLabel,
+                color = if (focused) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            runtimeMinutes?.takeIf { it > 0 }?.let { minutes ->
                 Text(
-                    text = sourceTitle,
+                    text = "$minutes minutes",
                     color = TvDesign.Dim,
                     fontSize = 10.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            qualityLabel?.let { quality ->
+                Text(
+                    text = quality,
+                    color = if (focused) TvDesign.White.copy(alpha = .76f) else TvDesign.Dim,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
                 )
             }
 
@@ -991,63 +1075,39 @@ private fun SourceCard(
         }
 
         Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            val qualityBadge =
-                source.quality
-                    ?.trim()
-                    ?.takeIf {
-                        it.isNotBlank() &&
-                            !it.equals("Unknown", ignoreCase = true) &&
-                            !it.equals("Other", ignoreCase = true)
-                    }
-                    ?: assessment.quality.label
-                        .takeUnless { it.equals("Unknown", ignoreCase = true) }
-
-            qualityBadge?.let { label ->
-                SourceBadge(
-                    text = label,
-                    focused = focused,
-                )
-            }
-            source.sizeBytes?.takeIf { it > 0L }?.let { bytes ->
+            Box(
+                modifier = Modifier
+                    .width(34.dp)
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(TvDesign.Black.copy(alpha = .30f))
+                    .border(
+                        1.dp,
+                        TvDesign.White.copy(alpha = if (focused) .34f else .16f),
+                        RoundedCornerShape(17.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    text = formatSourceBytes(bytes),
-                    color = TvDesign.Dim,
-                    fontSize = 9.sp,
+                    text = providerName.firstOrNull()?.uppercase() ?: "?",
+                    color = TvDesign.White.copy(alpha = .88f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun SourceBadge(
-    text: String,
-    focused: Boolean,
-    accent: Boolean = false,
-) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                when {
-                    accent -> TvDesign.Accent.copy(alpha = .15f)
-                    focused -> TvDesign.White.copy(alpha = .12f)
-                    else -> TvDesign.Black.copy(alpha = .24f)
-                }
+            Text(
+                text = providerName,
+                color = TvDesign.Dim,
+                fontSize = 8.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(64.dp),
+                textAlign = TextAlign.Center,
             )
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    ) {
-        Text(
-            text = text,
-            color = if (accent) TvDesign.Accent else if (focused) TvDesign.White else TvDesign.Muted,
-            fontSize = if (accent) 8.sp else 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = if (accent) .5.sp else 0.sp,
-            maxLines = 1,
-        )
+        }
     }
 }
 
