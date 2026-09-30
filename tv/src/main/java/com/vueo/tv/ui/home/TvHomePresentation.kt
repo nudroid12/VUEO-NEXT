@@ -45,7 +45,7 @@ internal fun TvHomePresentation(
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val targetRowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
-        pill = if (navigationVisible) 0.34f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
+        pill = if (navigationVisible) 0.32f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
     )
     val rowsViewportFraction by animateFloatAsState(
         targetValue = targetRowsViewportFraction,
