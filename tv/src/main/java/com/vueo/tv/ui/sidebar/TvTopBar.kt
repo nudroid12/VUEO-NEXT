@@ -21,8 +21,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -196,7 +196,7 @@ fun TvSidebar(
                 .fillMaxHeight()
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .padding(top = 18.dp)
-                .fillMaxWidth(1f / 3f)
+                .fillMaxWidth(0.40f)
                 .height(40.dp)
                 .clip(pillShape)
                 .background(panelBrush)
