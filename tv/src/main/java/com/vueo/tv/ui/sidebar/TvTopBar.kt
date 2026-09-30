@@ -306,7 +306,6 @@ fun TvSidebar(
             Box(modifier = panelModifier, content = navigationContent)
         }
         }
-    }
 }
 
 private fun sidebarPanelBrush(
