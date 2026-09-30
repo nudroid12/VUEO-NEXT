@@ -1,11 +1,9 @@
 package com.vueo.tv
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -17,12 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -33,6 +27,7 @@ import com.vueo.tv.core.TvSourceBundle
 import com.vueo.tv.core.TvSourceDiscoverySnapshot
 import com.vueo.tv.detail.TvDetailScreen
 import com.vueo.tv.home.TvHomeScreen
+import com.vueo.tv.home.rememberTvHomeRetainedState
 import com.vueo.tv.library.TvLibraryScreen
 import com.vueo.tv.player.TvPlayerScreen
 import com.vueo.tv.profile.TvProfilePickerScreen
@@ -44,16 +39,18 @@ import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.tvPlayerFadeThrough
+import com.vueo.tv.ui.motion.tvImmediateCut
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdatePrompt
 import com.vueo.tv.update.TvUpdateRelease
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class TvRoute {
-    STARTUP,
     HOME,
     SEARCH,
     LIBRARY,
@@ -70,8 +67,17 @@ private enum class TvRoute {
 fun VueoTvApp(onExit: () -> Unit = {}) {
     val context = LocalContext.current
     val runtime = remember { TvRuntime(context.applicationContext) }
+    val homeRetainedState = rememberTvHomeRetainedState(runtime)
 
-    var route by remember { mutableStateOf(TvRoute.STARTUP) }
+    var route by remember(runtime) {
+        mutableStateOf(
+            if (runtime.profileStore.shouldShowPickerOnStartup()) {
+                TvRoute.PROFILE
+            } else {
+                TvRoute.HOME
+            }
+        )
+    }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
     var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
@@ -106,13 +112,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
         // Resolve the first destination using local state only. Network addon
         // manifests must never keep the TV app parked on its startup artwork.
-        runtime.boot()
-        route =
-            if (runtime.profileStore.shouldShowPickerOnStartup()) {
-                TvRoute.PROFILE
-            } else {
-                TvRoute.HOME
-            }
+        withContext(Dispatchers.IO) { runtime.boot() }
         profileReturnRoute = TvRoute.HOME
 
         // Cache first, then prepare addons. Home can render the restored rows as
@@ -329,7 +329,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             AnimatedContent(
                 targetState = route,
                 transitionSpec = {
-                    if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
+                    if (targetState == TvRoute.HOME) {
+                        tvImmediateCut()
+                    } else if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
                         tvPlayerFadeThrough()
                     } else {
                         tvScreenFadeThrough()
@@ -338,20 +340,10 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 label = "vueoRootRoute",
             ) { displayedRoute ->
                 when (displayedRoute) {
-                TvRoute.STARTUP -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Image(
-                            painter = painterResource(R.drawable.vueo_tv_logo),
-                            contentDescription = "VUEO",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.width(320.dp),
-                        )
-                    }
-                }
-
                 TvRoute.HOME -> {
                     TvHomeScreen(
                         runtime = runtime,
+                        retainedState = homeRetainedState,
                         refreshToken = refreshToken,
                         onNavigate = ::navigate,
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },

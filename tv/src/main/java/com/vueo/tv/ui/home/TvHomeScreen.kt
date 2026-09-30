@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -21,6 +22,27 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.TvSidebar
 
+class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
+    var catalogRows by mutableStateOf(runtime.cachedHomeRows())
+        internal set
+    var loading by mutableStateOf(catalogRows.isEmpty())
+        internal set
+    var error by mutableStateOf<String?>(null)
+        internal set
+    var libraryRevision by mutableIntStateOf(0)
+        internal set
+
+    internal var loadedRefreshToken = Int.MIN_VALUE
+    internal var presentationRefreshToken = Int.MIN_VALUE
+    internal var presentationLibraryRevision = Int.MIN_VALUE
+    internal var presentationCatalogRows: List<CatalogRow>? = null
+    internal var presentationRows: List<TvHomeRow> = emptyList()
+}
+
+@Composable
+fun rememberTvHomeRetainedState(runtime: TvRuntime): TvHomeRetainedState =
+    remember(runtime) { TvHomeRetainedState(runtime) }
+
 /**
  * Home's VUEO boundary.
  *
@@ -31,6 +53,7 @@ import com.vueo.tv.ui.TvSidebar
 @Composable
 fun TvHomeScreen(
     runtime: TvRuntime,
+    retainedState: TvHomeRetainedState,
     refreshToken: Int,
     onNavigate: (String) -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
@@ -38,55 +61,54 @@ fun TvHomeScreen(
     onProfile: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var catalogRows by remember { mutableStateOf(runtime.cachedHomeRows()) }
-    var loading by remember { mutableStateOf(catalogRows.isEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val catalogRows = retainedState.catalogRows
+    val loading = retainedState.loading
+    val error = retainedState.error
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
-    var libraryRevision by remember { mutableStateOf(0) }
+    val libraryRevision = retainedState.libraryRevision
 
     LaunchedEffect(runtime, refreshToken) {
-        loading = catalogRows.isEmpty()
-        error = null
+        if (retainedState.loadedRefreshToken != refreshToken) {
+            retainedState.loading = retainedState.catalogRows.isEmpty()
+            retainedState.error = null
 
-        runCatching { runtime.homeRows(forceRefresh = false) }
-            .onSuccess { rows -> if (rows.isNotEmpty()) catalogRows = rows }
-            .onFailure { failure ->
-                if (catalogRows.isEmpty()) error = failure.message ?: "Unable to load Home"
-            }
+            runCatching { runtime.homeRows(forceRefresh = false) }
+                .onSuccess { rows ->
+                    if (rows.isNotEmpty()) retainedState.catalogRows = rows
+                }
+                .onFailure { failure ->
+                    if (retainedState.catalogRows.isEmpty()) {
+                        retainedState.error = failure.message ?: "Unable to load Home"
+                    }
+                }
 
-        loading = catalogRows.isEmpty() && !runtime.isHomeCatalogRuntimeReady()
+            retainedState.loading =
+                retainedState.catalogRows.isEmpty() && !runtime.isHomeCatalogRuntimeReady()
+            retainedState.loadedRefreshToken = refreshToken
+        }
     }
 
-    val continueWatching = remember(refreshToken, libraryRevision) {
-        runtime.libraryStore.continueWatching().take(12)
-    }
-    val watchHistory = remember(refreshToken, libraryRevision) {
-        runtime.libraryStore.history()
-    }
-    val activeProfileId = remember(refreshToken) {
-        runtime.profileStore.activeProfileId()
-    }
-    val personalizedHomeEnabled = remember(refreshToken, activeProfileId) {
-        runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-    }
-    val homeRecommendations = remember(
-        catalogRows,
-        watchHistory,
-        activeProfileId,
-        personalizedHomeEnabled,
-        refreshToken,
-    ) {
-        HomeRecommendationPolicy.build(
+    val presentationIsCurrent =
+        retainedState.presentationRefreshToken == refreshToken &&
+            retainedState.presentationLibraryRevision == libraryRevision &&
+            retainedState.presentationCatalogRows === catalogRows
+
+    val rows = if (presentationIsCurrent) {
+        retainedState.presentationRows
+    } else {
+        val continueWatching = runtime.libraryStore.continueWatching().take(12)
+        val watchHistory = runtime.libraryStore.history()
+        val activeProfileId = runtime.profileStore.activeProfileId()
+        val personalizedHomeEnabled =
+            runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
+        val homeRecommendations = HomeRecommendationPolicy.build(
             catalogRows = catalogRows,
             watchHistory = watchHistory,
             dnaEngine = runtime.dnaEngine,
             personalizationEnabled = personalizedHomeEnabled,
             limit = 12,
         )
-    }
-
-    val rows = remember(catalogRows, continueWatching, homeRecommendations) {
-        buildList {
+        val rebuiltRows = buildList {
             if (continueWatching.isNotEmpty()) {
                 add(
                     TvHomeRow(
@@ -155,6 +177,11 @@ fun TvHomeScreen(
                 }
             }
         }
+        retainedState.presentationRows = rebuiltRows
+        retainedState.presentationRefreshToken = refreshToken
+        retainedState.presentationLibraryRevision = libraryRevision
+        retainedState.presentationCatalogRows = catalogRows
+        rebuiltRows
     }
 
     val contentFocusRequester = remember { FocusRequester() }
@@ -216,7 +243,7 @@ fun TvHomeScreen(
             libraryStore = runtime.libraryStore,
             continueEntry = (entry as? TvHomeEntry.Resume)?.playback,
             onOpenDetails = { onOpenMedia(entry.media) },
-            onChanged = { libraryRevision += 1 },
+            onChanged = { retainedState.libraryRevision += 1 },
             onDismiss = { actionEntry = null },
         )
     }
