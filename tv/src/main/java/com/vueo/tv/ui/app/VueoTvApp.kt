@@ -251,9 +251,16 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
         sourceDiscoveryGeneration += 1
         val generation = sourceDiscoveryGeneration
+        val previousKey = sourceDiscoveryKey
+        val previousSnapshot = sourceDiscoverySnapshot
         sourceDiscoveryJob?.cancel()
         sourceDiscoveryKey = key
-        sourceDiscoverySnapshot = null
+        sourceDiscoverySnapshot = previousSnapshot
+            ?.takeIf { effectiveForce && previousKey == key }
+            ?.copy(
+                searching = true,
+                progress = "Refreshing sources…",
+            )
         sourceDiscoveryError = null
         sourceBundle = null
         selectedSource = null

@@ -72,6 +72,24 @@ class SourceDiscoveryEngine(
             .map(::providerKey)
             .distinct()
             .toList()
+        val loadingProviders = linkedSetOf<String>()
+
+        fun markProviderLoading(provider: String) {
+            val key = provider.trim().ifBlank { "Other" }
+            synchronized(loadingProviders) {
+                loadingProviders += key
+            }
+        }
+
+        fun markProviderComplete(provider: String) {
+            val key = provider.trim().ifBlank { "Other" }
+            synchronized(loadingProviders) {
+                loadingProviders -= key
+            }
+        }
+
+        fun loadingProviderSnapshot(): List<String> =
+            synchronized(loadingProviders) { loadingProviders.toList() }
 
         fun elapsedMs(): Long =
             (System.nanoTime() - startedAtNs) / 1_000_000L
@@ -93,6 +111,13 @@ class SourceDiscoveryEngine(
         }
 
         fun recordAddonActivity(event: AddonRequestActivity) {
+            if (event.resource == "sources") {
+                if (event.phase == "started") {
+                    markProviderLoading(event.providerName)
+                } else {
+                    markProviderComplete(event.providerName)
+                }
+            }
             val category = if (event.resource == "subtitles") "subtitles" else "requests"
             val level = when (event.phase) {
                 "timeout", "failed" -> "error"
@@ -182,6 +207,7 @@ class SourceDiscoveryEngine(
                     fromCache = cachedStreams.isNotEmpty(),
                     subtitlesResolved = subtitlesResolved,
                     activityLog = activityLog.toList(),
+                    loadingProviders = loadingProviderSnapshot(),
                 )
             )
         }
@@ -291,6 +317,9 @@ class SourceDiscoveryEngine(
         }
 
         val pluginsDeferred = async {
+            val configuredPluginProviders = configuredPluginProviderKeys(request)
+            configuredPluginProviders.forEach(::markProviderLoading)
+            pluginTotal = configuredPluginProviders.size
             activity(
                 "requests",
                 message = buildString {
@@ -305,7 +334,7 @@ class SourceDiscoveryEngine(
             )
             publish(latestProgress)
             var loggedPluginDiagnostics = 0
-            discoverPlugins(
+            val result = discoverPlugins(
                 request = request,
                 onSkipped = { skippedNotice ->
                     notice = skippedNotice
@@ -324,6 +353,12 @@ class SourceDiscoveryEngine(
                     pluginRawCount = progressResult.streams.size
                     pluginCompleted = completed
                     pluginTotal = total
+                    progressResult.diagnostics
+                        .forEach { diagnostic ->
+                            markProviderComplete(
+                                "${diagnostic.repositoryName} / ${diagnostic.providerName}"
+                            )
+                        }
                     progressResult.diagnostics
                         .drop(loggedPluginDiagnostics)
                         .forEach { diagnostic ->
@@ -359,6 +394,17 @@ class SourceDiscoveryEngine(
                 },
                 forceRefresh = request.forceRefresh,
             )
+            configuredPluginProviders.forEach(::markProviderComplete)
+            publish(
+                progressLabel(
+                    addonCompleted = addonCompleted,
+                    addonTotal = addonTotal,
+                    pluginCompleted = pluginCompleted,
+                    pluginTotal = pluginTotal,
+                    found = cleanFresh().size,
+                )
+            )
+            result
         }
 
         freshAddonStreams = addonsDeferred.await()
@@ -373,6 +419,7 @@ class SourceDiscoveryEngine(
         val freshFinal = cleanFresh()
         val finalStreams = freshFinal.ifEmpty { cachedStreams }
         searching = false
+        synchronized(loadingProviders) { loadingProviders.clear() }
         recordProviders(finalStreams)
 
         val rawCount = maxOf(
@@ -428,6 +475,7 @@ class SourceDiscoveryEngine(
                 fromCache = cachedStreams.isNotEmpty(),
                 subtitlesResolved = subtitlesResolved,
                 activityLog = activityLog.toList(),
+                loadingProviders = emptyList(),
             )
         )
 
@@ -448,6 +496,7 @@ class SourceDiscoveryEngine(
                 fromCache = cachedStreams.isNotEmpty(),
                 subtitlesResolved = true,
                 activityLog = activityLog.toList(),
+                loadingProviders = emptyList(),
             )
         )
         finalBundle
@@ -522,6 +571,27 @@ class SourceDiscoveryEngine(
             "${result.timeoutProviders} timeout • " +
             "${result.failedProviders} failed."
 
+    private fun configuredPluginProviderKeys(
+        request: SourceDiscoveryRequest,
+    ): List<String> {
+        if (!pluginStore.pluginsEnabled()) return emptyList()
+        val mediaType = MediaTypePolicy.pluginType(request.item.type).lowercase()
+        return pluginStore.repositories()
+            .asSequence()
+            .filter(pluginStore::isRepositoryEnabled)
+            .flatMap { repository ->
+                repository.providers.asSequence()
+                    .filter { provider ->
+                        pluginStore.isProviderEnabled(repository, provider) &&
+                            (provider.supportedTypes.isEmpty() || mediaType in provider.supportedTypes) &&
+                            "android" !in provider.disabledPlatforms
+                    }
+                    .map { provider -> "${repository.name} / ${provider.name}" }
+            }
+            .distinct()
+            .toList()
+    }
+
     private fun progressLabel(
         addonCompleted: Int,
         addonTotal: Int,
@@ -559,6 +629,7 @@ data class SourceDiscoverySnapshot(
     val fromCache: Boolean,
     val subtitlesResolved: Boolean,
     val activityLog: List<SourceDiscoveryActivity> = emptyList(),
+    val loadingProviders: List<String> = emptyList(),
 )
 
 data class SourceDiscoveryActivity(

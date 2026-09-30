@@ -48,6 +48,7 @@ fun TvSourceScreen(
     val notice = discovery?.notice
     val firstResultMs = discovery?.firstResultMs
     val providerOrder = discovery?.providerOrder.orEmpty()
+    val loadingProviders = discovery?.loadingProviders.orEmpty().toSet()
     val fromCache = discovery?.fromCache ?: false
     val error = discoveryError
     var selectedProvider by remember(memoryKey) {
@@ -77,20 +78,20 @@ fun TvSourceScreen(
             .distinct()
             .toList()
     }
-    val visibleProviders = remember(providerOrder, currentProviders) {
-        (providerOrder.filter { it in currentProviders } +
-            currentProviders.filter { it !in providerOrder })
+    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders) {
+        (providerOrder.filter { it in currentProviders || it in loadingProviders } +
+            loadingProviders.filter { it !in providerOrder } +
+            currentProviders.filter { it !in providerOrder && it !in loadingProviders })
             .distinct()
     }
     val providerLogos = remember(runtime, currentProviders) {
         buildProviderLogoLookup(runtime)
     }
 
-    LaunchedEffect(visibleProviders, searching) {
+    LaunchedEffect(visibleProviders) {
         if (
             selectedProvider != SOURCE_PROVIDER_ALL &&
-            selectedProvider !in visibleProviders &&
-            (visibleProviders.isNotEmpty() || !searching)
+            selectedProvider !in visibleProviders
         ) {
             selectedProvider = SOURCE_PROVIDER_ALL
             memory.selectedProvider = SOURCE_PROVIDER_ALL
@@ -117,6 +118,7 @@ fun TvSourceScreen(
             rankedSources = rankedSources,
             filteredSources = filteredSources,
             visibleProviders = visibleProviders,
+            loadingProviders = loadingProviders,
             providerLogos = providerLogos,
             selectedProvider = selectedProvider,
             preferredQuality = preferredQuality,

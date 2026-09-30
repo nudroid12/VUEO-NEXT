@@ -399,7 +399,8 @@ private fun SourceDetailsButton(
 
 @Composable
 private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
-    if (state.searching) {
+    val discoveryActive = state.searching || state.loadingProviders.isNotEmpty()
+    if (discoveryActive) {
         LinearProgressIndicator(
             modifier = Modifier
                 .fillMaxWidth(.76f)
@@ -413,13 +414,13 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
 
     Text(
         text = when {
-            state.searching && state.rankedSources.isEmpty() -> state.progress
-            state.searching -> "${state.rankedSources.size} playable • still checking providers"
+            discoveryActive && state.rankedSources.isEmpty() -> state.progress
+            discoveryActive -> "${state.rankedSources.size} playable • still checking providers"
             state.rankedSources.isNotEmpty() ->
                 "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
             else -> "No playable sources"
         },
-        color = if (state.searching) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
+        color = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
         fontSize = 11.sp,
         lineHeight = 16.sp,
         maxLines = 2,
@@ -471,6 +472,10 @@ private fun SourceResultsSection(
     onPlay: (StreamSource) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val discoveryActive = state.searching || state.loadingProviders.isNotEmpty()
+    val selectedProviderLoading =
+        state.selectedProvider != SOURCE_PROVIDER_ALL &&
+            state.selectedProvider in state.loadingProviders
     Column(
         modifier = modifier.padding(
             top = SourceRightTopPadding,
@@ -489,7 +494,7 @@ private fun SourceResultsSection(
             onRefresh = onRefresh,
         )
 
-        if (state.searching) {
+        if (discoveryActive) {
             SourceLoadingStatus(state.progress)
             Spacer(Modifier.height(8.dp))
         } else {
@@ -514,11 +519,11 @@ private fun SourceResultsSection(
                     )
                 }
 
-                state.searching && state.rankedSources.isEmpty() -> {
+                discoveryActive && state.rankedSources.isEmpty() -> {
                     SourceSkeletonList()
                 }
 
-                !state.searching && state.rankedSources.isEmpty() -> {
+                !discoveryActive && state.rankedSources.isEmpty() -> {
                     SourceMessageState(
                         title = "No playable sources",
                         message = if (state.bundle?.sources.orEmpty().isEmpty()) {
@@ -530,6 +535,10 @@ private fun SourceResultsSection(
                         actionRequester = retryRequester,
                         onAction = onRefresh,
                     )
+                }
+
+                selectedProviderLoading && state.filteredSources.isEmpty() -> {
+                    SourceSkeletonList()
                 }
 
                 state.filteredSources.isEmpty() -> {
@@ -567,13 +576,15 @@ private fun SourceFilterRow(
     onSelectProvider: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val discoveryActive = state.searching || state.loadingProviders.isNotEmpty()
     val chips = buildList {
-        if (state.rankedSources.isNotEmpty()) {
+        if (state.rankedSources.isNotEmpty() || state.visibleProviders.isNotEmpty()) {
             add(
                 SourceChip(
                     id = SOURCE_PROVIDER_ALL,
                     label = "All",
                     selected = state.selectedProvider == SOURCE_PROVIDER_ALL,
+                    loading = discoveryActive,
                     requester = allRequester,
                     action = { onSelectProvider(SOURCE_PROVIDER_ALL) },
                 )
@@ -584,6 +595,7 @@ private fun SourceFilterRow(
                         id = provider,
                         label = sourceProviderDisplayName(provider),
                         selected = state.selectedProvider == provider,
+                        loading = provider in state.loadingProviders,
                         requester = providerRequester(provider),
                         action = { onSelectProvider(provider) },
                     )
@@ -599,7 +611,7 @@ private fun SourceFilterRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SourceRefreshButton(
-            searching = state.searching,
+            searching = discoveryActive,
             requester = refreshRequester,
             rightRequester = chips.firstOrNull()?.requester,
             downRequester = firstSourceRequester,
@@ -616,6 +628,7 @@ private fun SourceFilterRow(
                 SourceFilterChip(
                     label = chip.label,
                     selected = chip.selected,
+                    loading = chip.loading,
                     requester = chip.requester,
                     leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
                     rightRequester = chips.getOrNull(index + 1)?.requester,
@@ -735,6 +748,7 @@ private data class SourceChip(
     val id: String,
     val label: String,
     val selected: Boolean,
+    val loading: Boolean,
     val requester: FocusRequester,
     val action: () -> Unit,
 )
@@ -743,6 +757,7 @@ private data class SourceChip(
 private fun SourceFilterChip(
     label: String,
     selected: Boolean,
+    loading: Boolean,
     requester: FocusRequester,
     leftRequester: FocusRequester?,
     rightRequester: FocusRequester?,
@@ -753,7 +768,7 @@ private fun SourceFilterChip(
 ) {
     var focused by remember(label) { mutableStateOf(false) }
 
-    Box(
+    Row(
         modifier = Modifier
             .height(34.dp)
             .focusRequester(requester)
@@ -805,8 +820,17 @@ private fun SourceFilterChip(
                 onClick()
             }
             .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.width(11.dp).height(11.dp),
+                color = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
+                else TvDesign.Accent,
+                strokeWidth = 1.4.dp,
+            )
+        }
         Text(
             text = label,
             color = if (focused || selected) TvDesign.Black.copy(alpha = .78f)

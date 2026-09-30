@@ -1379,17 +1379,23 @@ class UnifiedMediaEngine {
 
         var completed = 0
 
+        // Announce the complete provider set before any request starts. TV can
+        // therefore render every provider tab immediately instead of waiting
+        // for the first provider response to reveal that the provider exists.
+        providers.forEach { extension ->
+            onActivity(
+                AddonRequestActivity(
+                    providerName = extension.descriptor.name,
+                    resource = "sources",
+                    phase = "started",
+                )
+            )
+        }
+
         providers.map { extension ->
             async {
                 val providerName = extension.descriptor.name
                 val startedAtNs = System.nanoTime()
-                onActivity(
-                    AddonRequestActivity(
-                        providerName = providerName,
-                        resource = "sources",
-                        phase = "started",
-                    )
-                )
                 var phase = "completed"
                 var errorType: String? = null
                 val result = try {
@@ -1411,18 +1417,6 @@ class UnifiedMediaEngine {
                     errorType = error::class.java.simpleName
                     emptyList()
                 }
-                onActivity(
-                    AddonRequestActivity(
-                        providerName = providerName,
-                        resource = "sources",
-                        phase = phase,
-                        resultCount = result.size,
-                        elapsedMs =
-                            (System.nanoTime() - startedAtNs) / 1_000_000L,
-                        errorType = errorType,
-                    )
-                )
-
                 val progress =
                     mutex.withLock {
                         rawStreams += result
@@ -1443,6 +1437,20 @@ class UnifiedMediaEngine {
                     }
 
                 onProgress(progress)
+                // Publish the merged result before marking this provider done.
+                // A successful provider therefore changes directly from
+                // loading -> populated without its tab flickering away.
+                onActivity(
+                    AddonRequestActivity(
+                        providerName = providerName,
+                        resource = "sources",
+                        phase = phase,
+                        resultCount = result.size,
+                        elapsedMs =
+                            (System.nanoTime() - startedAtNs) / 1_000_000L,
+                        errorType = errorType,
+                    )
+                )
             }
         }.awaitAll()
 
