@@ -1,14 +1,21 @@
 package com.vueo.tv.ui
 
 import android.view.KeyEvent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +36,7 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,14 +93,14 @@ private fun sidebarMetrics(style: TvSidebarStyle): SidebarMetrics = when (style)
     )
 
     TvSidebarStyle.PILL_ICONS -> SidebarMetrics(
-        collapsedWidth = 620.dp,
-        expandedWidth = 620.dp,
-        collapsedItemWidth = 138.dp,
-        expandedItemWidth = 138.dp,
-        iconColumnWidth = 138.dp,
+        collapsedWidth = 520.dp,
+        expandedWidth = 520.dp,
+        collapsedItemWidth = 112.dp,
+        expandedItemWidth = 112.dp,
+        iconColumnWidth = 112.dp,
         iconSize = 24.dp,
-        itemHeight = 46.dp,
-        itemSpacing = 8.dp,
+        itemHeight = 38.dp,
+        itemSpacing = 4.dp,
         expandedStartPadding = 0.dp,
     )
 }
@@ -122,6 +130,12 @@ fun TvSidebar(
     val context = LocalContext.current
     val sidebarStyle = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     val metrics = sidebarMetrics(sidebarStyle)
+
+    LaunchedEffect(sidebarStyle, expanded, selected) {
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && expanded) {
+            request(navRequesters.getValue(selected))
+        }
+    }
 
     val width by animateDpAsState(
         targetValue = if (expanded) metrics.expandedWidth else metrics.collapsedWidth,
@@ -162,29 +176,39 @@ fun TvSidebar(
     }
 
     Box(modifier = containerModifier) {
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && !expanded) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .size(1.dp)
+                    .focusRequester(navRequesters.getValue(selected))
+                    .onFocusChanged { if (it.isFocused) onFocused() }
+                    .focusable(),
+            )
+        }
+
         val pillShape = RoundedCornerShape(28.dp)
         val panelModifier = when (sidebarStyle) {
             TvSidebarStyle.CLASSIC -> Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
             TvSidebarStyle.PILL_ICONS -> Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 24.dp)
+                .padding(top = 18.dp)
                 .width(width)
-                .height(58.dp)
+                .height(48.dp)
                 .clip(pillShape)
                 .background(panelBrush)
                 .border(1.dp, TvDesign.White.copy(alpha = .11f), pillShape)
                 .clipToBounds()
         }
 
-        Box(modifier = panelModifier) {
-        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
-            Row(
+        val navigationContent: @Composable BoxScope.() -> Unit = {
+            if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
+                Row(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
+                    .padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(
                     metrics.itemSpacing,
                     Alignment.CenterHorizontally,
@@ -222,10 +246,10 @@ fun TvSidebar(
                     )
                 }
             }
-        } else {
-            Column(
-                modifier = Modifier
-                .align(Alignment.CenterStart)
+            } else {
+                Column(
+                    modifier = Modifier
+                    .align(Alignment.CenterStart)
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(metrics.itemSpacing),
             ) {
@@ -260,6 +284,26 @@ fun TvSidebar(
                     )
                 }
             }
+        }
+        }
+
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
+            AnimatedVisibility(
+                visible = expanded,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = slideInVertically(
+                    animationSpec = tween(durationMillis = 180, easing = TvMotion.EaseOut),
+                    initialOffsetY = { -it },
+                ) + fadeIn(animationSpec = tween(140)),
+                exit = slideOutVertically(
+                    animationSpec = tween(durationMillis = 140, easing = TvMotion.EaseInOut),
+                    targetOffsetY = { -it },
+                ) + fadeOut(animationSpec = tween(100)),
+            ) {
+                Box(modifier = panelModifier, content = navigationContent)
+            }
+        } else {
+            Box(modifier = panelModifier, content = navigationContent)
         }
         }
     }
@@ -320,7 +364,7 @@ private fun SidebarNavigationItem(
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = sidebarItemBrush(style, expanded, selected, focused)
-    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) RoundedCornerShape(22.dp) else RoundedCornerShape(14.dp)
+    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) RoundedCornerShape(19.dp) else RoundedCornerShape(14.dp)
 
     Row(
         modifier = Modifier
@@ -379,7 +423,7 @@ private fun SidebarNavigationItem(
                 Text(
                     text = label,
                     color = if (selected) TvDesign.Black else TvDesign.White.copy(alpha = if (focused) 1f else .72f),
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
