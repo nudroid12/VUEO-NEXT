@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
+import com.vueo.tv.ui.tvSidebarIsPillMode
 import kotlinx.coroutines.delay
 
 @Composable
@@ -43,6 +44,8 @@ internal fun TvHomePresentation(
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    val floatingPillMode = tvSidebarIsPillMode()
+    val showContinueWatchingPreview = floatingPillMode && navigationVisible
     val targetRowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
         pill = if (navigationVisible) 0.32f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
@@ -95,6 +98,7 @@ internal fun TvHomePresentation(
                 TvModernHomeRows(
                     rows = rows,
                     rowsViewportHeight = rowsViewportHeight,
+                    showContinueWatchingPreview = showContinueWatchingPreview,
                     contentFocusRequester = contentFocusRequester,
                     onContentFocused = onContentFocused,
                     onFocused = { row, index, entry ->

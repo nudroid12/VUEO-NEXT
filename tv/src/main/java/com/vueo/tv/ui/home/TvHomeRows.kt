@@ -77,6 +77,7 @@ private const val FocusedCardScale = 1.022f
 internal fun TvModernHomeRows(
     rows: List<TvHomeRow>,
     rowsViewportHeight: Dp,
+    showContinueWatchingPreview: Boolean,
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
@@ -89,6 +90,7 @@ internal fun TvModernHomeRows(
     val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
         ?.takeIf { saved -> rows.any { it.key == saved } }
         ?: rows.firstOrNull()?.key
+    var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
 
     val density = LocalDensity.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
@@ -113,11 +115,30 @@ internal fun TvModernHomeRows(
         }
     }
 
-    LaunchedEffect(rows) {
+    LaunchedEffect(rows, showContinueWatchingPreview) {
+        if (showContinueWatchingPreview) return@LaunchedEffect
         val rowIndex = rows.indexOfFirst { it.key == initialActiveRowKey }.coerceAtLeast(0)
         if (rowIndex > 0) verticalState.scrollToItem(rowIndex, 0)
         delay(90)
         runCatching { contentFocusRequester.requestFocus() }
+    }
+
+    LaunchedEffect(showContinueWatchingPreview, rows) {
+        if (showContinueWatchingPreview) {
+            if (previewReturnRowKey == null) {
+                previewReturnRowKey = TvHomeFocusMemory.activeRowKey
+            }
+            val continueWatchingIndex =
+                rows.indexOfFirst { it.key == "continue-watching" }
+                    .takeIf { it >= 0 }
+                    ?: 0
+            verticalState.scrollToItem(continueWatchingIndex, 0)
+        } else {
+            val returnRowKey = previewReturnRowKey ?: return@LaunchedEffect
+            val returnIndex = rows.indexOfFirst { it.key == returnRowKey }
+            if (returnIndex >= 0) verticalState.scrollToItem(returnIndex, 0)
+            previewReturnRowKey = null
+        }
     }
 
     val focusRestorer = remember(rows, initialActiveRowKey) {
