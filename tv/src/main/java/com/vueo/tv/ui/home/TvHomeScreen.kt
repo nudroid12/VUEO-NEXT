@@ -226,6 +226,7 @@ fun TvHomeScreen(
             navigationVisible = navExpanded,
             contentFocusRequester = contentFocusRequester,
             onContentFocused = { navExpanded = false },
+            onOpenNavigation = ::focusSidebar,
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },
             onLongClick = { entry -> actionEntry = entry },
             modifier = Modifier.fillMaxSize(),

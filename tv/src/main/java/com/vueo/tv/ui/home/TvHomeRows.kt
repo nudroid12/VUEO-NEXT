@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -45,6 +46,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -80,6 +86,7 @@ internal fun TvModernHomeRows(
     showContinueWatchingPreview: Boolean,
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
+    onLeftAtRowStart: (() -> Unit)?,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
     onPosterLongClick: (TvHomeEntry) -> Unit,
@@ -176,6 +183,7 @@ internal fun TvModernHomeRows(
                     row = row,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     onContentFocused = onContentFocused,
+                    onLeftAtRowStart = onLeftAtRowStart,
                     onFocused = onFocused,
                     onOpen = onOpen,
                     onPosterLongClick = onPosterLongClick,
@@ -191,6 +199,7 @@ private fun TvModernHomeRow(
     row: TvHomeRow,
     rowFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
+    onLeftAtRowStart: (() -> Unit)?,
     onFocused: (TvHomeRow, Int, TvHomeEntry) -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
     onPosterLongClick: (TvHomeEntry) -> Unit,
@@ -211,7 +220,7 @@ private fun TvModernHomeRow(
         defaultBringIntoViewSpec,
         rowHorizontalPadding,
     ) {
-        val startInsetPx = with(density) { rowHorizontalPadding.toPx() }
+        val startInsetPx = 0f
         val rtl = layoutDirection == LayoutDirection.Rtl
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
@@ -252,40 +261,48 @@ private fun TvModernHomeRow(
         )
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalBringIntoViewSpec) {
-            LazyRow(
-                state = rowState,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(rowFocusRequester)
-                    .focusRestorer {
-                        itemFocusRequesters[focusedIndex]
-                            ?: itemFocusRequesters[0]
-                            ?: FocusRequester.Default
-                    }
-                    .focusGroup(),
-                contentPadding = PaddingValues(start = rowHorizontalPadding, end = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(start = rowHorizontalPadding)
+                    .clipToBounds(),
             ) {
-                itemsIndexed(
-                    items = row.entries,
-                    key = { _, entry -> entry.key },
-                ) { index, entry ->
-                    val itemRequester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
-                    val openPosterActions = { onPosterLongClick(entry) }
-                    TvModernHomeCard(
-                        entry = entry,
-                        kind = row.kind,
-                        requester = itemRequester,
-                        onFocused = {
-                            focusedIndex = index
-                            TvHomeFocusMemory.activeRowKey = row.key
-                            TvHomeFocusMemory.focusedIndexByRow[row.key] = index
-                            onContentFocused()
-                            onFocused(row, index, entry)
-                        },
-                        onOpen = { onOpen(entry) },
-                        onHold = openPosterActions,
-                    )
+                LazyRow(
+                    state = rowState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(rowFocusRequester)
+                        .focusRestorer {
+                            itemFocusRequesters[focusedIndex]
+                                ?: itemFocusRequesters[0]
+                                ?: FocusRequester.Default
+                        }
+                        .focusGroup(),
+                    contentPadding = PaddingValues(end = 32.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    itemsIndexed(
+                        items = row.entries,
+                        key = { _, entry -> entry.key },
+                    ) { index, entry ->
+                        val itemRequester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
+                        val openPosterActions = { onPosterLongClick(entry) }
+                        TvModernHomeCard(
+                            entry = entry,
+                            kind = row.kind,
+                            requester = itemRequester,
+                            onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
+                            onFocused = {
+                                focusedIndex = index
+                                TvHomeFocusMemory.activeRowKey = row.key
+                                TvHomeFocusMemory.focusedIndexByRow[row.key] = index
+                                onContentFocused()
+                                onFocused(row, index, entry)
+                            },
+                            onOpen = { onOpen(entry) },
+                            onHold = openPosterActions,
+                        )
+                    }
                 }
             }
         }
@@ -297,6 +314,7 @@ private fun TvModernHomeCard(
     entry: TvHomeEntry,
     kind: TvHomeRowKind,
     requester: FocusRequester,
+    onLeftAtStart: (() -> Unit)?,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
     onHold: () -> Unit,
@@ -325,6 +343,18 @@ private fun TvModernHomeCard(
                 scaleY = animatedScale
             }
             .focusRequester(requester)
+            .onPreviewKeyEvent { event ->
+                if (
+                    onLeftAtStart != null &&
+                    event.type == KeyEventType.KeyDown &&
+                    event.key == Key.DirectionLeft
+                ) {
+                    onLeftAtStart()
+                    true
+                } else {
+                    false
+                }
+            }
             .onFocusChanged { state ->
                 val becameFocused = state.isFocused
                 if (becameFocused && !focused) onFocused()

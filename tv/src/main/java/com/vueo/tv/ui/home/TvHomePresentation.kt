@@ -37,6 +37,7 @@ internal fun TvHomePresentation(
     navigationVisible: Boolean,
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
+    onOpenNavigation: () -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
     onLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
@@ -108,6 +109,8 @@ internal fun TvHomePresentation(
                     showContinueWatchingPreview = showContinueWatchingPreview,
                     contentFocusRequester = contentFocusRequester,
                     onContentFocused = onContentFocused,
+                    onLeftAtRowStart =
+                        if (floatingPillMode) onOpenNavigation else null,
                     onFocused = { row, index, entry ->
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
