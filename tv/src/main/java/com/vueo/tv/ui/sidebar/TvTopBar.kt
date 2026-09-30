@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,6 +124,13 @@ fun TvSidebar(
     val sidebarStyle = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     val metrics = sidebarMetrics(sidebarStyle)
 
+    // Keep focus on the active destination when the text pill opens the panel.
+    LaunchedEffect(sidebarStyle, expanded) {
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && expanded) {
+            request(navRequesters.getValue(selected))
+        }
+    }
+
     val width by animateDpAsState(
         targetValue = if (expanded) metrics.expandedWidth else metrics.collapsedWidth,
         animationSpec = tween(
@@ -165,10 +173,47 @@ fun TvSidebar(
             .clipToBounds()
             .background(panelBrush)
 
-        TvSidebarStyle.PILL_ICONS -> modifier.fillMaxWidth()
+        TvSidebarStyle.PILL_ICONS -> modifier.fillMaxWidth().fillMaxHeight()
     }
 
     Box(modifier = containerModifier) {
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && !expanded) {
+            val collapsedShape = RoundedCornerShape(24.dp)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp)
+                    .width(132.dp)
+                    .height(48.dp)
+                    .clip(collapsedShape)
+                    .background(panelBrush)
+                    .border(1.dp, TvDesign.White.copy(alpha = .11f), collapsedShape)
+                    .focusRequester(navRequesters.getValue(selected))
+                    .onFocusChanged { if (it.isFocused) onFocused() }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> onReturnToContent()
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                            KeyEvent.KEYCODE_BACK -> false
+                            else -> false
+                        }
+                    }
+                    .clickable { onNavigate(selected) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = selected,
+                    color = TvDesign.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            return@Box
+        }
         val pillShape = RoundedCornerShape(28.dp)
         val panelModifier = when (sidebarStyle) {
             TvSidebarStyle.CLASSIC -> Modifier
