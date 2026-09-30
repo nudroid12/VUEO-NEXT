@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.tvSidebarContentStartPadding
+import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import kotlinx.coroutines.delay
 
 @Composable
@@ -39,6 +40,10 @@ internal fun TvHomePresentation(
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    val rowsViewportFraction = tvSidebarHomeRowsViewportFraction(
+        classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
+        pill = 0.40f,
+    )
 
     val allEntries = remember(rows) { rows.flatMap(TvHomeRow::entries) }
 
@@ -68,7 +73,7 @@ internal fun TvHomePresentation(
             .background(TvDesign.Black),
     ) {
         val screenHeight = maxHeight
-        val rowsViewportHeight = screenHeight * MODERN_HOME_ROWS_VIEWPORT_FRACTION
+        val rowsViewportHeight = screenHeight * rowsViewportFraction
         val heroHeight = (screenHeight - rowsViewportHeight + 38.dp).coerceAtMost(screenHeight)
 
         TvModernHomeHero(

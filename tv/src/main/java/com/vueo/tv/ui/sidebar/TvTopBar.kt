@@ -93,13 +93,13 @@ private fun sidebarMetrics(style: TvSidebarStyle): SidebarMetrics = when (style)
     )
 
     TvSidebarStyle.PILL_ICONS -> SidebarMetrics(
-        collapsedWidth = 520.dp,
-        expandedWidth = 520.dp,
-        collapsedItemWidth = 112.dp,
-        expandedItemWidth = 112.dp,
-        iconColumnWidth = 112.dp,
+        collapsedWidth = 420.dp,
+        expandedWidth = 420.dp,
+        collapsedItemWidth = 92.dp,
+        expandedItemWidth = 92.dp,
+        iconColumnWidth = 92.dp,
         iconSize = 24.dp,
-        itemHeight = 38.dp,
+        itemHeight = 32.dp,
         itemSpacing = 4.dp,
         expandedStartPadding = 0.dp,
     )
@@ -195,7 +195,7 @@ fun TvSidebar(
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .padding(top = 18.dp)
                 .width(width)
-                .height(48.dp)
+                .height(40.dp)
                 .clip(pillShape)
                 .background(panelBrush)
                 .border(1.dp, TvDesign.White.copy(alpha = .11f), pillShape)
@@ -208,7 +208,7 @@ fun TvSidebar(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(
                     metrics.itemSpacing,
                     Alignment.CenterHorizontally,
@@ -363,7 +363,7 @@ private fun SidebarNavigationItem(
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = sidebarItemBrush(style, expanded, selected, focused)
-    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) RoundedCornerShape(19.dp) else RoundedCornerShape(14.dp)
+    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) RoundedCornerShape(16.dp) else RoundedCornerShape(14.dp)
 
     Row(
         modifier = Modifier
@@ -422,7 +422,7 @@ private fun SidebarNavigationItem(
                 Text(
                     text = label,
                     color = if (selected) TvDesign.Black else TvDesign.White.copy(alpha = if (focused) 1f else .72f),
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

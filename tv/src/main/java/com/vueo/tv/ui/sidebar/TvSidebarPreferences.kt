@@ -58,3 +58,13 @@ internal fun tvSidebarContentStartPadding(
     val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     return if (style == TvSidebarStyle.PILL_ICONS) pill else classic
 }
+
+@Composable
+internal fun tvSidebarHomeRowsViewportFraction(
+    classic: Float,
+    pill: Float,
+): Float {
+    val context = LocalContext.current
+    val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
+    return if (style == TvSidebarStyle.PILL_ICONS) pill else classic
+}
