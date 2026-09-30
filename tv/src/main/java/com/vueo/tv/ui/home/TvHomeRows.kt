@@ -115,15 +115,20 @@ internal fun TvModernHomeRows(
         }
     }
 
-    LaunchedEffect(rows, showContinueWatchingPreview) {
-        if (showContinueWatchingPreview) return@LaunchedEffect
+    // Initialize TV focus once when Home rows first enter composition. Catalog
+    // batches may append rows later, but must never steal focus from D-pad input.
+    LaunchedEffect(Unit) {
         val rowIndex = rows.indexOfFirst { it.key == initialActiveRowKey }.coerceAtLeast(0)
         if (rowIndex > 0) verticalState.scrollToItem(rowIndex, 0)
         delay(90)
-        runCatching { contentFocusRequester.requestFocus() }
+        if (!showContinueWatchingPreview) {
+            runCatching { contentFocusRequester.requestFocus() }
+        }
     }
 
-    LaunchedEffect(showContinueWatchingPreview, rows) {
+    // This scroll is driven only by opening/closing the floating pill. Keeping
+    // rows out of the key prevents incoming catalog batches from restarting it.
+    LaunchedEffect(showContinueWatchingPreview) {
         if (showContinueWatchingPreview) {
             if (previewReturnRowKey == null) {
                 previewReturnRowKey = TvHomeFocusMemory.activeRowKey
@@ -141,7 +146,7 @@ internal fun TvModernHomeRows(
         }
     }
 
-    val focusRestorer = remember(rows, initialActiveRowKey) {
+    val focusRestorer = remember {
         {
             rowFocusRequesters[TvHomeFocusMemory.activeRowKey ?: initialActiveRowKey]
                 ?: rowFocusRequesters[initialActiveRowKey]

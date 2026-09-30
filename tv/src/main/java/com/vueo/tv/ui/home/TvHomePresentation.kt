@@ -56,9 +56,16 @@ internal fun TvHomePresentation(
         label = "homeRowsViewportFraction",
     )
 
-    val allEntries = remember(rows) { rows.flatMap(TvHomeRow::entries) }
-
     LaunchedEffect(rows) {
+        val currentKey = focusedEntry?.key
+        val currentStillAvailable =
+            currentKey != null &&
+                rows.any { row -> row.entries.any { entry -> entry.key == currentKey } }
+
+        // Progressive catalog updates only append rows. Keep the current TV
+        // focus/hero untouched unless the focused item genuinely disappeared.
+        if (currentStillAvailable) return@LaunchedEffect
+
         val savedRowKey = TvHomeFocusMemory.activeRowKey
         val savedRow = rows.firstOrNull { it.key == savedRowKey }
         val initial = if (savedRow != null) {
@@ -66,10 +73,10 @@ internal fun TvHomePresentation(
                 .coerceIn(0, savedRow.entries.lastIndex)
             savedRow.entries[index]
         } else {
-            allEntries.firstOrNull()
+            rows.firstNotNullOfOrNull { it.entries.firstOrNull() }
         }
-        if (focusedEntry == null || focusedEntry !in allEntries) focusedEntry = initial
-        if (heroEntry == null || heroEntry !in allEntries) heroEntry = initial
+        focusedEntry = initial
+        heroEntry = initial
     }
 
     LaunchedEffect(focusedEntry?.key) {
