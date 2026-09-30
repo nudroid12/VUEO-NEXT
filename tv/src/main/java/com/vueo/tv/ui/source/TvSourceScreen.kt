@@ -59,7 +59,9 @@ fun TvSourceScreen(
 
     val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
 
-    val playable = bundle?.sources.orEmpty().filter(StreamSource::isDirectPlayable)
+    val playable = bundle?.sources.orEmpty()
+        .filter(StreamSource::isDirectPlayable)
+        .distinctBy { it.url.orEmpty().trim() }
     val rankedSources = remember(playable, preferredQuality, media.originalLanguage) {
         playable.sortedWith(
             PlayerSourcePolicy.comparator(
@@ -80,7 +82,7 @@ fun TvSourceScreen(
             currentProviders.filter { it !in providerOrder })
             .distinct()
     }
-    val providerLogos = remember(runtime) {
+    val providerLogos = remember(runtime, currentProviders) {
         buildProviderLogoLookup(runtime)
     }
 
@@ -141,6 +143,14 @@ fun TvSourceScreen(
 
 private fun buildProviderLogoLookup(runtime: TvRuntime): Map<String, String> =
     buildMap {
+        for (addon in runtime.engine.stremioAddons()) {
+            val descriptor = addon.descriptor
+            val logo = descriptor.logo?.trim()?.takeIf(String::isNotBlank) ?: continue
+            for (key in listOf(descriptor.name, descriptor.id)) {
+                val normalized = key.trim().lowercase()
+                if (normalized !in this) put(normalized, logo)
+            }
+        }
         for (repository in runtime.pluginStore.repositories()) {
             for (provider in repository.providers) {
                 val logo = resolveProviderLogoUrl(

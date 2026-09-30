@@ -78,4 +78,5 @@ data class ExtensionDescriptor(
     val configurable: Boolean = false,
     val configurationRequired: Boolean = false,
     val health: ExtensionHealth = ExtensionHealth.UNKNOWN,
+    val logo: String? = null,
 )

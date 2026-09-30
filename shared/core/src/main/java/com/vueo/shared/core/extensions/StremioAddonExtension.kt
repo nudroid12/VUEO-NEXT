@@ -183,6 +183,12 @@ class StremioAddonExtension private constructor(
                     catalogs = parseCatalogs(json.optJSONArray("catalogs")),
                     configurable = behaviorHints?.optBoolean("configurable", false) == true,
                     configurationRequired = behaviorHints?.optBoolean("configurationRequired", false) == true,
+                    logo = json.optString("logo")
+                        .trim()
+                        .takeIf {
+                            it.startsWith("https://", ignoreCase = true) ||
+                                it.startsWith("http://", ignoreCase = true)
+                        },
                 ),
                 httpClient = httpClient,
             )

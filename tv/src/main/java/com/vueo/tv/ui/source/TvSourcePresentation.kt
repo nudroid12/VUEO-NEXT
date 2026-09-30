@@ -62,9 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
-import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.motion.TvMotion
@@ -860,18 +858,32 @@ private fun SourceList(
             items = state.filteredSources,
             key = { _, source -> sourceStableKey(source) },
         ) { index, source ->
+            val providerLogoUrl = state.providerLogos[
+                sourceProviderKey(source).trim().lowercase()
+            ] ?: state.providerLogos[source.providerId.trim().lowercase()]
+            val cardModel = remember(
+                source,
+                state.media.name,
+                state.media.releaseInfo,
+                state.episode,
+                state.media.runtimeMinutes,
+                state.media.originalLanguage,
+                state.preferredQuality,
+                providerLogoUrl,
+            ) {
+                source.toTvSourceCardModel(
+                    mediaName = state.media.name,
+                    releaseInfo = state.media.releaseInfo,
+                    episode = state.episode,
+                    runtimeMinutes = state.media.runtimeMinutes,
+                    originalLanguage = state.media.originalLanguage,
+                    preferredQuality = state.preferredQuality,
+                    logoUrl = providerLogoUrl,
+                )
+            }
             SourceCard(
-                source = source,
-                mediaName = state.media.name,
-                releaseInfo = state.media.releaseInfo,
-                episode = state.episode,
-                runtimeMinutes = state.media.runtimeMinutes,
-                originalLanguage = state.media.originalLanguage,
-                preferredQuality = state.preferredQuality,
+                model = cardModel,
                 showEngineDetails = state.showEngineDetails,
-                providerLogoUrl = state.providerLogos[
-                    sourceProviderKey(source).trim().lowercase()
-                ] ?: state.providerLogos[source.providerId.trim().lowercase()],
                 requester = sourceRequester(source),
                 onFocused = {
                     onInteraction()
@@ -891,68 +903,15 @@ private fun SourceList(
 
 @Composable
 private fun SourceCard(
-    source: StreamSource,
-    mediaName: String,
-    releaseInfo: String?,
-    episode: EpisodeItem?,
-    runtimeMinutes: Int?,
-    originalLanguage: String?,
-    preferredQuality: String?,
+    model: TvSourceCardModel,
     showEngineDetails: Boolean,
-    providerLogoUrl: String?,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onUpFromFirst: (() -> Unit)?,
     onClick: () -> Unit,
 ) {
-    var focused by remember(sourceStableKey(source)) { mutableStateOf(false) }
-    val assessment = remember(source, originalLanguage, preferredQuality) {
-        PlayerSourcePolicy.assess(
-            source = source,
-            preferredQuality = preferredQuality,
-            originalLanguage = originalLanguage,
-        )
-    }
-    val providerName = remember(source) {
-        sourceProviderDisplayName(sourceProviderKey(source))
-    }
-    val serverName = remember(source) {
-        sourceServerDisplayName(source) ?: sourceTitleDisplayName(source)
-    }
-    val mediaLabel = remember(mediaName, releaseInfo, episode) {
-        buildString {
-            append(mediaName.uppercase())
-            releaseInfo?.trim()?.takeIf(String::isNotBlank)?.let { year ->
-                append(" (")
-                append(year)
-                append(")")
-            }
-            episode?.let {
-                append(" S")
-                append(it.season.toString().padStart(2, '0'))
-                append("E")
-                append(it.episode.toString().padStart(2, '0'))
-            }
-        }
-    }
-    val qualityLabel = remember(source, assessment) {
-        source.quality
-            ?.trim()
-            ?.takeIf {
-                it.isNotBlank() &&
-                    !it.equals("Unknown", ignoreCase = true) &&
-                    !it.equals("Other", ignoreCase = true)
-            }
-            ?: assessment.quality.label.takeUnless {
-                it.equals("Unknown", ignoreCase = true)
-            }
-    }
-    val playbackLine = remember(qualityLabel, runtimeMinutes) {
-        listOfNotNull(
-            qualityLabel,
-            runtimeMinutes?.takeIf { it > 0 }?.let { "$it minutes" },
-        ).joinToString("  •  ")
-    }
+    var focused by remember(model.detailUrl, model.providerName) { mutableStateOf(false) }
+    val playbackLine = model.qualityLabel ?: model.durationLabel
 
     Row(
         modifier = Modifier
@@ -1001,7 +960,7 @@ private fun SourceCard(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = providerName,
+                text = model.providerName,
                 color = TvDesign.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -1009,7 +968,7 @@ private fun SourceCard(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            serverName?.let { server ->
+            model.serverName?.let { server ->
                 Text(
                     text = server,
                     color = if (focused) TvDesign.White.copy(alpha = .86f) else TvDesign.Muted,
@@ -1022,7 +981,7 @@ private fun SourceCard(
             }
 
             Text(
-                text = mediaLabel,
+                text = model.title,
                 color = if (focused) {
                     TvDesign.White.copy(alpha = .90f)
                 } else {
@@ -1034,7 +993,7 @@ private fun SourceCard(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            playbackLine.takeIf(String::isNotBlank)?.let { line ->
+            playbackLine?.takeIf(String::isNotBlank)?.let { line ->
                 Text(
                     text = line,
                     color = if (focused) TvDesign.White.copy(alpha = .72f) else TvDesign.Dim,
@@ -1045,8 +1004,7 @@ private fun SourceCard(
                 )
             }
 
-            source.url
-                ?.takeIf(String::isNotBlank)
+            model.detailUrl
                 ?.takeIf { showEngineDetails }
                 ?.let { url ->
                     Text(
@@ -1063,14 +1021,14 @@ private fun SourceCard(
                 }
         }
 
-        providerLogoUrl?.let { logoUrl ->
+        model.logoUrl?.let { logoUrl ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 TvNetworkImage(
                     url = logoUrl,
-                    contentDescription = providerName,
+                    contentDescription = model.providerName,
                     modifier = Modifier
                         .width(38.dp)
                         .height(30.dp),
@@ -1078,7 +1036,7 @@ private fun SourceCard(
                     fallback = Color.Transparent,
                 )
                 Text(
-                    text = providerName,
+                    text = model.providerName,
                     color = TvDesign.Dim,
                     fontSize = 8.sp,
                     maxLines = 1,
