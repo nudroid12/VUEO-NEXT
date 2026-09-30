@@ -87,6 +87,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 private const val SEARCH_COLUMNS = 6
+private const val FLOATING_SEARCH_COLUMNS = 7
 
 internal enum class TvSearchTypeFilter(val label: String) {
     ALL("All"),
@@ -461,7 +462,7 @@ internal fun TvSearchScreen(
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
     val floatingPillMode = tvSidebarIsPillMode()
-    val searchColumns = if (floatingPillMode) 8 else SEARCH_COLUMNS
+    val searchColumns = if (floatingPillMode) FLOATING_SEARCH_COLUMNS else SEARCH_COLUMNS
     val gridEndPadding = if (floatingPillMode) 28.dp else 52.dp
 
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
@@ -533,113 +534,118 @@ internal fun TvSearchScreen(
                     Spacer(Modifier.height(1.dp))
                 }
 
-                Text(
-                    text = if (searchingMode) "Search Results" else "Discover",
-                    color = TvDesign.White.copy(alpha = .94f),
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TvSearchFilterButton(
-                        label = session.typeFilter.label,
-                        requester = typeRequester,
-                        onFocused = {
-                            navExpanded = false
-                            lastContentTarget = "type"
-                        },
-                        onClick = {
-                            dialogReturnFocus = { runCatching { typeRequester.requestFocus() } }
-                            choiceDialog = SearchChoice(
-                                title = "Type",
-                                options = TvSearchTypeFilter.entries.map { it.label },
-                                selected = session.typeFilter.label,
-                                onSelected = { label ->
-                                    TvSearchTypeFilter.entries
-                                        .firstOrNull { it.label == label }
-                                        ?.let { next ->
-                                            if (next != session.typeFilter) {
-                                                session.typeFilter = next
-                                                session.genre = null
-                                                resetGridForFilterChange()
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(TvDesign.SurfaceRaised)
+                            .border(
+                                width = 1.dp,
+                                color = TvDesign.White.copy(alpha = .12f),
+                                shape = RoundedCornerShape(50.dp),
+                            )
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TvSearchFilterButton(
+                            label = session.typeFilter.label,
+                            requester = typeRequester,
+                            onFocused = {
+                                navExpanded = false
+                                lastContentTarget = "type"
+                            },
+                            onClick = {
+                                dialogReturnFocus = { runCatching { typeRequester.requestFocus() } }
+                                choiceDialog = SearchChoice(
+                                    title = "Type",
+                                    options = TvSearchTypeFilter.entries.map { it.label },
+                                    selected = session.typeFilter.label,
+                                    onSelected = { label ->
+                                        TvSearchTypeFilter.entries
+                                            .firstOrNull { it.label == label }
+                                            ?.let { next ->
+                                                if (next != session.typeFilter) {
+                                                    session.typeFilter = next
+                                                    session.genre = null
+                                                    resetGridForFilterChange()
+                                                }
                                             }
-                                        }
-                                    dismissChoiceDialog()
-                                },
-                            )
-                        },
-                        onLeft = {
-                            navExpanded = true
-                            runCatching { navRequesters.getValue("Search").requestFocus() }
-                        },
-                        onRight = { runCatching { sortRequester.requestFocus() } },
-                        onUp = { runCatching { fieldRequester.requestFocus() } },
-                        onDown = ::focusFirstResult,
-                    )
-                    TvSearchFilterButton(
-                        label = session.sortMode.label,
-                        requester = sortRequester,
-                        onFocused = {
-                            navExpanded = false
-                            lastContentTarget = "sort"
-                        },
-                        onClick = {
-                            dialogReturnFocus = { runCatching { sortRequester.requestFocus() } }
-                            choiceDialog = SearchChoice(
-                                title = "Discover",
-                                options = TvSearchSortMode.entries.map { it.label },
-                                selected = session.sortMode.label,
-                                onSelected = { label ->
-                                    TvSearchSortMode.entries
-                                        .firstOrNull { it.label == label }
-                                        ?.let { next ->
-                                            if (next != session.sortMode) {
-                                                session.sortMode = next
-                                                resetGridForFilterChange()
+                                        dismissChoiceDialog()
+                                    },
+                                )
+                            },
+                            onLeft = {
+                                navExpanded = true
+                                runCatching { navRequesters.getValue("Search").requestFocus() }
+                            },
+                            onRight = { runCatching { sortRequester.requestFocus() } },
+                            onUp = { runCatching { fieldRequester.requestFocus() } },
+                            onDown = ::focusFirstResult,
+                        )
+                        TvSearchFilterButton(
+                            label = session.sortMode.label,
+                            requester = sortRequester,
+                            onFocused = {
+                                navExpanded = false
+                                lastContentTarget = "sort"
+                            },
+                            onClick = {
+                                dialogReturnFocus = { runCatching { sortRequester.requestFocus() } }
+                                choiceDialog = SearchChoice(
+                                    title = "Sort",
+                                    options = TvSearchSortMode.entries.map { it.label },
+                                    selected = session.sortMode.label,
+                                    onSelected = { label ->
+                                        TvSearchSortMode.entries
+                                            .firstOrNull { it.label == label }
+                                            ?.let { next ->
+                                                if (next != session.sortMode) {
+                                                    session.sortMode = next
+                                                    resetGridForFilterChange()
+                                                }
                                             }
+                                        dismissChoiceDialog()
+                                    },
+                                )
+                            },
+                            onLeft = { runCatching { typeRequester.requestFocus() } },
+                            onRight = { runCatching { genreRequester.requestFocus() } },
+                            onUp = { runCatching { fieldRequester.requestFocus() } },
+                            onDown = ::focusFirstResult,
+                        )
+                        TvSearchFilterButton(
+                            label = session.genre ?: "All Genres",
+                            requester = genreRequester,
+                            onFocused = {
+                                navExpanded = false
+                                lastContentTarget = "genre"
+                            },
+                            onClick = {
+                                dialogReturnFocus = { runCatching { genreRequester.requestFocus() } }
+                                choiceDialog = SearchChoice(
+                                    title = "Genre",
+                                    options = listOf("All Genres") + availableGenres,
+                                    selected = session.genre ?: "All Genres",
+                                    onSelected = { label ->
+                                        val next = label.takeUnless { it == "All Genres" }
+                                        if (next != session.genre) {
+                                            session.genre = next
+                                            resetGridForFilterChange()
                                         }
-                                    dismissChoiceDialog()
-                                },
-                            )
-                        },
-                        onLeft = { runCatching { typeRequester.requestFocus() } },
-                        onRight = { runCatching { genreRequester.requestFocus() } },
-                        onUp = { runCatching { fieldRequester.requestFocus() } },
-                        onDown = ::focusFirstResult,
-                    )
-                    TvSearchFilterButton(
-                        label = session.genre ?: "All Genres",
-                        requester = genreRequester,
-                        onFocused = {
-                            navExpanded = false
-                            lastContentTarget = "genre"
-                        },
-                        onClick = {
-                            dialogReturnFocus = { runCatching { genreRequester.requestFocus() } }
-                            choiceDialog = SearchChoice(
-                                title = "Genre",
-                                options = listOf("All Genres") + availableGenres,
-                                selected = session.genre ?: "All Genres",
-                                onSelected = { label ->
-                                    val next = label.takeUnless { it == "All Genres" }
-                                    if (next != session.genre) {
-                                        session.genre = next
-                                        resetGridForFilterChange()
-                                    }
-                                    dismissChoiceDialog()
-                                },
-                            )
-                        },
-                        onLeft = { runCatching { sortRequester.requestFocus() } },
-                        onRight = { true },
-                        onUp = { runCatching { fieldRequester.requestFocus() } },
-                        onDown = ::focusFirstResult,
-                    )
+                                        dismissChoiceDialog()
+                                    },
+                                )
+                            },
+                            onLeft = { runCatching { sortRequester.requestFocus() } },
+                            onRight = { true },
+                            onUp = { runCatching { fieldRequester.requestFocus() } },
+                            onDown = ::focusFirstResult,
+                        )
+                    }
 
                     Spacer(Modifier.weight(1f))
 
@@ -819,12 +825,12 @@ private fun TvMobileSearchField(
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(15.dp)
+    val shape = RoundedCornerShape(50.dp)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(50.dp)
             .clip(shape)
             .background(TvDesign.SurfaceRaised)
             .border(
@@ -932,7 +938,7 @@ private fun TvSearchModeToggle(
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(50.dp)
 
     Row(
         modifier = Modifier
@@ -1029,7 +1035,7 @@ private fun TvSearchFilterButton(
     onDown: () -> Boolean,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(50.dp)
 
     Row(
         modifier = Modifier
@@ -1066,22 +1072,21 @@ private fun TvSearchFilterButton(
             }
             .clickable(onClick = onClick)
             .background(
-                if (focused) TvDesign.White.copy(alpha = .12f) else TvDesign.SurfaceRaised,
+                if (focused) TvDesign.White else Color.Transparent,
                 shape,
             )
             .border(
-                width = 1.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .82f)
-                else TvDesign.White.copy(alpha = .11f),
+                width = if (focused) 1.dp else 0.dp,
+                color = if (focused) TvDesign.White else Color.Transparent,
                 shape = shape,
             )
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
-            color = TvDesign.White,
+            color = if (focused) TvDesign.Black.copy(alpha = .82f) else TvDesign.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -1089,7 +1094,7 @@ private fun TvSearchFilterButton(
         )
         Text(
             text = "⌄",
-            color = TvDesign.Muted,
+            color = if (focused) TvDesign.Black.copy(alpha = .58f) else TvDesign.Muted,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
         )
