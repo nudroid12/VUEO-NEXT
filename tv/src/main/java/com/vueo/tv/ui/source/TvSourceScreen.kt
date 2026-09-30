@@ -13,6 +13,7 @@ import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
+import java.net.URI
 
 /**
  * TV 35A Source boundary.
@@ -56,7 +57,6 @@ fun TvSourceScreen(
         mutableStateOf(memory.showEngineDetails)
     }
 
-    val showTechnicalDetails = runtime.settingsStore.showSourceTechnicalDetails()
     val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
 
     val playable = bundle?.sources.orEmpty().filter(StreamSource::isDirectPlayable)
@@ -79,6 +79,9 @@ fun TvSourceScreen(
         (providerOrder.filter { it in currentProviders } +
             currentProviders.filter { it !in providerOrder })
             .distinct()
+    }
+    val providerLogos = remember(runtime) {
+        buildProviderLogoLookup(runtime)
     }
 
     LaunchedEffect(visibleProviders, searching) {
@@ -112,9 +115,9 @@ fun TvSourceScreen(
             rankedSources = rankedSources,
             filteredSources = filteredSources,
             visibleProviders = visibleProviders,
+            providerLogos = providerLogos,
             selectedProvider = selectedProvider,
             preferredQuality = preferredQuality,
-            showTechnicalDetails = showTechnicalDetails,
             showEngineDetails = showEngineDetails,
         ),
         onSelectProvider = { provider ->
@@ -134,4 +137,46 @@ fun TvSourceScreen(
             bundle?.takeIf { source.isDirectPlayable }?.let { onPlay(it, source) }
         },
     )
+}
+
+private fun buildProviderLogoLookup(runtime: TvRuntime): Map<String, String> =
+    buildMap {
+        for (repository in runtime.pluginStore.repositories()) {
+            for (provider in repository.providers) {
+                val logo = resolveProviderLogoUrl(
+                    baseUrl = repository.baseUrl,
+                    value = provider.logo,
+                ) ?: continue
+                val keys = listOf(
+                    "${repository.name} / ${provider.name}",
+                    provider.name,
+                    provider.id,
+                )
+                for (key in keys) {
+                    val normalized = key.trim().lowercase()
+                    if (normalized !in this) put(normalized, logo)
+                }
+            }
+        }
+    }
+
+private fun resolveProviderLogoUrl(
+    baseUrl: String,
+    value: String?,
+): String? {
+    val raw = value?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val resolved = if (
+        raw.startsWith("https://", ignoreCase = true) ||
+        raw.startsWith("http://", ignoreCase = true)
+    ) {
+        raw
+    } else {
+        runCatching {
+            URI(baseUrl.trimEnd('/') + "/").resolve(raw).toString()
+        }.getOrNull()
+    }
+    return resolved?.takeIf {
+        it.startsWith("https://", ignoreCase = true) ||
+            it.startsWith("http://", ignoreCase = true)
+    }
 }

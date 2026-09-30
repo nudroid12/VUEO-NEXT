@@ -23,9 +23,9 @@ internal data class TvSourcePresentationState(
     val rankedSources: List<StreamSource>,
     val filteredSources: List<StreamSource>,
     val visibleProviders: List<String>,
+    val providerLogos: Map<String, String>,
     val selectedProvider: String,
     val preferredQuality: String?,
-    val showTechnicalDetails: Boolean,
     val showEngineDetails: Boolean,
 )
 

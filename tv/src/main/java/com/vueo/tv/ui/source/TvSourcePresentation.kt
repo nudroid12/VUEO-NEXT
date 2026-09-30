@@ -853,8 +853,8 @@ private fun SourceList(
                     else -> false
                 }
             },
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(top = 14.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
     ) {
         itemsIndexed(
             items = state.filteredSources,
@@ -868,8 +868,10 @@ private fun SourceList(
                 runtimeMinutes = state.media.runtimeMinutes,
                 originalLanguage = state.media.originalLanguage,
                 preferredQuality = state.preferredQuality,
-                showTechnicalDetails = state.showTechnicalDetails,
                 showEngineDetails = state.showEngineDetails,
+                providerLogoUrl = state.providerLogos[
+                    sourceProviderKey(source).trim().lowercase()
+                ] ?: state.providerLogos[source.providerId.trim().lowercase()],
                 requester = sourceRequester(source),
                 onFocused = {
                     onInteraction()
@@ -896,8 +898,8 @@ private fun SourceCard(
     runtimeMinutes: Int?,
     originalLanguage: String?,
     preferredQuality: String?,
-    showTechnicalDetails: Boolean,
     showEngineDetails: Boolean,
+    providerLogoUrl: String?,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onUpFromFirst: (() -> Unit)?,
@@ -945,6 +947,12 @@ private fun SourceCard(
                 it.equals("Unknown", ignoreCase = true)
             }
     }
+    val playbackLine = remember(qualityLabel, runtimeMinutes) {
+        listOfNotNull(
+            qualityLabel,
+            runtimeMinutes?.takeIf { it > 0 }?.let { "$it minutes" },
+        ).joinToString("  •  ")
+    }
 
     Row(
         modifier = Modifier
@@ -984,18 +992,18 @@ private fun SourceCard(
                 shape = SourceCardShape,
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = providerName,
                 color = TvDesign.White,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1005,7 +1013,7 @@ private fun SourceCard(
                 Text(
                     text = server,
                     color = if (focused) TvDesign.White.copy(alpha = .86f) else TvDesign.Muted,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     lineHeight = 14.sp,
                     maxLines = 1,
@@ -1015,79 +1023,70 @@ private fun SourceCard(
 
             Text(
                 text = mediaLabel,
-                color = if (focused) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
+                color = if (focused) {
+                    TvDesign.White.copy(alpha = .90f)
+                } else {
+                    TvDesign.White.copy(alpha = .74f)
+                },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
 
-            runtimeMinutes?.takeIf { it > 0 }?.let { minutes ->
+            playbackLine.takeIf(String::isNotBlank)?.let { line ->
                 Text(
-                    text = "$minutes minutes",
-                    color = TvDesign.Dim,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                )
-            }
-
-            qualityLabel?.let { quality ->
-                Text(
-                    text = quality,
-                    color = if (focused) TvDesign.White.copy(alpha = .76f) else TvDesign.Dim,
+                    text = line,
+                    color = if (focused) TvDesign.White.copy(alpha = .72f) else TvDesign.Dim,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
             source.url
                 ?.takeIf(String::isNotBlank)
-                ?.takeIf { showTechnicalDetails || showEngineDetails }
+                ?.takeIf { showEngineDetails }
                 ?.let { url ->
-                Text(
-                    text = url,
-                    color = if (focused) TvDesign.White.copy(alpha = .58f) else TvDesign.Dim,
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+                    Text(
+                        text = url,
+                        color = if (focused) {
+                            TvDesign.White.copy(alpha = .58f)
+                        } else {
+                            TvDesign.Dim
+                        },
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(34.dp)
-                    .height(34.dp)
-                    .clip(RoundedCornerShape(17.dp))
-                    .background(TvDesign.Black.copy(alpha = .30f))
-                    .border(
-                        1.dp,
-                        TvDesign.White.copy(alpha = if (focused) .34f else .16f),
-                        RoundedCornerShape(17.dp),
-                    ),
-                contentAlignment = Alignment.Center,
+        providerLogoUrl?.let { logoUrl ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                TvNetworkImage(
+                    url = logoUrl,
+                    contentDescription = providerName,
+                    modifier = Modifier
+                        .width(38.dp)
+                        .height(30.dp),
+                    contentScale = ContentScale.Fit,
+                    fallback = Color.Transparent,
+                )
                 Text(
-                    text = providerName.firstOrNull()?.uppercase() ?: "?",
-                    color = TvDesign.White.copy(alpha = .88f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = providerName,
+                    color = TvDesign.Dim,
+                    fontSize = 8.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(68.dp),
+                    textAlign = TextAlign.Center,
                 )
             }
-            Text(
-                text = providerName,
-                color = TvDesign.Dim,
-                fontSize = 8.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(64.dp),
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }
