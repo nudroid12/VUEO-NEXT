@@ -24,7 +24,7 @@ object CatalogDiscoveryCache {
         20
 
     private const val MAX_DISK_ROWS =
-        12
+        64
 
     private const val MAX_DISK_ITEMS_PER_ROW =
         50
@@ -35,8 +35,9 @@ object CatalogDiscoveryCache {
     private const val PREFS_NAME =
         "vueo_catalog_cache"
 
+    // v2 invalidates the old cache that could only contain the first 10 rows.
     private const val KEY_HOME =
-        "home_v1"
+        "home_v2"
 
     private var homeRows:
         List<CatalogRow> =

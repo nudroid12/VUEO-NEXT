@@ -60,9 +60,19 @@ data class CatalogDescriptor(
     val id: String,
     val name: String? = null,
     val extras: List<CatalogExtraDescriptor> = emptyList(),
+    val showInHome: Boolean? = null,
 ) {
     val canLoadWithoutExtras: Boolean
         get() = extras.none { it.isRequired }
+
+    val isSearchOnly: Boolean
+        get() =
+            extras.any {
+                it.isRequired && it.name.equals("search", ignoreCase = true)
+            }
+
+    val shouldShowOnHome: Boolean
+        get() = !isSearchOnly && showInHome != false
 }
 
 data class ExtensionDescriptor(

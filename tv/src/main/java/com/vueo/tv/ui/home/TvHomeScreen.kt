@@ -72,7 +72,17 @@ fun TvHomeScreen(
             retainedState.loading = retainedState.catalogRows.isEmpty()
             retainedState.error = null
 
-            runCatching { runtime.homeRows(forceRefresh = false) }
+            runCatching {
+                runtime.homeRows(
+                    forceRefresh = false,
+                    onPartial = { partialRows ->
+                        if (partialRows.isNotEmpty()) {
+                            retainedState.catalogRows = partialRows
+                            retainedState.loading = false
+                        }
+                    },
+                )
+            }
                 .onSuccess { rows ->
                     if (rows.isNotEmpty()) retainedState.catalogRows = rows
                 }

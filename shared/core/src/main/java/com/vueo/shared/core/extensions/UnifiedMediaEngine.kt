@@ -17,7 +17,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -81,10 +83,11 @@ class UnifiedMediaEngine {
         id?.let { target -> extensions.firstOrNull { it.descriptor.id == target } }
 
     suspend fun loadCatalogRows(
-        maxRows: Int = 10,
+        maxRows: Int = Int.MAX_VALUE,
         forceRefresh: Boolean = false,
         catalogOrder: List<String> = emptyList(),
         disabledCatalogKeys: Set<String> = emptySet(),
+        onPartial: ((List<CatalogRow>) -> Unit)? = null,
     ): List<CatalogRow> = coroutineScope {
         if (!forceRefresh) {
             CatalogDiscoveryCache
@@ -115,7 +118,7 @@ class UnifiedMediaEngine {
                 .flatMap { extension ->
                     extension.descriptor.catalogs
                         .filter { catalog ->
-                            catalog.canLoadWithoutExtras &&
+                            catalog.shouldShowOnHome &&
                                 catalogKey(
                                     extensionId = extension.descriptor.id,
                                     type = catalog.type,
@@ -137,13 +140,29 @@ class UnifiedMediaEngine {
                         )
                     ] ?: Int.MAX_VALUE
                 }
-                .take(maxRows)
+                .let { catalogs ->
+                    if (maxRows == Int.MAX_VALUE) catalogs else catalogs.take(maxRows)
+                }
 
-        val rows =
+        val loadedRows = linkedMapOf<String, CatalogRow>()
+        val loadedRowsMutex = Mutex()
+        val loadSemaphore = Semaphore(HOME_CATALOG_LOAD_CONCURRENCY)
+        var lastEmittedRowCount = 0
+        val candidateIndex =
             candidates
-                .map {
-                    (extension, catalog) ->
-                    async {
+                .mapIndexed { index, (extension, catalog) ->
+                    catalogKey(
+                        extensionId = extension.descriptor.id,
+                        type = catalog.type,
+                        catalogId = catalog.id,
+                    ) to index
+                }
+                .toMap()
+
+        candidates
+            .map { (extension, catalog) ->
+                async {
+                    loadSemaphore.withPermit {
                         runCatching {
                             val page =
                                 withTimeoutOrNull(
@@ -156,7 +175,7 @@ class UnifiedMediaEngine {
                                 }
                                     ?: return@runCatching null
 
-                            CatalogRow(
+                            val row = CatalogRow(
                                 id =
                                     catalogKey(
                                         extensionId =
@@ -185,21 +204,44 @@ class UnifiedMediaEngine {
                                         )
                                     },
                             )
+                            if (row.items.isEmpty()) return@runCatching null
+
+                            val (partialRows, shouldEmit) = loadedRowsMutex.withLock {
+                                loadedRows[row.id] = row
+                                val ordered =
+                                    orderCatalogRows(
+                                        rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
+                                        catalogOrder = catalogOrder,
+                                        disabledCatalogKeys = disabledCatalogKeys,
+                                    )
+                                val emit =
+                                    ordered.size == 1 ||
+                                        ordered.size - lastEmittedRowCount >= HOME_CATALOG_PARTIAL_BATCH_SIZE
+                                if (emit) lastEmittedRowCount = ordered.size
+                                ordered to emit
+                            }
+
+                            // Keep Home responsive like Nuvio: publish each completed
+                            // row while the remaining catalogs continue behind the
+                            // four-request concurrency gate.
+                            if (shouldEmit) onPartial?.invoke(partialRows)
+                            row
                         }.getOrNull()
                     }
                 }
-                .awaitAll()
-                .filterNotNull()
-                .filter {
-                    it.items.isNotEmpty()
-                }
-                .let {
-                    orderCatalogRows(
-                        rows = it,
-                        catalogOrder = catalogOrder,
-                        disabledCatalogKeys = disabledCatalogKeys,
-                    )
-                }
+            .awaitAll()
+
+        val (rows, shouldEmitFinalRows) = loadedRowsMutex.withLock {
+            val ordered =
+                orderCatalogRows(
+                    rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
+                    catalogOrder = catalogOrder,
+                    disabledCatalogKeys = disabledCatalogKeys,
+                )
+            ordered to (ordered.size != lastEmittedRowCount)
+        }
+
+        if (shouldEmitFinalRows) onPartial?.invoke(rows)
 
         CatalogDiscoveryCache.putHome(
             rows
@@ -1576,6 +1618,10 @@ class UnifiedMediaEngine {
     }
 
     companion object {
+        private const val HOME_CATALOG_LOAD_CONCURRENCY = 4
+
+        private const val HOME_CATALOG_PARTIAL_BATCH_SIZE = 4
+
         private const val ADDON_REQUEST_TIMEOUT_MS =
             8_000L
 

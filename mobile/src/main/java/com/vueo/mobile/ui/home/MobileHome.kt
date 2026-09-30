@@ -430,6 +430,17 @@ internal fun HomeScreen(
                     catalogOrder,
                 disabledCatalogKeys =
                     disabledCatalogKeys,
+                onPartial = { partialRows ->
+                    if (partialRows.isNotEmpty()) {
+                        rows =
+                            HomeCatalogPolicy.orderRows(
+                                rows = partialRows,
+                                catalogOrder = catalogOrder,
+                                disabledCatalogKeys = disabledCatalogKeys,
+                            )
+                        loading = false
+                    }
+                },
             )
         }.onSuccess {
             fresh ->
@@ -1113,4 +1124,3 @@ private fun HomeFeaturedCarousel(
         }
     }
 }
-

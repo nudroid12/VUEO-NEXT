@@ -116,7 +116,10 @@ class TvRuntime(context: Context) {
         runCatching { providerSync.syncMissing(pluginStore.repositories()) }
     }
 
-    suspend fun homeRows(forceRefresh: Boolean = false): List<CatalogRow> {
+    suspend fun homeRows(
+        forceRefresh: Boolean = false,
+        onPartial: ((List<CatalogRow>) -> Unit)? = null,
+    ): List<CatalogRow> {
         if (!addonsPrepared) {
             return CatalogDiscoveryCache.home(allowStale = true)
                 .orEmpty()
@@ -140,6 +143,9 @@ class TvRuntime(context: Context) {
                 forceRefresh = forceRefresh,
                 catalogOrder = content.catalogOrder(),
                 disabledCatalogKeys = content.disabledCatalogKeys(),
+                onPartial = { rows ->
+                    onPartial?.invoke(applyCatalogPreferences(rows))
+                },
             )
         if (fresh.isNotEmpty()) {
             content.reconcileCatalogOrder(fresh.map { it.id })

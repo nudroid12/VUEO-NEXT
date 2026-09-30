@@ -232,33 +232,62 @@ class StremioAddonExtension private constructor(
                     name = item.optString("name")
                         .trim()
                         .takeIf(String::isNotBlank),
-                    extras = parseCatalogExtras(item.optJSONArray("extra")),
+                    extras = parseCatalogExtras(item),
+                    showInHome =
+                        if (item.has("showInHome")) {
+                            item.optBoolean("showInHome")
+                        } else {
+                            null
+                        },
                 )
             }
         }
 
-        private fun parseCatalogExtras(array: JSONArray?): List<CatalogExtraDescriptor> {
-            if (array == null) return emptyList()
-
-            return (0 until array.length()).mapNotNull { index ->
-                when (val value = array.opt(index)) {
-                    is String -> value.trim()
-                        .takeIf(String::isNotBlank)
-                        ?.let { CatalogExtraDescriptor(name = it) }
-                    is JSONObject -> {
-                        val name = value.optString("name")
-                            .trim()
+        private fun parseCatalogExtras(catalog: JSONObject): List<CatalogExtraDescriptor> {
+            val array = catalog.optJSONArray("extra")
+            val objectExtras = if (array == null) {
+                emptyList()
+            } else {
+                (0 until array.length()).mapNotNull { index ->
+                    when (val value = array.opt(index)) {
+                        is String -> value.trim()
                             .takeIf(String::isNotBlank)
-                            ?: return@mapNotNull null
-                        CatalogExtraDescriptor(
-                            name = name,
-                            isRequired = value.optBoolean("isRequired", false),
-                            options = value.optJSONArray("options").toStringList(),
-                        )
+                            ?.let { CatalogExtraDescriptor(name = it) }
+                        is JSONObject -> {
+                            val name = value.optString("name")
+                                .trim()
+                                .takeIf(String::isNotBlank)
+                                ?: return@mapNotNull null
+                            CatalogExtraDescriptor(
+                                name = name,
+                                isRequired = value.optBoolean("isRequired", false),
+                                options = value.optJSONArray("options").toStringList(),
+                            )
+                        }
+                        else -> null
                     }
-                    else -> null
                 }
             }
+
+            val supported = catalog.optJSONArray("extraSupported").toStringList()
+            val required = catalog.optJSONArray("extraRequired")
+                .toStringList()
+                .map { it.lowercase() }
+                .toSet()
+
+            return (
+                objectExtras +
+                    supported.map { CatalogExtraDescriptor(name = it) } +
+                    required.map { CatalogExtraDescriptor(name = it, isRequired = true) }
+            )
+                .groupBy { it.name.lowercase() }
+                .map { (normalizedName, descriptors) ->
+                    val primary = descriptors.first()
+                    primary.copy(
+                        isRequired = primary.isRequired || normalizedName in required,
+                        options = descriptors.flatMap { it.options }.distinct(),
+                    )
+                }
         }
     }
 }
