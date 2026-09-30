@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,15 +85,15 @@ private fun sidebarMetrics(style: TvSidebarStyle): SidebarMetrics = when (style)
     )
 
     TvSidebarStyle.PILL_ICONS -> SidebarMetrics(
-        collapsedWidth = 54.dp,
-        expandedWidth = 54.dp,
-        collapsedItemWidth = 42.dp,
-        expandedItemWidth = 42.dp,
-        iconColumnWidth = 42.dp,
+        collapsedWidth = 620.dp,
+        expandedWidth = 620.dp,
+        collapsedItemWidth = 138.dp,
+        expandedItemWidth = 138.dp,
+        iconColumnWidth = 138.dp,
         iconSize = 24.dp,
-        itemHeight = 42.dp,
-        itemSpacing = 4.dp,
-        expandedStartPadding = 6.dp,
+        itemHeight = 46.dp,
+        itemSpacing = 8.dp,
+        expandedStartPadding = 0.dp,
     )
 }
 
@@ -124,13 +123,6 @@ fun TvSidebar(
     val sidebarStyle = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     val metrics = sidebarMetrics(sidebarStyle)
 
-    // Keep focus on the active destination when the text pill opens the panel.
-    LaunchedEffect(sidebarStyle, expanded) {
-        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && expanded) {
-            request(navRequesters.getValue(selected))
-        }
-    }
-
     val width by animateDpAsState(
         targetValue = if (expanded) metrics.expandedWidth else metrics.collapsedWidth,
         animationSpec = tween(
@@ -156,15 +148,6 @@ fun TvSidebar(
         ),
         label = "vueoSidebarPanelAlpha",
     )
-    val pillOffsetX by animateDpAsState(
-        targetValue = if (expanded) (-10).dp else 64.dp,
-        animationSpec = tween(
-            durationMillis = if (expanded) 180 else 145,
-            easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
-        ),
-        label = "vueoSidebarPillOffset",
-    )
-
     val panelBrush = sidebarPanelBrush(sidebarStyle, expanded, panelAlpha)
     val containerModifier = when (sidebarStyle) {
         TvSidebarStyle.CLASSIC -> modifier
@@ -173,57 +156,22 @@ fun TvSidebar(
             .clipToBounds()
             .background(panelBrush)
 
-        TvSidebarStyle.PILL_ICONS -> modifier.fillMaxWidth().fillMaxHeight()
+        TvSidebarStyle.PILL_ICONS -> modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
     }
 
     Box(modifier = containerModifier) {
-        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && !expanded) {
-            val collapsedShape = RoundedCornerShape(24.dp)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 24.dp)
-                    .width(132.dp)
-                    .height(48.dp)
-                    .clip(collapsedShape)
-                    .background(panelBrush)
-                    .border(1.dp, TvDesign.White.copy(alpha = .11f), collapsedShape)
-                    .focusRequester(navRequesters.getValue(selected))
-                    .onFocusChanged { if (it.isFocused) onFocused() }
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (event.nativeKeyEvent.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_LEFT -> onReturnToContent()
-                            KeyEvent.KEYCODE_DPAD_RIGHT -> true
-                            KeyEvent.KEYCODE_BACK -> false
-                            else -> false
-                        }
-                    }
-                    .clickable { onNavigate(selected) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = selected,
-                    color = TvDesign.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-            return@Box
-        }
         val pillShape = RoundedCornerShape(28.dp)
         val panelModifier = when (sidebarStyle) {
             TvSidebarStyle.CLASSIC -> Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
             TvSidebarStyle.PILL_ICONS -> Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = pillOffsetX)
+                .align(Alignment.TopCenter)
+                .padding(top = 24.dp)
                 .width(width)
-                .height(292.dp)
+                .height(58.dp)
                 .clip(pillShape)
                 .background(panelBrush)
                 .border(1.dp, TvDesign.White.copy(alpha = .11f), pillShape)
@@ -231,58 +179,86 @@ fun TvSidebar(
         }
 
         Box(modifier = panelModifier) {
-        val navColumnModifier = when (sidebarStyle) {
-            TvSidebarStyle.CLASSIC -> Modifier
+        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(
+                    metrics.itemSpacing,
+                    Alignment.CenterHorizontally,
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TvPrimaryDestinations.forEachIndexed { index, label ->
+                    SidebarNavigationItem(
+                        label = label,
+                        icon = destinationIcon(label),
+                        selected = selected == label,
+                        style = sidebarStyle,
+                        metrics = metrics,
+                        expanded = expanded,
+                        labelAlpha = labelAlpha,
+                        requester = navRequesters.getValue(label),
+                        onFocused = onFocused,
+                        onClick = { onNavigate(label) },
+                        onLeft = {
+                            if (index > 0) {
+                                request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
+                            } else {
+                                true
+                            }
+                        },
+                        onRight = {
+                            if (index < TvPrimaryDestinations.lastIndex) {
+                                request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
+                            } else {
+                                true
+                            }
+                        },
+                        onUp = { true },
+                        onDown = onReturnToContent,
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
                 .align(Alignment.CenterStart)
-                .fillMaxWidth()
-
-            TvSidebarStyle.PILL_ICONS -> Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .fillMaxHeight()
-        }
-
-        Column(
-            modifier = navColumnModifier,
-            verticalArrangement = if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
-                Arrangement.SpaceEvenly
-            } else {
-                Arrangement.spacedBy(metrics.itemSpacing)
-            },
-        ) {
-            TvPrimaryDestinations.forEachIndexed { index, label ->
-                SidebarNavigationItem(
-                    label = label,
-                    icon = destinationIcon(label),
-                    selected = selected == label,
-                    style = sidebarStyle,
-                    metrics = metrics,
-                    expanded = expanded,
-                    labelAlpha = labelAlpha,
-                    requester = navRequesters.getValue(label),
-                    onFocused = onFocused,
-                    onClick = { onNavigate(label) },
-                    onLeft = {
-                        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) onReturnToContent() else true
-                    },
-                    onRight = {
-                        if (sidebarStyle == TvSidebarStyle.PILL_ICONS) true else onReturnToContent()
-                    },
-                    onUp = {
-                        if (index > 0) {
-                            request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
-                        } else {
-                            true
-                        }
-                    },
-                    onDown = {
-                        if (index < TvPrimaryDestinations.lastIndex) {
-                            request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
-                        } else {
-                            true
-                        }
-                    },
-                )
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(metrics.itemSpacing),
+            ) {
+                TvPrimaryDestinations.forEachIndexed { index, label ->
+                    SidebarNavigationItem(
+                        label = label,
+                        icon = destinationIcon(label),
+                        selected = selected == label,
+                        style = sidebarStyle,
+                        metrics = metrics,
+                        expanded = expanded,
+                        labelAlpha = labelAlpha,
+                        requester = navRequesters.getValue(label),
+                        onFocused = onFocused,
+                        onClick = { onNavigate(label) },
+                        onLeft = { true },
+                        onRight = onReturnToContent,
+                        onUp = {
+                            if (index > 0) {
+                                request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
+                            } else {
+                                true
+                            }
+                        },
+                        onDown = {
+                            if (index < TvPrimaryDestinations.lastIndex) {
+                                request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
+                            } else {
+                                true
+                            }
+                        },
+                    )
+                }
             }
         }
         }
@@ -344,7 +320,7 @@ private fun SidebarNavigationItem(
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = sidebarItemBrush(style, expanded, selected, focused)
-    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) CircleShape else RoundedCornerShape(14.dp)
+    val itemShape = if (style == TvSidebarStyle.PILL_ICONS) RoundedCornerShape(22.dp) else RoundedCornerShape(14.dp)
 
     Row(
         modifier = Modifier
@@ -399,22 +375,37 @@ private fun SidebarNavigationItem(
             ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = when {
-                    expanded && selected -> TvDesign.Black
-                    focused -> TvDesign.White
-                    selected && !expanded -> TvDesign.White
-                    else -> TvDesign.White.copy(alpha = .46f)
-                },
-                modifier = Modifier
-                    .size(metrics.iconSize)
-                    .graphicsLayer {
+            if (style == TvSidebarStyle.PILL_ICONS) {
+                Text(
+                    text = label,
+                    color = if (selected) TvDesign.Black else TvDesign.White.copy(alpha = if (focused) 1f else .72f),
+                    fontSize = 17.sp,
+                    fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.graphicsLayer {
                         scaleX = iconScale
                         scaleY = iconScale
                     },
-            )
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = when {
+                        expanded && selected -> TvDesign.Black
+                        focused -> TvDesign.White
+                        selected && !expanded -> TvDesign.White
+                        else -> TvDesign.White.copy(alpha = .46f)
+                    },
+                    modifier = Modifier
+                        .size(metrics.iconSize)
+                        .graphicsLayer {
+                            scaleX = iconScale
+                            scaleY = iconScale
+                        },
+                )
+            }
         }
 
         if (style == TvSidebarStyle.CLASSIC) {
@@ -443,7 +434,7 @@ private fun sidebarItemBrush(
     selected: Boolean,
     focused: Boolean,
 ): Brush {
-    if (!expanded) {
+    if (!expanded && style == TvSidebarStyle.CLASSIC) {
         return Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
     }
 

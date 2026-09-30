@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
                 VueoTvApp(onExit = ::requestExit)
                 if (showExitPrompt) {
                     Text(
-                        text = "Press again to exit",
+                        text = "Press Back again to exit",
                         color = Color.White,
                         fontSize = 16.sp,
                         modifier = Modifier
