@@ -229,6 +229,7 @@ class UnifiedMediaEngine {
                         }.getOrNull()
                     }
                 }
+            }
             .awaitAll()
 
         val (rows, shouldEmitFinalRows) = loadedRowsMutex.withLock {
