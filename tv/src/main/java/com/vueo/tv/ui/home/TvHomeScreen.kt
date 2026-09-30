@@ -186,6 +186,7 @@ fun TvHomeScreen(
             rows = rows,
             loading = loading,
             error = error,
+            navigationVisible = navExpanded,
             contentFocusRequester = contentFocusRequester,
             onContentFocused = { navExpanded = false },
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },

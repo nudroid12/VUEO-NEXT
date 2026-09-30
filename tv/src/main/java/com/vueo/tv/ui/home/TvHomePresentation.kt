@@ -1,5 +1,7 @@
 package com.vueo.tv.home
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,6 +33,7 @@ internal fun TvHomePresentation(
     rows: List<TvHomeRow>,
     loading: Boolean,
     error: String?,
+    navigationVisible: Boolean,
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
@@ -40,9 +43,14 @@ internal fun TvHomePresentation(
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
-    val rowsViewportFraction = tvSidebarHomeRowsViewportFraction(
+    val targetRowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
-        pill = 0.40f,
+        pill = if (navigationVisible) 0.40f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
+    )
+    val rowsViewportFraction by animateFloatAsState(
+        targetValue = targetRowsViewportFraction,
+        animationSpec = tween(durationMillis = 180),
+        label = "homeRowsViewportFraction",
     )
 
     val allEntries = remember(rows) { rows.flatMap(TvHomeRow::entries) }

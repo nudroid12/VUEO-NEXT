@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -194,7 +195,7 @@ fun TvSidebar(
                 .fillMaxHeight()
             TvSidebarStyle.PILL_ICONS -> Modifier
                 .padding(top = 18.dp)
-                .width(width)
+                .fillMaxWidth(1f / 3f)
                 .height(40.dp)
                 .clip(pillShape)
                 .background(panelBrush)
@@ -204,48 +205,53 @@ fun TvSidebar(
 
         val navigationContent: @Composable BoxScope.() -> Unit = {
             if (sidebarStyle == TvSidebarStyle.PILL_ICONS) {
-                Row(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(
-                    metrics.itemSpacing,
-                    Alignment.CenterHorizontally,
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TvPrimaryDestinations.forEachIndexed { index, label ->
-                    SidebarNavigationItem(
-                        label = label,
-                        icon = destinationIcon(label),
-                        selected = selected == label,
-                        style = sidebarStyle,
-                        metrics = metrics,
-                        expanded = expanded,
-                        labelAlpha = labelAlpha,
-                        requester = navRequesters.getValue(label),
-                        onFocused = onFocused,
-                        onClick = { onNavigate(label) },
-                        onLeft = {
-                            if (index > 0) {
-                                request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
-                            } else {
-                                true
-                            }
-                        },
-                        onRight = {
-                            if (index < TvPrimaryDestinations.lastIndex) {
-                                request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
-                            } else {
-                                true
-                            }
-                        },
-                        onUp = { true },
-                        onDown = onReturnToContent,
-                    )
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val pillItemWidth =
+                        (maxWidth - 32.dp) / TvPrimaryDestinations.size.toFloat()
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            metrics.itemSpacing,
+                            Alignment.CenterHorizontally,
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TvPrimaryDestinations.forEachIndexed { index, label ->
+                            SidebarNavigationItem(
+                                label = label,
+                                icon = destinationIcon(label),
+                                selected = selected == label,
+                                style = sidebarStyle,
+                                metrics = metrics,
+                                expanded = expanded,
+                                labelAlpha = labelAlpha,
+                                itemWidthOverride = pillItemWidth,
+                                requester = navRequesters.getValue(label),
+                                onFocused = onFocused,
+                                onClick = { onNavigate(label) },
+                                onLeft = {
+                                    if (index > 0) {
+                                        request(navRequesters.getValue(TvPrimaryDestinations[index - 1]))
+                                    } else {
+                                        true
+                                    }
+                                },
+                                onRight = {
+                                    if (index < TvPrimaryDestinations.lastIndex) {
+                                        request(navRequesters.getValue(TvPrimaryDestinations[index + 1]))
+                                    } else {
+                                        true
+                                    }
+                                },
+                                onUp = { true },
+                                onDown = onReturnToContent,
+                            )
+                        }
+                    }
                 }
-            }
             } else {
                 Column(
                     modifier = Modifier
@@ -340,6 +346,7 @@ private fun SidebarNavigationItem(
     metrics: SidebarMetrics,
     expanded: Boolean,
     labelAlpha: Float,
+    itemWidthOverride: Dp? = null,
     requester: FocusRequester,
     canFocusWhenCollapsed: Boolean = selected,
     onFocused: () -> Unit,
@@ -375,7 +382,9 @@ private fun SidebarNavigationItem(
                 },
             )
             .width(
-                if (style == TvSidebarStyle.PILL_ICONS) {
+                if (itemWidthOverride != null) {
+                    itemWidthOverride
+                } else if (style == TvSidebarStyle.PILL_ICONS) {
                     metrics.expandedItemWidth
                 } else if (expanded) {
                     metrics.expandedItemWidth
@@ -408,7 +417,9 @@ private fun SidebarNavigationItem(
     ) {
         Box(
             modifier = Modifier.width(
-                if (style == TvSidebarStyle.PILL_ICONS) {
+                if (itemWidthOverride != null) {
+                    itemWidthOverride
+                } else if (style == TvSidebarStyle.PILL_ICONS) {
                     metrics.expandedItemWidth
                 } else if (expanded) {
                     metrics.iconColumnWidth
