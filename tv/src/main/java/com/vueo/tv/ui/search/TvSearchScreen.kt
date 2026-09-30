@@ -79,6 +79,7 @@ import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
+import com.vueo.tv.ui.tvSidebarIsPillMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -202,20 +203,20 @@ internal fun TvSearchScreen(
             return@LaunchedEffect
         }
 
+        searching = true
+        delay(250)
+        if (
+            thisRequest != requestId ||
+            session.query.trim() != normalized ||
+            session.mode != requestedMode
+        ) return@LaunchedEffect
+
         if (requestedMode == TvSearchMode.TITLE) {
             session.actorSourceAvailable = true
             val local = SearchOrchestrator.localTitleResults(normalized)
             if (local.isNotEmpty() || session.searchResults.isEmpty()) {
                 session.searchResults = local
             }
-
-            searching = true
-            delay(250)
-            if (
-                thisRequest != requestId ||
-                session.query.trim() != normalized ||
-                session.mode != requestedMode
-            ) return@LaunchedEffect
 
             val remote = SearchOrchestrator.remoteTitleResults(
                 engine = runtime.engine,
@@ -248,10 +249,6 @@ internal fun TvSearchScreen(
             searching = false
             return@LaunchedEffect
         }
-
-        searching = true
-        delay(250)
-        if (thisRequest != requestId || session.query.trim() != normalized || session.mode != requestedMode) return@LaunchedEffect
 
         val actorResults = SearchOrchestrator.actorResults(
             engine = runtime.engine,
@@ -360,7 +357,7 @@ internal fun TvSearchScreen(
         initialFirstVisibleItemScrollOffset = session.firstVisibleItemScrollOffset,
     )
     val resultKeys = remember(filteredItems) { filteredItems.map(::mediaKey) }
-    val resultRequesterCache = remember(session.query, session.mode) { mutableMapOf<String, FocusRequester>() }
+    val resultRequesterCache = remember(resultKeys, session.mode) { mutableMapOf<String, FocusRequester>() }
     val resultRequesters = resultKeys.associateWith { key -> resultRequesterCache.getOrPut(key) { FocusRequester() } }
 
     fun resetGridForFilterChange() {
@@ -431,6 +428,9 @@ internal fun TvSearchScreen(
     }
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
+    val floatingPillMode = tvSidebarIsPillMode()
+    val searchColumns = if (floatingPillMode) 8 else SEARCH_COLUMNS
+    val gridEndPadding = if (floatingPillMode) 28.dp else 52.dp
 
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
         Column(
@@ -666,12 +666,12 @@ internal fun TvSearchScreen(
 
                 filteredItems.isNotEmpty() -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(SEARCH_COLUMNS),
+                        columns = GridCells.Fixed(searchColumns),
                         state = gridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
-                            start = 96.dp,
-                            end = 52.dp,
+                            start = contentStartPadding,
+                            end = gridEndPadding,
                             top = 2.dp,
                             bottom = 36.dp,
                         ),
@@ -700,17 +700,17 @@ internal fun TvSearchScreen(
                                     onOpenMedia(item)
                                 },
                                 onLongClick = { actionMedia = item },
-                                onUpFromFirstRow = if (index < SEARCH_COLUMNS) {
+                                onUpFromFirstRow = if (index < searchColumns) {
                                     { runCatching { typeRequester.requestFocus() } }
                                 } else null,
-                                onLeftFromFirstColumn = if (index % SEARCH_COLUMNS == 0) {
+                                onLeftFromFirstColumn = if (index % searchColumns == 0) {
                                     {
                                         navExpanded = true
                                         runCatching { navRequesters.getValue("Search").requestFocus() }
                                     }
                                 } else null,
                                 blockRight =
-                                    index % SEARCH_COLUMNS == SEARCH_COLUMNS - 1 || index == filteredItems.lastIndex,
+                                    index % searchColumns == searchColumns - 1 || index == filteredItems.lastIndex,
                             )
                         }
                     }

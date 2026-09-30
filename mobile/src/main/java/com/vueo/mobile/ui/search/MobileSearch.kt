@@ -411,16 +411,18 @@ internal fun SearchScreen(
         ) {
             searching = false
             actorSourceAvailable = true
-            searchResults =
-                if (
-                    requestedMode ==
-                        SearchMode.TITLE &&
-                    normalized.length >= 2
-                ) {
-                    SearchOrchestrator.localTitleResults(normalized)
-                } else {
-                    emptyList()
-                }
+            searchResults = emptyList()
+            return@LaunchedEffect
+        }
+
+        searching = true
+        delay(250)
+
+        if (
+            requestId != searchRequestId ||
+            query.trim() != normalized ||
+            searchMode != requestedMode
+        ) {
             return@LaunchedEffect
         }
 
@@ -434,16 +436,6 @@ internal fun SearchScreen(
                 SearchOrchestrator.localTitleResults(normalized)
 
             searchResults = local
-            searching = true
-            delay(250)
-
-            if (
-                requestId != searchRequestId ||
-                query.trim() != normalized ||
-                searchMode != requestedMode
-            ) {
-                return@LaunchedEffect
-            }
 
             val remote =
                 SearchOrchestrator.remoteTitleResults(
@@ -487,17 +479,6 @@ internal fun SearchScreen(
 
         if (!actorSourceAvailable) {
             searching = false
-            return@LaunchedEffect
-        }
-
-        searching = true
-        delay(250)
-
-        if (
-            requestId != searchRequestId ||
-            query.trim() != normalized ||
-            searchMode != requestedMode
-        ) {
             return@LaunchedEffect
         }
 
@@ -1708,4 +1689,3 @@ internal fun searchTypeLabel(
                     it.uppercase()
                 }
     }
-

@@ -5,8 +5,10 @@ import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
 import com.vueo.shared.core.media.MediaItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 enum class MediaEntityKind {
@@ -26,22 +28,32 @@ object SearchOrchestrator {
         val available: Boolean get() = addonSearch || tmdbSearch
     }
 
-    fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
-        SearchPolicy.rankAndDedupe(CatalogDiscoveryCache.searchLocal(query, limit = limit), query).take(limit)
+    suspend fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
+        withContext(Dispatchers.Default) {
+            SearchPolicy.rankAndDedupe(
+                CatalogDiscoveryCache.searchLocal(query, limit = limit),
+                query,
+            ).take(limit)
+        }
 
     suspend fun remoteTitleResults(
         engine: UnifiedMediaEngine,
         query: String,
-        localResults: List<MediaItem> = localTitleResults(query),
+        localResults: List<MediaItem>? = null,
         limit: Int = 80,
         onPartial: ((List<MediaItem>) -> Unit)? = null,
     ): List<MediaItem> {
+        val local = localResults ?: localTitleResults(query, limit)
         val remote = try {
-            engine.search(query = query, maxResults = limit, onPartial = { partial ->
-                onPartial?.invoke(SearchPolicy.rankAndDedupe(partial + localResults, query).take(limit))
-            })
+            withContext(Dispatchers.IO) {
+                engine.search(query = query, maxResults = limit, onPartial = null)
+            }
         } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
-        return SearchPolicy.rankAndDedupe(remote + localResults, query).take(limit)
+        val combined = withContext(Dispatchers.Default) {
+            SearchPolicy.rankAndDedupe(remote + local, query).take(limit)
+        }
+        onPartial?.invoke(combined)
+        return combined
     }
 
     fun actorAvailability(engine: UnifiedMediaEngine, tmdbApiKey: String): ActorAvailability =

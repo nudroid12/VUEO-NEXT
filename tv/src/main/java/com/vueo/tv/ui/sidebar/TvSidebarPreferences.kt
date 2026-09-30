@@ -68,3 +68,10 @@ internal fun tvSidebarHomeRowsViewportFraction(
     val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     return if (style == TvSidebarStyle.PILL_ICONS) pill else classic
 }
+
+@Composable
+internal fun tvSidebarIsPillMode(): Boolean {
+    val context = LocalContext.current
+    val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
+    return style == TvSidebarStyle.PILL_ICONS
+}
