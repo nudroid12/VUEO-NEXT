@@ -70,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.extensions.MediaBrowseKind
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
@@ -118,6 +119,8 @@ internal class TvSearchSession {
 
     var searchResults by mutableStateOf<List<MediaItem>>(emptyList())
     var discoverRows by mutableStateOf<List<CatalogRow>>(emptyList())
+    var animeBrowseItems by mutableStateOf<List<MediaItem>>(emptyList())
+    var animeBrowseContentVersion by mutableStateOf<Int?>(null)
     var actorSourceAvailable by mutableStateOf(true)
     var completedSearchKey by mutableStateOf<String?>(null)
     var discoverContentVersion by mutableStateOf<Int?>(null)
@@ -140,6 +143,7 @@ internal fun TvSearchScreen(
 ) {
     var searching by remember { mutableStateOf(false) }
     var discovering by remember { mutableStateOf(session.discoverRows.isEmpty()) }
+    var animeDiscovering by remember { mutableStateOf(false) }
     var requestId by remember { mutableStateOf(0L) }
     var navExpanded by remember { mutableStateOf(false) }
     var lastContentTarget by remember { mutableStateOf("field") }
@@ -268,11 +272,35 @@ internal fun TvSearchScreen(
         }
     }
 
+    LaunchedEffect(session.typeFilter, contentVersion) {
+        if (session.typeFilter != TvSearchTypeFilter.ANIME) {
+            animeDiscovering = false
+            return@LaunchedEffect
+        }
+        if (
+            session.animeBrowseContentVersion == contentVersion &&
+            session.animeBrowseItems.isNotEmpty()
+        ) {
+            animeDiscovering = false
+            return@LaunchedEffect
+        }
+
+        animeDiscovering = true
+        session.animeBrowseItems = runCatching {
+            runtime.engine.browse(
+                kind = MediaBrowseKind.ANIME,
+                catalogOrder = runtime.content.catalogOrder(),
+            )
+        }.getOrElse { emptyList() }
+        session.animeBrowseContentVersion = contentVersion
+        animeDiscovering = false
+    }
+
     val normalizedQuery = session.query.trim()
     val searchingMode = normalizedQuery.isNotBlank()
 
-    val animeCatalogKeys = remember(session.discoverRows) {
-        session.discoverRows
+    val animeCatalogKeys = remember(session.discoverRows, session.animeBrowseItems) {
+        val rowKeys = session.discoverRows
             .filter { row ->
                 listOf(row.id, row.title, row.providerName)
                     .any { it.contains("anime", ignoreCase = true) }
@@ -280,6 +308,7 @@ internal fun TvSearchScreen(
             .flatMap { it.items }
             .map(::mediaKey)
             .toSet()
+        rowKeys + session.animeBrowseItems.map(::mediaKey)
     }
 
     val discoverBaseItems = remember(session.discoverRows, session.sortMode) {
@@ -291,9 +320,12 @@ internal fun TvSearchScreen(
 
     val sourceItems = if (searchingMode) {
         session.searchResults
+    } else if (session.typeFilter == TvSearchTypeFilter.ANIME) {
+        (session.animeBrowseItems + discoverBaseItems).distinctBy(::mediaKey)
     } else {
         discoverBaseItems
     }
+    val contentDiscovering = discovering || animeDiscovering
 
     val availableGenres = remember(sourceItems, session.typeFilter, animeCatalogKeys) {
         sourceItems
@@ -489,7 +521,7 @@ internal fun TvSearchScreen(
                     )
                 }
 
-                if (searching || discovering) {
+                if (searching || contentDiscovering) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth(.76f)
@@ -631,14 +663,14 @@ internal fun TvSearchScreen(
             Spacer(Modifier.height(if (searchingMode) 6.dp else 14.dp))
 
             when {
-                !searchingMode && session.discoverRows.isEmpty() && !discovering -> {
+                !searchingMode && sourceItems.isEmpty() && !contentDiscovering -> {
                     SearchEmptyState(
                         title = "Nothing to discover yet",
                         body = "Enable a catalog in Content Manager to populate Discover.",
                     )
                 }
 
-                !searchingMode && filteredItems.isEmpty() && !discovering -> {
+                !searchingMode && filteredItems.isEmpty() && !contentDiscovering -> {
                     SearchEmptyState(
                         title = "No ${session.typeFilter.label} titles",
                         body = if (session.typeFilter == TvSearchTypeFilter.ANIME) {

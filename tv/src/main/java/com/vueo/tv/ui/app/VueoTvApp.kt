@@ -1,9 +1,11 @@
 package com.vueo.tv
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -15,8 +17,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -51,6 +57,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class TvRoute {
+    STARTUP,
     HOME,
     SEARCH,
     LIBRARY,
@@ -69,15 +76,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     val runtime = remember { TvRuntime(context.applicationContext) }
     val homeRetainedState = rememberTvHomeRetainedState(runtime)
 
-    var route by remember(runtime) {
-        mutableStateOf(
-            if (runtime.profileStore.shouldShowPickerOnStartup()) {
-                TvRoute.PROFILE
-            } else {
-                TvRoute.HOME
-            }
-        )
-    }
+    var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
     var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
@@ -112,7 +111,11 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
         // Resolve the first destination using local state only. Network addon
         // manifests must never keep the TV app parked on its startup artwork.
-        withContext(Dispatchers.IO) { runtime.boot() }
+        val showProfilePicker = withContext(Dispatchers.IO) {
+            runtime.boot()
+            runtime.profileStore.shouldShowPickerOnStartup()
+        }
+        route = if (showProfilePicker) TvRoute.PROFILE else TvRoute.HOME
         profileReturnRoute = TvRoute.HOME
 
         // Cache first, then prepare addons. Home can render the restored rows as
@@ -329,7 +332,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             AnimatedContent(
                 targetState = route,
                 transitionSpec = {
-                    if (targetState == TvRoute.HOME) {
+                    if (initialState == TvRoute.STARTUP) {
+                        tvScreenFadeThrough()
+                    } else if (targetState == TvRoute.HOME) {
                         tvImmediateCut()
                     } else if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
                         tvPlayerFadeThrough()
@@ -340,6 +345,17 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 label = "vueoRootRoute",
             ) { displayedRoute ->
                 when (displayedRoute) {
+                TvRoute.STARTUP -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Image(
+                            painter = painterResource(R.drawable.vueo_tv_logo),
+                            contentDescription = "VUEO",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.width(320.dp),
+                        )
+                    }
+                }
+
                 TvRoute.HOME -> {
                     TvHomeScreen(
                         runtime = runtime,
