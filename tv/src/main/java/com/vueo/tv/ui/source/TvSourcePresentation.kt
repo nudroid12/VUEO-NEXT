@@ -843,7 +843,6 @@ private fun SourceList(
                 state.media.name,
                 state.media.releaseInfo,
                 state.episode,
-                state.media.runtimeMinutes,
                 state.media.originalLanguage,
                 state.preferredQuality,
                 providerLogoUrl,
@@ -852,7 +851,6 @@ private fun SourceList(
                     mediaName = state.media.name,
                     releaseInfo = state.media.releaseInfo,
                     episode = state.episode,
-                    runtimeMinutes = state.media.runtimeMinutes,
                     originalLanguage = state.media.originalLanguage,
                     preferredQuality = state.preferredQuality,
                     logoUrl = providerLogoUrl,
@@ -888,7 +886,6 @@ private fun SourceCard(
     onClick: () -> Unit,
 ) {
     var focused by remember(model.detailUrl, model.providerName) { mutableStateOf(false) }
-    val playbackLine = model.qualityLabel ?: model.durationLabel
 
     Row(
         modifier = Modifier
@@ -952,8 +949,6 @@ private fun SourceCard(
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     lineHeight = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -966,18 +961,16 @@ private fun SourceCard(
                 },
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                lineHeight = 15.sp,
             )
 
-            playbackLine?.takeIf(String::isNotBlank)?.let { line ->
+            model.metadataLabel?.let { line ->
                 Text(
                     text = line,
                     color = if (focused) TvDesign.White.copy(alpha = .72f) else TvDesign.Dim,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp,
                 )
             }
 

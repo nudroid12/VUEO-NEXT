@@ -36,8 +36,7 @@ internal data class TvSourceCardModel(
     val providerName: String,
     val serverName: String?,
     val title: String,
-    val qualityLabel: String?,
-    val durationLabel: String?,
+    val metadataLabel: String?,
     val logoUrl: String?,
     val detailUrl: String?,
 )
@@ -74,7 +73,6 @@ internal fun StreamSource.toTvSourceCardModel(
     mediaName: String,
     releaseInfo: String?,
     episode: EpisodeItem?,
-    runtimeMinutes: Int?,
     originalLanguage: String?,
     preferredQuality: String?,
     logoUrl: String?,
@@ -84,30 +82,14 @@ internal fun StreamSource.toTvSourceCardModel(
         .map(String::trim)
         .firstOrNull(String::isNotBlank)
         ?: "Other"
-    val title = sourceCardMediaTitle(
-        mediaName = mediaName,
-        releaseInfo = releaseInfo,
-        episode = episode,
-    )
-    val server = buildList {
-        sourceServerDisplayName(this@toTvSourceCardModel)?.let(::add)
-        add(name)
-    }
-        .flatMap(::sourceCardLabelParts)
-        .mapNotNull { candidate ->
-            cleanSourceCardServerLabel(
-                value = candidate,
-                providerName = provider,
-            )
-        }
-        .firstOrNull { candidate ->
-            !sourceCardLabelMatchesContent(
-                value = candidate,
-                providerName = provider,
-                mediaName = mediaName,
-                cardTitle = title,
-            )
-        }
+    // Keep provider text instead of replacing it with the selected media title.
+    val title = sourceTitleDisplayName(this)
+        ?.let { sourceCardLabelParts(it).joinToString("\n") }
+        ?.takeIf(String::isNotBlank)
+        ?: sourceCardMediaTitle(mediaName, releaseInfo, episode)
+    val server = sourceServerDisplayName(this)
+        ?.let { cleanSourceCardServerLabel(it, provider) }
+        ?.takeUnless { it.equals(title, ignoreCase = true) }
     val assessment = PlayerSourcePolicy.assess(
         source = this,
         preferredQuality = preferredQuality,
@@ -123,15 +105,30 @@ internal fun StreamSource.toTvSourceCardModel(
         ?: assessment.quality.label.takeUnless {
             it.equals("Unknown", ignoreCase = true)
         }
+    val metadata = listOfNotNull(
+        quality,
+        codec,
+        hdr,
+        audio,
+        language,
+        sizeBytes?.takeIf { it > 0 }?.let { bytes ->
+            val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+            if (gb >= 1.0) java.lang.String.format(java.util.Locale.US, "%.2f GB", gb)
+            else java.lang.String.format(java.util.Locale.US, "%.0f MB", bytes / (1024.0 * 1024.0))
+        },
+    )
+        .map(String::trim)
+        .filter { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) }
+        .distinctBy { it.lowercase() }
+        .filterNot { title.contains(it, ignoreCase = true) || server?.contains(it, ignoreCase = true) == true }
+        .joinToString(" • ")
+        .takeIf(String::isNotBlank)
 
     return TvSourceCardModel(
         providerName = provider,
         serverName = server,
         title = title,
-        qualityLabel = quality,
-        durationLabel = runtimeMinutes
-            ?.takeIf { it > 0 }
-            ?.let { "$it minutes" },
+        metadataLabel = metadata,
         logoUrl = logoUrl,
         detailUrl = url?.trim()?.takeIf(String::isNotBlank),
     )
@@ -207,32 +204,9 @@ private fun cleanSourceCardServerLabel(
     return withoutProvider.trim().takeIf(String::isNotBlank)
 }
 
-private fun sourceCardLabelMatchesContent(
-    value: String,
-    providerName: String,
-    mediaName: String,
-    cardTitle: String,
-): Boolean {
-    val candidate = sourceCardComparable(value)
-    val provider = sourceCardComparable(providerName)
-    val media = sourceCardComparable(mediaName)
-    val title = sourceCardComparable(cardTitle)
-    return candidate.isBlank() ||
-        candidate == provider ||
-        candidate == title ||
-        candidate == media ||
-        (media.length >= 3 && candidate.startsWith(media))
-}
-
-private fun sourceCardComparable(value: String): String =
-    value
-        .lowercase()
-        .replace(SOURCE_CARD_NON_ALPHANUMERIC, "")
-
 private val SOURCE_CARD_YEAR = Regex("""\b(?:19|20)\d{2}\b""")
 private val SOURCE_CARD_TRAILING_YEAR =
     Regex("""\s*\((?:19|20)\d{2}(?:\s*[–—-]\s*)?\)\s*$""")
-private val SOURCE_CARD_NON_ALPHANUMERIC = Regex("""[^\p{L}\p{N}]+""")
 
 private fun sourceRepositoryDisplayName(source: StreamSource): String? =
     source.providerName
