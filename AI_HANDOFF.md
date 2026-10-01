@@ -219,3 +219,13 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Outer LazyColumn uses a 232dp ahead/behind LazyLayoutCacheWindow (roughly one poster row) and row-kind content types for composition reuse. Inner LazyRow behavior is unchanged. Home image viewport gates remain in place, so cached offscreen composition does not start image downloads.
 - API references: https://developer.android.com/reference/kotlin/androidx/compose/foundation/gestures/BringIntoViewSpec and https://developer.android.com/reference/kotlin/androidx/compose/foundation/lazy/rememberLazyListState.composable . Cache-window state API was added in Compose Foundation 1.9.0; the project uses its existing Compose BOM without dependency changes.
 - Static delimiter/named-call/unchanged-horizontal/archive checks only; no local build, frame profiling or TV-remote test. Apply after the Home Progressive Loading patch; other player/About patches remain intact. Real-TV smoothness still requires maintainer validation.
+
+## Provider loading memory/cancellation patch (2026-10-02)
+
+- Shared Core only; both Mobile aliases and TV use the changes. No local build or tests run, per user instruction. Static source/archive checks only.
+- PluginHttp bounds script/manifest downloads to 8 MiB (including unknown length bodies), and keeps an OkHttp call plus active response attached to coroutine cancellation until decoding finishes. Existing 4 MiB provider fetch response cap remains.
+- ProviderCodeStore bounds cached script reads; readiness counters now use file metadata rather than copying script contents during settings composition. Files written here are required to be nonblank and <=8 MiB. Legacy corrupt files may need repository refresh.
+- ProviderCodeSyncManager uses one process-wide three-download gate across startup/settings/preflight instances. Fixed striped locks serialize writes to the same provider/version file; missing-code callers recheck readiness after waiting. Work runs on IO and cancellation propagates.
+- Console log retention is bounded to the latest 24 entries during execution via a synchronized deque, replacing unbounded copy-on-write accumulation. Two JUnit regression checks included for CI, not run locally.
+- WebView renderer termination destroys the affected view and reports a provider failure. Cleanup attempts destroy even if preceding cleanup fails. Injected HTML reads have a 4 MiB cap.
+- Provider execution concurrency, source ranking, progressive publication, scan budgets and UI remain unchanged. Actual crash cause and real-device behavior still require diagnostics/device validation; native runtime or OS process termination is not proven resolved.

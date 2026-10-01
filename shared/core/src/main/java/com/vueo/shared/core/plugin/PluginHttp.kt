@@ -1,7 +1,16 @@
 package com.vueo.shared.core.plugin
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -79,11 +88,11 @@ object PluginHttp {
             .header("User-Agent", "VUEO/0.9.6")
             .build()
 
-        client.newCall(request).execute().use { response ->
+        executeResponse(client, request) { response ->
             if (!response.isSuccessful) {
                 error("HTTP ${response.code} from ${response.request.url.host}")
             }
-            response.body.string()
+            readBoundedText(response, MAX_PROVIDER_SCRIPT_BYTES)
         }
     }
 
@@ -133,7 +142,7 @@ object PluginHttp {
                 client
             }
 
-            requestClient.newCall(requestBuilder.build()).execute().use { response ->
+            executeResponse(requestClient, requestBuilder.build()) { response ->
                 val responseHeaders = JSONObject()
                 response.headers.names().forEach { name ->
                     responseHeaders.put(name, response.headers.values(name).joinToString(", "))
@@ -211,10 +220,69 @@ object PluginHttp {
                     .toString()
             }
         }.getOrElse { error ->
+            if (error is CancellationException) throw error
             JSONObject()
                 .put("error", error.message ?: error::class.java.simpleName)
                 .toString()
         }
+    }
+
+    // Process the body on OkHttp's worker, keeping cancellation attached until
+    // decoding completes. Closing the active response also interrupts body reads.
+    private suspend fun executeResponse(
+        requestClient: OkHttpClient,
+        request: Request,
+        decode: (Response) -> String,
+    ): String = suspendCancellableCoroutine { continuation ->
+        val call = requestClient.newCall(request)
+        val activeResponse = AtomicReference<Response?>(null)
+        continuation.invokeOnCancellation {
+            call.cancel()
+            activeResponse.getAndSet(null)?.close()
+        }
+        if (!continuation.isActive) return@suspendCancellableCoroutine
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                activeResponse.set(response)
+                try {
+                    response.use {
+                        if (!continuation.isActive) return
+                        val value = decode(response)
+                        if (continuation.isActive) continuation.resume(value)
+                    }
+                } catch (error: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                } finally {
+                    activeResponse.compareAndSet(response, null)
+                }
+            }
+        })
+    }
+
+    internal const val MAX_PROVIDER_SCRIPT_BYTES = 8L * 1024L * 1024L
+
+    private fun readBoundedText(
+        response: Response,
+        limit: Long,
+    ): String {
+        val body = response.body
+        require(body.contentLength() <= limit) {
+            "Provider script exceeds the 8 MiB size limit."
+        }
+        val buffer = Buffer()
+        val source = body.source()
+        var remaining = limit + 1L
+        while (remaining > 0L) {
+            val count = source.read(buffer, minOf(HTTP_READ_CHUNK_BYTES, remaining))
+            if (count == -1L) break
+            remaining -= count
+        }
+        require(buffer.size <= limit) { "Provider script exceeds the 8 MiB size limit." }
+        return buffer.readString(body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
     }
 
     private fun requireHttps(url: String) {

@@ -14,6 +14,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.RenderProcessGoneDetail
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -28,6 +29,7 @@ import java.net.URI
 import java.net.URL
 import java.util.Collections
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 
 private fun JSONArray?.toVueoStringList(): List<String> {
@@ -171,11 +173,11 @@ internal class PluginWebViewResolver(
                 runCatching {
                     handler.removeCallbacksAndMessages(null)
                     webView.stopLoading()
-                    webView.loadUrl("about:blank")
                     webView.removeJavascriptInterface(BRIDGE_NAME)
                     webView.removeAllViews()
-                    webView.destroy()
                 }
+                // Always attempt destruction, including when a renderer is dead.
+                runCatching { webView.destroy() }
             }
 
             fun finish() {
@@ -739,6 +741,22 @@ internal class PluginWebViewResolver(
 
                 webView.webChromeClient = WebChromeClient()
                 webView.webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(
+                        view: WebView?,
+                        detail: RenderProcessGoneDetail?,
+                    ): Boolean {
+                        // Report renderer failure as a provider error, not an app crash.
+                        if (destroyed) return true
+                        streams.clear()
+                        safeDestroy()
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(
+                                java.io.IOException("Provider WebView renderer stopped."),
+                            )
+                        }
+                        return true
+                    }
+
                     override fun onPageStarted(
                         view: WebView?,
                         url: String?,
@@ -1069,9 +1087,24 @@ internal class PluginWebViewResolver(
         connection.connectTimeout = 7_000
         connection.readTimeout = 7_000
 
-        val html = connection.inputStream
-            .bufferedReader()
-            .use { it.readText() }
+        val html = try {
+            connection.inputStream.use { input ->
+                val buffer = okio.Buffer()
+                val bytes = ByteArray(32 * 1024)
+                while (true) {
+                    val count = input.read(bytes)
+                    if (count == -1) break
+                    require(buffer.size + count <= 4L * 1024L * 1024L) {
+                        "WebView HTML exceeds the 4 MiB size limit."
+                    }
+                    buffer.write(bytes, 0, count)
+                }
+                buffer.readUtf8()
+            }
+        } catch (error: Exception) {
+            connection.disconnect()
+            throw error
+        }
 
         connection.headerFields
             .filterKeys { it?.equals("Set-Cookie", true) == true }

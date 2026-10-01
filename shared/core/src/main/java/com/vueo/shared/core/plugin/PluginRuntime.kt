@@ -27,7 +27,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.CopyOnWriteArrayList
 
 class PluginSourceEngine(
     context: Context,
@@ -941,7 +940,7 @@ private fun emptyDiscoveryResult():
                 )
 
         val logs =
-            CopyOnWriteArrayList<String>()
+            BoundedProviderLog(MAX_STORED_LOGS)
 
         val httpTraceCount =
             java.util.concurrent.atomic.AtomicInteger(0)

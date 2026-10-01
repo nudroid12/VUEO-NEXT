@@ -1,6 +1,10 @@
 package com.vueo.shared.core.plugin
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -37,12 +41,24 @@ class ProviderCodeStore(context: Context) {
     ): String? {
         val file = fileFor(repository, provider)
 
-        if (!file.isFile) {
+        if (!file.isFile || file.length() > PluginHttp.MAX_PROVIDER_SCRIPT_BYTES) {
             return null
         }
 
         return runCatching {
-            file.readText(Charsets.UTF_8)
+            file.inputStream().use { input ->
+                val buffer = okio.Buffer()
+                val bytes = ByteArray(32 * 1024)
+                while (true) {
+                    val count = input.read(bytes)
+                    if (count == -1) break
+                    require(buffer.size + count <= PluginHttp.MAX_PROVIDER_SCRIPT_BYTES) {
+                        "Provider script exceeds the 8 MiB size limit."
+                    }
+                    buffer.write(bytes, 0, count)
+                }
+                buffer.readUtf8().takeIf { it.isNotBlank() }
+            }
         }.getOrNull()
     }
 
@@ -55,6 +71,9 @@ class ProviderCodeStore(context: Context) {
             "Provider script is empty."
         }
 
+        require(source.toByteArray(Charsets.UTF_8).size.toLong() <= PluginHttp.MAX_PROVIDER_SCRIPT_BYTES) {
+            "Provider script exceeds the 8 MiB size limit."
+        }
         val file = fileFor(repository, provider)
         file.parentFile?.mkdirs()
 
@@ -77,9 +96,11 @@ class ProviderCodeStore(context: Context) {
     fun isReady(
         repository: PluginRepositoryDescriptor,
         provider: PluginProviderDescriptor,
-    ): Boolean =
-        read(repository, provider)
-            ?.isNotBlank() == true
+    ): Boolean {
+        // UI readiness is metadata-only; actual execution validates script text.
+        val file = fileFor(repository, provider)
+        return file.isFile && file.length() in 1L..PluginHttp.MAX_PROVIDER_SCRIPT_BYTES
+    }
 
     fun has(
         repository: PluginRepositoryDescriptor,
@@ -179,7 +200,11 @@ class ProviderCodeSyncManager(
         context.applicationContext
     )
 
-    private val concurrency = Semaphore(4)
+    companion object {
+        // Shared by startup, settings and preflight manager instances.
+        private val concurrency = Semaphore(3)
+        private val providerLocks = Array(64) { Mutex() }
+    }
 
     suspend fun syncRepository(
         repository: PluginRepositoryDescriptor,
@@ -200,43 +225,47 @@ class ProviderCodeSyncManager(
         val uniqueProviders = providers.distinctBy { it.id }
 
         val outcomes = uniqueProviders.map { provider ->
-            async {
-                concurrency.withPermit {
-                    if (
-                        !force &&
-                        store.isReady(repository, provider)
-                    ) {
-                        return@withPermit true
-                    }
-
-                    runCatching {
-                        val url =
-                            PluginRepositoryClient
-                                .providerScriptUrl(
-                                    repository,
-                                    provider,
-                                )
-
-                        val source =
-                            PluginHttp.getText(url)
-
-                        store.write(
-                            repository,
-                            provider,
-                            source,
-                        )
-
-                        true
-                    }.getOrElse { error ->
-                        synchronized(errors) {
-                            errors +=
-                                "${provider.name}: " +
-                                (
-                                    error.message
-                                        ?: error::class.java.simpleName
-                                )
+            async(Dispatchers.IO) {
+                val lockKey = "${repository.manifestUrl}|${provider.id}|${provider.version}|${provider.filename}"
+                providerLocks[(lockKey.hashCode() and Int.MAX_VALUE) % providerLocks.size].withLock {
+                    concurrency.withPermit {
+                        if (
+                            !force &&
+                            store.isReady(repository, provider)
+                        ) {
+                            return@withPermit true
                         }
-                        false
+
+                        runCatching {
+                            val url =
+                                PluginRepositoryClient
+                                    .providerScriptUrl(
+                                        repository,
+                                        provider,
+                                    )
+
+                            val source =
+                                PluginHttp.getText(url)
+
+                            store.write(
+                                repository,
+                                provider,
+                                source,
+                            )
+
+                            true
+                        }.getOrElse { error ->
+                            if (error is CancellationException) throw error
+                            synchronized(errors) {
+                                errors +=
+                                    "${provider.name}: " +
+                                    (
+                                        error.message
+                                            ?: error::class.java.simpleName
+                                    )
+                            }
+                            false
+                        }
                     }
                 }
             }
