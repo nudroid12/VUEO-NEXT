@@ -184,3 +184,12 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Ended controls dismissed by Back are guarded in both the playback-ended listener and ended-focus effect. The guard resets after leaving ended playback. Active countdown cancellation and immediate root-focus handoff remain in the shared Back action.
 - Countdown is now inline inside the small Play pill (`Play • 5s`), keeping the 360dp card and a single focus target.
 - Apply after VUEO_TV_Compact_NextCard_Back_Fix.zip. Static checks only; no local build or real-remote verification.
+
+## TV Player — episode switching inside the player route
+
+- Next button, automatic countdown and Episodes selection now call in-player episode discovery. PLAYER route and the old playable bundle remain mounted during discovery; source discovery updates for the target episode are held separately until commit.
+- Automatic selection uses Shared Core PlayerSourcePolicy and the same preferred-quality/original-audio eligibility as Mobile. Below-policy fallback is considered only after discovery completes. New bundle/source/episode are committed together; a keyed TV playback session releases the previous player and initializes the target episode without navigating to SOURCE.
+- A remote-focused overlay remains until the target playback renders its first frame. Discovery/no-source/startup failures show Retry and Sources inside the player. Manual source selection recreates the pending playback session. The existing startup timeout and automatic source recovery remain active.
+- Back cancels pending discovery or dismisses preparation/failure, keeping the currently mounted player. Generation guards reject cancelled/old discovery results; post-commit late results only enrich the matching active bundle. Duplicate episode requests are rejected during a switch.
+- Overlay owns focus while switching. Player focus retries, auto-next and listener-triggered chrome reveals are suppressed until completion/cancellation. Existing skip/post-credit heuristics and root Back capture are retained.
+- Mobile and Shared Core source files are unchanged. Apply after VUEO_TV_Back_Capture_Play_Countdown_Fix.zip. Static source/signature/control-flow/archive checks only; no local build or actual TV/network test was performed.

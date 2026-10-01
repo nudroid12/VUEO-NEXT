@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
@@ -36,6 +38,7 @@ import com.vueo.tv.home.TvHomeScreen
 import com.vueo.tv.home.rememberTvHomeRetainedState
 import com.vueo.tv.library.TvLibraryScreen
 import com.vueo.tv.player.TvPlayerScreen
+import com.vueo.tv.player.TvEpisodeSwitchOverlay
 import com.vueo.tv.profile.TvProfilePickerScreen
 import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
@@ -104,6 +107,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoveryJob by remember { mutableStateOf<Job?>(null) }
     var sourceDiscoveryGeneration by remember { mutableIntStateOf(0) }
     var failedSourceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var switchingEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
+    var switchingBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
+    var switchingError by remember { mutableStateOf<String?>(null) }
+    var switchingShowSources by remember { mutableStateOf(false) }
+    var switchingCommitted by remember { mutableStateOf(false) }
+
 
     LaunchedEffect(runtime) {
         TvDesign.applyTheme(runtime.settingsStore.appTheme())
@@ -231,6 +240,97 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             sourceDiscoveryError = null
             sourceBundle = null
             selectedSource = null
+        }
+    }
+
+    fun cancelEpisodeSwitch() {
+        stopSourceDiscovery(markStopped = true)
+        switchingEpisode = null
+        switchingBundle = null
+        switchingError = null
+        switchingShowSources = false
+        switchingCommitted = false
+    }
+
+    fun commitEpisodeSwitch(target: EpisodeItem, nextBundle: TvSourceBundle, candidate: StreamSource) {
+        if (route != TvRoute.PLAYER || switchingEpisode?.id != target.id) return
+        switchingCommitted = true
+        switchingError = null
+        switchingShowSources = false
+        selectedEpisode = target
+        initialPositionMs = 0L
+        sourceBundle = nextBundle
+        selectedSource = candidate
+        playerSessionId += 1
+    }
+
+    fun startEpisodeSwitch(target: EpisodeItem, force: Boolean = false) {
+        val media = selectedMedia ?: return
+        if (route != TvRoute.PLAYER) return
+        if (!force && switchingEpisode != null) return
+        sourceDiscoveryGeneration += 1
+        val generation = sourceDiscoveryGeneration
+        sourceDiscoveryJob?.cancel()
+        switchingEpisode = target
+        switchingBundle = null
+        switchingError = null
+        switchingShowSources = false
+        switchingCommitted = false
+        val targetKey = sourceSessionKey(media, target)
+        sourceDiscoveryKey = targetKey
+        sourceDiscoverySnapshot = null
+        sourceDiscoveryError = null
+        var committed = false
+        val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
+
+        fun accept(nextBundle: TvSourceBundle, completed: Boolean) {
+            if (sourceDiscoveryGeneration != generation || route != TvRoute.PLAYER) return
+            switchingBundle = nextBundle
+            if (committed) {
+                // Late subtitle/source results belong only to the committed episode.
+                if (sourceBundle?.videoId == nextBundle.videoId) sourceBundle = nextBundle
+                return
+            }
+            val ranked = nextBundle.sources.filter { it.isDirectPlayable }
+                .sortedWith(PlayerSourcePolicy.comparator(preferredQuality, media.originalLanguage))
+            val candidate = ranked.firstOrNull {
+                val assessment = PlayerSourcePolicy.assess(it, preferredQuality, media.originalLanguage)
+                assessment.quality.automaticRecoveryEligible && assessment.audioMatch.recommendationEligible
+            } ?: ranked.firstOrNull()?.takeIf { completed }
+            if (candidate != null) {
+                committed = true
+                failedSourceKeys = failedSourceKeys - targetKey
+                commitEpisodeSwitch(target, nextBundle, candidate)
+            } else if (completed) {
+                failedSourceKeys = failedSourceKeys + targetKey
+                switchingError = "No playable source found for this episode."
+            }
+        }
+
+        sourceDiscoveryJob = sourceDiscoveryScope.launch {
+            try {
+                val result = runtime.discover(
+                    item = media,
+                    episode = target,
+                    forceRefresh = force || targetKey in failedSourceKeys,
+                    onUpdate = { snapshot ->
+                        if (sourceDiscoveryGeneration == generation && route == TvRoute.PLAYER) {
+                            sourceDiscoverySnapshot = snapshot
+                            accept(snapshot.bundle, completed = !snapshot.searching)
+                        }
+                    },
+                )
+                accept(result, completed = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (sourceDiscoveryGeneration == generation && route == TvRoute.PLAYER && !committed) {
+                    failedSourceKeys = failedSourceKeys + targetKey
+                    switchingError = error.message ?: "Episode source discovery failed."
+                }
+            } finally {
+                if (sourceDiscoveryGeneration == generation) sourceDiscoveryJob = null
+            }
         }
     }
 
@@ -548,28 +648,52 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     if (media == null || bundle == null || source == null) {
                         route = TvRoute.SOURCE
                     } else {
-                        TvPlayerScreen(
-                            runtime = runtime,
-                            media = media,
-                            episode = selectedEpisode,
-                            bundle = bundle,
-                            bundleState = sourceBundleState,
-                            source = source,
-                            initialPositionMs = initialPositionMs,
-                            playerSessionId = playerSessionId,
-                            onBack = {
-                                stopSourceDiscovery(markStopped = true)
-                                route = playerReturnRoute
-                            },
-                            onLibraryChanged = { refreshToken++ },
-                            onPlayNextEpisode = { nextEpisode ->
-                                stopSourceDiscovery(markStopped = false)
-                                selectedEpisode = nextEpisode
-                                initialPositionMs = 0L
-                                sourceReturnRoute = TvRoute.DETAIL
-                                route = TvRoute.SOURCE
-                            },
-                        )
+                        val playbackSession = playerSessionId
+                        key(bundle.videoId, playbackSession) {
+                            TvPlayerScreen(
+                                runtime = runtime,
+                                media = media,
+                                episode = selectedEpisode,
+                                bundle = bundle,
+                                bundleState = sourceBundleState,
+                                source = source,
+                                initialPositionMs = initialPositionMs,
+                                playerSessionId = playbackSession,
+                                onBack = {
+                                    cancelEpisodeSwitch()
+                                    route = playerReturnRoute
+                                },
+                                onLibraryChanged = { refreshToken++ },
+                                onPlayNextEpisode = { startEpisodeSwitch(it) },
+                                episodeSwitching = switchingEpisode != null,
+                                onEpisodeFrameReady = {
+                                    if (playerSessionId == playbackSession && switchingCommitted && switchingEpisode?.id == bundle.videoId) {
+                                        switchingEpisode = null
+                                        switchingError = null
+                                        switchingShowSources = false
+                                    }
+                                },
+                                onEpisodePlaybackFailed = { message ->
+                                    if (playerSessionId == playbackSession && switchingCommitted && switchingEpisode?.id == bundle.videoId) {
+                                        switchingError = message
+                                    }
+                                },
+                            )
+                        }
+                        switchingEpisode?.let { target ->
+                            TvEpisodeSwitchOverlay(
+                                episode = target,
+                                error = switchingError,
+                                showSources = switchingShowSources,
+                                sources = switchingBundle?.sources.orEmpty().filter { it.isDirectPlayable },
+                                onRetry = { startEpisodeSwitch(target, force = true) },
+                                onShowSources = { switchingShowSources = true },
+                                onSelectSource = { candidate ->
+                                    switchingBundle?.let { commitEpisodeSwitch(target, it, candidate) }
+                                },
+                                onCancel = { cancelEpisodeSwitch() },
+                            )
+                        }
                     }
                 }
                 }

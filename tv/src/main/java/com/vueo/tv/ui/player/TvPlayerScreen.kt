@@ -150,7 +150,13 @@ fun TvPlayerScreen(
     onBack: () -> Unit,
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem) -> Unit = {},
+    episodeSwitching: Boolean = false,
+    onEpisodeFrameReady: () -> Unit = {},
+    onEpisodePlaybackFailed: (String) -> Unit = {},
 ) {
+    val latestEpisodeSwitching = androidx.compose.runtime.rememberUpdatedState(episodeSwitching)
+    val latestEpisodeFrameReady = androidx.compose.runtime.rememberUpdatedState(onEpisodeFrameReady)
+    val latestEpisodePlaybackFailed = androidx.compose.runtime.rememberUpdatedState(onEpisodePlaybackFailed)
     val context = LocalContext.current
     val lifecycleOwner = context as? LifecycleOwner
     val rootRequester = remember { FocusRequester() }
@@ -362,7 +368,7 @@ fun TvPlayerScreen(
     val earlyNextEligible = PlayerSkipPolicy.canStartNextDuringCredits(
         skipSegments, positionMs, durationMs,
     )
-    val autoNextEligible = !nextEpisodeDispatched && !autoNextCancelled &&
+    val autoNextEligible = !episodeSwitching && !nextEpisodeDispatched && !autoNextCancelled &&
         autoPlayNextEpisode && nextEpisode != null &&
         activePanel == TvPlayerPanel.NONE && playbackError == null &&
         !recoveryInProgress && pendingSeekPositionMs == null && player.playWhenReady &&
@@ -386,7 +392,7 @@ fun TvPlayerScreen(
         interactionToken += 1
     }
 
-    fun isFocusRequestAllowed(requester: FocusRequester): Boolean = when (requester) {
+    fun isFocusRequestAllowed(requester: FocusRequester): Boolean = !latestEpisodeSwitching.value && when (requester) {
         progressRequester, restartRequester, nextRequester, subtitlesRequester,
         audioRequester, sourcesRequester, episodesRequester, moreRequester ->
             controlsVisible && activePanel == TvPlayerPanel.NONE
@@ -410,6 +416,7 @@ fun TvPlayerScreen(
     }
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
+        if (latestEpisodeSwitching.value) return
         focusedPrompt = TvPlayerPromptTarget.NONE
         seekFeedbackVisible = false
         controlsVisible = true
@@ -808,6 +815,7 @@ fun TvPlayerScreen(
                 sourceRecoverySession.markReady()
                 recoveryInProgress = false
                 playbackError = null
+                latestEpisodeFrameReady.value.invoke()
             }
         }
         player.addListener(listener)
@@ -1155,8 +1163,20 @@ fun TvPlayerScreen(
         onPlayNextEpisode(targetEpisode)
     }
 
+    LaunchedEffect(episodeSwitching) {
+        if (episodeSwitching) {
+            activePanel = TvPlayerPanel.NONE
+            hideControls()
+        } else {
+            nextEpisodeDispatched = false
+            requestFocusReliably(rootRequester)
+        }
+    }
+
     LaunchedEffect(playbackError) {
-        if (playbackError == null) return@LaunchedEffect
+        val error = playbackError ?: return@LaunchedEffect
+        latestEpisodePlaybackFailed.value.invoke(error)
+        if (episodeSwitching) return@LaunchedEffect
         controlsVisible = true
         controlFocusHandoffPending = true
         val restored = requestFocusNow(errorRequester) || requestFocusNow(progressRequester)
@@ -1170,7 +1190,7 @@ fun TvPlayerScreen(
             return@LaunchedEffect
         }
         if (
-            endedFocusAssigned || endedControlsDismissed ||
+            episodeSwitching || endedFocusAssigned || endedControlsDismissed ||
             autoNextEligible || nextCountdown > 0 ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null
