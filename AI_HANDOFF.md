@@ -210,3 +210,12 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 
 - About order is now VUEO/version, Privacy, TMDB Attribution, Check for updates on both Mobile and TV. Existing update callbacks/status/install logic are unchanged. Explicit maintainer authorization permits this Mobile UI ordering adjustment.
 - TV keeps the update entry key and activation callback, with the existing settings-list focus handling. Static ordering/block-preservation/archive checks only; no local build.
+
+## TV Home — vertical row motion correction
+
+- Vertical Home focus alignment is now owned by one cancellable row-scroll job, using a 180ms EaseOut tween and a 2px settle tolerance. Row headers align at viewport top, retaining the approximate 40dp poster/header inset. Incoming focus on a different row retargets from the current scroll position; same-row left/right focus does not restart vertical motion.
+- The outer BringIntoViewSpec returns zero to prevent competing automatic vertical relocation. Do not attempt to tune the deprecated scrollAnimationSpec property: Compose stopped supporting that customization in 1.8.0. Horizontal BringIntoViewSpec and card activation/focus/image behavior remain unchanged.
+- Target distance uses visible layout offsets or measured row heights plus spacing for a beyond-viewport focus target. One frame permits lazy target measurement before calculating the distance. Layout estimates are used only for unmeasured rows. The job is cancelled on disposal or floating-navigation preview, preserving the existing preview restoration path.
+- Outer LazyColumn uses a 232dp ahead/behind LazyLayoutCacheWindow (roughly one poster row) and row-kind content types for composition reuse. Inner LazyRow behavior is unchanged. Home image viewport gates remain in place, so cached offscreen composition does not start image downloads.
+- API references: https://developer.android.com/reference/kotlin/androidx/compose/foundation/gestures/BringIntoViewSpec and https://developer.android.com/reference/kotlin/androidx/compose/foundation/lazy/rememberLazyListState.composable . Cache-window state API was added in Compose Foundation 1.9.0; the project uses its existing Compose BOM without dependency changes.
+- Static delimiter/named-call/unchanged-horizontal/archive checks only; no local build, frame profiling or TV-remote test. Apply after the Home Progressive Loading patch; other player/About patches remain intact. Real-TV smoothness still requires maintainer validation.

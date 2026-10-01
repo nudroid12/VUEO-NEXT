@@ -1,6 +1,7 @@
 package com.vueo.tv.home
 
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -24,11 +25,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,6 +58,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +74,8 @@ import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 private val ContinueWatchingWidth = 210.dp
@@ -76,7 +84,9 @@ private val PosterWidth = 114.dp
 private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
-private val RowHeaderFocusInset = 40.dp
+private val VerticalRowCacheExtent = 232.dp
+private const val VerticalRowScrollDurationMs = 180
+private const val VerticalRowSettleTolerancePx = 2f
 private const val FocusedCardScale = 1.022f
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -93,7 +103,14 @@ internal fun TvModernHomeRows(
     onPosterLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val verticalState = rememberLazyListState()
+    val verticalCacheWindow = remember {
+        LazyLayoutCacheWindow(ahead = VerticalRowCacheExtent, behind = VerticalRowCacheExtent)
+    }
+    val verticalState = rememberLazyListState(cacheWindow = verticalCacheWindow)
+    val verticalScope = rememberCoroutineScope()
+    val verticalAlignmentJob = remember { arrayOfNulls<Job>(1) }
+    val measuredRowHeights = remember { mutableMapOf<String, Int>() }
+    var alignedRowKey by remember { mutableStateOf<String?>(null) }
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
         ?.takeIf { saved -> rows.any { it.key == saved } }
@@ -101,26 +118,66 @@ internal fun TvModernHomeRows(
     var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
 
     val density = LocalDensity.current
-    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
-    val verticalBringIntoViewSpec = remember(density, defaultBringIntoViewSpec) {
-        val topInsetPx = with(density) { RowHeaderFocusInset.toPx() }
-        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    val verticalBringIntoViewSpec = remember {
         object : BringIntoViewSpec {
-            override val scrollAnimationSpec: AnimationSpec<Float> = defaultBringIntoViewSpec.scrollAnimationSpec
+            // Focus changes below own the vertical scroll. Returning zero stops
+            // the framework from launching a competing relocation animation.
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+        }
+    }
 
-            override fun calculateScrollDistance(
-                offset: Float,
-                size: Float,
-                containerSize: Float,
-            ): Float {
-                // Mirror Vueo Modern Home: settle each focused row around a
-                // 40dp header anchor instead of snapping it flush to the top.
-                val distance = offset - topInsetPx
-                if (abs(distance) < 1f) return 0f
-                if (distance < 0f && !verticalState.canScrollBackward) return 0f
-                return distance
+    fun alignFocusedRow(row: TvHomeRow) {
+        if (alignedRowKey == row.key) return
+        alignedRowKey = row.key
+        verticalAlignmentJob[0]?.cancel()
+        verticalAlignmentJob[0] = verticalScope.launch {
+            // A beyond-viewport focus search can compose the target this frame.
+            // Give its measurement one frame to arrive before estimating distance.
+            withFrameNanos { }
+            val targetIndex = rows.indexOfFirst { it.key == row.key }
+            if (targetIndex < 0 || showContinueWatchingPreview) return@launch
+            val layout = verticalState.layoutInfo
+            val target = layout.visibleItemsInfo.firstOrNull { it.key == row.key }
+            val distance = if (target != null) {
+                target.offset.toFloat()
+            } else {
+                val first = layout.visibleItemsInfo.firstOrNull() ?: return@launch
+                if (first.index !in rows.indices) return@launch
+                val spacingPx = with(density) { 24.dp.toPx() }
+                fun extent(index: Int): Float {
+                    val candidate = rows[index]
+                    val measured = measuredRowHeights[candidate.key]
+                    val estimated = with(density) {
+                        val cardHeight = if (candidate.kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingHeight else PosterHeight
+                        cardHeight.toPx() + 14.dp.toPx() + 22.sp.toPx()
+                    }
+                    return (measured?.toFloat() ?: estimated) + spacingPx
+                }
+                if (targetIndex >= first.index) {
+                    first.offset + (first.index until targetIndex).sumOf { extent(it).toDouble() }.toFloat()
+                } else {
+                    first.offset - (targetIndex until first.index).sumOf { extent(it).toDouble() }.toFloat()
+                }
+            }
+            if (abs(distance) <= VerticalRowSettleTolerancePx) return@launch
+            // Row HEADER at zero gives the poster its existing ~40dp inset.
+            // A new row cancels and retargets from the current scroll position.
+            verticalState.scroll {
+                var previousValue = 0f
+                animate(
+                    initialValue = 0f,
+                    targetValue = distance,
+                    animationSpec = tween(durationMillis = VerticalRowScrollDurationMs, easing = TvMotion.EaseOut),
+                ) { value, _ ->
+                    scrollBy(value - previousValue)
+                    previousValue = value
+                }
             }
         }
+    }
+
+    DisposableEffect(verticalState) {
+        onDispose { verticalAlignmentJob[0]?.cancel() }
     }
 
     // Initialize TV focus once when Home rows first enter composition. Catalog
@@ -137,6 +194,8 @@ internal fun TvModernHomeRows(
     // This scroll is driven only by opening/closing the floating pill. Keeping
     // rows out of the key prevents incoming catalog batches from restarting it.
     LaunchedEffect(showContinueWatchingPreview) {
+        verticalAlignmentJob[0]?.cancel()
+        alignedRowKey = null
         if (showContinueWatchingPreview) {
             if (previewReturnRowKey == null) {
                 previewReturnRowKey = TvHomeFocusMemory.activeRowKey
@@ -179,6 +238,7 @@ internal fun TvModernHomeRows(
             itemsIndexed(
                 items = rows,
                 key = { _, row -> row.key },
+                contentType = { _, row -> row.kind },
             ) { _, row ->
                 val rowVisible by remember(verticalState, row.key) {
                     derivedStateOf {
@@ -190,11 +250,15 @@ internal fun TvModernHomeRows(
                 }
                 TvModernHomeRow(
                     rowVisible = rowVisible,
+                    onRowMeasured = { measuredRowHeights[row.key] = it },
                     row = row,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     onContentFocused = onContentFocused,
                     onLeftAtRowStart = onLeftAtRowStart,
-                    onFocused = onFocused,
+                    onFocused = { focusedRow, index, entry ->
+                        alignFocusedRow(focusedRow)
+                        onFocused(focusedRow, index, entry)
+                    },
                     onOpen = onOpen,
                     onPosterLongClick = onPosterLongClick,
                 )
@@ -208,6 +272,7 @@ internal fun TvModernHomeRows(
 private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
+    onRowMeasured: (Int) -> Unit,
     rowFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
@@ -258,6 +323,7 @@ private fun TvModernHomeRow(
     }
 
     Column(
+        modifier = Modifier.onSizeChanged { onRowMeasured(it.height) },
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
