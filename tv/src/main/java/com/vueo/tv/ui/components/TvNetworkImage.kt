@@ -20,8 +20,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +37,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 private object TvImageCache {
@@ -40,6 +46,7 @@ private object TvImageCache {
 
     private val memoryCache = object : LruCache<String, Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L)
+            .coerceAtMost(24L * 1024L)
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt(),
     ) {
@@ -47,45 +54,54 @@ private object TvImageCache {
             (value.allocationByteCount / 1024).coerceAtLeast(1)
     }
 
-    private val urlLocks = ConcurrentHashMap<String, Mutex>()
+    private val urlLocks = Array(64) { Mutex() }
+    private val loadingPermits = Semaphore(3)
     private val diskCacheCleaned = AtomicBoolean(false)
 
-    fun memoryEntry(url: String?): Bitmap? =
-        url?.takeIf(String::isNotBlank)?.let(memoryCache::get)
+    private fun key(url: String, size: IntSize) = "$url:${size.width}x${size.height}"
 
-    suspend fun load(context: Context, url: String): Bitmap? =
+    fun memoryEntry(url: String?, size: IntSize): Bitmap? =
+        url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
+
+    suspend fun load(context: Context, url: String, size: IntSize): Bitmap? =
         withContext(Dispatchers.IO) {
-            memoryCache.get(url)?.let { return@withContext it }
+            val cacheKey = key(url, size)
+            memoryCache.get(cacheKey)?.let { return@withContext it }
 
-            val lock = urlLocks.computeIfAbsent(url) { Mutex() }
+            val lock = urlLocks[(url.hashCode() and Int.MAX_VALUE) % urlLocks.size]
             lock.withLock {
-                memoryCache.get(url)?.let { return@withLock it }
+                currentCoroutineContext().ensureActive()
+                memoryCache.get(cacheKey)?.let { return@withLock it }
+                loadingPermits.withPermit {
+                    currentCoroutineContext().ensureActive()
 
-                val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
-                if (!cacheDirectory.exists()) cacheDirectory.mkdirs()
-                cleanDiskCacheOnce(cacheDirectory)
+                    val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
+                    if (!cacheDirectory.exists()) cacheDirectory.mkdirs()
+                    cleanDiskCacheOnce(cacheDirectory)
 
-                val cacheFile = File(cacheDirectory, url.sha256())
-                readCachedBitmap(cacheFile)?.let {
-                    memoryCache.put(url, it)
-                    return@withLock it
-                }
-
-                var downloaded: Bitmap? = null
-                repeat(2) { attempt ->
-                    if (downloaded == null) {
-                        downloaded = downloadBitmap(url, cacheFile)
-                        if (downloaded == null && attempt == 0) delay(250)
+                    val cacheFile = File(cacheDirectory, url.sha256())
+                    readCachedBitmap(cacheFile, size)?.let {
+                        memoryCache.put(cacheKey, it)
+                        return@withPermit it
                     }
-                }
 
-                downloaded?.also { memoryCache.put(url, it) }
+                    var downloaded: Bitmap? = null
+                    repeat(2) { attempt ->
+                        if (downloaded == null) {
+                            downloaded = downloadBitmap(url, cacheFile, size)
+                            if (downloaded == null && attempt == 0) delay(250)
+                        }
+                    }
+
+                    currentCoroutineContext().ensureActive()
+                    downloaded?.also { memoryCache.put(cacheKey, it) }
+                }
             }
         }
 
-    private fun readCachedBitmap(file: File): Bitmap? {
+    private fun readCachedBitmap(file: File, size: IntSize): Bitmap? {
         if (!file.isFile) return null
-        val bitmap = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+        val bitmap = decodeBitmap(file, size)
         if (bitmap == null) {
             file.delete()
         } else {
@@ -94,7 +110,7 @@ private object TvImageCache {
         return bitmap
     }
 
-    private fun downloadBitmap(url: String, cacheFile: File): Bitmap? {
+    private suspend fun downloadBitmap(url: String, cacheFile: File, size: IntSize): Bitmap? {
         val temporaryFile = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
         temporaryFile.delete()
 
@@ -116,6 +132,7 @@ private object TvImageCache {
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var totalBytes = 0L
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val count = input.read(buffer)
                         if (count < 0) break
                         totalBytes += count
@@ -125,17 +142,40 @@ private object TvImageCache {
                 }
             }
 
-            val bitmap = BitmapFactory.decodeFile(temporaryFile.absolutePath) ?: return null
+            currentCoroutineContext().ensureActive()
+            val bitmap = decodeBitmap(temporaryFile, size) ?: return null
             if (!temporaryFile.renameTo(cacheFile)) {
                 temporaryFile.copyTo(cacheFile, overwrite = true)
                 temporaryFile.delete()
             }
             bitmap
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             null
         } finally {
             connection.disconnect()
             temporaryFile.delete()
+        }
+    }
+
+    private fun decodeBitmap(file: File, size: IntSize): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = TvImageDecodePolicy.sampleSize(
+                    bounds.outWidth, bounds.outHeight, size.width, size.height,
+                )
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+        } catch (_: OutOfMemoryError) {
+            // A failed image must not terminate navigation on memory-limited TVs.
+            memoryCache.evictAll()
+            null
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -168,14 +208,20 @@ fun TvNetworkImage(
     fallback: Color = TvDesign.SurfaceRaised,
 ) {
     val context = LocalContext.current.applicationContext
-    var image by remember(url) { mutableStateOf(TvImageCache.memoryEntry(url)) }
+    var targetSize by remember { mutableStateOf(IntSize.Zero) }
+    var image by remember(url) {
+        mutableStateOf(TvImageCache.memoryEntry(url, targetSize))
+    }
 
-    LaunchedEffect(url) {
-        image = TvImageCache.memoryEntry(url)
-        if (image != null || url.isNullOrBlank() || !url.startsWith("https://")) {
+    LaunchedEffect(url, targetSize) {
+        if (targetSize.width <= 0 || targetSize.height <= 0) return@LaunchedEffect
+        val cached = TvImageCache.memoryEntry(url, targetSize)
+        if (cached != null) {
+            image = cached
             return@LaunchedEffect
         }
-        image = TvImageCache.load(context, url)
+        if (url.isNullOrBlank() || !url.startsWith("https://")) return@LaunchedEffect
+        TvImageCache.load(context, url, targetSize)?.let { image = it }
     }
 
     val imageAlpha by animateFloatAsState(
@@ -184,7 +230,13 @@ fun TvNetworkImage(
         label = "tvNetworkImageFade",
     )
 
-    Box(modifier = modifier.background(fallback)) {
+    Box(modifier = modifier.background(fallback).onSizeChanged { measured ->
+        val size = IntSize(
+            TvImageDecodePolicy.targetDimension(measured.width),
+            TvImageDecodePolicy.targetDimension(measured.height),
+        )
+        if (size != targetSize) targetSize = size
+    }) {
         image?.let { bitmap ->
             Image(
                 bitmap = bitmap.asImageBitmap(),

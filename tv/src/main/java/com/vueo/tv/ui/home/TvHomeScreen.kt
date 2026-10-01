@@ -21,6 +21,12 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.TvSidebar
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     var catalogRows by mutableStateOf(runtime.cachedHomeRows())
@@ -36,7 +42,7 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var presentationRefreshToken = Int.MIN_VALUE
     internal var presentationLibraryRevision = Int.MIN_VALUE
     internal var presentationCatalogRows: List<CatalogRow>? = null
-    internal var presentationRows: List<TvHomeRow> = emptyList()
+    internal var presentationRows by mutableStateOf<List<TvHomeRow>>(emptyList())
 }
 
 @Composable
@@ -62,7 +68,9 @@ fun TvHomeScreen(
     onBack: () -> Unit,
 ) {
     val catalogRows = retainedState.catalogRows
-    val loading = retainedState.loading
+    val loading = retainedState.loading ||
+        (retainedState.presentationRows.isEmpty() &&
+            retainedState.presentationCatalogRows !== catalogRows)
     val error = retainedState.error
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val libraryRevision = retainedState.libraryRevision
@@ -73,20 +81,34 @@ fun TvHomeScreen(
             retainedState.error = null
 
             runCatching {
-                runtime.homeRows(
-                    forceRefresh = false,
-                    onPartial = { partialRows ->
-                        if (partialRows.isNotEmpty()) {
-                            retainedState.catalogRows = partialRows
-                            retainedState.loading = false
+                coroutineScope {
+                    val updates = Channel<List<CatalogRow>>(Channel.CONFLATED)
+                    val publisher = launch {
+                        for (partialRows in updates) {
+                            if (partialRows.isNotEmpty()) {
+                                retainedState.catalogRows = partialRows
+                                retainedState.loading = false
+                            }
                         }
-                    },
-                )
+                    }
+                    try {
+                        withContext(Dispatchers.Default) {
+                            runtime.homeRows(
+                                forceRefresh = false,
+                                onPartial = { updates.trySend(it) },
+                            )
+                        }
+                    } finally {
+                        updates.close()
+                        publisher.join()
+                    }
+                }
             }
                 .onSuccess { rows ->
                     if (rows.isNotEmpty()) retainedState.catalogRows = rows
                 }
                 .onFailure { failure ->
+                    if (failure is CancellationException) throw failure
                     if (retainedState.catalogRows.isEmpty()) {
                         retainedState.error = failure.message ?: "Unable to load Home"
                     }
@@ -98,92 +120,94 @@ fun TvHomeScreen(
         }
     }
 
-    val presentationIsCurrent =
-        retainedState.presentationRefreshToken == refreshToken &&
-            retainedState.presentationLibraryRevision == libraryRevision &&
-            retainedState.presentationCatalogRows === catalogRows
+    val rows = retainedState.presentationRows
 
-    val rows = if (presentationIsCurrent) {
-        retainedState.presentationRows
-    } else {
-        val continueWatching = runtime.libraryStore.continueWatching().take(12)
-        val watchHistory = runtime.libraryStore.history()
-        val activeProfileId = runtime.profileStore.activeProfileId()
-        val personalizedHomeEnabled =
-            runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-        val homeRecommendations = HomeRecommendationPolicy.build(
-            catalogRows = catalogRows,
-            watchHistory = watchHistory,
-            dnaEngine = runtime.dnaEngine,
-            personalizationEnabled = personalizedHomeEnabled,
-            limit = 12,
-        )
-        val rebuiltRows = buildList {
-            if (continueWatching.isNotEmpty()) {
-                add(
-                    TvHomeRow(
-                        key = "continue-watching",
-                        title = "Continue Watching",
-                        kind = TvHomeRowKind.CONTINUE_WATCHING,
-                        entries = continueWatching.map { playback ->
-                            TvHomeEntry.Resume(
-                                key = "continue:${playback.mediaKey}",
-                                media = playback.media,
-                                playback = playback,
-                            )
-                        },
-                    )
-                )
-            }
-
-            if (homeRecommendations.forYou.size >= 4) {
-                add(
-                    TvHomeRow(
-                        key = "for-you",
-                        title = "For You",
-                        kind = TvHomeRowKind.POSTERS,
-                        entries = homeRecommendations.forYou.map { media ->
-                            TvHomeEntry.Media(
-                                key = "for-you:${media.type}:${media.id}",
-                                media = media,
-                            )
-                        },
-                    )
-                )
-            }
-
-            val becauseSeed = homeRecommendations.becauseYouWatchedSeed
-            if (becauseSeed != null && homeRecommendations.becauseYouWatched.size >= 4) {
-                add(
-                    TvHomeRow(
-                        key = "because-you-watched",
-                        title = "Because You Watched ${becauseSeed.name}",
-                        kind = TvHomeRowKind.POSTERS,
-                        entries = homeRecommendations.becauseYouWatched.map { media ->
-                            TvHomeEntry.Media(
-                                key = "because:${media.type}:${media.id}",
-                                media = media,
-                            )
-                        },
-                    )
-                )
-            }
-
-            catalogRows.forEach { row ->
-                if (row.items.isNotEmpty()) {
+    LaunchedEffect(runtime, refreshToken, libraryRevision, catalogRows) {
+        val presentationIsCurrent =
+            retainedState.presentationRefreshToken == refreshToken &&
+                retainedState.presentationLibraryRevision == libraryRevision &&
+                retainedState.presentationCatalogRows === catalogRows
+        if (presentationIsCurrent) return@LaunchedEffect
+        val rebuiltRows = withContext(Dispatchers.Default) {
+            val continueWatching = runtime.libraryStore.continueWatching().take(12)
+            val watchHistory = runtime.libraryStore.history()
+            val activeProfileId = runtime.profileStore.activeProfileId()
+            val personalizedHomeEnabled =
+                runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
+            val homeRecommendations = HomeRecommendationPolicy.build(
+                catalogRows = catalogRows,
+                watchHistory = watchHistory,
+                dnaEngine = runtime.dnaEngine,
+                personalizationEnabled = personalizedHomeEnabled,
+                limit = 12,
+            )
+            buildList {
+                if (continueWatching.isNotEmpty()) {
                     add(
                         TvHomeRow(
-                            key = "catalog:${row.id}",
-                            title = row.title,
+                            key = "continue-watching",
+                            title = "Continue Watching",
+                            kind = TvHomeRowKind.CONTINUE_WATCHING,
+                            entries = continueWatching.map { playback ->
+                                TvHomeEntry.Resume(
+                                    key = "continue:${playback.mediaKey}",
+                                    media = playback.media,
+                                    playback = playback,
+                                )
+                            },
+                        )
+                    )
+                }
+
+                if (homeRecommendations.forYou.size >= 4) {
+                    add(
+                        TvHomeRow(
+                            key = "for-you",
+                            title = "For You",
                             kind = TvHomeRowKind.POSTERS,
-                            entries = row.items.mapIndexed { index, media ->
+                            entries = homeRecommendations.forYou.map { media ->
                                 TvHomeEntry.Media(
-                                    key = "${row.id}:$index:${media.type}:${media.id}",
+                                    key = "for-you:${media.type}:${media.id}",
                                     media = media,
                                 )
                             },
                         )
                     )
+                }
+
+                val becauseSeed = homeRecommendations.becauseYouWatchedSeed
+                if (becauseSeed != null && homeRecommendations.becauseYouWatched.size >= 4) {
+                    add(
+                        TvHomeRow(
+                            key = "because-you-watched",
+                            title = "Because You Watched ${becauseSeed.name}",
+                            kind = TvHomeRowKind.POSTERS,
+                            entries = homeRecommendations.becauseYouWatched.map { media ->
+                                TvHomeEntry.Media(
+                                    key = "because:${media.type}:${media.id}",
+                                    media = media,
+                                )
+                            },
+                        )
+                    )
+                }
+
+                catalogRows.forEach { row ->
+                    if (row.items.isNotEmpty()) {
+                        add(
+                            TvHomeRow(
+                                key = "catalog:${row.id}",
+                                title = row.title,
+                                kind = TvHomeRowKind.POSTERS,
+                                entries = row.items.mapIndexed { index, media ->
+                                    TvHomeEntry.Media(
+                                        key = "${row.id}:$index:${media.type}:${media.id}",
+                                        media = media,
+                                    )
+                                },
+                            )
+                        )
+                    }
                 }
             }
         }
@@ -191,7 +215,6 @@ fun TvHomeScreen(
         retainedState.presentationRefreshToken = refreshToken
         retainedState.presentationLibraryRevision = libraryRevision
         retainedState.presentationCatalogRows = catalogRows
-        rebuiltRows
     }
 
     val contentFocusRequester = remember { FocusRequester() }
