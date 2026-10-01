@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -51,6 +52,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -124,6 +127,22 @@ internal fun TvSettingsMasterDetailShell(
 ) {
     if (categories.isEmpty()) return
 
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val categoryTextStyle = LocalTextStyle.current.copy(
+        fontSize = 16.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    val arrowTextStyle = LocalTextStyle.current.copy(fontSize = 20.sp)
+    // One compact width, sized for the longest label (Content Manager in this menu).
+    // Measure the focused weight too so labels never truncate when focus moves.
+    val categoryColumnWidth = remember(categories, textMeasurer, density, categoryTextStyle, arrowTextStyle) {
+        val labelWidth = categories.maxOf { category ->
+            textMeasurer.measure(category.title, style = categoryTextStyle, maxLines = 1).size.width
+        }
+        val arrowWidth = textMeasurer.measure("›", style = arrowTextStyle, maxLines = 1).size.width
+        with(density) { (labelWidth + arrowWidth).toDp() } + 46.dp
+    }
     val contentStartPadding = tvSidebarContentStartPadding(100.dp)
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
@@ -261,7 +280,7 @@ internal fun TvSettingsMasterDetailShell(
         ) {
             Column(
                 modifier = Modifier
-                    .width(242.dp)
+                    .width(categoryColumnWidth)
                     .fillMaxHeight(),
             ) {
                 Text(
@@ -274,7 +293,7 @@ internal fun TvSettingsMasterDetailShell(
                 )
 
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     var previousSection: String? = null
@@ -290,7 +309,7 @@ internal fun TvSettingsMasterDetailShell(
                                     letterSpacing = 1.15.sp,
                                     modifier = Modifier.padding(
                                         start = 10.dp,
-                                        top = if (index == 0) 2.dp else 9.dp,
+                                        top = if (index == 0) 2.dp else 14.dp,
                                         bottom = 1.dp,
                                     ),
                                 )
@@ -467,6 +486,7 @@ private fun TvSettingsCategoryRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Spacer(Modifier.width(12.dp))
         Text(
             text = "›",
             color = if (focused) TvDesign.White else TvDesign.Dim,

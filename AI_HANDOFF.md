@@ -229,3 +229,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Console log retention is bounded to the latest 24 entries during execution via a synchronized deque, replacing unbounded copy-on-write accumulation. Two JUnit regression checks included for CI, not run locally.
 - WebView renderer termination destroys the affected view and reports a provider failure. Cleanup attempts destroy even if preceding cleanup fails. Injected HTML reads have a 4 MiB cap.
 - Provider execution concurrency, source ranking, progressive publication, scan budgets and UI remain unchanged. Actual crash cause and real-device behavior still require diagnostics/device validation; native runtime or OS process termination is not proven resolved.
+
+## TV Settings category spacing patch (2026-10-02)
+
+- TvSettingsComponents: category column replaces fixed 242 dp with measured longest-label width at focused 16 sp Semibold, measured chevron plus 30 dp side padding, 12 dp label/arrow gap and 4 dp reserve. All menu boxes share this width, adapting to font scale; Content Manager is the reference longest label in the current menu.
+- Category list spacing increases 6 -> 14 dp; noninitial section header top padding increases 9 -> 14 dp. Row heights, panel content, focus requesters and D-pad callbacks are unchanged.
+- Static checks and ZIP integrity only. No local build/test execution or real-TV visual validation, per user instruction.
