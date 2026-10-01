@@ -61,9 +61,9 @@ internal fun VueoPlayerNextEpisodeCard(
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier
-            .widthIn(max = 430.dp)
-            .width(430.dp)
-            .heightIn(min = 88.dp)
+            .widthIn(max = 360.dp)
+            .width(360.dp)
+            .heightIn(min = 76.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -90,11 +90,11 @@ internal fun VueoPlayerNextEpisodeCard(
             .focusable()
             .background(Color(0xFF171A20).copy(alpha = .94f), shape)
             .border(if (focused) 2.dp else 1.dp, Color.White.copy(alpha = if (focused) .95f else .35f), shape)
-            .padding(12.dp),
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.width(108.dp).height(61.dp).clip(RoundedCornerShape(8.dp))) {
+        Box(Modifier.width(96.dp).height(54.dp).clip(RoundedCornerShape(8.dp))) {
             TvNetworkImage(
                 url = episode.thumbnail?.takeIf { it.isNotBlank() } ?: fallbackImage,
                 contentDescription = episode.title,
@@ -116,14 +116,16 @@ internal fun VueoPlayerNextEpisodeCard(
             )
         }
         Column(
-            modifier = Modifier
-                .background(Color.White.copy(alpha = if (focused) .16f else .07f), RoundedCornerShape(18.dp))
-                .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
-                .padding(horizontal = 10.dp, vertical = 7.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .background(Color.White.copy(alpha = if (focused) .16f else .07f), RoundedCornerShape(18.dp))
+                    .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                 Text("Play", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }

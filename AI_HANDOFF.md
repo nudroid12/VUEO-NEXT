@@ -170,3 +170,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Player root focus remains attached while controls are visible. `hideControls()` cancels pending chrome focus and moves focus directly to root. Chrome retained during exit has input/focus/focused styling disabled through `LocalPlayerChromeInteractive`.
 - Focus retries now accept an eligibility callback and stop when their target is no longer available. The release of an OK press that merely reveals controls is consumed so it cannot accidentally toggle playback after focus transfer.
 - Keep the earlier 12dp progress-relative prompt positioning and skip/auto-next safety behavior. Apply this patch after the previous Skip & Auto-next / prompt-position patches. Static checks only; no local build or TV runtime validation was performed.
+
+## TV Player — compact next card and single-Back dismissal
+
+- Next Episode card width is now 360dp, with 10dp padding/spacing, a 96x54dp thumbnail and a 76dp minimum height. Long episode titles retain two-line ellipsis. The whole card remains one remote focus target.
+- Only the Play row has a small pill outline; countdown appears below it, outside the pill. Existing progress-relative positioning is retained.
+- Back closes an open workspace first. Otherwise, when controls or the next countdown are visible, one Back cancels any active countdown and hides controls with the existing direct-root focus handoff. It no longer reveals progress controls just to cancel the countdown. Back with both hidden retains player exit behavior.
+- Apply after VUEO_TV_NextCard_Seek_Focus_Patch.zip. Seek, remaining-time, slide motion and post-credit safety policy are unchanged. Static source and archive checks only; no local build or TV runtime test was performed.

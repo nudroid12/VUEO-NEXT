@@ -565,13 +565,16 @@ fun TvPlayerScreen(
 
     BackHandler {
         when {
-            nextCountdown > 0 -> {
-                autoNextCancelled = true
-                nextCountdown = 0
-                requestControlFocus(progressRequester)
-            }
             activePanel != TvPlayerPanel.NONE -> closePanel()
-            controlsVisible -> hideControls()
+            controlsVisible || nextCountdown > 0 -> {
+                // One Back dismisses both the countdown card and player chrome.
+                // A workspace keeps its own Back-to-player behavior above.
+                if (nextCountdown > 0) {
+                    autoNextCancelled = true
+                    nextCountdown = 0
+                }
+                hideControls()
+            }
             else -> exitPlayer()
         }
     }
