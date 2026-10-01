@@ -609,6 +609,16 @@ internal fun AboutVueoSettingsScreen(
 
                     VueoAboutDivider()
                     VueoAboutRow(
+                        title = "Privacy",
+                        detail = "Settings and API keys stay on this device. API keys are excluded from backups unless you include them.",
+                    )
+                    VueoAboutDivider()
+                    VueoAboutRow(
+                        title = "TMDB Attribution",
+                        detail = "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+                    )
+                    VueoAboutDivider()
+                    VueoAboutRow(
                         title = "Check for updates",
                         detail = updateMessage,
                         value = when {
@@ -619,16 +629,6 @@ internal fun AboutVueoSettingsScreen(
                             else -> "Up to date"
                         },
                         onClick = updateAction,
-                    )
-                    VueoAboutDivider()
-                    VueoAboutRow(
-                        title = "Privacy",
-                        detail = "Settings and API keys stay on this device. API keys are excluded from backups unless you include them.",
-                    )
-                    VueoAboutDivider()
-                    VueoAboutRow(
-                        title = "TMDB Attribution",
-                        detail = "This product uses the TMDB API but is not endorsed or certified by TMDB.",
                     )
                 }
             }

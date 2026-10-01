@@ -205,3 +205,8 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - TV Home images start only for cards intersecting both visible row/card viewports (or focused cards). Hero/focus requests can use the reserved third image slot; ordinary image work is capped at two within the existing global maximum of three. Existing loaded images and disk/memory cache are retained.
 - Logcat tag VUEO_HOME records cache_restored, manifest_ready, manifests_finished, fresh_cache_used, first_fresh_row, first_rows_presented and catalogs_finished/fallback, with elapsed milliseconds/counts and no addon URLs. first_rows_presented is a Compose frame opportunity marker, not GPU-render timing or a promise that artwork is ready.
 - Four Shared Core regression tests cover immediate first/second-row publication despite a blocked remainder, scoped-load cache preservation, aggregate catalog concurrency and cancelled-slot release. Included for CI; not run locally. Static source/signature/control-flow/archive checks only, no local build or TV/network measurement. Keep the prior player patches; apply this patch after VUEO_TV_InPlayer_Episode_Switch_Patch.zip.
+
+## About — update action placed last on Mobile and TV
+
+- About order is now VUEO/version, Privacy, TMDB Attribution, Check for updates on both Mobile and TV. Existing update callbacks/status/install logic are unchanged. Explicit maintainer authorization permits this Mobile UI ordering adjustment.
+- TV keeps the update entry key and activation callback, with the existing settings-list focus handling. Static ordering/block-preservation/archive checks only; no local build.
