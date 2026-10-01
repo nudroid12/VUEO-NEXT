@@ -303,6 +303,8 @@ fun TvPlayerScreen(
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
+    var seekFeedbackVisible by remember { mutableStateOf(false) }
+    var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
     var restorePanelFocus by remember { mutableStateOf<TvPlayerPanel?>(null) }
     var endedFocusAssigned by remember(mediaKey) { mutableStateOf(false) }
@@ -384,6 +386,7 @@ fun TvPlayerScreen(
     }
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
+        seekFeedbackVisible = false
         controlsVisible = true
         controlFocusHandoffPending = true
         noteInteraction()
@@ -421,11 +424,19 @@ fun TvPlayerScreen(
         pendingSeekPositionMs = target
         positionMs = target
         seekCommitJob[0]?.cancel()
-        seekCommitJob[0] = focusScope.launch {
-            // KeyUp normally commits immediately. This longer fallback only
-            // protects against remotes that occasionally omit the release event.
-            delay(1_200L)
+        if (!controlsVisible && activePanel == TvPlayerPanel.NONE) {
+            // Hidden-chrome seeking stays on the root focus target and applies
+            // immediately, including held-key repeats. Only the rail is shown.
+            seekFeedbackVisible = true
+            seekFeedbackToken += 1
             commitPendingSeek()
+        } else {
+            seekCommitJob[0] = focusScope.launch {
+                // Visible-rail seeking commits on release, with a fallback for
+                // remotes that occasionally omit the release event.
+                delay(1_200L)
+                commitPendingSeek()
+            }
         }
         noteInteraction()
     }
@@ -1103,6 +1114,15 @@ fun TvPlayerScreen(
         }
     }
 
+    LaunchedEffect(seekFeedbackToken, controlsVisible, activePanel) {
+        if (controlsVisible || activePanel != TvPlayerPanel.NONE) {
+            seekFeedbackVisible = false
+        } else if (seekFeedbackVisible) {
+            delay(1_500L)
+            seekFeedbackVisible = false
+        }
+    }
+
     LaunchedEffect(controlsVisible, activePanel, interactionToken, playing) {
         if (controlsVisible && activePanel == TvPlayerPanel.NONE && playing) {
             val token = interactionToken
@@ -1160,7 +1180,9 @@ fun TvPlayerScreen(
                             code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
                     )
                 ) {
-                    commitPendingSeek()
+                    // Hidden seeking already committed on KeyDown; do not
+                    // issue the same ExoPlayer seek again on release.
+                    if (seekCommitJob[0] != null) commitPendingSeek()
                     return@onPreviewKeyEvent true
                 }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -1228,7 +1250,7 @@ fun TvPlayerScreen(
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                    requestControlFocus(progressRequester)
+                                    if (controlsVisible) requestControlFocus(progressRequester)
                                     seekBy(
                                         tvLongPressSeekDeltaMs(
                                             direction = -1,
@@ -1238,7 +1260,7 @@ fun TvPlayerScreen(
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    requestControlFocus(progressRequester)
+                                    if (controlsVisible) requestControlFocus(progressRequester)
                                     seekBy(
                                         tvLongPressSeekDeltaMs(
                                             direction = 1,
@@ -1372,6 +1394,7 @@ fun TvPlayerScreen(
             episode = episode,
             activeSource = activeSource,
             controlsVisible = controlsVisible,
+            seekFeedbackVisible = seekFeedbackVisible,
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,

@@ -135,3 +135,11 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Player chrome, scrim and workspaces animate independently from the video. The transparent subtitle workspace remains fade-only and does not move the rendered subtitle.
 - Hero and backdrop transitions are capped near 270ms. Do not restore the previous 420ms to 500ms fades.
 - This revision was reviewed statically only. No local Gradle build was run, as requested by the maintainer.
+
+## TV Player — hidden seek feedback + directional chrome
+
+- LEFT/RIGHT while player controls are hidden seeks immediately on KeyDown, including accelerated held-key repeats, without revealing full controls or moving focus away from the root.
+- Hidden seek feedback is a display-only progress rail with no focus target. It fades out after 1.5 seconds without another seek; opening controls or a workspace clears it.
+- Hidden seeks already applied on KeyDown must not be applied again on KeyUp. Visible-rail seeks retain release-to-commit and the missing-release fallback.
+- Main player chrome now has independent anchored motion: top enters/exits through the top edge, bottom enters/exits through the bottom edge. Video, subtitle rendering and workspace animations keep their existing behavior.
+- This explicitly supersedes the main chrome's previous fade-only presentation. Full TV compilation and real-remote motion verification remain required; the patch was reviewed statically in the handoff environment.

@@ -61,6 +61,7 @@ internal fun VueoPlayerProgressRail(
     onSeekBy: (Long) -> Unit,
     onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
+    interactive: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
     val targetProgress = if (durationMs > 0L) {
@@ -81,10 +82,8 @@ internal fun VueoPlayerProgressRail(
     )
     val shape = RoundedCornerShape(50)
 
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(railHeight)
+    val inputModifier = if (interactive) {
+        Modifier
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -129,6 +128,13 @@ internal fun VueoPlayerProgressRail(
                 }
             }
             .focusable()
+    } else Modifier
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(railHeight)
+            .then(inputModifier)
             .background(Color.White.copy(alpha = if (focused) .38f else .26f), shape)
             .border(if (focused) 1.dp else 0.dp, Color.White, shape),
     ) {
