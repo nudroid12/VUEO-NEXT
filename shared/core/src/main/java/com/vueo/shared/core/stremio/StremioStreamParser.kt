@@ -24,10 +24,23 @@ object StremioStreamParser {
                 return@mapNotNull null
             }
 
-            val title = item.optString(
-                "title",
-                item.optString("name", manifest.name),
-            ).trim().ifBlank { manifest.name }
+            // Addons use name for the server and title/description for release details.
+            // Keep all text instead of discarding name when title is present.
+            val rawName = item.sourceText("name")
+            val rawTitle = item.sourceText("title")
+            val description = item.sourceText("description")
+            val explicitServer = listOf("serverName", "server", "extractor", "host")
+                .firstNotNullOfOrNull { item.sourceText(it) }
+            val server = explicitServer ?: rawName
+                ?.takeIf { (rawTitle != null || description != null) && it != rawTitle && it != description }
+                ?.let { com.vueo.shared.core.source.SourceDisplayText.details(it, manifest.name, null) }
+            val title = listOfNotNull(rawTitle, description, rawName)
+                .flatMap(com.vueo.shared.core.source.SourceDisplayText::lines)
+                .distinctBy { it.lowercase() }
+                .joinToString("\n")
+                .let { com.vueo.shared.core.source.SourceDisplayText.details(it, manifest.name, server) }
+                ?: manifest.name
+            val metadataText = listOfNotNull(rawName, rawTitle, description).joinToString("\n")
             val behaviorHints = item.optJSONObject("behaviorHints")
             val requestHeaders = behaviorHints
                 ?.optJSONObject("proxyHeaders")
@@ -43,9 +56,9 @@ object StremioStreamParser {
                 url = streamUrl,
                 infoHash = infoHash,
                 fileIndex = item.optInt("fileIdx", -1).takeIf { it >= 0 },
-                quality = inferQuality(title),
-                codec = inferCodec(title),
-                hdr = inferHdr(title),
+                quality = item.sourceText("quality") ?: inferQuality(metadataText),
+                codec = item.sourceText("codec") ?: inferCodec(metadataText),
+                hdr = item.sourceText("hdr") ?: inferHdr(metadataText),
                 audio = item.optString("audio")
                     .takeIf { it.isNotBlank() },
                 language = listOf(
@@ -62,6 +75,7 @@ object StremioStreamParser {
                 headers = requestHeaders,
                 providerId = manifest.id,
                 providerName = manifest.name,
+                serverName = server,
             )
         }
     }
@@ -116,6 +130,9 @@ object StremioStreamParser {
         }
     }
 
+    private fun JSONObject.sourceText(field: String): String? =
+        if (isNull(field)) null else optString(field).trim().takeIf(String::isNotBlank)
+
     private fun JSONObject?.toStringMap(): Map<String, String> {
         if (this == null) return emptyMap()
         return buildMap {
@@ -142,8 +159,8 @@ object StremioStreamParser {
         val value = text.lowercase()
         return when {
             "av1" in value -> "AV1"
-            "hevc" in value || "h265" in value || "x265" in value -> "HEVC"
-            "h264" in value || "x264" in value -> "H.264"
+            "hevc" in value || "h265" in value || "h.265" in value || "x265" in value -> "HEVC"
+            "h264" in value || "h.264" in value || "x264" in value -> "H.264"
             else -> null
         }
     }

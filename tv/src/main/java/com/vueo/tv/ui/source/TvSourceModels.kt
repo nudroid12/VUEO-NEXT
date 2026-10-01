@@ -221,22 +221,11 @@ internal fun sourceServerDisplayName(source: StreamSource): String? =
         ?.takeIf(String::isNotBlank)
 
 internal fun sourceTitleDisplayName(source: StreamSource): String? {
-    val title = source.name.trim()
-    if (title.isBlank() ||
-        title.startsWith("http://", ignoreCase = true) ||
-        title.startsWith("https://", ignoreCase = true)
-    ) {
-        return null
-    }
-
-    val provider = sourceProviderDisplayName(sourceProviderKey(source))
-    val server = sourceServerDisplayName(source)
-    return title.takeUnless {
-        it.equals(provider, ignoreCase = true) ||
-            server?.let { serverName ->
-                it.equals(serverName, ignoreCase = true)
-            } == true
-    }
+    return com.vueo.shared.core.source.SourceDisplayText.details(
+        source.name,
+        sourceProviderDisplayName(sourceProviderKey(source)),
+        sourceServerDisplayName(source),
+    )
 }
 
 internal fun sourceMetadataLine(

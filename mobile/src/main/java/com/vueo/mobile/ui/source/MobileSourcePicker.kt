@@ -1111,24 +1111,11 @@ private fun sourceServerDisplayName(
 private fun sourceTitleDisplayName(
     source: StreamSource,
 ): String? {
-    val title = source.name.trim()
-    if (title.isBlank() ||
-        title.startsWith("http://", ignoreCase = true) ||
-        title.startsWith("https://", ignoreCase = true)
-    ) {
-        return null
-    }
-
-    val provider = sourceProviderTabDisplayName(
-        sourceProviderTabKey(source)
+    return com.vueo.shared.core.source.SourceDisplayText.details(
+        source.name,
+        sourceProviderTabDisplayName(sourceProviderTabKey(source)),
+        sourceServerDisplayName(source),
     )
-    val server = sourceServerDisplayName(source)
-    return title.takeUnless {
-        it.equals(provider, ignoreCase = true) ||
-            server?.let { serverName ->
-                it.equals(serverName, ignoreCase = true)
-            } == true
-    }
 }
 
 private fun sourceMetadataLine(
@@ -1302,16 +1289,11 @@ private fun StreamSourceCard(
             }
 
             val sourceTitle = sourceTitleDisplayName(source)
-            if (
-                sourceTitle != null &&
-                (showTechnicalDetails || sourceServerDisplayName(source) != null)
-            ) {
+            if (sourceTitle != null) {
                 Text(
                     sourceTitle,
                     color = Color.White.copy(alpha = .55f),
                     fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

@@ -155,7 +155,15 @@ internal fun parseProviderStreams(
                     ":" + provider.id +
                     ":" + index,
                 name =
-                    displayName,
+                    com.vueo.shared.core.source.SourceDisplayText.details(
+                        listOfNotNull(
+                            title,
+                            item.metadataLabel("description"),
+                            itemName,
+                        ).joinToString("\n"),
+                        provider.name,
+                        serverName,
+                    ) ?: displayName,
                 url =
                     url,
                 quality =

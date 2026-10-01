@@ -99,6 +99,7 @@ class StremioAddonExtension private constructor(
                 rankBoost = source.rankBoost,
                 providerId = source.providerId,
                 providerName = source.providerName,
+                serverName = source.serverName,
             )
         }
 
