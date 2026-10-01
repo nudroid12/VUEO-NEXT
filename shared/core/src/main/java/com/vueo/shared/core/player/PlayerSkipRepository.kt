@@ -25,8 +25,14 @@ data class PlayerSkipSegment(
 }
 
 object PlayerSkipRepository {
-    private val cache =
-        ConcurrentHashMap<String, List<PlayerSkipSegment>>()
+    private data class CachedSegments(
+        val segments: List<PlayerSkipSegment>,
+        val loadedAtNs: Long,
+    )
+
+    private val cache = ConcurrentHashMap<String, CachedSegments>()
+    private const val EMPTY_CACHE_NS = 30_000_000_000L
+    private const val READY_CACHE_NS = 600_000_000_000L
 
     suspend fun segments(
         imdbId: String,
@@ -35,7 +41,12 @@ object PlayerSkipRepository {
     ): List<PlayerSkipSegment> {
         val normalizedImdbId = imdbId.lowercase()
         val cacheKey = "$normalizedImdbId:$season:$episode"
-        cache[cacheKey]?.let { return it }
+        cache[cacheKey]?.let { cached ->
+            val ageNs = System.nanoTime() - cached.loadedAtNs
+            val ttlNs = if (cached.segments.isEmpty()) EMPTY_CACHE_NS else READY_CACHE_NS
+            if (ageNs >= 0L && ageNs < ttlNs) return cached.segments
+            cache.remove(cacheKey, cached)
+        }
 
         val loaded = coroutineScope {
             val introDb = async {
@@ -50,7 +61,7 @@ object PlayerSkipRepository {
             )
         }
 
-        cache[cacheKey] = loaded
+        cache[cacheKey] = CachedSegments(loaded, System.nanoTime())
         return loaded
     }
 
@@ -189,8 +200,12 @@ object PlayerSkipRepository {
 
     private fun parseTime(value: String): Long? {
         value.toDoubleOrNull()?.let { return (it * 1_000).toLong() }
-        val parts = value.split(':').mapNotNull(String::toDoubleOrNull)
-        if (parts.isEmpty() || parts.size > 3) return null
+        val rawParts = value.split(':')
+        if (rawParts.isEmpty() || rawParts.size > 3) return null
+        val parts = rawParts.map { it.toDoubleOrNull() ?: return null }
+        if (parts.any { !it.isFinite() || it < 0.0 } ||
+            parts.drop(1).any { it >= 60.0 }
+        ) return null
         var seconds = 0.0
         parts.forEach { seconds = seconds * 60 + it }
         return (seconds * 1_000).toLong()

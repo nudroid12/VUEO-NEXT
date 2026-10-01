@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +51,7 @@ import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
@@ -63,6 +66,8 @@ internal fun VueoPlayerPresentation(
     activeSource: StreamSource,
     controlsVisible: Boolean,
     seekFeedbackVisible: Boolean,
+    subtitleBottomPaddingFraction: Float,
+    subtitleFontSizeSp: Int,
     activePanel: TvPlayerPanel,
     playing: Boolean,
     isBuffering: Boolean,
@@ -93,6 +98,8 @@ internal fun VueoPlayerPresentation(
     nextContextRequester: FocusRequester,
     errorRequester: FocusRequester,
     onInteraction: () -> Unit,
+    onChromeInteraction: () -> Unit,
+    onPromptFocused: (TvPlayerPromptTarget) -> Unit,
     onPlayPause: () -> Unit,
     onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
@@ -117,13 +124,22 @@ internal fun VueoPlayerPresentation(
         else -> restartRequester
     }
 
-    Box(Modifier.fillMaxSize()) {
+    val subtitleLineClearance = with(LocalDensity.current) { (subtitleFontSizeSp * 3).sp.toDp() } + 16.dp
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val showPrompts = activePanel == TvPlayerPanel.NONE && playbackError == null
+        val promptBottomPadding = maxOf(
+            if (controlsVisible) 118.dp else 32.dp,
+            if (subtitleBottomPaddingFraction > 0f) {
+                maxHeight * subtitleBottomPaddingFraction.coerceIn(0f, 1f) + subtitleLineClearance
+            } else 0.dp,
+        ).coerceAtMost((maxHeight - 100.dp).coerceAtLeast(0.dp))
+        val skipOnRight = activeSkip?.kind == PlayerSkipKind.ENDING
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
         val showScrim = showChrome ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null ||
-            activeSkip != null ||
-            nextCountdown > 0
+            (showPrompts && activeSkip != null) ||
+            (showPrompts && nextCountdown > 0)
         AnimatedVisibility(
             visible = showScrim,
             enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
@@ -156,7 +172,7 @@ internal fun VueoPlayerPresentation(
             sourcesRequester = sourcesRequester,
             episodesRequester = episodesRequester,
             moreRequester = moreRequester,
-            onInteraction = onInteraction,
+            onInteraction = onChromeInteraction,
             onPlayPause = onPlayPause,
             onRestart = onRestart,
             onSeekBy = onSeekBy,
@@ -201,23 +217,51 @@ internal fun VueoPlayerPresentation(
             }
         }
 
-        activeSkip?.let { segment ->
-            VueoPlayerPromptButton(
-                text = vueoSkipLabel(segment), requester = skipRequester,
-                upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
-                downRequester = progressRequester,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 118.dp),
-                onInteraction = onInteraction, onClick = { onSkip(segment) },
-            )
-        }
-        if (nextCountdown > 0 && nextEpisode != null) {
-            VueoPlayerPromptButton(
-                text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester,
-                upRequester = FocusRequester.Cancel,
-                downRequester = if (activeSkip != null) skipRequester else progressRequester,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = if (activeSkip != null) 168.dp else 118.dp),
-                onInteraction = onInteraction, onClick = onNext,
-            )
+        if (showPrompts && (activeSkip != null || nextCountdown > 0)) {
+            Row(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .padding(start = 32.dp, end = 32.dp, bottom = promptBottomPadding),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                if (activeSkip != null && !skipOnRight) {
+                    VueoPlayerPromptButton(
+                        text = vueoSkipLabel(activeSkip), requester = skipRequester,
+                        upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
+                        downRequester = if (showChrome) progressRequester else FocusRequester.Cancel,
+                        onInteraction = onInteraction,
+                        onFocused = { onPromptFocused(TvPlayerPromptTarget.SKIP) },
+                        onClick = { onSkip(activeSkip) },
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (nextCountdown > 0 && nextEpisode != null) {
+                        VueoPlayerPromptButton(
+                            text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester,
+                            upRequester = FocusRequester.Cancel,
+                            downRequester = if (activeSkip != null) skipRequester else if (showChrome) progressRequester else FocusRequester.Cancel,
+                            onInteraction = onInteraction,
+                            onFocused = { onPromptFocused(TvPlayerPromptTarget.NEXT) },
+                            onClick = onNext,
+                        )
+                    }
+                    if (activeSkip != null && skipOnRight) {
+                        VueoPlayerPromptButton(
+                            text = vueoSkipLabel(activeSkip), requester = skipRequester,
+                            upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
+                            downRequester = if (showChrome) progressRequester else FocusRequester.Cancel,
+                            onInteraction = onInteraction,
+                            onFocused = { onPromptFocused(TvPlayerPromptTarget.SKIP) },
+                            onClick = { onSkip(activeSkip) },
+                        )
+                    }
+                }
+            }
         }
 
         playbackError?.let { message ->

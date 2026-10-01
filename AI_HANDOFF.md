@@ -143,3 +143,14 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Hidden seeks already applied on KeyDown must not be applied again on KeyUp. Visible-rail seeks retain release-to-commit and the missing-release fallback.
 - Main player chrome now has independent anchored motion: top enters/exits through the top edge, bottom enters/exits through the bottom edge. Video, subtitle rendering and workspace animations keep their existing behavior.
 - This explicitly supersedes the main chrome's previous fade-only presentation. Full TV compilation and real-remote motion verification remain required; the patch was reviewed statically in the handoff environment.
+
+## TV Player — Skip & Auto-next calibration
+
+- Intro/Recap prompts use bottom-left; Ending/Credits and Next use bottom-right. Prompts use 14sp text, a 44dp minimum height and 320dp maximum width. Same-side prompts stack with real layout spacing, not fixed overlapping offsets.
+- Prompt inset adapts to chrome visibility and the configured subtitle baseline, reserving three subtitle lines plus spacing. Unusually tall custom cues still require real-TV calibration. Prompts are hidden while workspaces or playback errors are open.
+- Prompt focus persists across changing countdown labels. Removed focused prompts restore progress/root focus; new skip prompts do not steal focus.
+- `PlayerSkipPolicy` validates intervals against the actual video duration. An ending within 1,000ms of video end permits an early 8-second auto-next countdown. A longer tail, unknown duration or invalid interval waits for actual playback end. This is an explicitly approved duration heuristic, not provider confirmation that no post-credit scene exists.
+- Skip Credits only seeks to the segment endpoint; it never invokes next-episode navigation directly. Pending seek/fallback state is cleared before Skip, Restart and episode navigation.
+- Early countdown resets on seeking, pause/buffer, workspace, recovery or error. Back cancels automatic next for the current episode. Navigation dispatch is guarded against repeats and early auto-next records the episode as complete.
+- Empty skip cache expires after 30 seconds; ready results after 10 minutes. TV retries empty results at most twice, 31 seconds apart. No movie skip support was added, no Mobile UI changed, and the prior hidden-seek/directional-chrome patch is retained.
+- Verification: static source/signature/delimiter and ZIP checks only. Policy regression tests are included for CI but were not executed locally. Do not run a local build; the maintainer uses GitHub Actions.

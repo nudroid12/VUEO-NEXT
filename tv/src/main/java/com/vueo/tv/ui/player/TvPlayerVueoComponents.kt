@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -278,6 +280,8 @@ internal fun VueoPlayerPillAction(
     }
 }
 
+internal enum class TvPlayerPromptTarget { NONE, SKIP, NEXT }
+
 @Composable
 internal fun VueoPlayerPromptButton(
     text: String,
@@ -287,11 +291,14 @@ internal fun VueoPlayerPromptButton(
     modifier: Modifier = Modifier,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
+    onFocused: () -> Unit = {},
 ) {
-    var focused by remember(text) { mutableStateOf(false) }
+    var focused by remember(requester) { mutableStateOf(false) }
     val shape = RoundedCornerShape(8.dp)
     Row(
         modifier = modifier
+            .widthIn(max = 320.dp)
+            .heightIn(min = 44.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -301,7 +308,10 @@ internal fun VueoPlayerPromptButton(
             }
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onInteraction()
+                if (it.isFocused) {
+                    onInteraction()
+                    onFocused()
+                }
             }
             .onPreviewKeyEvent { event ->
                 if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
@@ -318,7 +328,7 @@ internal fun VueoPlayerPromptButton(
         Text(
             text = text,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 12.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

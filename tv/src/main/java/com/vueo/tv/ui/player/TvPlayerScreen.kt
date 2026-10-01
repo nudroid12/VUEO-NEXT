@@ -98,6 +98,7 @@ import com.vueo.shared.core.player.SubtitleReadinessProbe
 import com.vueo.shared.core.player.SubtitleSessionDataSource
 import com.vueo.shared.core.player.SubtitleFormat
 import com.vueo.shared.core.player.SubtitleFormatPolicy
+import com.vueo.shared.core.player.PlayerSkipPolicy
 import com.vueo.shared.core.player.PlayerSkipRepository
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.shared.core.player.PlayerSourcePolicy
@@ -210,6 +211,9 @@ fun TvPlayerScreen(
     var playbackError by remember(bundle.videoId) { mutableStateOf<String?>(null) }
     var retryGeneration by remember(bundle.videoId) { mutableIntStateOf(0) }
     var autoNextCancelled by remember(bundle.videoId) { mutableStateOf(false) }
+    var nextEpisodeDispatched by remember(bundle.videoId) { mutableStateOf(false) }
+    var autoNextCompletedCurrent by remember(bundle.videoId) { mutableStateOf(false) }
+    var focusedPrompt by remember { mutableStateOf(TvPlayerPromptTarget.NONE) }
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
     val latestSubtitleDelayMs = androidx.compose.runtime.rememberUpdatedState(subtitleDelayMs)
@@ -351,11 +355,18 @@ fun TvPlayerScreen(
     var controlFocusHandoffPending by remember { mutableStateOf(true) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
-    val activeSkip = remember(positionMs, skipSegments) {
-        skipSegments.firstOrNull { segment ->
-            positionMs in segment.startMs until segment.endMs && segment.endMs - positionMs > 800L
-        }
+    val activeSkip = remember(positionMs, durationMs, skipSegments) {
+        PlayerSkipPolicy.activeSegment(skipSegments, positionMs, durationMs)
     }
+    val earlyNextEligible = PlayerSkipPolicy.canStartNextDuringCredits(
+        skipSegments, positionMs, durationMs,
+    )
+    val autoNextEligible = !nextEpisodeDispatched && !autoNextCancelled &&
+        autoPlayNextEpisode && nextEpisode != null &&
+        activePanel == TvPlayerPanel.NONE && playbackError == null &&
+        !recoveryInProgress && pendingSeekPositionMs == null && player.playWhenReady &&
+        (ended || (skipSegmentsEnabled && earlyNextEligible && playing && !isBuffering && hasRenderedFirstFrame))
+    val latestAutoNextEligible = androidx.compose.runtime.rememberUpdatedState(autoNextEligible)
     val hasSubtitleControl = textTracks.isNotEmpty() || liveSubtitles.isNotEmpty()
     val hasAudioControl = audioTracks.isNotEmpty() || !activeSource.audio.isNullOrBlank()
     val hasSourcesControl = playableSources.isNotEmpty()
@@ -386,6 +397,7 @@ fun TvPlayerScreen(
     }
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
+        focusedPrompt = TvPlayerPromptTarget.NONE
         seekFeedbackVisible = false
         controlsVisible = true
         controlFocusHandoffPending = true
@@ -441,6 +453,15 @@ fun TvPlayerScreen(
         noteInteraction()
     }
 
+    fun clearPendingSeek() {
+        seekCommitJob[0]?.cancel()
+        seekCommitJob[0] = null
+        seekAnchorClearJob[0]?.cancel()
+        seekAnchorClearJob[0] = null
+        pendingSeekPositionMs = null
+        seekFeedbackVisible = false
+    }
+
     fun togglePlayback() {
         if (player.isPlaying) player.pause() else player.play()
         playing = player.isPlaying
@@ -448,8 +469,9 @@ fun TvPlayerScreen(
     }
 
     fun saveProgress() {
-        val position = player.currentPosition.coerceAtLeast(0L)
         val duration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+        val position = if (autoNextCompletedCurrent && duration > 0L) duration
+            else player.currentPosition.coerceAtLeast(0L)
         runtime.playbackStore.savePositionMs(mediaKey = mediaKey, positionMs = position, durationMs = duration)
         runtime.libraryStore.recordPlayback(
             media = media,
@@ -802,9 +824,11 @@ fun TvPlayerScreen(
         skipSegments = emptyList()
         val imdbId = resolvedImdbId
         if (skipSegmentsEnabled && episode != null && imdbId != null) {
-            skipSegments = runCatching {
-                PlayerSkipRepository.segments(imdbId, episode.season, episode.episode)
-            }.getOrDefault(emptyList())
+            for (attempt in 0 until 3) {
+                skipSegments = PlayerSkipRepository.segments(imdbId, episode.season, episode.episode)
+                if (skipSegments.isNotEmpty() || attempt == 2) break
+                delay(31_000L)
+            }
         }
     }
 
@@ -1023,7 +1047,7 @@ fun TvPlayerScreen(
             if (currentPosition > 0L) {
                 runtime.playbackStore.savePositionMs(
                     mediaKey = mediaKey,
-                    positionMs = currentPosition,
+                    positionMs = if (autoNextCompletedCurrent && currentDuration > 0L) currentDuration else currentPosition,
                     durationMs = currentDuration,
                 )
             }
@@ -1051,27 +1075,41 @@ fun TvPlayerScreen(
         restorePanelFocus = null
     }
 
-    LaunchedEffect(ended, nextEpisode?.id, autoPlayNextEpisode, autoNextCancelled) {
-        if (
-            !ended ||
-            nextEpisode == null ||
-            !autoPlayNextEpisode ||
-            autoNextCancelled
-        ) {
+    LaunchedEffect(autoNextEligible, nextEpisode?.id) {
+        val targetEpisode = nextEpisode
+        if (!autoNextEligible || targetEpisode == null) {
             nextCountdown = 0
             return@LaunchedEffect
         }
         for (remaining in 8 downTo 1) {
             nextCountdown = remaining
-            delay(1_000)
-            if (player.playbackState != Player.STATE_ENDED || autoNextCancelled) {
+            delay(1_000L)
+            if (!latestAutoNextEligible.value) {
                 nextCountdown = 0
                 return@LaunchedEffect
             }
         }
+        // Recheck the real player, rather than trusting the 400ms UI poll, at
+        // dispatch time. A pause/seek/buffer must never advance the episode.
+        val actualDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+        val finished = player.playbackState == Player.STATE_ENDED
+        val safeCredits = skipSegmentsEnabled && player.isPlaying && PlayerSkipPolicy.canStartNextDuringCredits(
+            skipSegments, player.currentPosition, actualDuration,
+        )
         nextCountdown = 0
+        if (!latestAutoNextEligible.value || !player.playWhenReady ||
+            activePanel != TvPlayerPanel.NONE || playbackError != null ||
+            recoveryInProgress || pendingSeekPositionMs != null ||
+            autoNextCancelled || !autoPlayNextEpisode ||
+            (!finished && !safeCredits) || nextEpisodeDispatched
+        ) {
+            return@LaunchedEffect
+        }
+        nextEpisodeDispatched = true
+        autoNextCompletedCurrent = true
+        clearPendingSeek()
         saveProgress()
-        onPlayNextEpisode(nextEpisode)
+        onPlayNextEpisode(targetEpisode)
     }
 
     LaunchedEffect(playbackError) {
@@ -1089,6 +1127,7 @@ fun TvPlayerScreen(
         }
         if (
             endedFocusAssigned ||
+            autoNextEligible || nextCountdown > 0 ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null
         ) {
@@ -1100,10 +1139,9 @@ fun TvPlayerScreen(
         controlFocusHandoffPending = !endedFocusAssigned
     }
 
-    LaunchedEffect(nextCountdown, ended, activePanel, playbackError) {
+    LaunchedEffect(nextCountdown > 0, activePanel, playbackError) {
         if (
-            ended &&
-            nextCountdown == 8 &&
+            nextCountdown > 0 &&
             activePanel == TvPlayerPanel.NONE &&
             playbackError == null
         ) {
@@ -1111,6 +1149,24 @@ fun TvPlayerScreen(
             controlFocusHandoffPending = true
             val restored = requestFocusNow(nextContextRequester) || requestFocusNow(progressRequester)
             controlFocusHandoffPending = !restored
+        }
+    }
+
+    LaunchedEffect(activeSkip?.key, nextCountdown > 0, activePanel, controlsVisible, playbackError) {
+        if (activePanel != TvPlayerPanel.NONE || playbackError != null) return@LaunchedEffect
+        val removedFocusedPrompt = when (focusedPrompt) {
+            TvPlayerPromptTarget.SKIP -> activeSkip == null
+            TvPlayerPromptTarget.NEXT -> nextCountdown <= 0
+            TvPlayerPromptTarget.NONE -> false
+        }
+        if (removedFocusedPrompt) {
+            focusedPrompt = TvPlayerPromptTarget.NONE
+            if (controlsVisible) {
+                requestControlFocus(progressRequester)
+            } else {
+                controlFocusHandoffPending = false
+                requestFocusReliably(rootRequester)
+            }
         }
     }
 
@@ -1123,8 +1179,8 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, activePanel, interactionToken, playing) {
-        if (controlsVisible && activePanel == TvPlayerPanel.NONE && playing) {
+    LaunchedEffect(controlsVisible, activePanel, interactionToken, playing, nextCountdown > 0) {
+        if (controlsVisible && activePanel == TvPlayerPanel.NONE && playing && nextCountdown <= 0) {
             val token = interactionToken
             delay(4_500)
             if (token == interactionToken && activePanel == TvPlayerPanel.NONE) {
@@ -1168,6 +1224,7 @@ fun TvPlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(rootRequester)
+            .onFocusChanged { if (it.isFocused) focusedPrompt = TvPlayerPromptTarget.NONE }
             .onPreviewKeyEvent { event ->
                 val code = event.nativeKeyEvent.keyCode
                 if (
@@ -1395,6 +1452,8 @@ fun TvPlayerScreen(
             activeSource = activeSource,
             controlsVisible = controlsVisible,
             seekFeedbackVisible = seekFeedbackVisible,
+            subtitleBottomPaddingFraction = if (!subtitlesDisabled && hasSubtitleControl) subtitleBottomPaddingFraction else 0f,
+            subtitleFontSizeSp = subtitleStyle.fontSizeSp,
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,
@@ -1425,6 +1484,11 @@ fun TvPlayerScreen(
             nextContextRequester = nextContextRequester,
             errorRequester = errorRequester,
             onInteraction = ::noteInteraction,
+            onChromeInteraction = {
+                focusedPrompt = TvPlayerPromptTarget.NONE
+                noteInteraction()
+            },
+            onPromptFocused = { focusedPrompt = it },
             onPlayPause = ::togglePlayback,
             onRetryPlayback = {
                 saveProgress()
@@ -1440,10 +1504,10 @@ fun TvPlayerScreen(
                 requestControlFocus(progressRequester)
             },
             onRestart = {
-                seekCommitJob[0]?.cancel()
-                seekAnchorClearJob[0]?.cancel()
-                pendingSeekPositionMs = null
+                clearPendingSeek()
                 autoNextCancelled = false
+                nextEpisodeDispatched = false
+                autoNextCompletedCurrent = false
                 player.seekTo(0L)
                 positionMs = 0L
                 if (!player.isPlaying) player.play()
@@ -1453,7 +1517,10 @@ fun TvPlayerScreen(
             onSeekBy = ::seekBy,
             onSeekCommit = ::commitPendingSeek,
             onNext = {
-                nextEpisode?.let {
+                nextEpisode?.takeUnless { nextEpisodeDispatched }?.let {
+                    nextEpisodeDispatched = true
+                    nextCountdown = 0
+                    clearPendingSeek()
                     saveProgress()
                     onPlayNextEpisode(it)
                 }
@@ -1464,16 +1531,23 @@ fun TvPlayerScreen(
             },
             onDismissPanel = { closePanel() },
             onSkip = { segment ->
-                player.seekTo(segment.endMs)
-                positionMs = segment.endMs
-                requestControlFocus(progressRequester)
+                val actualDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+                PlayerSkipPolicy.skipTargetMs(segment, actualDuration)?.let { target ->
+                    clearPendingSeek()
+                    player.seekTo(target)
+                    positionMs = target
+                    requestControlFocus(progressRequester)
+                }
             },
             onPlayEpisode = { target ->
                 val isCurrent = episode?.let { current ->
                     current.id == target.id || (current.season == target.season && current.episode == target.episode)
                 } == true
                 if (isCurrent) closePanel()
-                else {
+                else if (!nextEpisodeDispatched) {
+                    nextEpisodeDispatched = true
+                    nextCountdown = 0
+                    clearPendingSeek()
                     saveProgress()
                     onPlayNextEpisode(target)
                 }
@@ -1889,7 +1963,7 @@ private fun nextEpisode(episodes: List<EpisodeItem>, current: EpisodeItem?): Epi
     current ?: return null
     val ordered = episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
     val index = ordered.indexOfFirst { it.id == current.id || (it.season == current.season && it.episode == current.episode) }
-    return ordered.getOrNull(index + 1)
+    return if (index >= 0) ordered.getOrNull(index + 1) else null
 }
 
 private fun withAlpha(argb: Int, percent: Int): Int {
