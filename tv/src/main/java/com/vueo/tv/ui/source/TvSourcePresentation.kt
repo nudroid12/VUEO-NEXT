@@ -3,11 +3,6 @@ package com.vueo.tv.source
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -414,8 +409,9 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
 
     Text(
         text = when {
-            discoveryActive && state.rankedSources.isEmpty() -> state.progress
-            discoveryActive -> "${state.rankedSources.size} playable • still checking providers"
+            discoveryActive -> state.progress.ifBlank {
+                "Searching • ${state.rankedSources.size} found"
+            }
             state.rankedSources.isNotEmpty() ->
                 "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
             else -> "No playable sources"
@@ -494,12 +490,7 @@ private fun SourceResultsSection(
             onRefresh = onRefresh,
         )
 
-        if (discoveryActive) {
-            SourceLoadingStatus(state.progress)
-            Spacer(Modifier.height(8.dp))
-        } else {
-            Spacer(Modifier.height(14.dp))
-        }
+        Spacer(Modifier.height(14.dp))
 
         Box(
             modifier = Modifier
@@ -584,7 +575,7 @@ private fun SourceFilterRow(
                     id = SOURCE_PROVIDER_ALL,
                     label = "All",
                     selected = state.selectedProvider == SOURCE_PROVIDER_ALL,
-                    loading = discoveryActive,
+                    loading = false,
                     requester = allRequester,
                     action = { onSelectProvider(SOURCE_PROVIDER_ALL) },
                 )
@@ -652,16 +643,6 @@ private fun SourceRefreshButton(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val infiniteTransition = rememberInfiniteTransition(label = "sourceRefreshRotation")
-    val animatedRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 850, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "sourceRefreshSpin",
-    )
     Box(
         modifier = Modifier
             .width(38.dp)
@@ -711,35 +692,7 @@ private fun SourceRefreshButton(
             },
             modifier = Modifier
                 .width(17.dp)
-                .height(17.dp)
-                .graphicsLayer {
-                    rotationZ = if (searching) animatedRotation else 0f
-                },
-        )
-    }
-}
-
-@Composable
-private fun SourceLoadingStatus(progress: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.width(12.dp).height(12.dp),
-            color = TvDesign.Accent,
-            strokeWidth = 1.5.dp,
-        )
-        Text(
-            text = progress.ifBlank { "Searching sources…" },
-            color = TvDesign.White.copy(alpha = .72f),
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+                .height(17.dp),
         )
     }
 }
