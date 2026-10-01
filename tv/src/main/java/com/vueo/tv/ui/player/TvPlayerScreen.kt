@@ -312,6 +312,7 @@ fun TvPlayerScreen(
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
     var restorePanelFocus by remember { mutableStateOf<TvPlayerPanel?>(null) }
     var endedFocusAssigned by remember(mediaKey) { mutableStateOf(false) }
+    var endedControlsDismissed by remember(mediaKey) { mutableStateOf(false) }
     var interactionToken by remember { mutableIntStateOf(0) }
     var positionMs by remember { mutableLongStateOf(startPosition) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -376,6 +377,7 @@ fun TvPlayerScreen(
     var pendingFocusJob by remember { mutableStateOf<Job?>(null) }
     val lastInteractionElapsedMs = remember { longArrayOf(0L) }
     val revealActivationKey = remember { intArrayOf(0) }
+    val backPressCaptured = remember { booleanArrayOf(false) }
 
     fun noteInteraction() {
         val now = SystemClock.elapsedRealtime()
@@ -563,10 +565,13 @@ fun TvPlayerScreen(
         }
     }
 
-    BackHandler {
+    fun handlePlayerBack() {
         when {
             activePanel != TvPlayerPanel.NONE -> closePanel()
             controlsVisible || nextCountdown > 0 -> {
+                if (ended || player.playbackState == Player.STATE_ENDED || nextCountdown > 0) {
+                    endedControlsDismissed = true
+                }
                 // One Back dismisses both the countdown card and player chrome.
                 // A workspace keeps its own Back-to-player behavior above.
                 if (nextCountdown > 0) {
@@ -578,6 +583,8 @@ fun TvPlayerScreen(
             else -> exitPlayer()
         }
     }
+
+    BackHandler { handlePlayerBack() }
 
     LaunchedEffect(activeSource.url, bundle.videoId) {
         val url = activeSource.url ?: return@LaunchedEffect
@@ -775,7 +782,9 @@ fun TvPlayerScreen(
                     onLibraryChanged()
                     ended = true
                     playing = false
-                    if (!autoPlayNextEpisode || nextEpisode == null || autoNextCancelled) {
+                    if (!endedControlsDismissed &&
+                        (!autoPlayNextEpisode || nextEpisode == null || autoNextCancelled)
+                    ) {
                         requestControlFocus(progressRequester)
                     }
                 }
@@ -1157,10 +1166,11 @@ fun TvPlayerScreen(
     LaunchedEffect(ended, activePanel, playbackError) {
         if (!ended) {
             endedFocusAssigned = false
+            endedControlsDismissed = false
             return@LaunchedEffect
         }
         if (
-            endedFocusAssigned ||
+            endedFocusAssigned || endedControlsDismissed ||
             autoNextEligible || nextCountdown > 0 ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null
@@ -1266,6 +1276,19 @@ fun TvPlayerScreen(
             }
             .onPreviewKeyEvent { event ->
                 val code = event.nativeKeyEvent.keyCode
+                // Capture the complete hardware Back press before focused children
+                // can clear focus. Workspace Back remains owned by its handlers.
+                if (code == KeyEvent.KEYCODE_BACK &&
+                    (backPressCaptured[0] || activePanel == TvPlayerPanel.NONE)
+                ) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        backPressCaptured[0] = true
+                    } else if (event.type == KeyEventType.KeyUp && backPressCaptured[0]) {
+                        backPressCaptured[0] = false
+                        if (!event.nativeKeyEvent.isCanceled) handlePlayerBack()
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type == KeyEventType.KeyUp && revealActivationKey[0] == code) {
                     revealActivationKey[0] = 0
                     return@onPreviewKeyEvent true

@@ -177,3 +177,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Only the Play row has a small pill outline; countdown appears below it, outside the pill. Existing progress-relative positioning is retained.
 - Back closes an open workspace first. Otherwise, when controls or the next countdown are visible, one Back cancels any active countdown and hides controls with the existing direct-root focus handoff. It no longer reveals progress controls just to cancel the countdown. Back with both hidden retains player exit behavior.
 - Apply after VUEO_TV_NextCard_Seek_Focus_Patch.zip. Seek, remaining-time, slide motion and post-credit safety policy are unchanged. Static source and archive checks only; no local build or TV runtime test was performed.
+
+## TV Player — root Back capture and inline Play countdown
+
+- Root preview captures hardware Back down/repeats/up when no workspace is open. It consumes both halves, invokes the shared player Back action once on an uncancelled release, and leaves workspace events to existing handlers. System BackHandler uses the same action.
+- Ended controls dismissed by Back are guarded in both the playback-ended listener and ended-focus effect. The guard resets after leaving ended playback. Active countdown cancellation and immediate root-focus handoff remain in the shared Back action.
+- Countdown is now inline inside the small Play pill (`Play • 5s`), keeping the 360dp card and a single focus target.
+- Apply after VUEO_TV_Compact_NextCard_Back_Fix.zip. Static checks only; no local build or real-remote verification.

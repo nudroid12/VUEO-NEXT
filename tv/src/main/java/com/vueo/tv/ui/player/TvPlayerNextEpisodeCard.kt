@@ -115,21 +115,17 @@ internal fun VueoPlayerNextEpisodeCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Row(
+            modifier = Modifier
+                .background(Color.White.copy(alpha = if (focused) .16f else .07f), RoundedCornerShape(18.dp))
+                .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .background(Color.White.copy(alpha = if (focused) .16f else .07f), RoundedCornerShape(18.dp))
-                    .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                Text("Play", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            }
-            Text("in ${countdown}s", color = Color.White.copy(alpha = .75f), fontSize = 10.sp)
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Text("Play", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("• ${countdown}s", color = Color.White.copy(alpha = .75f), fontSize = 10.sp)
         }
     }
 }
