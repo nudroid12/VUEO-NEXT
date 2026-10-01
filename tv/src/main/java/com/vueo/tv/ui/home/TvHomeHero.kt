@@ -66,6 +66,7 @@ internal fun TvModernHomeHero(
             ) { displayedEntry ->
                 val media = displayedEntry?.media
                 TvNetworkImage(
+                    highPriority = true,
                     url = media?.background ?: media?.poster,
                     contentDescription = media?.name,
                     modifier = Modifier.fillMaxSize(),

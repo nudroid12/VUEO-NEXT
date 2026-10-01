@@ -56,6 +56,8 @@ private object TvImageCache {
 
     private val urlLocks = Array(64) { Mutex() }
     private val loadingPermits = Semaphore(3)
+    // Ordinary posters use at most two slots, leaving capacity for hero/focus.
+    private val ordinaryPermits = Semaphore(2)
     private val diskCacheCleaned = AtomicBoolean(false)
 
     private fun key(url: String, size: IntSize) = "$url:${size.width}x${size.height}"
@@ -63,7 +65,7 @@ private object TvImageCache {
     fun memoryEntry(url: String?, size: IntSize): Bitmap? =
         url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
 
-    suspend fun load(context: Context, url: String, size: IntSize): Bitmap? =
+    suspend fun load(context: Context, url: String, size: IntSize, highPriority: Boolean): Bitmap? =
         withContext(Dispatchers.IO) {
             val cacheKey = key(url, size)
             memoryCache.get(cacheKey)?.let { return@withContext it }
@@ -72,7 +74,7 @@ private object TvImageCache {
             lock.withLock {
                 currentCoroutineContext().ensureActive()
                 memoryCache.get(cacheKey)?.let { return@withLock it }
-                loadingPermits.withPermit {
+                suspend fun loadWithPermit(): Bitmap? = loadingPermits.withPermit {
                     currentCoroutineContext().ensureActive()
 
                     val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
@@ -96,6 +98,8 @@ private object TvImageCache {
                     currentCoroutineContext().ensureActive()
                     downloaded?.also { memoryCache.put(cacheKey, it) }
                 }
+                if (highPriority) loadWithPermit()
+                else ordinaryPermits.withPermit { loadWithPermit() }
             }
         }
 
@@ -206,6 +210,8 @@ fun TvNetworkImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     fallback: Color = TvDesign.SurfaceRaised,
+    loadEnabled: Boolean = true,
+    highPriority: Boolean = false,
 ) {
     val context = LocalContext.current.applicationContext
     var targetSize by remember { mutableStateOf(IntSize.Zero) }
@@ -213,15 +219,15 @@ fun TvNetworkImage(
         mutableStateOf(TvImageCache.memoryEntry(url, targetSize))
     }
 
-    LaunchedEffect(url, targetSize) {
+    LaunchedEffect(url, targetSize, loadEnabled, highPriority) {
         if (targetSize.width <= 0 || targetSize.height <= 0) return@LaunchedEffect
         val cached = TvImageCache.memoryEntry(url, targetSize)
         if (cached != null) {
             image = cached
             return@LaunchedEffect
         }
-        if (url.isNullOrBlank() || !url.startsWith("https://")) return@LaunchedEffect
-        TvImageCache.load(context, url, targetSize)?.let { image = it }
+        if (!loadEnabled || url.isNullOrBlank() || !url.startsWith("https://")) return@LaunchedEffect
+        TvImageCache.load(context, url, targetSize, highPriority)?.let { image = it }
     }
 
     val imageAlpha by animateFloatAsState(

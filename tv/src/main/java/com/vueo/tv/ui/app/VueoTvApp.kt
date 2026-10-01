@@ -142,8 +142,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
             try {
                 runtime.prepareAddonsInBackground()
-                runtime.requestHomeRefreshAfterAddonPreparation()
-                refreshToken++
+                // Home observes installed addons progressively; keep fresh cache valid.
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {

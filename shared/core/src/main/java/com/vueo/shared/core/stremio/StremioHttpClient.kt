@@ -8,7 +8,7 @@ import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 interface StremioHttpClient {
     suspend fun get(url: String): String
@@ -40,15 +40,18 @@ object DefaultStremioHttpClient : StremioHttpClient {
             .header("User-Agent", "VUEO-NEXT")
             .build()
 
-        return suspendCoroutine { continuation ->
-            client.newCall(request).enqueue(
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(
                 object : Callback {
                     override fun onFailure(call: Call, e: IOException) {
-                        continuation.resumeWithException(e)
+                        if (continuation.isActive) continuation.resumeWithException(e)
                     }
 
                     override fun onResponse(call: Call, response: Response) {
                         response.use {
+                            if (!continuation.isActive) return@use
                             val result = runCatching {
                                 if (!response.isSuccessful) {
                                     error(
@@ -64,7 +67,7 @@ object DefaultStremioHttpClient : StremioHttpClient {
 
                                 response.body.string()
                             }
-                            continuation.resumeWith(result)
+                            if (continuation.isActive) continuation.resumeWith(result)
                         }
                     }
                 }

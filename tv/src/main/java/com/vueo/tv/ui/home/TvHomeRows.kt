@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -179,7 +180,16 @@ internal fun TvModernHomeRows(
                 items = rows,
                 key = { _, row -> row.key },
             ) { _, row ->
+                val rowVisible by remember(verticalState, row.key) {
+                    derivedStateOf {
+                        verticalState.layoutInfo.visibleItemsInfo.any {
+                            it.key == row.key && it.offset < verticalState.layoutInfo.viewportEndOffset &&
+                                it.offset + it.size > verticalState.layoutInfo.viewportStartOffset
+                        }
+                    }
+                }
                 TvModernHomeRow(
+                    rowVisible = rowVisible,
                     row = row,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     onContentFocused = onContentFocused,
@@ -197,6 +207,7 @@ internal fun TvModernHomeRows(
 @Composable
 private fun TvModernHomeRow(
     row: TvHomeRow,
+    rowVisible: Boolean,
     rowFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
@@ -287,7 +298,16 @@ private fun TvModernHomeRow(
                     ) { index, entry ->
                         val itemRequester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
                         val openPosterActions = { onPosterLongClick(entry) }
+                        val cardVisible by remember(rowState, index) {
+                            derivedStateOf {
+                                rowState.layoutInfo.visibleItemsInfo.any {
+                                    it.index == index && it.offset < rowState.layoutInfo.viewportEndOffset &&
+                                        it.offset + it.size > rowState.layoutInfo.viewportStartOffset
+                                }
+                            }
+                        }
                         TvModernHomeCard(
+                            loadImage = rowVisible && cardVisible,
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
@@ -312,6 +332,7 @@ private fun TvModernHomeRow(
 @Composable
 private fun TvModernHomeCard(
     entry: TvHomeEntry,
+    loadImage: Boolean,
     kind: TvHomeRowKind,
     requester: FocusRequester,
     onLeftAtStart: (() -> Unit)?,
@@ -374,25 +395,27 @@ private fun TvModernHomeCard(
             .clickable(onClick = onOpen),
     ) {
         when (kind) {
-            TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry)
-            TvHomeRowKind.POSTERS -> PosterCardContent(entry)
+            TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused)
+            TvHomeRowKind.POSTERS -> PosterCardContent(entry, loadImage || focused, focused)
         }
     }
 }
 
 @Composable
-private fun PosterCardContent(entry: TvHomeEntry) {
+private fun PosterCardContent(entry: TvHomeEntry, loadImage: Boolean, focused: Boolean) {
     TvNetworkImage(
         url = entry.media.poster ?: entry.media.background,
         contentDescription = entry.media.name,
         modifier = Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
         fallback = TvDesign.SurfaceRaised,
+        loadEnabled = loadImage,
+        highPriority = focused,
     )
 }
 
 @Composable
-private fun ContinueWatchingCardContent(entry: TvHomeEntry) {
+private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, focused: Boolean) {
     val resume = entry as? TvHomeEntry.Resume
     val progress = resume?.playback?.progressFraction ?: 0f
 
@@ -403,6 +426,8 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry) {
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
             fallback = TvDesign.SurfaceRaised,
+            loadEnabled = loadImage,
+            highPriority = focused,
         )
 
         Box(

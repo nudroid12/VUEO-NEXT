@@ -1,6 +1,8 @@
 package com.vueo.tv.core
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.StremioAddonExtension
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
@@ -31,6 +33,13 @@ import com.vueo.shared.core.storage.SettingsStore
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -70,6 +79,33 @@ class TvRuntime(context: Context) {
 
     @Volatile
     private var addonsPrepared = false
+    private val addonRevision = MutableStateFlow(0)
+    private val homeLoadGate = Semaphore(4)
+    private val homeCachePrefs = appContext.getSharedPreferences("vueo_tv_home_freshness", Context.MODE_PRIVATE)
+    private val homeStartedAt = SystemClock.elapsedRealtime()
+    private val homePresented = AtomicBoolean(false)
+
+    private fun signalAddonChange() = synchronized(addonRevision) {
+        addonRevision.value = addonRevision.value + 1
+    }
+
+    fun traceHome(stage: String, count: Int = 0) {
+        Log.d("VUEO_HOME", "stage=$stage elapsed_ms=${SystemClock.elapsedRealtime() - homeStartedAt} count=$count")
+    }
+
+    fun markHomePresented() {
+        if (homePresented.compareAndSet(false, true)) traceHome("first_rows_presented")
+    }
+
+    private fun homeConfigurationKey(): String {
+        val configuration = buildString {
+            content.manifestUrls().sorted().forEach { append(it.trim()); append(':'); append(content.isAddonEnabled(it)); append('\n') }
+            append(content.catalogOrder().joinToString("\n")); append('|')
+            append(content.disabledCatalogKeys().sorted().joinToString("\n"))
+        }
+        return MessageDigest.getInstance("SHA-256").digest(configuration.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
 
     /**
      * Startup-critical work only. Keep this path local so a slow addon can never
@@ -82,7 +118,8 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun restoreHomeCache() {
-        CatalogDiscoveryCache.restoreHome(appContext)
+        val rows = CatalogDiscoveryCache.restoreHome(appContext)
+        traceHome("cache_restored", rows.size)
     }
 
     fun cachedHomeRows(): List<CatalogRow> =
@@ -92,23 +129,21 @@ class TvRuntime(context: Context) {
 
     fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
 
+    fun needsHomeRefresh(): Boolean =
+        CatalogDiscoveryCache.home(allowStale = false).isNullOrEmpty() ||
+            homeCachePrefs.getString("configuration", null) != homeConfigurationKey()
+
+
     suspend fun prepareAddonsInBackground() {
         addonLoadMutex.lock()
         try {
             installConfiguredAddons()
-            addonsPrepared = true
         } finally {
+            addonsPrepared = true
+            signalAddonChange()
+            traceHome("manifests_finished", engine.stremioAddons().size)
             addonLoadMutex.unlock()
         }
-    }
-
-    /**
-     * Once manifests are ready, expire only the in-memory freshness marker.
-     * Existing rows stay available as the visual fallback while Home refreshes
-     * against the fully prepared addon set.
-     */
-    fun requestHomeRefreshAfterAddonPreparation() {
-        CatalogDiscoveryCache.invalidateHomeMemory()
     }
 
     suspend fun prepareProvidersInBackground() {
@@ -119,39 +154,82 @@ class TvRuntime(context: Context) {
     suspend fun homeRows(
         forceRefresh: Boolean = false,
         onPartial: ((List<CatalogRow>) -> Unit)? = null,
-    ): List<CatalogRow> {
-        if (!addonsPrepared) {
-            return CatalogDiscoveryCache.home(allowStale = true)
-                .orEmpty()
-                .let(::applyCatalogPreferences)
+    ): List<CatalogRow> = coroutineScope {
+        val configurationKey = homeConfigurationKey()
+        val cachedConfiguration = homeCachePrefs.getString("configuration", null)
+        val freshCached = CatalogDiscoveryCache.home(allowStale = false).orEmpty()
+        if (!forceRefresh && freshCached.isNotEmpty() &&
+            cachedConfiguration == configurationKey
+        ) {
+            traceHome("fresh_cache_used", freshCached.size)
+            return@coroutineScope applyCatalogPreferences(freshCached)
+        }
+        val staleCached = CatalogDiscoveryCache.home(allowStale = true).orEmpty()
+        val freshRows = linkedMapOf<String, CatalogRow>()
+        val scheduled = mutableSetOf<String>()
+        val jobs = mutableListOf<kotlinx.coroutines.Job>()
+        var firstFreshRow = true
+
+        fun publish(rows: List<CatalogRow>) = synchronized(freshRows) {
+            rows.forEach { freshRows[it.id] = it }
+            if (freshRows.isNotEmpty()) {
+                if (firstFreshRow) {
+                    firstFreshRow = false
+                    traceHome("first_fresh_row", freshRows.size)
+                }
+                // Keep untouched cached rows visible while fresh rows replace them.
+                val combined = staleCached.map { freshRows[it.id] ?: it } +
+                    freshRows.values.filter { fresh -> staleCached.none { it.id == fresh.id } }
+                onPartial?.invoke(applyCatalogPreferences(combined))
+            }
+            Unit
         }
 
-        val freshCached =
-            CatalogDiscoveryCache.home(allowStale = false)
-                .orEmpty()
-
-        if (!forceRefresh && freshCached.isNotEmpty()) {
-            return applyCatalogPreferences(freshCached)
+        // Each installed addon can start catalogs immediately. The shared gate
+        // limits ALL these addon jobs together to four catalog requests.
+        while (true) {
+            val observedRevision = addonRevision.value
+            // Read completion BEFORE the addon snapshot: a manifest finishing
+            // during scheduling must trigger another pass, not be skipped.
+            val preparationComplete = addonsPrepared
+            engine.activeStremioAddons().forEach { extension ->
+                if (scheduled.add(extension.descriptor.id)) {
+                    jobs += launch {
+                        val rows = engine.loadCatalogRows(
+                            forceRefresh = true,
+                            catalogOrder = content.catalogOrder(),
+                            disabledCatalogKeys = content.disabledCatalogKeys(),
+                            extensionIds = setOf(extension.descriptor.id),
+                            updateHomeCache = false,
+                            catalogLoadGate = homeLoadGate,
+                            onPartial = ::publish,
+                        )
+                        publish(rows)
+                    }
+                }
+            }
+            if (preparationComplete) break
+            addonRevision.first { it != observedRevision }
         }
-
-        val staleCached =
-            CatalogDiscoveryCache.home(allowStale = true)
-                .orEmpty()
-
-        val fresh =
-            engine.loadCatalogRows(
-                forceRefresh = forceRefresh,
-                catalogOrder = content.catalogOrder(),
-                disabledCatalogKeys = content.disabledCatalogKeys(),
-                onPartial = { rows ->
-                    onPartial?.invoke(applyCatalogPreferences(rows))
-                },
-            )
+        jobs.joinAll()
+        val fresh = synchronized(freshRows) { freshRows.values.toList() }
         if (fresh.isNotEmpty()) {
-            content.reconcileCatalogOrder(fresh.map { it.id })
-            CatalogDiscoveryCache.persistHome(appContext, fresh)
+            val activeIds = engine.activeStremioAddons().map { it.descriptor.id }
+            val fallback = staleCached.filter { row ->
+                (cachedConfiguration == null || cachedConfiguration == configurationKey ||
+                    activeIds.any { row.id.startsWith("$it:") }) && fresh.none { it.id == row.id }
+            }
+            val result = applyCatalogPreferences(fresh + fallback)
+            content.reconcileCatalogOrder(result.map { it.id })
+            CatalogDiscoveryCache.putHome(result)
+            CatalogDiscoveryCache.persistHome(appContext, result)
+            homeCachePrefs.edit().putString("configuration", homeConfigurationKey()).apply()
+            traceHome("catalogs_finished", result.size)
+            result
+        } else {
+            traceHome("catalogs_finished_using_fallback", staleCached.size)
+            applyCatalogPreferences(staleCached)
         }
-        return applyCatalogPreferences(fresh.ifEmpty { staleCached })
     }
 
     suspend fun refreshAddons(pruneRemoved: Boolean = false): TvAddonRefreshSummary {
@@ -169,45 +247,35 @@ class TvRuntime(context: Context) {
             return summary
         } finally {
             addonsPrepared = true
+            signalAddonChange()
             addonLoadMutex.unlock()
         }
     }
 
     private suspend fun installConfiguredAddons(): TvAddonRefreshSummary =
         coroutineScope {
-            val results = content.manifestUrls()
-                .map { manifestUrl ->
-                    async {
-                        manifestUrl to runCatching {
-                            require(manifestUrl.startsWith("https://"))
-                            StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
-                        }
+            val results = content.manifestUrls().map { manifestUrl ->
+                async {
+                    val result = runCatching {
+                        require(manifestUrl.startsWith("https://"))
+                        StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
                     }
+                    result.onSuccess { extension ->
+                        engine.stremioAddons()
+                            .filter { it.descriptor.baseUrl.trim() == manifestUrl.trim() && it.descriptor.id != extension.descriptor.id }
+                            .forEach { engine.uninstall(it.descriptor.id) }
+                        engine.install(extension)
+                        engine.setExtensionEnabled(extension.descriptor.id, content.isAddonEnabled(manifestUrl))
+                        traceHome("manifest_ready")
+                        signalAddonChange()
+                    }
+                    result.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+                    result
                 }
-                .awaitAll()
-
-            results.forEach { (manifestUrl, result) ->
-                result.onSuccess { extension ->
-                    // Only replace the previous runtime copy after the refreshed
-                    // manifest is valid. A temporary network/provider failure must
-                    // never erase a previously working addon.
-                    engine.stremioAddons()
-                        .filter {
-                            it.descriptor.baseUrl.trim() == manifestUrl.trim() &&
-                                it.descriptor.id != extension.descriptor.id
-                        }
-                        .forEach { engine.uninstall(it.descriptor.id) }
-                    engine.install(extension)
-                    engine.setExtensionEnabled(
-                        id = extension.descriptor.id,
-                        enabled = content.isAddonEnabled(manifestUrl),
-                    )
-                }
-            }
-
+            }.awaitAll()
             TvAddonRefreshSummary(
-                refreshed = results.count { it.second.isSuccess },
-                failed = results.count { it.second.isFailure },
+                refreshed = results.count { it.isSuccess },
+                failed = results.count { it.isFailure },
             )
         }
 

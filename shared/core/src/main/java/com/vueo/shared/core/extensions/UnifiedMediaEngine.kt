@@ -88,8 +88,11 @@ class UnifiedMediaEngine {
         catalogOrder: List<String> = emptyList(),
         disabledCatalogKeys: Set<String> = emptySet(),
         onPartial: ((List<CatalogRow>) -> Unit)? = null,
+        extensionIds: Set<String>? = null,
+        updateHomeCache: Boolean = true,
+        catalogLoadGate: Semaphore? = null,
     ): List<CatalogRow> = coroutineScope {
-        if (!forceRefresh) {
+        if (!forceRefresh && extensionIds == null) {
             CatalogDiscoveryCache
                 .home()
                 ?.let { cachedRows ->
@@ -115,6 +118,7 @@ class UnifiedMediaEngine {
 
         val candidates =
             activeStremioAddons()
+                .filter { extensionIds == null || it.descriptor.id in extensionIds }
                 .flatMap { extension ->
                     extension.descriptor.catalogs
                         .filter { catalog ->
@@ -146,7 +150,7 @@ class UnifiedMediaEngine {
 
         val loadedRows = linkedMapOf<String, CatalogRow>()
         val loadedRowsMutex = Mutex()
-        val loadSemaphore = Semaphore(HOME_CATALOG_LOAD_CONCURRENCY)
+        val loadSemaphore = catalogLoadGate ?: Semaphore(HOME_CATALOG_LOAD_CONCURRENCY)
         var lastEmittedRowCount = 0
         val candidateIndex =
             candidates
@@ -206,7 +210,7 @@ class UnifiedMediaEngine {
                             )
                             if (row.items.isEmpty()) return@runCatching null
 
-                            val (partialRows, shouldEmit) = loadedRowsMutex.withLock {
+                            loadedRowsMutex.withLock {
                                 loadedRows[row.id] = row
                                 val ordered =
                                     orderCatalogRows(
@@ -214,17 +218,13 @@ class UnifiedMediaEngine {
                                         catalogOrder = catalogOrder,
                                         disabledCatalogKeys = disabledCatalogKeys,
                                     )
-                                val emit =
-                                    ordered.size == 1 ||
-                                        ordered.size - lastEmittedRowCount >= HOME_CATALOG_PARTIAL_BATCH_SIZE
-                                if (emit) lastEmittedRowCount = ordered.size
-                                ordered to emit
+                                lastEmittedRowCount = ordered.size
+                                // Publish under the same lock so concurrent completions
+                                // cannot send an older snapshot after a newer one.
+                                onPartial?.invoke(ordered)
+                                ordered to true
                             }
 
-                            // Keep Home responsive like Nuvio: publish each completed
-                            // row while the remaining catalogs continue behind the
-                            // four-request concurrency gate.
-                            if (shouldEmit) onPartial?.invoke(partialRows)
                             row
                         }.getOrNull()
                     }
@@ -244,9 +244,7 @@ class UnifiedMediaEngine {
 
         if (shouldEmitFinalRows) onPartial?.invoke(rows)
 
-        CatalogDiscoveryCache.putHome(
-            rows
-        )
+        if (updateHomeCache) CatalogDiscoveryCache.putHome(rows)
 
         rows
     }
@@ -1628,8 +1626,6 @@ class UnifiedMediaEngine {
 
     companion object {
         private const val HOME_CATALOG_LOAD_CONCURRENCY = 4
-
-        private const val HOME_CATALOG_PARTIAL_BATCH_SIZE = 4
 
         private const val ADDON_REQUEST_TIMEOUT_MS =
             8_000L
