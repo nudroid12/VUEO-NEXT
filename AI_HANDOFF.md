@@ -154,3 +154,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Early countdown resets on seeking, pause/buffer, workspace, recovery or error. Back cancels automatic next for the current episode. Navigation dispatch is guarded against repeats and early auto-next records the episode as complete.
 - Empty skip cache expires after 30 seconds; ready results after 10 minutes. TV retries empty results at most twice, 31 seconds apart. No movie skip support was added, no Mobile UI changed, and the prior hidden-seek/directional-chrome patch is retained.
 - Verification: static source/signature/delimiter and ZIP checks only. Policy regression tests are included for CI but were not executed locally. Do not run a local build; the maintainer uses GitHub Actions.
+
+## TV Player — prompt position correction
+
+- Skip/Next prompts now sit 12dp above the progress rail, based on the measured bottom-controls height. Hidden-mode prompts use the existing feedback rail position (22dp bottom inset plus 3dp rail height).
+- Subtitle clearance no longer raises prompt positions. Intro/Recap remain left; Ending/Next remain right; prompt sizes, focus, seek and auto-next behavior are unchanged.
+- This patch follows the Skip & Auto-next patch. Static checks only; do not run a local build.

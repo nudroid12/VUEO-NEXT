@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +30,8 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -66,8 +68,6 @@ internal fun VueoPlayerPresentation(
     activeSource: StreamSource,
     controlsVisible: Boolean,
     seekFeedbackVisible: Boolean,
-    subtitleBottomPaddingFraction: Float,
-    subtitleFontSizeSp: Int,
     activePanel: TvPlayerPanel,
     playing: Boolean,
     isBuffering: Boolean,
@@ -124,15 +124,13 @@ internal fun VueoPlayerPresentation(
         else -> restartRequester
     }
 
-    val subtitleLineClearance = with(LocalDensity.current) { (subtitleFontSizeSp * 3).sp.toDp() } + 16.dp
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val density = LocalDensity.current
+    var bottomControlsHeight by remember { mutableStateOf(72.dp) }
+    Box(Modifier.fillMaxSize()) {
         val showPrompts = activePanel == TvPlayerPanel.NONE && playbackError == null
-        val promptBottomPadding = maxOf(
-            if (controlsVisible) 118.dp else 32.dp,
-            if (subtitleBottomPaddingFraction > 0f) {
-                maxHeight * subtitleBottomPaddingFraction.coerceIn(0f, 1f) + subtitleLineClearance
-            } else 0.dp,
-        ).coerceAtMost((maxHeight - 100.dp).coerceAtLeast(0.dp))
+        // The progress rail is the first item in the measured bottom controls.
+        // Hidden feedback has a 3dp rail above its existing 22dp bottom inset.
+        val promptBottomPadding = if (controlsVisible) bottomControlsHeight + 12.dp else 22.dp + 3.dp + 12.dp
         val skipOnRight = activeSkip?.kind == PlayerSkipKind.ENDING
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
         val showScrim = showChrome ||
@@ -150,6 +148,9 @@ internal fun VueoPlayerPresentation(
 
         VueoPlayerControls(
             visible = showChrome,
+            onBottomControlsHeightChanged = { heightPx ->
+                bottomControlsHeight = with(density) { heightPx.toDp() }
+            },
             media = media,
             episode = episode,
             activeSource = activeSource,
@@ -412,6 +413,7 @@ private fun VueoPlayerCinematicScrim(strong: Boolean) {
 @Composable
 private fun VueoPlayerControls(
     visible: Boolean,
+    onBottomControlsHeightChanged: (Int) -> Unit,
     media: MediaItem,
     episode: EpisodeItem?,
     activeSource: StreamSource,
@@ -566,7 +568,11 @@ private fun VueoPlayerControls(
                 targetOffsetY = { it },
             ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = 30.dp, end = 30.dp, bottom = 22.dp)) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .onSizeChanged { onBottomControlsHeightChanged(it.height) }
+                    .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
+            ) {
                 VueoPlayerProgressRail(
                     positionMs = positionMs,
                     durationMs = durationMs,

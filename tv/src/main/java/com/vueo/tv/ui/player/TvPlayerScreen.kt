@@ -1452,8 +1452,6 @@ fun TvPlayerScreen(
             activeSource = activeSource,
             controlsVisible = controlsVisible,
             seekFeedbackVisible = seekFeedbackVisible,
-            subtitleBottomPaddingFraction = if (!subtitlesDisabled && hasSubtitleControl) subtitleBottomPaddingFraction else 0f,
-            subtitleFontSizeSp = subtitleStyle.fontSizeSp,
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,
