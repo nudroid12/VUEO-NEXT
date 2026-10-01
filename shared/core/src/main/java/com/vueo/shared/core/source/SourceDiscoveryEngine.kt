@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Shared progressive source-discovery orchestration for Mobile and TV.
@@ -40,8 +41,24 @@ class SourceDiscoveryEngine(
             videoId = videoId,
         )
         val cached = SourceDiscoveryCache.get(cacheKey)
+        // Per-scan memoization avoids parsing the same source on every update.
+        val episodeDecisions = ConcurrentHashMap<StreamSource, String>()
+        fun rejectionReason(source: StreamSource): String {
+            val episode = request.episode ?: return ""
+            return episodeDecisions.computeIfAbsent(source) {
+                SourceEpisodePolicy.mismatch(
+                    name = source.name,
+                    url = source.url,
+                    season = episode.season,
+                    episode = episode.episode,
+                )?.let { found ->
+                    "requested S${episode.season}E${episode.episode}, source states S${found.season}E${found.episode}"
+                }.orEmpty()
+            }
+        }
+        val cachedCandidates = cached?.sources.orEmpty().map { it.toStreamSource() }
         val cachedStreams = SourceCleaner.clean(
-            sources = cached?.sources.orEmpty().map { it.toStreamSource() },
+            sources = cachedCandidates.filter { rejectionReason(it).isEmpty() },
             preferredQuality = preferredQuality,
             originalLanguage = item.originalLanguage,
         )
@@ -155,9 +172,23 @@ class SourceDiscoveryEngine(
             providerOrder = next
         }
 
+        val loggedEpisodeRejections = ConcurrentHashMap.newKeySet<StreamSource>()
+        fun episodeMatched(candidates: List<StreamSource>): List<StreamSource> =
+            candidates.filter { source ->
+                val reason = rejectionReason(source)
+                if (reason.isNotEmpty() && loggedEpisodeRejections.add(source)) {
+                    activity(
+                        category = "sources",
+                        level = "warning",
+                        message = "${source.providerName} → Source rejected: $reason",
+                    )
+                }
+                reason.isEmpty()
+            }
+
         fun cleanFresh(): List<StreamSource> =
             SourceCleaner.clean(
-                sources = freshAddonStreams + freshPluginStreams,
+                sources = episodeMatched(freshAddonStreams + freshPluginStreams),
                 preferredQuality = preferredQuality,
                 originalLanguage = item.originalLanguage,
             )
@@ -212,6 +243,10 @@ class SourceDiscoveryEngine(
             )
         }
 
+        episodeMatched(cachedCandidates)
+        request.episode?.let { episode ->
+            activity("requests", message = "Episode request → S${episode.season}E${episode.episode}")
+        }
         activity(
             category = "system",
             message = if (request.forceRefresh) {
