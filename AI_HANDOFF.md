@@ -160,3 +160,13 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Skip/Next prompts now sit 12dp above the progress rail, based on the measured bottom-controls height. Hidden-mode prompts use the existing feedback rail position (22dp bottom inset plus 3dp rail height).
 - Subtitle clearance no longer raises prompt positions. Intro/Recap remain left; Ending/Next remain right; prompt sizes, focus, seek and auto-next behavior are unchanged.
 - This patch follows the Skip & Auto-next patch. Static checks only; do not run a local build.
+
+## TV Player — next card, remaining time and hidden-input correction
+
+- Next Episode now uses a dark, rounded thumbnail card with episode metadata and a Play/countdown pill. The entire card is one focus target. Missing episode artwork falls back to the media background through the existing image loader.
+- Countdown/card focus does not reveal full player chrome. Hardware OK activates a focused hidden-mode card; hidden LEFT/RIGHT still seek. Existing ending/duration/post-credit heuristics remain unchanged.
+- The right-hand progress timestamp shows negative remaining time (`-23:45`), clamped at zero. Unknown duration displays `--:--`.
+- `onIsPlayingChanged(false)` must not reveal controls while `playWhenReady` is true: this includes seek-induced buffering. Real pause may reveal controls.
+- Player root focus remains attached while controls are visible. `hideControls()` cancels pending chrome focus and moves focus directly to root. Chrome retained during exit has input/focus/focused styling disabled through `LocalPlayerChromeInteractive`.
+- Focus retries now accept an eligibility callback and stop when their target is no longer available. The release of an OK press that merely reveals controls is consumed so it cannot accidentally toggle playback after focus transfer.
+- Keep the earlier 12dp progress-relative prompt positioning and skip/auto-next safety behavior. Apply this patch after the previous Skip & Auto-next / prompt-position patches. Static checks only; no local build or TV runtime validation was performed.

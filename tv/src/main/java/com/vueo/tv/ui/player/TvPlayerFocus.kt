@@ -9,11 +9,13 @@ import kotlinx.coroutines.delay
  */
 internal suspend fun FocusRequester.requestTvFocus(
     attempts: Int = 6,
+    canRequest: () -> Boolean = { true },
 ): Boolean {
     for (attempt in 0 until attempts.coerceAtLeast(1)) {
         if (attempt > 0) {
             delay((16L * attempt).coerceAtMost(64L))
         }
+        if (!canRequest()) return false
         val focused = runCatching { requestFocus() }.getOrDefault(false)
         if (focused) return true
     }

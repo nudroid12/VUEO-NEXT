@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -242,8 +243,11 @@ internal fun VueoPlayerPresentation(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (nextCountdown > 0 && nextEpisode != null) {
-                        VueoPlayerPromptButton(
-                            text = "Next in $nextCountdown  •  ${nextEpisode.title}", requester = nextContextRequester,
+                        VueoPlayerNextEpisodeCard(
+                            episode = nextEpisode,
+                            fallbackImage = media.background,
+                            countdown = nextCountdown,
+                            requester = nextContextRequester,
                             upRequester = FocusRequester.Cancel,
                             downRequester = if (activeSkip != null) skipRequester else if (showChrome) progressRequester else FocusRequester.Cancel,
                             onInteraction = onInteraction,
@@ -456,176 +460,178 @@ private fun VueoPlayerControls(
     }
     val bottomDefaultRequester = bottomActions.firstOrNull()?.requester ?: FocusRequester.Cancel
 
-    Box(Modifier.fillMaxSize()) {
-        AnimatedVisibility(
-            visible = visible,
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = slideInVertically(
-                animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
-                initialOffsetY = { -it },
-            ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
-            exit = slideOutVertically(
-                animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
-                targetOffsetY = { -it },
-            ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 30.dp, end = 30.dp, top = 28.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+    CompositionLocalProvider(LocalPlayerChromeInteractive provides visible) {
+        Box(Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = visible,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = slideInVertically(
+                    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
+                    initialOffsetY = { -it },
+                ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+                exit = slideOutVertically(
+                    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
+                    targetOffsetY = { -it },
+                ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
             ) {
-                if (contentWarningVisible) {
-                    Spacer(Modifier.weight(1f))
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                    ) {
-                        Text(
-                            text = media.name,
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            lineHeight = 23.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        episodeLine?.let { line ->
-                            Text(
-                                text = line,
-                                color = Color.White.copy(alpha = .72f),
-                                fontSize = 14.sp,
-                                lineHeight = 17.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (isBuffering) {
-                        Text(
-                            text = "BUFFERING",
-                            color = Color.White.copy(alpha = .90f),
-                            fontSize = 11.sp,
-                            lineHeight = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(end = 2.dp),
-                        )
-                    }
-                    VueoPlayerTopAction(
-                        icon = Icons.Rounded.Replay,
-                        label = "Restart",
-                        requester = restartRequester,
-                        downRequester = progressRequester,
-                        leftRequester = FocusRequester.Cancel,
-                        rightRequester = if (nextEpisode != null) nextRequester else moreRequester,
-                        onInteraction = onInteraction,
-                        onClick = onRestart,
-                    )
-                    if (nextEpisode != null) {
-                        VueoPlayerTopAction(
-                            icon = Icons.Rounded.SkipNext,
-                            label = "Next episode",
-                            requester = nextRequester,
-                            downRequester = progressRequester,
-                            leftRequester = restartRequester,
-                            rightRequester = moreRequester,
-                            onInteraction = onInteraction,
-                            onClick = onNext,
-                        )
-                    }
-                    VueoPlayerTopAction(
-                        icon = Icons.Rounded.MoreHoriz,
-                        label = "More",
-                        requester = moreRequester,
-                        downRequester = progressRequester,
-                        leftRequester = if (nextEpisode != null) nextRequester else restartRequester,
-                        rightRequester = FocusRequester.Cancel,
-                        onInteraction = onInteraction,
-                        onClick = { onOpenPanel(TvPlayerPanel.MORE) },
-                    )
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = visible,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = slideInVertically(
-                animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
-                initialOffsetY = { it },
-            ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
-            exit = slideOutVertically(
-                animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
-                targetOffsetY = { it },
-            ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
-        ) {
-            Column(
-                Modifier.fillMaxWidth()
-                    .onSizeChanged { onBottomControlsHeightChanged(it.height) }
-                    .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
-            ) {
-                VueoPlayerProgressRail(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    requester = progressRequester,
-                    upRequester = progressUpRequester,
-                    downRequester = bottomDefaultRequester,
-                    onInteraction = onInteraction,
-                    onSeekBy = onSeekBy,
-                    onSeekCommit = onSeekCommit,
-                    onTogglePlayback = onPlayPause,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 30.dp, end = 30.dp, top = 28.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        vueoPlayerTime(positionMs),
-                        color = Color.White.copy(alpha = .90f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        vueoPlayerTime(durationMs),
-                        color = Color.White.copy(alpha = .90f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
+                    if (contentWarningVisible) {
+                        Spacer(Modifier.weight(1f))
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(1.dp),
+                        ) {
+                            Text(
+                                text = media.name,
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                lineHeight = 23.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            episodeLine?.let { line ->
+                                Text(
+                                    text = line,
+                                    color = Color.White.copy(alpha = .72f),
+                                    fontSize = 14.sp,
+                                    lineHeight = 17.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
 
-                if (bottomActions.isNotEmpty()) {
-                    Spacer(Modifier.height(1.dp))
                     Row(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(Color(0xFF111316).copy(alpha = .88f))
-                            .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(22.dp))
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        bottomActions.forEachIndexed { index, action ->
-                            VueoPlayerPillAction(
-                                icon = action.icon,
-                                label = action.label,
-                                requester = action.requester,
-                                upRequester = progressRequester,
-                                leftRequester = bottomActions.getOrNull(index - 1)?.requester ?: FocusRequester.Cancel,
-                                rightRequester = bottomActions.getOrNull(index + 1)?.requester ?: FocusRequester.Cancel,
-                                onInteraction = onInteraction,
-                                onClick = { onOpenPanel(action.panel) },
+                        if (isBuffering) {
+                            Text(
+                                text = "BUFFERING",
+                                color = Color.White.copy(alpha = .90f),
+                                fontSize = 11.sp,
+                                lineHeight = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(end = 2.dp),
                             )
+                        }
+                        VueoPlayerTopAction(
+                            icon = Icons.Rounded.Replay,
+                            label = "Restart",
+                            requester = restartRequester,
+                            downRequester = progressRequester,
+                            leftRequester = FocusRequester.Cancel,
+                            rightRequester = if (nextEpisode != null) nextRequester else moreRequester,
+                            onInteraction = onInteraction,
+                            onClick = onRestart,
+                        )
+                        if (nextEpisode != null) {
+                            VueoPlayerTopAction(
+                                icon = Icons.Rounded.SkipNext,
+                                label = "Next episode",
+                                requester = nextRequester,
+                                downRequester = progressRequester,
+                                leftRequester = restartRequester,
+                                rightRequester = moreRequester,
+                                onInteraction = onInteraction,
+                                onClick = onNext,
+                            )
+                        }
+                        VueoPlayerTopAction(
+                            icon = Icons.Rounded.MoreHoriz,
+                            label = "More",
+                            requester = moreRequester,
+                            downRequester = progressRequester,
+                            leftRequester = if (nextEpisode != null) nextRequester else restartRequester,
+                            rightRequester = FocusRequester.Cancel,
+                            onInteraction = onInteraction,
+                            onClick = { onOpenPanel(TvPlayerPanel.MORE) },
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = visible,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(
+                    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
+                    initialOffsetY = { it },
+                ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+                exit = slideOutVertically(
+                    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
+                    targetOffsetY = { it },
+                ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .onSizeChanged { onBottomControlsHeightChanged(it.height) }
+                        .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
+                ) {
+                    VueoPlayerProgressRail(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        requester = progressRequester,
+                        upRequester = progressUpRequester,
+                        downRequester = bottomDefaultRequester,
+                        onInteraction = onInteraction,
+                        onSeekBy = onSeekBy,
+                        onSeekCommit = onSeekCommit,
+                        onTogglePlayback = onPlayPause,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            vueoPlayerTime(positionMs),
+                            color = Color.White.copy(alpha = .90f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            vueoPlayerRemainingTime(positionMs, durationMs),
+                            color = Color.White.copy(alpha = .90f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+
+                    if (bottomActions.isNotEmpty()) {
+                        Spacer(Modifier.height(1.dp))
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(Color(0xFF111316).copy(alpha = .88f))
+                                .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(22.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            bottomActions.forEachIndexed { index, action ->
+                                VueoPlayerPillAction(
+                                    icon = action.icon,
+                                    label = action.label,
+                                    requester = action.requester,
+                                    upRequester = progressRequester,
+                                    leftRequester = bottomActions.getOrNull(index - 1)?.requester ?: FocusRequester.Cancel,
+                                    rightRequester = bottomActions.getOrNull(index + 1)?.requester ?: FocusRequester.Cancel,
+                                    onInteraction = onInteraction,
+                                    onClick = { onOpenPanel(action.panel) },
+                                )
+                            }
                         }
                     }
                 }

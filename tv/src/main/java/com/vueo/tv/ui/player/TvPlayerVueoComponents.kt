@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,8 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
+internal val LocalPlayerChromeInteractive = staticCompositionLocalOf { true }
+
 @Composable
 internal fun VueoPlayerProgressRail(
     positionMs: Long,
@@ -65,7 +68,9 @@ internal fun VueoPlayerProgressRail(
     onTogglePlayback: () -> Unit,
     interactive: Boolean = true,
 ) {
-    var focused by remember { mutableStateOf(false) }
+    val acceptsInput = interactive && LocalPlayerChromeInteractive.current
+    var hasFocus by remember { mutableStateOf(false) }
+    val focused = hasFocus && acceptsInput
     val targetProgress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
@@ -84,7 +89,7 @@ internal fun VueoPlayerProgressRail(
     )
     val shape = RoundedCornerShape(50)
 
-    val inputModifier = if (interactive) {
+    val inputModifier = if (acceptsInput) {
         Modifier
             .focusRequester(requester)
             .focusProperties {
@@ -92,7 +97,7 @@ internal fun VueoPlayerProgressRail(
                 down = downRequester
             }
             .onFocusChanged {
-                focused = it.isFocused
+                hasFocus = it.isFocused
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
@@ -161,7 +166,9 @@ internal fun VueoPlayerTopAction(
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
-    var focused by remember(label) { mutableStateOf(false) }
+    val acceptsInput = enabled && LocalPlayerChromeInteractive.current
+    var hasFocus by remember(requester) { mutableStateOf(false) }
+    val focused = hasFocus && acceptsInput
     val scale by animateFloatAsState(
         targetValue = if (focused && enabled) 1.08f else 1f,
         animationSpec = tween(
@@ -179,22 +186,24 @@ internal fun VueoPlayerTopAction(
             }
             .focusRequester(requester)
             .focusProperties {
+                canFocus = acceptsInput
                 up = FocusRequester.Cancel
                 down = downRequester
                 left = leftRequester
                 right = rightRequester
             }
             .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
+                hasFocus = it.isFocused
+                if (it.isFocused && acceptsInput) onInteraction()
             }
             .onPreviewKeyEvent { event ->
+                if (!acceptsInput) return@onPreviewKeyEvent true
                 if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp && enabled) onClick()
                 true
             }
-            .focusable(enabled)
+            .focusable(acceptsInput)
             .background(
                 if (focused && enabled) Color.White else Color.Black.copy(alpha = .34f),
                 CircleShape,
@@ -225,7 +234,9 @@ internal fun VueoPlayerPillAction(
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
-    var focused by remember(label) { mutableStateOf(false) }
+    val acceptsInput = LocalPlayerChromeInteractive.current
+    var hasFocus by remember(requester) { mutableStateOf(false) }
+    val focused = hasFocus && acceptsInput
     val scale by animateFloatAsState(
         targetValue = if (focused) 1.035f else 1f,
         animationSpec = tween(
@@ -243,22 +254,24 @@ internal fun VueoPlayerPillAction(
             }
             .focusRequester(requester)
             .focusProperties {
+                canFocus = acceptsInput
                 up = upRequester
                 down = FocusRequester.Cancel
                 left = leftRequester
                 right = rightRequester
             }
             .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
+                hasFocus = it.isFocused
+                if (it.isFocused && acceptsInput) onInteraction()
             }
             .onPreviewKeyEvent { event ->
+                if (!acceptsInput) return@onPreviewKeyEvent true
                 if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onClick()
                 true
             }
-            .focusable()
+            .focusable(acceptsInput)
             .background(if (focused) Color.White else Color.Transparent, shape)
             .padding(horizontal = 9.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -335,6 +348,10 @@ internal fun VueoPlayerPromptButton(
         )
     }
 }
+
+internal fun vueoPlayerRemainingTime(positionMs: Long, durationMs: Long): String =
+    if (durationMs > 0L) "-${vueoPlayerTime((durationMs - positionMs.coerceAtLeast(0L)).coerceAtLeast(0L))}"
+    else "--:--"
 
 internal fun vueoPlayerTime(milliseconds: Long): String {
     val totalSeconds = milliseconds.coerceAtLeast(0L) / 1000L
