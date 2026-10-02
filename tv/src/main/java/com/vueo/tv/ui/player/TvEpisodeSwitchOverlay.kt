@@ -32,6 +32,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vueo.tv.ui.TvDesign
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
 
@@ -101,9 +102,13 @@ internal fun TvEpisodeSwitchOverlay(
                     }
                 }
                 else -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        CircularProgressIndicator(color = Color.White)
-                        Text("Loading episode…", color = Color.White, fontSize = 16.sp)
+                    Column(
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator(color = TvDesign.Accent)
+                        Text("Loading episode…", color = TvDesign.Accent, fontSize = 16.sp)
                     }
                 }
             }

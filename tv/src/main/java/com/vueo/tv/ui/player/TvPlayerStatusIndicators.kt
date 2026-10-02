@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -42,7 +43,7 @@ internal fun VueoPlayerStatusIndicators(
     translating: Boolean,
     enabled: Boolean,
     showPlaybackFeedback: Boolean,
-    translationBottomPadding: Dp,
+    translationTopPadding: Dp,
 ) {
     var showBuffering by remember { mutableStateOf(false) }
     var showFeedback by remember { mutableStateOf(false) }
@@ -69,26 +70,40 @@ internal fun VueoPlayerStatusIndicators(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Box(
-                modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = .55f), CircleShape),
-                contentAlignment = Alignment.Center,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Box(
+                    modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = .55f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (buffering) {
+                        CircularProgressIndicator(Modifier.size(40.dp), color = TvDesign.Accent, strokeWidth = 3.dp)
+                    } else {
+                        Icon(
+                            imageVector = if (paused) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (paused) "Paused" else "Playing",
+                            tint = TvDesign.Accent,
+                            modifier = Modifier.size(44.dp),
+                        )
+                    }
+                }
                 if (buffering) {
-                    CircularProgressIndicator(Modifier.size(40.dp), color = TvDesign.Accent, strokeWidth = 3.dp)
-                } else {
-                    Icon(
-                        imageVector = if (paused) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (paused) "Paused" else "Playing",
-                        tint = TvDesign.Accent,
-                        modifier = Modifier.size(44.dp),
+                    Text(
+                        "Buffering…",
+                        color = TvDesign.Accent,
+                        fontSize = 14.sp,
+                        modifier = Modifier.background(Color.Black.copy(alpha = .70f), RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
                     )
                 }
             }
         }
         if (enabled && translating) {
             Row(
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .padding(bottom = translationBottomPadding)
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .padding(top = translationTopPadding, end = 30.dp)
                     .background(Color.Black.copy(alpha = .70f), RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,

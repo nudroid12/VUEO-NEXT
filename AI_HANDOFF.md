@@ -276,3 +276,11 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Subtitle translation status uses translatingSubtitleSelectionId; display a lower-centre spinner and label while actual translation is pending. Hide overlays during panels, errors and episode switching.
 - All indicator foregrounds use TvDesign.Accent, exactly like the filled progress rail. No focus targets or control-reveal paths added. Mobile unchanged.
 - Static source and ZIP checks only; no local build or tests executed. Device verification remains required.
+
+## TV player status placement revision — 2026-10-02
+
+- Removed chrome's top-right BUFFERING text and its now-unused buffering parameter.
+- Centre buffering spinner now has its status label directly underneath; both follow TvDesign.Accent and the existing 500ms anti-flash gate.
+- Translating subtitles moved to top-right, below top actions while chrome is visible and at the top inset while hidden. It remains bound to actual translation state.
+- Existing episode/source-discovery overlay now stacks its loading label below the spinner and uses the progress accent. No discovery, focus, cancellation or playback logic changed.
+- Static source/archive checks only; no local builds/tests or TV device validation.
