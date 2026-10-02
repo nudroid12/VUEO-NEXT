@@ -253,3 +253,11 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 
 - Replace blue-tinted Settings surface palette only: normal pill and content card #303030, selected pill #404040, focused pill/card #555555, profile container #202020, disabled card #242424. Matches the user's reply-input reference approximately; exact pixel colour not sampled.
 - Dark backdrop, pill shape, measured widths, row spacing, omitted left group headers, white outlines and all navigation/behavior unchanged. Static palette/archive checks only; no local build or tests.
+
+## TV Player hidden OK / neutral skip prompt patch (2026-10-02)
+
+- Hidden chrome OK/Enter/Numpad Enter captures the press and toggles playback once on uncancelled KeyUp. Held repeats are consumed. It does not reveal chrome; Up/Down retain existing reveal behavior. Playback toggle uses playWhenReady so it can pause during buffering.
+- onIsPlayingChanged saves progress but only restores control focus for a real pause when chrome is already visible; hidden pauses remain hidden. Existing error reveal and visible control activation paths remain.
+- Focused Skip/Next prompts retain their own OK activation even with chrome hidden. Episode transition, workspace and canceled-release guards retained.
+- Skip Intro/Recap/Credits prompt fill #303030, focused #555555 with existing white outline and now white focused text. Geometry, timestamps and skip policy unchanged; next-episode card styling untouched.
+- Static checks/archive validation only; no build or local test execution. Real remote/device validation pending.

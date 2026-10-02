@@ -383,6 +383,7 @@ fun TvPlayerScreen(
     var pendingFocusJob by remember { mutableStateOf<Job?>(null) }
     val lastInteractionElapsedMs = remember { longArrayOf(0L) }
     val revealActivationKey = remember { intArrayOf(0) }
+    val hiddenPlaybackActivationKey = remember { intArrayOf(0) }
     val backPressCaptured = remember { booleanArrayOf(false) }
 
     fun noteInteraction() {
@@ -497,7 +498,7 @@ fun TvPlayerScreen(
     }
 
     fun togglePlayback() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.playWhenReady) player.pause() else player.play()
         playing = player.isPlaying
         noteInteraction()
     }
@@ -802,8 +803,9 @@ fun TvPlayerScreen(
                 if (!isPlaying && player.playbackState != Player.STATE_ENDED) {
                     saveProgress()
                     // A seek/buffer can temporarily stop isPlaying while
-                    // playWhenReady remains true. Reveal only for real pause.
-                    if (!player.playWhenReady && activePanel == TvPlayerPanel.NONE) {
+                    // playWhenReady remains true. A deliberate pause while chrome
+                    // is hidden must also stay hidden (OK toggles playback directly).
+                    if (!player.playWhenReady && controlsVisible && activePanel == TvPlayerPanel.NONE) {
                         requestControlFocus(progressRequester)
                     }
                 }
@@ -1309,6 +1311,19 @@ fun TvPlayerScreen(
                     }
                     return@onPreviewKeyEvent true
                 }
+                // Own both halves of hidden OK so repeats cannot toggle playback
+                // repeatedly or activate a child after focus changes.
+                if (hiddenPlaybackActivationKey[0] != 0 && hiddenPlaybackActivationKey[0] == code) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        hiddenPlaybackActivationKey[0] = 0
+                        if (!event.nativeKeyEvent.isCanceled && !latestEpisodeSwitching.value &&
+                            !controlsVisible && activePanel == TvPlayerPanel.NONE && playbackError == null
+                        ) {
+                            togglePlayback()
+                        }
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type == KeyEventType.KeyUp && revealActivationKey[0] == code) {
                     revealActivationKey[0] = 0
                     return@onPreviewKeyEvent true
@@ -1381,7 +1396,8 @@ fun TvPlayerScreen(
                         if (
                             activePanel != TvPlayerPanel.NONE ||
                             (controlsVisible && !controlFocusHandoffPending) ||
-                            (focusedPrompt == TvPlayerPromptTarget.NEXT && nextCountdown > 0 &&
+                            (((focusedPrompt == TvPlayerPromptTarget.NEXT && nextCountdown > 0) ||
+                                (focusedPrompt == TvPlayerPromptTarget.SKIP && activeSkip != null)) &&
                                 (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER ||
                                     code == KeyEvent.KEYCODE_NUMPAD_ENTER))
                         ) {
@@ -1391,10 +1407,14 @@ fun TvPlayerScreen(
                                 KeyEvent.KEYCODE_DPAD_CENTER,
                                 KeyEvent.KEYCODE_ENTER,
                                 KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                                    revealActivationKey[0] = code
-                                    requestControlFocus(
-                                        if (playbackError != null) errorRequester else progressRequester
-                                    )
+                                    if (!controlsVisible && playbackError == null && !latestEpisodeSwitching.value) {
+                                        hiddenPlaybackActivationKey[0] = code
+                                    } else {
+                                        revealActivationKey[0] = code
+                                        requestControlFocus(
+                                            if (playbackError != null) errorRequester else progressRequester
+                                        )
+                                    }
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
