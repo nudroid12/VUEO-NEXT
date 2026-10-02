@@ -332,3 +332,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Initial All list focuses the playing enabled source (existing selected-row behavior). Focusing a tab filters it without stealing focus back into the list. Down enters filtered list; Up from first enabled row returns to its active provider tab. Source/status labels remain and playing source explicitly says Playing.
 - Source discovery remains active after Play until completion/timeout/cancellation as before. No extra discovery, ranking, cancellation or source-switch behavior introduced. Existing single-Back panel dismissal is unchanged.
 - Static source and ZIP checks only; no build or tests executed. Device checks pending: open/close/reopen; provider navigation, Down/Up, sources arriving while tabs are focused, playing source highlight and one-Back dismissal.
+
+
+## TV episode switch loading card — 2026-10-03
+- Confirmed scope: present episode discovery/preparation inside the compact Next Episode card at bottom-right (32dp edge / 37dp bottom), replacing the centred dimmed overlay.
+- Thumbnail uses target episode artwork, falling back to media background; header/title remain during loading, failure, retry and manual source selection.
+- Spinner matches progress accent; error/retry/source selection grow upward within the same card. Existing Back press cancellation and discovery/commit logic preserved.
+- Static inspection and ZIP integrity only; no build or tests executed per user instruction.

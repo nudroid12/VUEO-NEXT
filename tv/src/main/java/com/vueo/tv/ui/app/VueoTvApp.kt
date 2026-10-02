@@ -699,6 +699,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         switchingEpisode?.let { target ->
                             TvEpisodeSwitchOverlay(
                                 episode = target,
+                                fallbackImage = media.background,
                                 error = switchingError,
                                 showSources = switchingShowSources,
                                 sources = switchingBundle?.sources.orEmpty().filter { it.isDirectPlayable },

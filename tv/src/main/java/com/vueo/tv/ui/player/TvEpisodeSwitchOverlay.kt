@@ -5,6 +5,7 @@ import com.vueo.shared.core.player.PlayerSourceDisplay
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +27,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -35,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
 
@@ -42,6 +49,7 @@ import com.vueo.shared.core.media.StreamSource
 @Composable
 internal fun TvEpisodeSwitchOverlay(
     episode: EpisodeItem,
+    fallbackImage: String?,
     error: String?,
     showSources: Boolean,
     sources: List<StreamSource>,
@@ -60,7 +68,6 @@ internal fun TvEpisodeSwitchOverlay(
     }
     Box(
         Modifier.fillMaxSize()
-            .background(Color.Black.copy(alpha = .72f))
             .focusRequester(rootRequester)
             .onPreviewKeyEvent { event ->
                 if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_BACK) return@onPreviewKeyEvent false
@@ -72,17 +79,41 @@ internal fun TvEpisodeSwitchOverlay(
                 true
             }
             .focusable(),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.BottomEnd,
     ) {
         Column(
-            Modifier.widthIn(max = 560.dp).background(Color(0xFF171A20), RoundedCornerShape(16.dp)).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.padding(end = 32.dp, bottom = 37.dp)
+                .width(360.dp)
+                .background(Color(0xFF171A20).copy(alpha = .94f), RoundedCornerShape(16.dp))
+                .border(1.dp, Color.White.copy(alpha = .35f), RoundedCornerShape(16.dp))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("S${episode.season} E${episode.episode} • ${episode.title}", color = Color.White, fontSize = 20.sp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TvNetworkImage(
+                    url = episode.thumbnail?.takeIf { it.isNotBlank() } ?: fallbackImage,
+                    contentDescription = episode.title,
+                    modifier = Modifier.width(96.dp).height(54.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop,
+                    fallback = Color(0xFF292D34),
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Next Episode", color = Color.White.copy(alpha = .75f), fontSize = 12.sp)
+                    Text("S${episode.season} E${episode.episode} • ${episode.title.ifBlank { "Episode ${episode.episode}" }}",
+                        color = Color.White, fontSize = 14.sp, lineHeight = 18.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                if (error == null && !showSources) {
+                    CircularProgressIndicator(color = TvDesign.Accent, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            }
             when {
                 showSources -> {
                     Text("Choose a source", color = Color.White)
-                    Column(Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
+                    Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
                         sources.forEachIndexed { index, source ->
                             Button(
                                 onClick = { onSelectSource(source) },
@@ -104,17 +135,10 @@ internal fun TvEpisodeSwitchOverlay(
                     }
                 }
                 else -> {
-                    Column(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator(color = TvDesign.Accent)
-                        Text("Loading episode…", color = TvDesign.Accent, fontSize = 16.sp)
-                    }
+                    Text("Loading episode…", color = TvDesign.Accent, fontSize = 12.sp)
                 }
             }
-            Text("Back to cancel", color = Color.White.copy(alpha = .65f), fontSize = 12.sp)
+            Text("Back to cancel", color = Color.White.copy(alpha = .65f), fontSize = 10.sp)
         }
     }
 }
