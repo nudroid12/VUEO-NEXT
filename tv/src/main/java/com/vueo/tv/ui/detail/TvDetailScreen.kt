@@ -1,5 +1,7 @@
 package com.vueo.tv.detail
 
+import com.vueo.shared.core.storage.ContinueWatchingPolicy
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -110,7 +112,7 @@ fun TvDetailScreen(
 
         val playbackTarget = detailPlaybackTargetEpisode(
             media = media,
-            entries = runtime.libraryStore.history(),
+            entries = runtime.libraryStore.continueWatchingPlaybackEntries(),
             initialEntry = initialLibraryEntry,
         )
         val target = playbackTarget
@@ -351,35 +353,7 @@ private fun detailPlaybackTargetEpisode(
     media: MediaItem,
     entries: List<LibraryPlaybackEntry>,
     initialEntry: LibraryPlaybackEntry?,
-): EpisodeItem? {
-    val orderedEpisodes = orderedDetailEpisodes(media.episodes)
-    if (orderedEpisodes.isEmpty()) return null
-
-    val latestPlayback = (entries + listOfNotNull(initialEntry))
-        .asSequence()
-        .filter { entry ->
-            entry.media.id == media.id &&
-                entry.media.type == media.type &&
-                entry.season != null &&
-                entry.episode != null &&
-                (entry.isCompleted || entry.positionMs > 15_000L)
-        }
-        .maxByOrNull(LibraryPlaybackEntry::lastWatchedEpochMs)
-        ?: return null
-
-    val currentIndex = orderedEpisodes.indexOfFirst { episode ->
-        episode.season == latestPlayback.season &&
-            episode.episode == latestPlayback.episode
-    }
-    if (currentIndex < 0) return null
-
-    if (!latestPlayback.isCompleted) {
-        return orderedEpisodes[currentIndex]
-    }
-
-    return orderedEpisodes.getOrNull(currentIndex + 1)
-        ?: orderedEpisodes.firstOrNull()
-}
+): EpisodeItem? = ContinueWatchingPolicy.targetEpisode(media, entries, initialEntry)
 
 internal fun detailPlaybackEntry(
     media: MediaItem,
@@ -407,9 +381,7 @@ private fun detailInitialPlaybackEntry(
         } else true
     }
 
-internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean =
-    entry.positionMs > 15_000L &&
-        (entry.durationMs <= 0L || entry.positionMs < (entry.durationMs * .95f).toLong())
+internal fun detailCanResume(entry: LibraryPlaybackEntry): Boolean = ContinueWatchingPolicy.canResume(entry)
 
 internal fun MediaItem.isDetailSeries(): Boolean =
     type.lowercase() in setOf("series", "tv")

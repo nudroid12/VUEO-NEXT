@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.ContinueWatchingPolicy
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -584,7 +586,7 @@ internal fun MediaDetailsScreen(
                 media = media,
                 entries =
                     libraryStore
-                        .history(),
+                        .continueWatchingPlaybackEntries(),
                 initialEntry =
                     initialLibraryEntry,
             )
@@ -1257,20 +1259,7 @@ internal fun MediaDetailsScreen(
                 detailPlaybackEntries,
         )
 
-    val canResume =
-        activePlaybackEntry
-            ?.let { entry ->
-                entry.positionMs > 15_000L &&
-                    (
-                        entry.durationMs <= 0L ||
-                            entry.positionMs <
-                                (
-                                    entry.durationMs *
-                                        .95f
-                                ).toLong()
-                    )
-            }
-            ?: false
+    val canResume = activePlaybackEntry?.let(ContinueWatchingPolicy::canResume) == true
 
     val primaryActionLabel =
         when {
@@ -1925,19 +1914,7 @@ internal fun MediaDetailsScreen(
                                 episode,
                             startPositionMs =
                                 episodeEntry
-                                    ?.takeIf { entry ->
-                                        entry.positionMs >
-                                            15_000L &&
-                                            (
-                                                entry.durationMs <=
-                                                    0L ||
-                                                    entry.positionMs <
-                                                        (
-                                                            entry.durationMs *
-                                                                .95f
-                                                        ).toLong()
-                                            )
-                                    }
+                                    ?.takeIf(ContinueWatchingPolicy::canResume)
                                     ?.positionMs
                                     ?: 0L,
                         )

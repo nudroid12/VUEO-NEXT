@@ -527,14 +527,15 @@ internal fun PlayerScreen(
     val resumePlaybackEnabled = remember(mediaKey) {
         settingsStore.resumePlaybackEnabled()
     }
+    val minimumResumePositionMs = if (episode != null) 0L else 5_000L
     val sourceSwitchPosition = initialPositionMs
         .coerceAtLeast(0L)
     val shouldPromptResume =
-        sourceSwitchPosition <= 5_000L &&
+        sourceSwitchPosition <= minimumResumePositionMs &&
             resumePlaybackEnabled &&
-            savedPositionMs > 5_000L
+            savedPositionMs > minimumResumePositionMs
     val initialPlaybackPositionMs =
-        if (sourceSwitchPosition > 5_000L) {
+        if (sourceSwitchPosition > minimumResumePositionMs) {
             sourceSwitchPosition
         } else if (!shouldPromptResume && resumePlaybackEnabled) {
             savedPositionMs
@@ -582,7 +583,7 @@ internal fun PlayerScreen(
             maxOf(
                 initialPlaybackPositionMs,
                 savedPositionMs,
-            ).takeIf { it > 5_000L } ?: 0L
+            ).takeIf { it > minimumResumePositionMs } ?: 0L
         )
     }
     var durationMs by remember {
@@ -1114,12 +1115,12 @@ internal fun PlayerScreen(
         val liveDurationMs =
             player.duration.coerceAtLeast(0L)
 
-        if (livePositionMs > 5_000L) {
+        if (livePositionMs > minimumResumePositionMs) {
             lastValidPlaybackPositionMs = livePositionMs
         }
 
         val stablePositionMs =
-            if (livePositionMs > 5_000L) {
+            if (livePositionMs > minimumResumePositionMs) {
                 livePositionMs
             } else {
                 lastValidPlaybackPositionMs
@@ -1149,7 +1150,7 @@ internal fun PlayerScreen(
 
         // Pause/exit/dispose can briefly report 0 ms. Never let that
         // transient value clear an already-valid resume point.
-        if (positionMs <= 5_000L) {
+        if (positionMs <= minimumResumePositionMs) {
             return
         }
 
@@ -1860,7 +1861,7 @@ internal fun PlayerScreen(
             currentPositionMs = sampledPositionMs
             durationMs = sampledDurationMs
 
-            if (sampledPositionMs > 5_000L) {
+            if (sampledPositionMs > minimumResumePositionMs) {
                 lastValidPlaybackPositionMs =
                     sampledPositionMs
             }
@@ -1868,13 +1869,13 @@ internal fun PlayerScreen(
             librarySaveTicks++
             if (librarySaveTicks >= 20) {
                 val stablePositionMs =
-                    if (sampledPositionMs > 5_000L) {
+                    if (sampledPositionMs > minimumResumePositionMs) {
                         sampledPositionMs
                     } else {
                         lastValidPlaybackPositionMs
                     }
 
-                if (stablePositionMs > 5_000L) {
+                if (stablePositionMs > minimumResumePositionMs) {
                     playbackStore.savePositionMs(
                         mediaKey = mediaKey,
                         positionMs = stablePositionMs,

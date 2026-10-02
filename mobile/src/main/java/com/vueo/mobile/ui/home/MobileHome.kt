@@ -209,6 +209,7 @@ import com.vueo.mobile.core.model.CatalogRow
 import com.vueo.mobile.BuildConfig
 import com.vueo.mobile.R
 import com.vueo.mobile.core.storage.PlaybackStore
+import com.vueo.shared.core.storage.ContinueWatchingMetadataRefresh
 import com.vueo.mobile.core.storage.LibraryStore
 import com.vueo.mobile.core.storage.ProfileStore
 import com.vueo.mobile.core.storage.VueoProfile
@@ -327,6 +328,13 @@ internal fun HomeScreen(
             profileStore
                 .activeProfileId()
         }
+
+    LaunchedEffect(engine, contentVersion, activeProfileId, booting) {
+        if (booting) return@LaunchedEffect
+        if (ContinueWatchingMetadataRefresh.refresh(libraryStore, engine::loadMeta)) {
+            onLibraryChanged()
+        }
+    }
 
     val personalizedHomeEnabled =
         dnaPreferences
@@ -540,7 +548,6 @@ internal fun HomeScreen(
         ) {
             libraryStore
                 .continueWatching()
-                .take(12)
         }
 
     val watchHistory =

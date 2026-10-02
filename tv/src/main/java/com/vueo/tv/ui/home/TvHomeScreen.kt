@@ -18,6 +18,7 @@ import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.storage.ContinueWatchingMetadataRefresh
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvPrimaryDestinations
@@ -77,6 +78,13 @@ fun TvHomeScreen(
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val libraryRevision = retainedState.libraryRevision
 
+    LaunchedEffect(runtime, refreshToken, runtime.isHomeCatalogRuntimeReady()) {
+        if (!runtime.isHomeCatalogRuntimeReady()) return@LaunchedEffect
+        if (ContinueWatchingMetadataRefresh.refresh(runtime.libraryStore, runtime.engine::loadMeta)) {
+            retainedState.libraryRevision += 1
+        }
+    }
+
     LaunchedEffect(runtime, refreshToken) {
         if (retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
             retainedState.loading = retainedState.catalogRows.isEmpty()
@@ -130,7 +138,7 @@ fun TvHomeScreen(
                 retainedState.presentationLibraryRevision == libraryRevision &&
                 retainedState.presentationCatalogRows === catalogRows
         if (presentationIsCurrent) return@LaunchedEffect
-        val continueWatching = withContext(Dispatchers.Default) { runtime.libraryStore.continueWatching().take(12) }
+        val continueWatching = withContext(Dispatchers.Default) { runtime.libraryStore.continueWatching() }
         val immediateRows = withContext(Dispatchers.Default) { buildTvHomeRows(catalogRows, continueWatching) }
         // Publish local/cache content before recommendation scoring. Preserve the
         // previous recommendation targets during incoming catalog updates.

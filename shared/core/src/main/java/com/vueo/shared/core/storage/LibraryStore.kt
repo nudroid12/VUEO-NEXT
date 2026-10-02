@@ -213,36 +213,59 @@ class LibraryStore(
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
 
-        // History is the durable source of truth for playback progress.
-        // The legacy continue-watching cache only keeps the most recently
-        // written entry, so relying on it can make older valid titles vanish
-        // whenever another playback entry is recorded.
-        return history()
-            .groupBy {
-                continueWatchingTitleKey(
-                    it.media
-                )
-            }
-            .values
-            .mapNotNull { titleEntries ->
-                // Ignore very short opens when deciding the state of a title,
-                // but let a later completion suppress older unfinished entries.
-                titleEntries.firstOrNull {
-                    it.isCompleted ||
-                        it.positionMs > 5_000L
-                }
-            }
-            .filterNot {
-                it.isCompleted
-            }
-            .filterNot {
-                continueWatchingTitleKey(
-                    it.media
-                ) in hiddenTitleKeys
-            }
-            .sortedByDescending {
-                it.lastWatchedEpochMs
-            }
+        return ContinueWatchingPolicy.resolve(continueWatchingPlaybackEntries())
+            .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
+    }
+
+    /** Dedicated title cursors survive the bounded 150-entry history. */
+    @Synchronized
+    fun continueWatchingPlaybackEntries(): List<LibraryPlaybackEntry> =
+        (readContinueWatching() + history()).sortedByDescending { it.lastWatchedEpochMs }
+            .distinctBy { it.mediaKey }
+
+    fun activeContinueWatchingProfileId(): String = profileStore.activeProfileId()
+
+    @Synchronized
+    fun continueWatchingMetadataCandidates(nowMs: Long): List<MediaItem> {
+        val hidden = dismissedContinueWatchingKeys() + markedWatchedKeys()
+        return continueWatchingPlaybackEntries().groupBy { continueWatchingTitleKey(it.media) }.values
+            .map { it.first().media }
+            .filter { ContinueWatchingPolicy.isSeries(it) && continueWatchingTitleKey(it) !in hidden }
+            .filter { nowMs - prefs.getLong(scopedKey("cw_meta_attempt:${continueWatchingTitleKey(it)}"), 0L) >= 15 * 60_000L }
+    }
+
+    @Synchronized
+    fun claimContinueWatchingMetadata(media: MediaItem, profileId: String, nowMs: Long): Boolean {
+        if (profileStore.activeProfileId() != profileId) return false
+        val key = scopedKey("cw_meta_attempt:${continueWatchingTitleKey(media)}")
+        if (nowMs - prefs.getLong(key, 0L) < 15 * 60_000L) return false
+        prefs.edit().putLong(key, nowMs).apply()
+        return true
+    }
+
+    @Synchronized
+    fun updateContinueWatchingMetadata(media: MediaItem, profileId: String): Boolean {
+        if (profileStore.activeProfileId() != profileId || media.episodes.isEmpty()) return false
+        val key = continueWatchingTitleKey(media)
+        if (key in dismissedContinueWatchingKeys() || key in markedWatchedKeys()) return false
+        var changed = false
+        fun update(entry: LibraryPlaybackEntry): LibraryPlaybackEntry {
+            if (continueWatchingTitleKey(entry.media) != key) return entry
+            // Merge rather than erase episodes when a provider returns partial metadata.
+            val episodes = (media.episodes + entry.media.episodes).distinctBy { it.season to it.episode }
+                .sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
+            val enriched = entry.media.copy(episodes = episodes)
+            if (enriched == entry.media) return entry
+            changed = true
+            return entry.copy(media = enriched) // never bump lastWatched or restore dismissed titles
+        }
+        val history = readHistory().map(::update)
+        val cursors = readContinueWatching().map(::update)
+        if (changed) {
+            writeHistory(history)
+            writeArray(scopedKey(continueWatchingStorageKey), cursors.map(::playbackToJson))
+        }
+        return changed
     }
 
     @Synchronized
@@ -309,6 +332,8 @@ class LibraryStore(
     fun removeHistory(
         mediaKey: String,
     ) {
+        writeArray(scopedKey(continueWatchingStorageKey),
+            readContinueWatching().filterNot { it.mediaKey == mediaKey }.map(::playbackToJson))
         writeHistory(
             readHistory()
                 .filterNot {
@@ -398,12 +423,9 @@ class LibraryStore(
     fun clearContinueWatching() {
         writeDismissedContinueWatchingKeys(
             dismissedContinueWatchingKeys() +
-                history()
+                continueWatchingPlaybackEntries()
                     .asSequence()
-                    .filter {
-                        it.positionMs > 5_000L &&
-                            !it.isCompleted
-                    }
+                    .filter { ContinueWatchingPolicy.isSeries(it.media) || (it.positionMs > 5_000L && !it.isCompleted) }
                     .map {
                         continueWatchingTitleKey(
                             it.media
@@ -519,15 +541,16 @@ class LibraryStore(
             }.getOrNull()
         }
 
-    private fun writeContinueWatching(
-        entry: LibraryPlaybackEntry,
-    ) {
-        writeArray(
-            scopedKey(
-                continueWatchingStorageKey
-            ),
-            listOf(playbackToJson(entry)),
-        )
+    private fun writeContinueWatching(entry: LibraryPlaybackEntry) {
+        val existing = (readContinueWatching() + readHistory())
+            .sortedByDescending { it.lastWatchedEpochMs }
+            .distinctBy { continueWatchingTitleKey(it.media) }
+        val titleKey = continueWatchingTitleKey(entry.media)
+        val old = existing.firstOrNull { continueWatchingTitleKey(it.media) == titleKey }
+        val episodes = (entry.media.episodes + old?.media?.episodes.orEmpty()).distinctBy { it.season to it.episode }
+        val cursor = entry.copy(media = entry.media.copy(episodes = episodes))
+        writeArray(scopedKey(continueWatchingStorageKey),
+            (listOf(cursor) + existing.filterNot { continueWatchingTitleKey(it.media) == titleKey }).map(::playbackToJson))
     }
 
     private fun readHistory():

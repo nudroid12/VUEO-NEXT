@@ -176,11 +176,12 @@ fun TvPlayerScreen(
     val mediaKey = "${media.type}:${media.id}:${bundle.videoId}"
     val settings = runtime.settingsStore
 
+    val minimumResumePositionMs = if (episode != null) 0L else 5_000L
     val savedPosition = remember(mediaKey) { runtime.playbackStore.positionMs(mediaKey) }
     val startPosition = remember(mediaKey, initialPositionMs) {
         when {
-            initialPositionMs > 5_000L -> initialPositionMs
-            settings.resumePlaybackEnabled() && savedPosition > 5_000L -> savedPosition
+            initialPositionMs > minimumResumePositionMs -> initialPositionMs
+            settings.resumePlaybackEnabled() && savedPosition > minimumResumePositionMs -> savedPosition
             else -> 0L
         }
     }
@@ -832,6 +833,7 @@ fun TvPlayerScreen(
             }
 
             override fun onRenderedFirstFrame() {
+                if (!hasRenderedFirstFrame && episode != null) saveProgress()
                 hasRenderedFirstFrame = true
                 isBuffering = false
                 sourceRecoverySession.markReady()

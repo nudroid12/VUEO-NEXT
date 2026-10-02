@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.ContinueWatchingPolicy
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -892,68 +894,7 @@ internal fun detailsPlaybackTargetEpisode(
     media: MediaItem,
     entries: List<LibraryPlaybackEntry>,
     initialEntry: LibraryPlaybackEntry?,
-): EpisodeItem? {
-    val orderedEpisodes =
-        orderedDetailsEpisodes(
-            media.episodes
-        )
-
-    if (orderedEpisodes.isEmpty()) {
-        return null
-    }
-
-    val latestPlayback =
-        (
-            entries +
-                listOfNotNull(
-                    initialEntry
-                )
-        )
-            .asSequence()
-            .filter { entry ->
-                entry.media.id ==
-                    media.id &&
-                    entry.media.type ==
-                        media.type &&
-                    entry.season != null &&
-                    entry.episode != null &&
-                    (
-                        entry.isCompleted ||
-                            entry.positionMs >
-                                15_000L
-                    )
-            }
-            .maxByOrNull {
-                it.lastWatchedEpochMs
-            }
-            ?: return null
-
-    val currentIndex =
-        orderedEpisodes
-            .indexOfFirst { episode ->
-                episode.season ==
-                    latestPlayback.season &&
-                    episode.episode ==
-                        latestPlayback.episode
-            }
-
-    if (currentIndex < 0) {
-        return null
-    }
-
-    if (!latestPlayback.isCompleted) {
-        return orderedEpisodes[
-            currentIndex
-        ]
-    }
-
-    return orderedEpisodes
-        .getOrNull(
-            currentIndex + 1
-        )
-        ?: orderedEpisodes
-            .firstOrNull()
-}
+): EpisodeItem? = ContinueWatchingPolicy.targetEpisode(media, entries, initialEntry)
 
 internal fun moreLikeThisAttribution(
     usesTmdb: Boolean,

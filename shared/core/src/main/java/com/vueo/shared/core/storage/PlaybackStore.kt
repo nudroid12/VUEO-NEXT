@@ -75,7 +75,8 @@ class PlaybackStore(
         positionMs: Long,
         durationMs: Long,
     ) {
-        if (positionMs <= minResumeMs) {
+        val minimum = if (mediaKey.startsWith("series:") || mediaKey.startsWith("tv:")) 0L else minResumeMs
+        if (positionMs <= minimum) {
             clearPosition(mediaKey)
             return
         }

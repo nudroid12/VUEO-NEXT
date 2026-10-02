@@ -291,3 +291,11 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Timer depends on playWhenReady intent and READY state, first rendered frame, inactivity, foreground, no buffering/recovery/error/end/episode switch/panel/pending seek/countdown. No artwork screen for buffering or lifecycle pauses.
 - Player root keeps focus. Capture full remote dismissal press and repeats; OK resumes on uncancelled release, other keys only dismiss while paused. Software Back also dismisses first. Any normal KeyDown restarts inactivity.
 - No new playback/discovery policy or mobile changes. Static source/archive validation only; no local builds or tests run. TV verification needed for 5-second timing, held keys, foreground/background and image fallback.
+
+## Continue Watching series continuity — 2026-10-02
+
+- Shared ContinueWatchingPolicy keeps short/zero-position episode cursors, advances completed episodes to the next released unwatched regular episode, and retains caught-up series in storage for future metadata refresh. Movie inclusion stays >5 seconds; existing 95%/20-second completion criteria preserved.
+- Dedicated per-title cursors now merge legacy history/cache and survive the 150-entry history limit. Refresh updates episode metadata without changing watched timestamps or restoring manually dismissed/marked-watched titles.
+- TV/mobile Home show all Continue Watching items locally first. Background metadata refresh uses 2 concurrent titles, 15-second per-title budget, 15-minute attempt cooldown and active-profile checks; unavailable/failed metadata keeps cached progress. Release dates prevent known future episodes from being offered. Metadata does not guarantee playable streams.
+- Detail selection/resume policy shared on both platforms; series positions >0 can resume, movies >5 seconds. Mobile stable snapshot guards preserved with series-specific threshold. TV saves the series cursor at first frame.
+- No local build/tests run. Static source/archive checks and CI-ready pure policy regression tests included; device/CI verification still required.
