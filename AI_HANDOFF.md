@@ -320,3 +320,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 
 ## Crash popup compile import fix (2026-10-02)
 - Uploaded CI logs_100287535140.zip reports mobile VueoApp.kt unresolved withContext and Dispatchers at line 352. Added the two missing coroutine imports. No behavioral changes. Static import and ZIP checks only; no local build or tests run.
+
+## Player source server labels (Mobile + TV, 2026-10-02)
+- Shared PlayerSourceDisplay presents serverName first, falling back to source name then provider/Source. Bullet-separated addon tags stay in secondary details; raw standalone URLs are not used as server labels.
+- Mobile player source cards show server identity with the existing quality badge, then provider, HLS/MP4 when known, and language/codec/audio/size/addon tags. TV player Sources and in-player episode-switch manual source picker use the same labels with quality in the title.
+- Provider tabs/filtering, selected/playing/recommended/failed states, source keys/order/switching/recovery/extraction/ranking are unchanged. Changes are limited to presentation; standalone source discovery screens are unchanged.
+- Static source/ZIP checks only. No build or tests run by user request. Device visual/D-pad validation pending.

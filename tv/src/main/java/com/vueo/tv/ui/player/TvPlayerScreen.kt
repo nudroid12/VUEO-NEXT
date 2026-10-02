@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.player.PlayerSourceDisplay
+
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.SystemClock
@@ -1601,8 +1603,8 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
-                    title = item.providerName,
-                    meta = sourceTechnicalLine(item) ?: item.name,
+                    title = PlayerSourceDisplay.titleWithQuality(item),
+                    meta = PlayerSourceDisplay.details(item),
                     selected = item.url == activeSource.url,
                 )
             }
@@ -2132,14 +2134,6 @@ private fun buildMediaItem(
         .setSubtitleConfigurations(configurations)
         .build()
 }
-
-private fun sourceTechnicalLine(source: StreamSource): String? =
-    listOfNotNull(
-        source.quality?.takeIf { it.isNotBlank() },
-        source.codec?.takeIf { it.isNotBlank() },
-        source.hdr?.takeIf { it.isNotBlank() },
-        source.audio?.takeIf { it.isNotBlank() },
-    ).distinct().takeIf { it.isNotEmpty() }?.joinToString("  •  ")
 
 private fun nextEpisode(episodes: List<EpisodeItem>, current: EpisodeItem?): EpisodeItem? {
     current ?: return null

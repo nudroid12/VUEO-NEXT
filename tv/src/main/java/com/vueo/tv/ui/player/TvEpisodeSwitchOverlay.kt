@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.player.PlayerSourceDisplay
+
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -86,7 +88,7 @@ internal fun TvEpisodeSwitchOverlay(
                                 onClick = { onSelectSource(source) },
                                 modifier = if (index == 0) Modifier.focusRequester(actionRequester) else Modifier,
                             ) {
-                                Text("${source.providerName} • ${source.name}", maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text("${PlayerSourceDisplay.titleWithQuality(source)}\n${PlayerSourceDisplay.details(source)}", maxLines = 3, overflow = TextOverflow.Ellipsis)
                             }
                         }
                         Button(onClick = onRetry, modifier = if (sources.isEmpty()) Modifier.focusRequester(actionRequester) else Modifier) {

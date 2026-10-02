@@ -52,7 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.player.PlayerSourcePolicy
-import java.util.Locale
+import com.vueo.shared.core.player.PlayerSourceDisplay
 
 private val SourceAccent = Color(0xFFB9FF3A)
 private val SourceCardShape = RoundedCornerShape(14.dp)
@@ -322,22 +322,22 @@ private fun SourceListRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    SourceQualityBadge(assessment.quality.label)
                     Text(
-                        text = sourceProviderDisplayName(
-                            sourceProviderKey(source)
-                        ),
-                        color = Color.White.copy(alpha = .64f),
-                        fontSize = 11.sp,
-                        maxLines = 1,
+                        text = PlayerSourceDisplay.title(source),
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    SourceQualityBadge(assessment.quality.label)
                 }
                 Text(
-                    text = sourceDetailLine(source),
+                    text = PlayerSourceDisplay.details(source),
                     color = Color.White.copy(alpha = .46f),
-                    fontSize = 9.sp,
-                    maxLines = 1,
+                    fontSize = 10.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -436,27 +436,6 @@ private fun sourceProviderDisplayName(provider: String): String =
         .trim()
         .ifBlank { "Other" }
 
-private fun sourceDetailLine(source: StreamSource): String =
-    buildList {
-        source.codec?.takeIf { it.isNotBlank() }?.let(::add)
-        source.hdr?.takeIf { it.isNotBlank() }?.let(::add)
-        source.audio?.takeIf { it.isNotBlank() }?.let(::add)
-        source.language?.takeIf { it.isNotBlank() }?.let(::add)
-        source.sizeBytes?.takeIf { it > 0L }?.let {
-            add(formatSourceSize(it))
-        }
-        add("Direct")
-    }.distinct().joinToString(" • ")
-
-private fun formatSourceSize(bytes: Long): String {
-    val gib = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-    val mib = bytes.toDouble() / (1024.0 * 1024.0)
-    return if (gib >= 1.0) {
-        String.format(Locale.US, "%.1f GB", gib)
-    } else {
-        String.format(Locale.US, "%.0f MB", mib)
-    }
-}
 
 @Composable
 private fun KeepSourcesDialogImmersive() {
