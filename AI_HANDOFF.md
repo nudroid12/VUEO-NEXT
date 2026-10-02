@@ -261,3 +261,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Focused Skip/Next prompts retain their own OK activation even with chrome hidden. Episode transition, workspace and canceled-release guards retained.
 - Skip Intro/Recap/Credits prompt fill #303030, focused #555555 with existing white outline and now white focused text. Geometry, timestamps and skip policy unchanged; next-episode card styling untouched.
 - Static checks/archive validation only; no build or local test execution. Real remote/device validation pending.
+
+## TV Sources loading focus patch (2026-10-02)
+
+- User explicitly excluded retaining empty/completed provider tabs: TvSourceScreen visibleProviders and fallback-to-All policy untouched.
+- First-result auto-focus now includes userInteracted in its cancellation key and guard, preventing updates from stealing focus after remote navigation. Explicit source-row provider cycling retains its one-time first-source handoff; newer user interaction clears that handoff.
+- Provider filter row intercepts horizontal intent and tracks focused/pending chip identity. LazyRow uses an explicit list state; offscreen destination scrolls into composition before a bounded four-frame focus retry. New inputs cancel the old job with a generation check; removed targets abort, and disposal cancels pending work. Long-press moves from pending identity instead of repeatedly targeting the same offscreen neighbor.
+- Refresh/error visuals, provider discovery, source ranking, provider tab policy, source playback and source-card behavior unchanged. Static source/archive checks only, no local build/test execution. Actual crash cause remains unconfirmed without a device log.

@@ -30,6 +30,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -125,13 +132,14 @@ internal fun TvSourcePresentation(
         return true
     }
 
-    LaunchedEffect(state.filteredSources, sourceFocusAssigned) {
-        if (sourceFocusAssigned || state.filteredSources.isEmpty()) {
+    LaunchedEffect(state.filteredSources, sourceFocusAssigned, userInteracted) {
+        if (userInteracted || sourceFocusAssigned || state.filteredSources.isEmpty()) {
             return@LaunchedEffect
         }
         val target = state.filteredSources.first()
         listState.scrollToItem(0)
         delay(90)
+        if (userInteracted) return@LaunchedEffect
         runCatching { sourceRequester(target).requestFocus() }
         sourceFocusAssigned = true
     }
@@ -140,6 +148,7 @@ internal fun TvSourcePresentation(
         if (!focusFirstAfterProviderCycle || state.filteredSources.isEmpty()) return@LaunchedEffect
         listState.scrollToItem(0)
         delay(60)
+        if (!focusFirstAfterProviderCycle) return@LaunchedEffect
         runCatching { sourceRequester(state.filteredSources.first()).requestFocus() }
         focusFirstAfterProviderCycle = false
     }
@@ -183,7 +192,10 @@ internal fun TvSourcePresentation(
                 providerRequester = ::providerRequester,
                 sourceRequester = ::sourceRequester,
                 selectedProviderRequester = ::selectedProviderRequester,
-                onInteraction = { userInteracted = true },
+                onInteraction = {
+                    userInteracted = true
+                    focusFirstAfterProviderCycle = false
+                },
                 onSelectProvider = onSelectProvider,
                 onRefresh = {
                     userInteracted = true
@@ -595,10 +607,88 @@ private fun SourceFilterRow(
         }
     }
 
+    val chipListState = rememberLazyListState()
+    val navigationScope = rememberCoroutineScope()
+    val latestChips = rememberUpdatedState(chips)
+    val navigationJob = remember { arrayOfNulls<Job>(1) }
+    var focusedChipId by remember { mutableStateOf<String?>(null) }
+    var pendingChipId by remember { mutableStateOf<String?>(null) }
+    var navigationGeneration by remember { mutableLongStateOf(0L) }
+
+    fun cancelNavigation() {
+        navigationGeneration += 1
+        navigationJob[0]?.cancel()
+        navigationJob[0] = null
+        pendingChipId = null
+    }
+
+    fun moveChip(delta: Int): Boolean {
+        onInteraction()
+        val currentChips = latestChips.value
+        val originId = pendingChipId ?: focusedChipId
+        val origin = currentChips.indexOfFirst { it.id == originId }
+        val targetIndex = origin + delta
+        if (targetIndex < 0) {
+            cancelNavigation()
+            focusedChipId = null
+            return if (origin >= 0) {
+                runCatching { refreshRequester.requestFocus() }
+                true
+            } else false
+        }
+        val target = currentChips.getOrNull(targetIndex) ?: return true
+        cancelNavigation()
+        pendingChipId = target.id
+        val generation = navigationGeneration
+        navigationJob[0] = navigationScope.launch {
+            try {
+                // An offscreen lazy item has no attached FocusRequester yet.
+                repeat(4) {
+                    val index = latestChips.value.indexOfFirst { it.id == target.id }
+                    if (index < 0) return@launch
+                    if (chipListState.layoutInfo.visibleItemsInfo.none { it.key == target.id }) {
+                        chipListState.scrollToItem(index)
+                    }
+                    withFrameNanos { }
+                    if (navigationGeneration != generation ||
+                        latestChips.value.none { it.id == target.id }
+                    ) return@launch
+                    if (runCatching { target.requester.requestFocus() }.getOrDefault(false)) {
+                        return@launch
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                android.util.Log.w("VUEO_SOURCE_FOCUS", "Provider tab navigation failed", error)
+            } finally {
+                if (navigationGeneration == generation) pendingChipId = null
+            }
+        }
+        return true
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { navigationJob[0]?.cancel() }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp),
+            .height(40.dp)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> moveChip(-1)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> moveChip(1)
+                    else -> {
+                        // A newer nonhorizontal intent must never be followed by
+                        // a late tab focus request from an earlier key press.
+                        cancelNavigation()
+                        false
+                    }
+                }
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SourceRefreshButton(
@@ -611,6 +701,7 @@ private fun SourceFilterRow(
         )
         Spacer(Modifier.width(8.dp))
         LazyRow(
+            state = chipListState,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 1.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -625,7 +716,10 @@ private fun SourceFilterRow(
                     rightRequester = chips.getOrNull(index + 1)?.requester,
                     downRequester = firstSourceRequester,
                     onInteraction = onInteraction,
-                    onFocused = chip.action,
+                    onFocused = {
+                        focusedChipId = chip.id
+                        chip.action()
+                    },
                     onClick = chip.action,
                 )
             }
