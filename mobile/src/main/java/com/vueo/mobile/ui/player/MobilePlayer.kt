@@ -829,7 +829,9 @@ internal fun PlayerScreen(
         val httpFactory =
             DefaultHttpDataSource.Factory()
                 .setUserAgent(
-                    "VUEO/${BuildConfig.VERSION_NAME}"
+                    source.headers.entries.firstOrNull {
+                        it.key.equals("User-Agent", ignoreCase = true) && it.value.isNotBlank()
+                    }?.value ?: "VUEO/${BuildConfig.VERSION_NAME}"
                 )
                 .setAllowCrossProtocolRedirects(true)
                 .setDefaultRequestProperties(

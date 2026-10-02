@@ -613,12 +613,17 @@ fun TvPlayerScreen(
 
     BackHandler { handlePlayerBack() }
 
-    LaunchedEffect(activeSource.url, bundle.videoId) {
+    LaunchedEffect(activeSource.url, activeSource.headers, bundle.videoId) {
         val url = activeSource.url ?: return@LaunchedEffect
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
         isBuffering = false
+        httpFactory.setUserAgent(
+            activeSource.headers.entries.firstOrNull {
+                it.key.equals("User-Agent", ignoreCase = true) && it.value.isNotBlank()
+            }?.value ?: "VUEO-TV"
+        )
         httpFactory.setDefaultRequestProperties(activeSource.headers)
         playbackError = null
         textTracks = emptyList()
