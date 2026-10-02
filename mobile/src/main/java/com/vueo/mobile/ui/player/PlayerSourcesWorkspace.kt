@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -347,21 +346,14 @@ private fun SourceListRow(
                         modifier = Modifier.weight(1f),
                     )
                     when {
-                        playbackFailed -> SourceBadge("Failed")
+                        playbackFailed -> SourceBadge("Failed", failed = true)
                         switching -> SourceBadge("Switching", accent = true)
                         current -> SourceBadge("Playing", accent = true)
                         recommended -> SourceBadge("Recommended", accent = true)
                         !automaticRecoveryEligible -> SourceBadge("Manual only")
                         else -> SourceBadge("Direct")
                     }
-                    if (current) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Current source",
-                            tint = SourceAccent,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
+
                 }
             }
         }
@@ -388,15 +380,18 @@ private fun SourceQualityBadge(label: String) {
 private fun SourceBadge(
     label: String,
     accent: Boolean = false,
+    failed: Boolean = false,
 ) {
     Text(
         text = label,
-        color = if (accent) SourceAccent else Color.White.copy(alpha = .62f),
+        color = if (failed) Color(0xFFFF7777) else if (accent) SourceAccent else Color.White.copy(alpha = .62f),
         fontSize = 8.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .background(
-                if (accent) {
+                if (failed) {
+                    Color(0xFFFF7777).copy(alpha = .12f)
+                } else if (accent) {
                     SourceAccent.copy(alpha = .10f)
                 } else {
                     Color.White.copy(alpha = .06f)

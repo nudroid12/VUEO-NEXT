@@ -1,4 +1,3 @@
-Apply from the VUEO repository root, replacing the two files at their included paths.
-Based on repo (34) with the previous player patches, including compact source labels and two-row badge alignment.
-Mobile and TV use a nonblank provider User-Agent (case-insensitive lookup), with their original fallback values. TV refreshes playback when source headers change.
-No build or device playback test performed. Test VOE playback on mobile and TV after building.
+Replace included files from repository root. Based on repo (34) with prior player/source patches and provider User-Agent fix.
+Sources: remove redundant Playing check on mobile (TV Sources already has no check); Failed badge uses red text and subtle red background. TV Sources now maps recovery failure status to Failed badge. Other selection indicators are unchanged.
+No build or device test performed.

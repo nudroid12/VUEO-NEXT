@@ -139,6 +139,7 @@ internal data class TvPlayerOption(
     val enabled: Boolean = true,
     val providerName: String? = null,
     val qualityLabel: String? = null,
+    val playbackFailed: Boolean = false,
 )
 
 @Composable
@@ -1624,6 +1625,8 @@ fun TvPlayerScreen(
                     providerName = item.providerName,
                     qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
                     selected = item.url == activeSource.url,
+                    playbackFailed = item.url in sourceRecoverySession.failedSourceUrls() ||
+                        (item.url == activeSource.url && playbackError != null),
                 )
             }
             TvPlayerPanel.EPISODES -> orderedEpisodes.map { item ->

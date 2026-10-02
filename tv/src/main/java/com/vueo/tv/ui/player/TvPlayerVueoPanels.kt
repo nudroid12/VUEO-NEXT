@@ -415,11 +415,11 @@ private fun VueoOptionRow(
                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        if (option.selected) "Playing" else "Direct",
-                        color = if (option.selected) TvDesign.Accent else Color.White.copy(alpha = .62f),
+                        if (option.playbackFailed) "Failed" else if (option.selected) "Playing" else "Direct",
+                        color = if (option.playbackFailed) Color(0xFFFF7777) else if (option.selected) TvDesign.Accent else Color.White.copy(alpha = .62f),
                         fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.background(
-                            if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
+                            if (option.playbackFailed) Color(0xFFFF7777).copy(alpha = .12f) else if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
                             RoundedCornerShape(50),
                         ).padding(horizontal = 6.dp, vertical = 3.dp),
                     )
