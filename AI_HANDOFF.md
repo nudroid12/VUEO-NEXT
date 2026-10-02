@@ -235,3 +235,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - TvSettingsComponents: category column replaces fixed 242 dp with measured longest-label width at focused 16 sp Semibold, measured chevron plus 30 dp side padding, 12 dp label/arrow gap and 4 dp reserve. All menu boxes share this width, adapting to font scale; Content Manager is the reference longest label in the current menu.
 - Category list spacing increases 6 -> 14 dp; noninitial section header top padding increases 9 -> 14 dp. Row heights, panel content, focus requesters and D-pad callbacks are unchanged.
 - Static checks and ZIP integrity only. No local build/test execution or real-TV visual validation, per user instruction.
+
+## TV Settings pill/contrast patch (2026-10-02)
+
+- Settings master/detail shell uses an opaque neutral charcoal #272B32 backdrop, replacing the near-black low-alpha surface, scoped to Settings only.
+- Category menus use 50% rounded pill shapes: normal #11151B, selected #343A44, focused #4C535F with the existing 2 dp white outline. Inactive labels/chevrons have higher white contrast. Existing measured label width, 14 dp spacing, row heights and D-pad callbacks are retained.
+- Panel contents and global theme are unchanged. Static source/archive checks only; no local build or tests, and real-TV contrast still requires user review.

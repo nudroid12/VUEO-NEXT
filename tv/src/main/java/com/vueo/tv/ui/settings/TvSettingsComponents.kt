@@ -47,6 +47,7 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.KeyEventType
@@ -66,6 +67,13 @@ import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private object TvSettingsContrast {
+    val Panel = Color(0xFF272B32)
+    val Pill = Color(0xFF11151B)
+    val SelectedPill = Color(0xFF343A44)
+    val FocusedPill = Color(0xFF4C535F)
+}
 
 internal data class TvSettingsEntry(
     val id: String,
@@ -274,7 +282,7 @@ internal fun TvSettingsMasterDetailShell(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = contentStartPadding, end = 42.dp, top = 34.dp, bottom = 28.dp)
-                .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(22.dp))
+                .background(TvSettingsContrast.Panel, RoundedCornerShape(22.dp))
                 .border(1.dp, TvDesign.White.copy(alpha = .12f), RoundedCornerShape(22.dp))
                 .padding(20.dp),
         ) {
@@ -456,22 +464,20 @@ private fun TvSettingsCategoryRow(
             }
             .background(
                 when {
-                    focused -> TvDesign.White.copy(alpha = .13f)
-                    selected && grouped -> TvDesign.White.copy(alpha = .045f)
-                    selected -> TvDesign.SurfaceRaised.copy(alpha = .58f)
-                    grouped -> TvDesign.White.copy(alpha = 0f)
-                    else -> TvDesign.Surface.copy(alpha = .44f)
+                    focused -> TvSettingsContrast.FocusedPill
+                    selected -> TvSettingsContrast.SelectedPill
+                    else -> TvSettingsContrast.Pill
                 },
-                RoundedCornerShape(12.dp),
+                RoundedCornerShape(percent = 50),
             )
             .border(
-                if (focused) 2.dp else if (grouped) 0.dp else 1.dp,
+                if (focused) 2.dp else 1.dp,
                 when {
                     focused -> TvDesign.White.copy(alpha = .94f)
-                    grouped -> TvDesign.White.copy(alpha = 0f)
-                    else -> TvDesign.White.copy(alpha = .05f)
+                    selected -> TvDesign.White.copy(alpha = .28f)
+                    else -> TvDesign.White.copy(alpha = .10f)
                 },
-                RoundedCornerShape(12.dp),
+                RoundedCornerShape(percent = 50),
             )
             .focusable()
             .padding(horizontal = 15.dp),
@@ -479,7 +485,7 @@ private fun TvSettingsCategoryRow(
     ) {
         Text(
             text = category.title,
-            color = if (focused || selected) TvDesign.White else TvDesign.Muted,
+            color = TvDesign.White.copy(alpha = if (focused || selected) 1f else .92f),
             fontSize = 16.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.weight(1f),
@@ -489,7 +495,7 @@ private fun TvSettingsCategoryRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = "›",
-            color = if (focused) TvDesign.White else TvDesign.Dim,
+            color = TvDesign.White.copy(alpha = if (focused) 1f else .72f),
             fontSize = 20.sp,
         )
     }
