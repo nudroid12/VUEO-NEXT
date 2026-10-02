@@ -69,12 +69,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private object TvSettingsContrast {
-    val Pill = Color(0xFF30353F)
-    val SelectedPill = Color(0xFF414956)
-    val FocusedPill = Color(0xFF596170)
-    val Card = Color(0xFF2B3039)
-    val CardContainer = Color(0xFF1D222B)
-    val DisabledCard = Color(0xFF1C2129)
+    val Pill = Color(0xFF303030)
+    val SelectedPill = Color(0xFF404040)
+    val FocusedPill = Color(0xFF555555)
+    val Card = Color(0xFF303030)
+    val CardContainer = Color(0xFF202020)
+    val DisabledCard = Color(0xFF242424)
 }
 
 internal data class TvSettingsEntry(

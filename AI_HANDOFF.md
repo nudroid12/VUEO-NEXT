@@ -248,3 +248,8 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Brighter opaque neutral menu fills: normal #30353F, selected #414956, focused #596170. Shared Settings cards/metrics/profile tiles now #2B3039 with focused #596170 and disabled #1C2129; profile container #1D222B. Existing focused white outlines and switch-profile focused white/black text remain.
 - Remove only rendered left category group headers (VUEO/PLAYBACK/APP), leaving original category order and destination data intact. Right-side content sections are retained.
 - Static checks and ZIP verification only; no build or tests executed locally. Real-TV visual review pending.
+
+## TV Settings neutral grey palette revision (2026-10-02)
+
+- Replace blue-tinted Settings surface palette only: normal pill and content card #303030, selected pill #404040, focused pill/card #555555, profile container #202020, disabled card #242424. Matches the user's reply-input reference approximately; exact pixel colour not sampled.
+- Dark backdrop, pill shape, measured widths, row spacing, omitted left group headers, white outlines and all navigation/behavior unchanged. Static palette/archive checks only; no local build or tests.
