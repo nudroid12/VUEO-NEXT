@@ -241,3 +241,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Settings master/detail shell uses an opaque neutral charcoal #272B32 backdrop, replacing the near-black low-alpha surface, scoped to Settings only.
 - Category menus use 50% rounded pill shapes: normal #11151B, selected #343A44, focused #4C535F with the existing 2 dp white outline. Inactive labels/chevrons have higher white contrast. Existing measured label width, 14 dp spacing, row heights and D-pad callbacks are retained.
 - Panel contents and global theme are unchanged. Static source/archive checks only; no local build or tests, and real-TV contrast still requires user review.
+
+## TV Settings dark backdrop / brighter surfaces revision (2026-10-02)
+
+- Supersedes prior pill contrast palette: roll back the master/detail outer surface to original dark Surface at 18% opacity. Keep pill shapes, measured widths, 14 dp category spacing and D-pad behaviors.
+- Brighter opaque neutral menu fills: normal #30353F, selected #414956, focused #596170. Shared Settings cards/metrics/profile tiles now #2B3039 with focused #596170 and disabled #1C2129; profile container #1D222B. Existing focused white outlines and switch-profile focused white/black text remain.
+- Remove only rendered left category group headers (VUEO/PLAYBACK/APP), leaving original category order and destination data intact. Right-side content sections are retained.
+- Static checks and ZIP verification only; no build or tests executed locally. Real-TV visual review pending.

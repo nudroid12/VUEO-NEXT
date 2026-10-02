@@ -69,10 +69,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private object TvSettingsContrast {
-    val Panel = Color(0xFF272B32)
-    val Pill = Color(0xFF11151B)
-    val SelectedPill = Color(0xFF343A44)
-    val FocusedPill = Color(0xFF4C535F)
+    val Pill = Color(0xFF30353F)
+    val SelectedPill = Color(0xFF414956)
+    val FocusedPill = Color(0xFF596170)
+    val Card = Color(0xFF2B3039)
+    val CardContainer = Color(0xFF1D222B)
+    val DisabledCard = Color(0xFF1C2129)
 }
 
 internal data class TvSettingsEntry(
@@ -282,7 +284,7 @@ internal fun TvSettingsMasterDetailShell(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = contentStartPadding, end = 42.dp, top = 34.dp, bottom = 28.dp)
-                .background(TvSettingsContrast.Panel, RoundedCornerShape(22.dp))
+                .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(22.dp))
                 .border(1.dp, TvDesign.White.copy(alpha = .12f), RoundedCornerShape(22.dp))
                 .padding(20.dp),
         ) {
@@ -304,27 +306,7 @@ internal fun TvSettingsMasterDetailShell(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    var previousSection: String? = null
                     categories.forEachIndexed { index, category ->
-                        val section = category.section?.takeIf { it.isNotBlank() }
-                        if (section != null && section != previousSection) {
-                            item(key = "category-section-$section") {
-                                Text(
-                                    text = section.uppercase(),
-                                    color = TvDesign.Dim,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.15.sp,
-                                    modifier = Modifier.padding(
-                                        start = 10.dp,
-                                        top = if (index == 0) 2.dp else 14.dp,
-                                        bottom = 1.dp,
-                                    ),
-                                )
-                            }
-                        }
-                        previousSection = section
-
                         item(key = category.id) {
                             TvSettingsCategoryRow(
                                 category = category,
@@ -542,7 +524,7 @@ internal fun TvSettingsProfilePanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(TvDesign.Surface.copy(alpha = .52f), RoundedCornerShape(20.dp))
+                .background(TvSettingsContrast.CardContainer, RoundedCornerShape(20.dp))
                 .border(1.dp, TvDesign.White.copy(alpha = .11f), RoundedCornerShape(20.dp))
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp),
@@ -576,7 +558,7 @@ internal fun TvSettingsProfilePanel(
                         }
                     }
                     .clip(RoundedCornerShape(15.dp))
-                    .background(if (profileFocused) TvDesign.White.copy(alpha = .10f) else TvDesign.White.copy(alpha = .02f))
+                    .background(if (profileFocused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card)
                     .border(
                         if (profileFocused) 1.5.dp else 0.dp,
                         if (profileFocused) TvDesign.White.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
@@ -684,7 +666,7 @@ internal fun TvSettingsProfilePanel(
                         }
                     }
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (switchFocused) TvDesign.White else TvDesign.Black.copy(alpha = .28f))
+                    .background(if (switchFocused) TvDesign.White else TvSettingsContrast.Card)
                     .border(
                         if (switchFocused) 1.5.dp else 1.dp,
                         if (switchFocused) TvDesign.White else TvDesign.White.copy(alpha = .06f),
@@ -722,7 +704,7 @@ private fun TvProfileStat(
     Column(
         modifier = modifier
             .height(86.dp)
-            .background(TvDesign.Black.copy(alpha = .25f), RoundedCornerShape(13.dp))
+            .background(TvSettingsContrast.Card, RoundedCornerShape(13.dp))
             .padding(horizontal = 10.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -740,7 +722,7 @@ private fun TvSettingsMetricsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TvDesign.Surface.copy(alpha = .54f), RoundedCornerShape(16.dp))
+            .background(TvSettingsContrast.Card, RoundedCornerShape(16.dp))
             .border(1.dp, TvDesign.White.copy(alpha = .08f), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1140,12 +1122,9 @@ private fun TvSettingsRow(
             }
             .background(
                 color = when {
-                    !entry.enabled -> TvDesign.Surface.copy(alpha = if (grouped) .10f else .18f)
-                    focused && entry.accented -> TvDesign.Accent.copy(alpha = .12f)
-                    focused -> TvDesign.White.copy(alpha = .10f)
-                    grouped -> TvDesign.White.copy(alpha = .015f)
-                    entry.accented -> TvDesign.Surface.copy(alpha = .44f)
-                    else -> TvDesign.Surface.copy(alpha = .36f)
+                    !entry.enabled -> TvSettingsContrast.DisabledCard
+                    focused -> TvSettingsContrast.FocusedPill
+                    else -> TvSettingsContrast.Card
                 },
                 shape = shape,
             )
