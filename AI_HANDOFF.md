@@ -317,3 +317,6 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - OS details do not claim an exact root cause/code location and binary native tombstones are not rendered as text. Local reports prefer richer JVM details over matching OS records; a newer distinct exit replaces stale evidence.
 - Static validation only, no build or tests run per user instruction. Five pure JUnit cases supplied for CI (dismissal/session cutoff, OS/JVM dedupe, newer native selection, older record protection, redaction). Device checks pending: force Java crash then relaunch, copy/details/close and relaunch twice; TV D-pad/Back focus; profile gate; native/ANR API 30+; normal exit/force-stop must not show popup.
 - Android reference consulted: https://developer.android.com/reference/android/app/ApplicationExitInfo and https://developer.android.com/reference/android/app/ActivityManager .
+
+## Crash popup compile import fix (2026-10-02)
+- Uploaded CI logs_100287535140.zip reports mobile VueoApp.kt unresolved withContext and Dispatchers at line 352. Added the two missing coroutine imports. No behavioral changes. Static import and ZIP checks only; no local build or tests run.
