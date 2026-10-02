@@ -11,6 +11,7 @@
         android:required="false" />
 
     <application
+        android:name="com.vueo.shared.core.diagnostics.VueoDiagnosticApplication"
         android:allowBackup="false"
         android:banner="@drawable/vueo_tv_banner_art"
         android:icon="@mipmap/ic_vueo_tv"

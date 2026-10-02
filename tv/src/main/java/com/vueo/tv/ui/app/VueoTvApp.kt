@@ -1,5 +1,9 @@
 package com.vueo.tv
 
+import com.vueo.shared.core.diagnostics.AppCrashReport
+import com.vueo.shared.core.diagnostics.CrashReportStore
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -76,6 +80,15 @@ private enum class TvRoute {
 @Composable
 fun VueoTvApp(onExit: () -> Unit = {}) {
     val context = LocalContext.current
+    var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
+    var crashRecoveryLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        pendingCrash = withContext(Dispatchers.IO) {
+            runCatching { CrashReportStore.pending(context.applicationContext) }.getOrNull()
+        }
+        crashRecoveryLoaded = true
+    }
+
     val runtime = remember { TvRuntime(context.applicationContext) }
     val homeRetainedState = rememberTvHomeRetainedState(runtime)
 
@@ -157,6 +170,10 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 updatePromptRelease = result.release?.takeIf { it.isNewerThanCurrent() }
             }
         }
+    }
+
+    LaunchedEffect(route) {
+        RuntimeDiagnostics.recordScreen("TV ${route.name}")
     }
 
     fun navigate(label: String) {
@@ -698,7 +715,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 }
             }
 
-            updatePromptRelease?.takeIf { route != TvRoute.PLAYER }?.let { release ->
+            if (route != TvRoute.STARTUP && route != TvRoute.PROFILE) {
+                pendingCrash?.let { report ->
+                    TvCrashRecoveryPopup(report = report, onClosed = { pendingCrash = null })
+                }
+            }
+            updatePromptRelease?.takeIf { route != TvRoute.PLAYER && crashRecoveryLoaded && pendingCrash == null }?.let { release ->
                 TvUpdatePrompt(
                     release = release,
                     onLater = { updatePromptRelease = null },

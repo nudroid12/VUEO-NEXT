@@ -57,12 +57,18 @@ object RuntimeDiagnostics {
         appContext = context.applicationContext
         if (!installed.compareAndSet(false, true)) return
 
+        runCatching { CrashReportStore.startSession(context.applicationContext) }
         installCrashHandler()
         record(
             "SESSION_START android=${Build.VERSION.SDK_INT} " +
                 "device=${safeToken(Build.MANUFACTURER)}_${safeToken(Build.MODEL)} " +
                 memoryLabel()
         )
+    }
+
+    fun recordScreen(label: String) {
+        CrashReportStore.screen(label)
+        record("SCREEN ${safeText(label, 120)}")
     }
 
     fun beginSourceScan(requestLabel: String, targetProviders: Int): Long {
@@ -225,6 +231,7 @@ object RuntimeDiagnostics {
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching { appContext?.let { CrashReportStore.capture(it, thread, throwable) } }
             runCatching {
                 val stack = throwable.stackTrace
                     .take(36)
@@ -240,7 +247,11 @@ object RuntimeDiagnostics {
                     )
                 )
             }
-            previous?.uncaughtException(thread, throwable)
+            if (previous != null) previous.uncaughtException(thread, throwable)
+            else {
+                android.os.Process.killProcess(android.os.Process.myPid())
+                kotlin.system.exitProcess(10)
+            }
         }
     }
 
@@ -268,7 +279,11 @@ object RuntimeDiagnostics {
 
     private fun record(message: String) {
         val line = timestamped(message)
-        writer.execute { appendSync(line) }
+        CrashReportStore.note(line)
+        writer.execute {
+            appendSync(line)
+            appContext?.let { CrashReportStore.updateSystemSummary(it, line, force = message.startsWith("SCREEN ")) }
+        }
     }
 
     private fun appendSync(line: String) {

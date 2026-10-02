@@ -1,5 +1,9 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.diagnostics.AppCrashReport
+import com.vueo.shared.core.diagnostics.CrashReportStore
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -343,6 +347,13 @@ internal enum class SearchMode(
 @Composable
 fun VueoApp() {
     val context = LocalContext.current
+    var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
+    LaunchedEffect(Unit) {
+        pendingCrash = withContext(Dispatchers.IO) {
+            runCatching { CrashReportStore.pending(context.applicationContext) }.getOrNull()
+        }
+    }
+
     val engine = remember { UnifiedMediaEngine() }
     val store = remember {
         AddonStore(context.applicationContext)
@@ -1183,6 +1194,15 @@ fun VueoApp() {
     }
         }
     }
+    LaunchedEffect(appSurface, selectedTab) {
+        RuntimeDiagnostics.recordScreen("Mobile ${appSurface.name} / ${selectedTab.name}")
+    }
+    if (startupDestinationResolved && !booting && !showProfilePicker) {
+        pendingCrash?.let { report ->
+            MobileCrashRecoveryPopup(report = report, onClosed = { pendingCrash = null })
+        }
+    }
+
 }
 
 @Composable

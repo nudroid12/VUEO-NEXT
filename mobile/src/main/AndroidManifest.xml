@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
+        android:name="com.vueo.shared.core.diagnostics.VueoDiagnosticApplication"
         android:allowBackup="true"
         android:icon="@drawable/ic_vueo"
         android:roundIcon="@drawable/ic_vueo"
