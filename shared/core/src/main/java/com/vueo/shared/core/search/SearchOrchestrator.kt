@@ -5,6 +5,8 @@ import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
 import com.vueo.shared.core.media.MediaItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -44,11 +46,31 @@ object SearchOrchestrator {
         onPartial: ((List<MediaItem>) -> Unit)? = null,
     ): List<MediaItem> {
         val local = localResults ?: localTitleResults(query, limit)
-        val remote = try {
-            withContext(Dispatchers.IO) {
-                engine.search(query = query, maxResults = limit, onPartial = null)
+        val remote = coroutineScope {
+            // Deliver provider snapshots on the caller context; keep only the newest
+            // queued snapshot when providers return faster than the UI can render.
+            val partials = Channel<List<MediaItem>>(Channel.CONFLATED)
+            val request = async(Dispatchers.IO) {
+                try {
+                    engine.search(query = query, maxResults = limit, onPartial = { partial ->
+                        partials.trySend(partial.toList())
+                    })
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    emptyList()
+                } finally {
+                    partials.close()
+                }
             }
-        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
+            for (partial in partials) {
+                val ranked = withContext(Dispatchers.Default) {
+                    SearchPolicy.rankAndDedupe(partial + local, query).take(limit)
+                }
+                onPartial?.invoke(ranked)
+            }
+            request.await()
+        }
         val combined = withContext(Dispatchers.Default) {
             SearchPolicy.rankAndDedupe(remote + local, query).take(limit)
         }

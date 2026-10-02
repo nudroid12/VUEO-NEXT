@@ -286,6 +286,8 @@ internal fun SearchScreen(
             )
         }
 
+    val latestSearchQuery = androidx.compose.runtime.rememberUpdatedState(query)
+
     var searchMode by remember {
         mutableStateOf(
             SearchMode.TITLE
@@ -314,6 +316,10 @@ internal fun SearchScreen(
 
     var searching by remember {
         mutableStateOf(false)
+    }
+
+    var completedSearchKey by remember {
+        mutableStateOf<Triple<String, SearchMode, Int>?>(null)
     }
 
     var searchRequestId by remember {
@@ -416,11 +422,12 @@ internal fun SearchScreen(
         }
 
         searching = true
+        searchResults = emptyList()
         delay(250)
 
         if (
             requestId != searchRequestId ||
-            query.trim() != normalized ||
+            latestSearchQuery.value.trim() != normalized ||
             searchMode != requestedMode
         ) {
             return@LaunchedEffect
@@ -445,7 +452,7 @@ internal fun SearchScreen(
                     onPartial = { partial ->
                         if (
                             requestId == searchRequestId &&
-                            query.trim() == normalized &&
+                            latestSearchQuery.value.trim() == normalized &&
                             searchMode == requestedMode
                         ) {
                             searchResults = partial
@@ -455,10 +462,11 @@ internal fun SearchScreen(
 
             if (
                 requestId == searchRequestId &&
-                query.trim() == normalized &&
+                latestSearchQuery.value.trim() == normalized &&
                 searchMode == requestedMode
             ) {
                 searchResults = remote
+                completedSearchKey = Triple(normalized, requestedMode, contentVersion)
                 searching = false
             }
 
@@ -478,6 +486,7 @@ internal fun SearchScreen(
         searchResults = emptyList()
 
         if (!actorSourceAvailable) {
+            completedSearchKey = Triple(normalized, requestedMode, contentVersion)
             searching = false
             return@LaunchedEffect
         }
@@ -488,22 +497,26 @@ internal fun SearchScreen(
                 query = normalized,
                 tmdbApiKey = tmdbApiKey,
                 onPartial = { partial ->
-                    if (
-                        requestId == searchRequestId &&
-                        query.trim() == normalized &&
-                        searchMode == requestedMode
-                    ) {
-                        searchResults = partial
+                    // Inherit the effect's Main dispatcher and cancellation lifetime.
+                    launch {
+                        if (
+                            requestId == searchRequestId &&
+                            latestSearchQuery.value.trim() == normalized &&
+                            searchMode == requestedMode && searching
+                        ) {
+                            searchResults = partial
+                        }
                     }
                 },
             )
 
         if (
             requestId == searchRequestId &&
-            query.trim() == normalized &&
+            latestSearchQuery.value.trim() == normalized &&
             searchMode == requestedMode
         ) {
             searchResults = actorResults
+            completedSearchKey = Triple(normalized, requestedMode, contentVersion)
             searching = false
         }
     }
@@ -513,6 +526,10 @@ internal fun SearchScreen(
 
     val searchingMode =
         normalizedQuery.isNotBlank()
+
+    val searchPending = normalizedQuery.length >= 2 &&
+        (booting || searching ||
+            completedSearchKey != Triple(normalizedQuery, searchMode, contentVersion))
 
     val animeCatalogKeys =
         remember(discoverRows) {
@@ -843,7 +860,7 @@ internal fun SearchScreen(
                 )
 
                 if (
-                    searching ||
+                    searchPending ||
                     discovering
                 ) {
                     LinearProgressIndicator(
@@ -955,9 +972,15 @@ internal fun SearchScreen(
                             VueoPalette.Muted,
                         fontSize = 12.sp,
                     )
+                } else if (searchingMode && searchPending) {
+                    Text(
+                        text = if (booting) "Preparing search…" else "Searching…",
+                        color = VueoPalette.Muted,
+                        fontSize = 12.sp,
+                    )
                 } else if (
                     searchingMode &&
-                    !searching
+                    !searchPending
                 ) {
                     Text(
                         text =
@@ -1001,7 +1024,7 @@ internal fun SearchScreen(
             searchingMode &&
             normalizedQuery.length >= 2 &&
             filteredItems.isEmpty() &&
-            !searching
+            !searchPending
         ) {
             item(
                 key = "search_empty_results"
