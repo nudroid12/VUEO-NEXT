@@ -137,6 +137,7 @@ internal data class TvPlayerOption(
     val meta: String? = null,
     val selected: Boolean = false,
     val enabled: Boolean = true,
+    val providerName: String? = null,
 )
 
 @Composable
@@ -1614,6 +1615,7 @@ fun TvPlayerScreen(
                     key = item.url.orEmpty(),
                     title = PlayerSourceDisplay.titleWithQuality(item),
                     meta = PlayerSourceDisplay.details(item),
+                    providerName = item.providerName,
                     selected = item.url == activeSource.url,
                 )
             }
