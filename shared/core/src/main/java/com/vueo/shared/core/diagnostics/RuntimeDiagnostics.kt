@@ -126,6 +126,33 @@ object RuntimeDiagnostics {
         )
     }
 
+    fun recordPlaybackError(
+        platform: String, provider: String, server: String, url: String?, mimeType: String?,
+        errorCode: Int, errorName: String, positionMs: Long, state: Int, error: Throwable,
+    ) {
+        // Omit paths too: signed credentials may live in path segments, not just query parameters.
+        fun redact(value: String): String = CrashRecoveryPolicy.sanitize(value)
+            .replace(Regex("https?://[^\\s<>\"']+")) { match ->
+                val host = runCatching { java.net.URI(match.value).host }.getOrNull()
+                "https://${host ?: "redacted"}/<redacted>"
+            }
+        val endpoint = runCatching { java.net.URI(url.orEmpty()).host }.getOrNull().orEmpty()
+        record("PLAYBACK_ERROR platform=${safeToken(platform)} provider=${safeText(redact(provider), 120)} " +
+            "server=${safeText(redact(server), 120)} host=${safeText(endpoint, 120)} mime=${safeText(mimeType.orEmpty(), 80)} " +
+            "code=$errorCode name=${safeToken(errorName)} positionMs=$positionMs state=$state")
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        var cause: Throwable? = error
+        var depth = 0
+        while (cause != null && depth < 8 && seen.add(cause)) {
+            val current = cause
+            record("PLAYBACK_CAUSE depth=$depth class=${current.javaClass.name} " +
+                "message=${safeText(redact(current.message.orEmpty()), 700)} " +
+                "location=${safeText(current.stackTrace.firstOrNull()?.toString().orEmpty(), 180)}")
+            cause = current.cause
+            depth++
+        }
+    }
+
     fun failSourceScan(scanId: Long, error: Throwable, completedProviders: Int) {
         record(
             "SCAN_ERROR id=$scanId type=${safeToken(error::class.java.simpleName)} " +

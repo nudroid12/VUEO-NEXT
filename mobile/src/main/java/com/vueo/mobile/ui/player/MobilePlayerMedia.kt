@@ -361,6 +361,7 @@ internal fun formatPlaybackTime(
 
 internal fun buildPlayerMediaItem(
     sourceUrl: String,
+    mediaMimeType: String? = null,
     subtitles: List<SubtitleTrack>,
     preferredLanguageCode: String?,
     secondaryLanguageCode: String?,
@@ -460,6 +461,7 @@ internal fun buildPlayerMediaItem(
         .setUri(
             Uri.parse(sourceUrl)
         )
+        .setMimeType(mediaMimeType)
         .setSubtitleConfigurations(
             subtitleConfigurations
         )

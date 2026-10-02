@@ -30,6 +30,7 @@ data class SourceCandidate(
     val providerId: String,
     val providerName: String,
     val serverName: String? = null,
+    val mimeType: String? = null,
 ) {
     /**
      * Keep the same security baseline as current VUEO Mobile: only HTTPS

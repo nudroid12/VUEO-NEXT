@@ -1878,6 +1878,7 @@ private fun StreamSource.toSourceCandidate(): SourceCandidate =
         providerId = providerId,
         providerName = providerName,
         serverName = serverName,
+        mimeType = mimeType,
     )
 
 
@@ -1924,6 +1925,7 @@ object SourceCleaner {
                 ?: duplicate.language,
             serverName = primary.serverName?.takeIf { it.isNotBlank() }
                 ?: duplicate.serverName,
+            mimeType = primary.mimeType ?: duplicate.mimeType,
             sizeBytes = primary.sizeBytes ?: duplicate.sizeBytes,
             headers = mergeHeaders(primary.headers, duplicate.headers),
         )

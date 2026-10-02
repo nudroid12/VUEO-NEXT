@@ -28,6 +28,7 @@ fun StreamSource.toSourceCandidate(): SourceCandidate =
         providerId = providerId,
         providerName = providerName,
         serverName = serverName,
+        mimeType = mimeType,
     )
 
 fun SourceCandidate.toStreamSource(): StreamSource =
@@ -47,4 +48,5 @@ fun SourceCandidate.toStreamSource(): StreamSource =
         providerId = providerId,
         providerName = providerName,
         serverName = serverName,
+        mimeType = mimeType,
     )

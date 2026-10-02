@@ -82,6 +82,7 @@ data class StreamSource(
     val providerId: String,
     val providerName: String,
     val serverName: String? = null,
+    val mimeType: String? = null,
 ) {
     val isDirectPlayable: Boolean
         get() = url?.startsWith("https://") == true

@@ -100,6 +100,7 @@ class StremioAddonExtension private constructor(
                 providerId = source.providerId,
                 providerName = source.providerName,
                 serverName = source.serverName,
+                mimeType = source.mimeType,
             )
         }
 

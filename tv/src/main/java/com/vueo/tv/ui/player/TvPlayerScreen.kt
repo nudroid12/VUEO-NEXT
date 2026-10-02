@@ -137,7 +137,6 @@ internal data class TvPlayerOption(
     val meta: String? = null,
     val selected: Boolean = false,
     val enabled: Boolean = true,
-    val providerName: String? = null,
 )
 
 @Composable
@@ -630,6 +629,7 @@ fun TvPlayerScreen(
 
         player.setMediaItem(
             buildMediaItem(
+                mediaMimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(activeSource.mimeType, activeSource.url, activeSource.name, activeSource.serverName),
                 sourceUrl = url,
                 subtitles = liveSubtitles,
                 preferredLanguages = languages,
@@ -697,6 +697,7 @@ fun TvPlayerScreen(
                 }
         }
         val updatedMediaItem = buildMediaItem(
+                mediaMimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(activeSource.mimeType, activeSource.url, activeSource.name, activeSource.serverName),
                 sourceUrl = url,
                 subtitles = liveSubtitles,
                 preferredLanguages = languages,
@@ -762,7 +763,14 @@ fun TvPlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                isBuffering = false
+                com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlaybackError(
+                        platform = "TV", provider = activeSource.providerName,
+                        server = activeSource.serverName ?: activeSource.name,
+                        url = activeSource.url, mimeType = player.currentMediaItem?.localConfiguration?.mimeType,
+                        errorCode = error.errorCode, errorName = error.errorCodeName,
+                        positionMs = player.currentPosition, state = player.playbackState, error = error,
+                    )
+                    isBuffering = false
                 handleSourceFailure(error.message ?: "Playback failed.")
             }
 
@@ -1605,9 +1613,8 @@ fun TvPlayerScreen(
                 TvPlayerOption(
                     key = item.url.orEmpty(),
                     title = PlayerSourceDisplay.titleWithQuality(item),
-                    meta = PlayerSourceDisplay.details(item) + if (item.url == activeSource.url) " • Playing" else "",
+                    meta = PlayerSourceDisplay.details(item),
                     selected = item.url == activeSource.url,
-                    providerName = item.providerName.trim().ifBlank { "Other" },
                 )
             }
             TvPlayerPanel.EPISODES -> orderedEpisodes.map { item ->
@@ -2048,6 +2055,8 @@ private fun StreamSource.toSourceCandidateForPlayer(): SourceCandidate =
         rankBoost = rankBoost,
         providerId = providerId,
         providerName = providerName,
+        serverName = serverName,
+        mimeType = mimeType,
     )
 
 private suspend fun applyAndConfirmTvSubtitleChoice(
@@ -2097,6 +2106,7 @@ private val TV_SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)
 
 private fun buildMediaItem(
     sourceUrl: String,
+    mediaMimeType: String? = null,
     subtitles: List<SubtitleTrack>,
     preferredLanguages: List<String>,
     subtitlesOnByDefault: Boolean,
@@ -2133,6 +2143,7 @@ private fun buildMediaItem(
 
     return MediaItem.Builder()
         .setUri(Uri.parse(sourceUrl))
+        .setMimeType(mediaMimeType)
         .setSubtitleConfigurations(configurations)
         .build()
 }

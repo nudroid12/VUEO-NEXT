@@ -864,6 +864,7 @@ internal fun PlayerScreen(
 
                 val playerMediaItem =
                     buildPlayerMediaItem(
+                        mediaMimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(source.mimeType, source.url, source.name, source.serverName),
                         sourceUrl =
                             requireNotNull(
                                 source.url
@@ -1009,6 +1010,7 @@ internal fun PlayerScreen(
             }
 
             val updatedMediaItem = buildPlayerMediaItem(
+                        mediaMimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(source.mimeType, source.url, source.name, source.serverName),
                     sourceUrl = requireNotNull(source.url),
                     subtitles = subtitles,
                     preferredLanguageCode =
@@ -1617,6 +1619,13 @@ internal fun PlayerScreen(
                 override fun onPlayerError(
                     error: PlaybackException,
                 ) {
+                    com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlaybackError(
+                        platform = "Mobile", provider = source.providerName,
+                        server = source.serverName ?: source.name,
+                        url = source.url, mimeType = player.currentMediaItem?.localConfiguration?.mimeType,
+                        errorCode = error.errorCode, errorName = error.errorCodeName,
+                        positionMs = player.currentPosition, state = player.playbackState, error = error,
+                    )
                     isBuffering = false
                     handleSourceFailure(
                         friendlyPlaybackError(error)

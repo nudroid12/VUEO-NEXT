@@ -201,6 +201,12 @@ internal fun parseProviderStreams(
                     provider.name,
                 serverName =
                     serverName,
+                mimeType = listOf("mimeType", "mime_type", "contentType", "streamType", "type", "format")
+                    .firstNotNullOfOrNull { field ->
+                        com.vueo.shared.core.player.PlaybackMediaPolicy.normalize(item.optString(field))
+                    } ?: if (item.optBoolean("isM3u8") || item.optBoolean("isHls")) {
+                        "application/x-mpegURL"
+                    } else null,
             )
         }
 }
