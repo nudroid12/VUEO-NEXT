@@ -284,3 +284,10 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Translating subtitles moved to top-right, below top actions while chrome is visible and at the top inset while hidden. It remains bound to actual translation state.
 - Existing episode/source-discovery overlay now stacks its loading label below the spinner and uses the progress accent. No discovery, focus, cancellation or playback logic changed.
 - Static source/archive checks only; no local builds/tests or TV device validation.
+
+## TV pause backdrop — 2026-10-02
+
+- After 5 seconds paused without remote input, hide chrome and fade in current media.background with title/episode metadata. Transparent image fallback preserves the paused frame underneath a dark scrim. Uses existing bounded/cached TvNetworkImage path.
+- Timer depends on playWhenReady intent and READY state, first rendered frame, inactivity, foreground, no buffering/recovery/error/end/episode switch/panel/pending seek/countdown. No artwork screen for buffering or lifecycle pauses.
+- Player root keeps focus. Capture full remote dismissal press and repeats; OK resumes on uncancelled release, other keys only dismiss while paused. Software Back also dismisses first. Any normal KeyDown restarts inactivity.
+- No new playback/discovery policy or mobile changes. Static source/archive validation only; no local builds or tests run. TV verification needed for 5-second timing, held keys, foreground/background and image fallback.

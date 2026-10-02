@@ -312,6 +312,12 @@ fun TvPlayerScreen(
             .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }
     }
 
+    var pauseBackdropVisible by remember(playerSessionId) { mutableStateOf(false) }
+    var playbackRequested by remember(player) { mutableStateOf(player.playWhenReady) }
+    var playerForeground by remember(playerSessionId) {
+        mutableStateOf(lifecycleOwner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true)
+    }
+    val pauseBackdropCapturedKey = remember(playerSessionId) { intArrayOf(0) }
     var controlsVisible by remember { mutableStateOf(true) }
     var playbackFeedbackToken by remember(playerSessionId) { mutableIntStateOf(0) }
     var playbackFeedbackPaused by remember(playerSessionId) { mutableStateOf(false) }
@@ -389,6 +395,7 @@ fun TvPlayerScreen(
     val backPressCaptured = remember { booleanArrayOf(false) }
 
     fun noteInteraction() {
+        pauseBackdropVisible = false
         val now = SystemClock.elapsedRealtime()
         if (now - lastInteractionElapsedMs[0] < 24L) return
         lastInteractionElapsedMs[0] = now
@@ -399,8 +406,8 @@ fun TvPlayerScreen(
         progressRequester, restartRequester, nextRequester, subtitlesRequester,
         audioRequester, sourcesRequester, episodesRequester, moreRequester ->
             controlsVisible && activePanel == TvPlayerPanel.NONE
-        skipRequester -> activePanel == TvPlayerPanel.NONE && activeSkip != null
-        nextContextRequester -> activePanel == TvPlayerPanel.NONE && nextCountdown > 0
+        skipRequester -> !pauseBackdropVisible && activePanel == TvPlayerPanel.NONE && activeSkip != null
+        nextContextRequester -> !pauseBackdropVisible && activePanel == TvPlayerPanel.NONE && nextCountdown > 0
         rootRequester -> activePanel == TvPlayerPanel.NONE
         else -> true
     }
@@ -581,6 +588,7 @@ fun TvPlayerScreen(
 
     fun handlePlayerBack() {
         when {
+            pauseBackdropVisible -> noteInteraction()
             activePanel != TvPlayerPanel.NONE -> closePanel()
             controlsVisible || nextCountdown > 0 -> {
                 if (ended || player.playbackState == Player.STATE_ENDED || nextCountdown > 0) {
@@ -802,6 +810,12 @@ fun TvPlayerScreen(
                         requestControlFocus(progressRequester)
                     }
                 }
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                playbackRequested = playWhenReady
+                pauseBackdropVisible = false
+                noteInteraction()
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1253,6 +1267,23 @@ fun TvPlayerScreen(
         }
     }
 
+    val pauseBackdropEligible = !playbackRequested && !playing && hasRenderedFirstFrame &&
+        player.playbackState == Player.STATE_READY && !isBuffering && !recoveryInProgress &&
+        !ended && playbackError == null && !episodeSwitching && playerForeground &&
+        activePanel == TvPlayerPanel.NONE && pendingSeekPositionMs == null && nextCountdown <= 0
+    LaunchedEffect(player, pauseBackdropEligible, interactionToken) {
+        pauseBackdropVisible = false
+        if (pauseBackdropEligible) {
+            delay(5_000L)
+            // Recheck the player intent at dispatch; buffering is never a pause.
+            if (!player.playWhenReady && player.playbackState == Player.STATE_READY) {
+                hideControls()
+                seekFeedbackVisible = false
+                pauseBackdropVisible = true
+            }
+        }
+    }
+
     LaunchedEffect(controlsVisible, activePanel, interactionToken, playing, nextCountdown > 0) {
         if (controlsVisible && activePanel == TvPlayerPanel.NONE && playing && nextCountdown <= 0) {
             val token = interactionToken
@@ -1274,11 +1305,15 @@ fun TvPlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
+                    playerForeground = false
+                    pauseBackdropVisible = false
                     resumeAfterLifecyclePause = player.playWhenReady
                     if (player.playWhenReady) player.pause()
                     runCatching { saveProgress() }
                 }
                 Lifecycle.Event.ON_START -> {
+                    playerForeground = true
+                    noteInteraction()
                     if (resumeAfterLifecyclePause) {
                         resumeAfterLifecyclePause = false
                         player.play()
@@ -1304,6 +1339,29 @@ fun TvPlayerScreen(
             }
             .onPreviewKeyEvent { event ->
                 val code = event.nativeKeyEvent.keyCode
+                // Own the full dismissal press, including repeats and KeyUp,
+                // so it cannot seek, activate a skip prompt or exit the player.
+                if (pauseBackdropCapturedKey[0] != 0 && pauseBackdropCapturedKey[0] == code) {
+                    noteInteraction()
+                    if (event.type == KeyEventType.KeyUp) {
+                        pauseBackdropCapturedKey[0] = 0
+                        if (!event.nativeKeyEvent.isCanceled && !latestEpisodeSwitching.value &&
+                            playbackError == null && (code == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER)
+                        ) {
+                            player.play()
+                        }
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (event.type == KeyEventType.KeyDown) {
+                    val dismissingBackdrop = pauseBackdropVisible
+                    noteInteraction()
+                    if (dismissingBackdrop) {
+                        pauseBackdropCapturedKey[0] = code
+                        return@onPreviewKeyEvent true
+                    }
+                }
                 // Capture the complete hardware Back press before focused children
                 // can clear focus. Workspace Back remains owned by its handlers.
                 if (code == KeyEvent.KEYCODE_BACK &&
@@ -1572,11 +1630,11 @@ fun TvPlayerScreen(
             playbackFeedbackToken = playbackFeedbackToken,
             playbackFeedbackPaused = playbackFeedbackPaused,
             translatingSubtitles = translatingSubtitleSelectionId != null,
-            statusIndicatorsEnabled = !episodeSwitching,
+            statusIndicatorsEnabled = !episodeSwitching && !pauseBackdropVisible,
             positionMs = positionMs,
             durationMs = durationMs,
             nextEpisode = nextEpisode,
-            activeSkip = activeSkip,
+            activeSkip = activeSkip.takeUnless { pauseBackdropVisible },
             nextCountdown = nextCountdown,
             contentWarnings = contentWarnings,
             warningVisible = warningVisible,
@@ -1700,6 +1758,12 @@ fun TvPlayerScreen(
                     TvPlayerPanel.NONE -> Unit
                 }
             },
+        )
+
+        VueoPlayerPauseBackdrop(
+            visible = pauseBackdropVisible && pauseBackdropEligible,
+            media = media,
+            episode = episode,
         )
 
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
