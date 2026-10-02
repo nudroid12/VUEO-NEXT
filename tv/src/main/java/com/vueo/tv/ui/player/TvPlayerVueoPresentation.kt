@@ -160,6 +160,7 @@ internal fun VueoPlayerPresentation(
             episode = episode,
             activeSource = activeSource,
             contentWarningVisible = warningVisible,
+            reserveTranslationSpace = translatingSubtitles,
             playing = playing,
             positionMs = positionMs,
             durationMs = durationMs,
@@ -310,7 +311,8 @@ internal fun VueoPlayerPresentation(
             translating = translatingSubtitles,
             enabled = statusIndicatorsEnabled && playbackError == null && activePanel == TvPlayerPanel.NONE,
             showPlaybackFeedback = !controlsVisible,
-            translationTopPadding = if (controlsVisible) 100.dp else 30.dp,
+            // Reserve the action row even while controls are hidden: no position jump.
+            translationEndPadding = if (nextEpisode != null) 184.dp else 134.dp,
         )
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.EPISODES,
@@ -434,6 +436,7 @@ private fun VueoPlayerControls(
     episode: EpisodeItem?,
     activeSource: StreamSource,
     contentWarningVisible: Boolean,
+    reserveTranslationSpace: Boolean,
     playing: Boolean,
     positionMs: Long,
     durationMs: Long,
@@ -496,7 +499,7 @@ private fun VueoPlayerControls(
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 24.dp),
+                                .padding(end = if (reserveTranslationSpace) 164.dp else 24.dp),
                             verticalArrangement = Arrangement.spacedBy(1.dp),
                         ) {
                             Text(

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +45,7 @@ internal fun VueoPlayerStatusIndicators(
     translating: Boolean,
     enabled: Boolean,
     showPlaybackFeedback: Boolean,
-    translationTopPadding: Dp,
+    translationEndPadding: Dp,
 ) {
     var showBuffering by remember { mutableStateOf(false) }
     var showFeedback by remember { mutableStateOf(false) }
@@ -103,14 +105,16 @@ internal fun VueoPlayerStatusIndicators(
         if (enabled && translating) {
             Row(
                 modifier = Modifier.align(Alignment.TopEnd)
-                    .padding(top = translationTopPadding, end = 30.dp)
+                    .padding(top = 35.dp, end = translationEndPadding)
+                    .height(28.dp)
+                    .widthIn(max = 132.dp)
                     .background(Color.Black.copy(alpha = .70f), RoundedCornerShape(50))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                CircularProgressIndicator(Modifier.size(20.dp), color = TvDesign.Accent, strokeWidth = 2.dp)
-                Text("Translating subtitles…", color = TvDesign.Accent, fontSize = 14.sp)
+                CircularProgressIndicator(Modifier.size(14.dp), color = TvDesign.Accent, strokeWidth = 1.5.dp)
+                Text("Translating…", color = TvDesign.Accent, fontSize = 11.sp, maxLines = 1)
             }
         }
     }
