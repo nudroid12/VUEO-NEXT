@@ -72,6 +72,10 @@ internal fun VueoPlayerPresentation(
     activePanel: TvPlayerPanel,
     playing: Boolean,
     isBuffering: Boolean,
+    playbackFeedbackToken: Int,
+    playbackFeedbackPaused: Boolean,
+    translatingSubtitles: Boolean,
+    statusIndicatorsEnabled: Boolean,
     positionMs: Long,
     durationMs: Long,
     nextEpisode: EpisodeItem?,
@@ -300,6 +304,15 @@ internal fun VueoPlayerPresentation(
                 onSelected = onPanelSelected,
             )
         }
+        VueoPlayerStatusIndicators(
+            buffering = isBuffering,
+            feedbackToken = playbackFeedbackToken,
+            paused = playbackFeedbackPaused,
+            translating = translatingSubtitles,
+            enabled = statusIndicatorsEnabled && playbackError == null && activePanel == TvPlayerPanel.NONE,
+            showPlaybackFeedback = !controlsVisible,
+            translationBottomPadding = if (controlsVisible) bottomControlsHeight + 20.dp else 54.dp,
+        )
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.EPISODES,
             enter = tvPanelEnter(),

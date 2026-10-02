@@ -313,6 +313,8 @@ fun TvPlayerScreen(
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
+    var playbackFeedbackToken by remember(playerSessionId) { mutableIntStateOf(0) }
+    var playbackFeedbackPaused by remember(playerSessionId) { mutableStateOf(false) }
     var seekFeedbackVisible by remember { mutableStateOf(false) }
     var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
@@ -500,6 +502,10 @@ fun TvPlayerScreen(
     fun togglePlayback() {
         if (player.playWhenReady) player.pause() else player.play()
         playing = player.isPlaying
+        if (!controlsVisible && activePanel == TvPlayerPanel.NONE) {
+            playbackFeedbackPaused = !player.playWhenReady
+            playbackFeedbackToken++
+        }
         noteInteraction()
     }
 
@@ -1563,6 +1569,10 @@ fun TvPlayerScreen(
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,
+            playbackFeedbackToken = playbackFeedbackToken,
+            playbackFeedbackPaused = playbackFeedbackPaused,
+            translatingSubtitles = translatingSubtitleSelectionId != null,
+            statusIndicatorsEnabled = !episodeSwitching,
             positionMs = positionMs,
             durationMs = durationMs,
             nextEpisode = nextEpisode,

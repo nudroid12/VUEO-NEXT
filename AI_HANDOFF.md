@@ -268,3 +268,11 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - First-result auto-focus now includes userInteracted in its cancellation key and guard, preventing updates from stealing focus after remote navigation. Explicit source-row provider cycling retains its one-time first-source handoff; newer user interaction clears that handoff.
 - Provider filter row intercepts horizontal intent and tracks focused/pending chip identity. LazyRow uses an explicit list state; offscreen destination scrolls into composition before a bounded four-frame focus retry. New inputs cancel the old job with a generation check; removed targets abort, and disposal cancels pending work. Long-press moves from pending identity instead of repeatedly targeting the same offscreen neighbor.
 - Refresh/error visuals, provider discovery, source ranking, provider tab policy, source playback and source-card behavior unchanged. Static source/archive checks only, no local build/test execution. Actual crash cause remains unconfirmed without a device log.
+
+## TV player status indicators — 2026-10-02
+
+- Hidden-control playback toggles emit a display-only play/pause indicator for 800ms using playWhenReady intent.
+- Buffering shows a centre spinner after 500ms, takes priority over playback feedback, and clears on readiness/error.
+- Subtitle translation status uses translatingSubtitleSelectionId; display a lower-centre spinner and label while actual translation is pending. Hide overlays during panels, errors and episode switching.
+- All indicator foregrounds use TvDesign.Accent, exactly like the filled progress rail. No focus targets or control-reveal paths added. Mobile unchanged.
+- Static source and ZIP checks only; no local build or tests executed. Device verification remains required.
