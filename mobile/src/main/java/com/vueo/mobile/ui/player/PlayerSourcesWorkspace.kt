@@ -333,33 +333,36 @@ private fun SourceListRow(
                     )
                     SourceQualityBadge(assessment.quality.label)
                 }
-                Text(
-                    text = PlayerSourceDisplay.serverDetails(source),
-                    color = Color.White.copy(alpha = .72f),
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                when {
-                    playbackFailed -> SourceBadge("Failed")
-                    switching -> SourceBadge("Switching", accent = true)
-                    current -> SourceBadge("Playing", accent = true)
-                    recommended -> SourceBadge("Recommended", accent = true)
-                    !automaticRecoveryEligible -> SourceBadge("Manual only")
-                    else -> SourceBadge("Direct")
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = PlayerSourceDisplay.serverDetails(source),
+                        color = Color.White.copy(alpha = .72f),
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    when {
+                        playbackFailed -> SourceBadge("Failed")
+                        switching -> SourceBadge("Switching", accent = true)
+                        current -> SourceBadge("Playing", accent = true)
+                        recommended -> SourceBadge("Recommended", accent = true)
+                        !automaticRecoveryEligible -> SourceBadge("Manual only")
+                        else -> SourceBadge("Direct")
+                    }
+                    if (current) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Current source",
+                            tint = SourceAccent,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                 }
-            }
-            if (current) {
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Current source",
-                    tint = SourceAccent,
-                    modifier = Modifier.size(18.dp),
-                )
             }
         }
     }

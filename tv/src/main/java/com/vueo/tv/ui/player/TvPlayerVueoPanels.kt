@@ -382,6 +382,50 @@ private fun VueoOptionRow(
                 )
         )
         Spacer(Modifier.width(11.dp))
+        if (option.providerName != null) {
+            Column(Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        option.title,
+                        color = if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
+                        fontSize = 12.sp,
+                        fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    option.qualityLabel?.let { quality ->
+                        Text(
+                            quality, color = Color.White, fontSize = 9.sp,
+                            modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
+                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        option.meta.orEmpty(), color = Color.White.copy(alpha = .72f), fontSize = 9.sp,
+                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (option.selected) "Playing" else "Direct",
+                        color = if (option.selected) TvDesign.Accent else Color.White.copy(alpha = .62f),
+                        fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.background(
+                            if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
+                            RoundedCornerShape(50),
+                        ).padding(horizontal = 6.dp, vertical = 3.dp),
+                    )
+                }
+            }
+        } else {
         Column(Modifier.weight(1f)) {
             Text(
                 option.title,
@@ -414,6 +458,7 @@ private fun VueoOptionRow(
             Spacer(Modifier.width(8.dp))
             Text(if (option.providerName != null) "Playing" else "Active",
                 color = TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        }
         }
     }
 }

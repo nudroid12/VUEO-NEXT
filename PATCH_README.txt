@@ -1,3 +1,2 @@
-Extract at repository root; overwrite matching files.
-Sources panel mobile + TV: compact spacing/header/tabs/cards, brighter second line, repository initials plus provider on first line (Luckez12 Plugins / PencuriMovie -> LP • PencuriMovie), server and stream tags on second line. Auto/Playing kept at right. TV focus outline remains distinct from faint Playing tint. Keeps previous server-line, provider-tabs compile fix and HLS diagnostic changes.
-Static checks and ZIP integrity passed. No build or device tests run; verify compact rows on target screens.
+Extract at repo root and overwrite matching files after the compact repo labels patch.
+Mobile and TV player Sources: quality/Auto badge aligned at right of first text row; Playing/Direct aligned at right of second text row. Direct retained. Existing mobile Failed/Switching/Recommended/Manual status priority preserved. Compact repo/provider and server labels preserved. No build or device tests run. Static layout/call checks and ZIP integrity passed.
