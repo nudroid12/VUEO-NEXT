@@ -156,12 +156,12 @@ internal fun VueoPlayerSourcesPanel(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
-                .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
+                .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 28.dp),
         ) {
             Text(
                 "Sources",
                 color = Color.White,
-                fontSize = 26.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
@@ -172,7 +172,7 @@ internal fun VueoPlayerSourcesPanel(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(9.dp))
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -185,7 +185,7 @@ internal fun VueoPlayerSourcesPanel(
                         Text(
                             text = provider?.substringAfterLast(" / ") ?: "All",
                             color = if (focused) Color.Black else Color.White,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             modifier = Modifier.focusRequester(tabRequester(provider))
@@ -215,12 +215,12 @@ internal fun VueoPlayerSourcesPanel(
                                     selectedProvider = provider
                                     onInteraction()
                                 }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
 
             Column(
@@ -230,7 +230,7 @@ internal fun VueoPlayerSourcesPanel(
                     .clip(PanelShape)
                     .background(cardBackground)
                     .border(1.dp, cardBorder, PanelShape)
-                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
                 key(selectedProvider) {
                     VueoOptionList(
@@ -355,7 +355,7 @@ private fun VueoOptionRow(
             .background(
                 when {
                     focused -> Color.White.copy(alpha = .13f)
-                    option.selected -> Color.White.copy(alpha = .06f)
+                    option.selected -> if (option.providerName != null) TvDesign.Accent.copy(alpha = .06f) else Color.White.copy(alpha = .06f)
                     else -> Color.Transparent
                 },
                 shape,
@@ -369,7 +369,7 @@ private fun VueoOptionRow(
                 },
                 shape,
             )
-            .padding(horizontal = 13.dp, vertical = 10.dp),
+            .padding(horizontal = 13.dp, vertical = if (option.providerName != null) 7.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -395,15 +395,25 @@ private fun VueoOptionRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     it,
-                    color = Color.White.copy(alpha = .48f),
+                    color = Color.White.copy(alpha = if (option.providerName != null) .72f else .48f),
                     fontSize = 9.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        option.qualityLabel?.let { quality ->
+            Spacer(Modifier.width(8.dp))
+            Text(
+                quality, color = Color.White, fontSize = 9.sp,
+                modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+            )
+        }
         if (option.selected) {
-            Text("Active", color = TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Text(if (option.providerName != null) "Playing" else "Active",
+                color = TvDesign.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -168,11 +168,11 @@ internal fun PlayerSourcesWorkspace(
                     Color.White.copy(alpha = .09f),
                 ),
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Text(
                         text = "Sources",
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
@@ -184,7 +184,7 @@ internal fun PlayerSourcesWorkspace(
                         modifier = Modifier.padding(top = 2.dp),
                     )
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -205,7 +205,7 @@ internal fun PlayerSourcesWorkspace(
                         }
                     }
 
-                    Spacer(Modifier.height(9.dp))
+                    Spacer(Modifier.height(7.dp))
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -279,26 +279,26 @@ private fun SourceListRow(
             ),
         shape = SourceCardShape,
         color = if (current || switching) {
-            SourceAccent.copy(alpha = .12f)
+            SourceAccent.copy(alpha = .07f)
         } else {
             Color.White.copy(alpha = .04f)
         },
         border = BorderStroke(
             1.dp,
             if (current || switching) {
-                SourceAccent.copy(alpha = .48f)
+                SourceAccent.copy(alpha = .30f)
             } else {
                 Color.White.copy(alpha = .07f)
             },
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(28.dp)
                     .background(
                         Color.White.copy(alpha = .055f),
                         RoundedCornerShape(10.dp),
@@ -316,28 +316,28 @@ private fun SourceListRow(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        text = PlayerSourceDisplay.title(source),
+                        text = PlayerSourceDisplay.providerTitle(source),
                         color = Color.White.copy(alpha = .92f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f),
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     SourceQualityBadge(assessment.quality.label)
                 }
                 Text(
-                    text = PlayerSourceDisplay.details(source),
-                    color = Color.White.copy(alpha = .46f),
+                    text = PlayerSourceDisplay.serverDetails(source),
+                    color = Color.White.copy(alpha = .72f),
                     fontSize = 10.sp,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
@@ -370,14 +370,14 @@ private fun SourceQualityBadge(label: String) {
     Text(
         text = label,
         color = Color.White,
-        fontSize = 10.sp,
+        fontSize = 9.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .background(
                 Color.White.copy(alpha = .08f),
                 RoundedCornerShape(50),
             )
-            .padding(horizontal = 7.dp, vertical = 3.dp),
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
@@ -421,7 +421,7 @@ private fun SourceFilterChip(
                 RoundedCornerShape(50),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 6.dp),
+            .padding(horizontal = 9.dp, vertical = 5.dp),
     )
 }
 

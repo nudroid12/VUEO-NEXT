@@ -15,6 +15,31 @@ object PlayerSourceDisplay {
             ?: parts(source.name).firstOrNull()
             ?: source.providerName.trim().ifBlank { "Source" }
 
+    fun providerTitle(source: StreamSource): String {
+        val full = source.providerName.trim()
+        val provider = full.substringAfterLast(" / ").trim().ifBlank { "Other" }
+        if (!full.contains(" / ")) return provider
+        val repository = full.substringBeforeLast(" / ").trim()
+        val words = repository.split(Regex("\\s+"))
+            .map { word -> word.firstOrNull { it.isLetterOrDigit() } }
+            .filterNotNull()
+        val shortRepository = if (words.size > 1) words.take(4).joinToString("").uppercase(Locale.ROOT)
+            else repository.take(3).uppercase(Locale.ROOT)
+        return if (shortRepository.isBlank()) provider else "$shortRepository • $provider"
+    }
+
+    /** Server identity starts the second line, before transport and language tags. */
+    fun serverDetails(source: StreamSource): String {
+        val provider = source.providerName.trim()
+        val shortProvider = source.providerName.substringAfterLast(" / ").trim()
+        val server = title(source)
+        return (listOf(server) + details(source).split(" • ")
+            .filterNot { it.equals(provider, true) || it.equals(shortProvider, true) })
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .joinToString(" • ")
+    }
+
     fun titleWithQuality(source: StreamSource): String =
         "${title(source)} • ${PlayerSourcePolicy.assess(source).quality.label}"
 

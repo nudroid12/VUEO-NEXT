@@ -138,6 +138,7 @@ internal data class TvPlayerOption(
     val selected: Boolean = false,
     val enabled: Boolean = true,
     val providerName: String? = null,
+    val qualityLabel: String? = null,
 )
 
 @Composable
@@ -1613,9 +1614,10 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
-                    title = PlayerSourceDisplay.titleWithQuality(item),
-                    meta = PlayerSourceDisplay.details(item),
+                    title = PlayerSourceDisplay.providerTitle(item),
+                    meta = PlayerSourceDisplay.serverDetails(item),
                     providerName = item.providerName,
+                    qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
                     selected = item.url == activeSource.url,
                 )
             }
