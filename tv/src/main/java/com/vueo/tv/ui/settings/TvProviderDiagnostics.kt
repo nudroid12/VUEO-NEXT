@@ -1,5 +1,7 @@
 package com.vueo.tv.settings
 
+import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -90,6 +92,13 @@ internal fun TvProviderDiagnosticDialog(
                     }
                     providerHttpStatus(health)?.let { DiagnosticLine("HTTP", it) }
                     providerRelevantTimingLabel(health)?.let { DiagnosticLine("Timing", it) }
+                    ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticLine("Last stage", sanitizeDiagnosticText(it)) }
+                    ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
+                        DiagnosticLine("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+                    }
+                    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let {
+                        DiagnosticLine("Timeline", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+                    }
                     if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
                         DiagnosticLine(
                             "Result",
@@ -305,7 +314,7 @@ private fun providerLikelyCause(health: ProviderHealthRecord, providerCodeReady:
         health.status == ProviderHealthStatus.NEEDS_SETUP ->
             "Provider configuration is incomplete. Complete required setup before source discovery."
         health.status == ProviderHealthStatus.TIMEOUT ->
-            "Provider execution exceeded the captured timeout. Inspect the raw log for the last request or parser step reached."
+            "Provider execution exceeded the captured timeout. Check Last stage, Pending requests and Timeline for the last observed progress."
         health.status == ProviderHealthStatus.UNAVAILABLE ->
             "The captured run could not reach the upstream host. Inspect DNS, connection or host-resolution evidence."
         health.status == ProviderHealthStatus.BLOCKED ->
@@ -360,6 +369,12 @@ private fun providerDiagnosticFullLog(
     health.errorType?.takeIf { it.isNotBlank() }?.let { appendLine("Error type: ${sanitizeDiagnosticText(it)}") }
     providerHttpStatus(health)?.let { appendLine("HTTP: $it") }
     providerRelevantTimingLabel(health)?.let { appendLine("Timing: $it") }
+    ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.pending(health.logs).forEach { appendLine("Pending request: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let { timeline ->
+        appendLine("Timeline (recent events)")
+        timeline.forEach { appendLine(sanitizeDiagnosticText(it)) }
+    }
     if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
         appendLine("Result: ${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}")
     }

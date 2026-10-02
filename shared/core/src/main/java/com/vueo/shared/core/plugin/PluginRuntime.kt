@@ -762,12 +762,16 @@ private fun emptyDiscoveryResult():
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
 
+        val progress = ProviderExecutionProgress()
+        progress.stage("Reading provider code")
+
         val execution =
             withTimeoutOrNull(
                 providerTimeoutMs
             ) {
                 try {
                     executeProvider(
+                        progress = progress,
                         repository =
                             repository,
                         provider =
@@ -799,7 +803,7 @@ private fun emptyDiscoveryResult():
                                     .simpleName,
                         errorType = error::class.java.simpleName,
                         logs =
-                            emptyList(),
+                            progress.snapshot(),
                     )
                 }
             }
@@ -811,7 +815,7 @@ private fun emptyDiscoveryResult():
                         "${providerTimeoutMs / 1000}s",
                     errorType = "Timeout",
                     logs =
-                        emptyList(),
+                        progress.snapshot(),
                 )
 
         val elapsedMs =
@@ -922,6 +926,7 @@ private fun emptyDiscoveryResult():
         episode: Int?,
         runtimeDiagnosticScanId: Long,
         discoveryContextBroker: PluginDiscoveryContextBroker,
+        progress: ProviderExecutionProgress,
     ): ProviderExecution {
         val source =
             codeStore.read(
@@ -936,11 +941,11 @@ private fun emptyDiscoveryResult():
                         "Open Content Manager > Plugins and refresh this repository.",
                     errorType = "ProviderCodeMissing",
                     logs =
-                        emptyList(),
+                        progress.snapshot(),
                 )
 
-        val logs =
-            BoundedProviderLog(MAX_STORED_LOGS)
+        val logs = progress
+        progress.stage("Evaluating provider script")
 
         val httpTraceCount =
             java.util.concurrent.atomic.AtomicInteger(0)
@@ -1001,10 +1006,21 @@ private fun emptyDiscoveryResult():
                     asyncFunction<String, String>(
                         "__vueoDiscoveryContext"
                     ) { requestJson ->
-                        discoveryContextBroker
-                            .resolveFromProviderRequest(
-                                requestJson
-                            )
+                        val requestId = progress.begin("Discovery context")
+                        try {
+                            val response = discoveryContextBroker
+                                .resolveFromProviderRequest(
+                                    requestJson
+                                )
+                            progress.finish(requestId, "completed")
+                            response
+                        } catch (error: CancellationException) {
+                            // Keep the request pending when the provider deadline cancels it.
+                            throw error
+                        } catch (error: Throwable) {
+                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                            throw error
+                        }
                     }
 
                     function<String, String>(
@@ -1015,6 +1031,7 @@ private fun emptyDiscoveryResult():
                                 JSONObject(traceJson)
                             }.getOrNull()
 
+                        progress.stage(trace?.optString("stage")?.takeIf { it.isNotBlank() } ?: "PROVIDER")
                         RuntimeDiagnostics.recordDiscoveryTrace(
                             scanId = runtimeDiagnosticScanId,
                             providerName = provider.name,
@@ -1035,77 +1052,98 @@ private fun emptyDiscoveryResult():
                     asyncFunction<String, String>(
                         "__vueoNativeFetch"
                     ) { requestJson ->
-                        val startedNs =
-                            System.nanoTime()
-                        val sharedTmdb =
-                            discoveryContextBroker
-                                .interceptTmdbFetch(
-                                    requestJson
-                                )
-                        val responseJson =
-                            sharedTmdb
-                                ?: PluginHttp.executeJson(
-                                    requestJson
-                                )
-                        val traceIndex =
-                            httpTraceCount.incrementAndGet()
+                        val requestId = progress.begin("HTTP " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
+                        try {
+                            val startedNs =
+                                System.nanoTime()
+                            val sharedTmdb =
+                                discoveryContextBroker
+                                    .interceptTmdbFetch(
+                                        requestJson
+                                    )
+                            val responseJson =
+                                sharedTmdb
+                                    ?: PluginHttp.executeJson(
+                                        requestJson
+                                    )
+                            val traceIndex =
+                                httpTraceCount.incrementAndGet()
 
-                        if (traceIndex <= MAX_HTTP_TRACE_ENTRIES) {
-                            RuntimeDiagnostics.recordDiscoveryTrace(
-                                scanId = runtimeDiagnosticScanId,
-                                providerName = provider.name,
-                                stage = "HTTP",
-                                details =
-                                    summarizeHttpTrace(
-                                        requestJson = requestJson,
-                                        responseJson = responseJson,
-                                        elapsedMs =
-                                            (
-                                                System.nanoTime() -
-                                                    startedNs
-                                            ) / 1_000_000L,
-                                        sharedTmdb =
-                                            sharedTmdb != null,
-                                    ),
-                            )
+                            if (traceIndex <= MAX_HTTP_TRACE_ENTRIES) {
+                                RuntimeDiagnostics.recordDiscoveryTrace(
+                                    scanId = runtimeDiagnosticScanId,
+                                    providerName = provider.name,
+                                    stage = "HTTP",
+                                    details =
+                                        summarizeHttpTrace(
+                                            requestJson = requestJson,
+                                            responseJson = responseJson,
+                                            elapsedMs =
+                                                (
+                                                    System.nanoTime() -
+                                                        startedNs
+                                                ) / 1_000_000L,
+                                            sharedTmdb =
+                                                sharedTmdb != null,
+                                        ),
+                                )
+                            }
+
+                            progress.finish(requestId, "completed")
+                            responseJson
+                        } catch (error: CancellationException) {
+                            // Keep the request pending when the provider deadline cancels it.
+                            throw error
+                        } catch (error: Throwable) {
+                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                            throw error
                         }
-
-                        responseJson
                     }
 
                     asyncFunction<String, String>(
                         "__vueoWebViewResolve"
                     ) { requestJson ->
-                        val startedNs =
-                            System.nanoTime()
-                        val responseJson =
-                            webViewConcurrency.withPermit {
-                                webViewResolver.resolveJson(
-                                    requestJson
+                        val requestId = progress.begin("WebView " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
+                        try {
+                            val startedNs =
+                                System.nanoTime()
+                            val responseJson =
+                                webViewConcurrency.withPermit {
+                                    progress.stage("Resolving WebView (slot acquired)")
+                                    webViewResolver.resolveJson(
+                                        requestJson
+                                    )
+                                }
+                            val traceIndex =
+                                webViewTraceCount.incrementAndGet()
+
+                            if (traceIndex <= MAX_WEBVIEW_TRACE_ENTRIES) {
+                                RuntimeDiagnostics.recordDiscoveryTrace(
+                                    scanId = runtimeDiagnosticScanId,
+                                    providerName = provider.name,
+                                    stage = "WEBVIEW",
+                                    details =
+                                        summarizeWebViewTrace(
+                                            requestJson = requestJson,
+                                            responseJson = responseJson,
+                                            elapsedMs =
+                                                (
+                                                    System.nanoTime() -
+                                                        startedNs
+                                                ) / 1_000_000L,
+                                        ),
                                 )
                             }
-                        val traceIndex =
-                            webViewTraceCount.incrementAndGet()
 
-                        if (traceIndex <= MAX_WEBVIEW_TRACE_ENTRIES) {
-                            RuntimeDiagnostics.recordDiscoveryTrace(
-                                scanId = runtimeDiagnosticScanId,
-                                providerName = provider.name,
-                                stage = "WEBVIEW",
-                                details =
-                                    summarizeWebViewTrace(
-                                        requestJson = requestJson,
-                                        responseJson = responseJson,
-                                        elapsedMs =
-                                            (
-                                                System.nanoTime() -
-                                                    startedNs
-                                            ) / 1_000_000L,
-                                    ),
-                            )
+                            progress.finish(requestId, "completed")
+                            responseJson
+                        } catch (error: CancellationException) {
+                            // Keep the request pending when the provider deadline cancels it.
+                            throw error
+                        } catch (error: Throwable) {
+                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                            throw error
                         }
-
-                        responseJson
                     }
 
                     val htmlBridge =
@@ -1114,6 +1152,7 @@ private fun emptyDiscoveryResult():
                     function<String, String>(
                         "__vueoHtmlOp"
                     ) { requestJson ->
+                        progress.stage("HTML " + runCatching { JSONObject(requestJson).optString("op") }.getOrDefault("operation"))
                         htmlBridge.execute(
                             requestJson
                         )
@@ -1199,6 +1238,7 @@ private fun emptyDiscoveryResult():
                     asyncFunction<Double, Boolean>(
                         "__vueoDelay"
                     ) { millis ->
+                        progress.stage("Provider delay")
                         delay(
                             millis
                                 .toLong()
@@ -1228,20 +1268,16 @@ private fun emptyDiscoveryResult():
                     )
                 }
 
+            progress.stage("Parsing provider results")
+            val streams = parseProviderStreams(repository, provider, resultJson)
+            progress.stage("Provider finished: ${streams.size} sources")
             ProviderExecution(
                 streams =
-                    parseProviderStreams(
-                        repository =
-                            repository,
-                        provider =
-                            provider,
-                        resultJson =
-                            resultJson,
-                    ),
+                    streams,
                 error =
                     null,
                 logs =
-                    logs.toList(),
+                    progress.snapshot(),
             )
         } catch (error: CancellationException) {
             throw error
@@ -1260,7 +1296,7 @@ private fun emptyDiscoveryResult():
                     },
                 errorType = error::class.java.simpleName,
                 logs =
-                    logs.toList(),
+                    progress.snapshot(),
             )
         }
     }
@@ -3557,7 +3593,7 @@ private fun emptyDiscoveryResult():
             3_000L
 
         private const val MAX_STORED_LOGS =
-            24
+            40
 
         private const val MAX_HTTP_TRACE_ENTRIES =
             14

@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -958,6 +960,13 @@ internal fun ProviderDiagnosticPanel(
             errorType?.let { DiagnosticFact("Error type", it) }
             httpStatus?.let { DiagnosticFact("HTTP", it) }
             timing?.let { DiagnosticFact("Timing", it) }
+            ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticFact("Last stage", sanitizeDiagnosticText(it)) }
+            ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
+                DiagnosticFact("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+            }
+            ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let {
+                DiagnosticFact("Timeline", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+            }
 
             if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
                 DiagnosticFact(
@@ -1169,7 +1178,7 @@ internal fun providerLikelyCause(
         health.status == ProviderHealthStatus.NEEDS_SETUP ->
             "Provider configuration is incomplete. Required setup must be completed before source discovery can succeed."
         health.status == ProviderHealthStatus.TIMEOUT ->
-            "Provider execution exceeded the captured runtime timeout. Inspect the raw log for the last request or parser step reached before timeout."
+            "Provider execution exceeded the captured runtime timeout. Check Last stage, Pending requests and Timeline for the last observed progress."
         health.status == ProviderHealthStatus.UNAVAILABLE ->
             "The captured run could not reach the upstream host. Inspect the raw log for DNS, connection, or host-resolution evidence."
         health.status == ProviderHealthStatus.BLOCKED ->
@@ -1224,6 +1233,12 @@ internal fun providerDiagnosticSummary(
     health.errorType?.takeIf { it.isNotBlank() }?.let { appendLine("Error type: ${sanitizeDiagnosticText(it)}") }
     providerHttpStatus(health)?.let { appendLine("HTTP: $it") }
     providerRelevantTimingLabel(health)?.let { appendLine("Timing: $it") }
+    ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.pending(health.logs).forEach { appendLine("Pending request: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let { timeline ->
+        appendLine("Timeline (recent events)")
+        timeline.forEach { appendLine(sanitizeDiagnosticText(it)) }
+    }
     if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
         appendLine("Result: ${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}")
     }
