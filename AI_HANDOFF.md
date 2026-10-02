@@ -326,3 +326,9 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Mobile player source cards show server identity with the existing quality badge, then provider, HLS/MP4 when known, and language/codec/audio/size/addon tags. TV player Sources and in-player episode-switch manual source picker use the same labels with quality in the title.
 - Provider tabs/filtering, selected/playing/recommended/failed states, source keys/order/switching/recovery/extraction/ranking are unchanged. Changes are limited to presentation; standalone source discovery screens are unchanged.
 - Static source/ZIP checks only. No build or tests run by user request. Device visual/D-pad validation pending.
+
+## TV player Sources provider tabs (2026-10-03)
+- Player source options retain full providerName for filtering; Sources panel now shows All plus distinct provider tabs and uses current player bundle updates. Provider display labels shorten the final slash segment while filter keys retain full names.
+- Initial All list focuses the playing enabled source (existing selected-row behavior). Focusing a tab filters it without stealing focus back into the list. Down enters filtered list; Up from first enabled row returns to its active provider tab. Source/status labels remain and playing source explicitly says Playing.
+- Source discovery remains active after Play until completion/timeout/cancellation as before. No extra discovery, ranking, cancellation or source-switch behavior introduced. Existing single-Back panel dismissal is unchanged.
+- Static source and ZIP checks only; no build or tests executed. Device checks pending: open/close/reopen; provider navigation, Down/Up, sources arriving while tabs are focused, playing source highlight and one-Back dismissal.

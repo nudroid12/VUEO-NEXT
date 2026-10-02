@@ -2,6 +2,9 @@ package com.vueo.tv.player
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.key
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -115,6 +118,23 @@ internal fun VueoPlayerSourcesPanel(
     onSelected: (TvPlayerOption) -> Unit,
 ) {
     val listEntryRequester = remember { FocusRequester() }
+    var selectedProvider by remember { mutableStateOf<String?>(null) }
+    var initialSourceFocus by remember { mutableStateOf(true) }
+    var enterListRequest by remember { mutableIntStateOf(0) }
+    val providers = options.mapNotNull { it.providerName }.distinct()
+    val tabRequesters = remember { mutableMapOf<String?, FocusRequester>() }
+    fun tabRequester(provider: String?) = tabRequesters.getOrPut(provider) { FocusRequester() }
+    val filteredOptions = options.filter { selectedProvider == null || it.providerName == selectedProvider }
+    LaunchedEffect(providers) {
+        if (selectedProvider != null && selectedProvider !in providers) selectedProvider = null
+    }
+    LaunchedEffect(enterListRequest) {
+        if (enterListRequest > 0 && filteredOptions.any { it.enabled }) {
+            withFrameNanos { }
+            listEntryRequester.requestTvFocus()
+        }
+    }
+
     val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
@@ -153,6 +173,55 @@ internal fun VueoPlayerSourcesPanel(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                (listOf<String?>(null) + providers).forEach { provider ->
+                    key(provider) {
+                        var focused by remember { mutableStateOf(false) }
+                        val selected = provider == selectedProvider
+                        val shape = RoundedCornerShape(50)
+                        Text(
+                            text = provider?.substringAfterLast(" / ") ?: "All",
+                            color = if (focused) Color.Black else Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.focusRequester(tabRequester(provider))
+                                .focusProperties { up = FocusRequester.Cancel }
+                                .onFocusChanged {
+                                    focused = it.isFocused
+                                    if (it.isFocused) {
+                                        initialSourceFocus = false
+                                        selectedProvider = provider
+                                        onInteraction()
+                                    }
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                        if (event.type == KeyEventType.KeyDown) {
+                                            onInteraction()
+                                            enterListRequest++
+                                        }
+                                        true
+                                    } else false
+                                }
+                                .clip(shape)
+                                .background(if (focused) Color.White else if (selected) Color(0xFF555555) else Color(0xFF303030))
+                                .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
+                                .clickable {
+                                    initialSourceFocus = false
+                                    selectedProvider = provider
+                                    onInteraction()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
 
             Column(
                 modifier = Modifier
@@ -163,14 +232,17 @@ internal fun VueoPlayerSourcesPanel(
                     .border(1.dp, cardBorder, PanelShape)
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
-                VueoOptionList(
-                    options = options,
-                    maxHeightFraction = 1f,
-                    onInteraction = onInteraction,
-                    onSelected = onSelected,
-                    topRequester = FocusRequester.Cancel,
-                    entryFocusRequester = listEntryRequester,
-                )
+                key(selectedProvider) {
+                    VueoOptionList(
+                        options = filteredOptions,
+                        maxHeightFraction = 1f,
+                        onInteraction = onInteraction,
+                        onSelected = onSelected,
+                        topRequester = tabRequester(selectedProvider),
+                        entryFocusRequester = listEntryRequester,
+                        assignInitialFocus = initialSourceFocus,
+                    )
+                }
             }
         }
     }
@@ -186,6 +258,7 @@ internal fun VueoOptionList(
     entryFocusRequester: FocusRequester? = null,
     initialFocusKey: String? = null,
     onFocused: (TvPlayerOption) -> Unit = {},
+    assignInitialFocus: Boolean = true,
 ) {
     val state = rememberLazyListState()
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -210,7 +283,7 @@ internal fun VueoOptionList(
     }
 
     LaunchedEffect(options, initialFocusKey, initialFocusAssigned) {
-        if (initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
+        if (!assignInitialFocus || initialFocusAssigned || options.isEmpty()) return@LaunchedEffect
         state.scrollToItem(initialIndex)
         if (requesterFor(initialIndex).requestTvFocus()) {
             initialFocusAssigned = true
