@@ -85,7 +85,7 @@ internal fun VueoPlayerCompactOverlay(
     Box(Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().width(500.dp)
-                .background(Color.Black.copy(alpha = .50f)),
+                .background(Color.Black.copy(alpha = .80f)),
         )
         Column(
             modifier = Modifier.align(Alignment.BottomStart)
@@ -134,7 +134,7 @@ internal fun VueoPlayerSourcesPanel(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -495,7 +495,7 @@ internal fun VueoPlayerEpisodesPanel(
         }
     }
     val listTopRequester = if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(

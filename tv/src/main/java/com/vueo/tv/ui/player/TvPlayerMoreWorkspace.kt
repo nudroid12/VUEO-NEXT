@@ -73,7 +73,7 @@ internal fun VueoPlayerMoreWorkspace(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(

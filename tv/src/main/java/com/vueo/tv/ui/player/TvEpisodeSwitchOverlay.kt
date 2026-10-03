@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -135,10 +136,21 @@ internal fun TvEpisodeSwitchOverlay(
                     }
                 }
                 else -> {
-                    Text("Loading episode…", color = TvDesign.Accent, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("Loading episode…", color = TvDesign.Accent, fontSize = 12.sp,
+                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Back to cancel", color = Color.White.copy(alpha = .65f), fontSize = 10.sp,
+                            modifier = Modifier.padding(start = 12.dp), maxLines = 1)
+                    }
                 }
             }
-            Text("Back to cancel", color = Color.White.copy(alpha = .65f), fontSize = 10.sp)
+            if (showSources || error != null) {
+                Text("Back to cancel", color = Color.White.copy(alpha = .65f), fontSize = 10.sp)
+            }
         }
     }
 }
