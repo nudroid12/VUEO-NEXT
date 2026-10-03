@@ -1,6 +1,10 @@
-Extract at repository root; replace included files.
-TV pause backdrop waits 8 seconds without interaction (previously 5). Existing interaction-token reset and playback eligibility checks retained.
-Adds current position / duration and remaining minutes (rounded up). Unknown duration displays --:-- and omits remaining time; negative position clamped and known-duration position clamped to duration. Existing title, episode and OK hint retained.
-Includes current cumulative TvPlayerScreen.kt; apply to the current session repository. No marker changes or synopsis added.
-Validation: source checks and ZIP integrity passed. No local build or device test.
-Device checks: pause without interaction => backdrop at 8 seconds; remote interaction restarts timer; resume hides backdrop; opening panels prevents backdrop; verify position/duration and remaining minutes.
+VUEO Sync by dialogue — Mobile + TV
+Extract at repository root and replace included files. Player files contain cumulative changes from this session. No Gradle changes needed.
+
+Open Subtitles > Sync by dialogue. Uses the selected external subtitle. Picker pauses playback and starts near current time minus existing delay; scroll for another line. Pick a line to resume, then press OK (TV) or tap Sync now (mobile) exactly when the spoken line begins. TV key-down capture consumes matching key-up and repeat events; other buttons and Back retain their functions. Replay 10 seconds is provided for a missed line.
+Offset = live player position - original cue start. Existing renderer/storage path applies it as an absolute replacement, not an addition. Positive means subtitle delayed. Maximum +/-60 seconds; out-of-range results rejected. Undo restores the delay saved when the dialog opened. Done keeps playback running after a successful sync. Cancel/Back before sync restores initial playback intent. Manual +/- controls retained. Source/session changes clear the modal request. TV pause backdrop suppressed while synchronising.
+
+Supports external SRT, VTT, ASS/SSA (UTF-8 or BOM-marked UTF-16). Embedded/TTML/unsupported or unreadable tracks report a manual-sync fallback; no automatic embedded extraction. Requests reuse source headers, User-Agent and prepared subtitle cache, support local/content through DefaultDataSource. Read/parse runs on IO with cancellation checks, 2 MiB limit, 20000 cue limit, 10-second connect/read timeouts and 20-second coroutine deadline (blocking read may finish at its read timeout). No subtitle text or token URLs logged.
+
+Validation: source wiring/delimiter review and ZIP integrity passed. JUnit source added for SRT/VTT/ASS parsing, malformed timestamps and offset signs/range. No local build, JUnit execution or device test performed per user instruction.
+Device validation needed: both delay signs, existing nonzero offset, Undo, manual fine-tune, buffering capture guard, long remote press, Back/cancel, load failure, local subtitle, source/episode switch, and embedded fallback. Human reaction time still requires manual fine-tune. Dialogue sync cannot correct subtitle timing drift across an entire video.

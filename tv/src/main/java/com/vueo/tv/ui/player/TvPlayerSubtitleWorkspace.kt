@@ -70,6 +70,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     secondaryLanguageCode: String?,
     preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
+    onSyncByDialogue: () -> Unit,
     style: TvPlayerSubtitleStyleState,
     onInteraction: () -> Unit,
     onDisable: () -> Unit,
@@ -256,6 +257,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                 fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
             )
+            androidx.compose.material3.TextButton(onClick = onSyncByDialogue) { Text("Sync by dialogue") }
             Spacer(Modifier.height(4.dp))
             Text(
                 "Choose a language, track and style",

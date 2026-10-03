@@ -711,8 +711,10 @@ internal fun PlayerScreen(
     var showMoreDialog by remember {
         mutableStateOf(false)
     }
+    var dialogueSyncOpen by remember(mediaKey, source.url) { mutableStateOf(false) }
+    var dialogueSyncTrack by remember(mediaKey, source.url) { mutableStateOf<SubtitleTrack?>(null) }
     val playerPanelVisible =
-        showAudioDialog ||
+        dialogueSyncOpen || showAudioDialog ||
             showSubtitleDialog ||
             showSubtitleStyleOverlay ||
             showSourceDialog ||
@@ -2177,8 +2179,32 @@ internal fun PlayerScreen(
         }
     }
 
+    if (dialogueSyncOpen) {
+        SubtitleDialogueSyncDialog(
+            player = player,
+            track = dialogueSyncTrack,
+            headers = source.headers,
+            delayMs = subtitleDelayMs,
+            onApply = { updated ->
+                subtitleDelayMs = updated
+                context.setPlayerSubtitleDelayMs(mediaKey = mediaKey, delayMs = updated)
+            },
+            onDismiss = { dialogueSyncOpen = false },
+        )
+    }
+
     PlayerSubtitleWorkspace(
             visible = showSubtitleDialog,
+            onSyncByDialogue = {
+                val selected = textTracks.firstOrNull { it.selected }
+                dialogueSyncTrack = if (!subtitlesDisabled && pendingSubtitleSelectionId == null && translatingSubtitleSelectionId == null) {
+                    selected?.externalSubtitle ?: latestSubtitles.value.firstOrNull {
+                        PlayerTrackPolicy.externalSubtitleSelectionId(it) == selected?.selectionId
+                    }
+                } else null
+                showSubtitleDialog = false
+                dialogueSyncOpen = true
+            },
             tracks = textTracks,
             subtitlesDisabled = subtitlesDisabled,
             pendingSelectionId = pendingSubtitleSelectionId,

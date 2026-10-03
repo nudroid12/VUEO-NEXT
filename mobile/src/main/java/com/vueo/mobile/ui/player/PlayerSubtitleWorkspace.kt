@@ -100,6 +100,7 @@ internal fun PlayerSubtitleWorkspace(
     visibilityPreferredLanguageCode: String?,
     preferredLanguageOnly: Boolean,
     subtitleDelayMs: Int,
+    onSyncByDialogue: () -> Unit,
     style: PlayerSubtitleStyleState,
     onDisable: () -> Unit,
     onSelect: (PlayerTrackChoice) -> Unit,
@@ -215,6 +216,7 @@ internal fun PlayerSubtitleWorkspace(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
+                androidx.compose.material3.TextButton(onClick = onSyncByDialogue) { Text("Sync by dialogue") }
                 Text(
                     "Choose a language, track and style",
                     color = Color.White.copy(alpha = .52f),

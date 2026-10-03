@@ -1288,7 +1288,10 @@ fun TvPlayerScreen(
         }
     }
 
-    val pauseBackdropEligible = !playbackRequested && !playing && hasRenderedFirstFrame &&
+    var dialogueSyncOpen by remember(player, mediaKey, activeSource.url) { mutableStateOf(false) }
+    var dialogueSyncTrack by remember(player, mediaKey, activeSource.url) { mutableStateOf<SubtitleTrack?>(null) }
+
+    val pauseBackdropEligible = !dialogueSyncOpen && !playbackRequested && !playing && hasRenderedFirstFrame &&
         player.playbackState == Player.STATE_READY && !isBuffering && !recoveryInProgress &&
         !ended && playbackError == null && !episodeSwitching && playerForeground &&
         activePanel == TvPlayerPanel.NONE && pendingSeekPositionMs == null && nextCountdown <= 0
@@ -1785,6 +1788,20 @@ fun TvPlayerScreen(
             },
         )
 
+        if (dialogueSyncOpen) {
+            TvSubtitleDialogueSyncDialog(
+                player = player,
+                track = dialogueSyncTrack,
+                headers = activeSource.headers,
+                delayMs = subtitleDelayMs,
+                onApply = { updated ->
+                    subtitleDelayMs = updated
+                    settings.setSubtitleDelayMs(mediaKey, updated)
+                },
+                onDismiss = { dialogueSyncOpen = false; runCatching { rootRequester.requestFocus() } },
+            )
+        }
+
         VueoPlayerPauseBackdrop(
             visible = pauseBackdropVisible && pauseBackdropEligible,
             media = media,
@@ -1907,6 +1924,15 @@ fun TvPlayerScreen(
             exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerSubtitleWorkspace(
+                onSyncByDialogue = {
+                    val selected = textTracks.firstOrNull { it.selected }
+                    dialogueSyncTrack = if (!subtitlesDisabled && pendingSubtitleSelectionId == null && translatingSubtitleSelectionId == null) {
+                        selected?.externalSubtitle ?: selected?.selectionId?.let { externalSubtitlesBySelectionId[it] }
+                    } else null
+                    closePanel(restoreFocus = false)
+                    hideControls()
+                    dialogueSyncOpen = true
+                },
                 tracks = textTracks,
                 subtitlesDisabled = subtitlesDisabled,
                 pendingSelectionId = pendingSubtitleSelectionId,
