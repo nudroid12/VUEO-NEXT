@@ -1,7 +1,5 @@
 package com.vueo.tv.detail
 
-import android.os.SystemClock
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -34,7 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,12 +52,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
@@ -160,15 +159,26 @@ internal fun VueoDetailEpisodes(
     onFocused: (EpisodeItem) -> Unit,
     onOpen: (EpisodeItem) -> Unit,
 ) {
-    val edgePadding = with(LocalDensity.current) { VueoDetailHorizontalPadding.toPx() }
-    val horizontalReveal = remember(edgePadding) {
+    val layoutDirection = LocalLayoutDirection.current
+    // Same leading-edge reveal rule as Modern Home. The viewport already
+    // excludes the left margin, so its leading target is zero. LazyRow clamps
+    // at its natural end; only then does focus advance across the last cards.
+    val horizontalReveal = remember(layoutDirection) {
+        val rtl = layoutDirection == LayoutDirection.Rtl
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-                val usableSize = containerSize - edgePadding
                 if (containerSize <= 0f || size <= 0f) return 0f
-                if (size >= usableSize) return offset
-                val target = (containerSize * .42f - size / 2f).coerceIn(0f, usableSize - size)
-                return offset - target
+                val childSize = abs(size)
+                return if (rtl) {
+                    val initialTarget = containerSize
+                    val target = if (childSize <= containerSize && initialTarget < childSize) childSize else initialTarget
+                    (offset + size) - target
+                } else {
+                    val initialTarget = 0f
+                    val available = containerSize - initialTarget
+                    val target = if (childSize <= containerSize && available < childSize) containerSize - childSize else initialTarget
+                    offset - target
+                }
             }
         }
     }
@@ -185,7 +195,6 @@ internal fun VueoDetailEpisodes(
             episode.id to FocusRequester()
         }
     }
-    var lastHorizontalRepeat by remember(media.id, media.type) { mutableStateOf(0L) }
 
     Column(
         modifier = Modifier
@@ -194,59 +203,50 @@ internal fun VueoDetailEpisodes(
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalReveal) {
-        LazyRow(
-            state = listState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = VueoDetailHorizontalPadding)
-                .clipToBounds()
-                .focusRequester(sectionRequester)
-                .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
-                .focusGroup()
-                .onPreviewKeyEvent { event ->
-                    val native = event.nativeKeyEvent
-                    val horizontal = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT ||
-                        native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
-                    if (horizontal && native.action == AndroidKeyEvent.ACTION_DOWN) {
-                        val now = SystemClock.uptimeMillis()
-                        if (native.repeatCount > 0 && now - lastHorizontalRepeat < 80L) {
-                            return@onPreviewKeyEvent true
+            Box(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(start = VueoDetailHorizontalPadding)
+                    .clipToBounds(),
+            ) {
+            LazyRow(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(sectionRequester)
+                        .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
+                        .focusGroup(),
+                    contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    itemsIndexed(episodes, key = { _, episode -> episode.id }) { _, episode ->
+                        val progress = history.firstOrNull { entry ->
+                            entry.media.id == media.id &&
+                                entry.media.type == media.type &&
+                                entry.season == episode.season &&
+                                entry.episode == episode.episode
                         }
-                        lastHorizontalRepeat = now
+                        VueoEpisodeCard(
+                            episode = episode,
+                            cardWidth = cardWidth,
+                            cardHeight = cardHeight,
+                            runtimeMinutes = media.runtimeMinutes,
+                            imdbRating = episodeRatings[episode.season to episode.episode],
+                            progress = progress,
+                            selected = selectedEpisode?.id == episode.id,
+                            requester = requesters.getValue(episode.id),
+                            upRequester = upRequester,
+                            downRequester = downRequester,
+                            onFocused = {
+                                VueoDetailFocusMemory.selectedSeason = episode.season
+                                VueoDetailFocusMemory.episodeId = episode.id
+                                onFocused(episode)
+                            },
+                            onOpen = { onOpen(episode) },
+                        )
                     }
-                    false
-                },
-            contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            itemsIndexed(episodes, key = { _, episode -> episode.id }) { _, episode ->
-                val progress = history.firstOrNull { entry ->
-                    entry.media.id == media.id &&
-                        entry.media.type == media.type &&
-                        entry.season == episode.season &&
-                        entry.episode == episode.episode
                 }
-                VueoEpisodeCard(
-                    episode = episode,
-                    cardWidth = cardWidth,
-                    cardHeight = cardHeight,
-                    runtimeMinutes = media.runtimeMinutes,
-                    imdbRating = episodeRatings[episode.season to episode.episode],
-                    progress = progress,
-                    selected = selectedEpisode?.id == episode.id,
-                    requester = requesters.getValue(episode.id),
-                    upRequester = upRequester,
-                    downRequester = downRequester,
-                    onFocused = {
-                        VueoDetailFocusMemory.selectedSeason = episode.season
-                        VueoDetailFocusMemory.episodeId = episode.id
-                        onFocused(episode)
-                    },
-                    onOpen = { onOpen(episode) },
-                )
+                }
             }
-        }
-        }
     }
 }
 
@@ -392,7 +392,7 @@ private fun VueoEpisodeCard(
             val notStarted = !watched && (progress == null || progress.positionMs <= 0L)
             if (watched) {
                 Box(
-                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
                         .size(24.dp).background(TvDesign.Focus, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -400,7 +400,7 @@ private fun VueoEpisodeCard(
                         tint = Color.Black, modifier = Modifier.size(17.dp))
                 }
             } else if (notStarted) {
-                Canvas(Modifier.align(Alignment.TopStart).padding(10.dp).size(24.dp)) {
+                Canvas(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp)) {
                     drawCircle(
                         color = TvDesign.White.copy(alpha = .80f),
                         style = Stroke(width = 2.dp.toPx(),
