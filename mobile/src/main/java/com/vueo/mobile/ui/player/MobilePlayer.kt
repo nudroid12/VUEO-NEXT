@@ -2203,6 +2203,7 @@ internal fun PlayerScreen(
                     }
                 } else null
                 showSubtitleDialog = false
+                controlsVisible = false
                 dialogueSyncOpen = true
             },
             tracks = textTracks,

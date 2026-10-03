@@ -1,12 +1,11 @@
-VUEO subtitle dialogue sync / TV diagnostics patch
+VUEO Live subtitle sync - mobile and TV
 
-Apply these repository-relative files over the current cumulative source tree.
+Apply repository-relative files over latest cumulative source including previous subtitle regex/cache fixes. Keep those shared parser fixes.
 
-Changes:
-- Escape the closing brace in subtitle override cleanup for Android regex compatibility. The cleanup runs for every cue, even plain SRT/VTT.
-- Subtitle failure diagnostics include the first VUEO code location, without subtitle text or URL tokens.
-- TV Performance & Crash Diagnostics: initial focus on log, D-pad Up/Down scroll, OK moves to Copy Log, Down at bottom moves to Copy Log, Up from footer returns to log. Full export remains copied; preview is limited to recent 24,000 characters.
-- Added SRT override cleanup regression test source.
+Changes: right-half full-height Live Sync panel; no background dim; opening with external subtitle resumes playback; choose a line at spoken start to immediately replace absolute delay; list stays open. TV captures on OK key down, consuming repeats and release. No Undo, staged confirmation, pause or seek. Close retains delay and leaves playback running. Focus gray, last applied line white when unfocused, other lines dark. Mobile controls hidden on opening.
 
-Validation: static source review and ZIP integrity only. No local build or JUnit/device execution.
-Device check: retry the same subtitle on mobile and TV; expect SUBTITLE_SYNC_READY with cue count. On TV, open diagnostics and scroll both ways, move to footer, return with Up, and copy full log.
+Existing 60-second delay limit and bounded loading/cache/diagnostics retained.
+
+Validation: static checks and ZIP integrity only. No local build or device tests.
+
+Device checks: open during playback and while paused; select at spoken start and verify alignment; choose another line to replace delay; close/reopen to verify persistence; TV hold OK to verify no repeated capture; scroll both ways and reach Close; check landscape/portrait bounds and video/subtitle visibility. Portrait intentionally stays half width as requested.
