@@ -39,7 +39,7 @@ internal data class TvSubtitleLanguageGroup(
 )
 
 internal data class TvPlayerSubtitleStyleState(
-    val fontSizeSp: Int = 22,
+    val fontSizeSp: Int = 26,
     val bold: Boolean = false,
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,

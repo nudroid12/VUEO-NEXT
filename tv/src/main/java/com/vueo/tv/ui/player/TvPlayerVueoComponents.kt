@@ -333,14 +333,14 @@ internal fun VueoPlayerPromptButton(
                 true
             }
             .focusable()
-            .background(if (focused) Color(0xFF555555) else Color(0xFF303030), shape)
+            .background(if (focused) Color.White else Color(0xFF303030), shape)
             .border(1.dp, Color.White.copy(alpha = if (focused) .92f else .18f), shape)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = if (focused) Color.Black else Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,

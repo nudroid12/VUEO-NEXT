@@ -250,7 +250,7 @@ private fun VueoMoreCycleRow(
             .focusable()
             .clickable(onClick = onClick)
             .background(
-                if (focused) Color.White.copy(alpha = .13f)
+                if (focused) Color(0xFF555555)
                 else Color.White.copy(alpha = .055f),
                 shape,
             )
@@ -319,7 +319,7 @@ private fun VueoMoreToggleRow(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White.copy(alpha = .10f) else Color.Transparent, shape)
+            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
             .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .45f) else Color.Transparent, shape)
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -382,14 +382,14 @@ private fun VueoMoreResetButton(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White else Color.Transparent, shape)
+            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
             .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             "Reset player controls",
-            color = if (focused) Color.Black else Color.White.copy(alpha = .78f),
+            color = Color.White.copy(alpha = .92f),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
         )

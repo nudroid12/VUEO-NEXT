@@ -87,10 +87,16 @@ internal fun VueoPlayerSubtitleWorkspace(
             ?.takeUnless { it == "und" },
     ).distinct()
     val preferredFilterActive = preferredLanguageOnly && preferredFilterCodes.isNotEmpty()
-    val filteredTracks = remember(tracks, preferredFilterCodes, preferredFilterActive) {
+    val uiSelectionId = requestedSelectionId ?: pendingSelectionId
+    val selectedTrack = tracks.firstOrNull {
+        it.selectionId == uiSelectionId
+    } ?: tracks.firstOrNull { it.selected }
+    val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
+    val filteredTracks = remember(tracks, preferredFilterCodes, preferredFilterActive, selectedLanguageCode, subtitlesDisabled) {
         if (preferredFilterActive) {
             tracks.filter {
-                tvCanonicalLanguage(it.language) in preferredFilterCodes
+                tvCanonicalLanguage(it.language) in preferredFilterCodes ||
+                    (!subtitlesDisabled && tvCanonicalLanguage(it.language) == selectedLanguageCode)
             }
         } else {
             tracks
@@ -99,11 +105,6 @@ internal fun VueoPlayerSubtitleWorkspace(
     val groups = remember(filteredTracks, preferredLanguageCode, secondaryLanguageCode) {
         tvBuildSubtitleLanguageGroups(filteredTracks, preferredLanguageCode, secondaryLanguageCode)
     }
-    val uiSelectionId = requestedSelectionId ?: pendingSelectionId
-    val selectedTrack = tracks.firstOrNull {
-        it.selectionId == uiSelectionId
-    } ?: tracks.firstOrNull { it.selected }
-    val selectedLanguageCode = selectedTrack?.language?.let(::tvCanonicalLanguage)
     val selectedLanguageVisible = selectedLanguageCode
         ?.takeIf { code -> groups.any { it.code == code } }
     val hasSelectedSubtitle = !subtitlesDisabled && selectedLanguageVisible != null
@@ -136,11 +137,15 @@ internal fun VueoPlayerSubtitleWorkspace(
     }
     val languageRequesters = remember(groups.map { it.code }, entryLanguageIndex, entryFocusRequester) {
         List(groups.size + 1) { index ->
-            if (index == entryLanguageIndex) entryFocusRequester else FocusRequester()
+            if (index == entryLanguageIndex && !hasSelectedSubtitle) entryFocusRequester else FocusRequester()
         }
     }
-    val trackRequesters = remember(visibleTracks.map { it.key }) {
-        List(visibleTracks.size.coerceAtLeast(1)) { FocusRequester() }
+    val selectedEntryIndex = visibleTracks.indexOfFirst { it.key == selectedTrack?.key }
+    val trackListState = rememberLazyListState(initialFirstVisibleItemIndex = selectedEntryIndex.coerceAtLeast(0))
+    val trackRequesters = remember(visibleTracks.map { it.key }, selectedEntryIndex, entryFocusRequester) {
+        List(visibleTracks.size.coerceAtLeast(1)) { index ->
+            if (hasSelectedSubtitle && index == selectedEntryIndex) entryFocusRequester else FocusRequester()
+        }
     }
     val dialogueSyncRequester = remember { FocusRequester() }
     val floatRequester = remember { FocusRequester() }
@@ -185,11 +190,16 @@ internal fun VueoPlayerSubtitleWorkspace(
         onInteraction()
     }
 
-    LaunchedEffect(groups, entryLanguageIndex, initialFocusAssigned) {
+    LaunchedEffect(groups, entryLanguageIndex, selectedEntryIndex, initialFocusAssigned) {
         if (initialFocusAssigned) return@LaunchedEffect
-        initialFocusAssigned = languageRequesters[
-            entryLanguageIndex.coerceIn(languageRequesters.indices)
-        ].requestTvFocus()
+        if (hasSelectedSubtitle && selectedEntryIndex >= 0) {
+            trackListState.scrollToItem(selectedEntryIndex)
+            initialFocusAssigned = trackRequesters[selectedEntryIndex].requestTvFocus()
+        } else {
+            initialFocusAssigned = languageRequesters[
+                entryLanguageIndex.coerceIn(languageRequesters.indices)
+            ].requestTvFocus()
+        }
     }
 
     LaunchedEffect(activeLanguageCode, visibleTracks, pendingTrackFocusLanguage) {
@@ -354,6 +364,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                         when {
                             activeLanguageCode == null -> VueoSubtitleEmpty("Choose a language to see its exact subtitle tracks.")
                             visibleTracks.isNotEmpty() -> LazyColumn(
+                                state = trackListState,
                                 modifier = Modifier.fillMaxWidth().weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
@@ -698,12 +709,12 @@ private fun VueoSubtitleHeaderButton(
             }
             .focusable()
             .background(
-                if (focused) TvDesign.Accent.copy(alpha = .28f) else Color.White.copy(alpha = .08f),
+                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .08f),
                 shape,
             )
             .border(
                 if (focused) 2.dp else 1.dp,
-                if (focused) TvDesign.Accent else Color.White.copy(alpha = .10f),
+                if (focused) Color(0xFF888888) else Color.White.copy(alpha = .10f),
                 shape,
             )
             .padding(horizontal = 11.dp),
@@ -779,8 +790,8 @@ private fun VueoSubtitleLanguageRow(
             .focusable()
             .background(
                 when {
-                    focused -> TvDesign.Accent.copy(alpha = .26f)
-                    selected -> TvDesign.Accent.copy(alpha = .10f)
+                    selected -> Color.White
+                    focused -> Color(0xFF555555)
                     else -> Color.Transparent
                 },
                 shape,
@@ -792,8 +803,8 @@ private fun VueoSubtitleLanguageRow(
                     else -> 0.dp
                 },
                 color = when {
-                    focused -> TvDesign.Accent
-                    selected -> TvDesign.Accent.copy(alpha = .48f)
+                    focused -> Color(0xFF888888)
+                    selected -> Color.White
                     else -> Color.Transparent
                 },
                 shape = shape,
@@ -803,7 +814,7 @@ private fun VueoSubtitleLanguageRow(
     ) {
         Text(
             title,
-            color = Color.White,
+            color = if (selected) Color.Black else Color.White,
             fontSize = 13.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
@@ -817,8 +828,8 @@ private fun VueoSubtitleLanguageRow(
                     .height(27.dp)
                     .background(
                         when {
-                            focused -> TvDesign.Accent.copy(alpha = .34f)
-                            selected -> TvDesign.Accent.copy(alpha = .18f)
+                            selected -> Color.Black.copy(alpha = .10f)
+                            focused -> Color.White.copy(alpha = .12f)
                             else -> Color.White.copy(alpha = .09f)
                         },
                         RoundedCornerShape(10.dp),
@@ -827,7 +838,7 @@ private fun VueoSubtitleLanguageRow(
             ) {
                 Text(
                     it.toString(),
-                    color = Color.White.copy(alpha = .92f),
+                    color = if (selected) Color.Black else Color.White.copy(alpha = .92f),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -880,8 +891,8 @@ private fun VueoSubtitleTrackRow(
             .focusable()
             .background(
                 when {
-                    focused -> TvDesign.Accent.copy(alpha = .24f)
-                    selected -> TvDesign.Accent.copy(alpha = .10f)
+                    selected -> Color.White
+                    focused -> Color(0xFF555555)
                     else -> Color.White.copy(alpha = .025f)
                 },
                 shape,
@@ -893,8 +904,8 @@ private fun VueoSubtitleTrackRow(
                     else -> 0.dp
                 },
                 color = when {
-                    focused -> TvDesign.Accent
-                    selected -> TvDesign.Accent.copy(alpha = .48f)
+                    focused -> Color(0xFF888888)
+                    selected -> Color.White
                     else -> Color.Transparent
                 },
                 shape = shape,
@@ -906,13 +917,13 @@ private fun VueoSubtitleTrackRow(
             Box(
                 modifier = Modifier
                     .background(
-                        if (selected || focused) TvDesign.Accent.copy(alpha = .12f)
+                        if (selected) Color.Black.copy(alpha = .06f) else if (focused) Color.White.copy(alpha = .12f)
                         else Color.White.copy(alpha = .055f),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
                         1.dp,
-                        if (selected || focused) TvDesign.Accent.copy(alpha = .38f)
+                        if (selected) Color.Black.copy(alpha = .20f) else if (focused) Color.White.copy(alpha = .38f)
                         else Color.White.copy(alpha = .09f),
                         RoundedCornerShape(999.dp),
                     )
@@ -920,7 +931,7 @@ private fun VueoSubtitleTrackRow(
             ) {
                 Text(
                     provider.ifBlank { "Subtitle" },
-                    color = if (selected || focused) TvDesign.Accent else Color.White.copy(alpha = .66f),
+                    color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -930,7 +941,7 @@ private fun VueoSubtitleTrackRow(
             Spacer(Modifier.height(5.dp))
             Text(
                 title,
-                color = Color.White,
+                color = if (selected) Color.Black else Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -940,7 +951,7 @@ private fun VueoSubtitleTrackRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     detail,
-                    color = Color.White.copy(alpha = .50f),
+                    color = if (selected) Color.Black.copy(alpha = .65f) else Color.White.copy(alpha = .50f),
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -950,7 +961,7 @@ private fun VueoSubtitleTrackRow(
         if (selected) {
             Text(
                 "✓",
-                color = TvDesign.Accent,
+                color = Color.Black,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 10.dp),
@@ -1063,12 +1074,12 @@ private fun VueoSubtitleStepperButton(
             }
             .focusable()
             .background(
-                if (focused) TvDesign.Accent.copy(alpha = .32f) else Color.White.copy(alpha = .09f),
+                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .09f),
                 shape,
             )
             .border(
                 if (focused) 2.dp else 1.dp,
-                if (focused) TvDesign.Accent else Color.White.copy(alpha = .08f),
+                if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
                 shape,
             ),
         contentAlignment = Alignment.Center,
@@ -1129,8 +1140,8 @@ private fun VueoSubtitleToggleRow(
                 .focusable()
                 .background(
                     when {
-                        focused -> TvDesign.Accent.copy(alpha = .32f)
-                        enabled -> TvDesign.Accent.copy(alpha = .14f)
+                        enabled -> Color.White
+                        focused -> Color(0xFF555555)
                         else -> Color.White.copy(alpha = .09f)
                     },
                     shape,
@@ -1138,8 +1149,8 @@ private fun VueoSubtitleToggleRow(
                 .border(
                     if (focused) 2.dp else 1.dp,
                     when {
-                        focused -> TvDesign.Accent
-                        enabled -> TvDesign.Accent.copy(alpha = .55f)
+                        focused -> Color(0xFF888888)
+                        enabled -> Color.White
                         else -> Color.White.copy(alpha = .08f)
                     },
                     shape,
@@ -1148,7 +1159,7 @@ private fun VueoSubtitleToggleRow(
         ) {
             Text(
                 if (enabled) "On" else "Off",
-                color = Color.White,
+                color = if (enabled) Color.Black else Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -1216,7 +1227,7 @@ private fun VueoSubtitleColorRow(
                         .border(
                             width = if (focused) 3.dp else if (selected) 2.dp else 1.dp,
                             color = when {
-                                focused -> TvDesign.Accent
+                                focused -> Color(0xFF888888)
                                 selected -> Color.White.copy(alpha = .92f)
                                 else -> Color.White.copy(alpha = .18f)
                             },

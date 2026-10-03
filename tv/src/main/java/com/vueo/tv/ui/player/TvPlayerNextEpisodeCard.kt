@@ -117,15 +117,15 @@ internal fun VueoPlayerNextEpisodeCard(
         }
         Row(
             modifier = Modifier
-                .background(Color.White.copy(alpha = if (focused) .16f else .07f), RoundedCornerShape(18.dp))
+                .background(if (focused) Color.White else Color.White.copy(alpha = .07f), RoundedCornerShape(18.dp))
                 .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
                 .padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-            Text("Play", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Text("• ${countdown}s", color = Color.White.copy(alpha = .75f), fontSize = 10.sp)
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = if (focused) Color.Black else Color.White, modifier = Modifier.size(15.dp))
+            Text("Play", color = if (focused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("• ${countdown}s", color = if (focused) Color.Black.copy(alpha = .75f) else Color.White.copy(alpha = .75f), fontSize = 10.sp)
         }
     }
 }

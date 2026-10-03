@@ -68,7 +68,7 @@ import com.vueo.shared.core.language.LanguagePolicy
 import kotlin.math.roundToInt
 
 internal data class PlayerSubtitleStyleState(
-    val fontSizeSp: Int = 20,
+    val fontSizeSp: Int = 26,
     val bold: Boolean = false,
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
@@ -76,7 +76,7 @@ internal data class PlayerSubtitleStyleState(
     val backgroundEnabled: Boolean = false,
     val backgroundColor: Int = 0xFF000000.toInt(),
     val backgroundOpacityPercent: Int = 60,
-    val bottomPaddingPercent: Int = 22,
+    val bottomPaddingPercent: Int = 8,
 )
 
 private data class SubtitleLanguageGroup(

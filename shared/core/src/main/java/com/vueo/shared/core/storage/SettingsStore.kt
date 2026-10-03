@@ -431,9 +431,10 @@ class SettingsStore(
     fun subtitleFontSizeSp(): Int {
         val key = profileKey(KEY_SUBTITLE_FONT_SIZE_SP)
         if (prefs.contains(key)) {
-            return prefs.getInt(key, 20).coerceIn(12, 40)
+            return prefs.getInt(key, 26).coerceIn(12, 40)
         }
 
+        if (!prefs.contains(profileKey(KEY_SUBTITLE_SIZE))) return 26
         return when (subtitleSize()) {
             SubtitleSize.SMALL -> 16
             SubtitleSize.MEDIUM -> 20
@@ -452,7 +453,7 @@ class SettingsStore(
 
     /**
      * One-time migration for the TV player subtitle presentation refresh.
-     * Called only by the TV app, so Mobile keeps its own subtitle defaults.
+     * Called by TV; missing values use the shared defaults without replacing saved choices.
      */
     fun migrateTvSubtitlePresentationDefaults() {
         val markerKey = profileKey(KEY_TV_SUBTITLE_PRESENTATION_V2)
@@ -460,25 +461,13 @@ class SettingsStore(
 
         val fontSizeKey = profileKey(KEY_SUBTITLE_FONT_SIZE_SP)
         val bottomPaddingKey = profileKey(KEY_SUBTITLE_BOTTOM_PADDING_PERCENT)
-        val currentFontSize = if (prefs.contains(fontSizeKey)) {
-            prefs.getInt(fontSizeKey, 20)
-        } else {
-            20
-        }
-        val currentBottomPadding = if (prefs.contains(bottomPaddingKey)) {
-            prefs.getInt(bottomPaddingKey, 22)
-        } else {
-            22
-        }
-
         prefs.edit().apply {
-            // 18sp and 20sp were previous TV defaults. Move those defaults to 22sp,
-            // but keep intentional custom sizes outside that legacy range.
-            if (!prefs.contains(fontSizeKey) || currentFontSize == 18 || currentFontSize == 20) {
-                putInt(fontSizeKey, 22)
+            // Initialize missing settings only; preserve existing profile choices.
+            if (!prefs.contains(fontSizeKey) && !prefs.contains(profileKey(KEY_SUBTITLE_SIZE))) {
+                putInt(fontSizeKey, 26)
             }
-            // 22% was the old shared bottom position. TV now uses the conventional 8% baseline.
-            if (!prefs.contains(bottomPaddingKey) || currentBottomPadding == 22) {
+            // Shared baseline is 8% for new profiles.
+            if (!prefs.contains(bottomPaddingKey)) {
                 putInt(bottomPaddingKey, 8)
             }
             putBoolean(markerKey, true)
@@ -548,7 +537,7 @@ class SettingsStore(
     fun subtitleBottomPaddingPercent(): Int =
         prefs.getInt(
             profileKey(KEY_SUBTITLE_BOTTOM_PADDING_PERCENT),
-            22,
+            8,
         ).coerceIn(5, 40)
 
     fun setSubtitleBottomPaddingPercent(value: Int) {
