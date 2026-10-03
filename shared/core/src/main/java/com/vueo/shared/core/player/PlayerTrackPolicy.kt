@@ -19,8 +19,10 @@ object PlayerTrackPolicy {
         return "external:$providerId:$stableTrackId"
     }
 
-    fun externalSubtitleLabel(track: SubtitleTrack): String =
-        "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
+    fun externalSubtitleLabel(track: SubtitleTrack): String {
+        SubtitleSessionCache.register(track.url)
+        return "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
+    }
 
     fun subtitleDisplayId(track: SubtitleTrack): String? {
         val displayId = subtitleDisplayId(track.id) ?: return null

@@ -1,4 +1,9 @@
-Apply after Sync by dialogue Mobile + TV patch. Extract at repository root, replacing the two workspace files.
-Move dialogue-sync entry from below Subtitles title to the Style header, immediately left of Float. Label Sync on mobile and TV. Existing manual Sync +/- row and dialogue-sync implementation retained.
-TV: explicit focus paths track Right -> Sync pill (when style open), Sync Right -> Float, Float Left -> Sync; both pills Down -> manual Sync row; manual Sync Up -> Sync pill; Sync Left -> track. Existing interaction callback and activation handling reused. Mobile uses same StyleModeButton as Float.
-Validation: source wiring/delimiter checks and ZIP integrity passed. No local build/device testing per user instruction. Verify TV D-pad traversal and mobile taps with an active subtitle track.
+Apply after Sync by dialogue Mobile + TV and Sync pill patches. Extract at repository root, replace included files. No workspace/button layout changes.
+
+- External subtitle labels register their URLs before playback loading (covers URLs without file extensions). SubtitleSessionDataSource captures only registered, uncached, full subtitle reads starting at byte zero with unspecified length. Cache commits only at EOF; closing/cancellation/errors/range reads do not cache partial files. Video URLs are not registered. Max file 2 MiB, max 16 entries, total cache 8 MiB; registered URLs bounded to 256. Existing preflight cache retained within the same limits.
+- Sync prefers prepared/playback cache. No second subtitle download needed if complete bytes are cached. Falls back to bounded IO download as before. A freshly installed patch cannot recover reads from the previous process; reselect the subtitle track if needed.
+- UI distinguishes HTTP status, timeout, file access, empty/oversized file, HTML response, unsupported TTML/unknown format, missing timestamps, processing/setup errors. Coroutine cancellation still propagated.
+- Performance Diagnostic includes DISCOVERY_TRACE scan=0 stage=SUBTITLE_SYNC_START/READ/READY/FAILED with host only (no path, query, token), cache/download, byte size, charset, detected format, cue count or error category and exception class. No response body, subtitle dialogue, request headers or raw exception messages logged.
+
+Validation: source wiring/delimiter checks and ZIP integrity passed; no build or device tests run per user instruction. Underlying screenshot failure is not identified without the new diagnostic evidence.
+Device checks: reselect external subtitle, open Sync; confirm source=cache after player full read; verify playback/subtitle seek remains normal. If failure persists, Copy Performance Diagnostic after opening Sync. Also verify HTTP failure vs unsupported format messages and cancel while loading.

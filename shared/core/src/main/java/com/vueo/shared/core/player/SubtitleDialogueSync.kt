@@ -3,6 +3,9 @@ package com.vueo.shared.core.player
 import android.net.Uri
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -13,39 +16,81 @@ import kotlin.math.roundToLong
 /** Raw cue times, before the renderer's existing offset. No subtitle text is logged. */
 data class SubtitleDialogue(val startMs: Long, val text: String)
 
+class SubtitleSyncReadFailure(val userMessage: String, val reason: String, cause: Throwable? = null) : Exception(userMessage, cause)
+
 object SubtitleDialogueSync {
+    fun diagnostic(url: String, event: String, details: String = "") {
+        val host = runCatching { java.net.URI(url).host }.getOrNull().orEmpty().take(100)
+        RuntimeDiagnostics.recordDiscoveryTrace(0L, "SUBTITLE_SYNC_$event", "host=$host $details")
+    }
+
     const val MAX_BYTES = 2 * 1024 * 1024
 
     suspend fun load(url: String, factory: DataSource.Factory): List<SubtitleDialogue> = withContext(Dispatchers.IO) {
-        val cached = SubtitleSessionCache.get(url)
-        val bytes = if (cached != null) {
-            require(cached.size <= MAX_BYTES) { "Subtitle is too large for dialogue sync." }
-            cached
-        } else {
-            val source = factory.createDataSource()
-            try {
-                source.open(DataSpec.Builder().setUri(Uri.parse(url)).build())
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (true) {
-                    coroutineContext.ensureActive()
-                    val count = source.read(buffer, 0, buffer.size)
-                    if (count < 0) break
-                    if (count == 0) continue
-                    require(output.size() + count <= MAX_BYTES) { "Subtitle is too large for dialogue sync." }
-                    output.write(buffer, 0, count)
-                }
-                output.toByteArray()
-            } finally { runCatching { source.close() } }
-        }
-        coroutineContext.ensureActive()
-        val charset = when {
-            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> Charsets.UTF_16LE
-            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> Charsets.UTF_16BE
-            else -> Charsets.UTF_8
-        }
-        parse(String(bytes, charset)).also {
-            require(it.isNotEmpty()) { "No dialogue timestamps found. Use manual Sync for embedded, TTML or unsupported subtitles." }
+        diagnostic(url, "START")
+        try {
+            val cached = SubtitleSessionCache.get(url)
+            val bytes = if (cached != null) {
+                if (cached.size > MAX_BYTES) throw SubtitleSyncReadFailure("Subtitle exceeds the 2 MB sync limit.", "TOO_LARGE")
+                cached
+            } else {
+                val source = factory.createDataSource()
+                try {
+                    source.open(DataSpec.Builder().setUri(Uri.parse(url)).build())
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val count = source.read(buffer, 0, buffer.size)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        if (output.size() + count > MAX_BYTES) throw SubtitleSyncReadFailure("Subtitle exceeds the 2 MB sync limit.", "TOO_LARGE")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } finally { runCatching { source.close() } }
+            }
+            coroutineContext.ensureActive()
+            if (bytes.isEmpty()) throw SubtitleSyncReadFailure("Subtitle file is empty. Try another track.", "EMPTY_FILE")
+            val charset = when {
+                bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> Charsets.UTF_16LE
+                bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> Charsets.UTF_16BE
+                else -> Charsets.UTF_8
+            }
+            val raw = String(bytes, charset)
+            val sample = raw.take(2000).trimStart().lowercase()
+            val format = when {
+                sample.startsWith("webvtt") || sample.startsWith("\uFEFFwebvtt") -> "VTT"
+                "[events]" in raw.lowercase() -> "ASS"
+                "-->" in raw -> "SRT_OR_VTT"
+                "<tt" in sample || "<tt:" in sample -> "TTML"
+                "<!doctype html" in sample || "<html" in sample -> "HTML"
+                else -> "UNKNOWN"
+            }
+            diagnostic(url, "READ", "source=${if (cached != null) "cache" else "download"} bytes=${bytes.size} encoding=${charset.name()} format=$format")
+            if (format == "HTML") throw SubtitleSyncReadFailure("Server returned a web page instead of subtitle text. Try another track.", "HTML_RESPONSE")
+            if (format == "TTML") throw SubtitleSyncReadFailure("This subtitle uses TTML. Use manual Sync for this format.", "UNSUPPORTED_TTML")
+            parse(raw).also {
+                if (it.isEmpty()) throw SubtitleSyncReadFailure(
+                    if (format == "UNKNOWN") "Subtitle format was not recognised. Use manual Sync or another track."
+                    else "Subtitle was read, but no valid dialogue timestamps were found. Use manual Sync.",
+                    if (format == "UNKNOWN") "UNSUPPORTED_FORMAT" else "NO_TIMESTAMPS"
+                )
+                SubtitleSessionCache.put(url, bytes)
+                diagnostic(url, "READY", "cues=${it.size}")
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            val failure = when (error) {
+                is SubtitleSyncReadFailure -> error
+                is HttpDataSource.InvalidResponseCodeException -> SubtitleSyncReadFailure("Subtitle download failed (HTTP ${error.responseCode}). Try another track.", "HTTP_${error.responseCode}", error)
+                is java.net.SocketTimeoutException -> SubtitleSyncReadFailure("Subtitle download timed out. Try again.", "NETWORK_TIMEOUT", error)
+                is java.io.IOException -> SubtitleSyncReadFailure("Could not access the subtitle file. Try again or another track.", "READ_IO", error)
+                else -> SubtitleSyncReadFailure("Subtitle processing failed. Use manual Sync and check Performance Diagnostic.", "PROCESSING", error)
+            }
+            diagnostic(url, "FAILED", "reason=${failure.reason} type=${error.javaClass.simpleName}")
+            throw failure
         }
     }
 

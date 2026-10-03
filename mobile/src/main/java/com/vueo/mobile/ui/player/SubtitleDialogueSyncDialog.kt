@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.SubtitleDialogue
 import com.vueo.shared.core.player.SubtitleDialogueSync
+import com.vueo.shared.core.player.SubtitleSyncReadFailure
 import com.vueo.shared.core.player.SubtitleSessionDataSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeout
@@ -67,10 +68,15 @@ internal fun SubtitleDialogueSyncDialog(
                 SubtitleDialogueSync.load(track.url, SubtitleSessionDataSource.Factory(DefaultDataSource.Factory(context, http)))
             }
         } catch (cancelled: CancellationException) {
-            if (cancelled is kotlinx.coroutines.TimeoutCancellationException) error = "Subtitle loading timed out. Try again or use manual Sync."
-            else throw cancelled
-        } catch (_: Exception) {
-            error = "Could not read subtitle dialogue. Supported formats: SRT, VTT and ASS/SSA. Try manual Sync."
+            if (cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+                error = "Subtitle loading timed out. Try again or use manual Sync."
+                SubtitleDialogueSync.diagnostic(track.url, "FAILED", "reason=DEADLINE_TIMEOUT")
+            } else throw cancelled
+        } catch (failure: SubtitleSyncReadFailure) {
+            error = failure.userMessage
+        } catch (failure: Exception) {
+            error = "Could not start subtitle sync. Check Performance Diagnostic."
+            SubtitleDialogueSync.diagnostic(track.url, "FAILED", "reason=SETUP type=${failure.javaClass.simpleName}")
         }
     }
     fun capture() {
