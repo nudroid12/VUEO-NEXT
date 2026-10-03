@@ -295,14 +295,17 @@ private fun TvModernHomeRow(
     val layoutDirection = LocalLayoutDirection.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    // Reserve paint space for the 1.022x focus scale without moving the cards.
+    val focusPaintInset = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
 
     val horizontalBringIntoViewSpec = remember(
         density,
         layoutDirection,
         defaultBringIntoViewSpec,
         rowHorizontalPadding,
+        focusPaintInset,
     ) {
-        val startInsetPx = 0f
+        val startInsetPx = with(density) { focusPaintInset.toPx() }
         val rtl = layoutDirection == LayoutDirection.Rtl
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
@@ -347,7 +350,7 @@ private fun TvModernHomeRow(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = rowHorizontalPadding)
+                    .padding(start = rowHorizontalPadding - focusPaintInset)
                     .clipToBounds(),
             ) {
                 LazyRow(
@@ -361,7 +364,7 @@ private fun TvModernHomeRow(
                                 ?: FocusRequester.Default
                         }
                         .focusGroup(),
-                    contentPadding = PaddingValues(end = 32.dp),
+                    contentPadding = PaddingValues(start = focusPaintInset, end = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     itemsIndexed(
@@ -535,7 +538,7 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             entry.episodeText()?.let { episode ->
                 Text(
@@ -556,7 +559,7 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(6.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

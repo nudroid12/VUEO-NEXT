@@ -63,7 +63,6 @@ internal fun TvHomeLoading(
             Placeholder(Modifier.width(300.dp).height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator(Modifier.size(20.dp), color = TvDesign.White, strokeWidth = 2.dp)
-                Text("Loading Home", color = TvDesign.Muted, fontSize = 16.sp)
             }
         }
         Column(
