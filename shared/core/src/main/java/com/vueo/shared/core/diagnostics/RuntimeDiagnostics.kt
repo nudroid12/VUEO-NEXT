@@ -23,6 +23,8 @@ object RuntimeDiagnostics {
     private const val FILE_NAME = "vueo_runtime_diagnostics.log"
     private const val ROTATE_AT_BYTES = 512 * 1024L
     private const val KEEP_BYTES = 256 * 1024
+    // Provider main-thread risk threshold; independent of the live ANR watchdog.
+    private const val STALL_THRESHOLD_MS = 350L
 
     private val installed = AtomicBoolean(false)
     private val scanSequence = AtomicLong(0L)
