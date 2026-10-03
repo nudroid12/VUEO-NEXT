@@ -85,7 +85,7 @@ internal fun VueoPlayerCompactOverlay(
     Box(Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().width(500.dp)
-                .background(Color.Black.copy(alpha = .80f)),
+                .background(Color.Black.copy(alpha = .50f)),
         )
         Column(
             modifier = Modifier.align(Alignment.BottomStart)
@@ -134,7 +134,7 @@ internal fun VueoPlayerSourcesPanel(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -198,7 +198,7 @@ internal fun VueoPlayerSourcesPanel(
                                     } else false
                                 }
                                 .clip(shape)
-                                .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color(0xFF303030))
+                                .background(if (selected) Color.White else if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f))
                                 .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
                                 .clickable {
                                     initialSourceFocus = false
@@ -345,8 +345,8 @@ private fun VueoOptionRow(
             .background(
                 when {
                     option.selected -> Color.White
-                    focused -> Color(0xFF555555)
-                    else -> Color.Transparent
+                    focused -> Color(0xFF555555).copy(alpha = .85f)
+                    else -> Color(0xFF303030).copy(alpha = .70f)
                 },
                 shape,
             )
@@ -477,6 +477,7 @@ internal fun VueoPlayerEpisodesPanel(
         episodes.filter { it.season == selectedSeason }.sortedBy { it.episode }
     }
     val episodeEntryRequester = remember { FocusRequester() }
+    var episodeEntryRequest by remember { mutableIntStateOf(0) }
     val seasonRequesters = remember(seasons) {
         List(seasons.size.coerceAtLeast(1)) { FocusRequester() }
     }
@@ -495,7 +496,7 @@ internal fun VueoPlayerEpisodesPanel(
         }
     }
     val listTopRequester = if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
-    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -509,21 +510,31 @@ internal fun VueoPlayerEpisodesPanel(
                 .width(520.dp)
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
-            Text(
-                "Episodes",
-                color = Color.White,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                mediaTitle,
-                color = Color.White.copy(alpha = .56f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(14.dp))
+            if (seasons.size > 1) {
+                LazyRow(
+                    state = seasonListState,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp),
+                ) {
+                    itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
+                        VueoSeasonChip(
+                            season = season,
+                            selected = season == selectedSeason,
+                            requester = seasonRequesters[index],
+                            upRequester = FocusRequester.Cancel,
+                            downRequester = FocusRequester.Cancel,
+                            onDown = { episodeEntryRequest++ },
+                            blockLeft = index == 0,
+                            blockRight = index == seasons.lastIndex,
+                            onInteraction = onInteraction,
+                            onFocused = { lastFocusedSeasonIndex = index },
+                        ) {
+                            selectedSeason = season
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
 
             Column(
                 modifier = Modifier
@@ -534,36 +545,28 @@ internal fun VueoPlayerEpisodesPanel(
                     .border(1.dp, cardBorder, PanelShape)
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
-                if (seasons.size > 1) {
-                    LazyRow(
-                        state = seasonListState,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp),
-                    ) {
-                        itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
-                            VueoSeasonChip(
-                                season = season,
-                                selected = season == selectedSeason,
-                                requester = seasonRequesters[index],
-                                upRequester = FocusRequester.Cancel,
-                                downRequester = episodeEntryRequester,
-                                blockLeft = index == 0,
-                                blockRight = index == seasons.lastIndex,
-                                onInteraction = onInteraction,
-                                onFocused = { lastFocusedSeasonIndex = index },
-                            ) {
-                                selectedSeason = season
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                }
+                Text(
+                    "Episodes",
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    mediaTitle,
+                    color = Color.White.copy(alpha = .56f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(14.dp))
 
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     VueoEpisodeList(
                         episodes = seasonEpisodes,
                         currentEpisode = currentEpisode,
                         entryFocusRequester = episodeEntryRequester,
+                        entryRequest = episodeEntryRequest,
                         topRequester = listTopRequester,
                         onInteraction = onInteraction,
                         onSelected = onSelected,
@@ -581,6 +584,7 @@ private fun VueoSeasonChip(
     requester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester,
+    onDown: () -> Unit,
     blockLeft: Boolean,
     blockRight: Boolean,
     onInteraction: () -> Unit,
@@ -606,6 +610,13 @@ private fun VueoSeasonChip(
                 }
             }
             .onPreviewKeyEvent { event ->
+                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        onInteraction()
+                        onDown()
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onClick()
@@ -616,8 +627,8 @@ private fun VueoSeasonChip(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555)
-                    else -> Color.Transparent
+                    focused -> Color(0xFF555555).copy(alpha = .85f)
+                    else -> Color(0xFF303030).copy(alpha = .70f)
                 },
                 shape,
             )
@@ -642,6 +653,7 @@ private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
     entryFocusRequester: FocusRequester,
+    entryRequest: Int,
     topRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
@@ -666,6 +678,13 @@ private fun VueoEpisodeList(
         if (requesters[currentIndex].requestTvFocus()) {
             initialFocusAssigned = true
         }
+    }
+
+    LaunchedEffect(entryRequest) {
+        if (entryRequest == 0 || episodes.isEmpty()) return@LaunchedEffect
+        state.scrollToItem(currentIndex)
+        withFrameNanos { }
+        entryFocusRequester.requestTvFocus()
     }
 
     LazyColumn(
@@ -729,7 +748,7 @@ private fun VueoEpisodeRow(
             }
             .focusable()
             .clickable(onClick = onSelected)
-            .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color.Transparent, shape)
+            .background(if (selected) Color.White else if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
             .border(
                 if (focused) 2.dp else 1.dp,
                 when {
@@ -840,7 +859,7 @@ private fun VueoPanelTextAction(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White else Color.White.copy(alpha = .07f), shape)
+            .background(if (focused) Color.White.copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
             .padding(horizontal = 12.dp, vertical = 7.dp),
     )
 }

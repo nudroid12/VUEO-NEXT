@@ -73,7 +73,7 @@ internal fun VueoPlayerMoreWorkspace(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -240,8 +240,8 @@ private fun VueoMoreCycleRow(
             .focusable()
             .clickable(onClick = onClick)
             .background(
-                if (focused) Color(0xFF555555)
-                else Color.White.copy(alpha = .055f),
+                if (focused) Color(0xFF555555).copy(alpha = .85f)
+                else Color(0xFF303030).copy(alpha = .70f),
                 shape,
             )
             .border(
@@ -309,7 +309,7 @@ private fun VueoMoreToggleRow(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
+            .background(if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
             .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .45f) else Color.Transparent, shape)
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -372,7 +372,7 @@ private fun VueoMoreResetButton(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
+            .background(if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
             .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,

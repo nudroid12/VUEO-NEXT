@@ -241,7 +241,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         )
     }
     val opacity = subtitleAlphaPercent(style.textColor)
-    val cardBackground = Color(0xFF17191C).copy(alpha = .80f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -389,8 +389,16 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         onInteraction = onInteraction,
                                         onFocused = { styleReturnTrackIndex = index },
                                     ) {
-                                        styleOpen = true
-                                        onSelect(track)
+                                        val selected = !subtitlesDisabled && (
+                                            track.selectionId == uiSelectionId ||
+                                                (uiSelectionId == null && track.selected)
+                                            )
+                                        if (selected) {
+                                            onDisable()
+                                        } else {
+                                            styleOpen = true
+                                            onSelect(track)
+                                        }
                                     }
                                 }
                             }
@@ -700,7 +708,7 @@ private fun VueoSubtitleHeaderButton(
             }
             .focusable()
             .background(
-                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .08f),
+                if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f),
                 shape,
             )
             .border(
@@ -782,8 +790,8 @@ private fun VueoSubtitleLanguageRow(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555)
-                    else -> Color.Transparent
+                    focused -> Color(0xFF555555).copy(alpha = .85f)
+                    else -> Color(0xFF303030).copy(alpha = .70f)
                 },
                 shape,
             )
@@ -883,8 +891,8 @@ private fun VueoSubtitleTrackRow(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555)
-                    else -> Color.White.copy(alpha = .025f)
+                    focused -> Color(0xFF555555).copy(alpha = .85f)
+                    else -> Color(0xFF303030).copy(alpha = .70f)
                 },
                 shape,
             )
@@ -1065,12 +1073,12 @@ private fun VueoSubtitleStepperButton(
             }
             .focusable()
             .background(
-                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .09f),
+                if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f),
                 shape,
             )
             .border(
                 if (focused) 2.dp else 1.dp,
-                if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
+                if (focused) Color(0xFF888888) else Color(0xFF303030).copy(alpha = .70f),
                 shape,
             ),
         contentAlignment = Alignment.Center,
@@ -1132,8 +1140,8 @@ private fun VueoSubtitleToggleRow(
                 .background(
                     when {
                         enabled -> Color.White
-                        focused -> Color(0xFF555555)
-                        else -> Color.White.copy(alpha = .09f)
+                        focused -> Color(0xFF555555).copy(alpha = .85f)
+                        else -> Color(0xFF303030).copy(alpha = .70f)
                     },
                     shape,
                 )
@@ -1284,7 +1292,7 @@ private fun VueoSubtitleActionRow(
                 true
             }
             .focusable()
-            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .045f), shape)
+            .background(if (focused) TvDesign.Accent.copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(
