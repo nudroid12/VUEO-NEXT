@@ -251,7 +251,8 @@ internal fun TvDetailPresentation(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = if (hasPeopleTabs && !hasRelated)
+                maxOf(88.dp, maxHeight / 2 - 96.dp) else 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "vueo-hero:$mediaKey") {
@@ -326,6 +327,18 @@ internal fun TvDetailPresentation(
                         sectionRequester = peopleContentRequester,
                         upRequester = peopleUp,
                         downRequester = if (hasRelated) relatedContentRequester else null,
+                        onCenterContent = { contentTop, contentHeight ->
+                            val layout = listState.layoutInfo
+                            val section = layout.visibleItemsInfo.firstOrNull { it.index == peopleIndex }
+                            if (section != null) {
+                                val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                                val distance = section.offset + contentTop + contentHeight / 2f - viewportCenter
+                                if (kotlin.math.abs(distance) > 1f) {
+                                    listState.animateScrollBy(distance,
+                                        animationSpec = spring(dampingRatio = .95f, stiffness = 180f))
+                                }
+                            }
+                        },
                         onMoveUp = { revealAndFocus(upIndex, peopleUp) },
                         onMoveDown = if (hasRelated) ({ revealAndFocus(peopleIndex + 1, relatedContentRequester) }) else null,
                         onOpenCast = { person ->
