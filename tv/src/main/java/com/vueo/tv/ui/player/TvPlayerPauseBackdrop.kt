@@ -13,6 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.platform.LocalContext
+import android.text.format.DateFormat
+import java.util.Date
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -33,7 +42,18 @@ internal fun VueoPlayerPauseBackdrop(
     episode: EpisodeItem?,
     positionMs: Long,
     durationMs: Long,
+    playbackSpeed: Float,
 ) {
+    val context = LocalContext.current
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            while (true) {
+                nowMs = System.currentTimeMillis()
+                delay(1_000L)
+            }
+        }
+    }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(300)),
@@ -52,6 +72,30 @@ internal fun VueoPlayerPauseBackdrop(
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                 listOf(Color.Transparent, Color.Black.copy(alpha = .85f)),
             )))
+            val timeFormat = DateFormat.getTimeFormat(context)
+            val validSpeed = playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
+            val remainingWallMs = if (durationMs > 0L) {
+                ((durationMs - positionMs.coerceIn(0L, durationMs)).toDouble() / validSpeed).toLong()
+            } else null
+            Column(
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 56.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = timeFormat.format(Date(nowMs)),
+                    color = Color.White,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                remainingWallMs?.let {
+                    Text(
+                        text = "End at ${timeFormat.format(Date(nowMs + it))}",
+                        color = Color.White.copy(alpha = .72f),
+                        fontSize = 14.sp,
+                    )
+                }
+            }
             Column(
                 modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 56.dp, vertical = 56.dp)
                     .widthIn(max = 680.dp),
@@ -72,6 +116,19 @@ internal fun VueoPlayerPauseBackdrop(
                 details?.let {
                     Text(it, color = Color.White.copy(alpha = .85f), fontSize = 18.sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                val synopsis = episode?.overview?.takeIf { it.isNotBlank() }
+                    ?: media.description?.takeIf { it.isNotBlank() }
+                synopsis?.let {
+                    Text(
+                        text = it.replace(Regex("<[^>]*>"), " ")
+                            .replace(Regex("\\s+"), " ").trim().take(1_000),
+                        color = Color.White.copy(alpha = .78f),
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 val knownDuration = durationMs > 0L
                 val displayPosition = if (knownDuration) positionMs.coerceIn(0L, durationMs)

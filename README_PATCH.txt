@@ -1,9 +1,6 @@
-Apply after Sync by dialogue Mobile + TV and Sync pill patches. Extract at repository root, replace included files. No workspace/button layout changes.
-
-- External subtitle labels register their URLs before playback loading (covers URLs without file extensions). SubtitleSessionDataSource captures only registered, uncached, full subtitle reads starting at byte zero with unspecified length. Cache commits only at EOF; closing/cancellation/errors/range reads do not cache partial files. Video URLs are not registered. Max file 2 MiB, max 16 entries, total cache 8 MiB; registered URLs bounded to 256. Existing preflight cache retained within the same limits.
-- Sync prefers prepared/playback cache. No second subtitle download needed if complete bytes are cached. Falls back to bounded IO download as before. A freshly installed patch cannot recover reads from the previous process; reselect the subtitle track if needed.
-- UI distinguishes HTTP status, timeout, file access, empty/oversized file, HTML response, unsupported TTML/unknown format, missing timestamps, processing/setup errors. Coroutine cancellation still propagated.
-- Performance Diagnostic includes DISCOVERY_TRACE scan=0 stage=SUBTITLE_SYNC_START/READ/READY/FAILED with host only (no path, query, token), cache/download, byte size, charset, detected format, cue count or error category and exception class. No response body, subtitle dialogue, request headers or raw exception messages logged.
-
-Validation: source wiring/delimiter checks and ZIP integrity passed; no build or device tests run per user instruction. Underlying screenshot failure is not identified without the new diagnostic evidence.
-Device checks: reselect external subtitle, open Sync; confirm source=cache after player full read; verify playback/subtitle seek remains normal. If failure persists, Copy Performance Diagnostic after opening Sync. Also verify HTTP failure vs unsupported format messages and cancel while loading.
+Extract at repository root, replacing included TV files. Apply to the current cumulative session repository.
+Pause backdrop adds synopsis below episode details (episode overview first, then media description; hidden if neither available). Maximum 3 lines, 15sp, 20sp line-height.
+Top-right current clock: 30sp; End at below: 14sp. Uses device local timezone and system 12/24-hour preference. Clock refreshed each second only while pause backdrop is visible. End at = current wall time + remaining video duration / playback speed, assuming resume now without future buffering. Hidden if duration unavailable.
+Retains 8-second pause timer, title/episode, elapsed/duration, remaining video minutes, resume hint and root focus behavior. No network requests for missing synopsis.
+Validation: source/call-site/delimiter review, simple speed arithmetic sanity check and ZIP integrity passed. No local build or device test performed.
+Device checks: synopsis for episode/movie and missing metadata; clock 12/24-hour preference; End at at 1x/2x; pause time shifts End at forward; resume dismisses backdrop.

@@ -1808,6 +1808,7 @@ fun TvPlayerScreen(
             episode = episode,
             positionMs = positionMs,
             durationMs = durationMs,
+            playbackSpeed = playbackSpeed,
         )
 
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
