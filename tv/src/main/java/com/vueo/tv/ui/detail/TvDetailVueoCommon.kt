@@ -62,18 +62,18 @@ internal fun VueoDetailBackdrop(
                 .graphicsLayer { alpha = scrimAlpha }
                 .background(
                     Brush.horizontalGradient(
-                        0f to TvDesign.Black.copy(alpha = .99f),
-                        .18f to TvDesign.Black.copy(alpha = .94f),
-                        .42f to TvDesign.Black.copy(alpha = .70f),
-                        .68f to TvDesign.Black.copy(alpha = .22f),
+                        0f to TvDesign.Black.copy(alpha = .88f),
+                        .18f to TvDesign.Black.copy(alpha = .72f),
+                        .42f to TvDesign.Black.copy(alpha = .42f),
+                        .68f to TvDesign.Black.copy(alpha = .10f),
                         1f to Color.Transparent,
                     )
                 )
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
-                        .56f to Color.Transparent,
-                        .78f to TvDesign.Black.copy(alpha = .30f),
+                        .44f to Color.Transparent,
+                        .72f to TvDesign.Black.copy(alpha = .38f),
                         1f to TvDesign.Black.copy(alpha = .94f),
                     )
                 ),

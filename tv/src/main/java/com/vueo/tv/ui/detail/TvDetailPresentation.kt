@@ -6,6 +6,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -129,16 +130,18 @@ internal fun TvDetailPresentation(
             rememberedEpisodeId != null &&
             rememberedEpisodeId == state.selectedEpisode?.id
         if (restoreEpisode) {
+            listState.scrollToItem(if (hasSeasons) 2 else 1)
             delay(120)
             runCatching { episodeRequester.requestFocus() }
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
+        val heroHeight = maxHeight
         VueoDetailBackdrop(
             item = state.item,
             imageAlpha = backdropAlpha,
@@ -154,6 +157,7 @@ internal fun TvDetailPresentation(
             item(key = "vueo-hero:$mediaKey") {
                 VueoDetailHero(
                     state = state,
+                    heroHeight = heroHeight,
                     playRequester = playRequester,
                     listRequester = listRequester,
                     downRequester = firstBelowHero,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.MediaRating
@@ -51,12 +53,13 @@ import com.vueo.tv.R
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
-private val VueoHeroContentWidth = .61f
-private val VueoHeroActionSize = 52.dp
+private val VueoHeroContentWidth = .50f
+private val VueoHeroActionSize = 44.dp
 
 @Composable
 internal fun VueoDetailHero(
     state: TvDetailPresentationState,
+    heroHeight: Dp,
     playRequester: FocusRequester,
     listRequester: FocusRequester,
     downRequester: FocusRequester?,
@@ -96,11 +99,12 @@ internal fun VueoDetailHero(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(VueoDetailHeroHeight)
+            .heightIn(min = heroHeight)
             .padding(
                 start = VueoDetailHorizontalPadding,
                 end = VueoDetailHorizontalPadding,
-                bottom = 34.dp,
+                top = 24.dp,
+                bottom = 32.dp,
             ),
         verticalArrangement = Arrangement.Bottom,
     ) {
@@ -109,7 +113,7 @@ internal fun VueoDetailHero(
             logoUrl = state.vueoExtras.logo,
         )
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(12.dp))
 
         val watchedRequester = remember(item.id, item.type) { FocusRequester() }
         val showWatched = !item.isDetailSeries()
@@ -150,7 +154,7 @@ internal fun VueoDetailHero(
             }
         }
 
-        Spacer(Modifier.height(17.dp))
+        Spacer(Modifier.height(12.dp))
 
         if (creditLines.isNotEmpty()) {
             Column(
@@ -184,7 +188,7 @@ internal fun VueoDetailHero(
                 fontSize = 14.sp,
                 lineHeight = 19.sp,
                 fontWeight = FontWeight.Normal,
-                maxLines = 6,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(VueoHeroContentWidth),
             )
@@ -236,8 +240,8 @@ private fun VueoHeroTitle(
             url = logoUrl,
             contentDescription = title,
             modifier = Modifier
-                .height(100.dp)
-                .fillMaxWidth(.40f),
+                .height(78.dp)
+                .fillMaxWidth(.36f),
             contentScale = ContentScale.Fit,
             fallback = Color.Transparent,
         )
@@ -245,12 +249,12 @@ private fun VueoHeroTitle(
         Text(
             text = title.uppercase(),
             color = TvDesign.White,
-            fontSize = 50.sp,
-            lineHeight = 54.sp,
+            fontSize = 38.sp,
+            lineHeight = 42.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(.58f),
+            modifier = Modifier.fillMaxWidth(VueoHeroContentWidth),
         )
     }
 }
