@@ -159,7 +159,7 @@ internal fun VueoPlayerSourcesPanel(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(520.dp)
+                .width(420.dp)
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 28.dp),
         ) {
             Text(
@@ -222,7 +222,6 @@ internal fun VueoPlayerSourcesPanel(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
                     .clip(PanelShape)
                     .background(cardBackground)
                     .border(1.dp, cardBorder, PanelShape)
@@ -230,8 +229,10 @@ internal fun VueoPlayerSourcesPanel(
             ) {
                 Text(
                     title,
-                    color = Color.White.copy(alpha = .56f),
-                    fontSize = 11.sp,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 27.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -240,6 +241,7 @@ internal fun VueoPlayerSourcesPanel(
                     VueoOptionList(
                         options = filteredOptions,
                         maxHeightFraction = 1f,
+                        compactHeight = true,
                         onInteraction = onInteraction,
                         onSelected = onSelected,
                         topRequester = tabRequester(selectedProvider),
@@ -263,6 +265,7 @@ internal fun VueoOptionList(
     initialFocusKey: String? = null,
     onFocused: (TvPlayerOption) -> Unit = {},
     assignInitialFocus: Boolean = true,
+    compactHeight: Boolean = false,
 ) {
     val state = rememberLazyListState()
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -299,7 +302,8 @@ internal fun VueoOptionList(
     }
     LazyColumn(
         state = state,
-        modifier = Modifier.fillMaxHeight(maxHeightFraction),
+        modifier = if (compactHeight) Modifier.fillMaxWidth()
+        else Modifier.fillMaxHeight(maxHeightFraction),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         itemsIndexed(options, key = { _, option -> option.key }) { index, option ->

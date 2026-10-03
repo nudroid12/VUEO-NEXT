@@ -925,7 +925,7 @@ private fun VueoSubtitleTrackRow(
             Box(
                 modifier = Modifier
                     .background(
-                        Color.White.copy(alpha = .055f),
+                        Color(0xFF242629),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
