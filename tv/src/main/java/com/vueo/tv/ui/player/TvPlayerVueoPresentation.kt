@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -474,19 +475,25 @@ private fun VueoPlayerControls(
     }
     val bottomDefaultRequester = bottomActions.firstOrNull()?.requester ?: FocusRequester.Cancel
 
+    // Keep chrome travel short and independent of measured panel height.
+    // A longer deceleration and gentler exit avoid the previous abrupt hide.
+    val chromeTravelPx = with(LocalDensity.current) { 28.dp.roundToPx() }
+    val chromeEnterEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+    val chromeExitEasing = CubicBezierEasing(0.4f, 0f, 1f, 1f)
+
     CompositionLocalProvider(LocalPlayerChromeInteractive provides visible) {
         Box(Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = visible,
                 modifier = Modifier.align(Alignment.TopCenter),
                 enter = slideInVertically(
-                    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
-                    initialOffsetY = { -it },
-                ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+                    animationSpec = tween(240, easing = chromeEnterEasing),
+                    initialOffsetY = { -chromeTravelPx },
+                ) + fadeIn(tween(240, easing = chromeEnterEasing)),
                 exit = slideOutVertically(
-                    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
-                    targetOffsetY = { -it },
-                ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+                    animationSpec = tween(180, easing = chromeExitEasing),
+                    targetOffsetY = { -chromeTravelPx },
+                ) + fadeOut(tween(180, easing = chromeExitEasing)),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 30.dp, end = 30.dp, top = 28.dp),
@@ -569,13 +576,13 @@ private fun VueoPlayerControls(
                 visible = visible,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically(
-                    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
-                    initialOffsetY = { it },
-                ) + fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+                    animationSpec = tween(240, easing = chromeEnterEasing),
+                    initialOffsetY = { chromeTravelPx },
+                ) + fadeIn(tween(240, easing = chromeEnterEasing)),
                 exit = slideOutVertically(
-                    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
-                    targetOffsetY = { it },
-                ) + fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+                    animationSpec = tween(180, easing = chromeExitEasing),
+                    targetOffsetY = { chromeTravelPx },
+                ) + fadeOut(tween(180, easing = chromeExitEasing)),
             ) {
                 Column(
                     Modifier.fillMaxWidth()
