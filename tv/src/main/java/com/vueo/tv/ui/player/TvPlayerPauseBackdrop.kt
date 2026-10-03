@@ -147,8 +147,13 @@ internal fun VueoPlayerPauseBackdrop(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("Press OK to resume", color = Color.White.copy(alpha = .65f), fontSize = 14.sp)
             }
+            Text(
+                text = "Press OK to resume",
+                color = Color.White.copy(alpha = .65f),
+                fontSize = 14.sp,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = 56.dp),
+            )
         }
     }
 }
