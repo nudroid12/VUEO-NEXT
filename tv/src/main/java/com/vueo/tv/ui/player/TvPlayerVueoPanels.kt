@@ -45,7 +45,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -83,10 +82,10 @@ internal fun VueoPlayerCompactOverlay(
         else -> ""
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .20f))) {
+    Box(Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().width(500.dp)
-                .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .96f), Color.Black.copy(alpha = .78f), Color.Transparent))),
+                .background(Color.Black.copy(alpha = .50f)),
         )
         Column(
             modifier = Modifier.align(Alignment.BottomStart)
@@ -135,21 +134,12 @@ internal fun VueoPlayerSourcesPanel(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = .20f))
-            .background(
-                Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .60f),
-                    .38f to Color.Black.copy(alpha = .30f),
-                    .72f to Color.Black.copy(alpha = .15f),
-                    1f to Color.Black.copy(alpha = .08f),
-                )
-            )
     ) {
         Column(
             modifier = Modifier
@@ -505,21 +495,12 @@ internal fun VueoPlayerEpisodesPanel(
         }
     }
     val listTopRequester = if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = .20f))
-            .background(
-                Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .60f),
-                    .38f to Color.Black.copy(alpha = .30f),
-                    .72f to Color.Black.copy(alpha = .15f),
-                    1f to Color.Black.copy(alpha = .08f),
-                )
-            )
     ) {
         Column(
             modifier = Modifier

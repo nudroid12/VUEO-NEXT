@@ -32,7 +32,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -74,21 +73,12 @@ internal fun VueoPlayerMoreWorkspace(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = .20f))
-            .background(
-                Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .12f),
-                    .46f to Color.Black.copy(alpha = .28f),
-                    .72f to Color.Black.copy(alpha = .58f),
-                    1f to Color.Black.copy(alpha = .94f),
-                )
-            )
     ) {
         Column(
             modifier = Modifier

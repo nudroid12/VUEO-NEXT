@@ -91,15 +91,7 @@ internal fun VueoPlayerStatusIndicators(
                         )
                     }
                 }
-                if (buffering) {
-                    Text(
-                        "Buffering…",
-                        color = TvDesign.Accent,
-                        fontSize = 14.sp,
-                        modifier = Modifier.background(Color.Black.copy(alpha = .70f), RoundedCornerShape(50))
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
-                    )
-                }
+
             }
         }
         if (enabled && translating) {
