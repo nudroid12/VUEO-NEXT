@@ -10,7 +10,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -430,7 +429,7 @@ private fun VueoRelatedRow(
                     .focusRequester(sectionRequester)
                     .focusRestorer { requesters[0] ?: FocusRequester.Default }
                     .focusGroup(),
-                contentPadding = PaddingValues(start = paintInset, end = VueoDetailHorizontalPadding, top = 6.dp, bottom = 6.dp),
+                contentPadding = PaddingValues(start = paintInset, end = 18.dp, top = 6.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 itemsIndexed(visible, key = { _, item -> "${item.type}:${item.id}" }) { index, item ->
@@ -465,64 +464,57 @@ private fun VueoRelatedCard(
         label = "detail39RelatedScale",
     )
 
-    Box(
-        modifier = Modifier
-            .width(VueoRelatedWidth)
-            .height(VueoRelatedHeight)
-            .zIndex(if (focused) 1f else 0f)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .focusRequester(requester)
-            .focusProperties {
-                upRequester?.let { up = it }
-                downRequester?.let { down = it }
-            }
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onOpen)
-            .clip(VueoDetailCardShape)
-            .background(TvDesign.SurfaceRaised)
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) TvDesign.Focus else Color.Transparent,
-                shape = VueoDetailCardShape,
-            ),
-    ) {
-        TvNetworkImage(
-            url = item.background ?: item.poster,
-            contentDescription = item.name,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            fallback = TvDesign.SurfaceRaised,
-        )
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-            0f to Color.Transparent,
-            .45f to Color.Transparent,
-            1f to TvDesign.Black.copy(alpha = .90f),
-        )))
-        Column(
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+    Column(Modifier.width(VueoRelatedWidth)) {
+        Box(
+            modifier = Modifier
+                .width(VueoRelatedWidth)
+                .height(VueoRelatedHeight)
+                .zIndex(if (focused) 1f else 0f)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .focusRequester(requester)
+                .focusProperties {
+                    upRequester?.let { up = it }
+                    downRequester?.let { down = it }
+                }
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(onClick = onOpen)
+                .clip(VueoDetailCardShape)
+                .background(TvDesign.SurfaceRaised)
+                .border(
+                    width = if (focused) 2.dp else 0.dp,
+                    color = if (focused) TvDesign.Focus else Color.Transparent,
+                    shape = VueoDetailCardShape,
+                ),
         ) {
+            TvNetworkImage(
+                url = item.background ?: item.poster,
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                fallback = TvDesign.SurfaceRaised,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = item.name,
+            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .82f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        item.releaseInfo?.takeIf(String::isNotBlank)?.let { release ->
+            Spacer(Modifier.height(2.dp))
             Text(
-                text = item.name,
-                color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .82f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
+                text = release,
+                color = TvDesign.White.copy(alpha = .65f),
+                fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            item.releaseInfo?.takeIf(String::isNotBlank)?.let { release ->
-                Text(
-                    text = release,
-                    color = TvDesign.White.copy(alpha = .65f),
-                    fontSize = 9.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

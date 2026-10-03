@@ -247,7 +247,7 @@ internal fun VueoDetailEpisodes(
                         .focusRequester(sectionRequester)
                         .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
                         .focusGroup(),
-                    contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
+                    contentPadding = PaddingValues(end = 18.dp, top = 7.dp, bottom = 7.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { _, episode ->
