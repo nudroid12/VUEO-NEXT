@@ -35,6 +35,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
@@ -59,12 +60,13 @@ internal fun TvDetailPresentation(
 ) {
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
-    val detailBringIntoView = remember {
+    val safeBottom = with(LocalDensity.current) { 32.dp.toPx() }
+    val detailBringIntoView = remember(safeBottom) {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
                 size >= containerSize -> 0f
                 offset < 0f -> offset
-                offset + size > containerSize -> offset + size - containerSize
+                offset + size > containerSize - safeBottom -> offset + size - (containerSize - safeBottom)
                 else -> 0f
             }
         }
@@ -242,6 +244,7 @@ internal fun TvDetailPresentation(
                     VueoDetailEpisodes(
                         media = state.item,
                         episodes = state.episodes,
+                        episodeRatings = state.episodeRatings,
                         selectedEpisode = state.selectedEpisode,
                         history = state.history,
                         sectionRequester = episodeRequester,

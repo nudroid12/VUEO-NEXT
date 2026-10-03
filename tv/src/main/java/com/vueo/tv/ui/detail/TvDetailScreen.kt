@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.enrichment.MediaRating
 import com.vueo.shared.core.media.EpisodeItem
+import com.vueo.shared.core.detail.DetailEpisodeRatingsClient
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.search.MediaEntityTarget
@@ -55,6 +56,9 @@ fun TvDetailScreen(
     }
     var vueoExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf(TvDetailVueoExtras())
+    }
+    var episodeRatings by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf<Map<Pair<Int, Int>, Double>>(emptyMap())
     }
     var supplementalRatings by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<MediaRating>>(emptyList())
@@ -142,6 +146,7 @@ fun TvDetailScreen(
         dnaMatch = null
         vueoExtras = TvDetailVueoExtras()
         supplementalRatings = emptyList()
+        episodeRatings = emptyMap()
         publishRatings(shell)
         watchlisted = runtime.libraryStore.isWatchlisted(shell)
         movieWatched = runtime.libraryStore.isMarkedWatched(shell)
@@ -202,6 +207,10 @@ fun TvDetailScreen(
         }
 
         launch {
+            episodeRatings = DetailEpisodeRatingsClient.load(core, runtime.pluginStore.tmdbApiKey())
+        }
+
+        launch {
             val fetched = runCatching { runtime.ratings(core) }.getOrDefault(emptyList())
             supplementalRatings = fetched
             publishRatings(item)
@@ -255,6 +264,7 @@ fun TvDetailScreen(
             movieWatched = movieWatched,
             vueoExtras = vueoExtras,
             ratings = ratings,
+            episodeRatings = episodeRatings,
             dnaMatch = dnaMatch,
             seasons = seasons,
             selectedSeason = selectedSeason,
@@ -325,6 +335,7 @@ internal data class TvDetailPresentationState(
     val movieWatched: Boolean,
     val vueoExtras: TvDetailVueoExtras,
     val ratings: List<MediaRating>,
+    val episodeRatings: Map<Pair<Int, Int>, Double>,
     val dnaMatch: Int?,
     val seasons: List<Int>,
     val selectedSeason: Int?,

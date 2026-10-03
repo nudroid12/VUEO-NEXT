@@ -136,6 +136,7 @@ internal fun VueoDetailSeasonTabs(
 internal fun VueoDetailEpisodes(
     media: MediaItem,
     episodes: List<EpisodeItem>,
+    episodeRatings: Map<Pair<Int, Int>, Double>,
     selectedEpisode: EpisodeItem?,
     history: List<LibraryPlaybackEntry>,
     sectionRequester: FocusRequester,
@@ -185,6 +186,7 @@ internal fun VueoDetailEpisodes(
                     cardWidth = cardWidth,
                     cardHeight = cardHeight,
                     runtimeMinutes = media.runtimeMinutes,
+                    imdbRating = episodeRatings[episode.season to episode.episode],
                     progress = progress,
                     selected = selectedEpisode?.id == episode.id,
                     requester = requesters.getValue(episode.id),
@@ -208,6 +210,7 @@ private fun VueoEpisodeCard(
     cardWidth: androidx.compose.ui.unit.Dp,
     cardHeight: androidx.compose.ui.unit.Dp,
     runtimeMinutes: Int?,
+    imdbRating: Double?,
     progress: LibraryPlaybackEntry?,
     selected: Boolean,
     requester: FocusRequester,
@@ -308,10 +311,16 @@ private fun VueoEpisodeCard(
                 val runtime = progress?.durationMs?.takeIf { it > 0L }?.let { (it / 60_000L).toInt() }
                     ?: runtimeMinutes
                 val released = vueoDetailFormatReleaseDate(episode.released)
-                if (runtime != null || released != null) {
+                if (runtime != null || released != null || imdbRating != null) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         runtime?.takeIf { it > 0 }?.let {
                             Text("${it}m", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
+                        }
+                        imdbRating?.takeIf { it.isFinite() && it > 0.0 && it <= 10.0 }?.let { score ->
+                            Spacer(Modifier.width(9.dp))
+                            Text("IMDb", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
+                            Spacer(Modifier.width(4.dp))
+                            Text(String.format(Locale.US, "%.1f", score), color = Color(0xFFF5C518), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         }
                         Spacer(Modifier.weight(1f))
                         released?.let {
