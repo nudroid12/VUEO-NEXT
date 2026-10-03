@@ -2,6 +2,9 @@ package com.vueo.tv.player
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.key
 import androidx.compose.runtime.withFrameNanos
@@ -31,6 +34,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -648,6 +652,7 @@ private fun VueoSeasonChip(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
@@ -687,27 +692,40 @@ private fun VueoEpisodeList(
         entryFocusRequester.requestTvFocus()
     }
 
-    LazyColumn(
-        state = state,
-        modifier = Modifier.fillMaxHeight(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(bottom = 12.dp),
-    ) {
-        itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
-            val selected = currentEpisode?.let {
-                it.id == episode.id ||
-                    (it.season == episode.season && it.episode == episode.episode)
-            } == true
-            VueoEpisodeRow(
-                episode = episode,
-                selected = selected,
-                requester = requesters[index],
-                topRequester = topRequester,
-                blockUp = index == 0,
-                blockDown = index == episodes.lastIndex,
-                onInteraction = onInteraction,
-            ) {
-                onSelected(episode)
+    // Keep the focused row at the top, matching Details' leading-edge reveal.
+    // LazyColumn clamps at the end before focus moves down the remaining rows.
+    val episodeReveal = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                if (containerSize <= 0f || size <= 0f) return 0f
+                return offset
+            }
+        }
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides episodeReveal) {
+
+        LazyColumn(
+            state = state,
+            modifier = Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 12.dp),
+        ) {
+            itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
+                val selected = currentEpisode?.let {
+                    it.id == episode.id ||
+                        (it.season == episode.season && it.episode == episode.episode)
+                } == true
+                VueoEpisodeRow(
+                    episode = episode,
+                    selected = selected,
+                    requester = requesters[index],
+                    topRequester = topRequester,
+                    blockUp = index == 0,
+                    blockDown = index == episodes.lastIndex,
+                    onInteraction = onInteraction,
+                ) {
+                    onSelected(episode)
+                }
             }
         }
     }

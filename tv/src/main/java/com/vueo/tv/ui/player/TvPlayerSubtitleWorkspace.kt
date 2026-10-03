@@ -462,7 +462,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     .weight(1f)
                                     .verticalScroll(rememberScrollState())
                                     .padding(bottom = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(11.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
                                 VueoSubtitleStepperRow(
                                     title = "Sync",
@@ -650,7 +650,6 @@ internal fun VueoPlayerSubtitleWorkspace(
                                 )
                                 VueoSubtitleActionRow(
                                     title = "Reset Style",
-                                    detail = "White • 22sp • black outline • background off • 8% bottom",
                                     requester = resetRequester,
                                     upRequester = positionRequester,
                                     downRequester = FocusRequester.Cancel,
@@ -916,21 +915,19 @@ private fun VueoSubtitleTrackRow(
             Box(
                 modifier = Modifier
                     .background(
-                        if (selected) Color.Black.copy(alpha = .06f) else if (focused) Color.White.copy(alpha = .12f)
-                        else Color.White.copy(alpha = .055f),
+                        Color.White.copy(alpha = .055f),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
                         1.dp,
-                        if (selected) Color.Black.copy(alpha = .20f) else if (focused) Color.White.copy(alpha = .38f)
-                        else Color.White.copy(alpha = .09f),
+                        Color.White.copy(alpha = .09f),
                         RoundedCornerShape(999.dp),
                     )
                     .padding(horizontal = 7.dp, vertical = 2.dp),
             ) {
                 Text(
                     provider.ifBlank { "Subtitle" },
-                    color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
+                    color = Color.White.copy(alpha = .66f),
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -981,10 +978,10 @@ private fun VueoSubtitleStepperRow(
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
 ) {
-    val minusRequester = remember(title) { FocusRequester() }
-    val internalValueRequester = remember(title) { FocusRequester() }
-    val plusRequester = remember(title) { FocusRequester() }
-    val valueRequester = requester ?: internalValueRequester
+    val internalRequester = remember(title) { FocusRequester() }
+    val valueRequester = requester ?: internalRequester
+    var focused by remember(valueRequester) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
 
     Column(Modifier.fillMaxWidth()) {
         Text(
@@ -993,103 +990,70 @@ private fun VueoSubtitleStepperRow(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(3.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(30.dp)
+                .focusRequester(valueRequester)
+                .focusProperties {
+                    up = upRequester
+                    down = downRequester
+                    left = leftRequester
+                    right = FocusRequester.Cancel
+                }
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onInteraction()
+                }
+                .onPreviewKeyEvent { event ->
+                    when (event.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (event.type == KeyEventType.KeyDown) {
+                                onInteraction()
+                                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                    onDecrease()
+                                } else {
+                                    onIncrease()
+                                }
+                            }
+                            true
+                        }
+                        else -> {
+                            if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                            onInteraction()
+                            if (event.type == KeyEventType.KeyUp) onIncrease()
+                            true
+                        }
+                    }
+                }
+                .focusable()
+                .background(
+                    if (focused) Color(0xFF555555).copy(alpha = .85f)
+                    else Color(0xFF303030).copy(alpha = .70f),
+                    shape,
+                )
+                .border(
+                    if (focused) 2.dp else 1.dp,
+                    if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
+                    shape,
+                )
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            VueoSubtitleStepperButton(
-                label = "−",
-                modifier = Modifier.width(46.dp),
-                requester = minusRequester,
-                upRequester = upRequester,
-                downRequester = downRequester,
-                leftRequester = leftRequester,
-                rightRequester = valueRequester,
-                onInteraction = onInteraction,
-                onClick = onDecrease,
-            )
-            VueoSubtitleStepperButton(
-                label = value,
-                modifier = Modifier.weight(1f),
-                requester = valueRequester,
-                upRequester = upRequester,
-                downRequester = downRequester,
-                leftRequester = minusRequester,
-                rightRequester = plusRequester,
-                onInteraction = onInteraction,
-                onClick = onIncrease,
-            )
-            VueoSubtitleStepperButton(
-                label = "+",
-                modifier = Modifier.width(46.dp),
-                requester = plusRequester,
-                upRequester = upRequester,
-                downRequester = downRequester,
-                leftRequester = valueRequester,
-                rightRequester = FocusRequester.Cancel,
-                onInteraction = onInteraction,
-                onClick = onIncrease,
-            )
+            Text("−", color = Color.White, fontSize = 16.sp)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    value,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+            Text("+", color = Color.White, fontSize = 16.sp)
         }
-    }
-}
-
-@Composable
-private fun VueoSubtitleStepperButton(
-    label: String,
-    modifier: Modifier,
-    requester: FocusRequester,
-    upRequester: FocusRequester,
-    downRequester: FocusRequester,
-    leftRequester: FocusRequester,
-    rightRequester: FocusRequester,
-    onInteraction: () -> Unit,
-    onClick: () -> Unit,
-) {
-    var focused by remember(requester) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(11.dp)
-
-    Box(
-        modifier = modifier
-            .height(38.dp)
-            .focusRequester(requester)
-            .focusProperties {
-                up = upRequester
-                down = downRequester
-                left = leftRequester
-                right = rightRequester
-            }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
-                onInteraction()
-                if (event.type == KeyEventType.KeyUp) onClick()
-                true
-            }
-            .focusable()
-            .background(
-                if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f),
-                shape,
-            )
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused) Color(0xFF888888) else Color(0xFF303030).copy(alpha = .70f),
-                shape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            color = Color.White,
-            fontSize = if (label == "+" || label == "−") 18.sp else 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
     }
 }
 
@@ -1114,11 +1078,11 @@ private fun VueoSubtitleToggleRow(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(3.dp))
         Box(
             modifier = Modifier
                 .width(64.dp)
-                .height(38.dp)
+                .height(30.dp)
                 .focusRequester(requester)
                 .focusProperties {
                     up = upRequester
@@ -1194,7 +1158,7 @@ private fun VueoSubtitleColorRow(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(3.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             colours.forEachIndexed { index, colour ->
                 var focused by remember(colour) { mutableStateOf(false) }
@@ -1259,7 +1223,6 @@ private fun VueoSubtitleColorRow(
 @Composable
 private fun VueoSubtitleActionRow(
     title: String,
-    detail: String,
     requester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester,
@@ -1271,9 +1234,10 @@ private fun VueoSubtitleActionRow(
     val shape = RoundedCornerShape(11.dp)
     val contentColor = if (focused) subtitleAccentContentColor() else Color.White
 
-    Column(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(120.dp)
+            .height(30.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = upRequester
@@ -1293,7 +1257,8 @@ private fun VueoSubtitleActionRow(
             }
             .focusable()
             .background(if (focused) TvDesign.Accent.copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             title,
@@ -1301,14 +1266,7 @@ private fun VueoSubtitleActionRow(
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            detail,
-            color = if (focused) contentColor.copy(alpha = .62f) else Color.White.copy(alpha = .44f),
-            fontSize = 8.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+
     }
 }
 
