@@ -49,6 +49,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -86,10 +87,10 @@ internal fun VueoPlayerCompactOverlay(
         else -> ""
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .20f))) {
         Box(
             modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().width(500.dp)
-                .background(Color.Black.copy(alpha = .50f)),
+                .background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = .96f), Color.Black.copy(alpha = .78f), Color.Transparent))),
         )
         Column(
             modifier = Modifier.align(Alignment.BottomStart)
@@ -138,12 +139,21 @@ internal fun VueoPlayerSourcesPanel(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
+            .background(Color.Black.copy(alpha = .20f))
+            .background(
+                Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .60f),
+                    .38f to Color.Black.copy(alpha = .30f),
+                    .72f to Color.Black.copy(alpha = .15f),
+                    1f to Color.Black.copy(alpha = .08f),
+                )
+            )
     ) {
         Column(
             modifier = Modifier
@@ -157,14 +167,6 @@ internal fun VueoPlayerSourcesPanel(
                 color = Color.White,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                title,
-                color = Color.White.copy(alpha = .56f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(9.dp))
             Row(
@@ -202,7 +204,7 @@ internal fun VueoPlayerSourcesPanel(
                                     } else false
                                 }
                                 .clip(shape)
-                                .background(if (selected) Color.White else if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f))
+                                .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color(0xFF303030))
                                 .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
                                 .clickable {
                                     initialSourceFocus = false
@@ -226,6 +228,14 @@ internal fun VueoPlayerSourcesPanel(
                     .border(1.dp, cardBorder, PanelShape)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
+                Text(
+                    title,
+                    color = Color.White.copy(alpha = .56f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(9.dp))
                 key(selectedProvider) {
                     VueoOptionList(
                         options = filteredOptions,
@@ -349,8 +359,8 @@ private fun VueoOptionRow(
             .background(
                 when {
                     option.selected -> Color.White
-                    focused -> Color(0xFF555555).copy(alpha = .85f)
-                    else -> Color(0xFF303030).copy(alpha = .70f)
+                    focused -> Color(0xFF555555)
+                    else -> Color.Transparent
                 },
                 shape,
             )
@@ -500,12 +510,21 @@ internal fun VueoPlayerEpisodesPanel(
         }
     }
     val listTopRequester = if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
+            .background(Color.Black.copy(alpha = .20f))
+            .background(
+                Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .60f),
+                    .38f to Color.Black.copy(alpha = .30f),
+                    .72f to Color.Black.copy(alpha = .15f),
+                    1f to Color.Black.copy(alpha = .08f),
+                )
+            )
     ) {
         Column(
             modifier = Modifier
@@ -514,6 +533,13 @@ internal fun VueoPlayerEpisodesPanel(
                 .width(520.dp)
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
+            Text(
+                "Episodes",
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(12.dp))
             if (seasons.size > 1) {
                 LazyRow(
                     state = seasonListState,
@@ -549,13 +575,6 @@ internal fun VueoPlayerEpisodesPanel(
                     .border(1.dp, cardBorder, PanelShape)
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
-                Text(
-                    "Episodes",
-                    color = Color.White,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(4.dp))
                 Text(
                     mediaTitle,
                     color = Color.White.copy(alpha = .56f),
@@ -631,8 +650,8 @@ private fun VueoSeasonChip(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555).copy(alpha = .85f)
-                    else -> Color(0xFF303030).copy(alpha = .70f)
+                    focused -> Color(0xFF555555)
+                    else -> Color.Transparent
                 },
                 shape,
             )
@@ -766,7 +785,7 @@ private fun VueoEpisodeRow(
             }
             .focusable()
             .clickable(onClick = onSelected)
-            .background(if (selected) Color.White else if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
+            .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color.Transparent, shape)
             .border(
                 if (focused) 2.dp else 1.dp,
                 when {
@@ -877,7 +896,7 @@ private fun VueoPanelTextAction(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White.copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
+            .background(if (focused) Color.White else Color.White.copy(alpha = .07f), shape)
             .padding(horizontal = 12.dp, vertical = 7.dp),
     )
 }

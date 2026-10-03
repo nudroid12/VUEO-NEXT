@@ -43,6 +43,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -241,12 +242,21 @@ internal fun VueoPlayerSubtitleWorkspace(
         )
     }
     val opacity = subtitleAlphaPercent(style.textColor)
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
+            .background(Color.Black.copy(alpha = .20f))
+            .background(
+                Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .60f),
+                    .38f to Color.Black.copy(alpha = .30f),
+                    .72f to Color.Black.copy(alpha = .15f),
+                    1f to Color.Black.copy(alpha = .08f),
+                )
+            )
     ) {
         Column(
             modifier = Modifier
@@ -707,7 +717,7 @@ private fun VueoSubtitleHeaderButton(
             }
             .focusable()
             .background(
-                if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f),
+                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .08f),
                 shape,
             )
             .border(
@@ -789,8 +799,8 @@ private fun VueoSubtitleLanguageRow(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555).copy(alpha = .85f)
-                    else -> Color(0xFF303030).copy(alpha = .70f)
+                    focused -> Color(0xFF555555)
+                    else -> Color.Transparent
                 },
                 shape,
             )
@@ -890,8 +900,8 @@ private fun VueoSubtitleTrackRow(
             .background(
                 when {
                     selected -> Color.White
-                    focused -> Color(0xFF555555).copy(alpha = .85f)
-                    else -> Color(0xFF303030).copy(alpha = .70f)
+                    focused -> Color(0xFF555555)
+                    else -> Color.White.copy(alpha = .025f)
                 },
                 shape,
             )
@@ -1030,10 +1040,9 @@ private fun VueoSubtitleStepperRow(
                 }
                 .focusable()
                 .background(
-                    if (focused) Color(0xFF555555).copy(alpha = .85f)
-                    else Color(0xFF303030).copy(alpha = .70f),
-                    shape,
-                )
+                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .09f),
+                shape,
+            )
                 .border(
                     if (focused) 2.dp else 1.dp,
                     if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
@@ -1104,8 +1113,8 @@ private fun VueoSubtitleToggleRow(
                 .background(
                     when {
                         enabled -> Color.White
-                        focused -> Color(0xFF555555).copy(alpha = .85f)
-                        else -> Color(0xFF303030).copy(alpha = .70f)
+                        focused -> Color(0xFF555555)
+                        else -> Color.White.copy(alpha = .09f)
                     },
                     shape,
                 )
@@ -1256,7 +1265,7 @@ private fun VueoSubtitleActionRow(
                 true
             }
             .focusable()
-            .background(if (focused) TvDesign.Accent.copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
+            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .045f), shape)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {

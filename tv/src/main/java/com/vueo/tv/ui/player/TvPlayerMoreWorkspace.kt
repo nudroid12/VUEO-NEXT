@@ -32,6 +32,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -73,12 +74,21 @@ internal fun VueoPlayerMoreWorkspace(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .50f)
+    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
         Modifier
             .fillMaxSize()
+            .background(Color.Black.copy(alpha = .20f))
+            .background(
+                Brush.horizontalGradient(
+                    0f to Color.Black.copy(alpha = .12f),
+                    .46f to Color.Black.copy(alpha = .28f),
+                    .72f to Color.Black.copy(alpha = .58f),
+                    1f to Color.Black.copy(alpha = .94f),
+                )
+            )
     ) {
         Column(
             modifier = Modifier
@@ -240,8 +250,8 @@ private fun VueoMoreCycleRow(
             .focusable()
             .clickable(onClick = onClick)
             .background(
-                if (focused) Color(0xFF555555).copy(alpha = .85f)
-                else Color(0xFF303030).copy(alpha = .70f),
+                if (focused) Color(0xFF555555)
+                else Color.White.copy(alpha = .055f),
                 shape,
             )
             .border(
@@ -309,7 +319,7 @@ private fun VueoMoreToggleRow(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
+            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
             .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .45f) else Color.Transparent, shape)
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -372,7 +382,7 @@ private fun VueoMoreResetButton(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555).copy(alpha = .85f) else Color(0xFF303030).copy(alpha = .70f), shape)
+            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
             .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
