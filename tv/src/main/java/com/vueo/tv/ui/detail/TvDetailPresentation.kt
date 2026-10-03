@@ -1,10 +1,12 @@
 package com.vueo.tv.detail
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,10 +62,13 @@ internal fun TvDetailPresentation(
 ) {
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
+    var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
     val safeBottom = with(LocalDensity.current) { 32.dp.toPx() }
-    val detailBringIntoView = remember(safeBottom) {
+    val detailBringIntoView = remember(mediaKey, safeBottom) {
         object : BringIntoViewSpec {
+            override val scrollAnimationSpec: AnimationSpec<Float> = tween(300, easing = TvMotion.EaseOut)
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
+                movingBetweenSections -> 0f
                 size >= containerSize -> 0f
                 offset < 0f -> offset
                 offset + size > containerSize - safeBottom -> offset + size - (containerSize - safeBottom)
@@ -107,16 +112,24 @@ internal fun TvDetailPresentation(
         else -> null
     }
     val navigationScope = rememberCoroutineScope()
-    var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
     fun revealAndFocus(index: Int, target: FocusRequester) {
         if (movingBetweenSections) return
-        if (runCatching { target.requestFocus() }.getOrDefault(false)) return
+        if (index != 0 && runCatching { target.requestFocus() }.getOrDefault(false)) return
         movingBetweenSections = true
         navigationScope.launch {
             try {
                 val viewport = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
                 // Reveal the next lazy item before requesting its not-yet-attached focus node.
-                listState.animateScrollToItem(index, if (index == 0) 0 else -viewport / 2)
+                val visibleItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                if (visibleItem != null) {
+                    val destinationOffset = if (index == 0) 0 else viewport / 2
+                    listState.animateScrollBy(
+                        (visibleItem.offset - destinationOffset).toFloat(),
+                        animationSpec = tween(300, easing = TvMotion.EaseOut),
+                    )
+                } else {
+                    listState.animateScrollToItem(index, if (index == 0) 0 else -viewport / 2)
+                }
                 for (attempt in 0 until 8) {
                     withFrameNanos { }
                     if (runCatching { target.requestFocus() }.getOrDefault(false)) break

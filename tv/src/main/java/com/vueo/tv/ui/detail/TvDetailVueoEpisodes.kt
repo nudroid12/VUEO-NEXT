@@ -1,5 +1,7 @@
 package com.vueo.tv.detail
 
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -54,6 +57,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.motion.TvMotion
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -152,11 +156,12 @@ internal fun VueoDetailEpisodes(
     val edgePadding = with(LocalDensity.current) { VueoDetailHorizontalPadding.toPx() }
     val horizontalReveal = remember(edgePadding) {
         object : BringIntoViewSpec {
+            override val scrollAnimationSpec: AnimationSpec<Float> = tween(300, easing = TvMotion.EaseOut)
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-                val usableSize = containerSize - 2 * edgePadding
-                if (size >= usableSize) return offset - edgePadding
+                val usableSize = containerSize - edgePadding
+                if (size >= usableSize) return offset
                 return when {
-                    offset < edgePadding -> offset - edgePadding
+                    offset < 0f -> offset
                     offset + size > containerSize - edgePadding -> offset + size - (containerSize - edgePadding)
                     else -> 0f
                 }
@@ -188,9 +193,11 @@ internal fun VueoDetailEpisodes(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(start = VueoDetailHorizontalPadding)
+                .clipToBounds()
                 .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
                 .focusGroup(),
-            contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 7.dp),
+            contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(episodes, key = { _, episode -> episode.id }) { _, episode ->
