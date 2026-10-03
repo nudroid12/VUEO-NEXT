@@ -89,7 +89,10 @@ object SubtitleDialogueSync {
                 is java.io.IOException -> SubtitleSyncReadFailure("Could not access the subtitle file. Try again or another track.", "READ_IO", error)
                 else -> SubtitleSyncReadFailure("Subtitle processing failed. Use manual Sync and check Performance Diagnostic.", "PROCESSING", error)
             }
-            diagnostic(url, "FAILED", "reason=${failure.reason} type=${error.javaClass.simpleName}")
+            val location = error.stackTrace.firstOrNull { it.className.startsWith("com.vueo.") }
+                ?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+                .orEmpty()
+            diagnostic(url, "FAILED", "reason=${failure.reason} type=${error.javaClass.simpleName} location=$location")
             throw failure
         }
     }
@@ -142,7 +145,7 @@ object SubtitleDialogueSync {
         return hours * 3_600_000L + minutes * 60_000L + (seconds * 1000).roundToLong()
     }
 
-    private fun plainText(raw: String): String = raw.replace(Regex("\\{[^}]*}"), "")
+    private fun plainText(raw: String): String = raw.replace(Regex("\\{[^}]*\\}"), "")
         .replace(Regex("<[^>]*>"), "").replace("\\N", " ").replace("\\n", " ").replace("\\h", " ")
         .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
         .replace(Regex("\\s+"), " ").trim().take(500)

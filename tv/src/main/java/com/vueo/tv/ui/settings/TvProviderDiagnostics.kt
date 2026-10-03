@@ -2,6 +2,21 @@ package com.vueo.tv.settings
 
 import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
 
+import android.view.KeyEvent
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -179,6 +194,24 @@ internal fun TvRuntimeDiagnosticsDialog(
         mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
     }
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+    val logFocus = remember { FocusRequester() }
+    val copyFocus = remember { FocusRequester() }
+    val logScroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
+    var logFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { logFocus.requestFocus() }
+    }
+    val buttonNavigation = Modifier.focusProperties { up = logFocus }
+        .onPreviewKeyEvent { event ->
+            val key = event.nativeKeyEvent
+            if (key.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (key.action == KeyEvent.ACTION_DOWN) runCatching { logFocus.requestFocus() }
+                true
+            } else false
+        }
 
     fun closeAndRestore() {
         onDismiss()
@@ -193,16 +226,47 @@ internal fun TvRuntimeDiagnosticsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 500.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .focusRequester(logFocus)
+                    .onFocusChanged { logFocused = it.isFocused }
+                    .focusProperties { down = copyFocus }
+                    .onPreviewKeyEvent { event ->
+                        val key = event.nativeKeyEvent
+                        when (key.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                if (key.action == KeyEvent.ACTION_DOWN) {
+                                    val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                    if (down && logScroll.value >= logScroll.maxValue) {
+                                        runCatching { copyFocus.requestFocus() }
+                                    } else {
+                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                            .coerceIn(0, logScroll.maxValue)
+                                        scope.launch { logScroll.scrollTo(target) }
+                                    }
+                                }
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                                if (key.action == KeyEvent.ACTION_DOWN) runCatching { copyFocus.requestFocus() }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .focusable()
+                    .verticalScroll(logScroll)
+                    .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Run source discovery until the lag/crash happens, then copy this log. It records provider timing, concurrency, main-thread stalls and memory.",
+                    text = "Up/Down: scroll log. OK: Copy Log button. Up from buttons: return to log. Reproduce the issue, then copy the log.",
                     color = TvDesign.Muted,
                     fontSize = 11.sp,
                 )
                 Text(
-                    text = diagnosticText.takeLast(24_000),
+                    text = if (diagnosticText.length > 24_000)
+                        "[Recent log preview. Copy Log includes the full log.]\n\n" + diagnosticText.takeLast(24_000)
+                    else diagnosticText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.5.sp,
                     color = TvDesign.Muted,
@@ -211,6 +275,7 @@ internal fun TvRuntimeDiagnosticsDialog(
         },
         confirmButton = {
             TextButton(
+                modifier = buttonNavigation.focusRequester(copyFocus),
                 onClick = {
                     diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -226,6 +291,7 @@ internal fun TvRuntimeDiagnosticsDialog(
         dismissButton = {
             Row {
                 TextButton(
+                    modifier = buttonNavigation,
                     onClick = {
                         RuntimeDiagnostics.clear(context.applicationContext)
                         diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
@@ -233,7 +299,7 @@ internal fun TvRuntimeDiagnosticsDialog(
                 ) {
                     Text("Clear")
                 }
-                TextButton(onClick = ::closeAndRestore) { Text("Close") }
+                TextButton(modifier = buttonNavigation, onClick = ::closeAndRestore) { Text("Close") }
             }
         },
     )

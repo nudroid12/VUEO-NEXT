@@ -9,6 +9,10 @@ class SubtitleDialogueSyncTest {
         val cues = SubtitleDialogueSync.parse("\uFEFF1\r\n00:01:02,345 --> 00:01:04,000\r\n<i>Hello</i>\r\nworld &amp; friends\r\n\r\n")
         assertEquals(listOf(SubtitleDialogue(62_345L, "Hello world & friends")), cues)
     }
+    @Test fun subripCleansAssOverridesInEveryCue() {
+        val cues = SubtitleDialogueSync.parse("1\n00:00:01,000 --> 00:00:02,000\n{\\an8}<i>Hello</i>{\\i0}\n\n2\n00:00:03,000 --> 00:00:04,000\nWorld\n")
+        assertEquals(listOf(SubtitleDialogue(1000L, "Hello"), SubtitleDialogue(3000L, "World")), cues)
+    }
     @Test fun webvttSupportsCueIdsAndSettings() {
         val cues = SubtitleDialogueSync.parse("WEBVTT\n\ncue-one\n01:02.010 --> 01:05.000 align:start\n<v Alice>Hi</v>\n\n")
         assertEquals(listOf(SubtitleDialogue(62_010L, "Hi")), cues)
