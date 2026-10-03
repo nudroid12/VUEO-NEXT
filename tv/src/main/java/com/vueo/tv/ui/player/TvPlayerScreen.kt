@@ -433,6 +433,7 @@ fun TvPlayerScreen(
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
         if (latestEpisodeSwitching.value) return
+        val targetRequester = if (!controlsVisible && playbackError == null) progressRequester else requester
         focusedPrompt = TvPlayerPromptTarget.NONE
         seekFeedbackVisible = false
         controlsVisible = true
@@ -440,7 +441,7 @@ fun TvPlayerScreen(
         noteInteraction()
         pendingFocusJob?.cancel()
         pendingFocusJob = focusScope.launch {
-            val focused = requester.requestTvFocus(canRequest = { isFocusRequestAllowed(requester) })
+            val focused = targetRequester.requestTvFocus(canRequest = { isFocusRequestAllowed(targetRequester) })
             if (controlsVisible) controlFocusHandoffPending = !focused
         }
     }
@@ -1149,23 +1150,9 @@ fun TvPlayerScreen(
     }
 
     LaunchedEffect(activePanel, controlsVisible, restorePanelFocus) {
-        val panel = restorePanelFocus ?: return@LaunchedEffect
+        if (restorePanelFocus == null) return@LaunchedEffect
         if (activePanel != TvPlayerPanel.NONE || !controlsVisible) return@LaunchedEffect
-        val requester = when (panel) {
-            TvPlayerPanel.SUBTITLES -> subtitlesRequester
-            TvPlayerPanel.AUDIO -> audioRequester
-            TvPlayerPanel.SOURCES -> sourcesRequester
-            TvPlayerPanel.EPISODES -> episodesRequester
-            TvPlayerPanel.MORE -> moreRequester
-            TvPlayerPanel.NONE -> progressRequester
-        }
-        val restored = requestFocusNow(requester)
-        val fallbackRestored = if (!restored && requester != progressRequester) {
-            requestFocusNow(progressRequester)
-        } else {
-            restored
-        }
-        controlFocusHandoffPending = !fallbackRestored
+        controlFocusHandoffPending = !requestFocusNow(progressRequester)
         restorePanelFocus = null
     }
 
@@ -1947,6 +1934,10 @@ fun TvPlayerScreen(
                 subtitleDelayMs = subtitleDelayMs,
                 style = subtitleStyle,
                 onInteraction = ::noteInteraction,
+                onDismissFloat = {
+                    closePanel(restoreFocus = false)
+                    hideControls()
+                },
                 onDisable = {
                     subtitlePreparationJob?.cancel()
                     subtitlePreparationJob = null

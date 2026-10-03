@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -72,6 +73,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     onSyncByDialogue: () -> Unit,
     style: TvPlayerSubtitleStyleState,
     onInteraction: () -> Unit,
+    onDismissFloat: () -> Unit,
     onDisable: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
     onSubtitleDelayChange: (Int) -> Unit,
@@ -185,8 +187,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     }
 
     BackHandler(enabled = styleFloatMode) {
-        styleFloatMode = false
-        onInteraction()
+        onDismissFloat()
     }
 
     LaunchedEffect(groups, entryLanguageIndex, selectedEntryIndex, initialFocusAssigned) {
@@ -1186,7 +1187,7 @@ private fun VueoSubtitleColorRow(
             fontWeight = FontWeight.Medium,
         )
         Spacer(Modifier.height(5.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             colours.forEachIndexed { index, colour ->
                 var focused by remember(colour) { mutableStateOf(false) }
                 val selected = (selectedColour and 0x00FFFFFF) == (colour and 0x00FFFFFF)
@@ -1195,7 +1196,7 @@ private fun VueoSubtitleColorRow(
 
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .requiredSize(28.dp)
                         .focusRequester(requesters[index])
                         .focusProperties {
                             up = upRequester
@@ -1223,7 +1224,7 @@ private fun VueoSubtitleColorRow(
                             },
                             shape = CircleShape,
                         )
-                        .padding(4.dp),
+                        .padding(3.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
