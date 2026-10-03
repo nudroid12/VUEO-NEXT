@@ -1,5 +1,6 @@
 package com.vueo.tv.detail
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -52,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +73,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 private val VueoEpisodeShape = RoundedCornerShape(14.dp)
+private const val VueoEpisodeScrollRepeatThrottleMs = 80L
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -104,7 +108,7 @@ internal fun VueoDetailSeasonTabs(
             contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(seasons, key = { _, season -> season }) { _, season ->
+            itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
                 var focused by remember(season) { mutableStateOf(false) }
                 val selected = season == selectedSeason
                 val shape = RoundedCornerShape(24.dp)
@@ -114,15 +118,12 @@ internal fun VueoDetailSeasonTabs(
                         .focusProperties {
                             up = upRequester
                             downRequester?.let { down = it }
+                            if (index == seasons.lastIndex) right = FocusRequester.Cancel
                         }
                         .onFocusChanged { focused = it.isFocused }
                         .clip(shape)
                         .background(
-                            when {
-                                focused -> TvDesign.White
-                                selected -> TvDesign.White.copy(alpha = .16f)
-                                else -> TvDesign.Surface.copy(alpha = .82f)
-                            }
+                            if (selected) TvDesign.White else TvDesign.Surface.copy(alpha = .82f)
                         )
                         .border(
                             width = if (focused) 2.dp else 1.dp,
@@ -135,7 +136,7 @@ internal fun VueoDetailSeasonTabs(
                 ) {
                     Text(
                         text = if (season == 0) "Specials" else "Season $season",
-                        color = if (focused) Color.Black else TvDesign.White,
+                        color = if (selected) Color.Black else TvDesign.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -189,7 +190,12 @@ internal fun VueoDetailEpisodes(
         ?.takeIf { id -> episodes.any { it.id == id } }
     val focusId = rememberedId ?: selectedEpisode?.id ?: episodes.firstOrNull()?.id
     val selectedIndex = episodes.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val rowPrefetchStrategy = remember { LazyListPrefetchStrategy(nestedPrefetchItemCount = 2) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = selectedIndex,
+        prefetchStrategy = rowPrefetchStrategy,
+    )
+    var lastHorizontalKeyRepeatTime by remember { mutableStateOf(0L) }
     val requesters = remember(media.id, media.type, episodes.map(EpisodeItem::id)) {
         episodes.associate { episode ->
             episode.id to FocusRequester()
@@ -212,6 +218,23 @@ internal fun VueoDetailEpisodes(
                     state = listState,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            val native = event.nativeKeyEvent
+                            val isHorizontalKey = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT ||
+                                native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
+                            if (
+                                isHorizontalKey &&
+                                native.action == AndroidKeyEvent.ACTION_DOWN &&
+                                native.repeatCount > 0
+                            ) {
+                                val now = System.currentTimeMillis()
+                                if (now - lastHorizontalKeyRepeatTime < VueoEpisodeScrollRepeatThrottleMs) {
+                                    return@onPreviewKeyEvent true
+                                }
+                                lastHorizontalKeyRepeatTime = now
+                            }
+                            false
+                        }
                         .focusRequester(sectionRequester)
                         .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
                         .focusGroup(),
