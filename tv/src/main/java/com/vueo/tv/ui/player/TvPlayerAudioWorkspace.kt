@@ -112,7 +112,7 @@ internal fun VueoPlayerAudioWorkspace(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
-                .width(380.dp)
+                .width(520.dp)
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
@@ -132,6 +132,7 @@ internal fun VueoPlayerAudioWorkspace(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .clip(PanelShape)
                     .background(cardBackground)
                     .border(1.dp, cardBorder, PanelShape)
@@ -140,7 +141,6 @@ internal fun VueoPlayerAudioWorkspace(
                 VueoOptionList(
                     options = options,
                     maxHeightFraction = 1f,
-                    compactHeight = true,
                     onInteraction = onInteraction,
                     onSelected = { option ->
                         if (option.key == TV_AUDIO_AUTO) onAutomatic()

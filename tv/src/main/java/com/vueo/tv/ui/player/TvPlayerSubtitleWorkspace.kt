@@ -925,19 +925,23 @@ private fun VueoSubtitleTrackRow(
             Box(
                 modifier = Modifier
                     .background(
-                        Color(0xFF242629),
+                        if (selected) Color.Black.copy(alpha = .06f)
+                        else if (focused) Color.White.copy(alpha = .12f)
+                        else Color.White.copy(alpha = .055f),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
                         1.dp,
-                        Color.White.copy(alpha = .09f),
+                        if (selected) Color.Black.copy(alpha = .20f)
+                        else if (focused) Color.White.copy(alpha = .38f)
+                        else Color.White.copy(alpha = .09f),
                         RoundedCornerShape(999.dp),
                     )
                     .padding(horizontal = 7.dp, vertical = 2.dp),
             ) {
                 Text(
                     provider.ifBlank { "Subtitle" },
-                    color = Color.White.copy(alpha = .66f),
+                    color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -991,7 +995,7 @@ private fun VueoSubtitleStepperRow(
     val internalRequester = remember(title) { FocusRequester() }
     val valueRequester = requester ?: internalRequester
     var focused by remember(valueRequester) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(11.dp)
+    val shape = RoundedCornerShape(9.dp)
 
     Column(Modifier.fillMaxWidth()) {
         Text(
@@ -1003,8 +1007,8 @@ private fun VueoSubtitleStepperRow(
         Spacer(Modifier.height(3.dp))
         Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(30.dp)
+                .width(148.dp)
+                .height(26.dp)
                 .focusRequester(valueRequester)
                 .focusProperties {
                     up = upRequester
@@ -1048,20 +1052,20 @@ private fun VueoSubtitleStepperRow(
                     if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
                     shape,
                 )
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("−", color = Color.White, fontSize = 16.sp)
+            Text("−", color = Color.White, fontSize = 14.sp)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     value,
                     color = Color.White,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
             }
-            Text("+", color = Color.White, fontSize = 16.sp)
+            Text("+", color = Color.White, fontSize = 14.sp)
         }
     }
 }
