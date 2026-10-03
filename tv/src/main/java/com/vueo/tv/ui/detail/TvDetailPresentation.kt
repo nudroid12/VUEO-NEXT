@@ -258,8 +258,11 @@ internal fun TvDetailPresentation(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(bottom = if (hasPeopleTabs && !hasRelated)
-                maxOf(88.dp, maxHeight / 2 - 96.dp) else 88.dp),
+            contentPadding = PaddingValues(bottom = when {
+                hasRelated -> 24.dp
+                hasPeopleTabs -> maxOf(88.dp, maxHeight / 2 - 96.dp)
+                else -> 88.dp
+            }),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "vueo-hero:$mediaKey") {
@@ -379,7 +382,8 @@ internal fun TvDetailPresentation(
                         hasSeasons -> 1
                         else -> 0
                     }
-                    Box(sectionNavigation(relatedUpIndex to relatedUpRequester, null)) {
+                    Box(sectionNavigation(relatedUpIndex to relatedUpRequester, null)
+                        .bringIntoViewResponder(episodeRowResponder)) {
                     VueoDetailRelatedSection(
                         items = state.related,
                         sectionRequester = relatedContentRequester,

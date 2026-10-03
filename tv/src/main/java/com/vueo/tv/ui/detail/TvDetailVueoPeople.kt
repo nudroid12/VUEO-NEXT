@@ -4,6 +4,13 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -393,23 +400,49 @@ private fun VueoRelatedRow(
         visible.indices.associateWith { FocusRequester() }
     }
 
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .focusRequester(sectionRequester)
-            .focusRestorer { requesters[0] ?: FocusRequester.Default }
-            .focusGroup(),
-        contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        itemsIndexed(visible, key = { _, item -> "${item.type}:${item.id}" }) { index, item ->
-            VueoRelatedCard(
-                item = item,
-                requester = requesters.getValue(index),
-                upRequester = upRequester,
-                downRequester = downRequester,
-                onOpen = { onOpen(item) },
-            )
+    val layoutDirection = LocalLayoutDirection.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val paintInset = 4.dp
+    val horizontalReveal = remember(layoutDirection, density) {
+        val rtl = layoutDirection == LayoutDirection.Rtl
+        val inset = with(density) { paintInset.toPx() }
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                if (containerSize <= 0f || size <= 0f) return 0f
+                val childSize = kotlin.math.abs(size)
+                return if (rtl) {
+                    val target = (containerSize - inset).coerceAtLeast(childSize.coerceAtMost(containerSize))
+                    offset + size - target
+                } else {
+                    val target = inset.coerceAtMost((containerSize - childSize).coerceAtLeast(0f))
+                    offset - target
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalReveal) {
+        Box(Modifier.fillMaxWidth()
+            .padding(start = VueoDetailHorizontalPadding - paintInset)
+            .clipToBounds()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(sectionRequester)
+                    .focusRestorer { requesters[0] ?: FocusRequester.Default }
+                    .focusGroup(),
+                contentPadding = PaddingValues(start = paintInset, end = VueoDetailHorizontalPadding, top = 6.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                itemsIndexed(visible, key = { _, item -> "${item.type}:${item.id}" }) { index, item ->
+                    VueoRelatedCard(
+                        item = item,
+                        requester = requesters.getValue(index),
+                        upRequester = upRequester,
+                        downRequester = downRequester,
+                        onOpen = { onOpen(item) },
+                    )
+                }
+            }
         }
     }
 }
@@ -432,9 +465,10 @@ private fun VueoRelatedCard(
         label = "detail39RelatedScale",
     )
 
-    Column(
+    Box(
         modifier = Modifier
             .width(VueoRelatedWidth)
+            .height(VueoRelatedHeight)
             .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
                 scaleX = scale
@@ -446,45 +480,49 @@ private fun VueoRelatedCard(
                 downRequester?.let { down = it }
             }
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onOpen),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .clickable(onClick = onOpen)
+            .clip(VueoDetailCardShape)
+            .background(TvDesign.SurfaceRaised)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) TvDesign.Focus else Color.Transparent,
+                shape = VueoDetailCardShape,
+            ),
     ) {
-        Box(
-            modifier = Modifier
-                .width(VueoRelatedWidth)
-                .height(VueoRelatedHeight)
-                .clip(VueoDetailCardShape)
-                .background(TvDesign.SurfaceRaised)
-                .border(
-                    width = if (focused) 2.dp else 0.dp,
-                    color = if (focused) TvDesign.Focus else Color.Transparent,
-                    shape = VueoDetailCardShape,
-                ),
-        ) {
-            TvNetworkImage(
-                url = item.background ?: item.poster,
-                contentDescription = item.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                fallback = TvDesign.SurfaceRaised,
-            )
-        }
-        Text(
-            text = item.name,
-            color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .82f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        TvNetworkImage(
+            url = item.background ?: item.poster,
+            contentDescription = item.name,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            fallback = TvDesign.SurfaceRaised,
         )
-        item.releaseInfo?.takeIf(String::isNotBlank)?.let { release ->
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+            0f to Color.Transparent,
+            .45f to Color.Transparent,
+            1f to TvDesign.Black.copy(alpha = .90f),
+        )))
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
             Text(
-                text = release,
-                color = TvDesign.White.copy(alpha = .42f),
-                fontSize = 9.sp,
+                text = item.name,
+                color = if (focused) TvDesign.White else TvDesign.White.copy(alpha = .82f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            item.releaseInfo?.takeIf(String::isNotBlank)?.let { release ->
+                Text(
+                    text = release,
+                    color = TvDesign.White.copy(alpha = .65f),
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
