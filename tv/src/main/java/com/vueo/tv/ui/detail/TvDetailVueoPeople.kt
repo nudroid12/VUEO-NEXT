@@ -7,6 +7,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -701,6 +707,7 @@ internal fun VueoDetailCastCompanyTabs(
     downRequester: FocusRequester?,
     onMoveUp: () -> Unit,
     onMoveDown: (() -> Unit)?,
+    onCenterContent: suspend (Float, Float) -> Unit,
     onOpenCast: (MediaPerson) -> Unit,
     onOpenCompany: (MediaCompany, Boolean) -> Unit,
 ) {
@@ -718,8 +725,24 @@ internal fun VueoDetailCastCompanyTabs(
     val contentRequesters = remember(mediaKey) {
         VueoCompanyTab.entries.associateWith { FocusRequester() }
     }
+    var sectionFocused by remember(mediaKey) { mutableStateOf(false) }
+    var contentTop by remember(mediaKey) { mutableStateOf(0f) }
+    var contentHeight by remember(mediaKey) { mutableStateOf(0f) }
+    val relocationBoundary = remember(mediaKey) {
+        object : BringIntoViewResponder {
+            override fun calculateRectForParent(localRect: Rect): Rect = Rect.Zero
+            override suspend fun bringChildIntoView(localRect: () -> Rect?) { }
+        }
+    }
+    LaunchedEffect(sectionFocused, contentTop, contentHeight) {
+        if (sectionFocused && contentHeight > 0f) onCenterContent(contentTop, contentHeight)
+    }
     Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
+        modifier = Modifier.fillMaxWidth()
+            .bringIntoViewResponder(relocationBoundary)
+            .onFocusChanged { sectionFocused = it.hasFocus }
+            .focusGroup()
+            .padding(top = 14.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
@@ -764,13 +787,18 @@ internal fun VueoDetailCastCompanyTabs(
         }
         // The same height prevents the page from moving when Cast changes to a shorter logo row.
         Box(
-            modifier = Modifier.fillMaxWidth().height(185.dp).onPreviewKeyEvent { event ->
+            modifier = Modifier.fillMaxWidth().height(185.dp)
+                .onGloballyPositioned { coordinates ->
+                    contentTop = coordinates.positionInParent().y
+                    contentHeight = coordinates.size.height.toFloat()
+                }.onPreviewKeyEvent { event ->
                 if (event.key != Key.DirectionDown || onMoveDown == null) false
                 else {
                     if (event.type == KeyEventType.KeyDown) onMoveDown()
                     true
                 }
             },
+            contentAlignment = Alignment.CenterStart,
         ) {
             when (active) {
                 VueoCompanyTab.CAST -> VueoCastRow(

@@ -6,6 +6,9 @@ import android.os.SystemClock
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -67,6 +70,14 @@ internal fun TvDetailPresentation(
     var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
     var heroFocused by remember(mediaKey) { mutableStateOf(false) }
     var lastVerticalRepeat by remember(mediaKey) { mutableStateOf(0L) }
+    // Same row relocation boundary as Nuvio: the horizontal list handles its
+    // child animation without re-running the parent's vertical relocation.
+    val episodeRowResponder = remember(mediaKey) {
+        object : BringIntoViewResponder {
+            override fun calculateRectForParent(localRect: Rect): Rect = localRect
+            override suspend fun bringChildIntoView(localRect: () -> Rect?) { }
+        }
+    }
     val detailBringIntoView = remember(mediaKey) {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
@@ -240,7 +251,8 @@ internal fun TvDetailPresentation(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = if (hasPeopleTabs && !hasRelated)
+                maxOf(88.dp, maxHeight / 2 - 96.dp) else 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "vueo-hero:$mediaKey") {
@@ -279,7 +291,7 @@ internal fun TvDetailPresentation(
                     Box(sectionNavigation(
                         if (hasSeasons) 1 to seasonRequester else 0 to playRequester,
                         firstBelowEpisodes?.let { belowIndex(it) to it },
-                    )) {
+                    ).bringIntoViewResponder(episodeRowResponder)) {
                     VueoDetailEpisodes(
                         media = state.item,
                         episodes = state.episodes,
@@ -315,6 +327,18 @@ internal fun TvDetailPresentation(
                         sectionRequester = peopleContentRequester,
                         upRequester = peopleUp,
                         downRequester = if (hasRelated) relatedContentRequester else null,
+                        onCenterContent = { contentTop, contentHeight ->
+                            val layout = listState.layoutInfo
+                            val section = layout.visibleItemsInfo.firstOrNull { it.index == peopleIndex }
+                            if (section != null) {
+                                val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                                val distance = section.offset + contentTop + contentHeight / 2f - viewportCenter
+                                if (kotlin.math.abs(distance) > 1f) {
+                                    listState.animateScrollBy(distance,
+                                        animationSpec = spring(dampingRatio = .95f, stiffness = 180f))
+                                }
+                            }
+                        },
                         onMoveUp = { revealAndFocus(upIndex, peopleUp) },
                         onMoveDown = if (hasRelated) ({ revealAndFocus(peopleIndex + 1, relatedContentRequester) }) else null,
                         onOpenCast = { person ->

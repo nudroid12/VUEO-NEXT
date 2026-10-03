@@ -1,6 +1,10 @@
 package com.vueo.tv.detail
 
 import android.view.KeyEvent as AndroidKeyEvent
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Card
+import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.Border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -160,6 +164,11 @@ internal fun VueoDetailEpisodes(
     onFocused: (EpisodeItem) -> Unit,
     onOpen: (EpisodeItem) -> Unit,
 ) {
+    val progressByEpisode = remember(media.id, media.type, history) {
+        history.filter { it.media.id == media.id && it.media.type == media.type }
+            .groupBy { it.season to it.episode }
+            .mapValues { (_, entries) -> entries.first() }
+    }
     val layoutDirection = LocalLayoutDirection.current
     // Same leading-edge reveal rule as Modern Home. The viewport already
     // excludes the left margin, so its leading target is zero. LazyRow clamps
@@ -241,13 +250,8 @@ internal fun VueoDetailEpisodes(
                     contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    itemsIndexed(episodes, key = { _, episode -> episode.id }) { _, episode ->
-                        val progress = history.firstOrNull { entry ->
-                            entry.media.id == media.id &&
-                                entry.media.type == media.type &&
-                                entry.season == episode.season &&
-                                entry.episode == episode.episode
-                        }
+                    itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { _, episode ->
+                        val progress = progressByEpisode[episode.season to episode.episode]
                         VueoEpisodeCard(
                             episode = episode,
                             cardWidth = cardWidth,
@@ -294,7 +298,8 @@ private fun VueoEpisodeCard(
         modifier = Modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(
+        Card(
+            onClick = onOpen,
             modifier = Modifier
                 .width(cardWidth)
                 .height(cardHeight)
@@ -306,129 +311,137 @@ private fun VueoEpisodeCard(
                 .onFocusChanged { state ->
                     if (state.isFocused && !focused) onFocused()
                     focused = state.isFocused
-                }
-                .clip(VueoEpisodeShape)
-                .background(TvDesign.SurfaceRaised)
-                .border(
-                    width = if (focused) 2.dp else if (selected) 1.dp else 0.dp,
-                    color = when {
-                        focused -> TvDesign.Focus
-                        selected -> TvDesign.White.copy(alpha = .30f)
-                        else -> Color.Transparent
-                    },
+                },
+            shape = CardDefaults.shape(shape = VueoEpisodeShape),
+            colors = CardDefaults.colors(
+                containerColor = TvDesign.SurfaceRaised,
+                focusedContainerColor = TvDesign.SurfaceRaised,
+            ),
+            border = CardDefaults.border(
+                border = Border(
+                    border = BorderStroke(if (selected) 1.dp else 0.dp,
+                        if (selected) TvDesign.White.copy(alpha = .30f) else Color.Transparent),
                     shape = VueoEpisodeShape,
-                )
-                .clickable(onClick = onOpen),
+                ),
+                focusedBorder = Border(
+                    border = BorderStroke(2.dp, TvDesign.Focus),
+                    shape = VueoEpisodeShape,
+                ),
+            ),
+            scale = CardDefaults.scale(focusedScale = 1.0f),
+            glow = CardDefaults.glow(),
         ) {
-            TvNetworkImage(
-                url = episode.thumbnail,
-                contentDescription = episode.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                fallback = TvDesign.SurfaceRaised,
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            .20f to TvDesign.Black.copy(alpha = .04f),
-                            .38f to TvDesign.Black.copy(alpha = .26f),
-                            .60f to TvDesign.Black.copy(alpha = .60f),
-                            1f to TvDesign.Black.copy(alpha = .93f),
-                        )
-                    ),
-            )
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 13.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = "EPISODE ${episode.episode}",
-                    modifier = Modifier.clip(RoundedCornerShape(5.dp))
-                        .background(TvDesign.Black.copy(alpha = .60f))
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                    color = TvDesign.White.copy(alpha = .68f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
+            Box(Modifier.fillMaxSize()) {
+                TvNetworkImage(
+                    url = episode.thumbnail,
+                    contentDescription = episode.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    fallback = TvDesign.SurfaceRaised,
                 )
-                Text(
-                    text = episode.title.ifBlank { "Episode ${episode.episode}" },
-                    color = TvDesign.White,
-                    fontSize = 14.sp,
-                    lineHeight = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                .20f to TvDesign.Black.copy(alpha = .04f),
+                                .38f to TvDesign.Black.copy(alpha = .26f),
+                                .60f to TvDesign.Black.copy(alpha = .60f),
+                                1f to TvDesign.Black.copy(alpha = .93f),
+                            )
+                        ),
                 )
-                episode.overview?.trim()?.takeIf(String::isNotBlank)?.let { synopsis ->
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
                     Text(
-                        text = synopsis,
-                        color = TvDesign.White.copy(alpha = .88f),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        maxLines = if (cardHeight >= 235.dp) 4 else 3,
+                        text = "EPISODE ${episode.episode}",
+                        modifier = Modifier.clip(RoundedCornerShape(5.dp))
+                            .background(TvDesign.Black.copy(alpha = .60f))
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                        color = TvDesign.White.copy(alpha = .68f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = episode.title.ifBlank { "Episode ${episode.episode}" },
+                        color = TvDesign.White,
+                        fontSize = 14.sp,
+                        lineHeight = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                }
-                val runtime = progress?.durationMs?.takeIf { it > 0L }?.let { (it / 60_000L).toInt() }
-                    ?: runtimeMinutes
-                val released = vueoDetailFormatReleaseDate(episode.released)
-                if (runtime != null || released != null || imdbRating != null) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        runtime?.takeIf { it > 0 }?.let {
-                            Text("${it}m", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
-                        }
-                        imdbRating?.takeIf { it.isFinite() && it > 0.0 && it <= 10.0 }?.let { score ->
-                            Spacer(Modifier.width(9.dp))
-                            Text("IMDb", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
-                            Spacer(Modifier.width(4.dp))
-                            Text(String.format(Locale.US, "%.1f", score), color = Color(0xFFF5C518), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        released?.let {
-                            Text(it, color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp, maxLines = 1)
+                    episode.overview?.trim()?.takeIf(String::isNotBlank)?.let { synopsis ->
+                        Text(
+                            text = synopsis,
+                            color = TvDesign.White.copy(alpha = .88f),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            maxLines = if (cardHeight >= 235.dp) 4 else 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    val runtime = progress?.durationMs?.takeIf { it > 0L }?.let { (it / 60_000L).toInt() }
+                        ?: runtimeMinutes
+                    val released = remember(episode.released) { vueoDetailFormatReleaseDate(episode.released) }
+                    if (runtime != null || released != null || imdbRating != null) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            runtime?.takeIf { it > 0 }?.let {
+                                Text("${it}m", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
+                            }
+                            imdbRating?.takeIf { it.isFinite() && it > 0.0 && it <= 10.0 }?.let { score ->
+                                Spacer(Modifier.width(9.dp))
+                                Text("IMDb", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
+                                Spacer(Modifier.width(4.dp))
+                                Text(String.format(Locale.US, "%.1f", score), color = Color(0xFFF5C518), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            released?.let {
+                                Text(it, color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp, maxLines = 1)
+                            }
                         }
                     }
                 }
-            }
 
-            progress?.takeIf { !it.isCompleted && it.durationMs > 0L && it.positionMs > 0L }?.let { entry ->
-                LinearProgressIndicator(
-                    progress = { entry.progressFraction.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 14.dp, end = 14.dp, bottom = 6.dp)
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = TvDesign.White,
-                    trackColor = TvDesign.White.copy(alpha = .20f),
-                )
-            }
-            val watched = progress?.isCompleted == true
-            val notStarted = !watched && (progress == null || progress.positionMs <= 0L)
-            if (watched) {
-                Box(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
-                        .size(24.dp).background(TvDesign.Focus, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = "Watched",
-                        tint = Color.Black, modifier = Modifier.size(17.dp))
-                }
-            } else if (notStarted) {
-                Canvas(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp)) {
-                    drawCircle(
-                        color = TvDesign.White.copy(alpha = .80f),
-                        style = Stroke(width = 2.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 5f))),
+                progress?.takeIf { !it.isCompleted && it.durationMs > 0L && it.positionMs > 0L }?.let { entry ->
+                    LinearProgressIndicator(
+                        progress = { entry.progressFraction.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(start = 14.dp, end = 14.dp, bottom = 6.dp)
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = TvDesign.White,
+                        trackColor = TvDesign.White.copy(alpha = .20f),
                     )
+                }
+                val watched = progress?.isCompleted == true
+                val notStarted = !watched && (progress == null || progress.positionMs <= 0L)
+                if (watched) {
+                    Box(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                            .size(24.dp).background(TvDesign.Focus, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = "Watched",
+                            tint = Color.Black, modifier = Modifier.size(17.dp))
+                    }
+                } else if (notStarted) {
+                    Canvas(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp)) {
+                        drawCircle(
+                            color = TvDesign.White.copy(alpha = .80f),
+                            style = Stroke(width = 2.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 5f))),
+                        )
+                    }
                 }
             }
         }

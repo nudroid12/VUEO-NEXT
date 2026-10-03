@@ -317,9 +317,8 @@ fun TvDetailScreen(
             VueoDetailFocusMemory.episodeId = null
         },
         onEpisodeFocused = { episode ->
-            episodeSelectionTouchedByUser = true
-            selectedSeason = episode.season
-            selectedEpisode = episode
+            // Nuvio keeps navigation memory separate from the playback selection.
+            // Moving focus must not reload history or change the hero action.
             VueoDetailFocusMemory.selectedSeason = episode.season
             VueoDetailFocusMemory.episodeId = episode.id
         },
