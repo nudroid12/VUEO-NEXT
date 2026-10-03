@@ -1,5 +1,16 @@
 package com.vueo.tv
 
+import android.view.KeyEvent
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.nativeKeyEvent
+import androidx.compose.ui.platform.LocalDensity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -45,6 +56,26 @@ internal fun TvCrashRecoveryPopup(report: AppCrashReport, onClosed: () -> Unit) 
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(report.timestampMs))
     }
     val closeFocus = remember { FocusRequester() }
+    val logFocus = remember { FocusRequester() }
+    val detailsFocus = remember { FocusRequester() }
+    val logScroll = rememberScrollState()
+    val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
+    var logFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            withFrameNanos { }
+            runCatching { logFocus.requestFocus() }
+        }
+    }
+
+    val buttonNavigation = Modifier.onPreviewKeyEvent { event ->
+        val key = event.nativeKeyEvent
+        if (key.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            if (key.action == KeyEvent.ACTION_DOWN) runCatching { logFocus.requestFocus() }
+            true
+        } else false
+    }.focusProperties { up = logFocus }
     LaunchedEffect(report.timestampMs) {
         withFrameNanos { }
         runCatching { closeFocus.requestFocus() }
@@ -69,7 +100,36 @@ internal fun TvCrashRecoveryPopup(report: AppCrashReport, onClosed: () -> Unit) 
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .focusRequester(logFocus)
+                    .onFocusChanged { logFocused = it.isFocused }
+                    .focusProperties { down = detailsFocus }
+                    .onPreviewKeyEvent { event ->
+                        val key = event.nativeKeyEvent
+                        when (key.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                if (key.action == KeyEvent.ACTION_DOWN) {
+                                    val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                    if (down && logScroll.value >= logScroll.maxValue) {
+                                        runCatching { detailsFocus.requestFocus() }
+                                    } else {
+                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                            .coerceIn(0, logScroll.maxValue)
+                                        scope.launch { logScroll.scrollTo(target) }
+                                    }
+                                }
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                                if (key.action == KeyEvent.ACTION_DOWN) runCatching { detailsFocus.requestFocus() }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .focusable()
+                    .verticalScroll(logScroll)
+                    .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(report.summary)
@@ -81,17 +141,17 @@ internal fun TvCrashRecoveryPopup(report: AppCrashReport, onClosed: () -> Unit) 
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { expanded = !expanded }) {
+                TextButton(onClick = { expanded = !expanded }, modifier = buttonNavigation.focusRequester(detailsFocus)) {
                     Text(if (expanded) "Hide details" else "Details")
                 }
-                TextButton(onClick = {
+                TextButton(modifier = buttonNavigation, onClick = {
                     val copied = runCatching {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("VUEO Crash Report", "$time\n${report.summary}\n\n${report.details}"))
                     }.isSuccess
                     message = if (copied) "Log copied." else "Couldn't copy log."
                 }) { Text("Copy Log") }
-                TextButton(onClick = ::close, enabled = !closing, modifier = Modifier.focusRequester(closeFocus)) {
+                TextButton(onClick = ::close, enabled = !closing, modifier = buttonNavigation.focusRequester(closeFocus)) {
                     Text("Close")
                 }
             }
