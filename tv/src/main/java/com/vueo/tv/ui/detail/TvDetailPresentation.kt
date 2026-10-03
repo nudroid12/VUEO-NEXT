@@ -85,20 +85,32 @@ internal fun TvDetailPresentation(
     val hasCast = people.isNotEmpty()
     val hasRelated = state.related.isNotEmpty()
     val hasCompanies = state.item.networks.isNotEmpty() || state.item.productionCompanies.isNotEmpty()
+    val hasPeopleTabs = hasCast || hasCompanies
     val hasSeasons = state.item.isDetailSeries() && state.seasons.isNotEmpty()
     val hasEpisodes = state.item.isDetailSeries() && state.episodes.isNotEmpty()
+
+    val hasEpisodeMessage = state.item.isDetailSeries() && !state.loading && state.item.episodes.isEmpty()
+    val peopleIndex = 1 + (if (hasSeasons) 1 else 0) + (if (hasEpisodes || hasEpisodeMessage) 1 else 0)
+    val relatedIndex = peopleIndex + (if (hasPeopleTabs) 1 else 0)
+    fun belowIndex(target: FocusRequester): Int = when (target) {
+        seasonRequester -> 1
+        episodeRequester -> if (hasSeasons) 2 else 1
+        peopleContentRequester -> peopleIndex
+        else -> relatedIndex
+    }
 
     val firstBelowHero = when {
         hasSeasons -> seasonRequester
         hasEpisodes -> episodeRequester
-        hasCast -> peopleContentRequester
-        !hasCompanies && hasRelated -> relatedContentRequester
+        hasPeopleTabs -> peopleContentRequester
+        hasRelated -> relatedContentRequester
         else -> null
     }
     val navigationScope = rememberCoroutineScope()
     var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
     fun revealAndFocus(index: Int, target: FocusRequester) {
         if (movingBetweenSections) return
+        if (runCatching { target.requestFocus() }.getOrDefault(false)) return
         movingBetweenSections = true
         navigationScope.launch {
             try {
@@ -127,13 +139,13 @@ internal fun TvDetailPresentation(
 
     val firstBelowSeasons = when {
         hasEpisodes -> episodeRequester
-        hasCast -> peopleContentRequester
-        !hasCompanies && hasRelated -> relatedContentRequester
+        hasPeopleTabs -> peopleContentRequester
+        hasRelated -> relatedContentRequester
         else -> null
     }
     val firstBelowEpisodes = when {
-        hasCast -> peopleContentRequester
-        !hasCompanies && hasRelated -> relatedContentRequester
+        hasPeopleTabs -> peopleContentRequester
+        hasRelated -> relatedContentRequester
         else -> null
     }
     val peopleUp = when {
@@ -142,8 +154,7 @@ internal fun TvDetailPresentation(
         else -> playRequester
     }
     val relatedUpRequester = when {
-        hasCompanies -> null
-        hasCast -> peopleContentRequester
+        hasPeopleTabs -> peopleContentRequester
         hasEpisodes -> episodeRequester
         hasSeasons -> seasonRequester
         else -> playRequester
@@ -167,18 +178,23 @@ internal fun TvDetailPresentation(
         label = "detail39ScrimAlpha",
     )
 
+    val entryEpisodeId = remember(mediaKey) {
+        VueoDetailFocusMemory.episodeId.takeIf { VueoDetailFocusMemory.mediaKey == mediaKey }
+    }
+    var entryFocusRestored by remember(mediaKey) { mutableStateOf(false) }
     LaunchedEffect(mediaKey) {
         delay(110)
         runCatching { playRequester.requestFocus() }
     }
 
-    LaunchedEffect(mediaKey, state.selectedEpisode?.id) {
-        val rememberedEpisodeId = VueoDetailFocusMemory.episodeId
+    LaunchedEffect(mediaKey, state.selectedEpisode?.id, hasEpisodes) {
+        val rememberedEpisodeId = entryEpisodeId
         val restoreEpisode = state.item.isDetailSeries() &&
             VueoDetailFocusMemory.mediaKey == mediaKey &&
             rememberedEpisodeId != null &&
             rememberedEpisodeId == state.selectedEpisode?.id
-        if (restoreEpisode) {
+        if (restoreEpisode && hasEpisodes && !entryFocusRestored) {
+            entryFocusRestored = true
             listState.scrollToItem(if (hasSeasons) 2 else 1)
             delay(120)
             runCatching { episodeRequester.requestFocus() }
@@ -205,7 +221,7 @@ internal fun TvDetailPresentation(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "vueo-hero:$mediaKey") {
-                Box(sectionNavigation(null, firstBelowHero?.let { 1 to it })) {
+                Box(sectionNavigation(null, firstBelowHero?.let { belowIndex(it) to it })) {
                 VueoDetailHero(
                     state = state,
                     heroHeight = heroHeight,
@@ -221,7 +237,7 @@ internal fun TvDetailPresentation(
 
             if (hasSeasons) {
                 item(key = "vueo-seasons:$mediaKey") {
-                    Box(sectionNavigation(0 to playRequester, firstBelowSeasons?.let { 2 to it })) {
+                    Box(sectionNavigation(0 to playRequester, firstBelowSeasons?.let { belowIndex(it) to it })) {
                     VueoDetailSeasonTabs(
                         seasons = state.seasons,
                         selectedSeason = state.selectedSeason,
@@ -236,10 +252,9 @@ internal fun TvDetailPresentation(
 
             if (hasEpisodes) {
                 item(key = "vueo-episodes:$mediaKey:${state.selectedSeason}") {
-                    val episodeIndex = if (hasSeasons) 2 else 1
                     Box(sectionNavigation(
                         if (hasSeasons) 1 to seasonRequester else 0 to playRequester,
-                        firstBelowEpisodes?.let { episodeIndex + 1 to it },
+                        firstBelowEpisodes?.let { belowIndex(it) to it },
                     )) {
                     VueoDetailEpisodes(
                         media = state.item,
@@ -261,57 +276,32 @@ internal fun TvDetailPresentation(
                 }
             }
 
-            if (hasCast) {
-                item(key = "vueo-cast:$mediaKey") {
-                    VueoDetailCastSection(
+            if (hasPeopleTabs) {
+                item(key = "vueo-people-tabs:$mediaKey") {
+                    val upIndex = when {
+                        hasEpisodes -> if (hasSeasons) 2 else 1
+                        hasSeasons -> 1
+                        else -> 0
+                    }
+                    VueoDetailCastCompanyTabs(
+                        mediaKey = mediaKey,
                         cast = people,
+                        production = state.item.productionCompanies,
+                        networks = state.item.networks,
                         sectionRequester = peopleContentRequester,
                         upRequester = peopleUp,
-                        downRequester = if (!hasCompanies && hasRelated) relatedContentRequester else null,
-                        onOpen = { person ->
-                            onOpenEntity(
-                                MediaEntityTarget(
-                                    kind = MediaEntityKind.ACTOR,
-                                    name = person.name,
-                                )
-                            )
+                        downRequester = if (hasRelated) relatedContentRequester else null,
+                        onMoveUp = { revealAndFocus(upIndex, peopleUp) },
+                        onMoveDown = if (hasRelated) ({ revealAndFocus(peopleIndex + 1, relatedContentRequester) }) else null,
+                        onOpenCast = { person ->
+                            onOpenEntity(MediaEntityTarget(kind = MediaEntityKind.ACTOR, name = person.name))
                         },
-                    )
-                }
-            }
-
-            val networks = state.item.networks
-            val production = state.item.productionCompanies
-            if (networks.isNotEmpty()) {
-                item(key = "vueo-networks:$mediaKey") {
-                    VueoDetailCompanies(
-                        title = if (networks.size == 1) "Network" else "Networks",
-                        companies = networks,
-                        onOpenCompany = { company ->
-                            onOpenEntity(
-                                MediaEntityTarget(
-                                    kind = MediaEntityKind.NETWORK,
-                                    name = company.name,
-                                    tmdbId = company.tmdbId,
-                                )
-                            )
-                        },
-                    )
-                }
-            }
-            if (production.isNotEmpty()) {
-                item(key = "vueo-production:$mediaKey") {
-                    VueoDetailCompanies(
-                        title = "Production",
-                        companies = production,
-                        onOpenCompany = { company ->
-                            onOpenEntity(
-                                MediaEntityTarget(
-                                    kind = MediaEntityKind.COMPANY,
-                                    name = company.name,
-                                    tmdbId = company.tmdbId,
-                                )
-                            )
+                        onOpenCompany = { company, isNetwork ->
+                            onOpenEntity(MediaEntityTarget(
+                                kind = if (isNetwork) MediaEntityKind.NETWORK else MediaEntityKind.COMPANY,
+                                name = company.name,
+                                tmdbId = company.tmdbId,
+                            ))
                         },
                     )
                 }

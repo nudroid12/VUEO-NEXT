@@ -23,6 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -145,6 +149,20 @@ internal fun VueoDetailEpisodes(
     onFocused: (EpisodeItem) -> Unit,
     onOpen: (EpisodeItem) -> Unit,
 ) {
+    val edgePadding = with(LocalDensity.current) { VueoDetailHorizontalPadding.toPx() }
+    val horizontalReveal = remember(edgePadding) {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                val usableSize = containerSize - 2 * edgePadding
+                if (size >= usableSize) return offset - edgePadding
+                return when {
+                    offset < edgePadding -> offset - edgePadding
+                    offset + size > containerSize - edgePadding -> offset + size - (containerSize - edgePadding)
+                    else -> 0f
+                }
+            }
+        }
+    }
     val screenWidth = LocalConfiguration.current.screenWidthDp
     val cardWidth = when { screenWidth >= 1300 -> 400.dp; screenWidth >= 1000 -> 360.dp; screenWidth >= 760 -> 320.dp; else -> 280.dp }
     val cardHeight = when { screenWidth >= 1300 -> 263.dp; screenWidth >= 1000 -> 235.dp; screenWidth >= 760 -> 207.dp; else -> 179.dp }
@@ -165,6 +183,7 @@ internal fun VueoDetailEpisodes(
             .padding(top = 2.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
+        CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalReveal) {
         LazyRow(
             state = listState,
             modifier = Modifier
@@ -200,6 +219,7 @@ internal fun VueoDetailEpisodes(
                     onOpen = { onOpen(episode) },
                 )
             }
+        }
         }
     }
 }

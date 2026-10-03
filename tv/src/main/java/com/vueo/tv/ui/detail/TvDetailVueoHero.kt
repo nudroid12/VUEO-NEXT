@@ -39,6 +39,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +68,8 @@ internal fun VueoDetailHero(
     onToggleList: () -> Unit,
     onToggleWatched: () -> Unit,
 ) {
+    val density = LocalDensity.current
+    var actionWidth by remember(state.item.id, state.item.type) { mutableStateOf(240.dp) }
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
@@ -110,6 +114,7 @@ internal fun VueoDetailHero(
         VueoHeroTitle(
             title = item.name,
             logoUrl = state.vueoExtras.logo,
+            actionWidth = actionWidth,
         )
 
         Spacer(Modifier.height(12.dp))
@@ -118,6 +123,7 @@ internal fun VueoDetailHero(
         val showWatched = !item.isDetailSeries()
 
         Row(
+            modifier = Modifier.onSizeChanged { actionWidth = with(density) { it.width.toDp() } },
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -233,6 +239,7 @@ internal fun VueoDetailHero(
 private fun VueoHeroTitle(
     title: String,
     logoUrl: String?,
+    actionWidth: Dp,
 ) {
     if (!logoUrl.isNullOrBlank()) {
         TvNetworkImage(
@@ -240,7 +247,7 @@ private fun VueoHeroTitle(
             contentDescription = title,
             modifier = Modifier
                 .height(78.dp)
-                .fillMaxWidth(.36f),
+                .width(actionWidth),
             contentScale = ContentScale.Fit,
             fallback = Color.Transparent,
         )

@@ -45,6 +45,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -305,7 +311,7 @@ private fun VueoCastMember(
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onOpen)
             .focusable(),
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
@@ -343,6 +349,8 @@ private fun VueoCastMember(
         Spacer(Modifier.height(9.dp))
         Text(
             text = person.name,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
             color = TvDesign.White.copy(alpha = .82f),
             fontSize = 11.sp,
             lineHeight = 14.sp,
@@ -354,6 +362,8 @@ private fun VueoCastMember(
             Spacer(Modifier.height(3.dp))
             Text(
                 text = role,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
                 color = TvDesign.White.copy(alpha = .48f),
                 fontSize = 9.sp,
                 maxLines = 1,
@@ -616,6 +626,7 @@ internal fun VueoDetailCompanies(
 private fun VueoCompanyCard(
     company: MediaCompany,
     onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember(company.name) { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -628,7 +639,7 @@ private fun VueoCompanyCard(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .width(140.dp)
             .height(70.dp)
             .graphicsLayer {
@@ -659,6 +670,8 @@ private fun VueoCompanyCard(
         } else {
             Text(
                 text = company.name,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
                 color = Color.Black.copy(alpha = .72f),
                 fontSize = 10.sp,
                 lineHeight = 12.sp,
@@ -666,6 +679,131 @@ private fun VueoCompanyCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+
+private enum class VueoCompanyTab(val label: String) {
+    CAST("Cast"), PRODUCTION("Production"), NETWORK("Network"),
+}
+
+/** One stable content area for the three requested tabs. */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@Composable
+internal fun VueoDetailCastCompanyTabs(
+    mediaKey: String,
+    cast: List<MediaPerson>,
+    production: List<MediaCompany>,
+    networks: List<MediaCompany>,
+    sectionRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester?,
+    onMoveUp: () -> Unit,
+    onMoveDown: (() -> Unit)?,
+    onOpenCast: (MediaPerson) -> Unit,
+    onOpenCompany: (MediaCompany, Boolean) -> Unit,
+) {
+    val available = buildList {
+        if (cast.isNotEmpty()) add(VueoCompanyTab.CAST)
+        if (production.isNotEmpty()) add(VueoCompanyTab.PRODUCTION)
+        if (networks.isNotEmpty()) add(VueoCompanyTab.NETWORK)
+    }
+    if (available.isEmpty()) return
+    var selected by remember(mediaKey) { mutableStateOf(available.first()) }
+    val active = selected.takeIf { it in available } ?: available.first()
+    val tabRequesters = remember(mediaKey, available, sectionRequester) {
+        available.associateWith { if (it == available.first()) sectionRequester else FocusRequester() }
+    }
+    val contentRequesters = remember(mediaKey) {
+        VueoCompanyTab.entries.associateWith { FocusRequester() }
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            available.forEachIndexed { index, tab ->
+                var focused by remember(mediaKey, tab) { mutableStateOf(false) }
+                Text(
+                    text = tab.label,
+                    color = if (focused || active == tab) TvDesign.White else TvDesign.White.copy(alpha = .58f),
+                    fontSize = 19.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,
+                    modifier = Modifier
+                        .focusRequester(tabRequesters.getValue(tab))
+                        .focusProperties {
+                            up = upRequester
+                            down = contentRequesters.getValue(tab)
+                            left = available.getOrNull(index - 1)?.let(tabRequesters::getValue) ?: FocusRequester.Cancel
+                            right = available.getOrNull(index + 1)?.let(tabRequesters::getValue) ?: FocusRequester.Cancel
+                        }
+                        .onPreviewKeyEvent { event ->
+                            if (event.key != Key.DirectionUp) false
+                            else {
+                                if (event.type == KeyEventType.KeyDown) onMoveUp()
+                                true
+                            }
+                        }
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) selected = tab
+                        }
+                        .clickable { selected = tab }
+                        .padding(vertical = 4.dp),
+                )
+                if (index < available.lastIndex) {
+                    Box(Modifier.width(1.dp).height(27.dp).background(TvDesign.White.copy(alpha = .48f)))
+                }
+            }
+        }
+        // The same height prevents the page from moving when Cast changes to a shorter logo row.
+        Box(
+            modifier = Modifier.fillMaxWidth().height(185.dp).onPreviewKeyEvent { event ->
+                if (event.key != Key.DirectionDown || onMoveDown == null) false
+                else {
+                    if (event.type == KeyEventType.KeyDown) onMoveDown()
+                    true
+                }
+            },
+        ) {
+            when (active) {
+                VueoCompanyTab.CAST -> VueoCastRow(
+                    cast = cast,
+                    sectionRequester = contentRequesters.getValue(active),
+                    upRequester = tabRequesters.getValue(active),
+                    downRequester = downRequester,
+                    onOpen = onOpenCast,
+                )
+                VueoCompanyTab.PRODUCTION, VueoCompanyTab.NETWORK -> {
+                    val companies = if (active == VueoCompanyTab.PRODUCTION) production else networks
+                    val firstRequester = contentRequesters.getValue(active)
+                    val requesters = remember(mediaKey, active, companies, firstRequester) {
+                        companies.take(14).indices.map { if (it == 0) firstRequester else FocusRequester() }
+                    }
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().focusRestorer { firstRequester }.focusGroup(),
+                        contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        itemsIndexed(companies.take(14), key = { index, company -> "$active:$index:${company.name}" }) { index, company ->
+                            VueoCompanyCard(
+                                company = company,
+                                onOpen = { onOpenCompany(company, active == VueoCompanyTab.NETWORK) },
+                                modifier = Modifier.focusRequester(requesters[index]).focusProperties {
+                                    up = tabRequesters.getValue(active)
+                                    down = downRequester ?: FocusRequester.Cancel
+                                },
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
