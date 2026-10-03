@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,8 +36,6 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
-import com.vueo.tv.core.TvTitleArtwork
-import kotlinx.coroutines.CancellationException
 
 /**
  * Modern Home hero scene.
@@ -49,8 +46,7 @@ import kotlinx.coroutines.CancellationException
  */
 @Composable
 internal fun TvModernHomeHero(
-    entry: TvHomeEntry?,
-    artworkApiKey: String,
+    scene: TvHomeHeroScene?,
     heroHeight: Dp,
     rowsViewportHeight: Dp,
     modifier: Modifier = Modifier,
@@ -65,15 +61,15 @@ internal fun TvModernHomeHero(
                 .height(heroHeight),
         ) {
             Crossfade(
-                targetState = entry,
+                targetState = scene,
                 animationSpec = tween(
-                    durationMillis = 250,
+                    durationMillis = 400,
                     easing = TvMotion.EaseOut,
                 ),
                 label = "modernHomeHeroMedia",
                 modifier = Modifier.fillMaxSize(),
             ) { displayedEntry ->
-                val media = displayedEntry?.media
+                val media = displayedEntry?.entry?.media
                 TvNetworkImage(
                     highPriority = true,
                     url = media?.background ?: media?.poster,
@@ -88,10 +84,9 @@ internal fun TvModernHomeHero(
         }
 
         Crossfade(
-            targetState = entry,
+            targetState = scene,
             animationSpec = tween(
-                durationMillis = 170,
-                delayMillis = 30,
+                durationMillis = 400,
                 easing = TvMotion.EaseOut,
             ),
             label = "modernHomeHeroCopy",
@@ -105,7 +100,7 @@ internal fun TvModernHomeHero(
                 .fillMaxWidth(MODERN_HOME_HERO_TEXT_WIDTH_FRACTION),
         ) { focusedEntry ->
             if (focusedEntry != null) {
-                HeroCopy(entry = focusedEntry, artworkApiKey = artworkApiKey)
+                HeroCopy(scene = focusedEntry)
             }
         }
     }
@@ -174,50 +169,37 @@ private fun HeroMediaGradient(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun HeroCopy(entry: TvHomeEntry, artworkApiKey: String) {
+private fun HeroCopy(scene: TvHomeHeroScene) {
+    val entry = scene.entry
     val media = entry.media
-    var artwork by remember(media.id, media.type, media.sourceExtensionId, artworkApiKey) {
-        mutableStateOf(TvTitleArtwork.cached(media, artworkApiKey))
-    }
-    var artworkLoading by remember(media.id, media.type, media.sourceExtensionId, artworkApiKey) {
-        mutableStateOf(artwork == null && artworkApiKey.isNotBlank())
-    }
-    LaunchedEffect(media.id, media.type, media.sourceExtensionId, artworkApiKey) {
-        try {
-            artwork = TvTitleArtwork.load(media, artworkApiKey)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // Use the title only after logo lookup has finished.
-        } finally {
-            artworkLoading = false
-        }
-    }
+    val logo = scene.artwork?.logo
+    var logoLoadFailed by remember(logo) { mutableStateOf(false) }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         Box(Modifier.height(100.dp).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-            val logo = artwork?.logo
-            if (!logo.isNullOrBlank()) {
+            if (!logo.isNullOrBlank() && !logoLoadFailed) {
                 TvNetworkImage(
                     url = logo,
                     contentDescription = media.name,
-                    modifier = Modifier.width(260.dp).height(100.dp),
+                    modifier = Modifier.width(220.dp).height(100.dp),
                     contentScale = ContentScale.Fit,
                     fallback = Color.Transparent,
                     highPriority = true,
+                    alignment = Alignment.CenterStart,
+                    onLoadResult = { success -> logoLoadFailed = !success },
                 )
-            } else if (!artworkLoading) {
-            androidx.compose.material3.Text(
-                text = media.name,
-                color = TvDesign.White,
-                fontSize = 36.sp,
-                lineHeight = 39.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            } else {
+                androidx.compose.material3.Text(
+                    text = media.name,
+                    color = TvDesign.White,
+                    fontSize = 36.sp,
+                    lineHeight = 39.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 

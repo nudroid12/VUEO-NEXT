@@ -10,6 +10,12 @@ internal const val MODERN_HOME_ROWS_VIEWPORT_FRACTION = 0.52f
 internal const val MODERN_HOME_HERO_FOCUS_SETTLE_MS = 450L
 internal val MODERN_HOME_CONTENT_START_PADDING = 96.dp
 
+/** One resolved item supplies both hero planes; navigation never waits for it. */
+internal data class TvHomeHeroScene(
+    val entry: TvHomeEntry,
+    val artwork: com.vueo.shared.core.detail.DetailSupplementalInfo?,
+)
+
 internal sealed interface TvHomeEntry {
     val key: String
     val media: MediaItem

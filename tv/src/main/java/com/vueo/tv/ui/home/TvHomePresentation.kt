@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,6 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
+import android.os.SystemClock
+import com.vueo.tv.ui.tvPrefetchImage
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
@@ -41,7 +47,12 @@ internal fun TvHomePresentation(
     modifier: Modifier = Modifier,
 ) {
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
-    var heroEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
+    var heroScene by remember(artworkApiKey) { mutableStateOf<TvHomeHeroScene?>(null) }
+    var lastNavigationAt by remember { mutableLongStateOf(0L) }
+    var heroSettleDelay by remember { mutableLongStateOf(MODERN_HOME_HERO_FOCUS_SETTLE_MS) }
+    val context = LocalContext.current.applicationContext
+    val density = LocalDensity.current
+    val logoSize = with(density) { IntSize(220.dp.roundToPx(), 100.dp.roundToPx()) }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val floatingPillMode = tvSidebarIsPillMode()
     val showContinueWatchingPreview = floatingPillMode && navigationVisible
@@ -75,24 +86,42 @@ internal fun TvHomePresentation(
             rows.firstNotNullOfOrNull { it.entries.firstOrNull() }
         }
         focusedEntry = initial
-        heroEntry = initial
     }
 
-    LaunchedEffect(focusedEntry?.key) {
-        val next = focusedEntry ?: return@LaunchedEffect
-        delay(MODERN_HOME_HERO_FOCUS_SETTLE_MS)
-        if (focusedEntry?.key == next.key) heroEntry = next
-    }
-
+    // Keep the displayed scene while enrichment is pending. A newer focus
+    // cancels this job, so an old lookup cannot replace the current selection.
     LaunchedEffect(focusedEntry?.key, artworkApiKey) {
-        val media = focusedEntry?.media ?: return@LaunchedEffect
-        delay(MODERN_HOME_HERO_FOCUS_SETTLE_MS)
-        try {
-            TvTitleArtwork.load(media, artworkApiKey)
+        val next = focusedEntry ?: return@LaunchedEffect
+        if (heroScene != null) delay(heroSettleDelay)
+        val artwork = try {
+            TvTitleArtwork.load(next.media, artworkApiKey)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // Artwork stays optional and never delays navigation.
+            null // Optional artwork failure still publishes the text title.
+        }
+        if (focusedEntry?.key == next.key) heroScene = TvHomeHeroScene(next, artwork)
+    }
+
+    // Nuvio preloads one adjacent item after a short settle. Bound the work to
+    // this row and cancel it on navigation; use the same artwork/image caches.
+    LaunchedEffect(focusedEntry?.key, artworkApiKey, rows) {
+        val selected = focusedEntry ?: return@LaunchedEffect
+        val row = rows.firstOrNull { it.entries.any { item -> item.key == selected.key } }
+            ?: return@LaunchedEffect
+        val index = row.entries.indexOfFirst { it.key == selected.key }
+        val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
+            ?: return@LaunchedEffect
+        delay(120L)
+        try {
+            val artwork = TvTitleArtwork.load(adjacent.media, artworkApiKey)
+            tvPrefetchImage(context, artwork.logo, logoSize)
+            // A bounded decode primes the disk cache for the large hero as well.
+            tvPrefetchImage(context, adjacent.media.background ?: adjacent.media.poster, IntSize(960, 540))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Adjacent artwork is optional; navigation remains independent.
         }
     }
 
@@ -106,8 +135,7 @@ internal fun TvHomePresentation(
         val heroHeight = (screenHeight - rowsViewportHeight + 38.dp).coerceAtMost(screenHeight)
 
         TvModernHomeHero(
-            entry = heroEntry,
-            artworkApiKey = artworkApiKey,
+            scene = heroScene,
             heroHeight = heroHeight,
             rowsViewportHeight = rowsViewportHeight,
         )
@@ -125,6 +153,12 @@ internal fun TvHomePresentation(
                     onFocused = { row, index, entry ->
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
+                        if (focusedEntry?.key != entry.key) {
+                            val now = SystemClock.uptimeMillis()
+                            heroSettleDelay = if (lastNavigationAt != 0L && now - lastNavigationAt < 130L) 400L
+                                else MODERN_HOME_HERO_FOCUS_SETTLE_MS
+                            lastNavigationAt = now
+                        }
                         focusedEntry = entry
                     },
                     onOpen = onOpen,

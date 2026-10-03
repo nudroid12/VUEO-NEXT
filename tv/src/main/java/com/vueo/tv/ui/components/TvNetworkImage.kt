@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -214,6 +215,16 @@ private object TvImageCache {
             .joinToString("") { byte -> "%02x".format(byte) }
 }
 
+/** Opt-in Home prefetch; shares existing limits, cache and download policy. */
+internal suspend fun tvPrefetchImage(context: Context, url: String?, size: IntSize) {
+    if (url.isNullOrBlank() || !url.startsWith("https://")) return
+    val target = IntSize(
+        TvImageDecodePolicy.targetDimension(size.width),
+        TvImageDecodePolicy.targetDimension(size.height),
+    )
+    TvImageCache.load(context, url, target, highPriority = false)
+}
+
 @Composable
 fun TvNetworkImage(
     url: String?,
@@ -224,8 +235,10 @@ fun TvNetworkImage(
     loadEnabled: Boolean = true,
     highPriority: Boolean = false,
     alignment: Alignment = Alignment.Center,
+    onLoadResult: ((Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current.applicationContext
+    val latestLoadResult by rememberUpdatedState(onLoadResult)
     var targetSize by remember { mutableStateOf(IntSize.Zero) }
     var image by remember(url) {
         mutableStateOf(TvImageCache.memoryEntry(url, targetSize) ?: TvImageCache.cachedPreview(url))
@@ -236,10 +249,17 @@ fun TvNetworkImage(
         val cached = TvImageCache.memoryEntry(url, targetSize)
         if (cached != null) {
             image = cached
+            latestLoadResult?.invoke(true)
             return@LaunchedEffect
         }
-        if (!loadEnabled || url.isNullOrBlank() || !url.startsWith("https://")) return@LaunchedEffect
-        TvImageCache.load(context, url, targetSize, highPriority)?.let { image = it }
+        if (!loadEnabled) return@LaunchedEffect
+        if (url.isNullOrBlank() || !url.startsWith("https://")) {
+            latestLoadResult?.invoke(false)
+            return@LaunchedEffect
+        }
+        val loaded = TvImageCache.load(context, url, targetSize, highPriority)
+        loaded?.let { image = it }
+        latestLoadResult?.invoke(image != null)
     }
 
     val imageAlpha by animateFloatAsState(

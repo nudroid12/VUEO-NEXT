@@ -87,7 +87,6 @@ private val PosterShape = RoundedCornerShape(12.dp)
 private val VerticalRowCacheExtent = 232.dp
 private const val VerticalRowScrollDurationMs = 180
 private const val VerticalRowSettleTolerancePx = 2f
-private const val FocusedCardScale = 1.022f
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -414,8 +413,10 @@ private fun TvModernHomeCard(
     onHold: () -> Unit,
 ) {
     var focused by remember(entry.key) { mutableStateOf(false) }
+    // Nuvio's catalog cards keep their geometry on focus. Preserve the
+    // existing Continue Watching treatment outside the poster comparison.
     val animatedScale by animateFloatAsState(
-        targetValue = if (focused) FocusedCardScale else 1f,
+        targetValue = if (focused && kind == TvHomeRowKind.CONTINUE_WATCHING) 1.022f else 1f,
         animationSpec = tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
