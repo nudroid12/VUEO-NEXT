@@ -28,12 +28,17 @@ object CrashReportStore {
     private var currentVersion = "unknown"
     private var lastSystemSummaryNs = 0L
     private var lastScreen = "Startup"
+    private var lastStall = "No live stall stack captured."
 
     internal fun startSession(context: Context) = synchronized(lock) {
         if (currentStartedMs != 0L) return@synchronized
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         previousStartedMs = prefs.getLong("session_started", 0L)
         previousVersion = prefs.getString("session_version", "unknown") ?: "unknown"
+        val evidence = File(context.noBackupFilesDir, "anr_evidence.json")
+        val previousEvidence = File(context.noBackupFilesDir, "anr_evidence_previous.json")
+        previousEvidence.delete()
+        if (evidence.exists()) evidence.renameTo(previousEvidence)
         currentStartedMs = System.currentTimeMillis()
         currentVersion = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -47,18 +52,40 @@ object CrashReportStore {
     }
 
     internal fun note(message: String) = synchronized(lock) {
-        if (breadcrumbs.size == 8) breadcrumbs.removeFirst()
+        if (breadcrumbs.size == 48) breadcrumbs.removeFirst()
         breadcrumbs.addLast(sanitize(message).take(700))
+    }
+
+    internal fun stall(stack: String) = synchronized(lock) {
+        lastStall = sanitize(stack).take(16_000)
+    }
+
+    private fun persistEvidence(context: Context) {
+        val snapshot = synchronized(lock) {
+            JSONObject().put("session", currentStartedMs).put("timestamp", System.currentTimeMillis())
+                .put("screen", lastScreen).put("timeline", breadcrumbs.joinToString("\n"))
+                .put("stall", lastStall)
+        }
+        val file = AtomicFile(File(context.noBackupFilesDir, "anr_evidence.json"))
+        val output = file.startWrite()
+        try {
+            output.write(snapshot.toString().toByteArray(Charsets.UTF_8))
+            file.finishWrite(output)
+        } catch (error: Throwable) {
+            file.failWrite(output)
+            throw error
+        }
     }
 
     // Invoked by the existing diagnostic writer, never for each event on the UI thread.
     internal fun updateSystemSummary(context: Context, message: String, force: Boolean = false) {
-        if (Build.VERSION.SDK_INT < 30) return
         val now = System.nanoTime()
         synchronized(lock) {
             if (!force && now - lastSystemSummaryNs < 500_000_000L) return
             lastSystemSummaryNs = now
         }
+        runCatching { persistEvidence(context) }
+        if (Build.VERSION.SDK_INT < 30) return
         runCatching {
             val state = synchronized(lock) { "Screen: $lastScreen | ${sanitize(message)}" }
             val bytes = state.toByteArray(Charsets.UTF_8).take(128).toByteArray()
@@ -149,23 +176,51 @@ object CrashReportStore {
             exit.processStateSummary?.let {
                 appendLine("Last observed activity: ${String(it, Charsets.UTF_8)}")
             }
-            appendLine("The exit record may not contain the exact code location or root cause.")
+            appendLine("Previous-session evidence (observations, not proven causes):")
+            appendLine(runCatching {
+                val file = File(context.noBackupFilesDir, "anr_evidence_previous.json")
+                if (!file.exists() || file.length() > 128_000) "Unavailable: no bounded previous-session evidence."
+                else {
+                    val evidence = JSONObject(file.readText())
+                    if (evidence.optLong("session") != previousStartedMs ||
+                        evidence.optLong("timestamp") > exit.timestamp) "Unavailable: evidence does not match this exit."
+                    else "Screen: ${evidence.optString("screen")}\nTimeline (last 48 events, each capped at 700 characters):\n${evidence.optString("timeline")}\nLive stall snapshot (capped at 16000 characters):\n${evidence.optString("stall")}" 
+                }
+            }.getOrElse { "Unavailable: previous-session evidence read failed (${it.javaClass.simpleName})." })
+            if (exit.reason == ApplicationExitInfo.REASON_ANR) {
+                appendLine("Android ANR trace:")
+                appendLine(runCatching {
+                    exit.traceInputStream?.use { stream ->
+                        val reader = stream.reader(Charsets.UTF_8)
+                        val chars = CharArray(48_001)
+                        var size = 0
+                        while (size < chars.size) {
+                            val count = reader.read(chars, size, chars.size - size)
+                            if (count <= 0) break
+                            size += count
+                        }
+                        String(chars, 0, minOf(size, 48_000)) +
+                            if (size > 48_000) "\n[TRACE TRUNCATED: 48000-character limit]" else "\n[TRACE END]"
+                    } ?: "Unavailable: Android supplied no trace."
+                }.getOrElse { "Unavailable: trace read failed (${it.javaClass.simpleName})." })
+            }
+            appendLine("Snapshots can miss the blocking operation; a stack alone does not prove the root cause.")
         }
-        return AppCrashReport(exit.timestamp, summary, sanitize(details).take(24_000))
+        return AppCrashReport(exit.timestamp, summary, sanitize(details).let { if (it.length > 110_000) it.take(110_000) + "\n[REPORT TRUNCATED]" else it })
     }
 
     private fun reportFile(context: Context) = AtomicFile(File(context.noBackupFilesDir, FILE))
     private fun read(context: Context): AppCrashReport? = runCatching {
         val file = reportFile(context)
         file.openRead().use { stream ->
-            val bytes = ByteArray(256_001)
+            val bytes = ByteArray(1_000_001)
             var size = 0
             while (size < bytes.size) {
                 val count = stream.read(bytes, size, bytes.size - size)
                 if (count < 0) break
                 size += count
             }
-            if (size > 256_000) return@use null
+            if (size > 1_000_000) return@use null
             val json = JSONObject(String(bytes, 0, size, Charsets.UTF_8))
             AppCrashReport(json.getLong("timestamp"), json.getString("summary"), json.getString("details"))
         }

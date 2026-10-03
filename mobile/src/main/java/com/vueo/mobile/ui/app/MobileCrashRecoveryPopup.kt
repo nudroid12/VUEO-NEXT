@@ -67,7 +67,11 @@ internal fun MobileCrashRecoveryPopup(report: AppCrashReport, onClosed: () -> Un
                 Text(report.summary)
                 Text(time)
                 Text("The app has restarted. You can copy this report to help investigate.")
-                if (expanded) Text(report.details)
+                if (expanded) Text(
+                    if (report.details.length > 12_000) report.details.take(12_000) +
+                        "\n\n[Preview shortened. Copy Log includes the full stored report.]"
+                    else report.details
+                )
                 message?.let { Text(it) }
             }
         },

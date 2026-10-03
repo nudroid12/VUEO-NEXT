@@ -1,5 +1,8 @@
 package com.vueo.shared.core.diagnostics
 
+import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 import android.content.Context
 import android.os.Build
 import android.os.Handler
@@ -20,8 +23,6 @@ object RuntimeDiagnostics {
     private const val FILE_NAME = "vueo_runtime_diagnostics.log"
     private const val ROTATE_AT_BYTES = 512 * 1024L
     private const val KEEP_BYTES = 256 * 1024
-    private const val PROBE_INTERVAL_MS = 500L
-    private const val STALL_THRESHOLD_MS = 350L
 
     private val installed = AtomicBoolean(false)
     private val scanSequence = AtomicLong(0L)
@@ -32,7 +33,7 @@ object RuntimeDiagnostics {
     }
     private val fileLock = Any()
     private val scanStates = ConcurrentHashMap<Long, ScanState>()
-    private val activeProbes = ConcurrentHashMap.newKeySet<Long>()
+    private val resumedActivities = AtomicInteger(0)
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     @Volatile
@@ -59,6 +60,7 @@ object RuntimeDiagnostics {
 
         runCatching { CrashReportStore.startSession(context.applicationContext) }
         installCrashHandler()
+        startStallWatchdog(context.applicationContext)
         record(
             "SESSION_START android=${Build.VERSION.SDK_INT} " +
                 "device=${safeToken(Build.MANUFACTURER)}_${safeToken(Build.MODEL)} " +
@@ -84,7 +86,6 @@ object RuntimeDiagnostics {
                 "targets=$targetProviders activeScans=$scans thread=${threadLabel()} " +
                 "mainThread=$onMain ${memoryLabel()}"
         )
-        startMainThreadProbe(id)
         return id
     }
 
@@ -95,7 +96,6 @@ object RuntimeDiagnostics {
         outcome: String = "complete",
     ) {
         val state = scanStates.remove(scanId)
-        activeProbes.remove(scanId)
         val scans = activeScans.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
         if (state == null) return
 
@@ -282,26 +282,47 @@ object RuntimeDiagnostics {
         }
     }
 
-    private fun startMainThreadProbe(scanId: Long) {
-        activeProbes += scanId
-        val runnable = object : Runnable {
-            var expected = SystemClock.uptimeMillis() + PROBE_INTERVAL_MS
-
-            override fun run() {
-                if (scanId !in activeProbes) return
-                val now = SystemClock.uptimeMillis()
-                val lateBy = now - expected
-                if (lateBy >= STALL_THRESHOLD_MS) {
-                    record(
-                        "UI_STALL scan=$scanId mainLooperDelay=${lateBy}ms " +
-                            "activeProviders=${activeProviders.get()} ${memoryLabel()}"
-                    )
-                }
-                expected = now + PROBE_INTERVAL_MS
-                mainHandler.postDelayed(this, PROBE_INTERVAL_MS)
-            }
+    // Runs independently of the main looper: captures stacks while it is stalled.
+    private fun startStallWatchdog(context: Context) {
+        (context as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) { resumedActivities.incrementAndGet() }
+            override fun onActivityPaused(activity: Activity) { resumedActivities.updateAndGet { maxOf(0, it - 1) } }
+            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
+        val pendingSince = AtomicLong(0L)
+        val probe = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "vueo-anr-watchdog").apply { isDaemon = true }
         }
-        mainHandler.postDelayed(runnable, PROBE_INTERVAL_MS)
+        var samples = 0
+        probe.scheduleWithFixedDelay({
+            runCatching {
+                if (resumedActivities.get() == 0) {
+                    pendingSince.set(0L)
+                    samples = 0
+                    return@runCatching
+                }
+                val now = SystemClock.uptimeMillis()
+                val since = pendingSince.get()
+                if (since == 0L) {
+                    samples = 0
+                    if (pendingSince.compareAndSet(0L, now)) {
+                        mainHandler.post { pendingSince.compareAndSet(now, 0L) }
+                    }
+                } else if (now - since >= 2_000L && samples < 3) {
+                    samples++
+                    val stack = Looper.getMainLooper().thread.stackTrace.take(80)
+                        .joinToString("\n") { "  at $it" }
+                    val evidence = "UI_STALL_LIVE delay=${now - since}ms sample=$samples " +
+                        "activeScans=${activeScans.get()} activeProviders=${activeProviders.get()} ${memoryLabel()}\n$stack"
+                    CrashReportStore.stall(timestamped(evidence))
+                    record(evidence)
+                }
+            }
+        }, 1_000L, 1_000L, TimeUnit.MILLISECONDS)
     }
 
     private fun record(message: String) {
