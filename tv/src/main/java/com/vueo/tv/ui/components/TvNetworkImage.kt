@@ -65,6 +65,16 @@ private object TvImageCache {
     fun memoryEntry(url: String?, size: IntSize): Bitmap? =
         url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
 
+    // A previous decoded size can paint immediately while layout determines
+    // the exact target size. This reuses the bounded cache without pinning images.
+    fun cachedPreview(url: String?): Bitmap? {
+        if (url.isNullOrBlank()) return null
+        val prefix = "$url:"
+        return memoryCache.snapshot().entries.firstOrNull {
+            it.key.startsWith(prefix) && !it.value.isRecycled
+        }?.value
+    }
+
     suspend fun load(context: Context, url: String, size: IntSize, highPriority: Boolean): Bitmap? =
         withContext(Dispatchers.IO) {
             val cacheKey = key(url, size)
@@ -216,7 +226,7 @@ fun TvNetworkImage(
     val context = LocalContext.current.applicationContext
     var targetSize by remember { mutableStateOf(IntSize.Zero) }
     var image by remember(url) {
-        mutableStateOf(TvImageCache.memoryEntry(url, targetSize))
+        mutableStateOf(TvImageCache.memoryEntry(url, targetSize) ?: TvImageCache.cachedPreview(url))
     }
 
     LaunchedEffect(url, targetSize, loadEnabled, highPriority) {

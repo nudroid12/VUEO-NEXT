@@ -71,9 +71,8 @@ fun TvHomeScreen(
     onBack: () -> Unit,
 ) {
     val catalogRows = retainedState.catalogRows
-    val loading = retainedState.loading ||
-        (retainedState.presentationRows.isEmpty() &&
-            retainedState.presentationCatalogRows !== catalogRows)
+    val loading = retainedState.presentationRows.isEmpty() &&
+        (retainedState.loading || retainedState.presentationCatalogRows !== catalogRows)
     val error = retainedState.error
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     val libraryRevision = retainedState.libraryRevision

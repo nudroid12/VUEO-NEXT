@@ -91,6 +91,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
     val runtime = remember { TvRuntime(context.applicationContext) }
     val homeRetainedState = rememberTvHomeRetainedState(runtime)
+    val homeSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
@@ -480,6 +481,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 }
 
                 TvRoute.HOME -> {
+                    homeSaveableState.SaveableStateProvider("home:${runtime.profileStore.activeProfileId()}") {
                     TvHomeScreen(
                         runtime = runtime,
                         retainedState = homeRetainedState,
@@ -490,6 +492,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onProfile = { openDna(TvRoute.HOME) },
                         onBack = onExit,
                     )
+                    }
                 }
 
                 TvRoute.SEARCH -> {

@@ -1,5 +1,5 @@
-Apply the included files at repository root. Based on VUEO repo (34).
-Mobile Search: show Searching/Preparing search until the current query+mode+content version completes; prevent premature No matches; ignore obsolete query responses. Actor partial UI updates use the effect Main dispatcher and cancellation lifetime.
-Shared title search: forward provider partial results via a conflated channel, rank on Default dispatcher, publish on caller context; propagate cancellation and preserve final merge. Shared change also benefits TV callers of SearchOrchestrator.
-Static source checks and ZIP integrity check passed. No build or device tests performed.
-Device checks: type quickly, change title/actor mode, clear query, leave Search mid-request, test slow providers and genuine empty results.
+Replace included files from repository root. Based on repo (34) with previous session changes.
+TV Home return: reuse decoded cached images before exact layout size is known; retain saveable Home list positions per profile; avoid resetting vertical scroll on re-entry; hide loading when presentation rows already exist.
+Catalog refresh and Continue Watching stay enabled. Image-cache budget unchanged. Images absent from memory still require disk/network loading.
+Source delimiter checks and ZIP integrity passed. No build or device test performed.
+Test Home -> detail/Search/Library -> Back, scrolled rows, profile switching, cache eviction and catalog refresh.

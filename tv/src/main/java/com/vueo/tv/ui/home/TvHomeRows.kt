@@ -180,11 +180,18 @@ internal fun TvModernHomeRows(
         onDispose { verticalAlignmentJob[0]?.cancel() }
     }
 
+    var initialScrollRestored by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+
     // Initialize TV focus once when Home rows first enter composition. Catalog
     // batches may append rows later, but must never steal focus from D-pad input.
     LaunchedEffect(Unit) {
         val rowIndex = rows.indexOfFirst { it.key == initialActiveRowKey }.coerceAtLeast(0)
-        if (rowIndex > 0) verticalState.scrollToItem(rowIndex, 0)
+        if (!initialScrollRestored) {
+            if (rowIndex > 0) verticalState.scrollToItem(rowIndex, 0)
+            initialScrollRestored = true
+        }
         delay(90)
         if (!showContinueWatchingPreview) {
             runCatching { contentFocusRequester.requestFocus() }
