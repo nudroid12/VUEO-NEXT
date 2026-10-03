@@ -1,7 +1,6 @@
 package com.vueo.tv.home
 
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -32,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -85,7 +85,7 @@ private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
 private val VerticalRowCacheExtent = 232.dp
-private const val VerticalRowScrollDurationMs = 180
+private const val VerticalRowSmoothingRate = 12f
 private const val VerticalRowSettleTolerancePx = 2f
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -109,7 +109,8 @@ internal fun TvModernHomeRows(
     val verticalScope = rememberCoroutineScope()
     val verticalAlignmentJob = remember { arrayOfNulls<Job>(1) }
     val measuredRowHeights = remember { mutableMapOf<String, Int>() }
-    var alignedRowKey by remember { mutableStateOf<String?>(null) }
+    val requestedRowKey = remember { arrayOfNulls<String>(1) }
+    val currentRows by rememberUpdatedState(rows)
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
         ?.takeIf { saved -> rows.any { it.key == saved } }
@@ -125,54 +126,62 @@ internal fun TvModernHomeRows(
         }
     }
 
-    fun alignFocusedRow(row: TvHomeRow) {
-        if (alignedRowKey == row.key) return
-        alignedRowKey = row.key
-        verticalAlignmentJob[0]?.cancel()
+    fun requestRowAlignment(rowKey: String) {
+        // Update the destination in place; rapid D-pad input does not restart
+        // the animation. Follow the remaining distance on each display frame.
+        requestedRowKey[0] = rowKey
+        if (verticalAlignmentJob[0]?.isActive == true) return
         verticalAlignmentJob[0] = verticalScope.launch {
-            // A beyond-viewport focus search can compose the target this frame.
-            // Give its measurement one frame to arrive before estimating distance.
             withFrameNanos { }
-            val targetIndex = rows.indexOfFirst { it.key == row.key }
-            if (targetIndex < 0 || showContinueWatchingPreview) return@launch
-            val layout = verticalState.layoutInfo
-            val target = layout.visibleItemsInfo.firstOrNull { it.key == row.key }
-            val distance = if (target != null) {
-                target.offset.toFloat()
-            } else {
-                val first = layout.visibleItemsInfo.firstOrNull() ?: return@launch
-                if (first.index !in rows.indices) return@launch
-                val spacingPx = with(density) { 24.dp.toPx() }
-                fun extent(index: Int): Float {
-                    val candidate = rows[index]
-                    val measured = measuredRowHeights[candidate.key]
-                    val estimated = with(density) {
-                        val cardHeight = if (candidate.kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingHeight else PosterHeight
-                        cardHeight.toPx() + 14.dp.toPx() + 22.sp.toPx()
-                    }
-                    return (measured?.toFloat() ?: estimated) + spacingPx
-                }
-                if (targetIndex >= first.index) {
-                    first.offset + (first.index until targetIndex).sumOf { extent(it).toDouble() }.toFloat()
-                } else {
-                    first.offset - (targetIndex until first.index).sumOf { extent(it).toDouble() }.toFloat()
-                }
-            }
-            if (abs(distance) <= VerticalRowSettleTolerancePx) return@launch
-            // Row HEADER at zero gives the poster its existing ~40dp inset.
-            // A new row cancels and retargets from the current scroll position.
             verticalState.scroll {
-                var previousValue = 0f
-                animate(
-                    initialValue = 0f,
-                    targetValue = distance,
-                    animationSpec = tween(durationMillis = VerticalRowScrollDurationMs, easing = TvMotion.EaseOut),
-                ) { value, _ ->
-                    scrollBy(value - previousValue)
-                    previousValue = value
+                var previousFrame = withFrameNanos { it }
+                while (true) {
+                    val frame = withFrameNanos { it }
+                    val elapsedSeconds = ((frame - previousFrame) / 1_000_000_000f)
+                        .coerceIn(0f, .05f)
+                    previousFrame = frame
+                    val targetKey = requestedRowKey[0] ?: break
+                    val availableRows = currentRows
+                    val targetIndex = availableRows.indexOfFirst { it.key == targetKey }
+                    if (targetIndex < 0) break
+                    val layout = verticalState.layoutInfo
+                    val target = layout.visibleItemsInfo.firstOrNull { it.key == targetKey }
+                    val distance = if (target != null) {
+                        target.offset.toFloat()
+                    } else {
+                        val first = layout.visibleItemsInfo.firstOrNull() ?: break
+                        if (first.index !in availableRows.indices) break
+                        val spacingPx = with(density) { 24.dp.toPx() }
+                        fun extent(index: Int): Float {
+                            val candidate = availableRows[index]
+                            val estimated = with(density) {
+                                val cardHeight = if (candidate.kind == TvHomeRowKind.CONTINUE_WATCHING)
+                                    ContinueWatchingHeight else PosterHeight
+                                cardHeight.toPx() + 14.dp.toPx() + 22.sp.toPx()
+                            }
+                            return (measuredRowHeights[candidate.key]?.toFloat() ?: estimated) + spacingPx
+                        }
+                        if (targetIndex >= first.index) {
+                            first.offset + (first.index until targetIndex).sumOf { extent(it).toDouble() }.toFloat()
+                        } else {
+                            first.offset - (targetIndex until first.index).sumOf { extent(it).toDouble() }.toFloat()
+                        }
+                    }
+                    if (abs(distance) <= VerticalRowSettleTolerancePx) {
+                        scrollBy(distance)
+                        break
+                    }
+                    val smoothing = 1f - kotlin.math.exp(-VerticalRowSmoothingRate * elapsedSeconds)
+                    val step = distance * smoothing
+                    val consumed = scrollBy(step)
+                    if (abs(step) > .5f && abs(consumed) < .01f) break
                 }
             }
         }
+    }
+
+    fun alignFocusedRow(row: TvHomeRow) {
+        if (!showContinueWatchingPreview) requestRowAlignment(row.key)
     }
 
     DisposableEffect(verticalState) {
@@ -200,21 +209,16 @@ internal fun TvModernHomeRows(
     // This scroll is driven only by opening/closing the floating pill. Keeping
     // rows out of the key prevents incoming catalog batches from restarting it.
     LaunchedEffect(showContinueWatchingPreview) {
-        verticalAlignmentJob[0]?.cancel()
-        alignedRowKey = null
         if (showContinueWatchingPreview) {
             if (previewReturnRowKey == null) {
                 previewReturnRowKey = TvHomeFocusMemory.activeRowKey
             }
-            val continueWatchingIndex =
-                rows.indexOfFirst { it.key == "continue-watching" }
-                    .takeIf { it >= 0 }
-                    ?: 0
-            verticalState.scrollToItem(continueWatchingIndex, 0)
+            val previewKey = rows.firstOrNull { it.key == "continue-watching" }?.key
+                ?: rows.firstOrNull()?.key
+            previewKey?.let(::requestRowAlignment)
         } else {
             val returnRowKey = previewReturnRowKey ?: return@LaunchedEffect
-            val returnIndex = rows.indexOfFirst { it.key == returnRowKey }
-            if (returnIndex >= 0) verticalState.scrollToItem(returnIndex, 0)
+            if (rows.any { it.key == returnRowKey }) requestRowAlignment(returnRowKey)
             previewReturnRowKey = null
         }
     }
@@ -381,8 +385,10 @@ private fun TvModernHomeRow(
                                 }
                             }
                         }
+                        val imageActivated = remember(entry.key) { booleanArrayOf(false) }
+                        if (rowVisible && cardVisible) imageActivated[0] = true
                         TvModernHomeCard(
-                            loadImage = rowVisible && cardVisible,
+                            loadImage = imageActivated[0],
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
@@ -538,7 +544,7 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             entry.episodeText()?.let { episode ->
                 Text(
@@ -559,7 +565,7 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

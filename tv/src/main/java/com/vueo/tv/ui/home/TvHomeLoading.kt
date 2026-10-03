@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,9 +59,6 @@ internal fun TvHomeLoading(
             Placeholder(Modifier.width(210.dp).height(14.dp))
             Placeholder(Modifier.width(340.dp).height(14.dp))
             Placeholder(Modifier.width(300.dp).height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CircularProgressIndicator(Modifier.size(20.dp), color = TvDesign.White, strokeWidth = 2.dp)
-            }
         }
         Column(
             Modifier.align(Alignment.BottomStart).fillMaxWidth().height(rowsViewportHeight)
