@@ -72,10 +72,12 @@ fun TvHomeScreen(
     onBack: () -> Unit,
 ) {
     val catalogRows = retainedState.catalogRows
-    val loading = retainedState.presentationRows.isEmpty() &&
+    val loading = retainedState.presentationRows.isEmpty() && retainedState.error == null &&
         (retainedState.loading || retainedState.presentationCatalogRows !== catalogRows)
     val error = retainedState.error
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
+    var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
+    var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
     val libraryRevision = retainedState.libraryRevision
 
     LaunchedEffect(runtime, refreshToken, runtime.isHomeCatalogRuntimeReady()) {
@@ -85,8 +87,16 @@ fun TvHomeScreen(
         }
     }
 
-    LaunchedEffect(runtime, refreshToken) {
-        if (retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
+    LaunchedEffect(runtime, refreshToken, retryAttempt) {
+        val requestedRetryAttempt = retryAttempt
+        val explicitRetry = requestedRetryAttempt > handledRetryAttempt
+        // Startup restores disk cache after this retained state is created.
+        // Publish it before awaiting any fresh catalog/provider result.
+        if (retainedState.catalogRows.isEmpty()) {
+            val restored = runtime.cachedHomeRows()
+            if (restored.isNotEmpty()) retainedState.catalogRows = restored
+        }
+        if (explicitRetry || retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
             retainedState.loading = retainedState.catalogRows.isEmpty()
             retainedState.error = null
 
@@ -104,7 +114,7 @@ fun TvHomeScreen(
                     try {
                         withContext(Dispatchers.Default) {
                             runtime.homeRows(
-                                forceRefresh = false,
+                                forceRefresh = explicitRetry,
                                 onPartial = { updates.trySend(it) },
                             )
                         }
@@ -119,14 +129,13 @@ fun TvHomeScreen(
                 }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
-                    if (retainedState.catalogRows.isEmpty()) {
-                        retainedState.error = failure.message ?: "Unable to load Home"
-                    }
+                    retainedState.error = failure.message?.takeIf(String::isNotBlank)
+                        ?: "Unable to load Home. Check your connection and try again."
                 }
 
-            retainedState.loading =
-                retainedState.catalogRows.isEmpty() && !runtime.isHomeCatalogRuntimeReady()
+            retainedState.loading = false
             retainedState.loadedRefreshToken = refreshToken
+            handledRetryAttempt = requestedRetryAttempt
         }
     }
 
@@ -191,19 +200,17 @@ fun TvHomeScreen(
         if (navExpanded) onBack() else focusSidebar()
     }
 
-    LaunchedEffect(rows.isEmpty(), loading, error) {
-        if (rows.isEmpty() && !loading) {
-            navExpanded = true
-            runCatching { navRequesters.getValue("Home").requestFocus() }
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
             rows = rows,
             artworkApiKey = runtime.pluginStore.tmdbApiKey(),
             loading = loading,
             error = error,
+            onRetry = {
+                retainedState.error = null
+                retainedState.loading = retainedState.catalogRows.isEmpty()
+                retryAttempt += 1
+            },
             navigationVisible = navExpanded,
             contentFocusRequester = contentFocusRequester,
             onContentFocused = { navExpanded = false },

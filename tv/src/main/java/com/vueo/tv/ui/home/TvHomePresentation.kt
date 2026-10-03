@@ -3,15 +3,10 @@ package com.vueo.tv.home
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
@@ -37,6 +31,7 @@ internal fun TvHomePresentation(
     artworkApiKey: String,
     loading: Boolean,
     error: String?,
+    onRetry: () -> Unit,
     navigationVisible: Boolean,
     contentFocusRequester: FocusRequester,
     onContentFocused: () -> Unit,
@@ -139,43 +134,47 @@ internal fun TvHomePresentation(
             }
 
             loading -> {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.width(20.dp).height(20.dp),
-                        color = TvDesign.White,
-                        strokeWidth = 2.dp,
-                    )
-                    Text("Loading Home", color = TvDesign.Muted, fontSize = 13.sp)
-                }
+                TvHomeLoading(contentStartPadding, rowsViewportHeight)
             }
 
             error != null -> {
-                Text(
-                    text = error,
-                    color = TvDesign.Muted,
-                    fontSize = 14.sp,
+                TvHomeLoadFailure(
+                    message = error,
+                    cachedContentVisible = false,
+                    contentRequester = contentFocusRequester,
+                    onContentFocused = onContentFocused,
+                    onRetry = onRetry,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
+                        .padding(start = contentStartPadding, end = 48.dp)
+                        .widthIn(max = 420.dp),
                 )
             }
 
             else -> {
-                Text(
-                    text = "No Home catalogs available. Add or enable content in Settings.",
-                    color = TvDesign.Muted,
-                    fontSize = 14.sp,
+                TvHomeLoadFailure(
+                    message = "No Home catalogs available. Check your connection or enable catalogs in Settings.",
+                    cachedContentVisible = false,
+                    contentRequester = contentFocusRequester,
+                    onContentFocused = onContentFocused,
+                    onRetry = onRetry,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = contentStartPadding, bottom = rowsViewportHeight * .18f),
+                        .padding(start = contentStartPadding, end = 48.dp)
+                        .widthIn(max = 420.dp),
                 )
             }
+        }
+        if (rows.isNotEmpty() && error != null) {
+            TvHomeLoadFailure(
+                message = error,
+                cachedContentVisible = true,
+                contentRequester = contentFocusRequester,
+                onContentFocused = onContentFocused,
+                onRetry = onRetry,
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .padding(top = 24.dp, end = 48.dp).widthIn(max = 360.dp),
+            )
         }
     }
 }
