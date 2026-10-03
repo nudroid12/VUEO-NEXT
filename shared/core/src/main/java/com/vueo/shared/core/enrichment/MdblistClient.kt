@@ -204,6 +204,7 @@ data class MediaRating(
                 "metacritic" -> "Metacritic"
                 "tmdb" -> "TMDB"
                 "trakt" -> "Trakt"
+                "myanimelist" -> "MAL"
                 else -> source
             }
 
@@ -247,6 +248,7 @@ private fun JSONArray?
             "metacritic",
             "tmdb",
             "trakt",
+            "myanimelist",
         )
 
     return buildList {
@@ -264,6 +266,7 @@ private fun JSONArray?
                 )
                     .trim()
                     .lowercase()
+                    .let { if (it == "mal" || it == "my_anime_list") "myanimelist" else it }
 
             if (source !in supported) {
                 continue

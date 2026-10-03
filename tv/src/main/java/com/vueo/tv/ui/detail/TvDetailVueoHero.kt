@@ -380,6 +380,7 @@ private fun VueoRatingsRow(ratings: List<MediaRating>) {
                     "tmdb" -> 2
                     "tomatoes" -> 3
                     "metacritic" -> 4
+                    "myanimelist" -> 5
                     else -> 9
                 }
             }
@@ -439,12 +440,12 @@ private fun VueoRatingMark(source: String) {
         modifier = Modifier
             .height(22.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(TvDesign.White.copy(alpha = .16f))
+            .background(if (normalized == "myanimelist") Color(0xFF2E51A2) else TvDesign.White.copy(alpha = .16f))
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = source.take(4).uppercase(),
+            text = if (normalized == "myanimelist") "MAL" else source.take(4).uppercase(),
             color = TvDesign.White,
             fontSize = 9.sp,
             fontWeight = FontWeight.Black,

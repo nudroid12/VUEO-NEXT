@@ -1,14 +1,7 @@
-VUEO TV Details hero + episode cards
+Apply after VUEO_TV_Details_Hero_Episodes_Patch.zip. Replace the three source files at their matching paths.
 
-Apply these four files to the current cumulative project, preserving their paths.
-Includes the earlier lower-left hero and viewport/focus corrections; no need to apply those separate Details ZIPs first.
+TV Details remote navigation: intercept Up/Down at hero, season and episode boundaries; animate to reveal the target lazy item, await layout frames, then request focus. Left/Right and activation retain existing behavior. Existing hero dimensions and episode cards are retained.
 
-Reference inspected: NuvioMedia/NuvioTV tag 0.8.3-beta, HeroSection.kt, EpisodesSection.kt, MetaDetailsScreen.kt.
-https://github.com/NuvioMedia/NuvioTV/tree/0.8.3-beta
+Ratings: accept MDBList myanimelist ratings (including mal/my_anime_list aliases), label MAL, decimal score, blue MAL badge in TV hero. Existing sources/order remain unchanged. No new network request, API key or invented score. MAL requires ratings enabled, the existing MDBList key, and a returned MAL value for this title. The shared parser also makes the value available to mobile.
 
-Hero uses exact viewport height and bottom alignment. Focus scrolls only enough to reveal an offscreen control. Seasons/episodes sit below the initial hero.
-Episode cards adapt to viewport width, overlay episode number/title/synopsis/date, retain playback progress and remote navigation.
-Runtime uses playback duration when available, otherwise the existing media runtime (which may be a series average). Missing synopsis/date/runtime are omitted. No invented episode rating; the existing hero rating row is unchanged.
-Backdrop stays visible, darkened, when browsing lower sections. No trailer added.
-
-Validation: source review, hero rating helper equality against prior source, ZIP integrity. No local build or device runtime test performed. Check initial Play focus, Down to season/episodes, Left/Right episode navigation, Up to hero, and return from playback on your TV.
+Verification: source checks for scroll-before-focus, navigation boundaries, rating allowlist/label, delimiter balance, and ZIP integrity. No local build or device test performed. On TV test Play -> Down -> Season -> Down -> Episode; Up in reverse; Left/Right across episodes; open the anime again and check MAL when supplied.
