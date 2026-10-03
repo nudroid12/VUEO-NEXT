@@ -27,7 +27,13 @@ import com.vueo.tv.ui.TvNetworkImage
 
 /** Presentation only: the player root retains focus and owns dismissal. */
 @Composable
-internal fun VueoPlayerPauseBackdrop(visible: Boolean, media: MediaItem, episode: EpisodeItem?) {
+internal fun VueoPlayerPauseBackdrop(
+    visible: Boolean,
+    media: MediaItem,
+    episode: EpisodeItem?,
+    positionMs: Long,
+    durationMs: Long,
+) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(300)),
@@ -67,6 +73,23 @@ internal fun VueoPlayerPauseBackdrop(visible: Boolean, media: MediaItem, episode
                     Text(it, color = Color.White.copy(alpha = .85f), fontSize = 18.sp,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
+                val knownDuration = durationMs > 0L
+                val displayPosition = if (knownDuration) positionMs.coerceIn(0L, durationMs)
+                    else positionMs.coerceAtLeast(0L)
+                val playbackTime = "${vueoPlayerTime(displayPosition)} / " +
+                    if (knownDuration) vueoPlayerTime(durationMs) else "--:--"
+                val remaining = if (knownDuration) {
+                    val remainingMs = durationMs - displayPosition
+                    val minutes = remainingMs / 60_000L + if (remainingMs % 60_000L > 0L) 1L else 0L
+                    " • $minutes min left"
+                } else ""
+                Text(
+                    text = playbackTime + remaining,
+                    color = Color.White.copy(alpha = .78f),
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text("Press OK to resume", color = Color.White.copy(alpha = .65f), fontSize = 14.sp)
             }
         }

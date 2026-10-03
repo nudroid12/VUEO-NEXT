@@ -1295,7 +1295,7 @@ fun TvPlayerScreen(
     LaunchedEffect(player, pauseBackdropEligible, interactionToken) {
         pauseBackdropVisible = false
         if (pauseBackdropEligible) {
-            delay(5_000L)
+            delay(8_000L)
             // Recheck the player intent at dispatch; buffering is never a pause.
             if (!player.playWhenReady && player.playbackState == Player.STATE_READY) {
                 hideControls()
@@ -1789,6 +1789,8 @@ fun TvPlayerScreen(
             visible = pauseBackdropVisible && pauseBackdropEligible,
             media = media,
             episode = episode,
+            positionMs = positionMs,
+            durationMs = durationMs,
         )
 
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
