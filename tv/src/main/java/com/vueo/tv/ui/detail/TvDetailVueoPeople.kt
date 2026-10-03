@@ -390,13 +390,14 @@ private fun VueoRelatedRow(
 ) {
     val visible = remember(items) { items.take(18) }
     val requesters = remember(visible.map { "${it.type}:${it.id}" }) {
-        visible.indices.associateWith { index -> if (index == 0) sectionRequester else FocusRequester() }
+        visible.indices.associateWith { FocusRequester() }
     }
 
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .focusRestorer { sectionRequester }
+            .focusRequester(sectionRequester)
+            .focusRestorer { requesters[0] ?: FocusRequester.Default }
             .focusGroup(),
         contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -707,7 +708,7 @@ internal fun VueoDetailCastCompanyTabs(
     downRequester: FocusRequester?,
     onMoveUp: () -> Unit,
     onMoveDown: (() -> Unit)?,
-    onCenterContent: suspend (Float, Float) -> Unit,
+    onCenterContent: (Float, Float) -> Unit,
     onOpenCast: (MediaPerson) -> Unit,
     onOpenCompany: (MediaCompany, Boolean) -> Unit,
 ) {

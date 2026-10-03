@@ -48,6 +48,7 @@ import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -125,11 +126,17 @@ internal fun TvDetailPresentation(
         else -> null
     }
     val navigationScope = rememberCoroutineScope()
+    var navigationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
+    var navigationGeneration by remember(mediaKey) { mutableStateOf(0L) }
     fun revealAndFocus(index: Int, target: FocusRequester) {
-        if (movingBetweenSections) return
+        // Latest navigation replaces the previous center/reveal animation.
+        // Attached targets use normal focus relocation, as in Nuvio.
+        val generation = ++navigationGeneration
+        navigationJob?.cancel()
+        movingBetweenSections = false
         if (index != 0 && runCatching { target.requestFocus() }.getOrDefault(false)) return
         movingBetweenSections = true
-        navigationScope.launch {
+        navigationJob = navigationScope.launch {
             try {
                 val viewport = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
                 // Reveal the next lazy item before requesting its not-yet-attached focus node.
@@ -149,7 +156,7 @@ internal fun TvDetailPresentation(
                     if (runCatching { target.requestFocus() }.getOrDefault(false)) break
                 }
             } finally {
-                movingBetweenSections = false
+                if (navigationGeneration == generation) movingBetweenSections = false
             }
         }
     }
@@ -328,19 +335,28 @@ internal fun TvDetailPresentation(
                         upRequester = peopleUp,
                         downRequester = if (hasRelated) relatedContentRequester else null,
                         onCenterContent = { contentTop, contentHeight ->
-                            val layout = listState.layoutInfo
-                            val section = layout.visibleItemsInfo.firstOrNull { it.index == peopleIndex }
-                            if (section != null) {
-                                val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
-                                val distance = section.offset + contentTop + contentHeight / 2f - viewportCenter
-                                if (kotlin.math.abs(distance) > 1f) {
-                                    listState.animateScrollBy(distance,
-                                        animationSpec = spring(dampingRatio = .95f, stiffness = 180f))
+                            val generation = ++navigationGeneration
+                            navigationJob?.cancel()
+                            movingBetweenSections = true
+                            navigationJob = navigationScope.launch {
+                                try {
+                                    val layout = listState.layoutInfo
+                                    val section = layout.visibleItemsInfo.firstOrNull { it.index == peopleIndex }
+                                    if (section != null) {
+                                        val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                                        val distance = section.offset + contentTop + contentHeight / 2f - viewportCenter
+                                        if (kotlin.math.abs(distance) > 1f) {
+                                            listState.animateScrollBy(distance,
+                                                animationSpec = spring(dampingRatio = .95f, stiffness = 180f))
+                                        }
+                                    }
+                                } finally {
+                                    if (navigationGeneration == generation) movingBetweenSections = false
                                 }
                             }
                         },
                         onMoveUp = { revealAndFocus(upIndex, peopleUp) },
-                        onMoveDown = if (hasRelated) ({ revealAndFocus(peopleIndex + 1, relatedContentRequester) }) else null,
+                        onMoveDown = if (hasRelated) ({ revealAndFocus(relatedIndex, relatedContentRequester) }) else null,
                         onOpenCast = { person ->
                             onOpenEntity(MediaEntityTarget(kind = MediaEntityKind.ACTOR, name = person.name))
                         },
@@ -357,6 +373,13 @@ internal fun TvDetailPresentation(
 
             if (hasRelated) {
                 item(key = "vueo-related:$mediaKey") {
+                    val relatedUpIndex = when {
+                        hasPeopleTabs -> peopleIndex
+                        hasEpisodes -> if (hasSeasons) 2 else 1
+                        hasSeasons -> 1
+                        else -> 0
+                    }
+                    Box(sectionNavigation(relatedUpIndex to relatedUpRequester, null)) {
                     VueoDetailRelatedSection(
                         items = state.related,
                         sectionRequester = relatedContentRequester,
@@ -364,6 +387,7 @@ internal fun TvDetailPresentation(
                         usesTmdb = state.tmdbMoreLikeThisEnabled,
                         onOpen = onOpenRelated,
                     )
+                    }
                 }
             }
 
