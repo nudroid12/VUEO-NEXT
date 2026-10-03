@@ -1,7 +1,8 @@
 package com.vueo.tv.detail
 
-import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.tween
+import android.os.SystemClock
+import android.view.KeyEvent as AndroidKeyEvent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,10 +19,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +52,9 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +66,6 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
-import com.vueo.tv.ui.motion.TvMotion
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -77,10 +85,8 @@ internal fun VueoDetailSeasonTabs(
     val selectedIndex = seasons.indexOf(selectedSeason).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
     val focusSeason = selectedSeason?.takeIf { it in seasons } ?: seasons.firstOrNull()
-    val requesters = remember(seasons, focusSeason) {
-        seasons.associateWith { season ->
-            if (season == focusSeason) sectionRequester else FocusRequester()
-        }
+    val requesters = remember(seasons) {
+        seasons.associateWith { FocusRequester() }
     }
 
     Column(
@@ -93,6 +99,7 @@ internal fun VueoDetailSeasonTabs(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRequester(sectionRequester)
                 .focusRestorer { requesters[focusSeason] ?: FocusRequester.Default }
                 .focusGroup(),
             contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 7.dp),
@@ -156,15 +163,12 @@ internal fun VueoDetailEpisodes(
     val edgePadding = with(LocalDensity.current) { VueoDetailHorizontalPadding.toPx() }
     val horizontalReveal = remember(edgePadding) {
         object : BringIntoViewSpec {
-            override val scrollAnimationSpec: AnimationSpec<Float> = tween(300, easing = TvMotion.EaseOut)
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
                 val usableSize = containerSize - edgePadding
+                if (containerSize <= 0f || size <= 0f) return 0f
                 if (size >= usableSize) return offset
-                return when {
-                    offset < 0f -> offset
-                    offset + size > containerSize - edgePadding -> offset + size - (containerSize - edgePadding)
-                    else -> 0f
-                }
+                val target = (containerSize * .42f - size / 2f).coerceIn(0f, usableSize - size)
+                return offset - target
             }
         }
     }
@@ -176,11 +180,12 @@ internal fun VueoDetailEpisodes(
     val focusId = rememberedId ?: selectedEpisode?.id ?: episodes.firstOrNull()?.id
     val selectedIndex = episodes.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
-    val requesters = remember(episodes.map(EpisodeItem::id), focusId) {
+    val requesters = remember(media.id, media.type, episodes.map(EpisodeItem::id)) {
         episodes.associate { episode ->
-            episode.id to if (episode.id == focusId) sectionRequester else FocusRequester()
+            episode.id to FocusRequester()
         }
     }
+    var lastHorizontalRepeat by remember(media.id, media.type) { mutableStateOf(0L) }
 
     Column(
         modifier = Modifier
@@ -195,8 +200,22 @@ internal fun VueoDetailEpisodes(
                 .fillMaxWidth()
                 .padding(start = VueoDetailHorizontalPadding)
                 .clipToBounds()
+                .focusRequester(sectionRequester)
                 .focusRestorer { requesters[focusId] ?: FocusRequester.Default }
-                .focusGroup(),
+                .focusGroup()
+                .onPreviewKeyEvent { event ->
+                    val native = event.nativeKeyEvent
+                    val horizontal = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT ||
+                        native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
+                    if (horizontal && native.action == AndroidKeyEvent.ACTION_DOWN) {
+                        val now = SystemClock.uptimeMillis()
+                        if (native.repeatCount > 0 && now - lastHorizontalRepeat < 80L) {
+                            return@onPreviewKeyEvent true
+                        }
+                        lastHorizontalRepeat = now
+                    }
+                    false
+                },
             contentPadding = PaddingValues(end = VueoDetailHorizontalPadding, top = 7.dp, bottom = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -357,16 +376,37 @@ private fun VueoEpisodeCard(
                 }
             }
 
-            progress?.takeIf { it.durationMs > 0L && it.positionMs > 5_000L }?.let { entry ->
+            progress?.takeIf { !it.isCompleted && it.durationMs > 0L && it.positionMs > 0L }?.let { entry ->
                 LinearProgressIndicator(
                     progress = { entry.progressFraction.coerceIn(0f, 1f) },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .padding(start = 14.dp, end = 14.dp, bottom = 6.dp)
                         .fillMaxWidth()
                         .height(3.dp),
                     color = TvDesign.White,
                     trackColor = TvDesign.White.copy(alpha = .20f),
                 )
+            }
+            val watched = progress?.isCompleted == true
+            val notStarted = !watched && (progress == null || progress.positionMs <= 0L)
+            if (watched) {
+                Box(
+                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
+                        .size(24.dp).background(TvDesign.Focus, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = "Watched",
+                        tint = Color.Black, modifier = Modifier.size(17.dp))
+                }
+            } else if (notStarted) {
+                Canvas(Modifier.align(Alignment.TopStart).padding(10.dp).size(24.dp)) {
+                    drawCircle(
+                        color = TvDesign.White.copy(alpha = .80f),
+                        style = Stroke(width = 2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(7f, 5f))),
+                    )
+                }
             }
         }
 

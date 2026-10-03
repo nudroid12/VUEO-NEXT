@@ -17,11 +17,13 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.tv.core.TvRuntime
+import com.vueo.tv.core.TvTitleArtwork
 import com.vueo.tv.core.enrichDetailRichDetails
 import com.vueo.tv.core.enrichDetailTmdb
 import com.vueo.tv.core.loadCoreDetail
 import com.vueo.tv.core.prepareDetailForCore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -45,6 +47,7 @@ fun TvDetailScreen(
     val initialShell = remember(initial) {
         DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
     }
+    val artworkApiKey = runtime.pluginStore.tmdbApiKey()
 
     var item by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(initialShell) }
     var loading by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(true) }
@@ -55,7 +58,10 @@ fun TvDetailScreen(
         mutableStateOf(runtime.libraryStore.isMarkedWatched(initialShell))
     }
     var vueoExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
-        mutableStateOf(TvDetailVueoExtras())
+        mutableStateOf(TvTitleArtwork.cached(initialShell, artworkApiKey) ?: TvDetailVueoExtras())
+    }
+    var titleArtworkLoading by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf(TvTitleArtwork.cached(initialShell, artworkApiKey) == null && artworkApiKey.isNotBlank())
     }
     var episodeRatings by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<Map<Pair<Int, Int>, Double>>(emptyMap())
@@ -144,7 +150,19 @@ fun TvDetailScreen(
                     runtime.settingsStore.tmdbSimilarTitlesEnabled()
             )
         dnaMatch = null
-        vueoExtras = TvDetailVueoExtras()
+        vueoExtras = TvTitleArtwork.cached(initialShell, artworkApiKey) ?: TvDetailVueoExtras()
+        titleArtworkLoading = TvTitleArtwork.cached(initialShell, artworkApiKey) == null && artworkApiKey.isNotBlank()
+        launch {
+            try {
+                vueoExtras = TvTitleArtwork.load(initialShell, artworkApiKey)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // A missing logo uses the text fallback; it never blocks Details.
+            } finally {
+                titleArtworkLoading = false
+            }
+        }
         supplementalRatings = emptyList()
         episodeRatings = emptyMap()
         publishRatings(shell)
@@ -216,14 +234,6 @@ fun TvDetailScreen(
             publishRatings(item)
         }
 
-        launch {
-            vueoExtras = runCatching {
-                loadTvDetailVueoExtras(
-                    media = core,
-                    tmdbApiKey = runtime.pluginStore.tmdbApiKey(),
-                )
-            }.getOrDefault(TvDetailVueoExtras())
-        }
     }
 
     val history = remember(item.id, item.type, selectedEpisode, loading) {
@@ -263,6 +273,7 @@ fun TvDetailScreen(
             watchlisted = watchlisted,
             movieWatched = movieWatched,
             vueoExtras = vueoExtras,
+            titleArtworkLoading = titleArtworkLoading,
             ratings = ratings,
             episodeRatings = episodeRatings,
             dnaMatch = dnaMatch,
@@ -334,6 +345,7 @@ internal data class TvDetailPresentationState(
     val watchlisted: Boolean,
     val movieWatched: Boolean,
     val vueoExtras: TvDetailVueoExtras,
+    val titleArtworkLoading: Boolean,
     val ratings: List<MediaRating>,
     val episodeRatings: Map<Pair<Int, Int>, Double>,
     val dnaMatch: Int?,

@@ -1,10 +1,12 @@
 package com.vueo.tv.detail
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.spring
+import android.os.SystemClock
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -31,13 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalDensity
 import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
@@ -63,16 +65,16 @@ internal fun TvDetailPresentation(
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
     var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
-    val safeBottom = with(LocalDensity.current) { 32.dp.toPx() }
-    val detailBringIntoView = remember(mediaKey, safeBottom) {
+    var heroFocused by remember(mediaKey) { mutableStateOf(false) }
+    var lastVerticalRepeat by remember(mediaKey) { mutableStateOf(0L) }
+    val detailBringIntoView = remember(mediaKey) {
         object : BringIntoViewSpec {
-            override val scrollAnimationSpec: AnimationSpec<Float> = tween(300, easing = TvMotion.EaseOut)
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
-                movingBetweenSections -> 0f
+                movingBetweenSections || heroFocused -> 0f
+                containerSize <= 0f || size <= 0f -> 0f
                 size >= containerSize -> 0f
-                offset < 0f -> offset
-                offset + size > containerSize - safeBottom -> offset + size - (containerSize - safeBottom)
-                else -> 0f
+                else -> offset - (containerSize * .42f - size / 2f)
+                    .coerceIn(0f, containerSize - size)
             }
         }
     }
@@ -122,10 +124,11 @@ internal fun TvDetailPresentation(
                 // Reveal the next lazy item before requesting its not-yet-attached focus node.
                 val visibleItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
                 if (visibleItem != null) {
-                    val destinationOffset = if (index == 0) 0 else viewport / 2
+                    val destinationOffset = if (index == 0) 0 else
+                        (viewport * .42f - visibleItem.size / 2f).toInt()
                     listState.animateScrollBy(
                         (visibleItem.offset - destinationOffset).toFloat(),
-                        animationSpec = tween(300, easing = TvMotion.EaseOut),
+                        animationSpec = spring(dampingRatio = .95f, stiffness = 180f),
                     )
                 } else {
                     listState.animateScrollToItem(index, if (index == 0) 0 else -viewport / 2)
@@ -146,7 +149,14 @@ internal fun TvDetailPresentation(
                 Key.DirectionUp -> up
                 else -> null
             } ?: return@onPreviewKeyEvent false
-            if (event.type == KeyEventType.KeyDown) revealAndFocus(destination.first, destination.second)
+            if (event.type == KeyEventType.KeyDown) {
+                val now = SystemClock.uptimeMillis()
+                if (event.nativeKeyEvent.repeatCount > 0 && now - lastVerticalRepeat < 80L) {
+                    return@onPreviewKeyEvent true
+                }
+                lastVerticalRepeat = now
+                revealAndFocus(destination.first, destination.second)
+            }
             true
         }
 
@@ -234,7 +244,8 @@ internal fun TvDetailPresentation(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "vueo-hero:$mediaKey") {
-                Box(sectionNavigation(null, firstBelowHero?.let { belowIndex(it) to it })) {
+                Box(Modifier.onFocusChanged { heroFocused = it.hasFocus }.focusGroup()
+                    .then(sectionNavigation(null, firstBelowHero?.let { belowIndex(it) to it }))) {
                 VueoDetailHero(
                     state = state,
                     heroHeight = heroHeight,

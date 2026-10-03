@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +45,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,7 +71,7 @@ internal fun VueoDetailHero(
     onToggleWatched: () -> Unit,
 ) {
     val density = LocalDensity.current
-    var actionWidth by remember(state.item.id, state.item.type) { mutableStateOf(240.dp) }
+    var playWidth by remember(state.item.id, state.item.type) { mutableStateOf(220.dp) }
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
@@ -114,7 +116,8 @@ internal fun VueoDetailHero(
         VueoHeroTitle(
             title = item.name,
             logoUrl = state.vueoExtras.logo,
-            actionWidth = actionWidth,
+            playWidth = playWidth,
+            artworkLoading = state.titleArtworkLoading,
         )
 
         Spacer(Modifier.height(12.dp))
@@ -123,7 +126,6 @@ internal fun VueoDetailHero(
         val showWatched = !item.isDetailSeries()
 
         Row(
-            modifier = Modifier.onSizeChanged { actionWidth = with(density) { it.width.toDp() } },
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -134,6 +136,7 @@ internal fun VueoDetailHero(
                 rightRequester = listRequester,
                 downRequester = downRequester,
                 onClick = onPlay,
+                modifier = Modifier.onSizeChanged { playWidth = with(density) { it.width.toDp() } },
             )
             VueoCircleAction(
                 icon = if (state.watchlisted) Icons.Default.Check else Icons.Default.Add,
@@ -239,29 +242,35 @@ internal fun VueoDetailHero(
 private fun VueoHeroTitle(
     title: String,
     logoUrl: String?,
-    actionWidth: Dp,
+    playWidth: Dp,
+    artworkLoading: Boolean,
 ) {
-    if (!logoUrl.isNullOrBlank()) {
-        TvNetworkImage(
-            url = logoUrl,
-            contentDescription = title,
-            modifier = Modifier
-                .height(78.dp)
-                .width(actionWidth),
-            contentScale = ContentScale.Fit,
-            fallback = Color.Transparent,
-        )
-    } else {
-        Text(
-            text = title.uppercase(),
-            color = TvDesign.White,
-            fontSize = 38.sp,
-            lineHeight = 42.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(VueoHeroContentWidth),
-        )
+    // A fixed title slot centers on Play only. Logo size is independent of the action row.
+    Box(Modifier.width(playWidth).height(100.dp), contentAlignment = Alignment.Center) {
+        if (!logoUrl.isNullOrBlank()) {
+            TvNetworkImage(
+                url = logoUrl,
+                contentDescription = title,
+                modifier = Modifier
+                    .requiredWidth(300.dp)
+                    .height(100.dp),
+                contentScale = ContentScale.Fit,
+                fallback = Color.Transparent,
+                highPriority = true,
+            )
+        } else if (!artworkLoading) {
+            Text(
+                text = title.uppercase(),
+                color = TvDesign.White,
+                fontSize = 32.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.requiredWidth(300.dp),
+            )
+        }
     }
 }
 
@@ -273,13 +282,14 @@ private fun VueoPlayButton(
     rightRequester: FocusRequester,
     downRequester: FocusRequester?,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
     val shape = RoundedCornerShape(30.dp)
 
     Row(
-        modifier = Modifier
-            .height(VueoHeroActionSize)
+        modifier = modifier
+            .height(52.dp)
             .focusRequester(requester)
             .focusProperties {
                 up = FocusRequester.Cancel
@@ -301,7 +311,7 @@ private fun VueoPlayButton(
             )
             .clickable(enabled = enabled, onClick = onClick)
             .focusable(enabled)
-            .padding(horizontal = 22.dp),
+            .padding(horizontal = 26.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -309,12 +319,12 @@ private fun VueoPlayButton(
             imageVector = Icons.Default.PlayArrow,
             contentDescription = null,
             tint = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
-            modifier = Modifier.size(21.dp),
+            modifier = Modifier.size(23.dp),
         )
         Text(
             text = label,
             color = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
-            fontSize = 14.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
@@ -534,5 +544,3 @@ private fun VueoMetaDot() {
             .background(TvDesign.White.copy(alpha = .58f)),
     )
 }
-
-

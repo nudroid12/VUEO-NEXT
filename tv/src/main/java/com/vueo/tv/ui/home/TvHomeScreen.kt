@@ -21,6 +21,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.ContinueWatchingMetadataRefresh
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
+import com.vueo.tv.core.TvTitleArtwork
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.TvSidebar
@@ -200,6 +201,7 @@ fun TvHomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
             rows = rows,
+            artworkApiKey = runtime.pluginStore.tmdbApiKey(),
             loading = loading,
             error = error,
             navigationVisible = navExpanded,

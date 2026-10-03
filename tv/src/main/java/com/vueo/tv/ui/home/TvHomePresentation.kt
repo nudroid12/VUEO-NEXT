@@ -28,10 +28,13 @@ import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import com.vueo.tv.core.TvTitleArtwork
 
 @Composable
 internal fun TvHomePresentation(
     rows: List<TvHomeRow>,
+    artworkApiKey: String,
     loading: Boolean,
     error: String?,
     navigationVisible: Boolean,
@@ -86,6 +89,18 @@ internal fun TvHomePresentation(
         if (focusedEntry?.key == next.key) heroEntry = next
     }
 
+    LaunchedEffect(focusedEntry?.key, artworkApiKey) {
+        val media = focusedEntry?.media ?: return@LaunchedEffect
+        delay(MODERN_HOME_HERO_FOCUS_SETTLE_MS)
+        try {
+            TvTitleArtwork.load(media, artworkApiKey)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Artwork stays optional and never delays navigation.
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -97,6 +112,7 @@ internal fun TvHomePresentation(
 
         TvModernHomeHero(
             entry = heroEntry,
+            artworkApiKey = artworkApiKey,
             heroHeight = heroHeight,
             rowsViewportHeight = rowsViewportHeight,
         )
