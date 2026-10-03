@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +40,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,8 +54,6 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-private val VueoEpisodeWidth = 360.dp
-private val VueoEpisodeHeight = 235.dp
 private val VueoEpisodeShape = RoundedCornerShape(14.dp)
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -143,6 +144,9 @@ internal fun VueoDetailEpisodes(
     onFocused: (EpisodeItem) -> Unit,
     onOpen: (EpisodeItem) -> Unit,
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    val cardWidth = when { screenWidth >= 1300 -> 400.dp; screenWidth >= 1000 -> 360.dp; screenWidth >= 760 -> 320.dp; else -> 280.dp }
+    val cardHeight = when { screenWidth >= 1300 -> 263.dp; screenWidth >= 1000 -> 235.dp; screenWidth >= 760 -> 207.dp; else -> 179.dp }
     val rememberedId = VueoDetailFocusMemory.episodeId
         ?.takeIf { id -> episodes.any { it.id == id } }
     val focusId = rememberedId ?: selectedEpisode?.id ?: episodes.firstOrNull()?.id
@@ -160,7 +164,6 @@ internal fun VueoDetailEpisodes(
             .padding(top = 2.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        VueoDetailSectionTitle("Episodes")
         LazyRow(
             state = listState,
             modifier = Modifier
@@ -179,6 +182,9 @@ internal fun VueoDetailEpisodes(
                 }
                 VueoEpisodeCard(
                     episode = episode,
+                    cardWidth = cardWidth,
+                    cardHeight = cardHeight,
+                    runtimeMinutes = media.runtimeMinutes,
                     progress = progress,
                     selected = selectedEpisode?.id == episode.id,
                     requester = requesters.getValue(episode.id),
@@ -199,6 +205,9 @@ internal fun VueoDetailEpisodes(
 @Composable
 private fun VueoEpisodeCard(
     episode: EpisodeItem,
+    cardWidth: androidx.compose.ui.unit.Dp,
+    cardHeight: androidx.compose.ui.unit.Dp,
+    runtimeMinutes: Int?,
     progress: LibraryPlaybackEntry?,
     selected: Boolean,
     requester: FocusRequester,
@@ -210,13 +219,13 @@ private fun VueoEpisodeCard(
     var focused by remember(episode.id) { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.width(VueoEpisodeWidth),
+        modifier = Modifier.width(cardWidth),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
             modifier = Modifier
-                .width(VueoEpisodeWidth)
-                .height(VueoEpisodeHeight)
+                .width(cardWidth)
+                .height(cardHeight)
                 .focusRequester(requester)
                 .focusProperties {
                     up = upRequester
@@ -253,7 +262,9 @@ private fun VueoEpisodeCard(
                     .background(
                         Brush.verticalGradient(
                             0f to Color.Transparent,
-                            .52f to Color.Transparent,
+                            .20f to TvDesign.Black.copy(alpha = .04f),
+                            .38f to TvDesign.Black.copy(alpha = .26f),
+                            .60f to TvDesign.Black.copy(alpha = .60f),
                             1f to TvDesign.Black.copy(alpha = .93f),
                         )
                     ),
@@ -267,7 +278,10 @@ private fun VueoEpisodeCard(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = "S${episode.season} E${episode.episode}",
+                    text = "EPISODE ${episode.episode}",
+                    modifier = Modifier.clip(RoundedCornerShape(5.dp))
+                        .background(TvDesign.Black.copy(alpha = .60f))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
                     color = TvDesign.White.copy(alpha = .68f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -281,6 +295,30 @@ private fun VueoEpisodeCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                episode.overview?.trim()?.takeIf(String::isNotBlank)?.let { synopsis ->
+                    Text(
+                        text = synopsis,
+                        color = TvDesign.White.copy(alpha = .88f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        maxLines = if (cardHeight >= 235.dp) 4 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val runtime = progress?.durationMs?.takeIf { it > 0L }?.let { (it / 60_000L).toInt() }
+                    ?: runtimeMinutes
+                val released = vueoDetailFormatReleaseDate(episode.released)
+                if (runtime != null || released != null) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        runtime?.takeIf { it > 0 }?.let {
+                            Text("${it}m", color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        released?.let {
+                            Text(it, color = TvDesign.White.copy(alpha = .76f), fontSize = 10.sp, maxLines = 1)
+                        }
+                    }
+                }
             }
 
             progress?.takeIf { it.durationMs > 0L && it.positionMs > 5_000L }?.let { entry ->
@@ -296,15 +334,6 @@ private fun VueoEpisodeCard(
             }
         }
 
-        vueoDetailFormatReleaseDate(episode.released)?.let { released ->
-            Text(
-                text = released,
-                color = TvDesign.White.copy(alpha = .44f),
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 

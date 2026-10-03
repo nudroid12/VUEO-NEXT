@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,13 +33,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 
-/**
- * TV 39A — true Vueo-first Details presentation.
- *
- * This file intentionally contains only the screen composition/root focus map.
- * The previous VUEO Details visual tree is not reused. The supplied Vueo
- * 0.8.6 Details screen is the layout/interaction reference.
- */
+/** TV Details composition and remote focus map. */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvDetailPresentation(
@@ -52,6 +49,16 @@ internal fun TvDetailPresentation(
 ) {
     val mediaKey = "${state.item.type}:${state.item.id}"
     val listState = rememberLazyListState()
+    val detailBringIntoView = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
+                size >= containerSize -> 0f
+                offset < 0f -> offset
+                offset + size > containerSize -> offset + size - containerSize
+                else -> 0f
+            }
+        }
+    }
 
     val playRequester = remember(mediaKey) { FocusRequester() }
     val listRequester = remember(mediaKey) { FocusRequester() }
@@ -102,7 +109,7 @@ internal fun TvDetailPresentation(
 
     val backdropScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 190
     val backdropAlpha by animateFloatAsState(
-        targetValue = if (backdropScrolled) .07f else 1f,
+        targetValue = if (backdropScrolled) .55f else 1f,
         animationSpec = tween(
             durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
             easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
@@ -110,7 +117,7 @@ internal fun TvDetailPresentation(
         label = "detail39BackdropAlpha",
     )
     val scrimAlpha by animateFloatAsState(
-        targetValue = if (backdropScrolled) 0f else 1f,
+        targetValue = 1f,
         animationSpec = tween(
             durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
             easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
@@ -148,6 +155,7 @@ internal fun TvDetailPresentation(
             scrimAlpha = scrimAlpha,
         )
 
+        CompositionLocalProvider(LocalBringIntoViewSpec provides detailBringIntoView) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
@@ -267,6 +275,8 @@ internal fun TvDetailPresentation(
                     )
                 }
             }
+
+        }
 
         }
 
