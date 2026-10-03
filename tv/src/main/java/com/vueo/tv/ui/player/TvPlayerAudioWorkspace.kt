@@ -66,6 +66,7 @@ internal fun VueoPlayerAudioWorkspace(
     onInteraction: () -> Unit,
     onAutomatic: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
+    panelModifier: Modifier = Modifier,
 ) {
     val options = remember(tracks, automaticSelected, activeSourceLabel) {
         buildList {
@@ -110,6 +111,7 @@ internal fun VueoPlayerAudioWorkspace(
     ) {
         Column(
             modifier = Modifier
+                .then(panelModifier)
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)

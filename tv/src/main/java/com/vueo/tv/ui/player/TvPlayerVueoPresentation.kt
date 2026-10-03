@@ -1,6 +1,10 @@
 package com.vueo.tv.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -59,8 +63,6 @@ import com.vueo.shared.core.player.PlayerSkipKind
 import com.vueo.shared.core.player.PlayerSkipSegment
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
-import com.vueo.tv.ui.motion.tvPanelEnter
-import com.vueo.tv.ui.motion.tvPanelExit
 import kotlinx.coroutines.delay
 
 @Composable
@@ -69,7 +71,6 @@ internal fun VueoPlayerPresentation(
     episode: EpisodeItem?,
     activeSource: StreamSource,
     controlsVisible: Boolean,
-    seekFeedbackVisible: Boolean,
     activePanel: TvPlayerPanel,
     playing: Boolean,
     isBuffering: Boolean,
@@ -188,29 +189,6 @@ internal fun VueoPlayerPresentation(
             onOpenPanel = onOpenPanel,
         )
 
-        // Feedback is display-only: root focus continues receiving quick seeks.
-        AnimatedVisibility(
-            visible = seekFeedbackVisible && !controlsVisible && activePanel == TvPlayerPanel.NONE,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
-        ) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 22.dp)) {
-                VueoPlayerProgressRail(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    requester = progressRequester,
-                    upRequester = FocusRequester.Cancel,
-                    downRequester = FocusRequester.Cancel,
-                    onInteraction = {},
-                    onSeekBy = {},
-                    onSeekCommit = {},
-                    onTogglePlayback = {},
-                    interactive = false,
-                )
-            }
-        }
-
         if (warningVisible && contentWarnings.isNotEmpty()) {
             Box(
                 modifier = Modifier
@@ -294,10 +272,14 @@ internal fun VueoPlayerPresentation(
 
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.SOURCES,
-            enter = tvPanelEnter(),
-            exit = tvPanelExit(),
+            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerSourcesPanel(
+                panelModifier = Modifier.animateEnterExit(
+                    enter = tvPlayerSidePanelEnter(),
+                    exit = tvPlayerSidePanelExit(),
+                ),
                 title = episode?.let { "S${it.season}E${it.episode} • ${it.title}" } ?: media.name,
                 options = displayedPanelOptions,
                 onInteraction = onInteraction,
@@ -317,10 +299,14 @@ internal fun VueoPlayerPresentation(
         )
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.EPISODES,
-            enter = tvPanelEnter(),
-            exit = tvPanelExit(),
+            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerEpisodesPanel(
+                panelModifier = Modifier.animateEnterExit(
+                    enter = tvPlayerSidePanelEnter(),
+                    exit = tvPlayerSidePanelExit(),
+                ),
                 mediaTitle = media.name,
                 episodes = episodes,
                 currentEpisode = episode,
@@ -656,4 +642,15 @@ private data class VueoPlayerChromeAction(
     val label: String,
     val requester: FocusRequester,
     val panel: TvPlayerPanel,
+)
+
+// Animate the right-hand column itself; keep the full-screen scrim in place.
+internal fun tvPlayerSidePanelEnter(): EnterTransition = slideInHorizontally(
+    initialOffsetX = { it },
+    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
+)
+
+internal fun tvPlayerSidePanelExit(): ExitTransition = slideOutHorizontally(
+    targetOffsetX = { it },
+    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
 )

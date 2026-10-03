@@ -327,8 +327,6 @@ fun TvPlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var playbackFeedbackToken by remember(playerSessionId) { mutableIntStateOf(0) }
     var playbackFeedbackPaused by remember(playerSessionId) { mutableStateOf(false) }
-    var seekFeedbackVisible by remember { mutableStateOf(false) }
-    var seekFeedbackToken by remember { mutableIntStateOf(0) }
     var activePanel by remember { mutableStateOf(TvPlayerPanel.NONE) }
     var restorePanelFocus by remember { mutableStateOf<TvPlayerPanel?>(null) }
     var endedFocusAssigned by remember(mediaKey) { mutableStateOf(false) }
@@ -435,7 +433,6 @@ fun TvPlayerScreen(
         if (latestEpisodeSwitching.value) return
         val targetRequester = if (!controlsVisible && playbackError == null) progressRequester else requester
         focusedPrompt = TvPlayerPromptTarget.NONE
-        seekFeedbackVisible = false
         controlsVisible = true
         controlFocusHandoffPending = true
         noteInteraction()
@@ -489,9 +486,7 @@ fun TvPlayerScreen(
         seekCommitJob[0]?.cancel()
         if (!controlsVisible && activePanel == TvPlayerPanel.NONE) {
             // Hidden-chrome seeking stays on the root focus target and applies
-            // immediately, including held-key repeats. Only the rail is shown.
-            seekFeedbackVisible = true
-            seekFeedbackToken += 1
+            // immediately, including held-key repeats, without showing controls.
             commitPendingSeek()
         } else {
             seekCommitJob[0] = focusScope.launch {
@@ -510,7 +505,6 @@ fun TvPlayerScreen(
         seekAnchorClearJob[0]?.cancel()
         seekAnchorClearJob[0] = null
         pendingSeekPositionMs = null
-        seekFeedbackVisible = false
     }
 
     fun togglePlayback() {
@@ -1266,15 +1260,6 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(seekFeedbackToken, controlsVisible, activePanel) {
-        if (controlsVisible || activePanel != TvPlayerPanel.NONE) {
-            seekFeedbackVisible = false
-        } else if (seekFeedbackVisible) {
-            delay(1_500L)
-            seekFeedbackVisible = false
-        }
-    }
-
     var dialogueSyncOpen by remember(player, mediaKey, activeSource.url) { mutableStateOf(false) }
     var dialogueSyncTrack by remember(player, mediaKey, activeSource.url) { mutableStateOf<SubtitleTrack?>(null) }
 
@@ -1289,7 +1274,6 @@ fun TvPlayerScreen(
             // Recheck the player intent at dispatch; buffering is never a pause.
             if (!player.playWhenReady && player.playbackState == Player.STATE_READY) {
                 hideControls()
-                seekFeedbackVisible = false
                 pauseBackdropVisible = true
             }
         }
@@ -1638,7 +1622,6 @@ fun TvPlayerScreen(
             episode = episode,
             activeSource = activeSource,
             controlsVisible = controlsVisible,
-            seekFeedbackVisible = seekFeedbackVisible,
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,
@@ -1977,10 +1960,14 @@ fun TvPlayerScreen(
 
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.AUDIO,
-            enter = tvPanelEnter(),
-            exit = tvPanelExit(),
+            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
         ) {
             VueoPlayerAudioWorkspace(
+                panelModifier = Modifier.animateEnterExit(
+                    enter = tvPlayerSidePanelEnter(),
+                    exit = tvPlayerSidePanelExit(),
+                ),
                 tracks = audioTracks,
                 automaticSelected = audioAutomaticSelected,
                 activeSourceLabel = activeSource.audio,

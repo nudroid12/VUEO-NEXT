@@ -120,6 +120,7 @@ internal fun VueoPlayerSourcesPanel(
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
+    panelModifier: Modifier = Modifier,
 ) {
     val listEntryRequester = remember { FocusRequester() }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
@@ -157,6 +158,7 @@ internal fun VueoPlayerSourcesPanel(
     ) {
         Column(
             modifier = Modifier
+                .then(panelModifier)
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
@@ -475,6 +477,7 @@ internal fun VueoPlayerEpisodesPanel(
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
+    panelModifier: Modifier = Modifier,
 ) {
     val seasons = remember(episodes) {
         val normal = episodes.map { it.season }.distinct().filter { it > 0 }.sorted()
@@ -528,6 +531,7 @@ internal fun VueoPlayerEpisodesPanel(
     ) {
         Column(
             modifier = Modifier
+                .then(panelModifier)
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
