@@ -1,4 +1,4 @@
-Extract at repository root, replacing RuntimeDiagnostics.kt. Apply after the ANR diagnostics patch.
-Restores STALL_THRESHOLD_MS = 350L used by provider UI_STALL_RISK. Live watchdog threshold remains 2000ms.
-Uploaded build log has one unique compiler error: unresolved STALL_THRESHOLD_MS at RuntimeDiagnostics.kt:214. Shared core failed before downstream mobile/TV compilation, so this log cannot confirm those compile.
-Validation: constant definition/reference checked and ZIP integrity passed. No local build run per user instruction. Re-run CI to verify remaining compilation.
+Apply after Sync by dialogue Mobile + TV patch. Extract at repository root, replacing the two workspace files.
+Move dialogue-sync entry from below Subtitles title to the Style header, immediately left of Float. Label Sync on mobile and TV. Existing manual Sync +/- row and dialogue-sync implementation retained.
+TV: explicit focus paths track Right -> Sync pill (when style open), Sync Right -> Float, Float Left -> Sync; both pills Down -> manual Sync row; manual Sync Up -> Sync pill; Sync Left -> track. Existing interaction callback and activation handling reused. Mobile uses same StyleModeButton as Float.
+Validation: source wiring/delimiter checks and ZIP integrity passed. No local build/device testing per user instruction. Verify TV D-pad traversal and mobile taps with an active subtitle track.

@@ -216,7 +216,6 @@ internal fun PlayerSubtitleWorkspace(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                androidx.compose.material3.TextButton(onClick = onSyncByDialogue) { Text("Sync by dialogue") }
                 Text(
                     "Choose a language, track and style",
                     color = Color.White.copy(alpha = .52f),
@@ -345,6 +344,7 @@ internal fun PlayerSubtitleWorkspace(
                     ) {
                         if (styleOpen && !subtitlesDisabled) {
                             SubtitleStyleCard(
+                                onSyncByDialogue = onSyncByDialogue,
                                 subtitleDelayMs = subtitleDelayMs,
                                 style = style,
                                 onSubtitleDelayChange =
@@ -537,6 +537,7 @@ private fun ProviderBadge(label: String, selected: Boolean) {
 
 @Composable
 private fun SubtitleStyleCard(
+    onSyncByDialogue: () -> Unit,
     subtitleDelayMs: Int,
     style: PlayerSubtitleStyleState,
     onSubtitleDelayChange: (Int) -> Unit,
@@ -570,6 +571,12 @@ private fun SubtitleStyleCard(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
+                StyleModeButton(
+                    label = "Sync",
+                    icon = Icons.Default.Refresh,
+                    onClick = onSyncByDialogue,
+                )
+                Spacer(Modifier.width(6.dp))
                 StyleModeButton(
                     label = "Float",
                     icon = Icons.Default.OpenInNew,

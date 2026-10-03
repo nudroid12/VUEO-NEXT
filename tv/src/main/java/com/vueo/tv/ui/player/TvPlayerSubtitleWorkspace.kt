@@ -142,6 +142,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val trackRequesters = remember(visibleTracks.map { it.key }) {
         List(visibleTracks.size.coerceAtLeast(1)) { FocusRequester() }
     }
+    val dialogueSyncRequester = remember { FocusRequester() }
     val floatRequester = remember { FocusRequester() }
     val syncRequester = remember { FocusRequester() }
     val sizeRequester = remember { FocusRequester() }
@@ -257,7 +258,6 @@ internal fun VueoPlayerSubtitleWorkspace(
                 fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            androidx.compose.material3.TextButton(onClick = onSyncByDialogue) { Text("Sync by dialogue") }
             Spacer(Modifier.height(4.dp))
             Text(
                 "Choose a language, track and style",
@@ -383,7 +383,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         blockUp = index == 0,
                                         blockDown = index == visibleTracks.lastIndex,
                                         leftRequester = activeLanguageRequester,
-                                        rightRequester = if (styleOpen) syncRequester else FocusRequester.Cancel,
+                                        rightRequester = if (styleOpen) dialogueSyncRequester else FocusRequester.Cancel,
                                         onInteraction = onInteraction,
                                         onFocused = { styleReturnTrackIndex = index },
                                     ) {
@@ -423,10 +423,22 @@ internal fun VueoPlayerSubtitleWorkspace(
                         ) {
                             VueoSubtitleColumnTitle("Style")
                             Spacer(Modifier.weight(1f))
-                            VueoSubtitleFloatButton(
-                                requester = floatRequester,
+                            VueoSubtitleHeaderButton(
+                                label = "Sync",
+                                requester = dialogueSyncRequester,
                                 downRequester = syncRequester,
                                 leftRequester = styleLeftRequester,
+                                rightRequester = floatRequester,
+                                onInteraction = onInteraction,
+                                onClick = onSyncByDialogue,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            VueoSubtitleHeaderButton(
+                                label = "Float",
+                                requester = floatRequester,
+                                downRequester = syncRequester,
+                                leftRequester = dialogueSyncRequester,
+                                rightRequester = FocusRequester.Cancel,
                                 onInteraction = onInteraction,
                             ) {
                                 styleFloatMode = true
@@ -446,7 +458,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     title = "Sync",
                                     value = formatSubtitleDelayTv(subtitleDelayMs),
                                     requester = syncRequester,
-                                    upRequester = floatRequester,
+                                    upRequester = dialogueSyncRequester,
                                     downRequester = sizeRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
@@ -652,10 +664,12 @@ internal fun VueoPlayerSubtitleWorkspace(
 
 
 @Composable
-private fun VueoSubtitleFloatButton(
+private fun VueoSubtitleHeaderButton(
+    label: String,
     requester: FocusRequester,
     downRequester: FocusRequester,
     leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -670,7 +684,7 @@ private fun VueoSubtitleFloatButton(
                 up = FocusRequester.Cancel
                 down = downRequester
                 left = leftRequester
-                right = FocusRequester.Cancel
+                right = rightRequester
             }
             .onFocusChanged {
                 focused = it.isFocused
@@ -696,7 +710,7 @@ private fun VueoSubtitleFloatButton(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            "Float",
+            label,
             color = Color.White,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
