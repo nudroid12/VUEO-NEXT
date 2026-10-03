@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -222,6 +223,7 @@ fun TvNetworkImage(
     fallback: Color = TvDesign.SurfaceRaised,
     loadEnabled: Boolean = true,
     highPriority: Boolean = false,
+    alignment: Alignment = Alignment.Center,
 ) {
     val context = LocalContext.current.applicationContext
     var targetSize by remember { mutableStateOf(IntSize.Zero) }
@@ -259,6 +261,7 @@ fun TvNetworkImage(
                 contentDescription = contentDescription,
                 modifier = Modifier.matchParentSize().alpha(imageAlpha),
                 contentScale = contentScale,
+                alignment = alignment,
             )
         }
     }
