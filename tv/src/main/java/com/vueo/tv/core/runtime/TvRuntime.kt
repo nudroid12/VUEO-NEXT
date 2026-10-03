@@ -400,6 +400,7 @@ class TvRuntime(context: Context) {
                     "metacritic" -> settingsStore.mdblistMetacriticEnabled()
                     "tmdb" -> settingsStore.mdblistTmdbRatingEnabled()
                     "trakt" -> settingsStore.mdblistTraktEnabled()
+                    "myanimelist" -> true
                     else -> false
                 }
             }
