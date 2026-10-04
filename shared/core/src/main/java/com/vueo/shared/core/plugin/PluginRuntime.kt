@@ -955,6 +955,7 @@ private fun emptyDiscoveryResult():
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
 
+        val executionTasks = ProviderExecutionTasks()
         return try {
             val resultJson =
                 quickJs {
@@ -1006,21 +1007,24 @@ private fun emptyDiscoveryResult():
                     asyncFunction<String, String>(
                         "__vueoDiscoveryContext"
                     ) { requestJson ->
-                        val requestId = progress.begin("Discovery context")
-                        try {
-                            val response = discoveryContextBroker
-                                .resolveFromProviderRequest(
-                                    requestJson
-                                )
-                            progress.finish(requestId, "completed")
-                            response
-                        } catch (error: CancellationException) {
-                            // Keep the request pending when the provider deadline cancels it.
-                            throw error
-                        } catch (error: Throwable) {
-                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
-                            throw error
-                        }
+                        executionTasks.run {
+                            val requestId = progress.begin("Discovery context")
+                            try {
+                                val response = discoveryContextBroker
+                                    .resolveFromProviderRequest(
+                                        requestJson
+                                    )
+                                progress.finish(requestId, "completed")
+                                response
+                            } catch (error: CancellationException) {
+                                // Preserve deadline cancellation; completed executions remove cancelled work.
+                                if (executionTasks.isFinished) progress.finish(requestId, "cancelled (provider completed)")
+                                throw error
+                            } catch (error: Throwable) {
+                                progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                                throw error
+                            }
+                        } ?: "{\"error\":\"Provider execution completed\"}"
                     }
 
                     function<String, String>(
@@ -1052,98 +1056,104 @@ private fun emptyDiscoveryResult():
                     asyncFunction<String, String>(
                         "__vueoNativeFetch"
                     ) { requestJson ->
-                        val requestId = progress.begin("HTTP " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
-                        try {
-                            val startedNs =
-                                System.nanoTime()
-                            val sharedTmdb =
-                                discoveryContextBroker
-                                    .interceptTmdbFetch(
-                                        requestJson
-                                    )
-                            val responseJson =
-                                sharedTmdb
-                                    ?: PluginHttp.executeJson(
-                                        requestJson
-                                    )
-                            val traceIndex =
-                                httpTraceCount.incrementAndGet()
+                        executionTasks.run {
+                            val requestId = progress.begin("HTTP " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
+                            try {
+                                val startedNs =
+                                    System.nanoTime()
+                                val sharedTmdb =
+                                    discoveryContextBroker
+                                        .interceptTmdbFetch(
+                                            requestJson
+                                        )
+                                val responseJson =
+                                    sharedTmdb
+                                        ?: PluginHttp.executeJson(
+                                            requestJson
+                                        )
+                                val traceIndex =
+                                    httpTraceCount.incrementAndGet()
 
-                            if (traceIndex <= MAX_HTTP_TRACE_ENTRIES) {
-                                RuntimeDiagnostics.recordDiscoveryTrace(
-                                    scanId = runtimeDiagnosticScanId,
-                                    providerName = provider.name,
-                                    stage = "HTTP",
-                                    details =
-                                        summarizeHttpTrace(
-                                            requestJson = requestJson,
-                                            responseJson = responseJson,
-                                            elapsedMs =
-                                                (
-                                                    System.nanoTime() -
-                                                        startedNs
-                                                ) / 1_000_000L,
-                                            sharedTmdb =
-                                                sharedTmdb != null,
-                                        ),
-                                )
+                                if (traceIndex <= MAX_HTTP_TRACE_ENTRIES) {
+                                    RuntimeDiagnostics.recordDiscoveryTrace(
+                                        scanId = runtimeDiagnosticScanId,
+                                        providerName = provider.name,
+                                        stage = "HTTP",
+                                        details =
+                                            summarizeHttpTrace(
+                                                requestJson = requestJson,
+                                                responseJson = responseJson,
+                                                elapsedMs =
+                                                    (
+                                                        System.nanoTime() -
+                                                            startedNs
+                                                    ) / 1_000_000L,
+                                                sharedTmdb =
+                                                    sharedTmdb != null,
+                                            ),
+                                    )
+                                }
+
+                                progress.finish(requestId, "completed")
+                                responseJson
+                            } catch (error: CancellationException) {
+                                // Preserve deadline cancellation; completed executions remove cancelled work.
+                                if (executionTasks.isFinished) progress.finish(requestId, "cancelled (provider completed)")
+                                throw error
+                            } catch (error: Throwable) {
+                                progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                                throw error
                             }
-
-                            progress.finish(requestId, "completed")
-                            responseJson
-                        } catch (error: CancellationException) {
-                            // Keep the request pending when the provider deadline cancels it.
-                            throw error
-                        } catch (error: Throwable) {
-                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
-                            throw error
-                        }
+                        } ?: "{\"error\":\"Provider execution completed\"}"
                     }
 
                     asyncFunction<String, String>(
                         "__vueoWebViewResolve"
                     ) { requestJson ->
-                        val requestId = progress.begin("WebView " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
-                        try {
-                            val startedNs =
-                                System.nanoTime()
-                            val responseJson =
-                                webViewConcurrency.withPermit {
-                                    progress.stage("Resolving WebView (slot acquired)")
-                                    webViewResolver.resolveJson(
-                                        requestJson
+                        executionTasks.run {
+                            val requestId = progress.begin("WebView " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
+                            try {
+                                val startedNs =
+                                    System.nanoTime()
+                                val responseJson =
+                                    webViewConcurrency.withPermit {
+                                        progress.stage("Resolving WebView (slot acquired)")
+                                        webViewResolver.resolveJson(
+                                            requestJson
+                                        )
+                                    }
+                                val traceIndex =
+                                    webViewTraceCount.incrementAndGet()
+
+                                if (traceIndex <= MAX_WEBVIEW_TRACE_ENTRIES) {
+                                    RuntimeDiagnostics.recordDiscoveryTrace(
+                                        scanId = runtimeDiagnosticScanId,
+                                        providerName = provider.name,
+                                        stage = "WEBVIEW",
+                                        details =
+                                            summarizeWebViewTrace(
+                                                requestJson = requestJson,
+                                                responseJson = responseJson,
+                                                elapsedMs =
+                                                    (
+                                                        System.nanoTime() -
+                                                            startedNs
+                                                    ) / 1_000_000L,
+                                            ),
                                     )
                                 }
-                            val traceIndex =
-                                webViewTraceCount.incrementAndGet()
 
-                            if (traceIndex <= MAX_WEBVIEW_TRACE_ENTRIES) {
-                                RuntimeDiagnostics.recordDiscoveryTrace(
-                                    scanId = runtimeDiagnosticScanId,
-                                    providerName = provider.name,
-                                    stage = "WEBVIEW",
-                                    details =
-                                        summarizeWebViewTrace(
-                                            requestJson = requestJson,
-                                            responseJson = responseJson,
-                                            elapsedMs =
-                                                (
-                                                    System.nanoTime() -
-                                                        startedNs
-                                                ) / 1_000_000L,
-                                        ),
-                                )
+                                progress.finish(requestId, "completed")
+                                responseJson
+                            } catch (error: CancellationException) {
+                                // Preserve deadline cancellation; completed executions remove cancelled work.
+                                if (executionTasks.isFinished) progress.finish(requestId, "cancelled (provider completed)")
+                                throw error
+                            } catch (error: Throwable) {
+                                progress.finish(requestId, "failed (${error::class.java.simpleName})")
+                                throw error
                             }
-
-                            progress.finish(requestId, "completed")
-                            responseJson
-                        } catch (error: CancellationException) {
-                            // Keep the request pending when the provider deadline cancels it.
-                            throw error
-                        } catch (error: Throwable) {
-                            progress.finish(requestId, "failed (${error::class.java.simpleName})")
-                            throw error
-                        }
+                        } ?: "{\"error\":\"Provider execution completed\"}"
                     }
 
                     val htmlBridge =
@@ -1235,19 +1245,20 @@ private fun emptyDiscoveryResult():
                         }
                     }
 
-                    asyncFunction<Double, Boolean>(
-                        "__vueoDelay"
-                    ) { millis ->
-                        progress.stage("Provider delay")
-                        delay(
-                            millis
-                                .toLong()
-                                .coerceIn(
-                                    0L,
-                                    30_000L,
-                                )
-                        )
+                    function<String, Boolean>("__vueoFinishExecution") { _ ->
+                        executionTasks.finish()
                         true
+                    }
+                    function<String, Boolean>("__vueoCancelTimer") { timerId ->
+                        executionTasks.cancelTimer(timerId)
+                        true
+                    }
+                    asyncFunction<String, Boolean>("__vueoTimerDelay") { timerJson ->
+                        val timer = JSONObject(timerJson)
+                        executionTasks.run(timer.optString("id")) {
+                            delay(timer.optLong("millis").coerceIn(0L, 30_000L))
+                            true
+                        } ?: false
                     }
 
                     evaluate<String>(
@@ -1355,6 +1366,7 @@ private fun emptyDiscoveryResult():
                     url: String(tmdbUrl || "")
                   })
                 );
+                if (__vueoExecutionFinished) return new Promise(function () {});
                 var context = JSON.parse(raw);
                 if (context && context.error) {
                   throw new Error(context.error);
@@ -1418,6 +1430,7 @@ private fun emptyDiscoveryResult():
               var raw = await __vueoWebViewResolve(
                 JSON.stringify(request)
               );
+              if (__vueoExecutionFinished) return new Promise(function () {});
               var result = JSON.parse(raw);
 
               if (result.error) {
@@ -1456,6 +1469,7 @@ private fun emptyDiscoveryResult():
                 JSON.stringify(request)
               );
 
+              if (__vueoExecutionFinished) return new Promise(function () {});
               var response = JSON.parse(raw);
 
               if (response.error) {
@@ -1600,14 +1614,7 @@ private fun emptyDiscoveryResult():
               }
             };
 
-            globalThis.setTimeout = function (callback, millis) {
-              return __vueoDelay(Number(millis || 0))
-                .then(function () {
-                  return callback();
-                });
-            };
-
-            globalThis.clearTimeout = function () {};
+            ${PROVIDER_TIMER_SCRIPT}
 
             function __vueoNativeUrl(input, base) {
                           var raw = __vueoUrlOp(
@@ -3407,8 +3414,9 @@ private fun emptyDiscoveryResult():
               );
             }
 
-            var __vueoStreams =
-              await Promise.resolve(
+            var __vueoStreams;
+            try {
+              __vueoStreams = await Promise.resolve(
                 __vueoGetStreams(
                   ${safeTmdbId},
                   ${safeMediaType},
@@ -3416,6 +3424,11 @@ private fun emptyDiscoveryResult():
                   ${episodeValue}
                 )
               );
+
+            } finally {
+              __vueoExecutionFinished = true;
+              __vueoFinishExecution("");
+            }
 
             JSON.stringify(
               Array.isArray(__vueoStreams)
