@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -872,14 +877,8 @@ internal fun TvSettingsListScreen(
             )
 
             if (metrics.isNotEmpty()) {
-                TvSettingsMetricsRow(metrics = metrics, compact = addonLayout)
-                Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
-            }
-
-            if (addonLayout) {
-                TvAddonControls(entries, { rowRequesters.getValue(it) },
-                    { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
-                Spacer(Modifier.height(8.dp))
+                TvSettingsMetricsRow(metrics = metrics)
+                Spacer(Modifier.height(12.dp))
             }
 
             LazyColumn(
@@ -893,6 +892,10 @@ internal fun TvSettingsListScreen(
                     .focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (addonLayout) item(key = "workspace-controls") {
+                    TvAddonControls(entries, { rowRequesters.getValue(it) },
+                        { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
+                }
                 var previousSection: String? = null
                 entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
                     val section = entry.section?.takeIf { it.isNotBlank() }
@@ -1007,13 +1010,8 @@ private fun TvSettingsEmbeddedPanel(
         )
 
         if (metrics.isNotEmpty()) {
-            TvSettingsMetricsRow(metrics = metrics, compact = addonLayout)
-            Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
-        }
-
-        if (addonLayout) {
-            TvAddonControls(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
-            Spacer(Modifier.height(8.dp))
+            TvSettingsMetricsRow(metrics = metrics)
+            Spacer(Modifier.height(12.dp))
         }
 
         LazyColumn(
@@ -1022,6 +1020,9 @@ private fun TvSettingsEmbeddedPanel(
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (addonLayout) item(key = "workspace-controls") {
+                TvAddonControls(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
+            }
             var previousSection: String? = null
             entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
                 val section = entry.section?.takeIf { it.isNotBlank() }
@@ -1350,6 +1351,7 @@ internal fun TvTextEntryDialog(
     title: String,
     initialValue: String,
     secret: Boolean = false,
+    themedInstall: Boolean = false,
     placeholder: String = "",
     confirmLabel: String = "Save",
     busy: Boolean = false,
@@ -1370,6 +1372,48 @@ internal fun TvTextEntryDialog(
         if (busy || value.isBlank()) return
         onSave(value.trim())
         if (restoreOnSave) restoreSettingsFocus()
+    }
+
+    if (themedInstall) {
+        val inputRequester = remember { FocusRequester() }
+        val cancelRequester = remember { FocusRequester() }
+        val installRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { inputRequester.requestFocus() }
+        Dialog(onDismissRequest = { if (!busy) dismissAndRestore() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(
+                modifier = Modifier.width(440.dp)
+                    .background(TvSettingsContrast.Card, RoundedCornerShape(18.dp))
+                    .border(1.dp, TvDesign.White.copy(alpha = .22f), RoundedCornerShape(18.dp))
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = value, onValueChange = { value = it }, enabled = !busy, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().focusRequester(inputRequester)
+                        .focusProperties { down = cancelRequester },
+                    placeholder = { Text(placeholder, color = TvDesign.Dim, fontSize = 13.sp) },
+                    textStyle = LocalTextStyle.current.copy(color = TvDesign.White, fontSize = 14.sp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TvDesign.White, unfocusedBorderColor = TvDesign.White.copy(alpha = .28f),
+                        cursorColor = TvDesign.White, focusedContainerColor = Color(0xFF202020),
+                        unfocusedContainerColor = Color(0xFF202020),
+                    ),
+                )
+                message?.takeIf { it.isNotBlank() }?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
+                if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.White)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                    TvInstallDialogButton("Cancel", !busy, Modifier.focusRequester(cancelRequester).focusProperties {
+                        up = inputRequester
+                        if (!busy && value.isNotBlank()) right = installRequester
+                    }, ::dismissAndRestore)
+                    TvInstallDialogButton(if (busy) "Installing…" else confirmLabel, !busy && value.isNotBlank(),
+                        Modifier.focusRequester(installRequester).focusProperties { up = inputRequester; left = cancelRequester }, ::saveAndRestore)
+                }
+            }
+        }
+        return
     }
 
     AlertDialog(
@@ -1401,6 +1445,23 @@ internal fun TvTextEntryDialog(
             TextButton(enabled = !busy, onClick = ::dismissAndRestore) { Text("Cancel") }
         },
     )
+}
+
+@Composable
+private fun TvInstallDialogButton(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    TextButton(
+        enabled = enabled, onClick = onClick,
+        modifier = modifier.onFocusChanged { focused = it.isFocused }
+            .background(if (focused) TvDesign.White else TvSettingsContrast.Card, shape)
+            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .25f), shape),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = if (focused) Color.Black else TvDesign.White,
+            disabledContentColor = TvDesign.Dim.copy(alpha = .5f),
+        ),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+    ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
 }
 
 @Composable
@@ -1454,7 +1515,7 @@ private fun TvSettingsEntry.isWorkspaceTab(): Boolean =
     id.startsWith("addon-category-") || id.startsWith("repository-tab-")
 
 private fun TvSettingsEntry.isAddonControl(): Boolean =
-    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") || isWorkspaceTab()
+    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics") || isWorkspaceTab()
 
 @Composable
 private fun TvAddonControls(
@@ -1465,14 +1526,27 @@ private fun TvAddonControls(
 ) {
     val actions = entries.filter { it.id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") }
     val categories = entries.filter { it.isWorkspaceTab() }
+    val systemCards = entries.filter { it.id in setOf("provider-health", "runtime-diagnostics") }
     val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
     val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             actions.forEachIndexed { index, entry ->
-                val actionModifier = Modifier.focusProperties {
+                val actionModifier = Modifier.onPreviewKeyEvent { event ->
+                    val keyCode = event.nativeKeyEvent.keyCode
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        if (event.type == KeyEventType.KeyDown) {
+                            when {
+                                keyCode == KeyEvent.KEYCODE_DPAD_LEFT && index == 0 -> onLeftToSidebar()
+                                keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> requesterFor(actions[index - 1].id).requestFocus()
+                                index < actions.lastIndex -> requesterFor(actions[index + 1].id).requestFocus()
+                            }
+                        }
+                        true
+                    } else false
+                }.focusProperties {
                     up = FocusRequester.Cancel
-                    down = selected?.let { requesterFor(it.id) } ?: firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                    down = systemCards.firstOrNull()?.let { requesterFor(it.id) } ?: selected?.let { requesterFor(it.id) } ?: firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
                     if (index > 0) left = requesterFor(actions[index - 1].id)
                     if (index < actions.lastIndex) right = requesterFor(actions[index + 1].id)
                     else right = FocusRequester.Cancel
@@ -1515,6 +1589,17 @@ private fun TvAddonControls(
                 }
             }
         }
+        systemCards.forEachIndexed { index, entry ->
+            TvSettingsRow(
+                entry = entry, requester = requesterFor(entry.id), first = false, last = false,
+                modifier = Modifier.focusProperties {
+                    up = requesterFor(if (index > 0) systemCards[index - 1].id else actions.first().id)
+                    down = if (index < systemCards.lastIndex) requesterFor(systemCards[index + 1].id)
+                        else selected?.let { requesterFor(it.id) } ?: firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                },
+                onLeftToSidebar = onLeftToSidebar, onFocused = { onFocused(entry.id) },
+            )
+        }
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             categories.forEachIndexed { index, entry ->
                 var focused by remember(entry.id) { mutableStateOf(false) }
@@ -1526,7 +1611,7 @@ private fun TvAddonControls(
                     modifier = Modifier
                         .focusRequester(requesterFor(entry.id))
                         .focusProperties {
-                            actions.firstOrNull()?.let { up = requesterFor(it.id) }
+                            (systemCards.lastOrNull() ?: actions.firstOrNull())?.let { up = requesterFor(it.id) }
                             down = firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
                             if (index > 0) left = requesterFor(categories[index - 1].id)
                             if (index < categories.lastIndex) right = requesterFor(categories[index + 1].id)

@@ -193,6 +193,8 @@ internal fun TvAddonSettings(
     if (showAdd) {
         TvTextEntryDialog(
             title = "Add Addon",
+            themedInstall = true,
+            confirmLabel = "Install",
             initialValue = "",
             placeholder = "https://…/manifest.json",
             onDismiss = { showAdd = false },
@@ -235,7 +237,7 @@ internal fun TvAddonSettings(
         "catalog" in descriptor.resources || "meta" in descriptor.resources -> "Catalog & Metadata"
         else -> "Other"
     }
-    val categories = listOf("Catalog & Metadata", "Streams", "Subtitles", "Other")
+    val categories = listOf("Catalog & Metadata", "Streams", "Subtitles")
     val entries = buildList {
         add(
             TvSettingsEntry(
@@ -410,6 +412,7 @@ internal fun TvProviderSettings(
     if (showAdd) {
         TvTextEntryDialog(
             title = "Add Provider Repository",
+            themedInstall = true,
             initialValue = "",
             placeholder = "https://…/manifest.json",
             confirmLabel = "Install",
