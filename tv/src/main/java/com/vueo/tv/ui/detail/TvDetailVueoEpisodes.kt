@@ -182,6 +182,7 @@ internal fun VueoDetailEpisodes(
                 onFocused = { onToolbarFocus(false); onFocused(it) }, onOpen = onOpen,
                 targetEpisodeId = if (ranges.enabled) ranges.targetId else null,
                 focusRequest = ranges.focusRequest, focusCards = ranges.focusCards,
+                onRangeUp = if (ranges.enabled) ({ runCatching { rangeRequester.requestFocus() }; Unit }) else null,
                 onBoundary = { forward ->
                     val next = ranges.group + if (forward) 1 else -1
                     if (ranges.enabled && next in ranges.groups.indices) {
@@ -209,6 +210,7 @@ private fun VueoDetailEpisodeCards(
     focusRequest: Int = 0,
     focusCards: Boolean = false,
     onBoundary: ((Boolean) -> Boolean)? = null,
+    onRangeUp: (() -> Unit)? = null,
 ) {
     val progressByEpisode = remember(media.id, media.type, history) {
         history.filter { it.media.id == media.id && it.media.type == media.type }
@@ -285,6 +287,10 @@ private fun VueoDetailEpisodeCards(
                         .fillMaxWidth()
                         .onPreviewKeyEvent { event ->
                             val native = event.nativeKeyEvent
+                            if (onRangeUp != null && native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP) {
+                                if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount == 0) onRangeUp()
+                                return@onPreviewKeyEvent true
+                            }
                             val isHorizontalKey = native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT ||
                                 native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
                             if (

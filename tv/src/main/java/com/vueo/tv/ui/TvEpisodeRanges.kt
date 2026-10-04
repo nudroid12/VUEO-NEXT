@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
+import kotlinx.coroutines.launch
 
 internal class TvEpisodeRangeState(val episodes: List<EpisodeItem>, initialId: String?) {
     val groups = episodes.chunked(50)
@@ -67,16 +68,42 @@ internal fun TvEpisodeRangeControls(
     val row = rememberLazyListState(initialFirstVisibleItemIndex = state.group)
     var dialog by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(20.dp)
+    val scope = rememberCoroutineScope()
+    val chipRequesters = remember(state) { List(state.groups.size + 1) { FocusRequester() } }
+    fun moveTo(index: Int) {
+        if (index !in chipRequesters.indices) return
+        scope.launch {
+            row.scrollToItem(index)
+            for (attempt in 0 until 6) {
+                withFrameNanos { }
+                if (runCatching { chipRequesters[index].requestFocus() }.getOrDefault(false)) break
+            }
+        }
+    }
+    fun horizontalKey(event: androidx.compose.ui.input.key.KeyEvent, index: Int): Boolean {
+        val native = event.nativeKeyEvent
+        val direction = when (native.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> -1
+            KeyEvent.KEYCODE_DPAD_RIGHT -> 1
+            else -> return false
+        }
+        if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+            onInteraction()
+            moveTo(index + direction)
+        }
+        return true
+    }
     LaunchedEffect(state.group, state.focusRequest) { row.scrollToItem(state.group) }
     LazyRow(state = row, modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 5.dp)) {
         itemsIndexed(state.groups, key = { index, _ -> index }) { index, group ->
             var focused by remember { mutableStateOf(false) }
             val selected = index == state.group
-            Box(Modifier.then(if (selected) Modifier.focusRequester(requester) else Modifier)
+            Box(Modifier.focusRequester(chipRequesters[index]).then(if (selected) Modifier.focusRequester(requester) else Modifier)
                 .focusProperties { up = upRequester; if (index == 0) left = FocusRequester.Cancel }
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
-                    if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
+                    if (horizontalKey(event, index)) true
+                    else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
                     else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) { onInteraction(); onDown() }; true }
                 }
                 .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color(0xFF303030), shape)
@@ -87,10 +114,11 @@ internal fun TvEpisodeRangeControls(
         }
         item(key = "jump") {
             var focused by remember { mutableStateOf(false) }
-            Box(Modifier.focusProperties { up = upRequester; right = FocusRequester.Cancel }
+            Box(Modifier.focusRequester(chipRequesters.last()).focusProperties { up = upRequester; right = FocusRequester.Cancel }
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
-                    if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
+                    if (horizontalKey(event, state.groups.size)) true
+                    else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
                     else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) onDown(); true }
                 }
                 .background(if (focused) Color(0xFF555555) else Color(0xFF303030), shape).border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .4f), shape)
