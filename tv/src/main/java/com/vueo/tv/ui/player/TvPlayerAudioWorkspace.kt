@@ -93,28 +93,15 @@ internal fun VueoPlayerAudioWorkspace(
             }
         }
     }
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
-    val cardBorder = Color.White.copy(alpha = .065f)
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = .20f))
-            .background(
-                Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .60f),
-                    .38f to Color.Black.copy(alpha = .30f),
-                    .72f to Color.Black.copy(alpha = .15f),
-                    1f to Color.Black.copy(alpha = .08f),
-                )
-            )
-    ) {
+    Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .then(panelModifier)
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
+                .background(Color(0xF5202124))
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
@@ -135,9 +122,6 @@ internal fun VueoPlayerAudioWorkspace(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .clip(PanelShape)
-                    .background(cardBackground)
-                    .border(1.dp, cardBorder, PanelShape)
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
                 VueoOptionList(
