@@ -128,20 +128,6 @@ object RuntimeDiagnostics {
         )
     }
 
-    fun recordSubtitleLayout(
-        platform: String,
-        positionMs: Long,
-        incomingCues: Int,
-        displayedCues: Int,
-        unpositionedTextCues: Int,
-    ) {
-        record(
-            "SUBTITLE_LAYOUT platform=${safeToken(platform)} positionMs=$positionMs " +
-                "incoming=$incomingCues displayed=$displayedCues " +
-                "unpositionedText=$unpositionedTextCues path=managed-view"
-        )
-    }
-
     fun recordPlaybackError(
         platform: String, provider: String, server: String, url: String?, mimeType: String?,
         errorCode: Int, errorName: String, positionMs: Long, state: Int, error: Throwable,

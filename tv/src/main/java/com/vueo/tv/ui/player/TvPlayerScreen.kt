@@ -5,7 +5,6 @@ import com.vueo.shared.core.player.PlayerSourceDisplay
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.SystemClock
-import android.util.TypedValue
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -241,6 +240,7 @@ fun TvPlayerScreen(
             TvPlayerSubtitleStyleState(
                 fontSizeSp = storedSubtitleFontSizeSp,
                 bold = settings.subtitleBold(),
+                showCommentary = settings.tvSubtitleCommentaryEnabled(),
                 textColor = if ((storedSubtitleTextColor ushr 24) != 0xFF) {
                     storedSubtitleTextColor
                 } else {
@@ -1498,21 +1498,23 @@ fun TvPlayerScreen(
             .focusable(enabled = activePanel == TvPlayerPanel.NONE),
     ) {
         val exoPlayer = player
-        val appliedSubtitleStyle = CaptionStyleCompat(
-            subtitleStyle.textColor,
-            if (subtitleStyle.backgroundEnabled) {
-                withAlpha(
-                    subtitleStyle.backgroundColor,
-                    subtitleStyle.backgroundOpacityPercent,
-                )
-            } else {
-                android.graphics.Color.TRANSPARENT
-            },
-            android.graphics.Color.TRANSPARENT,
-            if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
-            subtitleStyle.outlineColor,
-            if (subtitleStyle.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
-        )
+        val appliedSubtitleStyle = remember(subtitleStyle) {
+            CaptionStyleCompat(
+                subtitleStyle.textColor,
+                if (subtitleStyle.backgroundEnabled) {
+                    withAlpha(
+                        subtitleStyle.backgroundColor,
+                        subtitleStyle.backgroundOpacityPercent,
+                    )
+                } else {
+                    android.graphics.Color.TRANSPARENT
+                },
+                android.graphics.Color.TRANSPARENT,
+                if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
+                subtitleStyle.outlineColor,
+                if (subtitleStyle.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
+            )
+        }
         val resizeMode = when (videoFit) {
             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
             // A TV-style Fill should crop while preserving the source aspect ratio.
@@ -1537,11 +1539,7 @@ fun TvPlayerScreen(
                     bindPlayer(exoPlayer)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     this.resizeMode = resizeMode
-                    managedSubtitleView.setApplyEmbeddedStyles(false)
-                    managedSubtitleView.setApplyEmbeddedFontSizes(false)
-                    managedSubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
-                    managedSubtitleView.setStyle(appliedSubtitleStyle)
-                    managedSubtitleView.setBottomPaddingFraction(subtitleBottomPaddingFraction)
+                    applySubtitlePresentation(subtitleStyle, appliedSubtitleStyle, subtitleBottomPaddingFraction)
                 }
             },
             update = {
@@ -1550,11 +1548,7 @@ fun TvPlayerScreen(
                 it.isFocusableInTouchMode = false
                 it.keepScreenOn = true
                 it.resizeMode = resizeMode
-                it.managedSubtitleView.setApplyEmbeddedStyles(false)
-                it.managedSubtitleView.setApplyEmbeddedFontSizes(false)
-                it.managedSubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleStyle.fontSizeSp.toFloat())
-                it.managedSubtitleView.setStyle(appliedSubtitleStyle)
-                it.managedSubtitleView.setBottomPaddingFraction(subtitleBottomPaddingFraction)
+                it.applySubtitlePresentation(subtitleStyle, appliedSubtitleStyle, subtitleBottomPaddingFraction)
             },
             modifier = Modifier.fillMaxSize(),
         )
@@ -1914,6 +1908,7 @@ fun TvPlayerScreen(
                     subtitleStyle = updated
                     settings.setSubtitleFontSizeSp(updated.fontSizeSp)
                     settings.setSubtitleBold(updated.bold)
+                    settings.setTvSubtitleCommentaryEnabled(updated.showCommentary)
                     settings.setSubtitleTextColor(updated.textColor)
                     settings.setSubtitleTextOpacityPercent(alphaPercent(updated.textColor))
                     settings.setSubtitleOutlineEnabled(updated.outlineEnabled)

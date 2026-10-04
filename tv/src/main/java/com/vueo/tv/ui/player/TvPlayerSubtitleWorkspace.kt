@@ -154,6 +154,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val syncRequester = remember { FocusRequester() }
     val sizeRequester = remember { FocusRequester() }
     val boldRequester = remember { FocusRequester() }
+    val commentaryRequester = remember { FocusRequester() }
     val textColorRequester = remember { FocusRequester() }
     val opacityRequester = remember { FocusRequester() }
     val outlineRequester = remember { FocusRequester() }
@@ -509,17 +510,27 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     enabled = style.bold,
                                     requester = boldRequester,
                                     upRequester = sizeRequester,
-                                    downRequester = textColorRequester,
+                                    downRequester = commentaryRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
+                                )
+                                VueoSubtitleToggleRow(
+                                    title = "Commentary",
+                                    enabled = style.showCommentary,
+                                    requester = commentaryRequester,
+                                    upRequester = boldRequester,
+                                    downRequester = textColorRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onToggle = { onStyleChange(style.copy(showCommentary = !style.showCommentary)) },
                                 )
                                 VueoSubtitleColorRow(
                                     title = "Text Color",
                                     colours = textColours,
                                     selectedColour = style.textColor,
                                     requester = textColorRequester,
-                                    upRequester = boldRequester,
+                                    upRequester = commentaryRequester,
                                     downRequester = opacityRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,

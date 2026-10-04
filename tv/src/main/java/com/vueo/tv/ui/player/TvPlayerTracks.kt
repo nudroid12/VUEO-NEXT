@@ -45,6 +45,7 @@ internal data class TvSubtitleLanguageGroup(
 internal data class TvPlayerSubtitleStyleState(
     val fontSizeSp: Int = 26,
     val bold: Boolean = false,
+    val showCommentary: Boolean = true,
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
     val outlineColor: Int = 0xFF000000.toInt(),
@@ -272,7 +273,8 @@ internal class TvSubtitleOffsetRenderersFactory(
  * Fully tagged commentary is grouped at the top with a safe margin.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
-internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
+internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boolean = true): List<Cue> {
+    if (cues.isEmpty()) return emptyList()
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
     val bottomGroup = mutableListOf<Cue>()
@@ -283,8 +285,10 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
             continue
         }
         if (tvIsTaggedSubtitleCommentary(cue)) {
-            if (commentaryGroup.isEmpty()) orderedGroups.add(commentaryGroup)
-            commentaryGroup.add(cue)
+            if (showCommentary) {
+                if (commentaryGroup.isEmpty()) orderedGroups.add(commentaryGroup)
+                commentaryGroup.add(cue)
+            }
             continue
         }
         if (tvIsBottomSubtitleCue(cue)) {
@@ -311,12 +315,15 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
         if (unique.size == 1 && group !== bottomGroup && group !== commentaryGroup) {
             unique.first()
         } else {
-            val text = SpannableStringBuilder()
-            unique.forEachIndexed { index, item ->
-                if (index > 0) text.append('\n')
-                text.append(requireNotNull(item.text))
+            val builder = unique.first().buildUpon()
+            if (unique.size > 1) {
+                val text = SpannableStringBuilder()
+                unique.forEachIndexed { index, item ->
+                    if (index > 0) text.append('\n')
+                    text.append(requireNotNull(item.text))
+                }
+                builder.setText(SpannedString(text))
             }
-            val builder = unique.first().buildUpon().setText(SpannedString(text))
             if (group === bottomGroup || group === commentaryGroup) {
                 // Normalize single captions too: authored lower-screen anchors otherwise
                 // bypass the user's Bottom Position, unlike a stacked group.
@@ -351,9 +358,12 @@ internal fun tvIsTaggedSubtitleCommentary(cue: Cue): Boolean {
     val markers = text.getSpans(0, text.length, ForegroundColorSpan::class.java)
         .filter { (it.foregroundColor and 0x00FFFFFF) == 0x00FFFFCC }
     if (markers.isEmpty()) return false
-    return text.indices.filter { !text[it].isWhitespace() }.all { index ->
-        markers.any { text.getSpanStart(it) <= index && text.getSpanEnd(it) > index }
+    for (index in text.indices) {
+        if (!text[index].isWhitespace() && markers.none {
+            text.getSpanStart(it) <= index && text.getSpanEnd(it) > index
+        }) return false
     }
+    return true
 }
 
 private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = when {

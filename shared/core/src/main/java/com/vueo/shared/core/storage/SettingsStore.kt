@@ -474,6 +474,13 @@ class SettingsStore(
         }.apply()
     }
 
+    fun tvSubtitleCommentaryEnabled(): Boolean =
+        prefs.getBoolean(profileKey(KEY_TV_SUBTITLE_COMMENTARY), true)
+
+    fun setTvSubtitleCommentaryEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(profileKey(KEY_TV_SUBTITLE_COMMENTARY), enabled).apply()
+    }
+
     fun subtitleBold(): Boolean =
         prefs.getBoolean(
             profileKey(KEY_SUBTITLE_BOLD),
@@ -1074,6 +1081,9 @@ class SettingsStore(
 
         private const val KEY_TV_SUBTITLE_PRESENTATION_V2 =
             "tv_subtitle_presentation_v2"
+
+        private const val KEY_TV_SUBTITLE_COMMENTARY =
+            "tv_subtitle_commentary_enabled"
 
         private const val KEY_SUBTITLE_BOLD =
             "subtitle_bold"
