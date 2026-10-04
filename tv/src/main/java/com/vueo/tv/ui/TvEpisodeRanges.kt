@@ -5,9 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -20,7 +24,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
-import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import com.vueo.tv.ui.motion.TvMotion
+import kotlin.math.roundToInt
 
 internal class TvEpisodeRangeState(val episodes: List<EpisodeItem>, initialId: String?) {
     val groups = episodes.chunked(50)
@@ -54,6 +61,7 @@ internal fun rememberTvEpisodeRanges(episodes: List<EpisodeItem>, initialId: Str
     return remember(ordered) { TvEpisodeRangeState(ordered, initialId) }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TvEpisodeRangeControls(
     state: TvEpisodeRangeState,
@@ -65,20 +73,32 @@ internal fun TvEpisodeRangeControls(
     onInteraction: () -> Unit = {},
 ) {
     if (!state.enabled) return
-    val row = rememberLazyListState(initialFirstVisibleItemIndex = state.group)
+    // Every range chip stays mounted: moving focus never waits for lazy composition.
+    val row = rememberScrollState()
     var dialog by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(20.dp)
-    val scope = rememberCoroutineScope()
     val chipRequesters = remember(state) { List(state.groups.size + 1) { FocusRequester() } }
-    fun moveTo(index: Int) {
-        if (index !in chipRequesters.indices) return
-        scope.launch {
-            row.scrollToItem(index)
-            for (attempt in 0 until 6) {
-                withFrameNanos { }
-                if (runCatching { chipRequesters[index].requestFocus() }.getOrDefault(false)) break
-            }
+    val chipWidths = remember(state) { mutableStateMapOf<Int, Int>() }
+    var viewportWidth by remember { mutableIntStateOf(0) }
+    var focusedIndex by remember(state) { mutableIntStateOf(state.group) }
+    var rowHasFocus by remember { mutableStateOf(false) }
+    var lastMoveTime by remember { mutableLongStateOf(0L) }
+    val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
+    // The explicit centering below owns scrolling; disable a second focus scroll.
+    val noAutomaticScroll = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) = 0f
         }
+    }
+    LaunchedEffect(state.group) {
+        if (!rowHasFocus) focusedIndex = state.group
+    }
+    LaunchedEffect(focusedIndex, viewportWidth, chipWidths.toMap(), row.maxValue) {
+        val width = chipWidths[focusedIndex] ?: return@LaunchedEffect
+        if (viewportWidth <= 0 || (0 until focusedIndex).any { it !in chipWidths }) return@LaunchedEffect
+        val left = (0 until focusedIndex).sumOf { chipWidths.getValue(it) } + gapPx * focusedIndex
+        val target = (left + width / 2f - viewportWidth / 2f).roundToInt().coerceIn(0, row.maxValue)
+        row.animateScrollTo(target, animationSpec = tween(180, easing = TvMotion.EaseOut))
     }
     fun horizontalKey(event: androidx.compose.ui.input.key.KeyEvent, index: Int): Boolean {
         val native = event.nativeKeyEvent
@@ -87,20 +107,32 @@ internal fun TvEpisodeRangeControls(
             KeyEvent.KEYCODE_DPAD_RIGHT -> 1
             else -> return false
         }
-        if (native.action == KeyEvent.ACTION_DOWN && native.repeatCount == 0) {
+        if (native.action == KeyEvent.ACTION_DOWN) {
+            if (native.repeatCount > 0 && native.eventTime - lastMoveTime < 140L) return true
+            lastMoveTime = native.eventTime
             onInteraction()
-            moveTo(index + direction)
+            val next = index + direction
+            if (next in chipRequesters.indices) chipRequesters[next].requestFocus()
         }
         return true
     }
-    LaunchedEffect(state.group, state.focusRequest) { row.scrollToItem(state.group) }
-    LazyRow(state = row, modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 5.dp)) {
-        itemsIndexed(state.groups, key = { index, _ -> index }) { index, group ->
+    CompositionLocalProvider(LocalBringIntoViewSpec provides noAutomaticScroll) {
+    Row(
+        modifier = modifier.fillMaxWidth()
+            .onSizeChanged { viewportWidth = it.width }
+            .onFocusChanged { rowHasFocus = it.hasFocus }
+            .focusGroup()
+            .horizontalScroll(row)
+            .padding(vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        state.groups.forEachIndexed { index, group ->
+        key(index) {
             var focused by remember { mutableStateOf(false) }
             val selected = index == state.group
-            Box(Modifier.focusRequester(chipRequesters[index]).then(if (selected) Modifier.focusRequester(requester) else Modifier)
+            Box(Modifier.onSizeChanged { chipWidths[index] = it.width }.focusRequester(chipRequesters[index]).then(if (selected) Modifier.focusRequester(requester) else Modifier)
                 .focusProperties { up = upRequester; if (index == 0) left = FocusRequester.Cancel }
-                .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocused(); onInteraction() } }
+                .onFocusChanged { focused = it.isFocused; if (it.isFocused) { focusedIndex = index; onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
                     if (horizontalKey(event, index)) true
                     else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
@@ -112,10 +144,11 @@ internal fun TvEpisodeRangeControls(
                 Text("${group.first().episode}–${group.last().episode}", color = if (selected) Color.Black else Color.White, fontSize = 11.sp)
             }
         }
-        item(key = "jump") {
+        }
+        key("jump") {
             var focused by remember { mutableStateOf(false) }
-            Box(Modifier.focusRequester(chipRequesters.last()).focusProperties { up = upRequester; right = FocusRequester.Cancel }
-                .onFocusChanged { focused = it.isFocused; if (it.isFocused) { onFocused(); onInteraction() } }
+            Box(Modifier.onSizeChanged { chipWidths[state.groups.size] = it.width }.focusRequester(chipRequesters.last()).focusProperties { up = upRequester; right = FocusRequester.Cancel }
+                .onFocusChanged { focused = it.isFocused; if (it.isFocused) { focusedIndex = state.groups.size; onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
                     if (horizontalKey(event, state.groups.size)) true
                     else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
@@ -126,6 +159,7 @@ internal fun TvEpisodeRangeControls(
                 Text("Go to episode", color = Color.White, fontSize = 11.sp)
             }
         }
+    }
     }
     if (dialog) {
         var input by remember { mutableStateOf("") }

@@ -70,7 +70,6 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
-import androidx.compose.runtime.key
 import androidx.compose.runtime.withFrameNanos
 import com.vueo.tv.ui.rememberTvEpisodeRanges
 import com.vueo.tv.ui.TvEpisodeRangeControls
@@ -176,7 +175,6 @@ internal fun VueoDetailEpisodes(
             onDown = { ranges.focusCards = true; ranges.focusRequest++ },
             modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding),
             onFocused = { onToolbarFocus(true) })
-        key(ranges.group) {
             VueoDetailEpisodeCards(media, ranges.visible, episodeRatings, selectedEpisode, history,
                 sectionRequester, if (ranges.enabled) rangeRequester else upRequester, downRequester,
                 onFocused = { onToolbarFocus(false); onFocused(it) }, onOpen = onOpen,
@@ -189,7 +187,6 @@ internal fun VueoDetailEpisodes(
                         ranges.select(next, focusCards = true, last = !forward); true
                     } else false
                 })
-        }
     }
 }
 
@@ -259,6 +256,10 @@ private fun VueoDetailEpisodeCards(
         }
     }
 
+    LaunchedEffect(episodes.firstOrNull()?.id) {
+        if (episodes.isNotEmpty()) listState.scrollToItem(selectedIndex)
+    }
+
     LaunchedEffect(focusRequest) {
         if (focusRequest > 0 && focusCards && episodes.isNotEmpty()) {
             listState.scrollToItem(selectedIndex)
@@ -312,7 +313,7 @@ private fun VueoDetailEpisodeCards(
                     contentPadding = PaddingValues(end = 18.dp, top = 7.dp, bottom = 7.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { index, episode ->
+                    itemsIndexed(episodes, key = { index, _ -> index }, contentType = { _, _ -> "episode-card" }) { index, episode ->
                         val progress = progressByEpisode[episode.season to episode.episode]
                         VueoEpisodeCard(
                             episode = episode,
@@ -407,6 +408,7 @@ private fun VueoEpisodeCard(
             Box(Modifier.fillMaxSize()) {
                 TvNetworkImage(
                     url = episode.thumbnail,
+                    fadeEnabled = false,
                     contentDescription = episode.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

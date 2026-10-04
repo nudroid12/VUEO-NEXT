@@ -236,6 +236,7 @@ fun TvNetworkImage(
     highPriority: Boolean = false,
     alignment: Alignment = Alignment.Center,
     onLoadResult: ((Boolean) -> Unit)? = null,
+    fadeEnabled: Boolean = true,
 ) {
     val context = LocalContext.current.applicationContext
     val latestLoadResult by rememberUpdatedState(onLoadResult)
@@ -279,7 +280,7 @@ fun TvNetworkImage(
             Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = contentDescription,
-                modifier = Modifier.matchParentSize().alpha(imageAlpha),
+                modifier = Modifier.matchParentSize().alpha(if (fadeEnabled) imageAlpha else 1f),
                 contentScale = contentScale,
                 alignment = alignment,
             )

@@ -546,13 +546,11 @@ internal fun VueoPlayerEpisodesPanel(
                 Spacer(Modifier.height(12.dp))
             }
 
-            VueoLeadingTabs {
             Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
             TvEpisodeRangeControls(ranges, rangeRequester,
                 if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel,
                 onDown = { ranges.focusCards = true; ranges.focusRequest++ },
                 onInteraction = onInteraction)
-            }
             }
 
             Column(
@@ -694,6 +692,10 @@ private fun VueoEpisodeList(
         }
     }
 
+    LaunchedEffect(episodes.firstOrNull()?.id) {
+        if (episodes.isNotEmpty()) state.scrollToItem(currentIndex)
+    }
+
     LaunchedEffect(entryRequest) {
         if (entryRequest == 0 || episodes.isEmpty()) return@LaunchedEffect
         state.scrollToItem(currentIndex)
@@ -727,7 +729,7 @@ private fun VueoEpisodeList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 12.dp),
         ) {
-            itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
+            itemsIndexed(episodes, key = { index, _ -> index }) { index, episode ->
                 val selected = currentEpisode?.let {
                     it.id == episode.id ||
                         (it.season == episode.season && it.episode == episode.episode)
@@ -819,6 +821,7 @@ private fun VueoEpisodeRow(
                 Modifier.fillMaxSize(),
                 ContentScale.Crop,
                 TvDesign.SurfaceRaised,
+                fadeEnabled = false,
             )
             Text(
                 "S${episode.season}E${episode.episode}",
