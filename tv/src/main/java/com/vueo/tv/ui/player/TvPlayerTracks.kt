@@ -2,9 +2,11 @@ package com.vueo.tv.player
 
 import android.content.Context
 import android.os.Looper
+import android.text.Layout
+import android.text.SpannableStringBuilder
+import android.text.SpannedString
 import androidx.media3.common.C
 import androidx.media3.common.text.Cue
-import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ForwardingRenderer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.common.TrackSelectionOverride
@@ -236,7 +238,6 @@ private fun tvBuildAudioSelectionId(
 internal class TvSubtitleOffsetRenderersFactory(
     context: Context,
     private val subtitleDelayUsProvider: () -> Long,
-    private val shouldNormalizeCuePositionProvider: () -> Boolean,
 ) : DefaultRenderersFactory(context) {
     override fun buildTextRenderers(
         context: Context,
@@ -245,14 +246,10 @@ internal class TvSubtitleOffsetRenderersFactory(
         extensionRendererMode: Int,
         out: ArrayList<Renderer>,
     ) {
-        val normalizingOutput = TvCueNormalizingTextOutput(
-            delegate = output,
-            shouldNormalizeCuePositionProvider = shouldNormalizeCuePositionProvider,
-        )
         val firstTextRenderer = out.size
         super.buildTextRenderers(
             context,
-            normalizingOutput,
+            output,
             outputLooper,
             extensionRendererMode,
             out,
@@ -266,40 +263,85 @@ internal class TvSubtitleOffsetRenderersFactory(
     }
 }
 
-private class TvCueNormalizingTextOutput(
-    private val delegate: TextOutput,
-    private val shouldNormalizeCuePositionProvider: () -> Boolean,
-) : TextOutput {
-    override fun onCues(cueGroup: CueGroup) {
-        delegate.onCues(
-            CueGroup(
-                cueGroup.cues.map(::normalizeCuePosition),
-                cueGroup.presentationTimeUs,
-            )
-        )
-    }
-
-    @Deprecated("Uses a deprecated player callback for text outputs.")
-    override fun onCues(cues: List<Cue>) {
-        delegate.onCues(cues.map(::normalizeCuePosition))
-    }
-
-    private fun normalizeCuePosition(cue: Cue): Cue {
-        if (
-            !shouldNormalizeCuePositionProvider() ||
-            cue.bitmap != null ||
-            cue.verticalType != Cue.TYPE_UNSET ||
-            cue.line == Cue.DIMEN_UNSET
-        ) {
-            return cue
+/** Stack simultaneous lower-screen captions even when their horizontal metadata differs.
+ * Upper and middle authored placements remain separate.
+ * One multiline cue lets SubtitleView measure wrapping and height at the user's
+ * font size. Combined bottom captions use the configured Bottom Position.
+ * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
+ */
+internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
+    val orderedGroups = mutableListOf<MutableList<Cue>>()
+    val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
+    val bottomGroup = mutableListOf<Cue>()
+    for (cue in cues) {
+        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank()) {
+            orderedGroups.add(mutableListOf(cue))
+            continue
         }
-
-        return cue.buildUpon()
-            .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
-            .setLineAnchor(Cue.TYPE_UNSET)
-            .build()
+        if (tvIsBottomSubtitleCue(cue)) {
+            if (bottomGroup.isEmpty()) orderedGroups.add(bottomGroup)
+            bottomGroup.add(cue)
+            continue
+        }
+        val placement = TvSubtitlePlacement(
+            line = cue.line,
+            lineType = if (cue.line == Cue.DIMEN_UNSET) Cue.TYPE_UNSET else cue.lineType,
+            lineAnchor = if (cue.line == Cue.DIMEN_UNSET) Cue.TYPE_UNSET else cue.lineAnchor,
+            position = cue.position,
+            positionAnchor = cue.positionAnchor,
+            size = cue.size,
+            alignment = cue.textAlignment,
+            multiRowAlignment = cue.multiRowAlignment,
+            shearDegrees = cue.shearDegrees,
+        )
+        groups.getOrPut(placement) { mutableListOf<Cue>().also { orderedGroups.add(it) } }.add(cue)
+    }
+    // Keep groups in their original order, including bitmap and vertical cues.
+    return orderedGroups.map { group ->
+        val unique = group.distinctBy { it.text.toString() }
+        if (unique.size == 1) {
+            unique.first()
+        } else {
+            val text = SpannableStringBuilder()
+            unique.forEachIndexed { index, item ->
+                if (index > 0) text.append('\n')
+                text.append(requireNotNull(item.text))
+            }
+            val builder = unique.first().buildUpon().setText(SpannedString(text))
+            if (group === bottomGroup) {
+                // A single measured block grows upward from the user's Bottom Position.
+                // Different ASS/WebVTT widths/anchors must not create separate overlapping boxes.
+                builder.setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+                    .setLineAnchor(Cue.TYPE_UNSET)
+                    .setPosition(Cue.DIMEN_UNSET)
+                    .setPositionAnchor(Cue.TYPE_UNSET)
+                    .setSize(Cue.DIMEN_UNSET)
+                    .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
+            }
+            builder.build()
+        }
     }
 }
+
+private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = when {
+    cue.line == Cue.DIMEN_UNSET -> true
+    cue.lineType == Cue.LINE_TYPE_FRACTION -> cue.line >= .70f
+    cue.lineType == Cue.LINE_TYPE_NUMBER -> cue.line in -3f..-1f
+    else -> false
+}
+
+private data class TvSubtitlePlacement(
+    val line: Float,
+    val lineType: Int,
+    val lineAnchor: Int,
+    val position: Float,
+    val positionAnchor: Int,
+    val size: Float,
+    val alignment: Layout.Alignment?,
+    val multiRowAlignment: Layout.Alignment?,
+    val shearDegrees: Float,
+)
 
 private class TvSubtitleOffsetRenderer(
     baseRenderer: Renderer,
