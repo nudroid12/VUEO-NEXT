@@ -347,7 +347,7 @@ internal fun TvAddonSettings(
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
-        topLabel = null,
+        topLabel = "Content Manager",
         addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(manifests.size.toString(), "Installed"),
@@ -371,7 +371,6 @@ internal fun TvProviderSettings(
     val scope = rememberCoroutineScope()
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
-    var selectedCategory by remember { mutableStateOf("Repositories") }
     var revision by remember { mutableIntStateOf(0) }
     var pluginsEnabled by remember { mutableStateOf(runtime.pluginStore.pluginsEnabled()) }
     var showAdd by remember { mutableStateOf(false) }
@@ -429,7 +428,6 @@ internal fun TvProviderSettings(
                         .onSuccess { repository ->
                             revision++
                             selectedRepositoryUrl = repository.manifestUrl
-                            selectedCategory = "Repositories"
                             status = "Installed ${repository.name}."
                             showAdd = false
                             addMessage = null
@@ -551,29 +549,8 @@ internal fun TvProviderSettings(
             )
         } else {
             val repository = selectedRepository ?: repositories.first()
-            val repositoryIndex = repositories.indexOfFirst { it.manifestUrl == repository.manifestUrl }
             val repoEnabled = runtime.pluginStore.isRepositoryEnabled(repository)
             val refreshing = refreshingRepositoryUrl == repository.manifestUrl
-
-            add(
-                TvSettingsEntry(
-                    id = "repository-selector",
-                    title = "Repositories",
-                    subtitle = "Use D-pad left/right to choose a repository.",
-                    onPrevious = {
-                        val previous = (repositoryIndex - 1).coerceAtLeast(0)
-                        selectedRepositoryUrl = repositories[previous].manifestUrl
-                    },
-                    onNext = {
-                        val next = (repositoryIndex + 1).coerceAtMost(repositories.lastIndex)
-                        selectedRepositoryUrl = repositories[next].manifestUrl
-                    },
-                    section = "REPOSITORIES",
-                    accented = true,
-                    choices = repositories.map { it.name },
-                    selectedChoiceIndex = repositoryIndex,
-                )
-            )
 
             add(toggleEntry(
                 id = "repo-${repository.manifestUrl.hashCode()}",
@@ -680,29 +657,21 @@ internal fun TvProviderSettings(
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
-    val categories = listOf("System", "Repositories", "Providers")
     val entries = buildList {
-        listOf("add-repo", "plugins-master", "refresh-repository").forEach { id ->
+        listOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics").forEach { id ->
             allEntries.firstOrNull { it.id == id }?.let { add(it.copy(section = null)) }
         }
-        categories.forEachIndexed { index, category ->
+        repositories.forEach { repository ->
             add(TvSettingsEntry(
-                id = "addon-category-$index",
-                title = category,
+                id = "repository-tab-${repository.manifestUrl.hashCode()}",
+                title = repository.name,
                 subtitle = "",
-                value = if (selectedCategory == category) "Selected" else "",
-                onActivate = { selectedCategory = category },
+                value = if (repository.manifestUrl == (selectedRepository?.manifestUrl ?: repositories.firstOrNull()?.manifestUrl)) "Selected" else "",
+                onActivate = { selectedRepositoryUrl = repository.manifestUrl },
             ))
         }
-        allEntries.filter { entry ->
-            when (entry.id) {
-                "add-repo", "plugins-master", "refresh-repository" -> false
-                "provider-health", "runtime-diagnostics" -> selectedCategory == "System"
-                "repository-selector" -> selectedCategory != "System"
-                "status" -> true
-                else -> if (entry.id.startsWith("provider-")) selectedCategory == "Providers"
-                    else selectedCategory == "Repositories"
-            }
+        allEntries.filterNot {
+            it.id in setOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics")
         }.forEach { add(it.copy(section = null)) }
     }
 
@@ -717,7 +686,7 @@ internal fun TvProviderSettings(
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
-        topLabel = null,
+        topLabel = "Content Manager",
         addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(repositories.size.toString(), "Repos"),
@@ -725,8 +694,8 @@ internal fun TvProviderSettings(
             TvSettingsMetric(enabledProviderCount.toString(), "Active"),
             TvSettingsMetric(readyProviderCount.toString(), "Ready"),
         ),
-        footer = "Left/right changes repository. OK changes a saved preference. Press right on a provider for diagnostics.",
-        preferredFocusId = "addon-category-1",
+        footer = "Select a repository tab. OK changes a saved preference. Press right on a provider for diagnostics.",
+        preferredFocusId = repositories.firstOrNull()?.let { "repository-tab-${it.manifestUrl.hashCode()}" } ?: "add-repo",
     )
 }
 

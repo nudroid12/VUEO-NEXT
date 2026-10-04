@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -719,13 +721,14 @@ private fun TvProfileStat(
 @Composable
 private fun TvSettingsMetricsRow(
     metrics: List<TvSettingsMetric>,
+    compact: Boolean = false,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(TvSettingsContrast.Card, RoundedCornerShape(16.dp))
             .border(1.dp, TvDesign.White.copy(alpha = .08f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 11.dp),
+            .padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 11.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         metrics.forEach { metric ->
@@ -737,7 +740,7 @@ private fun TvSettingsMetricsRow(
                 Text(
                     text = metric.value,
                     color = TvDesign.Accent,
-                    fontSize = 20.sp,
+                    fontSize = if (compact) 17.sp else 20.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
@@ -857,7 +860,7 @@ internal fun TvSettingsListScreen(
             Text(
                 text = title,
                 color = TvDesign.White,
-                fontSize = if (addonLayout) 22.sp else 28.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
@@ -865,11 +868,11 @@ internal fun TvSettingsListScreen(
                 color = TvDesign.Muted,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                modifier = Modifier.padding(top = if (addonLayout) 3.dp else 6.dp, bottom = if (addonLayout) 8.dp else 16.dp),
+                modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
             )
 
             if (metrics.isNotEmpty()) {
-                if (addonLayout) TvAddonCompactMetrics(metrics) else TvSettingsMetricsRow(metrics = metrics)
+                TvSettingsMetricsRow(metrics = metrics, compact = addonLayout)
                 Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
             }
 
@@ -910,7 +913,7 @@ internal fun TvSettingsListScreen(
                     item(key = entry.id) {
                         TvSettingsRow(
                             entry = entry,
-                            compact = addonLayout,
+                            compact = false,
                             requester = rowRequesters.getValue(entry.id),
                             first = entry.id == firstFocusable?.id,
                             last = entry.id == lastFocusable?.id,
@@ -992,7 +995,7 @@ private fun TvSettingsEmbeddedPanel(
         Text(
             text = title,
             color = TvDesign.White,
-            fontSize = if (addonLayout) 22.sp else 29.sp,
+            fontSize = 29.sp,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -1000,11 +1003,11 @@ private fun TvSettingsEmbeddedPanel(
             color = TvDesign.Muted,
             fontSize = 13.sp,
             lineHeight = 18.sp,
-            modifier = Modifier.padding(top = if (addonLayout) 3.dp else 5.dp, bottom = if (addonLayout) 8.dp else 16.dp),
+            modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
         )
 
         if (metrics.isNotEmpty()) {
-            if (addonLayout) TvAddonCompactMetrics(metrics) else TvSettingsMetricsRow(metrics = metrics)
+            TvSettingsMetricsRow(metrics = metrics, compact = addonLayout)
             Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
         }
 
@@ -1039,7 +1042,7 @@ private fun TvSettingsEmbeddedPanel(
                 item(key = entry.id) {
                     TvSettingsRow(
                         entry = entry,
-                            compact = addonLayout,
+                            compact = false,
                         requester = host.requesterFor(entry.id),
                         first = entry.id == firstFocusable?.id,
                         last = entry.id == lastFocusable?.id,
@@ -1073,6 +1076,7 @@ private fun TvSettingsRow(
     last: Boolean,
     grouped: Boolean = false,
     compact: Boolean = false,
+    modifier: Modifier = Modifier,
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
@@ -1087,7 +1091,7 @@ private fun TvSettingsRow(
     )
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = if (compact) 56.dp else 70.dp)
             .focusRequester(requester)
@@ -1446,16 +1450,11 @@ private fun androidx.compose.ui.input.key.KeyEvent.isTvActivationKey(): Boolean 
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 
-private fun TvSettingsEntry.isAddonControl(): Boolean =
-    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") || id.startsWith("addon-category-")
+private fun TvSettingsEntry.isWorkspaceTab(): Boolean =
+    id.startsWith("addon-category-") || id.startsWith("repository-tab-")
 
-@Composable
-private fun TvAddonCompactMetrics(metrics: List<TvSettingsMetric>) {
-    Text(
-        metrics.joinToString(" · ") { "${it.value} ${it.label}" },
-        color = TvDesign.Muted, fontSize = 11.sp, maxLines = 1,
-    )
-}
+private fun TvSettingsEntry.isAddonControl(): Boolean =
+    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") || isWorkspaceTab()
 
 @Composable
 private fun TvAddonControls(
@@ -1464,52 +1463,59 @@ private fun TvAddonControls(
     onFocused: (String) -> Unit,
     onLeftToSidebar: () -> Unit,
 ) {
-    val actions = entries.filter { it.isAddonControl() && !it.id.startsWith("addon-category-") }
-    val categories = entries.filter { it.id.startsWith("addon-category-") }
+    val actions = entries.filter { it.id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") }
+    val categories = entries.filter { it.isWorkspaceTab() }
     val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
     val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             actions.forEachIndexed { index, entry ->
-                var focused by remember(entry.id) { mutableStateOf(false) }
-                val shape = RoundedCornerShape(50)
-                Row(
-                    modifier = Modifier
-                        .focusRequester(requesterFor(entry.id))
-                        .focusProperties {
-                            up = FocusRequester.Cancel
-                            selected?.let { down = requesterFor(it.id) }
-                            if (index > 0) left = requesterFor(actions[index - 1].id)
-                            if (index < actions.lastIndex) right = requesterFor(actions[index + 1].id)
-                            else right = FocusRequester.Cancel
+                val actionModifier = Modifier.focusProperties {
+                    up = FocusRequester.Cancel
+                    down = selected?.let { requesterFor(it.id) } ?: firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                    if (index > 0) left = requesterFor(actions[index - 1].id)
+                    if (index < actions.lastIndex) right = requesterFor(actions[index + 1].id)
+                    else right = FocusRequester.Cancel
+                }
+                if (entry.id == "add" || entry.id == "add-repo") {
+                    TvSettingsRow(
+                        entry = entry, requester = requesterFor(entry.id), first = false, last = false,
+                        modifier = Modifier.weight(1f).then(actionModifier),
+                        onLeftToSidebar = onLeftToSidebar, onFocused = { onFocused(entry.id) },
+                    )
+                } else {
+                    var focused by remember(entry.id) { mutableStateOf(false) }
+                    val shape = RoundedCornerShape(15.dp)
+                    val isMaster = entry.id == "plugins-master"
+                    Row(
+                        modifier = Modifier
+                            .width(if (isMaster) 110.dp else 70.dp).height(70.dp)
+                            .then(actionModifier)
+                            .focusRequester(requesterFor(entry.id))
+                            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused(entry.id) }
+                            .onPreviewKeyEvent { event ->
+                                if (event.isTvActivationKey()) {
+                                    if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                    true
+                                } else false
+                            }
+                            .background(if (focused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card, shape)
+                            .border(1.dp, if (focused) TvDesign.White else TvDesign.White.copy(alpha = .12f), shape)
+                            .focusable(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        if (isMaster) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(entry.title, color = TvDesign.White, fontSize = 12.sp)
+                            Text(entry.value, color = TvDesign.Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        } else entry.icon?.let {
+                            Icon(it, contentDescription = entry.title, tint = TvDesign.White, modifier = Modifier.size(23.dp))
                         }
-                        .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused(entry.id) }
-                        .onPreviewKeyEvent { event ->
-                            if (index == 0 && event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                                onLeftToSidebar(); true
-                            } else if (event.isTvActivationKey()) {
-                                if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
-                                true
-                            } else false
-                        }
-                        .background(if (focused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card, shape)
-                        .border(1.dp, if (focused) TvDesign.White else TvDesign.White.copy(alpha = .12f), shape)
-                        .focusable()
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    entry.icon?.let { Icon(it, contentDescription = entry.title, tint = TvDesign.White, modifier = Modifier.size(18.dp)) }
-                    if (entry.id == "add" || entry.id == "add-repo" || entry.id == "plugins-master") {
-                        Text(
-                            if (entry.id == "plugins-master") "${entry.title}: ${entry.value}" else entry.title,
-                            color = TvDesign.White, fontSize = 12.sp,
-                        )
                     }
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             categories.forEachIndexed { index, entry ->
                 var focused by remember(entry.id) { mutableStateOf(false) }
                 Text(
