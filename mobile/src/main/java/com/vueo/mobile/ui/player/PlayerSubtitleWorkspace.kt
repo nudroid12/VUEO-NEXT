@@ -26,7 +26,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -46,12 +47,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -175,14 +176,6 @@ internal fun PlayerSubtitleWorkspace(
         .firstOrNull { it.code == activeLanguageCode }
         ?.tracks
         .orEmpty()
-    val density = LocalDensity.current
-    val layoutDirection = LocalLayoutDirection.current
-    val visualCentreOffset = with(density) {
-        (
-            ComposeWindowInsets.navigationBars
-                .getRight(this, layoutDirection) / 2
-            ).toDp()
-    }
 
     VueoMotionDialogHost(
         visible = visible,
@@ -201,14 +194,14 @@ internal fun PlayerSubtitleWorkspace(
                     )
                 )
                 .clickable(onClick = onDismiss)
+                .windowInsetsPadding(ComposeWindowInsets.safeDrawing)
                 .padding(horizontal = 24.dp, vertical = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
                     .width(710.dp)
-                    .fillMaxHeight()
-                    .offset(x = visualCentreOffset),
+                    .fillMaxHeight(),
             ) {
                 Text(
                     "Subtitles",
@@ -934,12 +927,15 @@ private fun SubtitleStyleControls(
             )
         }
         item {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Row(
                 modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = .06f))
                     .clickable {
                         onStyleChange(PlayerSubtitleStyleState())
                     }
-                    .padding(vertical = 7.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -954,6 +950,7 @@ private fun SubtitleStyleControls(
                     color = Color.White.copy(alpha = .78f),
                     fontSize = 10.sp,
                 )
+            }
             }
         }
     }
@@ -1014,35 +1011,31 @@ private fun StyleStepper(
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
 ) {
-    Column {
-        Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp)
-        Spacer(Modifier.height(3.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            StepButton("−", onDecrease)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(32.dp)
-                    .background(Color.White.copy(alpha = .10f), RoundedCornerShape(9.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(value, color = Color.White, fontSize = 10.sp)
+    val shape = RoundedCornerShape(9.dp)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp,
+            modifier = Modifier.weight(1f))
+        Row(Modifier.width(112.dp).height(40.dp).clip(shape)
+            .background(Color.White.copy(alpha = .06f))
+            .border(1.dp, Color.White.copy(alpha = .15f), shape),
+            verticalAlignment = Alignment.CenterVertically) {
+            StepButton("−", "Decrease $label", onDecrease)
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Text(value, color = Color.White, fontSize = 10.sp, maxLines = 1)
             }
-            StepButton("+", onIncrease)
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
+            StepButton("+", "Increase $label", onIncrease)
         }
     }
 }
 
 @Composable
-private fun StepButton(label: String, onClick: () -> Unit) {
+private fun StepButton(label: String, description: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier
-            .size(32.dp)
-            .background(Color.White.copy(alpha = .10f), RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick),
+        modifier = Modifier.width(32.dp).fillMaxHeight()
+            .clickable(onClickLabel = description, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = Color.White, fontSize = 14.sp)
@@ -1051,21 +1044,20 @@ private fun StepButton(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun StyleToggle(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Column {
-        Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp)
-        Spacer(Modifier.height(3.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp,
+            modifier = Modifier.weight(1f))
         Surface(
-            modifier = Modifier.clickable(onClick = onClick),
+            modifier = Modifier.width(48.dp).height(40.dp).clickable(onClick = onClick),
             color = if (enabled) SubtitleAccent.copy(alpha = .16f) else Color.White.copy(alpha = .10f),
             shape = RoundedCornerShape(10.dp),
         ) {
-            Text(
-                if (enabled) "On" else "Off",
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-                color = if (enabled) SubtitleAccent else Color.White,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Medium,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(if (enabled) "On" else "Off",
+                    color = if (enabled) SubtitleAccent else Color.White,
+                    fontSize = 9.sp, fontWeight = FontWeight.Medium)
+            }
         }
     }
 }
