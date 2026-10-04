@@ -70,6 +70,10 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import androidx.compose.runtime.key
+import androidx.compose.runtime.withFrameNanos
+import com.vueo.tv.ui.rememberTvEpisodeRanges
+import com.vueo.tv.ui.TvEpisodeRangeControls
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import java.text.SimpleDateFormat
@@ -150,7 +154,6 @@ internal fun VueoDetailSeasonTabs(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun VueoDetailEpisodes(
     media: MediaItem,
@@ -163,6 +166,49 @@ internal fun VueoDetailEpisodes(
     downRequester: FocusRequester?,
     onFocused: (EpisodeItem) -> Unit,
     onOpen: (EpisodeItem) -> Unit,
+    onToolbarFocus: (Boolean) -> Unit,
+) {
+    val initialId = VueoDetailFocusMemory.episodeId?.takeIf { id -> episodes.any { it.id == id } } ?: selectedEpisode?.id
+    val ranges = rememberTvEpisodeRanges(episodes, initialId)
+    val rangeRequester = remember { FocusRequester() }
+    Column {
+        TvEpisodeRangeControls(ranges, rangeRequester, upRequester,
+            onDown = { ranges.focusCards = true; ranges.focusRequest++ },
+            modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding),
+            onFocused = { onToolbarFocus(true) })
+        key(ranges.group) {
+            VueoDetailEpisodeCards(media, ranges.visible, episodeRatings, selectedEpisode, history,
+                sectionRequester, if (ranges.enabled) rangeRequester else upRequester, downRequester,
+                onFocused = { onToolbarFocus(false); onFocused(it) }, onOpen = onOpen,
+                targetEpisodeId = if (ranges.enabled) ranges.targetId else null,
+                focusRequest = ranges.focusRequest, focusCards = ranges.focusCards,
+                onBoundary = { forward ->
+                    val next = ranges.group + if (forward) 1 else -1
+                    if (ranges.enabled && next in ranges.groups.indices) {
+                        ranges.select(next, focusCards = true, last = !forward); true
+                    } else false
+                })
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@Composable
+private fun VueoDetailEpisodeCards(
+    media: MediaItem,
+    episodes: List<EpisodeItem>,
+    episodeRatings: Map<Pair<Int, Int>, Double>,
+    selectedEpisode: EpisodeItem?,
+    history: List<LibraryPlaybackEntry>,
+    sectionRequester: FocusRequester,
+    upRequester: FocusRequester,
+    downRequester: FocusRequester?,
+    onFocused: (EpisodeItem) -> Unit,
+    onOpen: (EpisodeItem) -> Unit,
+    targetEpisodeId: String? = null,
+    focusRequest: Int = 0,
+    focusCards: Boolean = false,
+    onBoundary: ((Boolean) -> Boolean)? = null,
 ) {
     val progressByEpisode = remember(media.id, media.type, history) {
         history.filter { it.media.id == media.id && it.media.type == media.type }
@@ -197,7 +243,7 @@ internal fun VueoDetailEpisodes(
     val cardHeight = when { screenWidth >= 1300 -> 263.dp; screenWidth >= 1000 -> 235.dp; screenWidth >= 760 -> 207.dp; else -> 179.dp }
     val rememberedId = VueoDetailFocusMemory.episodeId
         ?.takeIf { id -> episodes.any { it.id == id } }
-    val focusId = rememberedId ?: selectedEpisode?.id ?: episodes.firstOrNull()?.id
+    val focusId = targetEpisodeId ?: rememberedId ?: selectedEpisode?.id?.takeIf { id -> episodes.any { it.id == id } } ?: episodes.firstOrNull()?.id
     val selectedIndex = episodes.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
     val rowPrefetchStrategy = remember { LazyListPrefetchStrategy(nestedPrefetchItemCount = 2) }
     val listState = rememberLazyListState(
@@ -208,6 +254,16 @@ internal fun VueoDetailEpisodes(
     val requesters = remember(media.id, media.type, episodes.map(EpisodeItem::id)) {
         episodes.associate { episode ->
             episode.id to FocusRequester()
+        }
+    }
+
+    LaunchedEffect(focusRequest) {
+        if (focusRequest > 0 && focusCards && episodes.isNotEmpty()) {
+            listState.scrollToItem(selectedIndex)
+            for (attempt in 0 until 6) {
+                withFrameNanos { }
+                if (requesters[focusId]?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true) break
+            }
         }
     }
 
@@ -250,7 +306,7 @@ internal fun VueoDetailEpisodes(
                     contentPadding = PaddingValues(end = 18.dp, top = 7.dp, bottom = 7.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { _, episode ->
+                    itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { index, episode ->
                         val progress = progressByEpisode[episode.season to episode.episode]
                         VueoEpisodeCard(
                             episode = episode,
@@ -269,6 +325,9 @@ internal fun VueoDetailEpisodes(
                                 onFocused(episode)
                             },
                             onOpen = { onOpen(episode) },
+                            onBoundary = { forward ->
+                                if ((forward && index == episodes.lastIndex) || (!forward && index == 0)) onBoundary?.invoke(forward) == true else false
+                            },
                         )
                     }
                 }
@@ -291,6 +350,7 @@ private fun VueoEpisodeCard(
     downRequester: FocusRequester?,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
+    onBoundary: (Boolean) -> Boolean,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
 
@@ -303,6 +363,13 @@ private fun VueoEpisodeCard(
             modifier = Modifier
                 .width(cardWidth)
                 .height(cardHeight)
+                .onPreviewKeyEvent { event ->
+                    val native = event.nativeKeyEvent
+                    if (native.action == AndroidKeyEvent.ACTION_DOWN && native.repeatCount == 0 &&
+                        (native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT || native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_LEFT)) {
+                        onBoundary(native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT)
+                    } else false
+                }
                 .focusRequester(requester)
                 .focusProperties {
                     up = upRequester

@@ -70,6 +70,7 @@ internal fun TvDetailPresentation(
     val listState = rememberLazyListState()
     var movingBetweenSections by remember(mediaKey) { mutableStateOf(false) }
     var heroFocused by remember(mediaKey) { mutableStateOf(false) }
+    var episodeToolbarFocused by remember(mediaKey) { mutableStateOf(false) }
     var lastVerticalRepeat by remember(mediaKey) { mutableStateOf(0L) }
     // Same row relocation boundary as Nuvio: the horizontal list handles its
     // child animation without re-running the parent's vertical relocation.
@@ -160,8 +161,11 @@ internal fun TvDetailPresentation(
             }
         }
     }
-    fun sectionNavigation(up: Pair<Int, FocusRequester>?, down: Pair<Int, FocusRequester>?): Modifier =
+    fun sectionNavigation(up: Pair<Int, FocusRequester>?, down: Pair<Int, FocusRequester>?, episodeRanges: Boolean = false): Modifier =
         Modifier.onPreviewKeyEvent { event ->
+            if (episodeRanges && state.episodes.size > 50 &&
+                ((event.key == Key.DirectionUp && !episodeToolbarFocused) ||
+                    (event.key == Key.DirectionDown && episodeToolbarFocused))) return@onPreviewKeyEvent false
             val destination = when (event.key) {
                 Key.DirectionDown -> down
                 Key.DirectionUp -> up
@@ -301,6 +305,7 @@ internal fun TvDetailPresentation(
                     Box(sectionNavigation(
                         if (hasSeasons) 1 to seasonRequester else 0 to playRequester,
                         firstBelowEpisodes?.let { belowIndex(it) to it },
+                        episodeRanges = true,
                     ).bringIntoViewResponder(episodeRowResponder)) {
                     VueoDetailEpisodes(
                         media = state.item,
@@ -313,6 +318,7 @@ internal fun TvDetailPresentation(
                         downRequester = firstBelowEpisodes,
                         onFocused = onEpisodeFocused,
                         onOpen = onEpisodeSelected,
+                        onToolbarFocus = { episodeToolbarFocused = it },
                     )
                     }
                 }

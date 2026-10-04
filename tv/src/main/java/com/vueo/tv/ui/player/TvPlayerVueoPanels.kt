@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.storage.PlayerVideoFit
+import com.vueo.tv.ui.rememberTvEpisodeRanges
+import com.vueo.tv.ui.TvEpisodeRangeControls
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
@@ -477,6 +479,8 @@ internal fun VueoPlayerEpisodesPanel(
     val seasonEpisodes = remember(episodes, selectedSeason) {
         episodes.filter { it.season == selectedSeason }.sortedBy { it.episode }
     }
+    val ranges = rememberTvEpisodeRanges(seasonEpisodes, currentEpisode?.id)
+    val rangeRequester = remember { FocusRequester() }
     val episodeEntryRequester = remember { FocusRequester() }
     var episodeEntryRequest by remember { mutableIntStateOf(0) }
     val seasonRequesters = remember(seasons) {
@@ -496,7 +500,7 @@ internal fun VueoPlayerEpisodesPanel(
             seasonListState.scrollToItem(selectedSeasonIndex)
         }
     }
-    val listTopRequester = if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
+    val listTopRequester = if (ranges.enabled) rangeRequester else if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -528,7 +532,9 @@ internal fun VueoPlayerEpisodesPanel(
                             requester = seasonRequesters[index],
                             upRequester = FocusRequester.Cancel,
                             downRequester = FocusRequester.Cancel,
-                            onDown = { episodeEntryRequest++ },
+                            onDown = {
+                                if (ranges.enabled) runCatching { rangeRequester.requestFocus() } else episodeEntryRequest++
+                            },
                             blockLeft = index == 0,
                             blockRight = index == seasons.lastIndex,
                             onInteraction = onInteraction,
@@ -540,6 +546,11 @@ internal fun VueoPlayerEpisodesPanel(
                 }
                 Spacer(Modifier.height(12.dp))
             }
+
+            TvEpisodeRangeControls(ranges, rangeRequester,
+                if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel,
+                onDown = { ranges.focusCards = true; ranges.focusRequest++ },
+                onInteraction = onInteraction)
 
             Column(
                 modifier = Modifier
@@ -558,13 +569,22 @@ internal fun VueoPlayerEpisodesPanel(
 
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     VueoEpisodeList(
-                        episodes = seasonEpisodes,
+                        episodes = ranges.visible,
                         currentEpisode = currentEpisode,
                         entryFocusRequester = episodeEntryRequester,
                         entryRequest = episodeEntryRequest,
                         topRequester = listTopRequester,
                         onInteraction = onInteraction,
                         onSelected = onSelected,
+                        targetEpisodeId = if (ranges.enabled) ranges.targetId else null,
+                        rangeFocusRequest = ranges.focusRequest,
+                        focusRangeCards = ranges.focusCards,
+                        onRange = { forward ->
+                            val next = ranges.group + if (forward) 1 else -1
+                            if (ranges.enabled && next in ranges.groups.indices) {
+                                ranges.select(next, focusCards = true, last = !forward); true
+                            } else false
+                        },
                     )
                 }
             }
@@ -653,10 +673,14 @@ private fun VueoEpisodeList(
     topRequester: FocusRequester,
     onInteraction: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
+    targetEpisodeId: String? = null,
+    rangeFocusRequest: Int = 0,
+    focusRangeCards: Boolean = false,
+    onRange: (Boolean) -> Boolean = { false },
 ) {
     val state = rememberLazyListState()
     val currentIndex = episodes.indexOfFirst { episode ->
-        currentEpisode?.let {
+        if (targetEpisodeId != null) targetEpisodeId == episode.id else currentEpisode?.let {
             it.id == episode.id ||
                 (it.season == episode.season && it.episode == episode.episode)
         } == true
@@ -681,6 +705,14 @@ private fun VueoEpisodeList(
         state.scrollToItem(currentIndex)
         withFrameNanos { }
         entryFocusRequester.requestTvFocus()
+    }
+
+    LaunchedEffect(rangeFocusRequest) {
+        if (rangeFocusRequest > 0 && focusRangeCards && episodes.isNotEmpty()) {
+            state.scrollToItem(currentIndex)
+            withFrameNanos { }
+            entryFocusRequester.requestTvFocus()
+        }
     }
 
     // Keep the focused row at the top, matching Details' leading-edge reveal.
@@ -714,6 +746,7 @@ private fun VueoEpisodeList(
                     blockUp = index == 0,
                     blockDown = index == episodes.lastIndex,
                     onInteraction = onInteraction,
+                    onRange = onRange,
                 ) {
                     onSelected(episode)
                 }
@@ -732,6 +765,7 @@ private fun VueoEpisodeRow(
     blockDown: Boolean,
     onInteraction: () -> Unit,
     onSelected: () -> Unit,
+    onRange: (Boolean) -> Boolean,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
@@ -750,6 +784,15 @@ private fun VueoEpisodeRow(
                 if (it.isFocused) onInteraction()
             }
             .onPreviewKeyEvent { event ->
+                val native = event.nativeKeyEvent
+                if (native.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                    (native.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && blockDown)) {
+                    if (event.type == KeyEventType.KeyDown && native.repeatCount == 0) {
+                        onInteraction()
+                        return@onPreviewKeyEvent onRange(native.keyCode != KeyEvent.KEYCODE_DPAD_LEFT)
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onSelected()
