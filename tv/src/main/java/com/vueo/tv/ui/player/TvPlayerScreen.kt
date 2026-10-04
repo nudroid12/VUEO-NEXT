@@ -1860,10 +1860,14 @@ fun TvPlayerScreen(
 
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.SUBTITLES,
-            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+            enter = tvPlayerWorkspaceFadeIn(),
+            exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerSubtitleWorkspace(
+                panelModifier = Modifier.animateEnterExit(
+                    enter = tvPlayerSidePanelEnter(),
+                    exit = tvPlayerSidePanelExit(),
+                ),
                 onSyncByDialogue = {
                     val selected = textTracks.firstOrNull { it.selected }
                     dialogueSyncTrack = if (!subtitlesDisabled && pendingSubtitleSelectionId == null && translatingSubtitleSelectionId == null) {
@@ -1929,8 +1933,8 @@ fun TvPlayerScreen(
 
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.AUDIO,
-            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+            enter = tvPlayerWorkspaceFadeIn(),
+            exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerAudioWorkspace(
                 panelModifier = Modifier.animateEnterExit(

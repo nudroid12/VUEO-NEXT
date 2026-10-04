@@ -10,6 +10,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -140,15 +141,15 @@ internal fun VueoPlayerPresentation(
         val promptBottomPadding = if (controlsVisible) bottomControlsHeight + 12.dp else 22.dp + 3.dp + 12.dp
         val skipOnRight = activeSkip?.kind == PlayerSkipKind.ENDING
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
-        val showScrim = activePanel != TvPlayerPanel.SUBTITLES && (showChrome ||
+        val showScrim = showChrome ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null ||
             (showPrompts && activeSkip != null) ||
-            (showPrompts && nextCountdown > 0))
+            (showPrompts && nextCountdown > 0)
         AnimatedVisibility(
             visible = showScrim,
-            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+            enter = tvPlayerWorkspaceFadeIn(),
+            exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerCinematicScrim(strong = activePanel != TvPlayerPanel.NONE || playbackError != null)
         }
@@ -272,8 +273,8 @@ internal fun VueoPlayerPresentation(
 
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.SOURCES,
-            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+            enter = tvPlayerWorkspaceFadeIn(),
+            exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerSourcesPanel(
                 panelModifier = Modifier.animateEnterExit(
@@ -301,8 +302,8 @@ internal fun VueoPlayerPresentation(
         )
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.EPISODES,
-            enter = fadeIn(tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut)),
-            exit = fadeOut(tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut)),
+            enter = tvPlayerWorkspaceFadeIn(),
+            exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerEpisodesPanel(
                 panelModifier = Modifier.animateEnterExit(
@@ -409,11 +410,16 @@ private fun VueoContentWarningsOverlay(
 
 @Composable
 private fun VueoPlayerCinematicScrim(strong: Boolean) {
+    val strength by animateFloatAsState(
+        targetValue = if (strong) 1f else 0f,
+        animationSpec = tween(TV_WORKSPACE_ENTER_MS, easing = TvMotion.EaseOut),
+        label = "workspaceScrimStrength",
+    )
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(150.dp)
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = if (strong) .78f else .66f), Color.Transparent))))
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .66f + .12f * strength), Color.Transparent))))
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(200.dp)
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = if (strong) .92f else .80f)))))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .80f + .12f * strength)))))
     }
 }
 
@@ -646,13 +652,24 @@ private data class VueoPlayerChromeAction(
     val panel: TvPlayerPanel,
 )
 
-// Animate the right-hand column itself; keep the full-screen scrim in place.
+// Keep workspace fades and shallow panel travel in sync, including on close.
+internal const val TV_WORKSPACE_ENTER_MS = 240
+internal const val TV_WORKSPACE_EXIT_MS = 200
+
+internal fun tvPlayerWorkspaceFadeIn(): EnterTransition = fadeIn(
+    tween(TV_WORKSPACE_ENTER_MS, easing = TvMotion.EaseOut),
+)
+
+internal fun tvPlayerWorkspaceFadeOut(): ExitTransition = fadeOut(
+    tween(TV_WORKSPACE_EXIT_MS, easing = TvMotion.EaseInOut),
+)
+
 internal fun tvPlayerSidePanelEnter(): EnterTransition = slideInHorizontally(
-    initialOffsetX = { it },
-    animationSpec = tween(TvMotion.PANEL_IN_MS, easing = TvMotion.EaseOut),
+    initialOffsetX = { it / 16 },
+    animationSpec = tween(TV_WORKSPACE_ENTER_MS, easing = TvMotion.EaseOut),
 )
 
 internal fun tvPlayerSidePanelExit(): ExitTransition = slideOutHorizontally(
-    targetOffsetX = { it },
-    animationSpec = tween(TvMotion.PANEL_OUT_MS, easing = TvMotion.EaseInOut),
+    targetOffsetX = { it / 16 },
+    animationSpec = tween(TV_WORKSPACE_EXIT_MS, easing = TvMotion.EaseInOut),
 )

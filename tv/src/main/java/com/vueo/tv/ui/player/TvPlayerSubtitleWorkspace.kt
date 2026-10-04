@@ -60,6 +60,7 @@ import com.vueo.tv.ui.TvNetworkImage
 
 @Composable
 internal fun VueoPlayerSubtitleWorkspace(
+    panelModifier: Modifier = Modifier,
     tracks: List<TvPlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
@@ -246,9 +247,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
-        Modifier
-            .fillMaxSize()
-
+        panelModifier.fillMaxSize()
     ) {
         Column(
             modifier = Modifier
@@ -272,7 +271,7 @@ internal fun VueoPlayerSubtitleWorkspace(
 
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 Box(
                     modifier = Modifier.weight(.30f).fillMaxHeight(),
@@ -427,7 +426,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                             .clip(PanelShape)
                             .background(cardBackground)
                             .border(1.dp, cardBorder, PanelShape)
-                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                            .padding(horizontal = 18.dp, vertical = 18.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -456,15 +455,15 @@ internal fun VueoPlayerSubtitleWorkspace(
                                 styleFloatMode = true
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(18.dp))
                         if (styleOpen && !subtitlesDisabled) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f)
                                     .verticalScroll(rememberScrollState())
-                                    .padding(bottom = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                                    .padding(bottom = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 VueoSubtitleStepperRow(
                                     title = "Sync",
@@ -1158,7 +1157,7 @@ private fun VueoSubtitleColorRow(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             colours.forEachIndexed { index, colour ->
                 var focused by remember(colour) { mutableStateOf(false) }
