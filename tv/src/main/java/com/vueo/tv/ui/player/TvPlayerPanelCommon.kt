@@ -68,13 +68,12 @@ internal fun androidx.compose.ui.input.key.KeyEvent.isTvPanelActivationKey(): Bo
 
 internal fun tvLongPressSeekDeltaMs(
     direction: Int,
-    repeatCount: Int,
+    heldDurationMs: Long,
 ): Long {
     val stepMs = when {
-        repeatCount <= 0 -> 10_000L
-        repeatCount <= 5 -> 5_000L
-        repeatCount <= 12 -> 10_000L
-        else -> 20_000L
+        heldDurationMs < 1_000L -> 10_000L
+        heldDurationMs < 3_000L -> 30_000L
+        else -> 60_000L
     }
     return if (direction < 0) -stepMs else stepMs
 }

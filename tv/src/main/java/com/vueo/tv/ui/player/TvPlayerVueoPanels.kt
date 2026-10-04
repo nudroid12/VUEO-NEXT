@@ -115,6 +115,7 @@ internal fun VueoPlayerCompactOverlay(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun VueoPlayerSourcesPanel(
     title: String,
@@ -156,12 +157,13 @@ internal fun VueoPlayerSourcesPanel(
             Text(
                 "Sources",
                 color = Color.White,
-                fontSize = 22.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            Spacer(Modifier.height(9.dp))
+            Spacer(Modifier.height(12.dp))
+            VueoLeadingTabs {
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp).horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 (listOf<String?>(null) + providers).forEach { provider ->
@@ -207,7 +209,8 @@ internal fun VueoPlayerSourcesPanel(
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
 
 
             Column(
@@ -216,14 +219,6 @@ internal fun VueoPlayerSourcesPanel(
                     .weight(1f)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
-                Text(
-                    title,
-                    color = Color.White.copy(alpha = .56f),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(9.dp))
                 key(selectedProvider) {
                     VueoOptionList(
                         options = filteredOptions,
@@ -455,6 +450,7 @@ private fun VueoOptionRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun VueoPlayerEpisodesPanel(
     mediaTitle: String,
@@ -520,7 +516,9 @@ internal fun VueoPlayerEpisodesPanel(
             )
             Spacer(Modifier.height(12.dp))
             if (seasons.size > 1) {
+                VueoLeadingTabs {
                 LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                     state = seasonListState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 2.dp),
@@ -544,13 +542,18 @@ internal fun VueoPlayerEpisodesPanel(
                         }
                     }
                 }
+                }
                 Spacer(Modifier.height(12.dp))
             }
 
+            VueoLeadingTabs {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
             TvEpisodeRangeControls(ranges, rangeRequester,
                 if (seasons.size > 1) seasonReturnRequester else FocusRequester.Cancel,
                 onDown = { ranges.focusCards = true; ranges.focusRequest++ },
                 onInteraction = onInteraction)
+            }
+            }
 
             Column(
                 modifier = Modifier
@@ -558,15 +561,6 @@ internal fun VueoPlayerEpisodesPanel(
                     .weight(1f)
                     .padding(horizontal = 14.dp, vertical = 14.dp),
             ) {
-                Text(
-                    mediaTitle,
-                    color = Color.White.copy(alpha = .56f),
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(14.dp))
-
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     VueoEpisodeList(
                         episodes = ranges.visible,
@@ -916,3 +910,16 @@ private fun VueoPanelTextAction(
 }
 
 
+
+/** Leading-edge focus reveal, naturally clamped at the last tab. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VueoLeadingTabs(content: @Composable () -> Unit) {
+    val reveal = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+                if (containerSize > 0f && size > 0f) offset else 0f
+        }
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides reveal, content = content)
+}

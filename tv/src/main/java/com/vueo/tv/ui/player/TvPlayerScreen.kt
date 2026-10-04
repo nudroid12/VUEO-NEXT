@@ -1410,7 +1410,8 @@ fun TvPlayerScreen(
                         seekBy(
                             tvLongPressSeekDeltaMs(
                                 direction = -1,
-                                repeatCount = event.nativeKeyEvent.repeatCount,
+                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
+                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                             )
                         )
                         true
@@ -1419,7 +1420,8 @@ fun TvPlayerScreen(
                         seekBy(
                             tvLongPressSeekDeltaMs(
                                 direction = 1,
-                                repeatCount = event.nativeKeyEvent.repeatCount,
+                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
+                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                             )
                         )
                         true
@@ -1454,7 +1456,8 @@ fun TvPlayerScreen(
                                     seekBy(
                                         tvLongPressSeekDeltaMs(
                                             direction = -1,
-                                            repeatCount = event.nativeKeyEvent.repeatCount,
+                                            heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
+                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                                         )
                                     )
                                     true
@@ -1464,7 +1467,8 @@ fun TvPlayerScreen(
                                     seekBy(
                                         tvLongPressSeekDeltaMs(
                                             direction = 1,
-                                            repeatCount = event.nativeKeyEvent.repeatCount,
+                                            heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
+                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                                         )
                                     )
                                     true
