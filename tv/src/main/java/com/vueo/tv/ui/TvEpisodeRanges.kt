@@ -11,7 +11,6 @@ import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -26,8 +25,10 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import com.vueo.tv.ui.motion.TvMotion
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlinx.coroutines.flow.first
 
 internal class TvEpisodeRangeState(val episodes: List<EpisodeItem>, initialId: String?) {
     val groups = episodes.chunked(50)
@@ -93,12 +94,44 @@ internal fun TvEpisodeRangeControls(
     LaunchedEffect(state.group) {
         if (!rowHasFocus) focusedIndex = state.group
     }
-    LaunchedEffect(focusedIndex, viewportWidth, chipWidths.toMap(), row.maxValue) {
-        val width = chipWidths[focusedIndex] ?: return@LaunchedEffect
-        if (viewportWidth <= 0 || (0 until focusedIndex).any { it !in chipWidths }) return@LaunchedEffect
-        val left = (0 until focusedIndex).sumOf { chipWidths.getValue(it) } + gapPx * focusedIndex
-        val target = (left + width / 2f - viewportWidth / 2f).roundToInt().coerceIn(0, row.maxValue)
-        row.animateScrollTo(target, animationSpec = tween(180, easing = TvMotion.EaseOut))
+    val centeredTarget by remember(state, row, gapPx) {
+        derivedStateOf {
+            val width = chipWidths[focusedIndex]
+            if (width == null || viewportWidth <= 0 ||
+                (0 until focusedIndex).any { it !in chipWidths }) null
+            else {
+                val left = (0 until focusedIndex).sumOf { chipWidths.getValue(it) } + gapPx * focusedIndex
+                (left + width / 2f - viewportWidth / 2f).coerceIn(0f, row.maxValue.toFloat())
+            }
+        }
+    }
+    // One scroll owner for the lifetime of the row. Retarget without restarting
+    // easing or dropping velocity on each single press / repeat event.
+    LaunchedEffect(row, state) {
+        var position = row.value.toFloat()
+        var velocity = 0f
+        while (true) {
+            snapshotFlow { centeredTarget }.first { it != null && abs(it - row.value) > .5f }
+            position = row.value.toFloat()
+            var previousFrame = withFrameNanos { it }
+            do {
+                val frame = withFrameNanos { it }
+                val dt = ((frame - previousFrame) / 1_000_000_000f).coerceIn(0f, .05f)
+                previousFrame = frame
+                val target = centeredTarget ?: position
+                // Exact critically damped spring step: stable at different frame rates.
+                val frequency = 24f
+                val displacement = position - target
+                val coefficient = velocity + frequency * displacement
+                val decay = exp(-frequency * dt)
+                position = target + (displacement + coefficient * dt) * decay
+                velocity = (velocity - frequency * coefficient * dt) * decay
+                position = position.coerceIn(0f, row.maxValue.toFloat())
+                row.scrollTo(position.roundToInt())
+            } while (abs(position - (centeredTarget ?: position)) > .5f || abs(velocity) > 4f)
+            centeredTarget?.let { row.scrollTo(it.roundToInt()) }
+            velocity = 0f
+        }
     }
     fun horizontalKey(event: androidx.compose.ui.input.key.KeyEvent, index: Int): Boolean {
         val native = event.nativeKeyEvent

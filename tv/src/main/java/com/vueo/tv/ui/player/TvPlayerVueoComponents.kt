@@ -5,20 +5,18 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -35,6 +33,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
@@ -87,7 +87,11 @@ internal fun VueoPlayerProgressRail(
         ),
         label = "playerProgressHeight",
     )
-    val shape = RoundedCornerShape(50)
+    val markerRadius by animateDpAsState(
+        targetValue = if (focused) 5.dp else 3.5.dp,
+        animationSpec = tween(TvMotion.FOCUS_IN_MS, easing = TvMotion.EaseOut),
+        label = "playerProgressMarker",
+    )
 
     val inputModifier = if (acceptsInput) {
         Modifier
@@ -139,21 +143,28 @@ internal fun VueoPlayerProgressRail(
             .focusable()
     } else Modifier
 
-    BoxWithConstraints(
+    Canvas(
         modifier = Modifier
             .fillMaxWidth()
             .height(railHeight)
-            .then(inputModifier)
-            .background(Color.White.copy(alpha = if (focused) .38f else .26f), shape)
-            .border(if (focused) 1.dp else 0.dp, Color.White, shape),
+            .then(inputModifier),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(maxWidth * progress)
-                .background(TvDesign.Accent, shape),
-        )
+        val centerY = size.height / 2f
+        val endX = size.width * progress
+        val accent = TvDesign.Accent.copy(alpha = 1f)
+        // No full-width white border: it obscures the played segment on a thin rail.
+        drawLine(Color.Black.copy(alpha = .65f), Offset(0f, centerY),
+            Offset(size.width, centerY), strokeWidth = size.height + 2.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(Color.White.copy(alpha = .20f), Offset(0f, centerY),
+            Offset(size.width, centerY), strokeWidth = size.height, cap = StrokeCap.Round)
+        if (endX > 0f) drawLine(accent, Offset(0f, centerY), Offset(endX, centerY),
+            strokeWidth = size.height, cap = StrokeCap.Round)
+        val radius = markerRadius.toPx()
+        val markerX = endX.coerceIn(radius, (size.width - radius).coerceAtLeast(radius))
+        drawCircle(Color.Black.copy(alpha = .75f), radius + 1.dp.toPx(), Offset(markerX, centerY))
+        drawCircle(accent, radius, Offset(markerX, centerY))
     }
+
 }
 
 @Composable
