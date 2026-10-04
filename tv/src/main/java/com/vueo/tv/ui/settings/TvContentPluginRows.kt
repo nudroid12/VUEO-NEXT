@@ -7,7 +7,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,55 +95,54 @@ private fun TvPluginRepositoryCard(
             modifier = Modifier.fillMaxWidth().background(PluginSurface, shape).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .focusRequester(requesterFor(entry.id))
-                    .focusProperties {
-                        up = FocusRequester.Default
-                        down = refresh?.let { requesterFor(it.id) } ?: nextProvider?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
-                        refresh?.let { right = requesterFor(it.id) }
-                    }
-                    .onFocusChanged {
-                        focused = it.isFocused
-                        if (it.isFocused) onEntryFocused(entry.id)
-                    }
-                    .onPreviewKeyEvent { event ->
-                        when {
-                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
-                            activation(event.nativeKeyEvent.keyCode) -> {
-                                if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(10.dp))
-                    .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
-                    .focusable().padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                    Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
-            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.subtitle, color = PluginMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Row(
+                    modifier = Modifier.weight(1f)
+                        .focusRequester(requesterFor(entry.id))
+                        .focusProperties {
+                            up = FocusRequester.Default
+                            down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                            refresh?.let { right = requesterFor(it.id) }
+                        }
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) onEntryFocused(entry.id)
+                        }
+                        .onPreviewKeyEvent { event ->
+                            when {
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
+                                activation(event.nativeKeyEvent.keyCode) -> {
+                                    if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(10.dp))
+                        .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+                        .focusable().padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                        Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
+                }
                 refresh?.let {
                     TvRepositoryAction(it, Icons.Default.Refresh, Color.White, requesterFor(it.id), Modifier.focusProperties {
-                        up = requesterFor(entry.id); left = requesterFor(entry.id)
+                        up = FocusRequester.Default; left = requesterFor(entry.id)
                         remove?.let { action -> right = requesterFor(action.id) }
                         down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
                     }, { onEntryFocused(it.id) })
                 }
                 remove?.let {
-                    TvRepositoryAction(it, Icons.Default.Delete, PluginFailure, requesterFor(it.id), Modifier.focusProperties {
-                        up = requesterFor(entry.id)
+                    TvRepositoryAction(it, null, Color(0xFFFF5252), requesterFor(it.id), Modifier.focusProperties {
+                        up = FocusRequester.Default
                         left = refresh?.let { action -> requesterFor(action.id) } ?: requesterFor(entry.id)
                         right = FocusRequester.Cancel
                         down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
@@ -156,15 +154,18 @@ private fun TvPluginRepositoryCard(
 }
 
 @Composable
-private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
+private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
     var focused by remember(entry.id) { mutableStateOf(false) }
     IconButton(
         onClick = { entry.onActivate?.invoke() },
-        modifier = modifier.size(38.dp).focusRequester(requester)
+        modifier = modifier.height(38.dp).width(if (icon == null) 76.dp else 38.dp).focusRequester(requester)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
             .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
             .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50)),
-    ) { Icon(icon, contentDescription = entry.title, tint = tint, modifier = Modifier.size(21.dp)) }
+    ) {
+        if (icon == null) Text("Remove ›", color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        else Icon(icon, contentDescription = entry.title, tint = tint, modifier = Modifier.size(21.dp))
+    }
 }
 
 @Composable

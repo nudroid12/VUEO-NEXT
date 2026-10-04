@@ -218,6 +218,7 @@ internal fun TvAddonSettings(
             title = "Remove addon?",
             message = "Remove ${addonByManifest[url.trim()]?.descriptor?.name ?: shortUrl(url)} from VUEO?",
             confirmLabel = "Remove",
+            themedRemove = true,
             onDismiss = { removeUrl = null },
             onConfirm = {
                 removeUrl = null
@@ -389,17 +390,7 @@ internal fun TvProviderSettings(
     val context = LocalContext.current
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
-    val activeRepositories = if (pluginsEnabled) {
-        repositories.filter(runtime.pluginStore::isRepositoryEnabled)
-    } else {
-        emptyList()
-    }
-    val healthSummary = healthStore.summary(
-        repositories = activeRepositories,
-        pluginStore = runtime.pluginStore,
-    )
     var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
-    var showRuntimeDiagnostics by remember { mutableStateOf(false) }
     var refreshingRepositoryUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(repositories, selectedRepositoryUrl) {
@@ -458,6 +449,7 @@ internal fun TvProviderSettings(
             title = "Remove repository?",
             message = "Remove ${repository.name} and its provider configuration?",
             confirmLabel = "Remove",
+            themedRemove = true,
             onDismiss = { removeRepo = null },
             onConfirm = {
                 removeRepo = null
@@ -483,12 +475,6 @@ internal fun TvProviderSettings(
         )
     }
 
-    if (showRuntimeDiagnostics) {
-        TvRuntimeDiagnosticsDialog(
-            onDismiss = { showRuntimeDiagnostics = false },
-        )
-    }
-
     val allEntries = buildList {
         add(toggleEntry("plugins-master", "Providers", "Master switch for plugin provider discovery.", pluginsEnabled) {
             pluginsEnabled = it
@@ -500,32 +486,6 @@ internal fun TvProviderSettings(
             icon = Icons.Default.SettingsInputComponent,
             accented = true,
         ))
-        add(
-            TvSettingsEntry(
-                id = "provider-health",
-                title = "Provider Health",
-                subtitle = "${healthSummary.online} online • ${healthSummary.slow} slow • " +
-                    "${healthSummary.noResults} no results • " +
-                    "${healthSummary.failed + healthSummary.blocked + healthSummary.unavailable + healthSummary.timeout} failed",
-                value = "Open",
-                onActivate = onOpenProviderHealth,
-                section = "PROVIDER SYSTEM",
-                icon = Icons.Default.SettingsInputComponent,
-                accented = true,
-            )
-        )
-        add(
-            TvSettingsEntry(
-                id = "runtime-diagnostics",
-                title = "Performance & Crash Diagnostics",
-                subtitle = "Source scan timing, UI stalls, memory and crash evidence.",
-                value = "Open",
-                onActivate = { showRuntimeDiagnostics = true },
-                section = "PROVIDER SYSTEM",
-                icon = Icons.Default.SettingsInputComponent,
-                accented = true,
-            )
-        )
         add(
             TvSettingsEntry(
                 id = "add-repo",

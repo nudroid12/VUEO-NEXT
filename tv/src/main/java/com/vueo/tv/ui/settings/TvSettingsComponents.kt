@@ -1342,7 +1342,7 @@ internal fun TvSettingsRow(
             if (focused && !entry.rightActionLabel.isNullOrBlank()) {
                 Text(
                     text = "${entry.rightActionLabel}  ›",
-                    color = if (entry.accented) TvDesign.Accent else TvDesign.White.copy(alpha = .86f),
+                    color = if (entry.rightActionLabel == "Remove") Color(0xFFFF5252) else if (entry.accented) TvDesign.Accent else TvDesign.White.copy(alpha = .86f),
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1461,7 +1461,7 @@ internal fun TvTextEntryDialog(
 }
 
 @Composable
-private fun TvInstallDialogButton(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun TvInstallDialogButton(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit, destructive: Boolean = false) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(50)
     TextButton(
@@ -1470,7 +1470,7 @@ private fun TvInstallDialogButton(label: String, enabled: Boolean, modifier: Mod
             .background(if (focused) TvDesign.White else TvSettingsContrast.Card, shape)
             .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .25f), shape),
         colors = ButtonDefaults.textButtonColors(
-            contentColor = if (focused) Color.Black else TvDesign.White,
+            contentColor = if (destructive) Color(0xFFFF5252) else if (focused) Color.Black else TvDesign.White,
             disabledContentColor = TvDesign.Dim.copy(alpha = .5f),
         ),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -1482,6 +1482,7 @@ internal fun TvConfirmDialog(
     title: String,
     message: String,
     confirmLabel: String = "Confirm",
+    themedRemove: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -1495,6 +1496,33 @@ internal fun TvConfirmDialog(
     fun confirmAndRestore() {
         onConfirm()
         restoreSettingsFocus()
+    }
+
+    if (themedRemove) {
+        val cancelRequester = remember { FocusRequester() }
+        val removeRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { cancelRequester.requestFocus() }
+        Dialog(onDismissRequest = ::dismissAndRestore, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(
+                modifier = Modifier.width(440.dp)
+                    .background(TvSettingsContrast.Card, RoundedCornerShape(18.dp))
+                    .border(1.dp, TvDesign.White.copy(alpha = .22f), RoundedCornerShape(18.dp))
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(message, color = TvDesign.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                    TvInstallDialogButton("Cancel", true,
+                        Modifier.focusRequester(cancelRequester).focusProperties { left = FocusRequester.Cancel; right = removeRequester },
+                        ::dismissAndRestore)
+                    TvInstallDialogButton(confirmLabel, true,
+                        Modifier.focusRequester(removeRequester).focusProperties { left = cancelRequester; right = FocusRequester.Cancel },
+                        ::confirmAndRestore, destructive = true)
+                }
+            }
+        }
+        return
     }
 
     AlertDialog(
