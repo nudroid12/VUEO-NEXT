@@ -2,7 +2,6 @@ package com.vueo.tv.player
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,11 +36,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -472,9 +466,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     .padding(bottom = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
-                                VueoSubtitleSliderRow(
+                                VueoSubtitleStepperRow(
                                     title = "Sync",
-                                    fraction = ((subtitleDelayMs + 60_000) / 120_000f),
                                     value = formatSubtitleDelayTv(subtitleDelayMs),
                                     requester = syncRequester,
                                     upRequester = dialogueSyncRequester,
@@ -488,9 +481,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         onSubtitleDelayChange((subtitleDelayMs + 50).coerceAtMost(60_000))
                                     },
                                 )
-                                VueoSubtitleSliderRow(
+                                VueoSubtitleStepperRow(
                                     title = "Font Size",
-                                    fraction = ((style.fontSizeSp - 12) / 28f),
                                     value = "${style.fontSizeSp}sp",
                                     requester = sizeRequester,
                                     upRequester = syncRequester,
@@ -540,9 +532,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         )
                                     )
                                 }
-                                VueoSubtitleSliderRow(
+                                VueoSubtitleStepperRow(
                                     title = "Text Opacity",
-                                    fraction = ((opacity - 30) / 70f),
                                     value = "$opacity%",
                                     requester = opacityRequester,
                                     upRequester = textColorRequester,
@@ -615,9 +606,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     ) { colour ->
                                         onStyleChange(style.copy(backgroundColor = colour))
                                     }
-                                    VueoSubtitleSliderRow(
+                                    VueoSubtitleStepperRow(
                                         title = "Background Opacity",
-                                        fraction = ((style.backgroundOpacityPercent - 10) / 90f),
                                         value = "${style.backgroundOpacityPercent}%",
                                         requester = backgroundOpacityRequester,
                                         upRequester = backgroundColorRequester,
@@ -644,9 +634,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         },
                                     )
                                 }
-                                VueoSubtitleSliderRow(
+                                VueoSubtitleStepperRow(
                                     title = "Bottom Position",
-                                    fraction = ((style.bottomPaddingPercent - 5) / 35f),
                                     value = "${style.bottomPaddingPercent}%",
                                     requester = positionRequester,
                                     upRequester = when {
@@ -996,10 +985,9 @@ private fun VueoSubtitleTrackRow(
 }
 
 @Composable
-private fun VueoSubtitleSliderRow(
+private fun VueoSubtitleStepperRow(
     title: String,
     value: String,
-    fraction: Float,
     requester: FocusRequester? = null,
     upRequester: FocusRequester,
     downRequester: FocusRequester,
@@ -1011,53 +999,59 @@ private fun VueoSubtitleSliderRow(
     val internalRequester = remember(title) { FocusRequester() }
     val valueRequester = requester ?: internalRequester
     var focused by remember(valueRequester) { mutableStateOf(false) }
-    val progress = fraction.coerceIn(0f, 1f)
     val shape = RoundedCornerShape(9.dp)
-    val activeColor = TvDesign.Accent
-    Column(
-        Modifier.fillMaxWidth()
-            .focusRequester(valueRequester)
-            .focusProperties {
-                up = upRequester
-                down = downRequester
-                left = leftRequester
-                right = FocusRequester.Cancel
-            }
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onInteraction()
-            }
-            .onPreviewKeyEvent { event ->
-                when (event.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (event.type == KeyEventType.KeyDown) {
-                            onInteraction()
-                            if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) onDecrease() else onIncrease()
-                        }
-                        true
-                    }
-                    else -> false
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, color = Color.White.copy(alpha = .72f), fontSize = 11.sp,
+            fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Row(
+            Modifier.width(104.dp).height(30.dp)
+                .focusRequester(valueRequester)
+                .focusProperties {
+                    up = upRequester
+                    down = downRequester
+                    left = leftRequester
+                    right = FocusRequester.Cancel
                 }
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) onInteraction()
+                }
+                .onPreviewKeyEvent { event ->
+                    when (event.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (event.type == KeyEventType.KeyDown) {
+                                onInteraction()
+                                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) onDecrease() else onIncrease()
+                            }
+                            true
+                        }
+                        else -> {
+                            if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                            onInteraction()
+                            if (event.type == KeyEventType.KeyUp) onIncrease()
+                            true
+                        }
+                    }
+                }
+                .focusable()
+                .clip(shape)
+                .background(if (focused) TvDesign.Accent.copy(alpha = .12f) else Color.White.copy(alpha = .045f))
+                .border(if (focused) 2.dp else 1.dp,
+                    if (focused) TvDesign.Accent else Color.White.copy(alpha = .15f), shape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Text("−", color = Color.White, fontSize = 16.sp)
             }
-            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f) }
-            .focusable()
-            .background(if (focused) activeColor.copy(alpha = .10f) else Color.Transparent, shape)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(title, color = Color.White.copy(alpha = .72f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
-            Text(value, color = if (focused) activeColor else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Canvas(Modifier.fillMaxWidth().height(18.dp)) {
-            val radius = (if (focused) 5.dp else 4.dp).toPx()
-            val start = radius
-            val end = (size.width - radius).coerceAtLeast(start)
-            val thumb = start + (end - start) * progress
-            val y = size.height / 2f
-            val stroke = 2.dp.toPx()
-            drawLine(Color.White.copy(alpha = .20f), Offset(start, y), Offset(end, y), stroke, StrokeCap.Round)
-            drawLine(activeColor, Offset(start, y), Offset(thumb, y), stroke, StrokeCap.Round)
-            drawCircle(activeColor, radius, Offset(thumb, y))
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Text(value, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
+            Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Text("+", color = Color.White, fontSize = 16.sp)
+            }
         }
     }
 }
@@ -1076,14 +1070,15 @@ private fun VueoSubtitleToggleRow(
     var focused by remember(title) { mutableStateOf(false) }
     val shape = RoundedCornerShape(11.dp)
 
-    Column(Modifier.fillMaxWidth()) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title,
             color = Color.White.copy(alpha = .72f),
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.height(3.dp))
         Box(
             modifier = Modifier
                 .width(64.dp)
@@ -1109,7 +1104,7 @@ private fun VueoSubtitleToggleRow(
                 .background(
                     when {
                         enabled -> Color.White
-                        focused -> Color(0xFF555555)
+                        focused -> TvDesign.Accent.copy(alpha = .18f)
                         else -> Color.White.copy(alpha = .09f)
                     },
                     shape,
@@ -1117,7 +1112,7 @@ private fun VueoSubtitleToggleRow(
                 .border(
                     if (focused) 2.dp else 1.dp,
                     when {
-                        focused -> Color(0xFF888888)
+                        focused -> TvDesign.Accent
                         enabled -> Color.White
                         else -> Color.White.copy(alpha = .08f)
                     },

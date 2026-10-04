@@ -140,11 +140,11 @@ internal fun VueoPlayerPresentation(
         val promptBottomPadding = if (controlsVisible) bottomControlsHeight + 12.dp else 22.dp + 3.dp + 12.dp
         val skipOnRight = activeSkip?.kind == PlayerSkipKind.ENDING
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
-        val showScrim = showChrome ||
+        val showScrim = activePanel != TvPlayerPanel.SUBTITLES && (showChrome ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null ||
             (showPrompts && activeSkip != null) ||
-            (showPrompts && nextCountdown > 0)
+            (showPrompts && nextCountdown > 0))
         AnimatedVisibility(
             visible = showScrim,
             enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
