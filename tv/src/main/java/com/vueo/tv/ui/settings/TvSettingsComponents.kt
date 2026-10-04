@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -765,6 +766,7 @@ internal fun TvSettingsListScreen(
     footer: String? = null,
     metrics: List<TvSettingsMetric> = emptyList(),
     preferredFocusId: String? = null,
+    addonLayout: Boolean = false,
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -776,6 +778,7 @@ internal fun TvSettingsListScreen(
             topLabel = topLabel,
             footer = footer,
             metrics = metrics,
+            addonLayout = addonLayout,
         )
         return
     }
@@ -854,7 +857,7 @@ internal fun TvSettingsListScreen(
             Text(
                 text = title,
                 color = TvDesign.White,
-                fontSize = 28.sp,
+                fontSize = if (addonLayout) 22.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
@@ -862,12 +865,18 @@ internal fun TvSettingsListScreen(
                 color = TvDesign.Muted,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
+                modifier = Modifier.padding(top = if (addonLayout) 3.dp else 6.dp, bottom = if (addonLayout) 8.dp else 16.dp),
             )
 
             if (metrics.isNotEmpty()) {
-                TvSettingsMetricsRow(metrics = metrics)
-                Spacer(Modifier.height(12.dp))
+                if (addonLayout) TvAddonCompactMetrics(metrics) else TvSettingsMetricsRow(metrics = metrics)
+                Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
+            }
+
+            if (addonLayout) {
+                TvAddonControls(entries, { rowRequesters.getValue(it) },
+                    { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
+                Spacer(Modifier.height(8.dp))
             }
 
             LazyColumn(
@@ -882,7 +891,7 @@ internal fun TvSettingsListScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 var previousSection: String? = null
-                entries.forEachIndexed { index, entry ->
+                entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
                     val section = entry.section?.takeIf { it.isNotBlank() }
                     if (section != null && section != previousSection) {
                         item(key = "section-$index-$section") {
@@ -901,6 +910,7 @@ internal fun TvSettingsListScreen(
                     item(key = entry.id) {
                         TvSettingsRow(
                             entry = entry,
+                            compact = addonLayout,
                             requester = rowRequesters.getValue(entry.id),
                             first = entry.id == firstFocusable?.id,
                             last = entry.id == lastFocusable?.id,
@@ -951,6 +961,7 @@ private fun TvSettingsEmbeddedPanel(
     topLabel: String?,
     footer: String?,
     metrics: List<TvSettingsMetric>,
+    addonLayout: Boolean = false,
 ) {
     val focusableIds = entries.filter { it.enabled }.map { it.id }
     val firstFocusable = entries.firstOrNull { it.enabled }
@@ -981,7 +992,7 @@ private fun TvSettingsEmbeddedPanel(
         Text(
             text = title,
             color = TvDesign.White,
-            fontSize = 29.sp,
+            fontSize = if (addonLayout) 22.sp else 29.sp,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -989,12 +1000,17 @@ private fun TvSettingsEmbeddedPanel(
             color = TvDesign.Muted,
             fontSize = 13.sp,
             lineHeight = 18.sp,
-            modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
+            modifier = Modifier.padding(top = if (addonLayout) 3.dp else 5.dp, bottom = if (addonLayout) 8.dp else 16.dp),
         )
 
         if (metrics.isNotEmpty()) {
-            TvSettingsMetricsRow(metrics = metrics)
-            Spacer(Modifier.height(12.dp))
+            if (addonLayout) TvAddonCompactMetrics(metrics) else TvSettingsMetricsRow(metrics = metrics)
+            Spacer(Modifier.height(if (addonLayout) 8.dp else 12.dp))
+        }
+
+        if (addonLayout) {
+            TvAddonControls(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
+            Spacer(Modifier.height(8.dp))
         }
 
         LazyColumn(
@@ -1004,7 +1020,7 @@ private fun TvSettingsEmbeddedPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             var previousSection: String? = null
-            entries.forEachIndexed { index, entry ->
+            entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
                 val section = entry.section?.takeIf { it.isNotBlank() }
                 if (section != null && section != previousSection) {
                     item(key = "embedded-section-$index-$section") {
@@ -1023,6 +1039,7 @@ private fun TvSettingsEmbeddedPanel(
                 item(key = entry.id) {
                     TvSettingsRow(
                         entry = entry,
+                            compact = addonLayout,
                         requester = host.requesterFor(entry.id),
                         first = entry.id == firstFocusable?.id,
                         last = entry.id == lastFocusable?.id,
@@ -1055,6 +1072,7 @@ private fun TvSettingsRow(
     first: Boolean,
     last: Boolean,
     grouped: Boolean = false,
+    compact: Boolean = false,
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
@@ -1071,7 +1089,7 @@ private fun TvSettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 70.dp)
+            .heightIn(min = if (compact) 56.dp else 70.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1141,13 +1159,13 @@ private fun TvSettingsRow(
                 shape = shape,
             )
             .focusable(enabled = entry.enabled)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = if (compact) 7.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!entry.badge.isNullOrBlank()) {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(if (compact) 32.dp else 44.dp)
                     .background(TvDesign.Accent.copy(alpha = .12f), RoundedCornerShape(13.dp))
                     .border(1.dp, TvDesign.Accent.copy(alpha = .28f), RoundedCornerShape(13.dp)),
                 contentAlignment = Alignment.Center,
@@ -1165,7 +1183,7 @@ private fun TvSettingsRow(
             entry.icon?.let { icon ->
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(if (compact) 32.dp else 44.dp)
                         .background(
                             color = if (entry.accented) {
                                 TvDesign.Accent.copy(alpha = if (focused) .16f else .09f)
@@ -1186,7 +1204,7 @@ private fun TvSettingsRow(
                             entry.accented -> TvDesign.Accent
                             else -> TvDesign.White.copy(alpha = .92f)
                         },
-                        modifier = Modifier.size(23.dp),
+                        modifier = Modifier.size(if (compact) 19.dp else 23.dp),
                     )
                 }
                 Spacer(Modifier.width(14.dp))
@@ -1427,3 +1445,99 @@ private fun androidx.compose.ui.input.key.KeyEvent.isTvActivationKey(): Boolean 
     nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER ||
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+private fun TvSettingsEntry.isAddonControl(): Boolean =
+    id == "add" || id == "refresh-addons" || id.startsWith("addon-category-")
+
+@Composable
+private fun TvAddonCompactMetrics(metrics: List<TvSettingsMetric>) {
+    Text(
+        metrics.joinToString(" · ") { "${it.value} ${it.label}" },
+        color = TvDesign.Muted, fontSize = 11.sp, maxLines = 1,
+    )
+}
+
+@Composable
+private fun TvAddonControls(
+    entries: List<TvSettingsEntry>,
+    requesterFor: (String) -> FocusRequester,
+    onFocused: (String) -> Unit,
+    onLeftToSidebar: () -> Unit,
+) {
+    val actions = entries.filter { it.id == "add" || it.id == "refresh-addons" }
+    val categories = entries.filter { it.id.startsWith("addon-category-") }
+    val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
+    val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            actions.forEachIndexed { index, entry ->
+                var focused by remember(entry.id) { mutableStateOf(false) }
+                val shape = RoundedCornerShape(50)
+                Row(
+                    modifier = Modifier
+                        .focusRequester(requesterFor(entry.id))
+                        .focusProperties {
+                            up = FocusRequester.Cancel
+                            selected?.let { down = requesterFor(it.id) }
+                            if (index > 0) left = requesterFor(actions[index - 1].id)
+                            if (index < actions.lastIndex) right = requesterFor(actions[index + 1].id)
+                            else right = FocusRequester.Cancel
+                        }
+                        .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused(entry.id) }
+                        .onPreviewKeyEvent { event ->
+                            if (index == 0 && event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                onLeftToSidebar(); true
+                            } else if (event.isTvActivationKey()) {
+                                if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                true
+                            } else false
+                        }
+                        .background(if (focused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card, shape)
+                        .border(1.dp, if (focused) TvDesign.White else TvDesign.White.copy(alpha = .12f), shape)
+                        .focusable()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    entry.icon?.let { Icon(it, contentDescription = entry.title, tint = TvDesign.White, modifier = Modifier.size(18.dp)) }
+                    if (entry.id == "add") Text(entry.title, color = TvDesign.White, fontSize = 12.sp)
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            categories.forEachIndexed { index, entry ->
+                var focused by remember(entry.id) { mutableStateOf(false) }
+                Text(
+                    entry.title,
+                    color = if (focused || entry.value == "Selected") TvDesign.White else TvDesign.White.copy(alpha = .58f),
+                    fontSize = 14.sp,
+                    fontWeight = if (entry.value == "Selected") FontWeight.Medium else FontWeight.Normal,
+                    modifier = Modifier
+                        .focusRequester(requesterFor(entry.id))
+                        .focusProperties {
+                            actions.firstOrNull()?.let { up = requesterFor(it.id) }
+                            down = firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                            if (index > 0) left = requesterFor(categories[index - 1].id)
+                            if (index < categories.lastIndex) right = requesterFor(categories[index + 1].id)
+                            else right = FocusRequester.Cancel
+                        }
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) { onFocused(entry.id); entry.onActivate?.invoke() }
+                        }
+                        .onPreviewKeyEvent { event ->
+                            if (index == 0 && event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                onLeftToSidebar(); true
+                            } else if (event.isTvActivationKey()) {
+                                if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                true
+                            } else false
+                        }
+                        .focusable()
+                        .padding(vertical = 4.dp),
+                )
+                if (index < categories.lastIndex) Box(Modifier.width(1.dp).height(20.dp).background(TvDesign.White.copy(alpha = .48f)))
+            }
+        }
+    }
+}

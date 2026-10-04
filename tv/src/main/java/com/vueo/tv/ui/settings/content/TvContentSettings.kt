@@ -178,6 +178,7 @@ internal fun TvAddonSettings(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    var selectedCategory by remember { mutableStateOf("Catalog & Metadata") }
     var revision by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var removeUrl by remember { mutableStateOf<String?>(null) }
@@ -227,6 +228,14 @@ internal fun TvAddonSettings(
         )
     }
 
+    fun addonCategory(descriptor: com.vueo.shared.core.extensions.ExtensionDescriptor?): String = when {
+        descriptor == null -> "Other"
+        "stream" in descriptor.resources -> "Streams"
+        "subtitles" in descriptor.resources -> "Subtitles"
+        "catalog" in descriptor.resources || "meta" in descriptor.resources -> "Catalog & Metadata"
+        else -> "Other"
+    }
+    val categories = listOf("Catalog & Metadata", "Streams", "Subtitles", "Other")
     val entries = buildList {
         add(
             TvSettingsEntry(
@@ -271,22 +280,33 @@ internal fun TvAddonSettings(
             )
         )
 
+        categories.forEachIndexed { index, category ->
+            add(TvSettingsEntry(
+                id = "addon-category-$index",
+                title = category,
+                subtitle = "",
+                value = if (selectedCategory == category) "Selected" else "",
+                onActivate = { selectedCategory = category },
+            ))
+        }
+
         val orderedManifests = manifests
             .map { url -> url to addonByManifest[url.trim()] }
             .sortedWith(
                 compareBy<Pair<String, com.vueo.shared.core.extensions.MediaExtension?>> { (_, addon) ->
-                    addon?.descriptor?.primaryAddonCategory()?.ordinal ?: Int.MAX_VALUE
+                    categories.indexOf(addonCategory(addon?.descriptor))
                 }.thenBy { (url, addon) ->
                     addon?.descriptor?.name?.lowercase() ?: url.lowercase()
                 }
             )
 
-        orderedManifests.forEachIndexed { index, (url, addon) ->
+        orderedManifests.filter { (_, addon) -> addonCategory(addon?.descriptor) == selectedCategory }
+            .forEachIndexed { _, (url, addon) ->
             val descriptor = addon?.descriptor
             val enabled = runtime.content.isAddonEnabled(url)
             add(
                 TvSettingsEntry(
-                    id = "addon-$index-${url.hashCode()}",
+                    id = "addon-${url.hashCode()}",
                     title = descriptor?.name ?: shortUrl(url),
                     subtitle = if (descriptor != null) {
                         "v${descriptor.version} • ${descriptor.catalogs.size} catalogs • ${descriptor.resources.size} resources"
@@ -305,7 +325,7 @@ internal fun TvAddonSettings(
                             onDataChanged()
                         }
                     },
-                    section = descriptor?.primaryAddonCategory()?.label?.uppercase() ?: "INSTALLED ADDONS",
+                    section = null,
                     icon = Icons.Default.Extension,
                     onRightAction = { removeUrl = url },
                     accented = true,
@@ -327,7 +347,8 @@ internal fun TvAddonSettings(
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
-        topLabel = "Content Manager",
+        topLabel = null,
+        addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(manifests.size.toString(), "Installed"),
             TvSettingsMetric(enabledCount.toString(), "Enabled"),
