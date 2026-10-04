@@ -3,6 +3,7 @@ package com.vueo.tv.settings
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import com.vueo.tv.ui.TvDesign
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,18 +92,42 @@ private fun TvPluginRepositoryCard(
     var focused by remember(entry.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(15.dp)
     Column(modifier = Modifier.padding(bottom = if (nextProvider != null) 12.dp else 0.dp)) {
-        Column(
-            modifier = Modifier.fillMaxWidth().background(PluginSurface, shape).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(if (focused) PluginFocus else PluginSurface, shape)
+                .border(1.dp, if (focused) Color.White else Color.Transparent, shape)
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    modifier = Modifier.weight(1f)
-                        .focusRequester(requesterFor(entry.id))
+            Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    refresh?.let { action ->
+                        TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
+                            up = FocusRequester.Default
+                            left = FocusRequester.Cancel
+                            right = requesterFor(entry.id)
+                            down = remove?.let { requesterFor(it.id) } ?: FocusRequester.Default
+                        }.onPreviewKeyEvent { event ->
+                            if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
+                                true
+                            } else false
+                        }, { onEntryFocused(action.id) })
+                    }
+                    Box(Modifier.focusRequester(requesterFor(entry.id))
                         .focusProperties {
                             up = FocusRequester.Default
-                            down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                            refresh?.let { right = requesterFor(it.id) }
+                            left = refresh?.let { requesterFor(it.id) } ?: FocusRequester.Default
+                            right = FocusRequester.Cancel
+                            down = remove?.let { requesterFor(it.id) } ?: FocusRequester.Default
                         }
                         .onFocusChanged {
                             focused = it.isFocused
@@ -110,43 +135,24 @@ private fun TvPluginRepositoryCard(
                         }
                         .onPreviewKeyEvent { event ->
                             when {
-                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && refresh == null && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
                                 activation(event.nativeKeyEvent.keyCode) -> {
                                     if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
                                     true
                                 }
                                 else -> false
                             }
-                        }
-                        .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(10.dp))
-                        .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
-                        .focusable().padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                        Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }.focusable()) {
+                        TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
                 }
-                refresh?.let {
-                    TvRepositoryAction(it, Icons.Default.Refresh, Color.White, requesterFor(it.id), Modifier.focusProperties {
-                        up = FocusRequester.Default; left = requesterFor(entry.id)
-                        remove?.let { action -> right = requesterFor(action.id) }
-                        down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                    }, { onEntryFocused(it.id) })
-                }
-                remove?.let {
-                    TvRepositoryAction(it, null, Color(0xFFFF5252), requesterFor(it.id), Modifier.focusProperties {
-                        up = FocusRequester.Default
-                        left = refresh?.let { action -> requesterFor(action.id) } ?: requesterFor(entry.id)
+                remove?.let { action ->
+                    TvRepositoryAction(action, null, if (entry.accented) TvDesign.Accent else Color.White.copy(alpha = .86f), requesterFor(action.id), Modifier.focusProperties {
+                        up = requesterFor(entry.id)
+                        left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
                         right = FocusRequester.Cancel
                         down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                    }, { onEntryFocused(it.id) })
+                    }, { onEntryFocused(action.id) })
                 }
             }
         }
@@ -163,7 +169,7 @@ private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint:
             .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
             .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50)),
     ) {
-        if (icon == null) Text("Remove ›", color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        if (icon == null) Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
         else Icon(icon, contentDescription = entry.title, tint = tint, modifier = Modifier.size(21.dp))
     }
 }

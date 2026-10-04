@@ -1342,7 +1342,7 @@ internal fun TvSettingsRow(
             if (focused && !entry.rightActionLabel.isNullOrBlank()) {
                 Text(
                     text = "${entry.rightActionLabel}  ›",
-                    color = if (entry.rightActionLabel == "Remove") Color(0xFFFF5252) else if (entry.accented) TvDesign.Accent else TvDesign.White.copy(alpha = .86f),
+                    color = if (entry.accented) TvDesign.Accent else TvDesign.White.copy(alpha = .86f),
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                 )
