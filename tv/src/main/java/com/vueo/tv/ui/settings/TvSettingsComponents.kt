@@ -1447,7 +1447,7 @@ private fun androidx.compose.ui.input.key.KeyEvent.isTvActivationKey(): Boolean 
         nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
 
 private fun TvSettingsEntry.isAddonControl(): Boolean =
-    id == "add" || id == "refresh-addons" || id.startsWith("addon-category-")
+    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") || id.startsWith("addon-category-")
 
 @Composable
 private fun TvAddonCompactMetrics(metrics: List<TvSettingsMetric>) {
@@ -1464,7 +1464,7 @@ private fun TvAddonControls(
     onFocused: (String) -> Unit,
     onLeftToSidebar: () -> Unit,
 ) {
-    val actions = entries.filter { it.id == "add" || it.id == "refresh-addons" }
+    val actions = entries.filter { it.isAddonControl() && !it.id.startsWith("addon-category-") }
     val categories = entries.filter { it.id.startsWith("addon-category-") }
     val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
     val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() }
@@ -1500,7 +1500,12 @@ private fun TvAddonControls(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     entry.icon?.let { Icon(it, contentDescription = entry.title, tint = TvDesign.White, modifier = Modifier.size(18.dp)) }
-                    if (entry.id == "add") Text(entry.title, color = TvDesign.White, fontSize = 12.sp)
+                    if (entry.id == "add" || entry.id == "add-repo" || entry.id == "plugins-master") {
+                        Text(
+                            if (entry.id == "plugins-master") "${entry.title}: ${entry.value}" else entry.title,
+                            color = TvDesign.White, fontSize = 12.sp,
+                        )
+                    }
                 }
             }
         }

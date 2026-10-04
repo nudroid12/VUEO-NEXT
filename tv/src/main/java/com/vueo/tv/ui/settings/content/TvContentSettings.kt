@@ -371,6 +371,7 @@ internal fun TvProviderSettings(
     val scope = rememberCoroutineScope()
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+    var selectedCategory by remember { mutableStateOf("Repositories") }
     var revision by remember { mutableIntStateOf(0) }
     var pluginsEnabled by remember { mutableStateOf(runtime.pluginStore.pluginsEnabled()) }
     var showAdd by remember { mutableStateOf(false) }
@@ -428,6 +429,7 @@ internal fun TvProviderSettings(
                         .onSuccess { repository ->
                             revision++
                             selectedRepositoryUrl = repository.manifestUrl
+                            selectedCategory = "Repositories"
                             status = "Installed ${repository.name}."
                             showAdd = false
                             addMessage = null
@@ -485,7 +487,7 @@ internal fun TvProviderSettings(
         )
     }
 
-    val entries = buildList {
+    val allEntries = buildList {
         add(toggleEntry("plugins-master", "Providers", "Master switch for plugin provider discovery.", pluginsEnabled) {
             pluginsEnabled = it
             runtime.pluginStore.setPluginsEnabled(it)
@@ -678,6 +680,32 @@ internal fun TvProviderSettings(
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
+    val categories = listOf("System", "Repositories", "Providers")
+    val entries = buildList {
+        listOf("add-repo", "plugins-master", "refresh-repository").forEach { id ->
+            allEntries.firstOrNull { it.id == id }?.let { add(it.copy(section = null)) }
+        }
+        categories.forEachIndexed { index, category ->
+            add(TvSettingsEntry(
+                id = "addon-category-$index",
+                title = category,
+                subtitle = "",
+                value = if (selectedCategory == category) "Selected" else "",
+                onActivate = { selectedCategory = category },
+            ))
+        }
+        allEntries.filter { entry ->
+            when (entry.id) {
+                "add-repo", "plugins-master", "refresh-repository" -> false
+                "provider-health", "runtime-diagnostics" -> selectedCategory == "System"
+                "repository-selector" -> selectedCategory != "System"
+                "status" -> true
+                else -> if (entry.id.startsWith("provider-")) selectedCategory == "Providers"
+                    else selectedCategory == "Repositories"
+            }
+        }.forEach { add(it.copy(section = null)) }
+    }
+
     val providerCount = repositories.sumOf { it.providers.size }
     val enabledProviderCount = if (pluginsEnabled) runtime.pluginStore.enabledProviderCount() else 0
     val readyProviderCount = repositories.sumOf { providerCodeStore.readyCount(it) }
@@ -689,7 +717,8 @@ internal fun TvProviderSettings(
         onNavigate = onNavigate,
         onProfile = onProfile,
         onBack = onBack,
-        topLabel = "Content Manager",
+        topLabel = null,
+        addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(repositories.size.toString(), "Repos"),
             TvSettingsMetric(providerCount.toString(), "Providers"),
@@ -697,7 +726,7 @@ internal fun TvProviderSettings(
             TvSettingsMetric(readyProviderCount.toString(), "Ready"),
         ),
         footer = "Left/right changes repository. OK changes a saved preference. Press right on a provider for diagnostics.",
-        preferredFocusId = "repository-selector",
+        preferredFocusId = "addon-category-1",
     )
 }
 
