@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +49,11 @@ internal fun VueoPlayerStatusIndicators(
     showPlaybackFeedback: Boolean,
     translationEndPadding: Dp,
 ) {
+    val translationEnd by animateDpAsState(
+        targetValue = translationEndPadding,
+        animationSpec = tween(240, easing = TvMotion.EaseOut),
+        label = "translationPillEnd",
+    )
     var showBuffering by remember { mutableStateOf(false) }
     var showFeedback by remember { mutableStateOf(false) }
     LaunchedEffect(buffering, enabled) {
@@ -94,13 +101,16 @@ internal fun VueoPlayerStatusIndicators(
 
             }
         }
-        if (enabled && translating) {
+        AnimatedVisibility(
+            visible = enabled && translating,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 35.dp, end = translationEnd),
+            enter = fadeIn(tween(TvMotion.ELEMENT_MS, easing = TvMotion.EaseOut)),
+            exit = fadeOut(tween(TvMotion.QUICK_MS, easing = TvMotion.EaseInOut)),
+        ) {
             Row(
-                modifier = Modifier.align(Alignment.TopEnd)
-                    .padding(top = 35.dp, end = translationEndPadding)
-                    .height(28.dp)
+                modifier = Modifier.height(28.dp)
                     .widthIn(max = 132.dp)
-                    .background(Color.Black.copy(alpha = .70f), RoundedCornerShape(50))
+                    .background(TvPlayerTopActionBackground, RoundedCornerShape(50))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),

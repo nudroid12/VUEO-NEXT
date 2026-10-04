@@ -58,6 +58,8 @@ import com.vueo.shared.core.storage.PlayerVideoFit
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 
+internal val TvPlayerTopActionBackground = Color.Black.copy(alpha = .34f)
+
 internal val PanelShape = RoundedCornerShape(18.dp)
 internal val SubtitleWorkspaceBottomClearance = 48.dp
 

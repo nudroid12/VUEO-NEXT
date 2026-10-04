@@ -294,8 +294,10 @@ internal fun VueoPlayerPresentation(
             translating = translatingSubtitles,
             enabled = statusIndicatorsEnabled && playbackError == null && activePanel == TvPlayerPanel.NONE,
             showPlaybackFeedback = !controlsVisible,
-            // Reserve the action row even while controls are hidden: no position jump.
-            translationEndPadding = if (nextEpisode != null) 184.dp else 134.dp,
+            // 30dp margin + 42dp actions + 8dp gaps, including the gap before Restart.
+            translationEndPadding = if (showChrome) {
+                30.dp + (42.dp + 8.dp) * (if (nextEpisode != null) 3 else 2)
+            } else 30.dp,
         )
         AnimatedVisibility(
             visible = activePanel == TvPlayerPanel.EPISODES,

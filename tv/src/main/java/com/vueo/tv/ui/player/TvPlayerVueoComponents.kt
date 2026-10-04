@@ -207,7 +207,7 @@ internal fun VueoPlayerTopAction(
             }
             .focusable(acceptsInput)
             .background(
-                if (focused && enabled) Color.White else Color.Black.copy(alpha = .34f),
+                if (focused && enabled) Color.White else TvPlayerTopActionBackground,
                 CircleShape,
             ),
         contentAlignment = Alignment.Center,
