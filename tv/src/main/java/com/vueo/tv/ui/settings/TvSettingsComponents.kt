@@ -103,6 +103,12 @@ internal data class TvSettingsEntry(
     val rightActionLabel: String? = null,
     val choices: List<String> = emptyList(),
     val selectedChoiceIndex: Int = -1,
+    val switchChecked: Boolean? = null,
+    val providerStatus: String? = null,
+    val providerResponse: String? = null,
+    val providerFailed: Boolean = false,
+    val providerPanelStart: Boolean = false,
+    val providerPanelEnd: Boolean = false,
 )
 
 internal data class TvSettingsNavItem(
@@ -890,14 +896,14 @@ internal fun TvSettingsListScreen(
                         targetId?.let { rowRequesters[it] } ?: FocusRequester.Default
                     }
                     .focusGroup(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
             ) {
                 if (addonLayout) item(key = "workspace-controls") {
                     TvAddonControls(entries, { rowRequesters.getValue(it) },
                         { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
                 }
                 var previousSection: String? = null
-                entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
+                entries.filterNot { addonLayout && (it.isAddonControl() || it.isRepositoryAction()) }.forEachIndexed { index, entry ->
                     val section = entry.section?.takeIf { it.isNotBlank() }
                     if (section != null && section != previousSection) {
                         item(key = "section-$index-$section") {
@@ -914,9 +920,12 @@ internal fun TvSettingsListScreen(
                     }
 
                     item(key = entry.id) {
-                        TvSettingsRow(
+                        TvContentSettingsRow(
                             entry = entry,
-                            compact = false,
+                            contentLayout = addonLayout,
+                            entries = entries,
+                            requesterFor = { rowRequesters.getValue(it) },
+                            onEntryFocused = { lastFocusedId = it; navExpanded = false },
                             requester = rowRequesters.getValue(entry.id),
                             first = entry.id == firstFocusable?.id,
                             last = entry.id == lastFocusable?.id,
@@ -1018,13 +1027,13 @@ private fun TvSettingsEmbeddedPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
         ) {
             if (addonLayout) item(key = "workspace-controls") {
                 TvAddonControls(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
             }
             var previousSection: String? = null
-            entries.filterNot { addonLayout && it.isAddonControl() }.forEachIndexed { index, entry ->
+            entries.filterNot { addonLayout && (it.isAddonControl() || it.isRepositoryAction()) }.forEachIndexed { index, entry ->
                 val section = entry.section?.takeIf { it.isNotBlank() }
                 if (section != null && section != previousSection) {
                     item(key = "embedded-section-$index-$section") {
@@ -1041,13 +1050,15 @@ private fun TvSettingsEmbeddedPanel(
                 }
 
                 item(key = entry.id) {
-                    TvSettingsRow(
+                    TvContentSettingsRow(
                         entry = entry,
-                            compact = false,
+                        contentLayout = addonLayout,
+                        entries = entries,
+                        requesterFor = host.requesterFor,
+                        onEntryFocused = host.onRowFocused,
                         requester = host.requesterFor(entry.id),
                         first = entry.id == firstFocusable?.id,
                         last = entry.id == lastFocusable?.id,
-                        grouped = false,
                         onLeftToSidebar = host.onLeftToCategory,
                         onFocused = { host.onRowFocused(entry.id) },
                     )
@@ -1070,7 +1081,7 @@ private fun TvSettingsEmbeddedPanel(
 }
 
 @Composable
-private fun TvSettingsRow(
+internal fun TvSettingsRow(
     entry: TvSettingsEntry,
     requester: FocusRequester,
     first: Boolean,
@@ -1287,7 +1298,9 @@ private fun TvSettingsRow(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            if (entry.value.isNotBlank()) {
+            if (entry.switchChecked != null) {
+                TvContentToggle(entry.switchChecked)
+            } else if (entry.value.isNotBlank()) {
                 Text(
                     text = buildString {
                         if (canAdjust && focused) append("‹  ")
@@ -1515,7 +1528,7 @@ private fun TvSettingsEntry.isWorkspaceTab(): Boolean =
     id.startsWith("addon-category-") || id.startsWith("repository-tab-")
 
 private fun TvSettingsEntry.isAddonControl(): Boolean =
-    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics") || isWorkspaceTab()
+    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "provider-health", "runtime-diagnostics") || isWorkspaceTab()
 
 @Composable
 private fun TvAddonControls(
@@ -1524,12 +1537,12 @@ private fun TvAddonControls(
     onFocused: (String) -> Unit,
     onLeftToSidebar: () -> Unit,
 ) {
-    val actions = entries.filter { it.id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "refresh-repository") }
+    val actions = entries.filter { it.id in setOf("add", "refresh-addons", "add-repo", "plugins-master") }
     val categories = entries.filter { it.isWorkspaceTab() }
     val systemCards = entries.filter { it.id in setOf("provider-health", "runtime-diagnostics") }
     val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
-    val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() && !it.isRepositoryAction() }
+    Column(modifier = Modifier.padding(bottom = if (entries.any { it.providerStatus != null }) 8.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             actions.forEachIndexed { index, entry ->
                 val actionModifier = Modifier.onPreviewKeyEvent { event ->
@@ -1612,7 +1625,7 @@ private fun TvAddonControls(
                         .focusRequester(requesterFor(entry.id))
                         .focusProperties {
                             (systemCards.lastOrNull() ?: actions.firstOrNull())?.let { up = requesterFor(it.id) }
-                            down = firstAddon?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                            down = if (firstAddon != null) FocusRequester.Default else FocusRequester.Cancel
                             if (index > 0) left = requesterFor(categories[index - 1].id)
                             if (index < categories.lastIndex) right = requesterFor(categories[index + 1].id)
                             else right = FocusRequester.Cancel

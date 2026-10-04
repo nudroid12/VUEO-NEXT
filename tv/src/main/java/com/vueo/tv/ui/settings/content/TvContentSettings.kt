@@ -320,6 +320,7 @@ internal fun TvAddonSettings(
                         ?.takeIf { it.isNotBlank() }
                         ?: url,
                     value = if (enabled) "On" else "Off",
+                    switchChecked = enabled,
                     onActivate = {
                         scope.launch {
                             runtime.setAddonEnabled(url, !enabled)
@@ -573,6 +574,7 @@ internal fun TvProviderSettings(
                 icon = Icons.Default.SettingsInputComponent,
                 accented = true,
                 detail = "v${repository.version} • ${repository.providers.size} providers • ${providerCodeStore.readyCount(repository)} ready",
+                switchChecked = repoEnabled,
             ))
             add(
                 TvSettingsEntry(
@@ -628,21 +630,29 @@ internal fun TvProviderSettings(
                     }.thenBy { (provider, _) -> provider.name.lowercase() }
                 )
 
-            rankedProviders.forEach { (provider, health) ->
+            rankedProviders.forEachIndexed { index, (provider, health) ->
                 val providerEnabled = runtime.pluginStore.isProviderEnabled(repository, provider)
                 add(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
                         title = provider.name,
-                        subtitle = buildString {
-                            append(if (providerEnabled) health?.status?.label ?: "No diagnostic yet" else "Disabled")
-                            append(" • v").append(provider.version)
-                            provider.supportedTypes.takeIf { it.isNotEmpty() }?.let { types ->
-                                append(" • ").append(types.joinToString(" / ") { it.replaceFirstChar { char -> char.uppercase() } })
-                            }
-                        },
-                        detail = provider.description?.trim()?.takeIf { it.isNotBlank() },
+                        subtitle = buildList {
+                            if (provider.supportedTypes.isNotEmpty()) add(provider.supportedTypes.sorted().joinToString("/"))
+                            if (provider.formats.isNotEmpty()) add(provider.formats.take(3).joinToString(", "))
+                            if (provider.limited) add("limited")
+                        }.joinToString(" • "),
                         value = if (providerEnabled) "On" else "Off",
+                        switchChecked = providerEnabled,
+                        providerStatus = if (!providerEnabled) "Disabled" else health?.status?.label ?: "Unknown",
+                        providerResponse = health?.responseMs?.let { "$it ms" },
+                        providerFailed = providerEnabled && health?.status in setOf(
+                            com.vueo.shared.core.plugin.ProviderHealthStatus.FAILED,
+                            com.vueo.shared.core.plugin.ProviderHealthStatus.BLOCKED,
+                            com.vueo.shared.core.plugin.ProviderHealthStatus.TIMEOUT,
+                            com.vueo.shared.core.plugin.ProviderHealthStatus.UNAVAILABLE,
+                        ),
+                        providerPanelStart = index == 0,
+                        providerPanelEnd = index == rankedProviders.lastIndex,
                         onActivate = {
                             runtime.pluginStore.setProviderEnabled(repository, provider, !providerEnabled)
                             revision++
