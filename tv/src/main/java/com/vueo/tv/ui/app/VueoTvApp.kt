@@ -38,6 +38,7 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.core.TvSourceBundle
 import com.vueo.tv.core.TvSourceDiscoverySnapshot
 import com.vueo.tv.detail.TvDetailScreen
+import com.vueo.tv.home.TvHomeFocusMemory
 import com.vueo.tv.home.TvHomeScreen
 import com.vueo.tv.home.rememberTvHomeRetainedState
 import com.vueo.tv.library.TvLibraryScreen
@@ -89,7 +90,13 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         crashRecoveryLoaded = true
     }
 
-    val runtime = remember { TvRuntime(context.applicationContext) }
+    val runtime = remember {
+        // New app session starts at the first Home card. Route changes within
+        // this session keep the existing row/card focus memory.
+        TvHomeFocusMemory.activeRowKey = null
+        TvHomeFocusMemory.focusedIndexByRow.clear()
+        TvRuntime(context.applicationContext)
+    }
     val homeRetainedState = rememberTvHomeRetainedState(runtime)
     val homeSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
@@ -241,10 +248,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         sourceDiscoveryJob = null
         if (markStopped) {
             sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let { current ->
-                if (!current.searching) current
-                else current.copy(
+                current.copy(
                     searching = false,
-                    progress = if (current.bundle.sources.isEmpty()) {
+                    loadingProviders = emptyList(),
+                    progress = if (!current.searching && current.loadingProviders.isEmpty()) {
+                        current.progress
+                    } else if (current.bundle.sources.isEmpty()) {
                         "Discovery stopped"
                     } else {
                         "Discovery stopped • ${current.bundle.sources.size} unique sources"
@@ -377,9 +386,10 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             ?.copy(
                 searching = true,
                 progress = "Refreshing sources…",
+                loadingProviders = emptyList(),
             )
         sourceDiscoveryError = null
-        sourceBundle = null
+        sourceBundle = sourceDiscoverySnapshot?.bundle
         selectedSource = null
 
         sourceDiscoveryJob = sourceDiscoveryScope.launch {
@@ -393,8 +403,17 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             sourceDiscoveryGeneration == generation &&
                             sourceDiscoveryKey == key
                         ) {
-                            sourceDiscoverySnapshot = snapshot
-                            sourceBundle = snapshot.bundle
+                            // Keep the existing cards until refreshed results
+                            // arrive; the final snapshot replaces them even if empty.
+                            val visibleSnapshot = if (
+                                snapshot.searching && snapshot.bundle.sources.isEmpty() &&
+                                previousKey == key && effectiveForce && previousSnapshot != null
+                            ) snapshot.copy(
+                                bundle = snapshot.bundle.copy(sources = previousSnapshot.bundle.sources),
+                                rawCount = maxOf(snapshot.rawCount, previousSnapshot.rawCount),
+                            ) else snapshot
+                            sourceDiscoverySnapshot = visibleSnapshot
+                            sourceBundle = visibleSnapshot.bundle
                             if (!snapshot.searching) {
                                 failedSourceKeys =
                                     if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
@@ -411,6 +430,11 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryKey == key
                 ) {
                     sourceBundle = finalBundle
+                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(
+                        bundle = finalBundle,
+                        searching = false,
+                        loadingProviders = emptyList(),
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -420,12 +444,21 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryKey == key
                 ) {
                     sourceDiscoveryError = throwable.message ?: "Source discovery failed"
-                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(searching = false)
+                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(searching = false, loadingProviders = emptyList())
                     failedSourceKeys = failedSourceKeys + key
                 }
             } finally {
                 if (sourceDiscoveryGeneration == generation) {
                     sourceDiscoveryJob = null
+                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let { current ->
+                        current.copy(
+                            searching = false,
+                            loadingProviders = emptyList(),
+                            progress = if (current.searching && sourceDiscoveryError == null)
+                                "Discovery stopped • ${current.bundle.sources.size} unique sources"
+                            else current.progress,
+                        )
+                    }
                 }
             }
         }

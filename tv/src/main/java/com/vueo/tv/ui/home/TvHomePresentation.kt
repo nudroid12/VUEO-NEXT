@@ -149,7 +149,7 @@ internal fun TvHomePresentation(
                     contentFocusRequester = contentFocusRequester,
                     onContentFocused = onContentFocused,
                     onLeftAtRowStart =
-                        if (floatingPillMode) onOpenNavigation else null,
+                        if (floatingPillMode) ({ /* Left boundary stays on the first card. */ }) else null,
                     onFocused = { row, index, entry ->
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index

@@ -48,7 +48,7 @@ fun TvSourceScreen(
     val notice = discovery?.notice
     val firstResultMs = discovery?.firstResultMs
     val providerOrder = discovery?.providerOrder.orEmpty()
-    val loadingProviders = discovery?.loadingProviders.orEmpty().toSet()
+    val loadingProviders = if (searching) discovery?.loadingProviders.orEmpty().toSet() else emptySet()
     val fromCache = discovery?.fromCache ?: false
     val error = discoveryError
     var selectedProvider by remember(memoryKey) {

@@ -450,10 +450,9 @@ private fun TvModernHomeCard(
             .onPreviewKeyEvent { event ->
                 if (
                     onLeftAtStart != null &&
-                    event.type == KeyEventType.KeyDown &&
                     event.key == Key.DirectionLeft
                 ) {
-                    onLeftAtStart()
+                    if (event.type == KeyEventType.KeyDown) onLeftAtStart()
                     true
                 } else {
                     false
