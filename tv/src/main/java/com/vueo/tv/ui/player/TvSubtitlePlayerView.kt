@@ -98,7 +98,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             managedSubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
         }
         if (previous == null || previous.textColor != style.textColor ||
-            previous.bold != style.bold || previous.outlineEnabled != style.outlineEnabled ||
+            previous.bold != style.bold || previous.fontFamily != style.fontFamily || previous.outlineEnabled != style.outlineEnabled ||
             previous.outlineColor != style.outlineColor ||
             previous.backgroundEnabled != style.backgroundEnabled ||
             previous.backgroundColor != style.backgroundColor ||

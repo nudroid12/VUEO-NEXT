@@ -744,19 +744,6 @@ private fun SubtitleStyleControls(
         contentPadding = PaddingValues(bottom = 12.dp),
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Font", color = Color.White.copy(alpha = .72f), fontSize = 9.sp)
-                Box(Modifier.fillMaxWidth().background(Color.White.copy(alpha = .06f), RoundedCornerShape(9.dp))
-                    .clickable { onStyleChange(style.copy(fontFamily =
-                        com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, 1))) }
-                    .padding(12.dp), contentAlignment = Alignment.Center) {
-                    Text(com.vueo.shared.core.player.SubtitleFonts.label(style.fontFamily) + "  ›",
-                        color = Color.White, fontSize = 11.sp)
-                }
-                SubtitleFontPreview(style)
-            }
-        }
-        item {
             StyleStepper(
                 label = "Sync",
                 value = formatSubtitleDelay(subtitleDelayMs),
@@ -943,6 +930,15 @@ private fun SubtitleStyleControls(
             )
         }
         item {
+            StyleStepper(
+                label = "Font",
+                value = com.vueo.shared.core.player.SubtitleFonts.label(style.fontFamily),
+                onDecrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, -1))) },
+                onIncrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, 1))) },
+                decreaseLabel = "‹", increaseLabel = "›", controlWidth = 140.dp,
+            )
+        }
+        item {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Row(
                 modifier = Modifier
@@ -1026,23 +1022,26 @@ private fun StyleStepper(
     value: String,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
+    decreaseLabel: String = "−",
+    increaseLabel: String = "+",
+    controlWidth: androidx.compose.ui.unit.Dp = 112.dp,
 ) {
     val shape = RoundedCornerShape(9.dp)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp,
             modifier = Modifier.weight(1f))
-        Row(Modifier.width(112.dp).height(40.dp).clip(shape)
+        Row(Modifier.width(controlWidth).height(40.dp).clip(shape)
             .background(Color.White.copy(alpha = .06f))
             .border(1.dp, Color.White.copy(alpha = .15f), shape),
             verticalAlignment = Alignment.CenterVertically) {
-            StepButton("−", "Decrease $label", onDecrease)
+            StepButton(decreaseLabel, "Decrease $label", onDecrease)
             Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(value, color = Color.White, fontSize = 10.sp, maxLines = 1)
+                Text(value, color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = .10f)))
-            StepButton("+", "Increase $label", onIncrease)
+            StepButton(increaseLabel, "Increase $label", onIncrease)
         }
     }
 }
@@ -1193,32 +1192,3 @@ private fun withAlpha(colour: Int, opacityPercent: Int): Int {
     return (alpha shl 24) or (colour and 0x00FFFFFF)
 }
 
-@Composable
-private fun SubtitleFontPreview(style: PlayerSubtitleStyleState) {
-    androidx.compose.ui.viewinterop.AndroidView(
-        modifier = Modifier.fillMaxWidth().height((style.fontSizeSp * 3 + 12).dp),
-        factory = { context -> androidx.media3.ui.SubtitleView(context).apply {
-            isFocusable = false
-            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            setApplyEmbeddedStyles(false)
-            setApplyEmbeddedFontSizes(false)
-            setBottomPaddingFraction(.12f)
-            setCues(listOf(androidx.media3.common.text.Cue.Builder()
-                .setText("Contoh sari kata.").build()))
-        } },
-        update = { view ->
-            view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
-            val background = if (style.backgroundEnabled) {
-                (style.backgroundColor and 0x00FFFFFF) or
-                    ((style.backgroundOpacityPercent * 255 / 100) shl 24)
-            } else android.graphics.Color.TRANSPARENT
-            view.setStyle(androidx.media3.ui.CaptionStyleCompat(
-                style.textColor, background, android.graphics.Color.TRANSPARENT,
-                if (style.outlineEnabled) androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
-                else androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE,
-                style.outlineColor,
-                com.vueo.shared.core.player.SubtitleFonts.resolve(view.context, style.fontFamily, style.bold),
-            ))
-        },
-    )
-}

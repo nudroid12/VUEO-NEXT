@@ -1,5 +1,15 @@
 package com.vueo.tv.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
+import com.vueo.tv.player.TvPlayerSubtitleStyleState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
@@ -100,6 +110,7 @@ internal fun TvSubtitleSettings(
     onBack: () -> Unit,
 ) {
     val store = runtime.settingsStore
+    var font by remember { mutableStateOf(store.subtitleFontFamily()) }
     var primary by remember { mutableStateOf(store.preferredSubtitleLanguage()) }
     var secondary by remember { mutableStateOf(store.secondarySubtitleLanguage()) }
     var visibility by remember { mutableStateOf(store.subtitleVisibility()) }
@@ -141,6 +152,17 @@ internal fun TvSubtitleSettings(
             .copy(section = "LANGUAGE & BEHAVIOR"),
         toggleEntry("embedded", "Embedded Subtitle Priority", "Prefer subtitle tracks already included in the stream before external tracks when possible.", embedded) { embedded = it; store.setEmbeddedSubtitlePriority(it) }
             .copy(section = "LANGUAGE & BEHAVIOR"),
+        choiceEntry("font", "Subtitle Font", "Choose a font. The preview updates immediately.", com.vueo.shared.core.player.SubtitleFonts.label(font),
+            { font = com.vueo.shared.core.player.SubtitleFonts.next(font, -1); store.setSubtitleFontFamily(font) },
+            { font = com.vueo.shared.core.player.SubtitleFonts.next(font, 1); store.setSubtitleFontFamily(font) })
+            .copy(section = "DISPLAY", supportingContent = {
+                SubtitleFontPreview(com.vueo.tv.player.TvPlayerSubtitleStyleState(
+                    fontFamily = font, fontSizeSp = store.subtitleFontSizeSp(), bold = bold,
+                    textColor = store.subtitleTextColor(), outlineEnabled = outline,
+                    outlineColor = store.subtitleOutlineColor(), backgroundEnabled = backgroundEnabled,
+                    backgroundColor = backgroundColor, backgroundOpacityPercent = backgroundOpacity,
+                ))
+            }),
         choiceEntry("size", "Subtitle Size", "Saved display size preference for the VUEO player.", size.label, { size = cycle(SubtitleSize.entries, size, -1); store.setSubtitleSize(size) }, { size = cycle(SubtitleSize.entries, size, 1); store.setSubtitleSize(size) })
             .copy(section = "DISPLAY"),
         toggleEntry("bold", "Bold Subtitles", "Use heavier subtitle text.", bold) { bold = it; store.setSubtitleBold(it) }
@@ -232,4 +254,41 @@ internal fun TvAppearanceSettings(
         }).copy(section = "NAVIGATION"),
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
+}
+
+@Composable
+internal fun SubtitleFontPreview(style: TvPlayerSubtitleStyleState) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier.fillMaxWidth().height(64.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Color(0xFF101318))
+            .border(1.dp, Color.White.copy(alpha = .10f), RoundedCornerShape(9.dp)),
+        factory = { context -> androidx.media3.ui.SubtitleView(context).apply {
+            isFocusable = false
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setApplyEmbeddedStyles(false)
+            setApplyEmbeddedFontSizes(false)
+            setBottomPaddingFraction(0f)
+            setCues(listOf(androidx.media3.common.text.Cue.Builder()
+                .setText("Contoh sari kata.")
+                .setLine(.5f, androidx.media3.common.text.Cue.LINE_TYPE_FRACTION)
+                .setLineAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE)
+                .setPosition(.5f).setPositionAnchor(androidx.media3.common.text.Cue.ANCHOR_TYPE_MIDDLE)
+                .setSize(.9f).build()))
+        } },
+        update = { view ->
+            view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.coerceIn(16, 26).toFloat())
+            val background = if (style.backgroundEnabled) {
+                (style.backgroundColor and 0x00FFFFFF) or
+                    ((style.backgroundOpacityPercent * 255 / 100) shl 24)
+            } else android.graphics.Color.TRANSPARENT
+            view.setStyle(androidx.media3.ui.CaptionStyleCompat(
+                style.textColor, background, android.graphics.Color.TRANSPARENT,
+                if (style.outlineEnabled) androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                else androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE,
+                style.outlineColor,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(view.context, style.fontFamily, style.bold),
+            ))
+        },
+    )
 }

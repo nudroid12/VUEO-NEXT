@@ -109,6 +109,7 @@ internal data class TvSettingsEntry(
     val providerFailed: Boolean = false,
     val providerPanelStart: Boolean = false,
     val providerPanelEnd: Boolean = false,
+    val supportingContent: (@Composable () -> Unit)? = null,
 )
 
 internal data class TvSettingsNavItem(
@@ -1092,6 +1093,10 @@ internal fun TvSettingsRow(
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
+    if (entry.supportingContent != null) {
+        TvSubtitleFontSettingsCard(entry, requester, first, last, modifier, onLeftToSidebar, onFocused)
+        return
+    }
     var focused by remember(entry.id) { mutableStateOf(false) }
     val canAdjust = entry.onPrevious != null || entry.onNext != null
     val shape = RoundedCornerShape(
@@ -1247,6 +1252,7 @@ internal fun TvSettingsRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            entry.supportingContent?.invoke()
             if (entry.choices.isNotEmpty()) {
                 val selectedIndex = entry.selectedChoiceIndex.coerceIn(0, entry.choices.lastIndex)
                 val firstVisible = (selectedIndex - 1)
@@ -1676,5 +1682,75 @@ private fun TvAddonControls(
                 if (index < categories.lastIndex) Box(Modifier.width(1.dp).height(20.dp).background(TvDesign.White.copy(alpha = .48f)))
             }
         }
+    }
+}
+
+
+/** Font preference and preview share one compact card; only the selector is highlighted. */
+@Composable
+private fun TvSubtitleFontSettingsCard(
+    entry: TvSettingsEntry,
+    requester: FocusRequester,
+    first: Boolean,
+    last: Boolean,
+    modifier: Modifier,
+    onLeftToSidebar: () -> Unit,
+    onFocused: () -> Unit,
+) {
+    var focused by remember(entry.id) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    Column(
+        modifier.fillMaxWidth().focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
+            .onPreviewKeyEvent { event ->
+                val key = event.nativeKeyEvent.keyCode
+                when {
+                    event.type == KeyEventType.KeyDown && first && key == KeyEvent.KEYCODE_DPAD_UP -> true
+                    event.type == KeyEventType.KeyDown && last && key == KeyEvent.KEYCODE_DPAD_DOWN -> true
+                    key == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (event.type == KeyEventType.KeyDown) {
+                            entry.onPrevious?.invoke() ?: onLeftToSidebar()
+                        }
+                        true
+                    }
+                    key == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (event.type == KeyEventType.KeyDown) entry.onNext?.invoke()
+                        true
+                    }
+                    event.isTvActivationKey() -> {
+                        if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .background(TvSettingsContrast.Card, shape)
+            .border(1.dp, TvDesign.White.copy(alpha = if (focused) .28f else .045f), shape)
+            .focusable(enabled = entry.enabled)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(entry.title, color = TvDesign.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Choose your subtitle typeface.", color = TvDesign.Muted, fontSize = 11.sp)
+            }
+            Row(
+                Modifier.width(214.dp).height(36.dp)
+                    .background(if (focused) TvDesign.Accent.copy(alpha = .12f) else TvDesign.White.copy(alpha = .045f), RoundedCornerShape(9.dp))
+                    .border(if (focused) 2.dp else 1.dp, if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .15f), RoundedCornerShape(9.dp)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) { Text("‹", color = TvDesign.White, fontSize = 18.sp) }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(TvDesign.White.copy(alpha = .10f)))
+                Text(entry.value, color = TvDesign.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Box(Modifier.width(1.dp).fillMaxHeight().background(TvDesign.White.copy(alpha = .10f)))
+                Box(Modifier.width(30.dp), contentAlignment = Alignment.Center) { Text("›", color = TvDesign.White, fontSize = 18.sp) }
+            }
+        }
+        entry.supportingContent?.invoke()
     }
 }
