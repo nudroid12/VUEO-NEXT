@@ -2,7 +2,6 @@ package com.vueo.shared.core.plugin
 
 import android.app.ActivityManager
 import android.content.Context
-import android.util.Base64
 import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
@@ -1184,65 +1183,17 @@ private fun emptyDiscoveryResult():
                         )
                     }
 
-                    function<String, String>(
-                        "__vueoBase64"
-                    ) { value ->
-                        Base64.encodeToString(
-                            value.toByteArray(
-                                Charsets.UTF_8
-                            ),
-                            Base64.NO_WRAP,
-                        )
+                    function<String, String>("__vueoBase64") { value ->
+                        BinaryCompatBridge.encodeUtf8(value)
                     }
-
-                    function<String, String>(
-                        "__vueoBase64Decode"
-                    ) { value ->
-                        String(
-                            Base64.decode(
-                                value,
-                                Base64.DEFAULT,
-                            ),
-                            Charsets.UTF_8,
-                        )
+                    function<String, String>("__vueoBase64Decode") { value ->
+                        BinaryCompatBridge.decodeUtf8(value)
                     }
-
-                    function<String, String>(
-                        "__vueoBinaryToBase64"
-                    ) { value ->
-                        val bytes =
-                            ByteArray(value.length) { index ->
-                                (
-                                    value[index].code and 0xFF
-                                ).toByte()
-                            }
-
-                        Base64.encodeToString(
-                            bytes,
-                            Base64.NO_WRAP,
-                        )
+                    function<String, String>("__vueoBinaryToBase64") { value ->
+                        BinaryCompatBridge.encodeBinary(value)
                     }
-
-                    function<String, String>(
-                        "__vueoBase64ToBinary"
-                    ) { value ->
-                        val bytes =
-                            Base64.decode(
-                                value,
-                                Base64.DEFAULT,
-                            )
-
-                        buildString(
-                            bytes.size
-                        ) {
-                            bytes.forEach { byte ->
-                                append(
-                                    (
-                                        byte.toInt() and 0xFF
-                                    ).toChar()
-                                )
-                            }
-                        }
+                    function<String, String>("__vueoBase64ToBinary") { value ->
+                        BinaryCompatBridge.decodeBinary(value)
                     }
 
                     function<String, Boolean>("__vueoFinishExecution") { _ ->
@@ -1589,14 +1540,14 @@ private fun emptyDiscoveryResult():
 
             globalThis.btoa = function (value) {
               return __vueoBinaryToBase64(
-                String(value)
+                JSON.stringify(String(value))
               );
             };
 
             globalThis.atob = function (value) {
-              return __vueoBase64ToBinary(
+              return JSON.parse(__vueoBase64ToBinary(
                 String(value)
-              );
+              ));
             };
 
             globalThis.Buffer = globalThis.Buffer || {
@@ -1606,7 +1557,7 @@ private fun emptyDiscoveryResult():
                 return {
                   toString: function (encoding) {
                     if (encoding === "base64") {
-                      return __vueoBase64(text);
+                      return __vueoBase64(JSON.stringify(text));
                     }
                     return text;
                   }
