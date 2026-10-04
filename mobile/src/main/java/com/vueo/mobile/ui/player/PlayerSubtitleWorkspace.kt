@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -555,7 +556,7 @@ private fun SubtitleStyleCard(
             Color.White.copy(alpha = .09f),
         ),
     ) {
-        Column(Modifier.padding(11.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "Style",
@@ -576,7 +577,7 @@ private fun SubtitleStyleCard(
                     onClick = onOpenStyle,
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
             SubtitleStyleControls(
                 subtitleDelayMs = subtitleDelayMs,
                 style = style,
@@ -738,7 +739,8 @@ private fun SubtitleStyleControls(
     onStyleChange: (PlayerSubtitleStyleState) -> Unit,
 ) {
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(bottom = 12.dp),
     ) {
         item {
             StyleStepper(
@@ -1071,7 +1073,7 @@ private fun StyleColorPicker(
 ) {
     Column {
         Text(label, color = Color.White.copy(alpha = .78f), fontSize = 9.sp)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             colours.forEach { colour ->
                 val isSelected =
