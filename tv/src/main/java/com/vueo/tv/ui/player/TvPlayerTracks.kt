@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Looper
 import android.text.Layout
 import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.SpannedString
 import androidx.media3.common.C
 import androidx.media3.common.text.Cue
@@ -266,16 +268,23 @@ internal class TvSubtitleOffsetRenderersFactory(
 /** Stack simultaneous lower-screen captions even when their horizontal metadata differs.
  * Upper and middle authored placements remain separate.
  * One multiline cue lets SubtitleView measure wrapping and height at the user's
- * font size. Combined bottom captions use the configured Bottom Position.
+ * font size. Single and combined bottom captions use the configured Bottom Position.
+ * Fully tagged commentary is grouped at the top with a safe margin.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
 internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
     val bottomGroup = mutableListOf<Cue>()
+    val commentaryGroup = mutableListOf<Cue>()
     for (cue in cues) {
         if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank()) {
             orderedGroups.add(mutableListOf(cue))
+            continue
+        }
+        if (tvIsTaggedSubtitleCommentary(cue)) {
+            if (commentaryGroup.isEmpty()) orderedGroups.add(commentaryGroup)
+            commentaryGroup.add(cue)
             continue
         }
         if (tvIsBottomSubtitleCue(cue)) {
@@ -299,7 +308,7 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
     // Keep groups in their original order, including bitmap and vertical cues.
     return orderedGroups.map { group ->
         val unique = group.distinctBy { it.text.toString() }
-        if (unique.size == 1) {
+        if (unique.size == 1 && group !== bottomGroup && group !== commentaryGroup) {
             unique.first()
         } else {
             val text = SpannableStringBuilder()
@@ -308,9 +317,9 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
                 text.append(requireNotNull(item.text))
             }
             val builder = unique.first().buildUpon().setText(SpannedString(text))
-            if (group === bottomGroup) {
-                // A single measured block grows upward from the user's Bottom Position.
-                // Different ASS/WebVTT widths/anchors must not create separate overlapping boxes.
+            if (group === bottomGroup || group === commentaryGroup) {
+                // Normalize single captions too: authored lower-screen anchors otherwise
+                // bypass the user's Bottom Position, unlike a stacked group.
                 builder.setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
                     .setLineAnchor(Cue.TYPE_UNSET)
                     .setPosition(Cue.DIMEN_UNSET)
@@ -318,9 +327,32 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
                     .setSize(Cue.DIMEN_UNSET)
                     .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
                     .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
+                if (group === commentaryGroup) {
+                    builder.setLine(.08f, Cue.LINE_TYPE_FRACTION)
+                        .setLineAnchor(Cue.ANCHOR_TYPE_START)
+                        .setPosition(.5f)
+                        .setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
+                        .setSize(.9f)
+                }
             }
             builder.build()
         }
+    }
+}
+
+/** Recognize the fully colored parenthetical commentary convention in the EP814 file.
+ * Parentheses alone or an arbitrary colored fragment are not role metadata.
+ * Inspect parser spans before SubtitleView applies the user's styling preferences.
+ */
+internal fun tvIsTaggedSubtitleCommentary(cue: Cue): Boolean {
+    val text = cue.text as? Spanned ?: return false
+    val trimmed = text.toString().trim()
+    if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return false
+    val markers = text.getSpans(0, text.length, ForegroundColorSpan::class.java)
+        .filter { (it.foregroundColor and 0x00FFFFFF) == 0x00FFFFCC }
+    if (markers.isEmpty()) return false
+    return text.indices.filter { !text[it].isWhitespace() }.all { index ->
+        markers.any { text.getSpanStart(it) <= index && text.getSpanEnd(it) > index }
     }
 }
 

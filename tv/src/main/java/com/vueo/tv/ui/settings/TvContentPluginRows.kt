@@ -88,14 +88,13 @@ private fun TvPluginRepositoryCard(
     val refresh = entries.firstOrNull { it.id == "refresh-repository" }
     val remove = entries.firstOrNull { it.id == "remove-repository" }
     val nextProvider = entries.firstOrNull { it.providerStatus != null }
-    // Use the host's registry for every action so focus restoration also works after dialogs/refresh.
-    var focused by remember(entry.id) { mutableStateOf(false) }
+    // Keep the repository entry ID on the toggle for the host's focus restoration.
+    var toggleFocused by remember(entry.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(15.dp)
     Column(modifier = Modifier.padding(bottom = if (nextProvider != null) 12.dp else 0.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth()
-                .background(if (focused) PluginFocus else PluginSurface, shape)
-                .border(1.dp, if (focused) Color.White else Color.Transparent, shape)
+                .background(PluginSurface, shape)
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -107,52 +106,67 @@ private fun TvPluginRepositoryCard(
                 Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    refresh?.let { action ->
-                        TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
-                            up = FocusRequester.Default
-                            left = FocusRequester.Cancel
-                            right = requesterFor(entry.id)
-                            down = remove?.let { requesterFor(it.id) } ?: FocusRequester.Default
-                        }.onPreviewKeyEvent { event ->
-                            if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                                if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
-                                true
-                            } else false
-                        }, { onEntryFocused(action.id) })
-                    }
-                    Box(Modifier.focusRequester(requesterFor(entry.id))
-                        .focusProperties {
-                            up = FocusRequester.Default
-                            left = refresh?.let { requesterFor(it.id) } ?: FocusRequester.Default
-                            right = FocusRequester.Cancel
-                            down = remove?.let { requesterFor(it.id) } ?: FocusRequester.Default
-                        }
-                        .onFocusChanged {
-                            focused = it.isFocused
-                            if (it.isFocused) onEntryFocused(entry.id)
-                        }
-                        .onPreviewKeyEvent { event ->
-                            when {
-                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && refresh == null && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
-                                activation(event.nativeKeyEvent.keyCode) -> {
-                                    if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
-                                    true
-                                }
-                                else -> false
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                refresh?.let { action ->
+                    TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
+                        up = FocusRequester.Default
+                        left = FocusRequester.Cancel
+                        right = requesterFor(entry.id)
+                        down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                    }.onPreviewKeyEvent { event ->
+                        if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                            if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
+                            true
+                        } else false
+                    }, { onEntryFocused(action.id) })
+                }
+                Column(
+                    modifier = Modifier.width(76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.width(76.dp).height(38.dp)
+                            .focusRequester(requesterFor(entry.id))
+                            .focusProperties {
+                                up = FocusRequester.Default
+                                left = refresh?.let { requesterFor(it.id) } ?: FocusRequester.Default
+                                right = FocusRequester.Cancel
+                                down = remove?.let { requesterFor(it.id) }
+                                    ?: if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
                             }
-                        }.focusable()) {
+                            .onFocusChanged {
+                                toggleFocused = it.isFocused
+                                if (it.isFocused) onEntryFocused(entry.id)
+                            }
+                            .onPreviewKeyEvent { event ->
+                                when {
+                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && refresh == null && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
+                                    activation(event.nativeKeyEvent.keyCode) -> {
+                                        if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
+                            .background(if (toggleFocused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
+                            .border(1.dp, if (toggleFocused) Color.White else Color.Transparent, RoundedCornerShape(50))
+                            .focusable(),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
                     }
-                }
-                remove?.let { action ->
-                    TvRepositoryAction(action, null, if (entry.accented) TvDesign.Accent else Color.White.copy(alpha = .86f), requesterFor(action.id), Modifier.focusProperties {
-                        up = requesterFor(entry.id)
-                        left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
-                        right = FocusRequester.Cancel
-                        down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                    }, { onEntryFocused(action.id) })
+                    remove?.let { action ->
+                        TvRepositoryAction(action, null, if (entry.accented) TvDesign.Accent else Color.White.copy(alpha = .86f), requesterFor(action.id), Modifier.focusProperties {
+                            up = requesterFor(entry.id)
+                            left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
+                            right = FocusRequester.Cancel
+                            down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                        }, { onEntryFocused(action.id) })
+                    }
                 }
             }
         }
