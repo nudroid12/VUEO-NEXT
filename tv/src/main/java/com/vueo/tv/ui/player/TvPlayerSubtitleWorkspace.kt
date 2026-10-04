@@ -2,6 +2,7 @@ package com.vueo.tv.player
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +37,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +49,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
@@ -249,15 +254,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = .20f))
-            .background(
-                Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = .60f),
-                    .38f to Color.Black.copy(alpha = .30f),
-                    .72f to Color.Black.copy(alpha = .15f),
-                    1f to Color.Black.copy(alpha = .08f),
-                )
-            )
+
     ) {
         Column(
             modifier = Modifier
@@ -475,8 +472,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     .padding(bottom = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
-                                VueoSubtitleStepperRow(
+                                VueoSubtitleSliderRow(
                                     title = "Sync",
+                                    fraction = ((subtitleDelayMs + 60_000) / 120_000f),
                                     value = formatSubtitleDelayTv(subtitleDelayMs),
                                     requester = syncRequester,
                                     upRequester = dialogueSyncRequester,
@@ -484,14 +482,15 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs - 50).coerceAtLeast(-60_000))
                                     },
                                     onIncrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs + 50).coerceAtMost(60_000))
                                     },
                                 )
-                                VueoSubtitleStepperRow(
+                                VueoSubtitleSliderRow(
                                     title = "Font Size",
+                                    fraction = ((style.fontSizeSp - 12) / 28f),
                                     value = "${style.fontSizeSp}sp",
                                     requester = sizeRequester,
                                     upRequester = syncRequester,
@@ -541,8 +540,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         )
                                     )
                                 }
-                                VueoSubtitleStepperRow(
+                                VueoSubtitleSliderRow(
                                     title = "Text Opacity",
+                                    fraction = ((opacity - 30) / 70f),
                                     value = "$opacity%",
                                     requester = opacityRequester,
                                     upRequester = textColorRequester,
@@ -615,8 +615,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     ) { colour ->
                                         onStyleChange(style.copy(backgroundColor = colour))
                                     }
-                                    VueoSubtitleStepperRow(
+                                    VueoSubtitleSliderRow(
                                         title = "Background Opacity",
+                                        fraction = ((style.backgroundOpacityPercent - 10) / 90f),
                                         value = "${style.backgroundOpacityPercent}%",
                                         requester = backgroundOpacityRequester,
                                         upRequester = backgroundColorRequester,
@@ -643,8 +644,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         },
                                     )
                                 }
-                                VueoSubtitleStepperRow(
+                                VueoSubtitleSliderRow(
                                     title = "Bottom Position",
+                                    fraction = ((style.bottomPaddingPercent - 5) / 35f),
                                     value = "${style.bottomPaddingPercent}%",
                                     requester = positionRequester,
                                     upRequester = when {
@@ -669,6 +671,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         )
                                     },
                                 )
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 VueoSubtitleActionRow(
                                     title = "Reset Style",
                                     requester = resetRequester,
@@ -678,6 +681,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     onInteraction = onInteraction,
                                 ) {
                                     onStyleChange(TvPlayerSubtitleStyleState())
+                                }
                                 }
                             }
                         } else {
@@ -992,9 +996,10 @@ private fun VueoSubtitleTrackRow(
 }
 
 @Composable
-private fun VueoSubtitleStepperRow(
+private fun VueoSubtitleSliderRow(
     title: String,
     value: String,
+    fraction: Float,
     requester: FocusRequester? = null,
     upRequester: FocusRequester,
     downRequester: FocusRequester,
@@ -1006,77 +1011,53 @@ private fun VueoSubtitleStepperRow(
     val internalRequester = remember(title) { FocusRequester() }
     val valueRequester = requester ?: internalRequester
     var focused by remember(valueRequester) { mutableStateOf(false) }
+    val progress = fraction.coerceIn(0f, 1f)
     val shape = RoundedCornerShape(9.dp)
-
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            title,
-            color = Color.White.copy(alpha = .72f),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Spacer(Modifier.height(3.dp))
-        Row(
-            modifier = Modifier
-                .width(148.dp)
-                .height(26.dp)
-                .focusRequester(valueRequester)
-                .focusProperties {
-                    up = upRequester
-                    down = downRequester
-                    left = leftRequester
-                    right = FocusRequester.Cancel
-                }
-                .onFocusChanged {
-                    focused = it.isFocused
-                    if (it.isFocused) onInteraction()
-                }
-                .onPreviewKeyEvent { event ->
-                    when (event.nativeKeyEvent.keyCode) {
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            if (event.type == KeyEventType.KeyDown) {
-                                onInteraction()
-                                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                                    onDecrease()
-                                } else {
-                                    onIncrease()
-                                }
-                            }
-                            true
-                        }
-                        else -> {
-                            if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
-                            onInteraction()
-                            if (event.type == KeyEventType.KeyUp) onIncrease()
-                            true
-                        }
-                    }
-                }
-                .focusable()
-                .background(
-                if (focused) Color(0xFF555555) else Color.White.copy(alpha = .09f),
-                shape,
-            )
-                .border(
-                    if (focused) 2.dp else 1.dp,
-                    if (focused) Color(0xFF888888) else Color.White.copy(alpha = .08f),
-                    shape,
-                )
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("−", color = Color.White, fontSize = 14.sp)
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(
-                    value,
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
+    val activeColor = TvDesign.Accent
+    Column(
+        Modifier.fillMaxWidth()
+            .focusRequester(valueRequester)
+            .focusProperties {
+                up = upRequester
+                down = downRequester
+                left = leftRequester
+                right = FocusRequester.Cancel
             }
-            Text("+", color = Color.White, fontSize = 14.sp)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (event.type == KeyEventType.KeyDown) {
+                            onInteraction()
+                            if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) onDecrease() else onIncrease()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f) }
+            .focusable()
+            .background(if (focused) activeColor.copy(alpha = .10f) else Color.Transparent, shape)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(title, color = Color.White.copy(alpha = .72f), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text(value, color = if (focused) activeColor else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Canvas(Modifier.fillMaxWidth().height(18.dp)) {
+            val radius = (if (focused) 5.dp else 4.dp).toPx()
+            val start = radius
+            val end = (size.width - radius).coerceAtLeast(start)
+            val thumb = start + (end - start) * progress
+            val y = size.height / 2f
+            val stroke = 2.dp.toPx()
+            drawLine(Color.White.copy(alpha = .20f), Offset(start, y), Offset(end, y), stroke, StrokeCap.Round)
+            drawLine(activeColor, Offset(start, y), Offset(thumb, y), stroke, StrokeCap.Round)
+            drawCircle(activeColor, radius, Offset(thumb, y))
         }
     }
 }
