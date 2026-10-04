@@ -239,6 +239,7 @@ fun TvPlayerScreen(
         mutableStateOf(
             TvPlayerSubtitleStyleState(
                 fontSizeSp = storedSubtitleFontSizeSp,
+                fontFamily = settings.subtitleFontFamily(),
                 bold = settings.subtitleBold(),
                 showCommentary = settings.tvSubtitleCommentaryEnabled(),
                 textColor = if ((storedSubtitleTextColor ushr 24) != 0xFF) {
@@ -1516,7 +1517,7 @@ fun TvPlayerScreen(
                 android.graphics.Color.TRANSPARENT,
                 if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
                 subtitleStyle.outlineColor,
-                if (subtitleStyle.bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(context, subtitleStyle.fontFamily, subtitleStyle.bold),
             )
         }
         val resizeMode = when (videoFit) {
@@ -1915,6 +1916,7 @@ fun TvPlayerScreen(
                 onStyleChange = { updated ->
                     subtitleStyle = updated
                     settings.setSubtitleFontSizeSp(updated.fontSizeSp)
+                    settings.setSubtitleFontFamily(updated.fontFamily)
                     settings.setSubtitleBold(updated.bold)
                     settings.setTvSubtitleCommentaryEnabled(updated.showCommentary)
                     settings.setSubtitleTextColor(updated.textColor)

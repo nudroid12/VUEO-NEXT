@@ -290,11 +290,7 @@ internal fun PlayerView.applyVueoSubtitleStyle(
                     CaptionStyleCompat.EDGE_TYPE_NONE
                 },
                 style.outlineColor,
-                if (style.bold) {
-                    Typeface.DEFAULT_BOLD
-                } else {
-                    Typeface.DEFAULT
-                },
+                com.vueo.shared.core.player.SubtitleFonts.resolve(context, style.fontFamily, style.bold),
             )
         )
     }

@@ -151,6 +151,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     }
     val dialogueSyncRequester = remember { FocusRequester() }
     val floatRequester = remember { FocusRequester() }
+    val fontRequester = remember { FocusRequester() }
     val syncRequester = remember { FocusRequester() }
     val sizeRequester = remember { FocusRequester() }
     val boldRequester = remember { FocusRequester() }
@@ -437,7 +438,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                             VueoSubtitleHeaderButton(
                                 label = "Sync",
                                 requester = dialogueSyncRequester,
-                                downRequester = syncRequester,
+                                downRequester = fontRequester,
                                 leftRequester = styleLeftRequester,
                                 rightRequester = floatRequester,
                                 onInteraction = onInteraction,
@@ -447,7 +448,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                             VueoSubtitleHeaderButton(
                                 label = "Float",
                                 requester = floatRequester,
-                                downRequester = syncRequester,
+                                downRequester = fontRequester,
                                 leftRequester = dialogueSyncRequester,
                                 rightRequester = FocusRequester.Cancel,
                                 onInteraction = onInteraction,
@@ -465,11 +466,15 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     .padding(bottom = 12.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
+                                Text("Font", color = Color.White.copy(alpha = .72f), fontSize = 11.sp)
+                                SubtitleFontChoice(style, fontRequester, dialogueSyncRequester, syncRequester,
+                                    styleLeftRequester, onInteraction, onStyleChange)
+                                SubtitleFontPreview(style)
                                 VueoSubtitleStepperRow(
                                     title = "Sync",
                                     value = formatSubtitleDelayTv(subtitleDelayMs),
                                     requester = syncRequester,
-                                    upRequester = dialogueSyncRequester,
+                                    upRequester = fontRequester,
                                     downRequester = sizeRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
@@ -1292,4 +1297,74 @@ private fun formatSubtitleDelayTv(value: Int): String {
     if (value == 0) return "0.00s"
     val seconds = value / 1000.0
     return java.lang.String.format(java.util.Locale.US, if (value > 0) "+%.2fs" else "%.2fs", seconds)
+}
+
+@Composable
+private fun SubtitleFontChoice(
+    style: TvPlayerSubtitleStyleState,
+    requester: FocusRequester,
+    up: FocusRequester,
+    down: FocusRequester,
+    left: FocusRequester,
+    onInteraction: () -> Unit,
+    onChange: (TvPlayerSubtitleStyleState) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(11.dp)
+    fun change(direction: Int) {
+        onInteraction()
+        onChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, direction)))
+    }
+    Box(Modifier.fillMaxWidth().focusRequester(requester)
+        .focusProperties { this.up = up; this.down = down; this.left = left }
+        .onFocusChanged { focused = it.isFocused; if (it.isFocused) onInteraction() }
+        .onPreviewKeyEvent { event ->
+            when (event.nativeKeyEvent.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (event.type == KeyEventType.KeyDown) change(if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+                    true
+                }
+                else -> if (event.isTvPanelActivationKey()) {
+                    if (event.type == KeyEventType.KeyUp) change(1)
+                    true
+                } else false
+            }
+        }
+        .background(if (focused) TvDesign.Accent.copy(alpha = .12f) else Color.White.copy(alpha = .06f), shape)
+        .border(if (focused) 2.dp else 1.dp, if (focused) TvDesign.Accent else Color.White.copy(alpha = .15f), shape)
+        .clickable { change(1) }.padding(horizontal = 10.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center) {
+        Text("‹  " + com.vueo.shared.core.player.SubtitleFonts.label(style.fontFamily) + "  ›",
+            color = Color.White, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun SubtitleFontPreview(style: TvPlayerSubtitleStyleState) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier.fillMaxWidth().height((style.fontSizeSp * 3 + 12).dp),
+        factory = { context -> androidx.media3.ui.SubtitleView(context).apply {
+            isFocusable = false
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setApplyEmbeddedStyles(false)
+            setApplyEmbeddedFontSizes(false)
+            setBottomPaddingFraction(.12f)
+            setCues(listOf(androidx.media3.common.text.Cue.Builder()
+                .setText("Contoh sari kata.").build()))
+        } },
+        update = { view ->
+            view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
+            val background = if (style.backgroundEnabled) {
+                (style.backgroundColor and 0x00FFFFFF) or
+                    ((style.backgroundOpacityPercent * 255 / 100) shl 24)
+            } else android.graphics.Color.TRANSPARENT
+            view.setStyle(androidx.media3.ui.CaptionStyleCompat(
+                style.textColor, background, android.graphics.Color.TRANSPARENT,
+                if (style.outlineEnabled) androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                else androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE,
+                style.outlineColor,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(view.context, style.fontFamily, style.bold),
+            ))
+        },
+    )
 }

@@ -70,6 +70,7 @@ import com.vueo.shared.core.language.LanguagePolicy
 import kotlin.math.roundToInt
 
 internal data class PlayerSubtitleStyleState(
+    val fontFamily: String = "default",
     val fontSizeSp: Int = 26,
     val bold: Boolean = false,
     val textColor: Int = 0xFFFFFFFF.toInt(),
@@ -743,6 +744,19 @@ private fun SubtitleStyleControls(
         contentPadding = PaddingValues(bottom = 12.dp),
     ) {
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Font", color = Color.White.copy(alpha = .72f), fontSize = 9.sp)
+                Box(Modifier.fillMaxWidth().background(Color.White.copy(alpha = .06f), RoundedCornerShape(9.dp))
+                    .clickable { onStyleChange(style.copy(fontFamily =
+                        com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, 1))) }
+                    .padding(12.dp), contentAlignment = Alignment.Center) {
+                    Text(com.vueo.shared.core.player.SubtitleFonts.label(style.fontFamily) + "  ›",
+                        color = Color.White, fontSize = 11.sp)
+                }
+                SubtitleFontPreview(style)
+            }
+        }
+        item {
             StyleStepper(
                 label = "Sync",
                 value = formatSubtitleDelay(subtitleDelayMs),
@@ -1177,4 +1191,34 @@ internal fun friendlySubtitleLanguageName(value: String?): String =
 private fun withAlpha(colour: Int, opacityPercent: Int): Int {
     val alpha = opacityPercent.coerceIn(0, 100) * 255 / 100
     return (alpha shl 24) or (colour and 0x00FFFFFF)
+}
+
+@Composable
+private fun SubtitleFontPreview(style: PlayerSubtitleStyleState) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        modifier = Modifier.fillMaxWidth().height((style.fontSizeSp * 3 + 12).dp),
+        factory = { context -> androidx.media3.ui.SubtitleView(context).apply {
+            isFocusable = false
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setApplyEmbeddedStyles(false)
+            setApplyEmbeddedFontSizes(false)
+            setBottomPaddingFraction(.12f)
+            setCues(listOf(androidx.media3.common.text.Cue.Builder()
+                .setText("Contoh sari kata.").build()))
+        } },
+        update = { view ->
+            view.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
+            val background = if (style.backgroundEnabled) {
+                (style.backgroundColor and 0x00FFFFFF) or
+                    ((style.backgroundOpacityPercent * 255 / 100) shl 24)
+            } else android.graphics.Color.TRANSPARENT
+            view.setStyle(androidx.media3.ui.CaptionStyleCompat(
+                style.textColor, background, android.graphics.Color.TRANSPARENT,
+                if (style.outlineEnabled) androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                else androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE,
+                style.outlineColor,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(view.context, style.fontFamily, style.bold),
+            ))
+        },
+    )
 }

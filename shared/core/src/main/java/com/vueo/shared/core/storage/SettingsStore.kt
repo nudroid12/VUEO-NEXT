@@ -481,6 +481,15 @@ class SettingsStore(
         prefs.edit().putBoolean(profileKey(KEY_TV_SUBTITLE_COMMENTARY), enabled).apply()
     }
 
+    fun subtitleFontFamily(): String = com.vueo.shared.core.player.SubtitleFonts.normalize(
+        prefs.getString(profileKey("subtitle_font_family"), "default") ?: "default"
+    )
+
+    fun setSubtitleFontFamily(id: String) {
+        prefs.edit().putString(profileKey("subtitle_font_family"),
+            com.vueo.shared.core.player.SubtitleFonts.normalize(id)).apply()
+    }
+
     fun subtitleBold(): Boolean =
         prefs.getBoolean(
             profileKey(KEY_SUBTITLE_BOLD),
