@@ -746,10 +746,9 @@ private fun VueoEpisodeList(
                     blockUp = index == 0,
                     blockDown = index == episodes.lastIndex,
                     onInteraction = onInteraction,
+                    onSelected = { onSelected(episode) },
                     onRange = onRange,
-                ) {
-                    onSelected(episode)
-                }
+                )
             }
         }
     }
