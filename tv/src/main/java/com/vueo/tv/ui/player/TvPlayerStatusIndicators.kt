@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.motion.TvMotion
+
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
