@@ -150,6 +150,7 @@ suspend fun discoverProgressive(
     mediaExternalId: String? = null,
     mediaOriginalLanguage: String? = null,
     forceRefresh: Boolean = false,
+    providerNameFilter: String? = null,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
     supervisorScope {
@@ -201,6 +202,10 @@ suspend fun discoverProgressive(
                         .map { provider ->
                             repository to provider
                         }
+                }
+                .filter { (repository, provider) ->
+                    providerNameFilter == null ||
+                        "${repository.name} / ${provider.name}".equals(providerNameFilter, true)
                 }
                 .sortedWith(
                     compareBy<

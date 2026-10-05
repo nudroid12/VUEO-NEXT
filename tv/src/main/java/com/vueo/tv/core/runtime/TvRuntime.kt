@@ -348,6 +348,8 @@ class TvRuntime(context: Context) {
         episode: EpisodeItem?,
         forceRefresh: Boolean = false,
         discoveryControl: com.vueo.shared.core.source.SourceDiscoveryControl? = null,
+        sourceProviderName: String? = null,
+        discoverSubtitles: Boolean = true,
         onProgress: (String) -> Unit = {},
         onUpdate: (TvSourceDiscoverySnapshot) -> Unit = {},
     ): TvSourceBundle {
@@ -363,6 +365,8 @@ class TvRuntime(context: Context) {
                 videoId = videoId,
                 preferredQuality = settingsStore.preferredQuality().rankKey,
                 forceRefresh = forceRefresh,
+                sourceProviderName = sourceProviderName,
+                discoverSubtitles = discoverSubtitles,
             ),
             control = discoveryControl,
         ) { snapshot ->

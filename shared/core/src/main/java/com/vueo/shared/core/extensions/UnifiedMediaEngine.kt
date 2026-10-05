@@ -1355,6 +1355,7 @@ class UnifiedMediaEngine {
     suspend fun resolveStreamsProgressive(
         type: String,
         videoId: String,
+        providerNameFilter: String? = null,
         onActivity: (AddonRequestActivity) -> Unit = {},
         onProgress: suspend (AddonStreamProgress) -> Unit,
     ): List<StreamSource> = coroutineScope {
@@ -1364,7 +1365,8 @@ class UnifiedMediaEngine {
                     it.descriptor.id
                 ) &&
                     "stream" in
-                        it.descriptor.resources
+                        it.descriptor.resources &&
+                    (providerNameFilter == null || it.descriptor.name.equals(providerNameFilter, true))
             }
 
         if (providers.isEmpty()) {

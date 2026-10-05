@@ -42,4 +42,16 @@ class NextEpisodeSourcePolicyTest {
         val available = source("Other", "Server B", 2)
         assertEquals(available, NextEpisodeSourcePolicy.select(listOf(available), null, false, false, "1080p", null))
     }
+    @Test fun prefetchNeverReturnsAnotherProviderOrDifferentServer() {
+        assertNull(NextEpisodeSourcePolicy.matchingServer(
+            listOf(source("Other", "Server A", 2), source("Repo / Provider", "Server B", 2)),
+            current, "1080p", null,
+        ))
+    }
+    @Test fun prefetchMatchesSameServerAcrossEpisodeUrls() {
+        val matching = source("Repo / Provider", "Server A", 2)
+        assertEquals(matching, NextEpisodeSourcePolicy.matchingServer(
+            listOf(source("Other", "Server A", 2), matching), current, "1080p", null,
+        ))
+    }
 }

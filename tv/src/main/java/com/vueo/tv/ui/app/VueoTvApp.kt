@@ -129,6 +129,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoveryJob by remember { mutableStateOf<Job?>(null) }
     var sourceDiscoveryGeneration by remember { mutableIntStateOf(0) }
     var sourceDiscoveryControl by remember { mutableStateOf<SourceDiscoveryControl?>(null) }
+    var episodePrefetch by remember { mutableStateOf<TvEpisodePrefetch?>(null) }
+    var playingEpisodePrefetch by remember { mutableStateOf<TvEpisodePrefetch?>(null) }
     var failedSourceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var switchingEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
     var switchingPreferredSource by remember { mutableStateOf<StreamSource?>(null) }
@@ -245,6 +247,73 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     fun sourceSessionKey(media: MediaItem, episode: EpisodeItem?): String =
         "${media.type}:${media.id}:${episode?.id ?: media.id}"
 
+    fun cancelEpisodePrefetch() {
+        playingEpisodePrefetch?.cancel()
+        playingEpisodePrefetch = null
+        episodePrefetch?.cancel()
+        episodePrefetch = null
+    }
+
+    fun startEpisodePrefetch(target: EpisodeItem, current: StreamSource) {
+        val media = selectedMedia ?: return
+        if (route != TvRoute.PLAYER || switchingEpisode != null) return
+        if (episodePrefetch?.originSession == playerSessionId) return
+        if (episodePrefetch?.claimed == true) {
+            // A short episode can reach its prefetch window while its own
+            // subtitle retries are still finishing. Keep those retries alive.
+            playingEpisodePrefetch?.cancel()
+            playingEpisodePrefetch = episodePrefetch
+            episodePrefetch = null
+        } else {
+            episodePrefetch?.cancel()
+        }
+        val pending = TvEpisodePrefetch("${media.type}:${media.id}", playerSessionId, target, current)
+        episodePrefetch = pending
+        RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_PREFETCH_START",
+            "episode=S${target.season}E${target.episode} provider=${current.providerName}")
+        pending.job = sourceDiscoveryScope.launch {
+            try {
+                runtime.discover(
+                    item = media, episode = target, forceRefresh = true,
+                    sourceProviderName = current.providerName,
+                    discoveryControl = pending.control,
+                    onUpdate = { snapshot ->
+                        if (episodePrefetch === pending || playingEpisodePrefetch === pending) {
+                            pending.subtitlesResolved = snapshot.subtitlesResolved
+                            val previous = pending.bundle
+                            pending.bundle = snapshot.bundle.copy(subtitles =
+                                (previous?.subtitles.orEmpty() + snapshot.bundle.subtitles).distinctBy { it.url })
+                            if (pending.matchedSource == null) {
+                                pending.matchedSource = com.vueo.shared.core.player.NextEpisodeSourcePolicy.matchingServer(
+                                    snapshot.bundle.sources, current,
+                                    runtime.settingsStore.preferredQuality().rankKey, media.originalLanguage,
+                                )
+                                if (pending.matchedSource != null) {
+                                    pending.matchedAtMs = android.os.SystemClock.elapsedRealtime()
+                                    pending.control.stopSources()
+                                    pending.sourcesReady.complete(Unit)
+                                    RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_PREFETCH_READY",
+                                        "episode=S${target.season}E${target.episode} server=${com.vueo.shared.core.player.PlayerSourceDisplay.title(requireNotNull(pending.matchedSource))}")
+                                }
+                            }
+                            // Standby retains only the exact server; other returned servers
+                            // do not become background fallback candidates.
+                            pending.bundle = pending.bundle?.copy(sources = listOfNotNull(pending.matchedSource))
+                            if (!snapshot.searching) pending.sourcesReady.complete(Unit)
+                            pending.onSubtitles?.invoke()
+                        }
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                pending.failed = true
+            } finally {
+                pending.sourcesReady.complete(Unit)
+            }
+        }
+    }
+
     fun stopSourceDiscovery(markStopped: Boolean) {
         sourceDiscoveryGeneration += 1
         sourceDiscoveryJob?.cancel()
@@ -273,6 +342,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     }
 
     fun cancelEpisodeSwitch() {
+        cancelEpisodePrefetch()
         stopSourceDiscovery(markStopped = true)
         switchingEpisode = null
         switchingPreferredSource = null
@@ -299,11 +369,19 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         val media = selectedMedia ?: return
         if (route != TvRoute.PLAYER) return
         if (!force && switchingEpisode != null) return
+        val prefetched = episodePrefetch?.takeIf {
+            !force && it.reusable("${media.type}:${media.id}", playerSessionId, target,
+                preferredSource, android.os.SystemClock.elapsedRealtime())
+        }
+        playingEpisodePrefetch?.cancel()
+        playingEpisodePrefetch = null
+        if (prefetched == null) cancelEpisodePrefetch()
+        else prefetched.claimed = true
         sourceDiscoveryGeneration += 1
         val generation = sourceDiscoveryGeneration
         sourceDiscoveryJob?.cancel()
         val discoveryControl = SourceDiscoveryControl()
-        sourceDiscoveryControl = discoveryControl
+        sourceDiscoveryControl = prefetched?.control ?: discoveryControl
         switchingEpisode = target
         switchingPreferredSource = preferredSource
         switchingBundle = null
@@ -368,21 +446,64 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             }
         }
 
+        fun withPrefetchedSubtitles(next: TvSourceBundle): TvSourceBundle = next.copy(
+            subtitles = (prefetched?.bundle?.subtitles.orEmpty() + next.subtitles).distinctBy { it.url },
+        )
+        prefetched?.onSubtitles = {
+            if (sourceDiscoveryGeneration == generation && route == TvRoute.PLAYER) {
+                switchingBundle = switchingBundle?.let(::withPrefetchedSubtitles)
+                sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let {
+                    it.copy(bundle = withPrefetchedSubtitles(it.bundle),
+                        subtitlesResolved = prefetched?.subtitlesResolved == true)
+                }
+                if (sourceBundle?.videoId == target.id) {
+                    sourceBundle = sourceBundle?.let(::withPrefetchedSubtitles)
+                }
+            }
+        }
         sourceDiscoveryJob = sourceDiscoveryScope.launch {
             try {
+                if (prefetched != null) {
+                    // Await the existing filtered scan, never start a duplicate.
+                    prefetched.sourcesReady.await()
+                    if (sourceDiscoveryGeneration != generation || route != TvRoute.PLAYER) return@launch
+                    val standby = prefetched.bundle
+                    val matched = prefetched.matchedSource
+                    if (!prefetched.failed && standby != null && matched != null) {
+                        sourceDiscoveryControl = prefetched.control
+                        sourceDiscoverySnapshot = TvSourceDiscoverySnapshot(
+                            bundle = standby, rawCount = standby.sources.size, notice = null,
+                            searching = false, progress = "Next episode ready", firstResultMs = null,
+                            providerOrder = listOf(matched.providerName), fromCache = false,
+                            subtitlesResolved = prefetched.subtitlesResolved, sourcesStopped = true, pluginsStopped = true,
+                            completedSourceProviders = listOf(matched.providerName),
+                            plannedSourceProviders = listOf(matched.providerName),
+                        )
+                        accept(standby, completed = true)
+                        prefetched.job?.join()
+                        return@launch
+                    }
+                    RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_PREFETCH_FALLBACK",
+                        "episode=S${target.season}E${target.episode} matchingServer=false")
+                }
+                sourceDiscoveryControl = discoveryControl
                 val result = runtime.discover(
                     item = media,
                     episode = target,
                     forceRefresh = force || targetKey in failedSourceKeys,
                     discoveryControl = discoveryControl,
+                    // The prefetch subtitle worker remains the owner during fallback.
+                    discoverSubtitles = prefetched == null || prefetched.failed,
                     onUpdate = { snapshot ->
                         if (sourceDiscoveryGeneration == generation && route == TvRoute.PLAYER) {
-                            sourceDiscoverySnapshot = snapshot
-                            accept(snapshot.bundle, completed = !snapshot.searching)
+                            val merged = snapshot.copy(bundle = withPrefetchedSubtitles(snapshot.bundle))
+                            sourceDiscoverySnapshot = merged
+                            accept(merged.bundle, completed = !merged.searching)
                         }
                     },
                 )
-                accept(result, completed = true)
+                accept(withPrefetchedSubtitles(result), completed = true)
+                prefetched?.job?.join()
                 RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_DISCOVERY_FINISHED",
                     "episode=S${target.season}E${target.episode} sources=${result.sources.size} subtitleTracks=${result.subtitles.size}")
             } catch (cancelled: CancellationException) {
@@ -403,6 +524,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         episode: EpisodeItem?,
         force: Boolean = false,
     ) {
+        if (force && route == TvRoute.PLAYER) cancelEpisodePrefetch()
         val key = sourceSessionKey(media, episode)
         val effectiveForce = force || key in failedSourceKeys
         if (
@@ -495,6 +617,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     }
 
     LaunchedEffect(route, selectedMedia?.id, selectedMedia?.type, selectedEpisode?.id) {
+        if (route != TvRoute.PLAYER) cancelEpisodePrefetch()
         when (route) {
             TvRoute.SOURCE -> selectedMedia?.let { media ->
                 startSourceDiscovery(media, selectedEpisode)
@@ -753,6 +876,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 },
                                 onLibraryChanged = { refreshToken++ },
                                 onPlayNextEpisode = { target, current -> startEpisodeSwitch(target, preferredSource = current) },
+                                onPrefetchNextEpisode = { target, current -> startEpisodePrefetch(target, current) },
+                                onActiveSourceChanged = { current ->
+                                    episodePrefetch?.takeIf {
+                                        !it.claimed && !com.vueo.shared.core.player.NextEpisodeSourcePolicy.sameServer(it.preferredSource, current)
+                                    }?.let { cancelEpisodePrefetch() }
+                                },
                                 episodeSwitching = switchingEpisode != null,
                                 onEpisodeFrameReady = {
                                     if (playerSessionId == playbackSession && switchingCommitted && switchingEpisode?.id == bundle.videoId) {

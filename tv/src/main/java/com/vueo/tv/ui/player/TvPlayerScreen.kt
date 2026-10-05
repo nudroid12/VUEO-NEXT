@@ -159,6 +159,8 @@ fun TvPlayerScreen(
     onStopSources: () -> Unit = {},
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
+    onPrefetchNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
+    onActiveSourceChanged: (StreamSource) -> Unit = {},
     episodeSwitching: Boolean = false,
     onEpisodeFrameReady: () -> Unit = {},
     onEpisodePlaybackFailed: (String) -> Unit = {},
@@ -266,31 +268,16 @@ fun TvPlayerScreen(
             )
         )
     }
-    var pendingSubtitleSelectionId by remember(mediaKey) {
-        val contentSelection = settings.subtitleSelection(mediaKey)
-        val globalSelection = settings.lastSubtitleSelection()
-        val savedLanguage = globalSelection
+    fun rememberedExternalSubtitle(): String? {
+        val savedLanguage = settings.lastSubtitleSelection()
             ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
-            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
-        mutableStateOf(
-            contentSelection
-                ?.takeIf {
-                    globalSelection != TV_SUBTITLE_OFF &&
-                        it.startsWith("external:")
-                }
-                ?: if (
-                    contentSelection == null &&
-                    globalSelection != TV_SUBTITLE_OFF &&
-                    savedLanguage != null
-                ) {
-                    liveSubtitles.firstOrNull { subtitle ->
-                        tvCanonicalLanguage(subtitle.language) ==
-                            tvCanonicalLanguage(savedLanguage)
-                    }?.let(::tvExternalSubtitleSelectionId)
-                } else {
-                    null
-                }
-        )
+            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX) ?: return null
+        return liveSubtitles.firstOrNull {
+            tvCanonicalLanguage(it.language) == tvCanonicalLanguage(savedLanguage)
+        }?.let(::tvExternalSubtitleSelectionId)
+    }
+    var pendingSubtitleSelectionId by remember(mediaKey) {
+        mutableStateOf(rememberedExternalSubtitle())
     }
     var translatingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf<String?>(null)
@@ -379,6 +366,17 @@ fun TvPlayerScreen(
     var controlFocusHandoffPending by remember { mutableStateOf(true) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
+    LaunchedEffect(activeSource.url) { onActiveSourceChanged(activeSource) }
+    var prefetchDispatched by remember(bundle.videoId) { mutableStateOf(false) }
+    val prefetchEligible = playing && !episodeSwitching && nextEpisode != null &&
+        durationMs > 0L && positionMs >= (durationMs - 300_000L).coerceAtLeast(0L)
+    LaunchedEffect(prefetchEligible, nextEpisode?.id) {
+        if (prefetchEligible && !prefetchDispatched) {
+            prefetchDispatched = true
+            nextEpisode?.let { onPrefetchNextEpisode(it, activeSource) }
+        }
+    }
+
     val activeSkip = remember(positionMs, durationMs, skipSegments) {
         PlayerSkipPolicy.activeSegment(skipSegments, positionMs, durationMs)
     }
@@ -630,7 +628,10 @@ fun TvPlayerScreen(
         textTracks = emptyList()
         audioTracks = emptyList()
 
-        val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
+        val primaryLanguage = settings.lastSubtitleSelection()
+            ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
+            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
+            ?: settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
 
@@ -674,34 +675,16 @@ fun TvPlayerScreen(
             currentPositionMs = player.currentPosition,
             lastKnownPositionMs = positionMs,
         )
-        val primaryLanguage = settings.preferredSubtitleLanguage().languageCode
+        val primaryLanguage = settings.lastSubtitleSelection()
+            ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
+            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
+            ?: settings.preferredSubtitleLanguage().languageCode
         val secondaryLanguage = settings.secondarySubtitleLanguage().languageCode
         val languages = listOfNotNull(primaryLanguage, secondaryLanguage).distinct()
         audioPreferenceRestored = false
         subtitlePreferenceRestored = false
         if (pendingSubtitleSelectionId == null) {
-            val contentSelection = settings.subtitleSelection(mediaKey)
-            val globalSelection = settings.lastSubtitleSelection()
-            val savedLanguage = globalSelection
-                ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
-                ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
-            pendingSubtitleSelectionId = contentSelection
-                ?.takeIf {
-                    globalSelection != TV_SUBTITLE_OFF &&
-                        it.startsWith("external:")
-                }
-                ?: if (
-                    contentSelection == null &&
-                    globalSelection != TV_SUBTITLE_OFF &&
-                    savedLanguage != null
-                ) {
-                    liveSubtitles.firstOrNull { subtitle ->
-                        tvCanonicalLanguage(subtitle.language) ==
-                            tvCanonicalLanguage(savedLanguage)
-                    }?.let(::tvExternalSubtitleSelectionId)
-                } else {
-                    null
-                }
+            pendingSubtitleSelectionId = rememberedExternalSubtitle()
         }
         val updatedMediaItem = buildMediaItem(
                 mediaMimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(activeSource.mimeType, activeSource.url, activeSource.name, activeSource.serverName),
@@ -1000,22 +983,15 @@ fun TvPlayerScreen(
 
             if (tracksBelongToActiveSource && !subtitlePreferenceRestored && currentTextTracks.isNotEmpty()) {
                 val globalSelection = settings.lastSubtitleSelection()
-                val contentSelection = settings.subtitleSelection(mediaKey)
-                val savedSelection = PlayerTrackPolicy.resolvedSubtitleSelection(
-                    globalSelection = globalSelection,
-                    contentSelection = contentSelection,
-                )
-                val savedLanguage = (globalSelection ?: contentSelection)
+                val savedSelection = globalSelection
+                val savedLanguage = globalSelection
                     ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
                     ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
-                val savedTrack = contentSelection
-                    ?.let { selectionId -> currentTextTracks.firstOrNull { it.selectionId == selectionId } }
-                    ?: savedLanguage?.let { language ->
-                        currentTextTracks.firstOrNull {
-                            tvCanonicalLanguage(it.language) == tvCanonicalLanguage(language)
-                        }
+                val savedTrack = savedLanguage?.let { language ->
+                    currentTextTracks.firstOrNull {
+                        tvCanonicalLanguage(it.language) == tvCanonicalLanguage(language)
                     }
-                    ?: currentTextTracks.firstOrNull { it.selectionId == savedSelection }
+                }
 
                 when {
                     savedSelection == TV_SUBTITLE_OFF -> {
@@ -1780,7 +1756,6 @@ fun TvPlayerScreen(
             fun commitSelection(selected: TvPlayerTrackChoice) {
                 tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
                 subtitlesDisabled = false
-                settings.setSubtitleSelection(mediaKey, selected.selectionId)
                 settings.setLastSubtitleSelection(
                     PlayerTrackPolicy.subtitleLanguageSelectionId(selected.language)
                 )
@@ -1857,7 +1832,6 @@ fun TvPlayerScreen(
                         selectionConfirmed = confirmed
                         if (confirmed) {
                             subtitlesDisabled = false
-                            settings.setSubtitleSelection(mediaKey, preparedChoice.selectionId)
                             settings.setLastSubtitleSelection(
                                 PlayerTrackPolicy.subtitleLanguageSelectionId(preparedChoice.language)
                             )
@@ -1925,7 +1899,6 @@ fun TvPlayerScreen(
                     requestedSubtitleSelectionId = null
                     tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                     subtitlesDisabled = true
-                    settings.setSubtitleSelection(mediaKey, TV_SUBTITLE_OFF)
                     settings.setLastSubtitleSelection(TV_SUBTITLE_OFF)
                 },
                 onSelect = { choice ->

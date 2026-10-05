@@ -7,6 +7,16 @@ object NextEpisodeSourcePolicy {
     private fun sameProvider(a: StreamSource, b: StreamSource): Boolean =
         a.providerId == b.providerId && a.providerName.trim().equals(b.providerName.trim(), true)
 
+    fun sameServer(a: StreamSource, b: StreamSource): Boolean =
+        sameProvider(a, b) && PlayerSourceDisplay.title(a).trim()
+            .equals(PlayerSourceDisplay.title(b).trim(), true)
+
+    fun matchingServer(sources: List<StreamSource>, current: StreamSource,
+        preferredQuality: String?, originalLanguage: String?): StreamSource? =
+        sources.filter { it.isDirectPlayable && sameServer(it, current) }
+            .sortedWith(PlayerSourcePolicy.comparator(preferredQuality, originalLanguage))
+            .firstOrNull()
+
     fun select(
         sources: List<StreamSource>,
         current: StreamSource?,

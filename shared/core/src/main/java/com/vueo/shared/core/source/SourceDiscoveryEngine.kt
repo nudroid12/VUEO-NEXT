@@ -44,7 +44,7 @@ class SourceDiscoveryEngine(
             mediaId = item.id,
             videoId = videoId,
         )
-        val cached = SourceDiscoveryCache.get(cacheKey)
+        val cached = if (request.sourceProviderName == null) SourceDiscoveryCache.get(cacheKey) else null
         // Per-scan memoization avoids parsing the same source on every update.
         val episodeDecisions = ConcurrentHashMap<StreamSource, String>()
         fun rejectionReason(source: StreamSource): String {
@@ -98,7 +98,7 @@ class SourceDiscoveryEngine(
         val plannedSourceProviders = (
             mediaEngine.installed().filter {
                 mediaEngine.isExtensionEnabled(it.descriptor.id) && "stream" in it.descriptor.resources
-            }.map { it.descriptor.name } + configuredPluginProviderKeys(request)
+            }.map { it.descriptor.name }.filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) } + configuredPluginProviderKeys(request)
         ).distinct()
 
         fun markProviderLoading(provider: String) {
@@ -279,6 +279,10 @@ class SourceDiscoveryEngine(
         publish(latestProgress, streams = cachedStreams)
 
         val subtitlesUpdateDeferred = async {
+            if (!request.discoverSubtitles) {
+                subtitlesResolved = true
+                return@async
+            }
             activity("subtitles", message = "Subtitle discovery started in parallel")
             request.subtitleLanguageCodes
                 ?.takeIf { it.isNotEmpty() }
@@ -335,6 +339,7 @@ class SourceDiscoveryEngine(
             publish(latestProgress)
             try {
                 mediaEngine.resolveStreamsProgressive(
+                    providerNameFilter = request.sourceProviderName,
                     type = item.type,
                     videoId = videoId,
                     onActivity = { event ->
@@ -545,7 +550,7 @@ class SourceDiscoveryEngine(
             subtitles = subtitles,
         )
 
-        if (finalStreams.isNotEmpty()) {
+        if (finalStreams.isNotEmpty() && request.sourceProviderName == null) {
             SourceDiscoveryCache.put(
                 key = cacheKey,
                 sources = finalStreams.map { it.toSourceCandidate() },
@@ -607,7 +612,8 @@ class SourceDiscoveryEngine(
         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
         forceRefresh: Boolean,
     ): PluginDiscoveryResult? {
-        if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty()) {
+        if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty() ||
+            (request.sourceProviderName != null && configuredPluginProviderKeys(request).isEmpty())) {
             return null
         }
 
@@ -644,6 +650,7 @@ class SourceDiscoveryEngine(
                 mediaYear = item.releaseInfo,
                 mediaExternalId = item.id,
                 mediaOriginalLanguage = item.originalLanguage,
+                providerNameFilter = request.sourceProviderName,
                 forceRefresh = forceRefresh,
             ) { progress ->
                 onProgress(
@@ -687,6 +694,7 @@ class SourceDiscoveryEngine(
                     }
                     .map { provider -> "${repository.name} / ${provider.name}" }
             }
+            .filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) }
             .distinct()
             .toList()
     }
@@ -715,6 +723,8 @@ data class SourceDiscoveryRequest(
     val preferredQuality: String? = null,
     val forceRefresh: Boolean = false,
     val subtitleLanguageCodes: Set<String>? = null,
+    val sourceProviderName: String? = null,
+    val discoverSubtitles: Boolean = true,
 )
 
 data class SourceDiscoverySnapshot(
