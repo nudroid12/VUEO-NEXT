@@ -29,6 +29,9 @@ import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal class TvEpisodeRangeState(val episodes: List<EpisodeItem>, initialId: String?) {
     val groups = episodes.chunked(50)
@@ -40,6 +43,7 @@ internal class TvEpisodeRangeState(val episodes: List<EpisodeItem>, initialId: S
     val visible get() = groups.getOrNull(group).orEmpty()
     fun select(index: Int, focusCards: Boolean = false, last: Boolean = false) {
         if (index !in groups.indices) return
+        if (index == group && !focusCards) return
         this.focusCards = focusCards
         group = index
         targetId = (if (last) visible.lastOrNull() else visible.firstOrNull())?.id
@@ -83,7 +87,11 @@ internal fun TvEpisodeRangeControls(
     var viewportWidth by remember { mutableIntStateOf(0) }
     var focusedIndex by remember(state) { mutableIntStateOf(state.group) }
     var rowHasFocus by remember { mutableStateOf(false) }
-    var lastMoveTime by remember { mutableLongStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    var heldKey by remember { mutableIntStateOf(0) }
+    var repeatJob by remember { mutableStateOf<Job?>(null) }
+    val latestInteraction by rememberUpdatedState(onInteraction)
+    DisposableEffect(state) { onDispose { repeatJob?.cancel() } }
     val gapPx = with(LocalDensity.current) { 8.dp.toPx() }
     // The explicit centering below owns scrolling; disable a second focus scroll.
     val noAutomaticScroll = remember {
@@ -133,27 +141,55 @@ internal fun TvEpisodeRangeControls(
             velocity = 0f
         }
     }
-    fun horizontalKey(event: androidx.compose.ui.input.key.KeyEvent, index: Int): Boolean {
+    fun move(direction: Int) {
+        val next = focusedIndex + direction
+        if (next in chipRequesters.indices) {
+            latestInteraction()
+            chipRequesters[next].requestFocus()
+        }
+    }
+    // Own the held key at the row, so repeat survives focus moving between chips.
+    fun horizontalKey(event: androidx.compose.ui.input.key.KeyEvent): Boolean {
         val native = event.nativeKeyEvent
         val direction = when (native.keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> -1
             KeyEvent.KEYCODE_DPAD_RIGHT -> 1
             else -> return false
         }
-        if (native.action == KeyEvent.ACTION_DOWN) {
-            if (native.repeatCount > 0 && native.eventTime - lastMoveTime < 140L) return true
-            lastMoveTime = native.eventTime
-            onInteraction()
-            val next = index + direction
-            if (next in chipRequesters.indices) chipRequesters[next].requestFocus()
+        if (native.action == KeyEvent.ACTION_UP) {
+            repeatJob?.cancel(); repeatJob = null; heldKey = 0
+            if (focusedIndex in state.groups.indices) state.select(focusedIndex)
+        } else if (native.action == KeyEvent.ACTION_DOWN && heldKey != native.keyCode) {
+            repeatJob?.cancel()
+            val keyCode = native.keyCode
+            heldKey = keyCode
+            move(direction)
+            repeatJob = scope.launch {
+                delay(320L)
+                while (rowHasFocus && heldKey == keyCode) {
+                    move(direction)
+                    delay(160L)
+                }
+            }
         }
         return true
+    }
+    // Commit once the focus settles, avoiding repeated episode/image replacement while holding.
+    LaunchedEffect(focusedIndex, rowHasFocus) {
+        if (rowHasFocus && focusedIndex in state.groups.indices) {
+            delay(190L)
+            state.select(focusedIndex)
+        }
     }
     CompositionLocalProvider(LocalBringIntoViewSpec provides noAutomaticScroll) {
     Row(
         modifier = modifier.fillMaxWidth()
             .onSizeChanged { viewportWidth = it.width }
-            .onFocusChanged { rowHasFocus = it.hasFocus }
+            .onFocusChanged {
+                rowHasFocus = it.hasFocus
+                if (!it.hasFocus) { repeatJob?.cancel(); repeatJob = null; heldKey = 0 }
+            }
+            .onPreviewKeyEvent { horizontalKey(it) }
             .focusGroup()
             .horizontalScroll(row)
             .padding(vertical = 5.dp),
@@ -163,13 +199,12 @@ internal fun TvEpisodeRangeControls(
         key(index) {
             var focused by remember { mutableStateOf(false) }
             val selected = index == state.group
-            Box(Modifier.onSizeChanged { chipWidths[index] = it.width }.focusRequester(chipRequesters[index]).then(if (selected) Modifier.focusRequester(requester) else Modifier)
+            Box(Modifier.onSizeChanged { chipWidths[index] = it.width }.focusRequester(chipRequesters[index]).focusRequester(if (selected) requester else chipRequesters[index])
                 .focusProperties { up = upRequester; if (index == 0) left = FocusRequester.Cancel }
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { focusedIndex = index; onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
-                    if (horizontalKey(event, index)) true
-                    else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
-                    else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) { onInteraction(); onDown() }; true }
+                    if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
+                    else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) { state.select(index); onInteraction(); onDown() }; true }
                 }
                 .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color(0xFF303030), shape)
                 .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .15f), shape)
@@ -183,8 +218,7 @@ internal fun TvEpisodeRangeControls(
             Box(Modifier.onSizeChanged { chipWidths[state.groups.size] = it.width }.focusRequester(chipRequesters.last()).focusProperties { up = upRequester; right = FocusRequester.Cancel }
                 .onFocusChanged { focused = it.isFocused; if (it.isFocused) { focusedIndex = state.groups.size; onFocused(); onInteraction() } }
                 .onPreviewKeyEvent { event ->
-                    if (horizontalKey(event, state.groups.size)) true
-                    else if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
+                    if (event.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_DPAD_DOWN) false
                     else { if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) onDown(); true }
                 }
                 .background(if (focused) Color(0xFF555555) else Color(0xFF303030), shape).border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .4f), shape)

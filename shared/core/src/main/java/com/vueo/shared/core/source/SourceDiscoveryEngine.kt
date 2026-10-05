@@ -240,6 +240,7 @@ class SourceDiscoveryEngine(
                     searching = searching,
                     progress = displayedProgress,
                     pluginsStopped = control?.pluginsStopped == true,
+                    sourcesStopped = control?.sourcesStopped == true,
                     firstResultMs = firstResultMs,
                     providerOrder = providerOrder,
                     fromCache = cachedStreams.isNotEmpty(),
@@ -319,7 +320,7 @@ class SourceDiscoveryEngine(
             }
         }
 
-        val addonsDeferred = async {
+        val addonsDeferred = async(start = CoroutineStart.LAZY) {
             activity("requests", message = "Addon source requests started")
             publish(latestProgress)
             try {
@@ -355,8 +356,14 @@ class SourceDiscoveryEngine(
                 )
                 publish(latestProgress)
                 emptyList()
+            } finally {
+                if (control?.sourcesStopped == true) publish("Source scan stopped")
             }
         }
+
+        control?.attachAddons(addonsDeferred)
+        addonsDeferred.invokeOnCompletion { control?.detachAddons(addonsDeferred) }
+        addonsDeferred.start()
 
         val pluginsDeferred = async(start = CoroutineStart.LAZY) {
             val configuredPluginProviders = configuredPluginProviderKeys(request)
@@ -460,7 +467,13 @@ class SourceDiscoveryEngine(
         pluginsDeferred.invokeOnCompletion { control?.detachPlugins(pluginsDeferred) }
         pluginsDeferred.start()
 
-        freshAddonStreams = addonsDeferred.await()
+        try {
+            freshAddonStreams = addonsDeferred.await()
+        } catch (cancelled: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (control?.sourcesStopped != true) throw cancelled
+            // Keep partial addon results; subtitles continue in their sibling job.
+        }
         val pluginResult = try {
             pluginsDeferred.await()
         } catch (cancelled: CancellationException) {
@@ -477,7 +490,7 @@ class SourceDiscoveryEngine(
         }
 
         val freshFinal = cleanFresh()
-        val finalStreams = if (control?.pluginsStopped == true) SourceCleaner.clean(
+        val finalStreams = if (control?.pluginsStopped == true || control?.sourcesStopped == true) SourceCleaner.clean(
             sources = cachedStreams + freshFinal,
             preferredQuality = preferredQuality,
             originalLanguage = item.originalLanguage,
@@ -490,7 +503,9 @@ class SourceDiscoveryEngine(
             cached?.rawCount ?: 0,
             addonRawCount + pluginRawCount,
         )
-        val finalProgress = if (control?.pluginsStopped == true) {
+        val finalProgress = if (control?.sourcesStopped == true) {
+            "Source scan stopped • ${finalStreams.size} unique sources"
+        } else if (control?.pluginsStopped == true) {
             "Search finished • plugins stopped • ${finalStreams.size} unique sources"
         } else if (finalStreams.isEmpty()) {
             "Search complete • no sources found"
@@ -536,6 +551,7 @@ class SourceDiscoveryEngine(
                 notice = notice,
                 searching = false,
                 pluginsStopped = control?.pluginsStopped == true,
+                sourcesStopped = control?.sourcesStopped == true,
                 progress = finalProgress,
                 firstResultMs = firstResultMs,
                 providerOrder = providerOrder,
@@ -558,6 +574,7 @@ class SourceDiscoveryEngine(
                 notice = notice,
                 searching = false,
                 pluginsStopped = control?.pluginsStopped == true,
+                sourcesStopped = control?.sourcesStopped == true,
                 progress = finalProgress,
                 firstResultMs = firstResultMs,
                 providerOrder = providerOrder,
@@ -699,6 +716,7 @@ data class SourceDiscoverySnapshot(
     val activityLog: List<SourceDiscoveryActivity> = emptyList(),
     val loadingProviders: List<String> = emptyList(),
     val pluginsStopped: Boolean = false,
+    val sourcesStopped: Boolean = false,
 )
 
 data class SourceDiscoveryActivity(

@@ -34,6 +34,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
@@ -124,6 +127,8 @@ internal fun VueoPlayerSourcesPanel(
     searching: Boolean,
     pluginsStopped: Boolean,
     onRefresh: () -> Unit,
+    sourcesStopped: Boolean,
+    onStop: () -> Unit,
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
@@ -165,17 +170,19 @@ internal fun VueoPlayerSourcesPanel(
                     Text("Sources", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                     if (searching) CircularProgressIndicator(Modifier.size(18.dp), color = TvDesign.Accent, strokeWidth = 2.dp)
                 }
-                VueoPlayerPromptButton(
-                    text = if (searching) "Loading…" else "Refresh",
+                VueoPlayerTopAction(
+                    icon = if (searching) Icons.Default.Stop else Icons.Default.Refresh,
+                    label = if (searching) "Stop source scan" else "Refresh sources",
                     requester = refreshRequester,
-                    upRequester = FocusRequester.Cancel,
-                    downRequester = tabRequester(null),
+                    downRequester = tabRequester(selectedProvider),
+                    leftRequester = tabRequester((listOf<String?>(null) + providers).last()),
+                    rightRequester = FocusRequester.Cancel,
                     onInteraction = onInteraction,
-                    onClick = { if (!searching) onRefresh() },
+                    onClick = { if (searching) onStop() else onRefresh() },
                 )
             }
-            if (searching || pluginsStopped) {
-                Text(if (searching && pluginsStopped) "Addons loading • plugins stopped"
+            if (searching || pluginsStopped || sourcesStopped) {
+                Text(if (sourcesStopped) "Source scan stopped" else if (searching && pluginsStopped) "Addons loading • plugins stopped"
                     else if (searching) "Discovering sources…" else "Plugin scan stopped",
                     color = Color.White.copy(alpha = .6f), fontSize = 11.sp,
                     modifier = Modifier.padding(top = 6.dp))
@@ -198,7 +205,10 @@ internal fun VueoPlayerSourcesPanel(
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             modifier = Modifier.focusRequester(tabRequester(provider))
-                                .focusProperties { up = refreshRequester }
+                                .focusProperties {
+                                    up = refreshRequester
+                                    if (provider == providers.lastOrNull()) right = refreshRequester
+                                }
                                 .onFocusChanged {
                                     focused = it.isFocused
                                     if (it.isFocused) {
@@ -690,13 +700,13 @@ private fun VueoEpisodeList(
     focusRangeCards: Boolean = false,
     onRange: (Boolean) -> Boolean = { false },
 ) {
-    val state = rememberLazyListState()
     val currentIndex = episodes.indexOfFirst { episode ->
         if (targetEpisodeId != null) targetEpisodeId == episode.id else currentEpisode?.let {
             it.id == episode.id ||
                 (it.season == episode.season && it.episode == episode.episode)
         } == true
     }.coerceAtLeast(0)
+    val state = key(episodes.firstOrNull()?.id) { rememberLazyListState(initialFirstVisibleItemIndex = currentIndex) }
     val requesters = remember(episodes.map { it.id }, currentIndex, entryFocusRequester) {
         List(episodes.size.coerceAtLeast(1)) { index ->
             if (index == currentIndex) entryFocusRequester else FocusRequester()
@@ -749,7 +759,7 @@ private fun VueoEpisodeList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 12.dp),
         ) {
-            itemsIndexed(episodes, key = { index, _ -> index }) { index, episode ->
+            itemsIndexed(episodes, key = { _, episode -> episode.id }) { index, episode ->
                 val selected = currentEpisode?.let {
                     it.id == episode.id ||
                         (it.season == episode.season && it.episode == episode.episode)

@@ -245,10 +245,9 @@ private fun VueoDetailEpisodeCards(
     val focusId = targetEpisodeId ?: rememberedId ?: selectedEpisode?.id?.takeIf { id -> episodes.any { it.id == id } } ?: episodes.firstOrNull()?.id
     val selectedIndex = episodes.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
     val rowPrefetchStrategy = remember { LazyListPrefetchStrategy(nestedPrefetchItemCount = 2) }
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = selectedIndex,
-        prefetchStrategy = rowPrefetchStrategy,
-    )
+    val listState = androidx.compose.runtime.key(episodes.firstOrNull()?.id) {
+        rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex, prefetchStrategy = rowPrefetchStrategy)
+    }
     var lastHorizontalKeyRepeatTime by remember { mutableStateOf(0L) }
     val requesters = remember(media.id, media.type, episodes.map(EpisodeItem::id)) {
         episodes.associate { episode ->
@@ -313,7 +312,7 @@ private fun VueoDetailEpisodeCards(
                     contentPadding = PaddingValues(end = 18.dp, top = 7.dp, bottom = 7.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    itemsIndexed(episodes, key = { index, _ -> index }, contentType = { _, _ -> "episode-card" }) { index, episode ->
+                    itemsIndexed(episodes, key = { _, episode -> episode.id }, contentType = { _, _ -> "episode-card" }) { index, episode ->
                         val progress = progressByEpisode[episode.season to episode.episode]
                         VueoEpisodeCard(
                             episode = episode,

@@ -402,6 +402,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 searching = true,
                 progress = "Refreshing sources…",
                 pluginsStopped = false,
+                sourcesStopped = false,
                 loadingProviders = emptyList(),
             )
         sourceDiscoveryError = null
@@ -709,6 +710,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 sourcesSearching = sourceDiscoverySnapshot?.searching == true,
                                 pluginsStopped = sourceDiscoverySnapshot?.pluginsStopped == true,
                                 onRefreshSources = { startSourceDiscovery(media, selectedEpisode, force = true) },
+                                sourcesStopped = sourceDiscoverySnapshot?.sourcesStopped == true,
+                                onStopSources = { sourceDiscoveryControl?.stopSources() },
                                 source = source,
                                 initialPositionMs = initialPositionMs,
                                 playerSessionId = playbackSession,

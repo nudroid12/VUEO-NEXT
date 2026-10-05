@@ -155,6 +155,8 @@ fun TvPlayerScreen(
     sourcesSearching: Boolean = false,
     pluginsStopped: Boolean = false,
     onRefreshSources: () -> Unit = {},
+    sourcesStopped: Boolean = false,
+    onStopSources: () -> Unit = {},
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem) -> Unit = {},
     episodeSwitching: Boolean = false,
@@ -1569,8 +1571,9 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
-                    title = PlayerSourceDisplay.providerTitle(item),
-                    meta = PlayerSourceDisplay.serverDetails(item),
+                    title = item.providerName.substringBeforeLast(" / ").trim().ifBlank { "Source" },
+                    meta = (listOf(item.providerName.substringAfterLast(" / ").trim()) +
+                        PlayerSourceDisplay.serverDetails(item).split(" • ")).filter(String::isNotBlank).distinct().joinToString(" • "),
                     providerName = item.providerName,
                     qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
                     selected = item.url == activeSource.url,
@@ -1621,6 +1624,8 @@ fun TvPlayerScreen(
             sourcesSearching = sourcesSearching,
             pluginsStopped = pluginsStopped,
             onRefreshSources = onRefreshSources,
+            sourcesStopped = sourcesStopped,
+            onStopSources = onStopSources,
             hasEpisodes = hasEpisodesControl,
             restartRequester = restartRequester,
             progressRequester = progressRequester,
