@@ -475,6 +475,20 @@ fun TvPlayerScreen(
         }
     }
 
+    fun seekImmediateBy(deltaMs: Long) {
+        val max = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }
+        val base = player.currentPosition.coerceAtLeast(0L)
+        val target = if (max != null) {
+            (base + deltaMs).coerceIn(0L, max)
+        } else {
+            (base + deltaMs).coerceAtLeast(0L)
+        }
+        clearPendingSeek()
+        player.seekTo(target)
+        positionMs = target
+        noteInteraction()
+    }
+
     fun seekBy(deltaMs: Long) {
         val max = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }
         val base = pendingSeekPositionMs ?: player.currentPosition.coerceAtLeast(0L)
@@ -489,9 +503,9 @@ fun TvPlayerScreen(
         positionMs = target
         seekCommitJob[0]?.cancel()
         seekCommitJob[0] = focusScope.launch {
-            // Both visible and hidden seeking preview the target first and commit
-            // on release. This keeps subtitle/playback timing stable during held
-            // key repeats while preserving a fallback for remotes that omit KeyUp.
+            // Held-key repeats only preview the target and commit on release.
+            // The first KeyDown is handled separately as an immediate single-step
+            // seek so taps stay responsive in both visible and hidden controls.
             delay(1_200L)
             commitPendingSeek()
         }
@@ -1398,23 +1412,23 @@ fun TvPlayerScreen(
                         true
                     }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                        seekBy(
-                            tvLongPressSeekDeltaMs(
-                                direction = -1,
-                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                            )
+                        val repeatCount = event.nativeKeyEvent.repeatCount
+                        val delta = tvLongPressSeekDeltaMs(
+                            direction = -1,
+                            heldDurationMs = if (repeatCount == 0) 0L else
+                                (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                         )
+                        if (repeatCount == 0) seekImmediateBy(delta) else seekBy(delta)
                         true
                     }
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        seekBy(
-                            tvLongPressSeekDeltaMs(
-                                direction = 1,
-                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                            )
+                        val repeatCount = event.nativeKeyEvent.repeatCount
+                        val delta = tvLongPressSeekDeltaMs(
+                            direction = 1,
+                            heldDurationMs = if (repeatCount == 0) 0L else
+                                (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                         )
+                        if (repeatCount == 0) seekImmediateBy(delta) else seekBy(delta)
                         true
                     }
                     else -> {
@@ -1444,24 +1458,24 @@ fun TvPlayerScreen(
                                 }
                                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                                     if (controlsVisible) requestControlFocus(progressRequester)
-                                    seekBy(
-                                        tvLongPressSeekDeltaMs(
-                                            direction = -1,
-                                            heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                                        )
+                                    val repeatCount = event.nativeKeyEvent.repeatCount
+                                    val delta = tvLongPressSeekDeltaMs(
+                                        direction = -1,
+                                        heldDurationMs = if (repeatCount == 0) 0L else
+                                            (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                                     )
+                                    if (repeatCount == 0) seekImmediateBy(delta) else seekBy(delta)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                                     if (controlsVisible) requestControlFocus(progressRequester)
-                                    seekBy(
-                                        tvLongPressSeekDeltaMs(
-                                            direction = 1,
-                                            heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                                        )
+                                    val repeatCount = event.nativeKeyEvent.repeatCount
+                                    val delta = tvLongPressSeekDeltaMs(
+                                        direction = 1,
+                                        heldDurationMs = if (repeatCount == 0) 0L else
+                                            (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                                     )
+                                    if (repeatCount == 0) seekImmediateBy(delta) else seekBy(delta)
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP -> {
@@ -1674,6 +1688,7 @@ fun TvPlayerScreen(
                 playing = true
                 noteInteraction()
             },
+            onSeekImmediateBy = ::seekImmediateBy,
             onSeekBy = ::seekBy,
             onSeekCommit = ::commitPendingSeek,
             onNext = {

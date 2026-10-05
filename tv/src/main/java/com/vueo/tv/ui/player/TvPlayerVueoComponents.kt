@@ -63,6 +63,7 @@ internal fun VueoPlayerProgressRail(
     upRequester: FocusRequester,
     downRequester: FocusRequester,
     onInteraction: () -> Unit,
+    onSeekImmediateBy: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
     onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
@@ -103,23 +104,23 @@ internal fun VueoPlayerProgressRail(
             .onPreviewKeyEvent { event ->
                 when {
                     event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        onSeekBy(
-                            tvLongPressSeekDeltaMs(
-                                direction = -1,
-                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                            )
+                        val repeatCount = event.nativeKeyEvent.repeatCount
+                        val delta = tvLongPressSeekDeltaMs(
+                            direction = -1,
+                            heldDurationMs = if (repeatCount == 0) 0L else
+                                (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                         )
+                        if (repeatCount == 0) onSeekImmediateBy(delta) else onSeekBy(delta)
                         true
                     }
                     event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        onSeekBy(
-                            tvLongPressSeekDeltaMs(
-                                direction = 1,
-                                heldDurationMs = if (event.nativeKeyEvent.repeatCount == 0) 0L else
-                                    (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
-                            )
+                        val repeatCount = event.nativeKeyEvent.repeatCount
+                        val delta = tvLongPressSeekDeltaMs(
+                            direction = 1,
+                            heldDurationMs = if (repeatCount == 0) 0L else
+                                (event.nativeKeyEvent.eventTime - event.nativeKeyEvent.downTime).coerceAtLeast(0L),
                         )
+                        if (repeatCount == 0) onSeekImmediateBy(delta) else onSeekBy(delta)
                         true
                     }
                     event.type == KeyEventType.KeyUp &&
