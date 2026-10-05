@@ -475,6 +475,14 @@ fun TvPlayerScreen(
         }
     }
 
+    fun clearPendingSeek() {
+        seekCommitJob[0]?.cancel()
+        seekCommitJob[0] = null
+        seekAnchorClearJob[0]?.cancel()
+        seekAnchorClearJob[0] = null
+        pendingSeekPositionMs = null
+    }
+
     fun seekImmediateBy(deltaMs: Long) {
         val max = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }
         val base = player.currentPosition.coerceAtLeast(0L)
@@ -510,14 +518,6 @@ fun TvPlayerScreen(
             commitPendingSeek()
         }
         noteInteraction()
-    }
-
-    fun clearPendingSeek() {
-        seekCommitJob[0]?.cancel()
-        seekCommitJob[0] = null
-        seekAnchorClearJob[0]?.cancel()
-        seekAnchorClearJob[0] = null
-        pendingSeekPositionMs = null
     }
 
     fun togglePlayback() {
