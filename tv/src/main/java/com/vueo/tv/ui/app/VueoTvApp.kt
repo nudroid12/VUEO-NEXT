@@ -28,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.vueo.shared.core.source.SourceDiscoveryControl
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
@@ -127,6 +128,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoveryKey by remember { mutableStateOf<String?>(null) }
     var sourceDiscoveryJob by remember { mutableStateOf<Job?>(null) }
     var sourceDiscoveryGeneration by remember { mutableIntStateOf(0) }
+    var sourceDiscoveryControl by remember { mutableStateOf<SourceDiscoveryControl?>(null) }
     var failedSourceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var switchingEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
     var switchingBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
@@ -246,11 +248,13 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         sourceDiscoveryGeneration += 1
         sourceDiscoveryJob?.cancel()
         sourceDiscoveryJob = null
+        sourceDiscoveryControl = null
         if (markStopped) {
             sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let { current ->
                 if (!current.searching) current
                 else current.copy(
                     searching = false,
+                    loadingProviders = emptyList(),
                     progress = if (current.bundle.sources.isEmpty()) {
                         "Discovery stopped"
                     } else {
@@ -284,6 +288,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         selectedEpisode = target
         initialPositionMs = 0L
         sourceBundle = nextBundle
+        sourceDiscoveryControl?.stopPlugins()
         selectedSource = candidate
         playerSessionId += 1
     }
@@ -295,6 +300,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         sourceDiscoveryGeneration += 1
         val generation = sourceDiscoveryGeneration
         sourceDiscoveryJob?.cancel()
+        val discoveryControl = SourceDiscoveryControl()
+        sourceDiscoveryControl = discoveryControl
         switchingEpisode = target
         switchingBundle = null
         switchingError = null
@@ -337,6 +344,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     item = media,
                     episode = target,
                     forceRefresh = force || targetKey in failedSourceKeys,
+                    discoveryControl = discoveryControl,
                     onUpdate = { snapshot ->
                         if (sourceDiscoveryGeneration == generation && route == TvRoute.PLAYER) {
                             sourceDiscoverySnapshot = snapshot
@@ -377,17 +385,30 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         val generation = sourceDiscoveryGeneration
         val previousKey = sourceDiscoveryKey
         val previousSnapshot = sourceDiscoverySnapshot
+        val retainPlayback = route == TvRoute.PLAYER
+        val retainedBundle = sourceBundle?.takeIf { retainPlayback && previousKey == key }
+        fun visibleBundle(next: TvSourceBundle): TvSourceBundle = if (retainedBundle != null)
+            next.copy(
+                sources = (retainedBundle.sources + next.sources).distinctBy { it.url },
+                subtitles = (retainedBundle.subtitles + next.subtitles).distinctBy { it.url },
+            ) else next
         sourceDiscoveryJob?.cancel()
+        val discoveryControl = SourceDiscoveryControl()
+        sourceDiscoveryControl = discoveryControl
         sourceDiscoveryKey = key
         sourceDiscoverySnapshot = previousSnapshot
             ?.takeIf { effectiveForce && previousKey == key }
             ?.copy(
                 searching = true,
                 progress = "Refreshing sources…",
+                pluginsStopped = false,
+                loadingProviders = emptyList(),
             )
         sourceDiscoveryError = null
-        sourceBundle = null
-        selectedSource = null
+        if (!retainPlayback) {
+            sourceBundle = null
+            selectedSource = null
+        }
 
         sourceDiscoveryJob = sourceDiscoveryScope.launch {
             try {
@@ -395,13 +416,15 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     item = media,
                     episode = episode,
                     forceRefresh = effectiveForce,
+                    discoveryControl = discoveryControl,
                     onUpdate = { snapshot ->
                         if (
                             sourceDiscoveryGeneration == generation &&
                             sourceDiscoveryKey == key
                         ) {
-                            sourceDiscoverySnapshot = snapshot
-                            sourceBundle = snapshot.bundle
+                            val displayedBundle = visibleBundle(snapshot.bundle)
+                            sourceDiscoverySnapshot = snapshot.copy(bundle = displayedBundle)
+                            sourceBundle = displayedBundle
                             if (!snapshot.searching) {
                                 failedSourceKeys =
                                     if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
@@ -417,7 +440,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryGeneration == generation &&
                     sourceDiscoveryKey == key
                 ) {
-                    sourceBundle = finalBundle
+                    sourceBundle = visibleBundle(finalBundle)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -659,6 +682,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             onPlay = { bundle, source ->
                                 sourceBundle = bundle
                                 selectedSource = source
+                                sourceDiscoveryControl?.stopPlugins()
                                 playerReturnRoute = TvRoute.SOURCE
                                 playerSessionId += 1
                                 route = TvRoute.PLAYER
@@ -682,6 +706,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 episode = selectedEpisode,
                                 bundle = bundle,
                                 bundleState = sourceBundleState,
+                                sourcesSearching = sourceDiscoverySnapshot?.searching == true,
+                                pluginsStopped = sourceDiscoverySnapshot?.pluginsStopped == true,
+                                onRefreshSources = { startSourceDiscovery(media, selectedEpisode, force = true) },
                                 source = source,
                                 initialPositionMs = initialPositionMs,
                                 playerSessionId = playbackSession,

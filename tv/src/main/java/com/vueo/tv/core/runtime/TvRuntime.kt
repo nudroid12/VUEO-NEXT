@@ -347,6 +347,7 @@ class TvRuntime(context: Context) {
         item: MediaItem,
         episode: EpisodeItem?,
         forceRefresh: Boolean = false,
+        discoveryControl: com.vueo.shared.core.source.SourceDiscoveryControl? = null,
         onProgress: (String) -> Unit = {},
         onUpdate: (TvSourceDiscoverySnapshot) -> Unit = {},
     ): TvSourceBundle {
@@ -363,6 +364,7 @@ class TvRuntime(context: Context) {
                 preferredQuality = settingsStore.preferredQuality().rankKey,
                 forceRefresh = forceRefresh,
             ),
+            control = discoveryControl,
         ) { snapshot ->
             onProgress(snapshot.progress)
             onUpdate(snapshot)

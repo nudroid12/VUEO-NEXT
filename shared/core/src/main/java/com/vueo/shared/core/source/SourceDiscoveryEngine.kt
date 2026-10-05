@@ -13,6 +13,9 @@ import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.TmdbResolver
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.CopyOnWriteArrayList
@@ -30,6 +33,7 @@ class SourceDiscoveryEngine(
 ) {
     suspend fun discover(
         request: SourceDiscoveryRequest,
+        control: SourceDiscoveryControl? = null,
         onUpdate: (SourceDiscoverySnapshot) -> Unit = {},
     ): SourceDiscoveryBundle = coroutineScope {
         val item = request.item
@@ -197,7 +201,9 @@ class SourceDiscoveryEngine(
             progress: String,
             streams: List<StreamSource>? = null,
         ) {
-            latestProgress = progress
+            val displayedProgress = if (control?.pluginsStopped == true && searching && progress.startsWith("Searching"))
+                "$progress • Plugin scan stopped" else progress
+            latestProgress = displayedProgress
             val fresh = cleanFresh()
             val display = streams ?: if (searching) {
                 SourceCleaner.clean(
@@ -232,7 +238,8 @@ class SourceDiscoveryEngine(
                     rawCount = rawCount,
                     notice = notice,
                     searching = searching,
-                    progress = progress,
+                    progress = displayedProgress,
+                    pluginsStopped = control?.pluginsStopped == true,
                     firstResultMs = firstResultMs,
                     providerOrder = providerOrder,
                     fromCache = cachedStreams.isNotEmpty(),
@@ -351,99 +358,117 @@ class SourceDiscoveryEngine(
             }
         }
 
-        val pluginsDeferred = async {
+        val pluginsDeferred = async(start = CoroutineStart.LAZY) {
             val configuredPluginProviders = configuredPluginProviderKeys(request)
-            configuredPluginProviders.forEach(::markProviderLoading)
-            pluginTotal = configuredPluginProviders.size
-            activity(
-                "requests",
-                message = buildString {
-                    append("Plugin request → ")
-                    append(item.type)
-                    request.episode?.let { episode ->
-                        append(" • S${episode.season} E${episode.episode}")
-                    }
-                    append(" • ")
-                    append(item.name)
-                },
-            )
-            publish(latestProgress)
-            var loggedPluginDiagnostics = 0
-            val result = discoverPlugins(
-                request = request,
-                onSkipped = { skippedNotice ->
-                    notice = skippedNotice
-                    publish(
-                        progressLabel(
-                            addonCompleted = addonCompleted,
-                            addonTotal = addonTotal,
-                            pluginCompleted = pluginCompleted,
-                            pluginTotal = pluginTotal,
-                            found = cleanFresh().size,
-                        )
-                    )
-                },
-                onProgress = { progressResult, completed, total ->
-                    freshPluginStreams = progressResult.streams.map { it.toStreamSource() }
-                    pluginRawCount = progressResult.streams.size
-                    pluginCompleted = completed
-                    pluginTotal = total
-                    progressResult.diagnostics
-                        .forEach { diagnostic ->
-                            markProviderComplete(
-                                "${diagnostic.repositoryName} / ${diagnostic.providerName}"
-                            )
+            try {
+                configuredPluginProviders.forEach(::markProviderLoading)
+                pluginTotal = configuredPluginProviders.size
+                activity(
+                    "requests",
+                    message = buildString {
+                        append("Plugin request → ")
+                        append(item.type)
+                        request.episode?.let { episode ->
+                            append(" • S${episode.season} E${episode.episode}")
                         }
-                    progressResult.diagnostics
-                        .drop(loggedPluginDiagnostics)
-                        .forEach { diagnostic ->
-                            val failed = diagnostic.status.name in setOf(
-                                "TIMEOUT", "FAILED", "BLOCKED", "UNAVAILABLE"
-                            )
-                            activity(
-                                category = if (failed) "errors" else "requests",
-                                level = if (failed) "error" else "info",
-                                message = buildString {
-                                    append(diagnostic.providerName)
-                                    append(" ← ")
-                                    append(diagnostic.status.name.lowercase().replace('_', ' '))
-                                    append(" • ")
-                                    append(diagnostic.streamCount)
-                                    append(" sources • ")
-                                    append(diagnostic.responseMs)
-                                    append(" ms")
-                                    diagnostic.errorType?.let { append(" • $it") }
-                                },
-                            )
-                        }
-                    loggedPluginDiagnostics = progressResult.diagnostics.size
-                    publish(
-                        progressLabel(
-                            addonCompleted = addonCompleted,
-                            addonTotal = addonTotal,
-                            pluginCompleted = pluginCompleted,
-                            pluginTotal = pluginTotal,
-                            found = cleanFresh().size,
-                        )
-                    )
-                },
-                forceRefresh = request.forceRefresh,
-            )
-            configuredPluginProviders.forEach(::markProviderComplete)
-            publish(
-                progressLabel(
-                    addonCompleted = addonCompleted,
-                    addonTotal = addonTotal,
-                    pluginCompleted = pluginCompleted,
-                    pluginTotal = pluginTotal,
-                    found = cleanFresh().size,
+                        append(" • ")
+                        append(item.name)
+                    },
                 )
-            )
-            result
+                publish(latestProgress)
+                var loggedPluginDiagnostics = 0
+                val result = discoverPlugins(
+                    request = request,
+                    onSkipped = { skippedNotice ->
+                        notice = skippedNotice
+                        publish(
+                            progressLabel(
+                                addonCompleted = addonCompleted,
+                                addonTotal = addonTotal,
+                                pluginCompleted = pluginCompleted,
+                                pluginTotal = pluginTotal,
+                                found = cleanFresh().size,
+                            )
+                        )
+                    },
+                    onProgress = { progressResult, completed, total ->
+                        freshPluginStreams = progressResult.streams.map { it.toStreamSource() }
+                        pluginRawCount = progressResult.streams.size
+                        pluginCompleted = completed
+                        pluginTotal = total
+                        progressResult.diagnostics
+                            .forEach { diagnostic ->
+                                markProviderComplete(
+                                    "${diagnostic.repositoryName} / ${diagnostic.providerName}"
+                                )
+                            }
+                        progressResult.diagnostics
+                            .drop(loggedPluginDiagnostics)
+                            .forEach { diagnostic ->
+                                val failed = diagnostic.status.name in setOf(
+                                    "TIMEOUT", "FAILED", "BLOCKED", "UNAVAILABLE"
+                                )
+                                activity(
+                                    category = if (failed) "errors" else "requests",
+                                    level = if (failed) "error" else "info",
+                                    message = buildString {
+                                        append(diagnostic.providerName)
+                                        append(" ← ")
+                                        append(diagnostic.status.name.lowercase().replace('_', ' '))
+                                        append(" • ")
+                                        append(diagnostic.streamCount)
+                                        append(" sources • ")
+                                        append(diagnostic.responseMs)
+                                        append(" ms")
+                                        diagnostic.errorType?.let { append(" • $it") }
+                                    },
+                                )
+                            }
+                        loggedPluginDiagnostics = progressResult.diagnostics.size
+                        publish(
+                            progressLabel(
+                                addonCompleted = addonCompleted,
+                                addonTotal = addonTotal,
+                                pluginCompleted = pluginCompleted,
+                                pluginTotal = pluginTotal,
+                                found = cleanFresh().size,
+                            )
+                        )
+                    },
+                    forceRefresh = request.forceRefresh,
+                )
+                configuredPluginProviders.forEach(::markProviderComplete)
+                publish(
+                    progressLabel(
+                        addonCompleted = addonCompleted,
+                        addonTotal = addonTotal,
+                        pluginCompleted = pluginCompleted,
+                        pluginTotal = pluginTotal,
+                        found = cleanFresh().size,
+                    )
+                )
+                result
+            } finally {
+                configuredPluginProviders.forEach(::markProviderComplete)
+                if (control?.pluginsStopped == true) {
+                    activity("system", message = "Plugin discovery stopped for playback; addon/subtitle work continues")
+                    publish(latestProgress)
+                }
+            }
         }
+        control?.attachPlugins(pluginsDeferred)
+        pluginsDeferred.invokeOnCompletion { control?.detachPlugins(pluginsDeferred) }
+        pluginsDeferred.start()
 
         freshAddonStreams = addonsDeferred.await()
-        val pluginResult = pluginsDeferred.await()
+        val pluginResult = try {
+            pluginsDeferred.await()
+        } catch (cancelled: CancellationException) {
+            // Selective plugin cancellation must not cancel the parent scan.
+            currentCoroutineContext().ensureActive()
+            if (control?.pluginsStopped != true) throw cancelled
+            null
+        }
 
         if (pluginResult != null) {
             freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
@@ -452,7 +477,11 @@ class SourceDiscoveryEngine(
         }
 
         val freshFinal = cleanFresh()
-        val finalStreams = freshFinal.ifEmpty { cachedStreams }
+        val finalStreams = if (control?.pluginsStopped == true) SourceCleaner.clean(
+            sources = cachedStreams + freshFinal,
+            preferredQuality = preferredQuality,
+            originalLanguage = item.originalLanguage,
+        ) else freshFinal.ifEmpty { cachedStreams }
         searching = false
         synchronized(loadingProviders) { loadingProviders.clear() }
         recordProviders(finalStreams)
@@ -461,7 +490,9 @@ class SourceDiscoveryEngine(
             cached?.rawCount ?: 0,
             addonRawCount + pluginRawCount,
         )
-        val finalProgress = if (finalStreams.isEmpty()) {
+        val finalProgress = if (control?.pluginsStopped == true) {
+            "Search finished • plugins stopped • ${finalStreams.size} unique sources"
+        } else if (finalStreams.isEmpty()) {
             "Search complete • no sources found"
         } else {
             "Search complete • ${finalStreams.size} unique sources"
@@ -504,6 +535,7 @@ class SourceDiscoveryEngine(
                 rawCount = rawCount,
                 notice = notice,
                 searching = false,
+                pluginsStopped = control?.pluginsStopped == true,
                 progress = finalProgress,
                 firstResultMs = firstResultMs,
                 providerOrder = providerOrder,
@@ -525,6 +557,7 @@ class SourceDiscoveryEngine(
                 rawCount = rawCount,
                 notice = notice,
                 searching = false,
+                pluginsStopped = control?.pluginsStopped == true,
                 progress = finalProgress,
                 firstResultMs = firstResultMs,
                 providerOrder = providerOrder,
@@ -665,6 +698,7 @@ data class SourceDiscoverySnapshot(
     val subtitlesResolved: Boolean,
     val activityLog: List<SourceDiscoveryActivity> = emptyList(),
     val loadingProviders: List<String> = emptyList(),
+    val pluginsStopped: Boolean = false,
 )
 
 data class SourceDiscoveryActivity(

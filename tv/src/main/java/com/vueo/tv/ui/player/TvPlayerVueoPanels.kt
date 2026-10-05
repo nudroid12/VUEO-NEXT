@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
@@ -120,12 +121,16 @@ internal fun VueoPlayerCompactOverlay(
 internal fun VueoPlayerSourcesPanel(
     title: String,
     options: List<TvPlayerOption>,
+    searching: Boolean,
+    pluginsStopped: Boolean,
+    onRefresh: () -> Unit,
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (TvPlayerOption) -> Unit,
     panelModifier: Modifier = Modifier,
 ) {
     val listEntryRequester = remember { FocusRequester() }
+    val refreshRequester = remember { FocusRequester() }
     var selectedProvider by remember { mutableStateOf<String?>(null) }
     var initialSourceFocus by remember { mutableStateOf(true) }
     var enterListRequest by remember { mutableIntStateOf(0) }
@@ -154,12 +159,27 @@ internal fun VueoPlayerSourcesPanel(
                 .background(Color(0xF5202124))
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 28.dp),
         ) {
-            Text(
-                "Sources",
-                color = Color.White,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Sources", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                    if (searching) CircularProgressIndicator(Modifier.size(18.dp), color = TvDesign.Accent, strokeWidth = 2.dp)
+                }
+                VueoPlayerPromptButton(
+                    text = if (searching) "Loading…" else "Refresh",
+                    requester = refreshRequester,
+                    upRequester = FocusRequester.Cancel,
+                    downRequester = tabRequester(null),
+                    onInteraction = onInteraction,
+                    onClick = { if (!searching) onRefresh() },
+                )
+            }
+            if (searching || pluginsStopped) {
+                Text(if (searching && pluginsStopped) "Addons loading • plugins stopped"
+                    else if (searching) "Discovering sources…" else "Plugin scan stopped",
+                    color = Color.White.copy(alpha = .6f), fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 6.dp))
+            }
             Spacer(Modifier.height(12.dp))
             VueoLeadingTabs {
             Row(
@@ -178,7 +198,7 @@ internal fun VueoPlayerSourcesPanel(
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             modifier = Modifier.focusRequester(tabRequester(provider))
-                                .focusProperties { up = FocusRequester.Cancel }
+                                .focusProperties { up = refreshRequester }
                                 .onFocusChanged {
                                     focused = it.isFocused
                                     if (it.isFocused) {
