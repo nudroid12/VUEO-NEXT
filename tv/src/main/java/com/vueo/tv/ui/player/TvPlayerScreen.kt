@@ -487,17 +487,12 @@ fun TvPlayerScreen(
         pendingSeekPositionMs = target
         positionMs = target
         seekCommitJob[0]?.cancel()
-        if (!controlsVisible && activePanel == TvPlayerPanel.NONE) {
-            // Hidden-chrome seeking stays on the root focus target and applies
-            // immediately, including held-key repeats, without showing controls.
+        seekCommitJob[0] = focusScope.launch {
+            // Both visible and hidden seeking preview the target first and commit
+            // on release. This keeps subtitle/playback timing stable during held
+            // key repeats while preserving a fallback for remotes that omit KeyUp.
+            delay(1_200L)
             commitPendingSeek()
-        } else {
-            seekCommitJob[0] = focusScope.launch {
-                // Visible-rail seeking commits on release, with a fallback for
-                // remotes that occasionally omit the release event.
-                delay(1_200L)
-                commitPendingSeek()
-            }
         }
         noteInteraction()
     }
@@ -1363,8 +1358,8 @@ fun TvPlayerScreen(
                             code == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
                     )
                 ) {
-                    // Hidden seeking already committed on KeyDown; do not
-                    // issue the same ExoPlayer seek again on release.
+                    // Commit the previewed seek once on release for both hidden
+                    // and visible controls. The scheduled job is only a fallback.
                     if (seekCommitJob[0] != null) commitPendingSeek()
                     return@onPreviewKeyEvent true
                 }
