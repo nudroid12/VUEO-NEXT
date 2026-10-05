@@ -408,6 +408,8 @@ internal fun PlayerScreen(
     onEpisodeSwitchFailed: () -> Unit,
     onLibraryChanged: () -> Unit,
     onSwitchSource: (StreamSource, Long) -> Unit,
+    onPrefetchNextEpisode: (EpisodeItem, StreamSource) -> Unit,
+    onActiveSourceChanged: (StreamSource) -> Unit,
     onNextEpisode: (EpisodeItem) -> Unit,
     onEpisodeSelected: (EpisodeItem) -> Unit,
     onBack: () -> Unit,
@@ -1919,6 +1921,37 @@ internal fun PlayerScreen(
         ) {
             delay(3_000L)
             controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(source.url) {
+        onActiveSourceChanged(source)
+    }
+
+    var nextEpisodePrefetchDispatched by remember(videoId, source.url) {
+        mutableStateOf(false)
+    }
+    val nextEpisodePrefetchEligible =
+        isPlaying &&
+            episodeSwitchingTo == null &&
+            nextEpisode != null &&
+            durationMs > 0L &&
+            currentPositionMs >=
+                (durationMs - 300_000L).coerceAtLeast(0L)
+
+    LaunchedEffect(
+        nextEpisodePrefetchEligible,
+        nextEpisode?.id,
+        source.url,
+    ) {
+        if (
+            nextEpisodePrefetchEligible &&
+            !nextEpisodePrefetchDispatched
+        ) {
+            nextEpisodePrefetchDispatched = true
+            nextEpisode?.let { target ->
+                onPrefetchNextEpisode(target, source)
+            }
         }
     }
 

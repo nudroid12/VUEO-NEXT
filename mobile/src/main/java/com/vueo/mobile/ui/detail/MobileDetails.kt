@@ -206,6 +206,10 @@ import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.shared.core.source.SourceDiscoveryRequest
+import com.vueo.shared.core.source.SourceDiscoveryBundle
+import com.vueo.shared.core.player.NextEpisodeSourcePolicy
+import com.vueo.shared.core.player.PlayerSourceDisplay
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.mobile.core.dna.UserDnaEngine
 import com.vueo.mobile.core.dna.UserDnaPreferences
 import com.vueo.mobile.core.model.CatalogRow
@@ -503,6 +507,18 @@ internal fun MediaDetailsScreen(
     }
     var sourceDiscoveryGeneration by remember {
         mutableIntStateOf(0)
+    }
+    var episodePrefetch by remember(
+        initialItem.id,
+        initialItem.type,
+    ) {
+        mutableStateOf<MobileEpisodePrefetch?>(null)
+    }
+    var playingEpisodePrefetch by remember(
+        initialItem.id,
+        initialItem.type,
+    ) {
+        mutableStateOf<MobileEpisodePrefetch?>(null)
     }
     var failedSourceVideoIds by remember {
         mutableStateOf<Set<String>>(emptySet())
@@ -843,11 +859,160 @@ internal fun MediaDetailsScreen(
     }
 
 
+    fun subtitleLanguageCodesForDiscovery(): Set<String>? =
+        if (
+            settingsStore.subtitleVisibility() ==
+            com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY
+        ) {
+            setOfNotNull(
+                settingsStore.preferredSubtitleLanguage().languageCode,
+                settingsStore.secondarySubtitleLanguage().languageCode,
+            ).takeIf { it.isNotEmpty() }
+        } else {
+            null
+        }
+
+    fun cancelEpisodePrefetch() {
+        playingEpisodePrefetch?.cancel()
+        playingEpisodePrefetch = null
+        episodePrefetch?.cancel()
+        episodePrefetch = null
+    }
+
+    DisposableEffect(
+        initialItem.id,
+        initialItem.type,
+    ) {
+        onDispose {
+            episodePrefetch?.cancel()
+            playingEpisodePrefetch?.cancel()
+        }
+    }
+
+    fun startEpisodePrefetch(
+        target: EpisodeItem,
+        current: StreamSource,
+    ) {
+        val originVideoId = selectedPlaybackVideoId ?: return
+        if (pendingPlaybackEpisode != null) return
+
+        val mediaKey = "${item.type}:${item.id}"
+        val existing = episodePrefetch
+        if (
+            existing != null &&
+            !existing.claimed &&
+            !existing.failed &&
+            existing.mediaKey == mediaKey &&
+            existing.originVideoId == originVideoId &&
+            existing.target.id == target.id &&
+            NextEpisodeSourcePolicy.sameServer(existing.preferredSource, current)
+        ) {
+            return
+        }
+
+        if (episodePrefetch?.claimed == true) {
+            playingEpisodePrefetch?.cancel()
+            playingEpisodePrefetch = episodePrefetch
+            episodePrefetch = null
+        } else {
+            episodePrefetch?.cancel()
+        }
+
+        val targetVideoId = selectedVideoId(
+            media = item,
+            episode = target,
+        ) ?: return
+        val pending = MobileEpisodePrefetch(
+            mediaKey = mediaKey,
+            originVideoId = originVideoId,
+            target = target,
+            preferredSource = current,
+        )
+        episodePrefetch = pending
+        RuntimeDiagnostics.recordPlayerEvent(
+            "Mobile",
+            "NEXT_PREFETCH_START",
+            "episode=S${target.season}E${target.episode} provider=${current.providerName}",
+        )
+
+        pending.job = scope.launch {
+            try {
+                sourceDiscoveryEngine.discover(
+                    request = SourceDiscoveryRequest(
+                        item = item,
+                        episode = target,
+                        videoId = targetVideoId,
+                        preferredQuality = preferredSourceQuality,
+                        forceRefresh = true,
+                        subtitleLanguageCodes = subtitleLanguageCodesForDiscovery(),
+                        sourceProviderName = current.providerName,
+                    ),
+                    control = pending.control,
+                    onUpdate = prefetchUpdate@ { snapshot ->
+                        if (
+                            episodePrefetch !== pending &&
+                            playingEpisodePrefetch !== pending
+                        ) {
+                            return@prefetchUpdate
+                        }
+
+                        pending.subtitlesResolved = snapshot.subtitlesResolved
+                        val previous = pending.bundle
+                        pending.bundle = snapshot.bundle.copy(
+                            subtitles =
+                                (
+                                    previous?.subtitles.orEmpty() +
+                                        snapshot.bundle.subtitles
+                                ).distinctBy { it.url },
+                        )
+
+                        if (pending.matchedSource == null) {
+                            pending.matchedSource =
+                                NextEpisodeSourcePolicy.matchingServer(
+                                    sources = snapshot.bundle.sources,
+                                    current = current,
+                                    preferredQuality = preferredSourceQuality,
+                                    originalLanguage = item.originalLanguage,
+                                )
+                            if (pending.matchedSource != null) {
+                                pending.matchedAtMs = SystemClock.elapsedRealtime()
+                                pending.control.stopSources()
+                                pending.sourcesReady.complete(Unit)
+                                RuntimeDiagnostics.recordPlayerEvent(
+                                    "Mobile",
+                                    "NEXT_PREFETCH_READY",
+                                    "episode=S${target.season}E${target.episode} " +
+                                        "server=${PlayerSourceDisplay.title(requireNotNull(pending.matchedSource))}",
+                                )
+                            }
+                        }
+
+                        pending.bundle = pending.bundle?.copy(
+                            sources = listOfNotNull(pending.matchedSource),
+                        )
+                        if (!snapshot.searching) {
+                            pending.sourcesReady.complete(Unit)
+                        }
+                        pending.onSubtitles?.invoke()
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                pending.failed = true
+            } finally {
+                pending.sourcesReady.complete(Unit)
+            }
+        }
+    }
+
     fun startSourceDiscovery(
         targetEpisode: EpisodeItem?,
         startPositionMs: Long = 0L,
         autoPlayFirst: Boolean = false,
         forceRefresh: Boolean = false,
+        preferredSource: StreamSource? = null,
+        prefetched: MobileEpisodePrefetch? = null,
     ) {
         selectedPlaybackStartPositionMs = startPositionMs.coerceAtLeast(0L)
         if (autoPlayFirst) returnToSourcesOnPlayerExit = false
@@ -867,34 +1032,58 @@ internal fun MediaDetailsScreen(
         var sourceDiscoveryCompleted = false
         var latestAutoPlayCandidates = emptyList<StreamSource>()
 
+        fun withPrefetchedSubtitles(
+            bundle: SourceDiscoveryBundle,
+        ): SourceDiscoveryBundle =
+            bundle.copy(
+                subtitles =
+                    (
+                        prefetched?.bundle?.subtitles.orEmpty() +
+                            bundle.subtitles
+                    ).distinctBy { it.url },
+            )
+
         fun commitAutoPlayIfReady(
             candidates: List<StreamSource>,
-            allowLowQualityFallback: Boolean = false,
+            completed: Boolean = false,
+            preferredProviderDone: Boolean = true,
         ) {
             latestAutoPlayCandidates = candidates
             if (!autoPlayFirst || autoPlayCommitted) return
 
-            val directCandidates = candidates
-                .filter { it.isDirectPlayable }
-                .sortedWith(
-                    PlayerSourcePolicy.comparator(
+            val candidate =
+                if (preferredSource != null) {
+                    NextEpisodeSourcePolicy.select(
+                        sources = candidates,
+                        current = preferredSource,
+                        preferredProviderDone = preferredProviderDone,
+                        completed = completed,
                         preferredQuality = preferredSourceQuality,
                         originalLanguage = item.originalLanguage,
                     )
-                )
-            val candidate = directCandidates.firstOrNull { source ->
-                PlayerSourcePolicy.assess(
-                    source = source,
-                    preferredQuality = preferredSourceQuality,
-                    originalLanguage = item.originalLanguage,
-                ).let { assessment ->
-                    assessment.quality.automaticRecoveryEligible &&
-                        assessment.audioMatch.recommendationEligible
-                }
-            } ?: directCandidates
-                .firstOrNull()
-                ?.takeIf { allowLowQualityFallback }
-                ?: return
+                } else {
+                    val directCandidates =
+                        candidates
+                            .filter { it.isDirectPlayable }
+                            .sortedWith(
+                                PlayerSourcePolicy.comparator(
+                                    preferredQuality = preferredSourceQuality,
+                                    originalLanguage = item.originalLanguage,
+                                )
+                            )
+                    directCandidates.firstOrNull { source ->
+                        PlayerSourcePolicy.assess(
+                            source = source,
+                            preferredQuality = preferredSourceQuality,
+                            originalLanguage = item.originalLanguage,
+                        ).let { assessment ->
+                            assessment.quality.automaticRecoveryEligible &&
+                                assessment.audioMatch.recommendationEligible
+                        }
+                    } ?: directCandidates
+                        .firstOrNull()
+                        ?.takeIf { completed }
+                } ?: return
 
             autoPlayCommitted = true
             selectedSeason = targetEpisode?.season ?: selectedSeason
@@ -906,49 +1095,104 @@ internal fun MediaDetailsScreen(
 
         sourcePickerStreams = emptyList()
         sourcePickerProviderOrder = emptyList()
-        sourcePickerSubtitles = emptyList()
+        sourcePickerSubtitles = prefetched?.bundle?.subtitles.orEmpty()
         sourcePickerRawCount = 0
         sourcePickerNotice = null
         sourcePickerSearching = true
         sourcePickerFirstResultMs = null
-        sourcePickerProgress = "Starting source discovery…"
+        sourcePickerProgress =
+            if (prefetched != null) {
+                "Preparing prefetched next episode…"
+            } else {
+                "Starting source discovery…"
+            }
         sourcePickerActivityLog = emptyList()
         loadingStreams = true
         sourceStatus = null
 
+        prefetched?.onSubtitles = {
+            if (sourceDiscoveryGeneration == discoveryGeneration) {
+                sourcePickerSubtitles =
+                    (
+                        prefetched.bundle?.subtitles.orEmpty() +
+                            sourcePickerSubtitles
+                    ).distinctBy { it.url }
+            }
+        }
+
         sourceDiscoveryJob = scope.launch {
             try {
-                sourceDiscoveryEngine.discover(
+                if (prefetched != null) {
+                    prefetched.sourcesReady.await()
+                    if (sourceDiscoveryGeneration != discoveryGeneration) {
+                        return@launch
+                    }
+
+                    val standby = prefetched.bundle
+                    val matched = prefetched.matchedSource
+                    if (
+                        !prefetched.failed &&
+                        standby != null &&
+                        matched != null
+                    ) {
+                        val readyBundle = standby.copy(
+                            sources = listOf(matched),
+                        )
+                        sourcePickerStreams = readyBundle.sources
+                        sourcePickerProviderOrder = listOf(matched.providerName)
+                        sourcePickerSubtitles = readyBundle.subtitles
+                        sourcePickerRawCount = readyBundle.sources.size
+                        sourcePickerNotice = null
+                        sourcePickerSearching = false
+                        sourcePickerFirstResultMs = 0L
+                        sourcePickerProgress = "Next episode ready"
+                        sourcePickerActivityLog = emptyList()
+                        loadingStreams = false
+                        sourceDiscoveryCompleted = true
+                        failedSourceVideoIds = failedSourceVideoIds - targetVideoId
+                        commitAutoPlayIfReady(
+                            candidates = readyBundle.sources,
+                            completed = true,
+                            preferredProviderDone = true,
+                        )
+                        RuntimeDiagnostics.recordPlayerEvent(
+                            "Mobile",
+                            "NEXT_PREFETCH_USED",
+                            "episode=S${targetEpisode?.season ?: 0}E${targetEpisode?.episode ?: 0} " +
+                                "server=${PlayerSourceDisplay.title(matched)}",
+                        )
+                        // Subtitle discovery is independent of the stopped source
+                        // branch. Keep accepting late tracks for the new episode.
+                        prefetched.job?.join()
+                        return@launch
+                    }
+
+                    RuntimeDiagnostics.recordPlayerEvent(
+                        "Mobile",
+                        "NEXT_PREFETCH_FALLBACK",
+                        "episode=S${targetEpisode?.season ?: 0}E${targetEpisode?.episode ?: 0} matchingServer=false",
+                    )
+                }
+
+                val result = sourceDiscoveryEngine.discover(
                     request = SourceDiscoveryRequest(
                         item = item,
                         episode = targetEpisode,
                         videoId = targetVideoId,
                         preferredQuality = preferredSourceQuality,
                         forceRefresh = effectiveForceRefresh,
-                        subtitleLanguageCodes =
-                            if (
-                                settingsStore.subtitleVisibility() ==
-                                com.vueo.shared.core.storage.SubtitleVisibility.PREFERRED_ONLY
-                            ) {
-                                setOfNotNull(
-                                    settingsStore
-                                        .preferredSubtitleLanguage()
-                                        .languageCode,
-                                    settingsStore
-                                        .secondarySubtitleLanguage()
-                                        .languageCode,
-                                ).takeIf { it.isNotEmpty() }
-                            } else {
-                                null
-                            },
+                        subtitleLanguageCodes = subtitleLanguageCodesForDiscovery(),
+                        discoverSubtitles = prefetched == null || prefetched.failed,
                     ),
                     onUpdate = sourceUpdate@ { snapshot ->
                         if (sourceDiscoveryGeneration != discoveryGeneration) {
                             return@sourceUpdate
                         }
-                        sourcePickerStreams = snapshot.bundle.sources
+
+                        val mergedBundle = withPrefetchedSubtitles(snapshot.bundle)
+                        sourcePickerStreams = mergedBundle.sources
                         sourcePickerProviderOrder = snapshot.providerOrder
-                        sourcePickerSubtitles = snapshot.bundle.subtitles
+                        sourcePickerSubtitles = mergedBundle.subtitles
                         sourcePickerRawCount = snapshot.rawCount
                         sourcePickerNotice = snapshot.notice
                         sourcePickerSearching = snapshot.searching
@@ -960,18 +1204,57 @@ internal fun MediaDetailsScreen(
                         sourceDiscoveryCompleted = !snapshot.searching
                         if (sourceDiscoveryCompleted) {
                             failedSourceVideoIds =
-                                if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
+                                if (mergedBundle.sources.any { it.isDirectPlayable }) {
                                     failedSourceVideoIds - targetVideoId
                                 } else {
                                     failedSourceVideoIds + targetVideoId
                                 }
                         }
+
+                        val preferredProviderFinished =
+                            preferredSource == null ||
+                                snapshot.completedSourceProviders.any {
+                                    it.trim().equals(
+                                        preferredSource.providerName.trim(),
+                                        ignoreCase = true,
+                                    )
+                                } ||
+                                snapshot.plannedSourceProviders.none {
+                                    it.trim().equals(
+                                        preferredSource.providerName.trim(),
+                                        ignoreCase = true,
+                                    )
+                                }
+
                         commitAutoPlayIfReady(
-                            candidates = snapshot.bundle.sources,
-                            allowLowQualityFallback = sourceDiscoveryCompleted,
+                            candidates = mergedBundle.sources,
+                            completed = sourceDiscoveryCompleted,
+                            preferredProviderDone = preferredProviderFinished,
                         )
                     },
                 )
+
+                if (sourceDiscoveryGeneration != discoveryGeneration) {
+                    return@launch
+                }
+                val mergedResult = withPrefetchedSubtitles(result)
+                sourcePickerStreams = mergedResult.sources
+                sourcePickerSubtitles = mergedResult.subtitles
+                sourcePickerSearching = false
+                loadingStreams = false
+                sourceDiscoveryCompleted = true
+                failedSourceVideoIds =
+                    if (mergedResult.sources.any { it.isDirectPlayable }) {
+                        failedSourceVideoIds - targetVideoId
+                    } else {
+                        failedSourceVideoIds + targetVideoId
+                    }
+                commitAutoPlayIfReady(
+                    candidates = mergedResult.sources,
+                    completed = true,
+                    preferredProviderDone = true,
+                )
+                prefetched?.job?.join()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
@@ -988,7 +1271,8 @@ internal fun MediaDetailsScreen(
                     }
                 commitAutoPlayIfReady(
                     candidates = latestAutoPlayCandidates,
-                    allowLowQualityFallback = true,
+                    completed = true,
+                    preferredProviderDone = true,
                 )
             } finally {
                 if (sourceDiscoveryGeneration == discoveryGeneration) {
@@ -996,6 +1280,52 @@ internal fun MediaDetailsScreen(
                 }
             }
         }
+    }
+
+    fun startEpisodeSwitch(
+        target: EpisodeItem,
+        forceRefresh: Boolean = false,
+    ) {
+        val preferredSource = selectedPlaybackSource
+        val originVideoId = selectedPlaybackVideoId
+        val prefetched = episodePrefetch?.takeIf {
+            !forceRefresh &&
+                originVideoId != null &&
+                it.reusable(
+                    media = "${item.type}:${item.id}",
+                    origin = originVideoId,
+                    episode = target,
+                    source = preferredSource,
+                    nowMs = SystemClock.elapsedRealtime(),
+                )
+        }
+
+        playingEpisodePrefetch?.cancel()
+        playingEpisodePrefetch = null
+        if (prefetched == null) {
+            episodePrefetch?.cancel()
+            episodePrefetch = null
+        } else {
+            prefetched.claimed = true
+        }
+
+        pendingPlaybackEpisode = target
+        pendingPlaybackFailed = false
+        RuntimeDiagnostics.recordPlayerEvent(
+            "Mobile",
+            "NEXT_START",
+            "episode=S${target.season}E${target.episode} " +
+                "provider=${preferredSource?.providerName.orEmpty()} " +
+                "server=${preferredSource?.let(PlayerSourceDisplay::title).orEmpty()} " +
+                "prefetched=${prefetched != null}",
+        )
+        startSourceDiscovery(
+            targetEpisode = target,
+            autoPlayFirst = true,
+            forceRefresh = forceRefresh,
+            preferredSource = preferredSource,
+            prefetched = prefetched,
+        )
     }
 
     val playbackSource = selectedPlaybackSource
@@ -1009,6 +1339,7 @@ internal fun MediaDetailsScreen(
         sourceDiscoveryGeneration += 1
         sourceDiscoveryJob?.cancel()
         sourceDiscoveryJob = null
+        cancelEpisodePrefetch()
         loadingStreams = false
         onBack()
     }
@@ -1148,13 +1479,27 @@ internal fun MediaDetailsScreen(
                                 positionMs
                             selectedPlaybackSource = nextSource
                         },
+                        onPrefetchNextEpisode = { target, current ->
+                            startEpisodePrefetch(target, current)
+                        },
+                        onActiveSourceChanged = { current ->
+                            episodePrefetch
+                                ?.takeIf {
+                                    !it.claimed &&
+                                        !NextEpisodeSourcePolicy.sameServer(
+                                            it.preferredSource,
+                                            current,
+                                        )
+                                }
+                                ?.let { stale ->
+                                    stale.cancel()
+                                    if (episodePrefetch === stale) {
+                                        episodePrefetch = null
+                                    }
+                                }
+                        },
                         onNextEpisode = { next ->
-                            pendingPlaybackEpisode = next
-                            pendingPlaybackFailed = false
-                            startSourceDiscovery(
-                                targetEpisode = next,
-                                autoPlayFirst = true,
-                            )
+                            startEpisodeSwitch(next)
                         },
                         onEpisodeSelected = { selected ->
                             val retryingFailedEpisode =
@@ -1169,11 +1514,8 @@ internal fun MediaDetailsScreen(
                                                         .none { it.isDirectPlayable }
                                             )
                                     )
-                            pendingPlaybackEpisode = selected
-                            pendingPlaybackFailed = false
-                            startSourceDiscovery(
-                                targetEpisode = selected,
-                                autoPlayFirst = true,
+                            startEpisodeSwitch(
+                                target = selected,
                                 forceRefresh = retryingFailedEpisode,
                             )
                         },
@@ -1181,6 +1523,7 @@ internal fun MediaDetailsScreen(
                             sourceDiscoveryGeneration += 1
                             sourceDiscoveryJob?.cancel()
                             sourceDiscoveryJob = null
+                            cancelEpisodePrefetch()
                             sourcePickerSearching = false
                             if (!returnToSourcesOnPlayerExit) {
                                 sourcePickerStreams = null
