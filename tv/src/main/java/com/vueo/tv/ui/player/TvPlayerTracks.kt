@@ -269,9 +269,8 @@ internal class TvSubtitleOffsetRenderersFactory(
 
 /** Stack simultaneous lower-screen captions even when their horizontal metadata differs.
  * Upper and middle authored placements remain separate.
- * One multiline cue lets SubtitleView measure wrapping and height at the user's
- * font size. Single and combined bottom captions use the configured Bottom Position.
- * Fully tagged commentary is grouped at the top with a safe margin.
+ * Tagged commentary is kept in the same lower subtitle block, one blank line above
+ * the normal subtitle, so both follow the configured Bottom Position together.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
 internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boolean = true): List<Cue> {
@@ -310,42 +309,55 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boole
         )
         groups.getOrPut(placement) { mutableListOf<Cue>().also { orderedGroups.add(it) } }.add(cue)
     }
-    // Keep groups in their original order, including bitmap and vertical cues.
-    return orderedGroups.map { group ->
+
+    return orderedGroups.mapNotNull { group ->
         val unique = group.distinctBy { it.text.toString() }
-        if (unique.size == 1 && group !== bottomGroup && group !== commentaryGroup) {
-            unique.first()
-        } else {
-            val builder = unique.first().buildUpon()
-            if (unique.size > 1) {
+        when {
+            // When normal lower subtitles are present, commentary is rendered together
+            // with them at the normal Bottom Position, not as a second top-screen cue.
+            group === commentaryGroup && bottomGroup.isNotEmpty() -> null
+            group === bottomGroup && commentaryGroup.isNotEmpty() ->
+                tvBuildBottomSubtitleCue(commentaryGroup, bottomGroup)
+            group === bottomGroup || group === commentaryGroup ->
+                tvBuildBottomSubtitleCue(emptyList(), unique)
+            unique.size == 1 -> unique.first()
+            else -> {
+                val builder = unique.first().buildUpon()
                 val text = SpannableStringBuilder()
                 unique.forEachIndexed { index, item ->
                     if (index > 0) text.append('\n')
                     text.append(requireNotNull(item.text))
                 }
-                builder.setText(SpannedString(text))
+                builder.setText(SpannedString(text)).build()
             }
-            if (group === bottomGroup || group === commentaryGroup) {
-                // Normalize single captions too: authored lower-screen anchors otherwise
-                // bypass the user's Bottom Position, unlike a stacked group.
-                builder.setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
-                    .setLineAnchor(Cue.TYPE_UNSET)
-                    .setPosition(Cue.DIMEN_UNSET)
-                    .setPositionAnchor(Cue.TYPE_UNSET)
-                    .setSize(Cue.DIMEN_UNSET)
-                    .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
-                    .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
-                if (group === commentaryGroup) {
-                    builder.setLine(.08f, Cue.LINE_TYPE_FRACTION)
-                        .setLineAnchor(Cue.ANCHOR_TYPE_START)
-                        .setPosition(.5f)
-                        .setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
-                        .setSize(.9f)
-                }
-            }
-            builder.build()
         }
     }
+}
+
+private fun tvBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue>): Cue {
+    val commentaryUnique = commentary.distinctBy { it.text.toString() }
+    val normalUnique = normal.distinctBy { it.text.toString() }
+    val seed = normalUnique.firstOrNull() ?: commentaryUnique.first()
+    val text = SpannableStringBuilder()
+    commentaryUnique.forEachIndexed { index, item ->
+        if (index > 0) text.append('\n')
+        text.append(requireNotNull(item.text))
+    }
+    if (commentaryUnique.isNotEmpty() && normalUnique.isNotEmpty()) text.append("\n\n")
+    normalUnique.forEachIndexed { index, item ->
+        if (index > 0) text.append('\n')
+        text.append(requireNotNull(item.text))
+    }
+    return seed.buildUpon()
+        .setText(SpannedString(text))
+        .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+        .setLineAnchor(Cue.TYPE_UNSET)
+        .setPosition(Cue.DIMEN_UNSET)
+        .setPositionAnchor(Cue.TYPE_UNSET)
+        .setSize(Cue.DIMEN_UNSET)
+        .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
+        .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
+        .build()
 }
 
 /** Recognize the fully colored parenthetical commentary convention in the EP814 file.

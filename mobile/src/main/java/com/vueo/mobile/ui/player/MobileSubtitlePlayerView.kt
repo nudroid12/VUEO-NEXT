@@ -170,8 +170,9 @@ private fun mobileSubtitleWithAlpha(colour: Int, opacityPercent: Int): Int {
 }
 
 /**
- * Match the TV renderer: combine simultaneous lower-screen captions into one cue,
- * keep authored upper/middle placements separate, and move tagged commentary to the top.
+ * Match the TV renderer: combine simultaneous lower-screen captions and keep
+ * commentary in the same lower subtitle block, one blank line above normal subs.
+ * Authored upper/middle placements remain separate.
  */
 internal fun mobileStackCollidingSubtitleCues(
     cues: List<Cue>,
@@ -218,40 +219,52 @@ internal fun mobileStackCollidingSubtitleCues(
         }.add(cue)
     }
 
-    return orderedGroups.map { group ->
+    return orderedGroups.mapNotNull { group ->
         val unique = group.distinctBy { it.text.toString() }
-        if (unique.size == 1 && group !== bottomGroup && group !== commentaryGroup) {
-            unique.first()
-        } else {
-            val builder = unique.first().buildUpon()
-            if (unique.size > 1) {
+        when {
+            group === commentaryGroup && bottomGroup.isNotEmpty() -> null
+            group === bottomGroup && commentaryGroup.isNotEmpty() ->
+                mobileBuildBottomSubtitleCue(commentaryGroup, bottomGroup)
+            group === bottomGroup || group === commentaryGroup ->
+                mobileBuildBottomSubtitleCue(emptyList(), unique)
+            unique.size == 1 -> unique.first()
+            else -> {
+                val builder = unique.first().buildUpon()
                 val text = SpannableStringBuilder()
                 unique.forEachIndexed { index, item ->
                     if (index > 0) text.append('\n')
                     text.append(requireNotNull(item.text))
                 }
-                builder.setText(SpannedString(text))
+                builder.setText(SpannedString(text)).build()
             }
-            if (group === bottomGroup || group === commentaryGroup) {
-                builder.setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
-                    .setLineAnchor(Cue.TYPE_UNSET)
-                    .setPosition(Cue.DIMEN_UNSET)
-                    .setPositionAnchor(Cue.TYPE_UNSET)
-                    .setSize(Cue.DIMEN_UNSET)
-                    .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
-                    .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
-
-                if (group === commentaryGroup) {
-                    builder.setLine(.08f, Cue.LINE_TYPE_FRACTION)
-                        .setLineAnchor(Cue.ANCHOR_TYPE_START)
-                        .setPosition(.5f)
-                        .setPositionAnchor(Cue.ANCHOR_TYPE_MIDDLE)
-                        .setSize(.9f)
-                }
-            }
-            builder.build()
         }
     }
+}
+
+private fun mobileBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue>): Cue {
+    val commentaryUnique = commentary.distinctBy { it.text.toString() }
+    val normalUnique = normal.distinctBy { it.text.toString() }
+    val seed = normalUnique.firstOrNull() ?: commentaryUnique.first()
+    val text = SpannableStringBuilder()
+    commentaryUnique.forEachIndexed { index, item ->
+        if (index > 0) text.append('\n')
+        text.append(requireNotNull(item.text))
+    }
+    if (commentaryUnique.isNotEmpty() && normalUnique.isNotEmpty()) text.append("\n\n")
+    normalUnique.forEachIndexed { index, item ->
+        if (index > 0) text.append('\n')
+        text.append(requireNotNull(item.text))
+    }
+    return seed.buildUpon()
+        .setText(SpannedString(text))
+        .setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET)
+        .setLineAnchor(Cue.TYPE_UNSET)
+        .setPosition(Cue.DIMEN_UNSET)
+        .setPositionAnchor(Cue.TYPE_UNSET)
+        .setSize(Cue.DIMEN_UNSET)
+        .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
+        .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
+        .build()
 }
 
 internal fun mobileIsTaggedSubtitleCommentary(cue: Cue): Boolean {

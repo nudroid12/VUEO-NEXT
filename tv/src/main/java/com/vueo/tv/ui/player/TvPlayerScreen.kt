@@ -1647,6 +1647,8 @@ fun TvPlayerScreen(
                 noteInteraction()
             },
             onPromptFocused = { focusedPrompt = it },
+            onPromptNavigateUp = { requestControlFocus(restartRequester) },
+            onPromptNavigateDown = { requestControlFocus(progressRequester) },
             onPlayPause = ::togglePlayback,
             onRetryPlayback = {
                 saveProgress()

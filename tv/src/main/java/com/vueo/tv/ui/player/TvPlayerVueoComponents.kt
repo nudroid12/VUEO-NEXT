@@ -304,6 +304,8 @@ internal fun VueoPlayerPromptButton(
     upRequester: FocusRequester,
     downRequester: FocusRequester,
     modifier: Modifier = Modifier,
+    onNavigateUp: (() -> Unit)? = null,
+    onNavigateDown: (() -> Unit)? = null,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
     onFocused: () -> Unit = {},
@@ -329,6 +331,17 @@ internal fun VueoPlayerPromptButton(
                 }
             }
             .onPreviewKeyEvent { event ->
+                val code = event.nativeKeyEvent.keyCode
+                if (event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_UP && onNavigateUp != null) {
+                    onInteraction()
+                    onNavigateUp()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_DOWN && onNavigateDown != null) {
+                    onInteraction()
+                    onNavigateDown()
+                    return@onPreviewKeyEvent true
+                }
                 if (!event.isVueoActivationKey()) return@onPreviewKeyEvent false
                 onInteraction()
                 if (event.type == KeyEventType.KeyUp) onClick()

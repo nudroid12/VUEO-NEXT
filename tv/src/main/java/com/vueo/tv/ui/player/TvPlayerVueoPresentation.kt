@@ -114,6 +114,8 @@ internal fun VueoPlayerPresentation(
     onInteraction: () -> Unit,
     onChromeInteraction: () -> Unit,
     onPromptFocused: (TvPlayerPromptTarget) -> Unit,
+    onPromptNavigateUp: () -> Unit,
+    onPromptNavigateDown: () -> Unit,
     onPlayPause: () -> Unit,
     onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
@@ -147,11 +149,12 @@ internal fun VueoPlayerPresentation(
         val promptBottomPadding = if (controlsVisible) bottomControlsHeight + 12.dp else 22.dp + 3.dp + 12.dp
         val skipOnRight = activeSkip?.kind == PlayerSkipKind.ENDING
         val showChrome = controlsVisible && activePanel == TvPlayerPanel.NONE
+        // A standalone Skip prompt must not dim the video. Full chrome, panels,
+        // errors and the larger Next Episode countdown still own the cinematic scrim.
         val showScrim = showChrome ||
             activePanel != TvPlayerPanel.NONE ||
             playbackError != null ||
-            (showPrompts && activeSkip != null) ||
-            (showPrompts && nextCountdown > 0)
+            (showPrompts && nextCountdown > 0 && activeSkip == null)
         AnimatedVisibility(
             visible = showScrim,
             enter = tvPlayerWorkspaceFadeIn(),
@@ -221,6 +224,8 @@ internal fun VueoPlayerPresentation(
                         text = vueoSkipLabel(activeSkip), requester = skipRequester,
                         upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
                         downRequester = if (showChrome) progressRequester else FocusRequester.Cancel,
+                        onNavigateUp = if (nextCountdown <= 0 || nextEpisode == null) onPromptNavigateUp else null,
+                        onNavigateDown = if (!showChrome) onPromptNavigateDown else null,
                         onInteraction = onInteraction,
                         onFocused = { onPromptFocused(TvPlayerPromptTarget.SKIP) },
                         onClick = { onSkip(activeSkip) },
@@ -250,6 +255,8 @@ internal fun VueoPlayerPresentation(
                             text = vueoSkipLabel(activeSkip), requester = skipRequester,
                             upRequester = if (nextCountdown > 0 && nextEpisode != null) nextContextRequester else FocusRequester.Cancel,
                             downRequester = if (showChrome) progressRequester else FocusRequester.Cancel,
+                            onNavigateUp = if (nextCountdown <= 0 || nextEpisode == null) onPromptNavigateUp else null,
+                            onNavigateDown = if (!showChrome) onPromptNavigateDown else null,
                             onInteraction = onInteraction,
                             onFocused = { onPromptFocused(TvPlayerPromptTarget.SKIP) },
                             onClick = { onSkip(activeSkip) },
