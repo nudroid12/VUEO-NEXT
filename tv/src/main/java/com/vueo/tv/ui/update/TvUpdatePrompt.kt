@@ -1,7 +1,6 @@
 package com.vueo.tv.update
 
 import android.view.KeyEvent
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.BuildConfig
+import com.vueo.tv.ui.TvModalDialog
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.launch
@@ -68,187 +67,184 @@ fun TvUpdatePrompt(
 
     val canDownload = release.downloadUrl != null
 
-    BackHandler {
-        if (!downloading) onLater()
-    }
-
-    LaunchedEffect(release.versionCode, canDownload) {
-        if (canDownload) updateRequester.requestFocus() else laterRequester.requestFocus()
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = .74f)),
-        contentAlignment = Alignment.Center,
+    TvModalDialog(
+        onDismissRequest = { if (!downloading) onLater() },
+        initialFocus = if (canDownload) updateRequester else laterRequester,
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .widthIn(min = 560.dp, max = 680.dp)
-                .clip(PromptShape)
-                .background(TvDesign.SurfaceRaised.copy(alpha = .98f))
-                .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
-                .padding(horizontal = 34.dp, vertical = 30.dp),
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = .74f)),
+            contentAlignment = Alignment.Center,
         ) {
-            TextLine(
-                text = "UPDATE AVAILABLE",
-                sizeSp = 13,
-                weight = FontWeight.SemiBold,
-                color = TvDesign.Muted,
-                letterSpacingSp = 1.4f,
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            TextLine(
-                text = release.title,
-                sizeSp = 29,
-                weight = FontWeight.SemiBold,
-                color = TvDesign.White,
-                maxLines = 2,
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            TextLine(
-                text = "${BuildConfig.VERSION_NAME}  →  ${release.versionName}",
-                sizeSp = 16,
-                weight = FontWeight.Medium,
-                color = TvDesign.Muted,
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            TextLine(
-                text = "What’s new",
-                sizeSp = 18,
-                weight = FontWeight.SemiBold,
-                color = TvDesign.White,
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            val notes = release.changelog.take(4)
-            if (notes.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 560.dp, max = 680.dp)
+                    .clip(PromptShape)
+                    .background(TvDesign.SurfaceRaised.copy(alpha = .98f))
+                    .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
+                    .padding(horizontal = 34.dp, vertical = 30.dp),
+            ) {
                 TextLine(
-                    text = "Latest VUEO TV development build is ready to install.",
-                    sizeSp = 16,
-                    weight = FontWeight.Normal,
+                    text = "UPDATE AVAILABLE",
+                    sizeSp = 13,
+                    weight = FontWeight.SemiBold,
                     color = TvDesign.Muted,
-                    maxLines = 3,
+                    letterSpacingSp = 1.4f,
                 )
-            } else {
-                notes.forEach { note ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        TextLine(
-                            text = "•",
-                            sizeSp = 16,
-                            weight = FontWeight.Bold,
-                            color = TvDesign.White,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        TextLine(
-                            text = note,
-                            sizeSp = 16,
-                            weight = FontWeight.Normal,
-                            color = TvDesign.Muted,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 2,
-                        )
-                    }
-                    Spacer(Modifier.height(7.dp))
-                }
-            }
 
-            status?.let { message ->
                 Spacer(Modifier.height(10.dp))
+
                 TextLine(
-                    text = message,
-                    sizeSp = 14,
-                    weight = FontWeight.Medium,
-                    color = TvDesign.White.copy(alpha = .86f),
+                    text = release.title,
+                    sizeSp = 29,
+                    weight = FontWeight.SemiBold,
+                    color = TvDesign.White,
                     maxLines = 2,
                 )
-            }
 
-            Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TvUpdateAction(
-                    label = "Later",
-                    requester = laterRequester,
-                    enabled = !downloading,
-                    onClick = onLater,
-                    onBack = onLater,
-                    left = if (canDownload) updateRequester else laterRequester,
-                    right = if (canDownload) updateRequester else laterRequester,
-                    up = laterRequester,
-                    down = laterRequester,
-                    primary = false,
+                TextLine(
+                    text = "${BuildConfig.VERSION_NAME}  →  ${release.versionName}",
+                    sizeSp = 16,
+                    weight = FontWeight.Medium,
+                    color = TvDesign.Muted,
                 )
 
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.height(24.dp))
 
-                TvUpdateAction(
-                    label = when {
-                        downloading -> "$progress%"
-                        canDownload -> "Update"
-                        else -> "Unavailable"
-                    },
-                    requester = updateRequester,
-                    enabled = canDownload,
-                    onClick = {
-                        if (!downloading) {
-                            if (TvUpdateManager.needsInstallPermission(context)) {
-                                status = "Allow installs for VUEO, then return and choose Update again."
-                                TvUpdateManager.openInstallPermissionSettings(context.applicationContext)
-                            } else {
-                                downloading = true
-                                progress = 0
-                                status = "Downloading verified update…"
-                                scope.launch {
-                                    TvUpdateManager
-                                        .downloadAndInstall(
-                                            context = context.applicationContext,
-                                            release = release,
-                                            onProgress = { progress = it },
-                                        )
-                                        .onSuccess {
-                                            status = "Android installer opened."
-                                        }
-                                        .onFailure { failure ->
-                                            status = failure.message ?: "Unable to install update."
-                                        }
-                                    downloading = false
+                TextLine(
+                    text = "What’s new",
+                    sizeSp = 18,
+                    weight = FontWeight.SemiBold,
+                    color = TvDesign.White,
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                val notes = release.changelog.take(4)
+                if (notes.isEmpty()) {
+                    TextLine(
+                        text = "Latest VUEO TV development build is ready to install.",
+                        sizeSp = 16,
+                        weight = FontWeight.Normal,
+                        color = TvDesign.Muted,
+                        maxLines = 3,
+                    )
+                } else {
+                    notes.forEach { note ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            TextLine(
+                                text = "•",
+                                sizeSp = 16,
+                                weight = FontWeight.Bold,
+                                color = TvDesign.White,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            TextLine(
+                                text = note,
+                                sizeSp = 16,
+                                weight = FontWeight.Normal,
+                                color = TvDesign.Muted,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                            )
+                        }
+                        Spacer(Modifier.height(7.dp))
+                    }
+                }
+
+                status?.let { message ->
+                    Spacer(Modifier.height(10.dp))
+                    TextLine(
+                        text = message,
+                        sizeSp = 14,
+                        weight = FontWeight.Medium,
+                        color = TvDesign.White.copy(alpha = .86f),
+                        maxLines = 2,
+                    )
+                }
+
+                Spacer(Modifier.height(28.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TvUpdateAction(
+                        label = "Later",
+                        requester = laterRequester,
+                        enabled = !downloading,
+                        onClick = onLater,
+                        onBack = onLater,
+                        left = if (canDownload) updateRequester else laterRequester,
+                        right = if (canDownload) updateRequester else laterRequester,
+                        up = laterRequester,
+                        down = laterRequester,
+                        primary = false,
+                    )
+
+                    Spacer(Modifier.width(12.dp))
+
+                    TvUpdateAction(
+                        label = when {
+                            downloading -> "$progress%"
+                            canDownload -> "Update"
+                            else -> "Unavailable"
+                        },
+                        requester = updateRequester,
+                        enabled = canDownload,
+                        onClick = {
+                            if (!downloading) {
+                                if (TvUpdateManager.needsInstallPermission(context)) {
+                                    status = "Allow installs for VUEO, then return and choose Update again."
+                                    TvUpdateManager.openInstallPermissionSettings(context.applicationContext)
+                                } else {
+                                    downloading = true
+                                    progress = 0
+                                    status = "Downloading verified update…"
+                                    scope.launch {
+                                        TvUpdateManager
+                                            .downloadAndInstall(
+                                                context = context.applicationContext,
+                                                release = release,
+                                                onProgress = { progress = it },
+                                            )
+                                            .onSuccess {
+                                                status = "Android installer opened."
+                                            }
+                                            .onFailure { failure ->
+                                                status = failure.message ?: "Unable to install update."
+                                            }
+                                        downloading = false
+                                    }
                                 }
                             }
-                        }
-                    },
-                    onBack = { if (!downloading) onLater() },
-                    left = laterRequester,
-                    right = laterRequester,
-                    up = updateRequester,
-                    down = updateRequester,
-                    primary = true,
+                        },
+                        onBack = { if (!downloading) onLater() },
+                        left = if (downloading) updateRequester else laterRequester,
+                        right = if (downloading) updateRequester else laterRequester,
+                        up = updateRequester,
+                        down = updateRequester,
+                        primary = true,
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                TextLine(
+                    text = "Android will ask for final confirmation before installation.",
+                    sizeSp = 12,
+                    weight = FontWeight.Normal,
+                    color = TvDesign.Dim,
+                    maxLines = 1,
                 )
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            TextLine(
-                text = "Android will ask for final confirmation before installation.",
-                sizeSp = 12,
-                weight = FontWeight.Normal,
-                color = TvDesign.Dim,
-                maxLines = 1,
-            )
         }
     }
 }

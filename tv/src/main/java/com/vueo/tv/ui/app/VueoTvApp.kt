@@ -5,6 +5,7 @@ import com.vueo.shared.core.diagnostics.CrashReportStore
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
@@ -22,6 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -52,6 +59,8 @@ import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.search.TvEntityResultsScreen
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
+import com.vueo.tv.ui.LocalTvModalFocusHost
+import com.vueo.tv.ui.TvModalFocusHost
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.tvPlayerFadeThrough
 import com.vueo.tv.ui.motion.tvImmediateCut
@@ -123,6 +132,29 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var playerReturnRoute by remember { mutableStateOf(TvRoute.SOURCE) }
     val searchSession = remember { TvSearchSession() }
     val sourceDiscoveryScope = rememberCoroutineScope()
+    val backgroundFocus = remember { FocusRequester() }
+    val backgroundFocusManager = LocalFocusManager.current
+    var modalDepth by remember { mutableIntStateOf(0) }
+    val modalFocusHost = remember(backgroundFocus, backgroundFocusManager, sourceDiscoveryScope) {
+        TvModalFocusHost(
+            open = {
+                if (modalDepth == 0) {
+                    backgroundFocus.saveFocusedChild()
+                    backgroundFocusManager.clearFocus(force = true)
+                }
+                modalDepth += 1
+            },
+            close = {
+                modalDepth = (modalDepth - 1).coerceAtLeast(0)
+                sourceDiscoveryScope.launch {
+                    withFrameNanos { }
+                    if (modalDepth == 0) {
+                        if (!backgroundFocus.restoreFocusedChild()) backgroundFocus.requestFocus()
+                    }
+                }
+            },
+        )
+    }
     var sourceDiscoverySnapshot by remember { mutableStateOf<TvSourceDiscoverySnapshot?>(null) }
     var sourceDiscoveryError by remember { mutableStateOf<String?>(null) }
     var sourceDiscoveryKey by remember { mutableStateOf<String?>(null) }
@@ -636,10 +668,16 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             surface = TvDesign.Surface,
         ),
     ) {
+        CompositionLocalProvider(LocalTvModalFocusHost provides modalFocusHost) {
         Box(
             modifier = Modifier.fillMaxSize().background(TvDesign.Black),
         ) {
             AnimatedContent(
+                modifier = Modifier.focusRequester(backgroundFocus)
+                    .focusProperties {
+                        onEnter = { if (modalDepth > 0) cancelFocusChange() }
+                    }
+                    .focusGroup(),
                 targetState = route,
                 transitionSpec = {
                     if (initialState == TvRoute.STARTUP) {
@@ -929,6 +967,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 )
             }
 
+        }
         }
     }
 }

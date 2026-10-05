@@ -69,6 +69,7 @@ import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.profile.ProfileAvatarSpec
 import com.vueo.shared.core.storage.ProfileStore
 import com.vueo.shared.core.storage.VueoProfile
+import com.vueo.tv.ui.TvModalDialog
 import com.vueo.tv.R
 import com.vueo.tv.ui.motion.tvFocusSpec
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
@@ -1173,36 +1174,32 @@ private fun TvProfileConfirmOverlay(
     onCancel: () -> Unit,
 ) {
     val cancelRequester = remember { FocusRequester() }
-    BackHandler(onBack = onCancel)
-    LaunchedEffect(Unit) {
-        delay(80)
-        runCatching { cancelRequester.requestFocus() }
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .width(600.dp)
-                .background(PickerPanelRaised, RoundedCornerShape(24.dp))
-                .border(1.dp, PickerStroke, RoundedCornerShape(24.dp))
-                .padding(horizontal = 36.dp, vertical = 30.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    TvModalDialog(onDismissRequest = onCancel, initialFocus = cancelRequester) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(10.dp))
-            Text(message, color = PickerMuted, fontSize = 14.sp, lineHeight = 20.sp)
-            Spacer(Modifier.height(26.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                TvProfileAction(
-                    label = "Cancel",
-                    onClick = onCancel,
-                    width = 150,
-                    requester = cancelRequester,
-                )
-                TvProfileAction(label = confirmLabel, onClick = onConfirm, width = 190, danger = danger)
+            Column(
+                modifier = Modifier
+                    .width(600.dp)
+                    .background(PickerPanelRaised, RoundedCornerShape(24.dp))
+                    .border(1.dp, PickerStroke, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 36.dp, vertical = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(10.dp))
+                Text(message, color = PickerMuted, fontSize = 14.sp, lineHeight = 20.sp)
+                Spacer(Modifier.height(26.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TvProfileAction(
+                        label = "Cancel",
+                        onClick = onCancel,
+                        width = 150,
+                        requester = cancelRequester,
+                    )
+                    TvProfileAction(label = confirmLabel, onClick = onConfirm, width = 190, danger = danger)
+                }
             }
         }
     }

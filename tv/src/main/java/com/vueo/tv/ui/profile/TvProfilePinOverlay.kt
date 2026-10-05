@@ -1,6 +1,5 @@
 package com.vueo.tv.profile
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.vueo.tv.ui.motion.tvFocusSpec
-import kotlinx.coroutines.delay
+
+import com.vueo.tv.ui.TvModalDialog
 
 private const val PIN_LENGTH = 4
 private const val PIN_KEY_COUNT = 12
@@ -58,12 +57,6 @@ internal fun TvPinEntryOverlay(
     var pin by remember { mutableStateOf("") }
     val requesters = remember { List(PIN_KEY_COUNT) { FocusRequester() } }
 
-    BackHandler(onBack = onCancel)
-    LaunchedEffect(Unit) {
-        delay(80)
-        runCatching { requesters.first().requestFocus() }
-    }
-
     fun appendDigit(digit: Char) {
         if (pin.length >= PIN_LENGTH) return
         val next = pin + digit
@@ -71,85 +64,87 @@ internal fun TvPinEntryOverlay(
         if (next.length == PIN_LENGTH) onComplete(next)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(80f)
-            .background(Color(0xFF050706).copy(alpha = 0.985f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
+    TvModalDialog(onDismissRequest = onCancel, initialFocus = requesters.first()) {
+        Box(
             modifier = Modifier
-                .width(560.dp)
-                .background(Color(0xFF111412), RoundedCornerShape(24.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
-                .padding(horizontal = 48.dp, vertical = 36.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .fillMaxSize()
+                .zIndex(80f)
+                .background(Color(0xFF050706).copy(alpha = 0.985f)),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(title, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(8.dp))
-            Text(subtitle, color = Color(0xFFAAB2AD), fontSize = 15.sp)
-            Spacer(Modifier.height(24.dp))
+            Column(
+                modifier = Modifier
+                    .width(560.dp)
+                    .background(Color(0xFF111412), RoundedCornerShape(24.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 48.dp, vertical = 36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(title, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(8.dp))
+                Text(subtitle, color = Color(0xFFAAB2AD), fontSize = 15.sp)
+                Spacer(Modifier.height(24.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(17.dp)) {
-                repeat(PIN_LENGTH) { index ->
-                    val filled = index < pin.length
-                    Box(
-                        Modifier
-                            .size(23.dp)
-                            .background(if (filled) Color.White else Color.Transparent, CircleShape)
-                            .border(
-                                2.dp,
-                                if (filled) Color.White else Color.White.copy(alpha = 0.30f),
-                                CircleShape,
-                            ),
-                    )
-                }
-            }
-
-            if (!errorText.isNullOrBlank()) {
-                Spacer(Modifier.height(13.dp))
-                Text(errorText, color = Color(0xFFFF8A80), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-
-            Spacer(Modifier.height(26.dp))
-            val keys = listOf(
-                "1", "2", "3",
-                "4", "5", "6",
-                "7", "8", "9",
-                "Delete", "0", "Cancel",
-            )
-
-            keys.chunked(3).forEachIndexed { rowIndex, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    row.forEachIndexed { columnIndex, label ->
-                        val index = rowIndex * 3 + columnIndex
-                        PinKey(
-                            label = label,
-                            requester = requesters[index],
-                            onMove = { direction ->
-                                val next = when (direction) {
-                                    PinMove.Left -> if (columnIndex > 0) index - 1 else index
-                                    PinMove.Right -> if (columnIndex < 2) index + 1 else index
-                                    PinMove.Up -> if (rowIndex > 0) index - 3 else index
-                                    PinMove.Down -> if (rowIndex < 3) index + 3 else index
-                                }
-                                if (next != index) {
-                                    runCatching { requesters[next].requestFocus() }
-                                    true
-                                } else false
-                            },
-                            onClick = {
-                                when (label) {
-                                    "Delete" -> if (pin.isNotEmpty()) pin = pin.dropLast(1)
-                                    "Cancel" -> onCancel()
-                                    else -> appendDigit(label.first())
-                                }
-                            },
+                Row(horizontalArrangement = Arrangement.spacedBy(17.dp)) {
+                    repeat(PIN_LENGTH) { index ->
+                        val filled = index < pin.length
+                        Box(
+                            Modifier
+                                .size(23.dp)
+                                .background(if (filled) Color.White else Color.Transparent, CircleShape)
+                                .border(
+                                    2.dp,
+                                    if (filled) Color.White else Color.White.copy(alpha = 0.30f),
+                                    CircleShape,
+                                ),
                         )
                     }
                 }
-                if (rowIndex < 3) Spacer(Modifier.height(14.dp))
+
+                if (!errorText.isNullOrBlank()) {
+                    Spacer(Modifier.height(13.dp))
+                    Text(errorText, color = Color(0xFFFF8A80), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(Modifier.height(26.dp))
+                val keys = listOf(
+                    "1", "2", "3",
+                    "4", "5", "6",
+                    "7", "8", "9",
+                    "Delete", "0", "Cancel",
+                )
+
+                keys.chunked(3).forEachIndexed { rowIndex, row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        row.forEachIndexed { columnIndex, label ->
+                            val index = rowIndex * 3 + columnIndex
+                            PinKey(
+                                label = label,
+                                requester = requesters[index],
+                                onMove = { direction ->
+                                    val next = when (direction) {
+                                        PinMove.Left -> if (columnIndex > 0) index - 1 else index
+                                        PinMove.Right -> if (columnIndex < 2) index + 1 else index
+                                        PinMove.Up -> if (rowIndex > 0) index - 3 else index
+                                        PinMove.Down -> if (rowIndex < 3) index + 3 else index
+                                    }
+                                    if (next != index) {
+                                        runCatching { requesters[next].requestFocus() }
+                                        true
+                                    } else false
+                                },
+                                onClick = {
+                                    when (label) {
+                                        "Delete" -> if (pin.isNotEmpty()) pin = pin.dropLast(1)
+                                        "Cancel" -> onCancel()
+                                        else -> appendDigit(label.first())
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    if (rowIndex < 3) Spacer(Modifier.height(14.dp))
+                }
             }
         }
     }
