@@ -1382,13 +1382,7 @@ internal fun MediaDetailsScreen(
             ) {
                 vueoPlayerFadeThrough()
             } else {
-                vueoFadeThrough(
-                    enterDurationMillis = 320,
-                    exitDurationMillis = 180,
-                    enterDelayMillis = 36,
-                    initialScale = 0.992f,
-                    targetScale = 0.996f,
-                )
+                vueoFadeThrough()
             }
         },
         modifier = Modifier.fillMaxSize(),

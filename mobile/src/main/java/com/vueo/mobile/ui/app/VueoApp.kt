@@ -594,13 +594,7 @@ fun VueoApp() {
     AnimatedContent(
         targetState = appSurface,
         transitionSpec = {
-            vueoFadeThrough(
-                enterDurationMillis = 340,
-                exitDurationMillis = 190,
-                enterDelayMillis = 28,
-                initialScale = 0.988f,
-                targetScale = 0.994f,
-            )
+            vueoFadeThrough()
         },
         modifier = Modifier.fillMaxSize(),
         label = "VUEO app surface transition",
@@ -852,13 +846,7 @@ fun VueoApp() {
             AnimatedContent(
                 targetState = selectedTab to settingsPage,
                 transitionSpec = {
-                    vueoFadeThrough(
-                        enterDurationMillis = 300,
-                        exitDurationMillis = 170,
-                        enterDelayMillis = 22,
-                        initialScale = 0.992f,
-                        targetScale = 0.996f,
-                    )
+                    vueoFadeThrough()
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "VUEO main navigation transition",

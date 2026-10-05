@@ -241,13 +241,7 @@ internal fun WhosWatchingScreen(
     AnimatedContent(
         targetState = managingProfiles,
         transitionSpec = {
-            vueoFadeThrough(
-                enterDurationMillis = 320,
-                exitDurationMillis = 180,
-                enterDelayMillis = 24,
-                initialScale = 0.994f,
-                targetScale = 0.996f,
-            )
+            vueoFadeThrough()
         },
         modifier = Modifier
             .fillMaxSize()
@@ -399,13 +393,7 @@ internal fun ProfileSettingsScreen(
     AnimatedContent(
         targetState = editor,
         transitionSpec = {
-            vueoFadeThrough(
-                enterDurationMillis = 380,
-                exitDurationMillis = 210,
-                enterDelayMillis = 34,
-                initialScale = 0.985f,
-                targetScale = 0.992f,
-            )
+            vueoFadeThrough()
         },
         modifier = Modifier
             .fillMaxSize()

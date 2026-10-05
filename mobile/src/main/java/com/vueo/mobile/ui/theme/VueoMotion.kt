@@ -11,6 +11,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -32,42 +34,42 @@ internal object VueoMotion {
     val EaseInOut = CubicBezierEasing(0.40f, 0f, 0.20f, 1f)
 }
 
-internal fun vueoFadeThrough(
-    enterDurationMillis: Int = VueoMotion.SCREEN_MS,
-    exitDurationMillis: Int = VueoMotion.QUICK_MS,
-    enterDelayMillis: Int = 32,
-    initialScale: Float = 0.985f,
-    targetScale: Float = 0.992f,
-): ContentTransform =
+/**
+ * Full-page navigation transition.
+ *
+ * Both surfaces move at the same time: the outgoing page fades while
+ * settling slightly backward, and the incoming page fades in from a
+ * shallow zoom. Scale uses a critically damped spring so it decelerates
+ * naturally without bounce or overshoot.
+ */
+internal fun vueoFadeThrough(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
-                durationMillis = enterDurationMillis,
-                delayMillis = enterDelayMillis,
+                durationMillis = 280,
                 easing = VueoMotion.EaseOut,
             ),
         ) +
             scaleIn(
-                initialScale = initialScale,
-                animationSpec = tween(
-                    durationMillis = enterDurationMillis,
-                    delayMillis = enterDelayMillis,
-                    easing = VueoMotion.EaseOut,
+                initialScale = 0.965f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = 430f,
                 ),
             )
     ) togetherWith
         (
             fadeOut(
                 animationSpec = tween(
-                    durationMillis = exitDurationMillis,
-                    easing = VueoMotion.EaseInOut,
+                    durationMillis = 220,
+                    easing = VueoMotion.EaseOut,
                 ),
             ) +
                 scaleOut(
-                    targetScale = targetScale,
-                    animationSpec = tween(
-                        durationMillis = exitDurationMillis,
-                        easing = VueoMotion.EaseInOut,
+                    targetScale = 0.985f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = 500f,
                     ),
                 )
         )

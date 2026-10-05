@@ -336,13 +336,7 @@ internal fun VueoSettingsHub(
     AnimatedContent(
         targetState = settingsSurface,
         transitionSpec = {
-            vueoFadeThrough(
-                enterDurationMillis = 320,
-                exitDurationMillis = 170,
-                enterDelayMillis = 24,
-                initialScale = 0.992f,
-                targetScale = 0.996f,
-            )
+            vueoFadeThrough()
         },
         label = "VUEO settings personalization transition",
         modifier = Modifier.fillMaxSize(),
