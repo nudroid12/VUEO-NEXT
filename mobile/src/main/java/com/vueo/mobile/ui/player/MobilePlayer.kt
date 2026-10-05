@@ -216,7 +216,6 @@ import com.vueo.mobile.core.storage.PreferredQuality
 import com.vueo.mobile.core.storage.PlayerOrientation
 import com.vueo.mobile.core.storage.PlayerVideoFit
 import com.vueo.mobile.core.storage.SettingsStore
-import com.vueo.mobile.core.player.PlayerSkipKind
 import com.vueo.mobile.core.player.PlayerSkipRepository
 import com.vueo.mobile.core.player.PlayerSkipSegment
 import com.vueo.mobile.core.player.PlayerPlaybackPhase
@@ -225,6 +224,7 @@ import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
+import com.vueo.shared.core.player.PlayerSkipPolicy
 import com.vueo.shared.core.player.SubtitleReadinessProbe
 import com.vueo.shared.core.player.SubtitleSessionDataSource
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
@@ -573,6 +573,9 @@ internal fun PlayerScreen(
         mutableStateOf(false)
     }
     var isPlaying by remember {
+        mutableStateOf(false)
+    }
+    var playbackEnded by remember(mediaKey) {
         mutableStateOf(false)
     }
     var currentPositionMs by remember {
@@ -1646,6 +1649,8 @@ internal fun PlayerScreen(
                 override fun onPlaybackStateChanged(
                     playbackState: Int,
                 ) {
+                    playbackEnded =
+                        playbackState == Player.STATE_ENDED
                     isBuffering =
                         playbackState ==
                             Player.STATE_BUFFERING
@@ -1705,12 +1710,6 @@ internal fun PlayerScreen(
                             !nextEpisodeCardDismissed
                         ) {
                             showNextEpisodeCard = true
-                            nextEpisodeCountdown =
-                                if (autoPlayNextEpisode) {
-                                    8
-                                } else {
-                                    null
-                                }
                             controlsVisible = true
                         }
                     }
@@ -1922,57 +1921,111 @@ internal fun PlayerScreen(
         }
     }
 
+    val earlyNextEligible =
+        skipSegmentsEnabled &&
+            durationMs > 0L &&
+            PlayerSkipPolicy.canStartNextDuringCredits(
+                skipSegments,
+                currentPositionMs,
+                durationMs,
+            )
+
+    val autoNextEligible =
+        !nextEpisodeSwitching &&
+            !nextEpisodeCardDismissed &&
+            autoPlayNextEpisode &&
+            nextEpisode != null &&
+            !playerPanelVisible &&
+            playbackError == null &&
+            !recoveryInProgress &&
+            gestureSeekPositionMs == null &&
+            !gestureActive &&
+            player.playWhenReady &&
+            (
+                playbackEnded ||
+                    (
+                        earlyNextEligible &&
+                            isPlaying &&
+                            !isBuffering &&
+                            hasRenderedFirstFrame
+                        )
+                )
+    val latestAutoNextEligible =
+        rememberUpdatedState(autoNextEligible)
+
     LaunchedEffect(
-        currentPositionMs,
-        durationMs,
+        playbackEnded,
+        earlyNextEligible,
         nextEpisode?.id,
         nextEpisodeCardDismissed,
-        skipSegments,
+        nextEpisodeCardSwitchTarget?.id,
     ) {
-        if (
+        val shouldShow =
             nextEpisode != null &&
-            !nextEpisodeCardDismissed &&
-            durationMs > 0L
-        ) {
-            val endingStartMs = skipSegments
-                .firstOrNull {
-                    it.kind == PlayerSkipKind.ENDING
-                }
-                ?.startMs
-            val remainingMs =
-                (durationMs - currentPositionMs)
-                    .coerceAtLeast(0L)
-            val progress =
-                currentPositionMs.toDouble() /
-                    durationMs.toDouble()
+                !nextEpisodeCardDismissed &&
+                (playbackEnded || earlyNextEligible)
 
-            val reachedNextEpisodePoint =
-                endingStartMs?.let {
-                    currentPositionMs >= it
-                } ?: (
-                    progress >= .95 &&
-                        remainingMs <= 60_000L
-                    )
-
-            if (reachedNextEpisodePoint) {
-                showNextEpisodeCard = true
-                controlsVisible = true
-            }
+        if (shouldShow) {
+            showNextEpisodeCard = true
+            controlsVisible = true
+        } else if (nextEpisodeCardSwitchTarget == null) {
+            showNextEpisodeCard = false
+            nextEpisodeCountdown = null
         }
     }
 
-    LaunchedEffect(nextEpisodeCountdown) {
-        val count = nextEpisodeCountdown
-        if (count != null && count > 0) {
-            delay(1_000L)
-            nextEpisodeCountdown = count - 1
-        } else if (
-            count == 0 &&
-            nextEpisode != null
-        ) {
+    LaunchedEffect(autoNextEligible, nextEpisode?.id) {
+        val targetEpisode = nextEpisode
+        if (!autoNextEligible || targetEpisode == null) {
             nextEpisodeCountdown = null
-            startNextEpisode()
+            return@LaunchedEffect
         }
+
+        for (remaining in 8 downTo 1) {
+            nextEpisodeCountdown = remaining
+            delay(1_000L)
+            if (!latestAutoNextEligible.value) {
+                nextEpisodeCountdown = null
+                return@LaunchedEffect
+            }
+        }
+
+        // Recheck the real player at dispatch time. A seek, pause, buffer,
+        // open workspace, recovery or unsafe post-credit interval must not
+        // advance the episode just because the UI poll was briefly eligible.
+        val actualDurationMs =
+            player.duration
+                .takeIf { it > 0L && it != C.TIME_UNSET }
+                ?: 0L
+        val finished =
+            player.playbackState == Player.STATE_ENDED
+        val safeCredits =
+            skipSegmentsEnabled &&
+                player.isPlaying &&
+                PlayerSkipPolicy.canStartNextDuringCredits(
+                    skipSegments,
+                    player.currentPosition,
+                    actualDurationMs,
+                )
+
+        nextEpisodeCountdown = null
+        if (
+            !latestAutoNextEligible.value ||
+            !player.playWhenReady ||
+            playerPanelVisible ||
+            playbackError != null ||
+            recoveryInProgress ||
+            gestureSeekPositionMs != null ||
+            gestureActive ||
+            nextEpisodeCardDismissed ||
+            !autoPlayNextEpisode ||
+            (!finished && !safeCredits) ||
+            nextEpisodeSwitching
+        ) {
+            return@LaunchedEffect
+        }
+
+        startNextEpisode()
     }
 
     LaunchedEffect(
@@ -2795,17 +2848,17 @@ internal fun PlayerScreen(
             }
         }
 
-        val activeSkipSegment = skipSegments
-            .firstOrNull {
-                currentPositionMs >= it.startMs &&
-                    currentPositionMs < it.endMs
-            }
-            ?.takeUnless {
-                it.key == dismissedSkipSegmentKey ||
-                    (
-                        it.kind == PlayerSkipKind.ENDING &&
-                            nextEpisode != null
-                        )
+        val activeSkipSegment =
+            if (skipSegmentsEnabled && durationMs > 0L) {
+                PlayerSkipPolicy.activeSegment(
+                    skipSegments,
+                    currentPositionMs,
+                    durationMs,
+                )?.takeUnless {
+                    it.key == dismissedSkipSegmentKey
+                }
+            } else {
+                null
             }
 
         if (!controlsLocked) {
@@ -2813,13 +2866,13 @@ internal fun PlayerScreen(
                 segment = activeSkipSegment,
                 onSkip = {
                     activeSkipSegment?.let { segment ->
-                        dismissedSkipSegmentKey = segment.key
-                        player.seekTo(
-                            segment.endMs.coerceAtMost(
-                                durationMs.takeIf { it > 0L }
-                                    ?: segment.endMs
-                            )
-                        )
+                        PlayerSkipPolicy.skipTargetMs(
+                            segment,
+                            durationMs,
+                        )?.let { targetMs ->
+                            dismissedSkipSegmentKey = segment.key
+                            player.seekTo(targetMs)
+                        }
                     }
                 },
                 modifier = Modifier
@@ -3184,8 +3237,11 @@ internal fun PlayerScreen(
                         fontSize = 11.sp,
                     )
                     Spacer(Modifier.weight(1f))
+                    val remainingMs =
+                        (durationMs - displayedPosition)
+                            .coerceAtLeast(0L)
                     Text(
-                        formatPlaybackTime(durationMs),
+                        "-${formatPlaybackTime(remainingMs)}",
                         color = Color.White.copy(
                             alpha = .72f
                         ),

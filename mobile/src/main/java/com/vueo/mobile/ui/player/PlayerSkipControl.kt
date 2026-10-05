@@ -42,7 +42,7 @@ internal fun PlayerSkipControl(
         val label = when (segment?.kind) {
             PlayerSkipKind.INTRO -> "Skip Intro"
             PlayerSkipKind.RECAP -> "Skip Recap"
-            PlayerSkipKind.ENDING -> "Skip Ending"
+            PlayerSkipKind.ENDING -> "Skip Credits"
             null -> "Skip"
         }
         Row(
