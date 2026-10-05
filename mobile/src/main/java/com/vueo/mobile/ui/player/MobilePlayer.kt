@@ -628,6 +628,7 @@ internal fun PlayerScreen(
                 fontSizeSp = settingsStore.subtitleFontSizeSp(),
                 fontFamily = settingsStore.subtitleFontFamily(),
                 bold = settingsStore.subtitleBold(),
+                showCommentary = settingsStore.subtitleCommentaryEnabled(),
                 textColor = settingsStore.subtitleTextColor(),
                 outlineEnabled = settingsStore.subtitleOutlineEnabled(),
                 outlineColor = settingsStore.subtitleOutlineColor(),
@@ -2313,8 +2314,14 @@ internal fun PlayerScreen(
                 settingsStore.setSubtitleFontSizeSp(
                     updated.fontSizeSp
                 )
+                settingsStore.setSubtitleFontFamily(
+                    updated.fontFamily
+                )
                 settingsStore.setSubtitleBold(
                     updated.bold
+                )
+                settingsStore.setSubtitleCommentaryEnabled(
+                    updated.showCommentary
                 )
                 settingsStore.setSubtitleTextColor(
                     updated.textColor
@@ -2365,7 +2372,8 @@ internal fun PlayerScreen(
                 subtitleStyle = updated
                 settingsStore.setSubtitleFontSizeSp(updated.fontSizeSp)
                 settingsStore.setSubtitleFontFamily(updated.fontFamily)
-                    settingsStore.setSubtitleBold(updated.bold)
+                settingsStore.setSubtitleBold(updated.bold)
+                settingsStore.setSubtitleCommentaryEnabled(updated.showCommentary)
                 settingsStore.setSubtitleTextColor(updated.textColor)
                 settingsStore.setSubtitleOutlineEnabled(updated.outlineEnabled)
                 settingsStore.setSubtitleOutlineColor(updated.outlineColor)
@@ -2523,6 +2531,15 @@ internal fun PlayerScreen(
             onDismiss = { showMoreDialog = false },
         )
 
+    val baseSubtitleBottomPaddingFraction =
+        subtitleStyle.bottomPaddingPercent / 100f
+    val subtitleBottomPaddingFraction =
+        if (controlsVisible && !playerPanelVisible) {
+            maxOf(baseSubtitleBottomPaddingFraction, 0.18f)
+        } else {
+            baseSubtitleBottomPaddingFraction
+        }
+
     Box(
         modifier =
             Modifier
@@ -2532,23 +2549,23 @@ internal fun PlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { playerContext ->
-                PlayerView(playerContext).apply {
-                    this.player = player
+                MobileSubtitlePlayerView(playerContext).apply {
                     useController = false
                     keepScreenOn = true
-                    applyVueoSubtitleStyle(
+                    bindPlayer(player)
+                    applySubtitlePresentation(
                         style = subtitleStyle,
-                        fontScale = 1f,
+                        bottomPadding = subtitleBottomPaddingFraction,
                     )
                     resizeMode = videoFit.toMedia3ResizeMode()
                 }
             },
             update = { view ->
-                view.player = player
+                view.bindPlayer(player)
                 view.useController = false
-                view.applyVueoSubtitleStyle(
+                view.applySubtitlePresentation(
                     style = subtitleStyle,
-                    fontScale = 1f,
+                    bottomPadding = subtitleBottomPaddingFraction,
                 )
                 view.resizeMode = videoFit.toMedia3ResizeMode()
             },

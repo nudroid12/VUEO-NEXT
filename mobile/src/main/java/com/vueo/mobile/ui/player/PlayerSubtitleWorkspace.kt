@@ -73,6 +73,7 @@ internal data class PlayerSubtitleStyleState(
     val fontFamily: String = "default",
     val fontSizeSp: Int = 26,
     val bold: Boolean = false,
+    val showCommentary: Boolean = true,
     val textColor: Int = 0xFFFFFFFF.toInt(),
     val outlineEnabled: Boolean = true,
     val outlineColor: Int = 0xFF000000.toInt(),
@@ -760,6 +761,13 @@ private fun SubtitleStyleControls(
             )
         }
         item {
+            StyleToggle("Commentary", style.showCommentary) {
+                onStyleChange(
+                    style.copy(showCommentary = !style.showCommentary)
+                )
+            }
+        }
+        item {
             StyleStepper(
                 label = "Font Size",
                 value = "${style.fontSizeSp}sp",
@@ -913,7 +921,7 @@ private fun SubtitleStyleControls(
                     onStyleChange(
                         style.copy(
                             bottomPaddingPercent =
-                                (style.bottomPaddingPercent - 5)
+                                (style.bottomPaddingPercent - 2)
                                     .coerceAtLeast(5)
                         )
                     )
@@ -922,7 +930,7 @@ private fun SubtitleStyleControls(
                     onStyleChange(
                         style.copy(
                             bottomPaddingPercent =
-                                (style.bottomPaddingPercent + 5)
+                                (style.bottomPaddingPercent + 2)
                                     .coerceAtMost(40)
                         )
                     )

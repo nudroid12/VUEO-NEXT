@@ -474,11 +474,18 @@ class SettingsStore(
         }.apply()
     }
 
-    fun tvSubtitleCommentaryEnabled(): Boolean =
+    fun subtitleCommentaryEnabled(): Boolean =
         prefs.getBoolean(profileKey(KEY_TV_SUBTITLE_COMMENTARY), true)
 
-    fun setTvSubtitleCommentaryEnabled(enabled: Boolean) {
+    fun setSubtitleCommentaryEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(profileKey(KEY_TV_SUBTITLE_COMMENTARY), enabled).apply()
+    }
+
+    // Keep the TV-named accessors as compatibility aliases for older player code.
+    fun tvSubtitleCommentaryEnabled(): Boolean = subtitleCommentaryEnabled()
+
+    fun setTvSubtitleCommentaryEnabled(enabled: Boolean) {
+        setSubtitleCommentaryEnabled(enabled)
     }
 
     fun subtitleFontFamily(): String = com.vueo.shared.core.player.SubtitleFonts.normalize(

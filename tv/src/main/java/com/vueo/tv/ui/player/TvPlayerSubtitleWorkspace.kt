@@ -475,10 +475,10 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs - 50).coerceAtLeast(-60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
                                     },
                                     onIncrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs + 50).coerceAtMost(60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
                                     },
                                 )
                                 VueoSubtitleStepperRow(
