@@ -5,8 +5,8 @@ import android.graphics.Typeface
 
 /** Bundled offline fonts; the system face remains the default. */
 object SubtitleFonts {
-    val ids = listOf("default", "noto_sans", "atkinson", "open_sans", "lato")
-    private val labels = listOf("Default", "Noto Sans", "Atkinson Hyperlegible", "Open Sans", "Lato")
+    val ids = listOf("default", "arimo", "dejavu_sans", "atkinson", "noto_sans", "roboto")
+    private val labels = listOf("Default", "Arimo", "DejaVu Sans", "Atkinson Hyperlegible", "Noto Sans", "Roboto")
     private val cache = mutableMapOf<String, Typeface>()
     fun normalize(id: String) = id.takeIf { it in ids } ?: "default"
     fun label(id: String) = labels[ids.indexOf(normalize(id))]
