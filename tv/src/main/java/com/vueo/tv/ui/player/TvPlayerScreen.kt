@@ -235,6 +235,7 @@ fun TvPlayerScreen(
     var autoNextCancelled by remember(bundle.videoId) { mutableStateOf(false) }
     var nextEpisodeDispatched by remember(bundle.videoId) { mutableStateOf(false) }
     var autoNextCompletedCurrent by remember(bundle.videoId) { mutableStateOf(false) }
+    var libraryProgressRevision by remember(media.id, media.type) { mutableIntStateOf(0) }
     var focusedPrompt by remember { mutableStateOf(TvPlayerPromptTarget.NONE) }
 
     var subtitleDelayMs by remember(mediaKey) { mutableIntStateOf(settings.subtitleDelayMs(mediaKey)) }
@@ -529,6 +530,7 @@ fun TvPlayerScreen(
             positionMs = position,
             durationMs = duration,
         )
+        libraryProgressRevision += 1
         onLibraryChanged()
     }
 
@@ -788,6 +790,7 @@ fun TvPlayerScreen(
                         season = episode?.season, episode = episode?.episode,
                         positionMs = completedDuration, durationMs = completedDuration,
                     )
+                    libraryProgressRevision += 1
                     onLibraryChanged()
                     ended = true
                     playing = false
@@ -1548,6 +1551,23 @@ fun TvPlayerScreen(
         val orderedEpisodes = remember(media.episodes) {
             media.episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
         }
+        val watchedEpisodeKeys = remember(
+            media.id,
+            media.type,
+            libraryProgressRevision,
+        ) {
+            runtime.libraryStore.history()
+                .asSequence()
+                .filter { entry ->
+                    entry.media.id == media.id &&
+                        entry.media.type == media.type &&
+                        entry.isCompleted &&
+                        entry.season != null &&
+                        entry.episode != null
+                }
+                .map { entry -> entry.season!! to entry.episode!! }
+                .toSet()
+        }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
@@ -1600,6 +1620,7 @@ fun TvPlayerScreen(
             playbackError = playbackError,
             panelOptions = panelOptions,
             episodes = orderedEpisodes,
+            watchedEpisodeKeys = watchedEpisodeKeys,
             hasSubtitles = hasSubtitleControl,
             hasAudio = hasAudioControl,
             hasSources = hasSourcesControl,
@@ -1658,6 +1679,10 @@ fun TvPlayerScreen(
                     nextEpisodeDispatched = true
                     nextCountdown = 0
                     clearPendingSeek()
+                    // The contextual Next action only appears after the episode
+                    // ended or during credits that safely reach the video end.
+                    // Persist the current episode as completed before switching.
+                    autoNextCompletedCurrent = true
                     saveProgress()
                     onPlayNextEpisode(it, activeSource)
                 }

@@ -34,7 +34,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Text
@@ -486,6 +488,7 @@ internal fun VueoPlayerEpisodesPanel(
     mediaTitle: String,
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
+    watchedEpisodeKeys: Set<Pair<Int, Int>>,
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
@@ -593,6 +596,7 @@ internal fun VueoPlayerEpisodesPanel(
                     VueoEpisodeList(
                         episodes = ranges.visible,
                         currentEpisode = currentEpisode,
+                        watchedEpisodeKeys = watchedEpisodeKeys,
                         entryFocusRequester = episodeEntryRequester,
                         entryRequest = episodeEntryRequest,
                         topRequester = listTopRequester,
@@ -690,6 +694,7 @@ private fun VueoSeasonChip(
 private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
+    watchedEpisodeKeys: Set<Pair<Int, Int>>,
     entryFocusRequester: FocusRequester,
     entryRequest: Int,
     topRequester: FocusRequester,
@@ -767,6 +772,7 @@ private fun VueoEpisodeList(
                 VueoEpisodeRow(
                     episode = episode,
                     selected = selected,
+                    watched = (episode.season to episode.episode) in watchedEpisodeKeys,
                     requester = requesters[index],
                     topRequester = topRequester,
                     blockUp = index == 0,
@@ -784,6 +790,7 @@ private fun VueoEpisodeList(
 private fun VueoEpisodeRow(
     episode: EpisodeItem,
     selected: Boolean,
+    watched: Boolean,
     requester: FocusRequester,
     topRequester: FocusRequester,
     blockUp: Boolean,
@@ -872,6 +879,22 @@ private fun VueoEpisodeRow(
                         .size(9.dp)
                         .background(TvDesign.Accent, CircleShape)
                 )
+            } else if (watched) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(22.dp)
+                        .background(Color.Black.copy(alpha = .74f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Watched",
+                        tint = Color.White.copy(alpha = .88f),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(13.dp))
@@ -896,6 +919,14 @@ private fun VueoEpisodeRow(
                     lineHeight = 12.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (watched && !selected) {
+                Text(
+                    "Watched",
+                    color = Color.White.copy(alpha = .62f),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

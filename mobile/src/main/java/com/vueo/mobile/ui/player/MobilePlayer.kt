@@ -580,6 +580,9 @@ internal fun PlayerScreen(
     var playbackEnded by remember(mediaKey) {
         mutableStateOf(false)
     }
+    var episodeHistoryRevision by remember(media.id, media.type) {
+        mutableIntStateOf(0)
+    }
     var currentPositionMs by remember {
         mutableStateOf(initialPlaybackPositionMs)
     }
@@ -1178,6 +1181,24 @@ internal fun PlayerScreen(
         )
     }
 
+    fun markCurrentEpisodeCompletedForNext() {
+        val completedDuration = player.duration
+            .takeIf { it > 0L && it != C.TIME_UNSET }
+            ?.coerceAtLeast(0L)
+            ?: durationMs.coerceAtLeast(0L)
+        if (completedDuration <= 0L) {
+            savePosition()
+            return
+        }
+        playbackStore.clearPosition(mediaKey)
+        recordLibraryProgress(
+            positionMs = completedDuration,
+            durationMs = completedDuration,
+        )
+        episodeHistoryRevision += 1
+        onLibraryChanged()
+    }
+
     fun startNextEpisode() {
         val next = nextEpisode ?: return
         if (nextEpisodeSwitching) {
@@ -1188,7 +1209,10 @@ internal fun PlayerScreen(
         nextEpisodeCountdown = null
         showNextEpisodeCard = false
         controlsVisible = false
-        savePosition()
+        // The Next card is only exposed after playback ended or during credits
+        // that safely run to the end of the video. Treat advancing from here as
+        // completion so Episodes can immediately show the watched marker.
+        markCurrentEpisodeCompletedForNext()
         onNextEpisode(next)
     }
 
@@ -1707,6 +1731,7 @@ internal fun PlayerScreen(
                                 player.duration
                                     .coerceAtLeast(0L),
                         )
+                        episodeHistoryRevision += 1
                         onLibraryChanged()
                         if (
                             nextEpisode != null &&
@@ -2453,12 +2478,18 @@ internal fun PlayerScreen(
             },
         )
 
-    val episodeHistory = libraryStore.history()
+    val episodeHistory = remember(
+        media.id,
+        media.type,
+        episodeHistoryRevision,
+    ) {
+        libraryStore.history()
             .filter { entry ->
                 entry.media.type == media.type &&
                     entry.media.id == media.id
             }
-        val progressByEpisodeId = episodes.associate { candidate ->
+    }
+    val progressByEpisodeId = episodes.associate { candidate ->
             val stored = episodeHistory.firstOrNull { entry ->
                 entry.videoId == candidate.id ||
                     (
