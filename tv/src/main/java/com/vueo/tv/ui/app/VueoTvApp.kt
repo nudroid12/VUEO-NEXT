@@ -248,12 +248,10 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         sourceDiscoveryJob = null
         if (markStopped) {
             sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let { current ->
-                current.copy(
+                if (!current.searching) current
+                else current.copy(
                     searching = false,
-                    loadingProviders = emptyList(),
-                    progress = if (!current.searching && current.loadingProviders.isEmpty()) {
-                        current.progress
-                    } else if (current.bundle.sources.isEmpty()) {
+                    progress = if (current.bundle.sources.isEmpty()) {
                         "Discovery stopped"
                     } else {
                         "Discovery stopped • ${current.bundle.sources.size} unique sources"
@@ -386,10 +384,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             ?.copy(
                 searching = true,
                 progress = "Refreshing sources…",
-                loadingProviders = emptyList(),
             )
         sourceDiscoveryError = null
-        sourceBundle = sourceDiscoverySnapshot?.bundle
+        sourceBundle = null
         selectedSource = null
 
         sourceDiscoveryJob = sourceDiscoveryScope.launch {
@@ -403,17 +400,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             sourceDiscoveryGeneration == generation &&
                             sourceDiscoveryKey == key
                         ) {
-                            // Keep the existing cards until refreshed results
-                            // arrive; the final snapshot replaces them even if empty.
-                            val visibleSnapshot = if (
-                                snapshot.searching && snapshot.bundle.sources.isEmpty() &&
-                                previousKey == key && effectiveForce && previousSnapshot != null
-                            ) snapshot.copy(
-                                bundle = snapshot.bundle.copy(sources = previousSnapshot.bundle.sources),
-                                rawCount = maxOf(snapshot.rawCount, previousSnapshot.rawCount),
-                            ) else snapshot
-                            sourceDiscoverySnapshot = visibleSnapshot
-                            sourceBundle = visibleSnapshot.bundle
+                            sourceDiscoverySnapshot = snapshot
+                            sourceBundle = snapshot.bundle
                             if (!snapshot.searching) {
                                 failedSourceKeys =
                                     if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
@@ -430,11 +418,6 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryKey == key
                 ) {
                     sourceBundle = finalBundle
-                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(
-                        bundle = finalBundle,
-                        searching = false,
-                        loadingProviders = emptyList(),
-                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -444,21 +427,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryKey == key
                 ) {
                     sourceDiscoveryError = throwable.message ?: "Source discovery failed"
-                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(searching = false, loadingProviders = emptyList())
+                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.copy(searching = false)
                     failedSourceKeys = failedSourceKeys + key
                 }
             } finally {
                 if (sourceDiscoveryGeneration == generation) {
                     sourceDiscoveryJob = null
-                    sourceDiscoverySnapshot = sourceDiscoverySnapshot?.let { current ->
-                        current.copy(
-                            searching = false,
-                            loadingProviders = emptyList(),
-                            progress = if (current.searching && sourceDiscoveryError == null)
-                                "Discovery stopped • ${current.bundle.sources.size} unique sources"
-                            else current.progress,
-                        )
-                    }
                 }
             }
         }
