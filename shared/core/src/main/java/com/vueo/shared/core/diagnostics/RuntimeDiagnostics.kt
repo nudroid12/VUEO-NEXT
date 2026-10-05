@@ -111,6 +111,10 @@ object RuntimeDiagnostics {
 
     }
 
+    fun recordPlayerEvent(platform: String, event: String, details: String) {
+        record("PLAYER_EVENT platform=${safeToken(platform)} event=${safeToken(event)} ${safeText(details, 360)}")
+    }
+
     fun recordDiscoveryTrace(
         scanId: Long,
         stage: String,

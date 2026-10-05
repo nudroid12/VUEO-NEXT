@@ -94,11 +94,18 @@ class SourceDiscoveryEngine(
             .distinct()
             .toList()
         val loadingProviders = linkedSetOf<String>()
+        val completedSourceProviders = linkedSetOf<String>()
+        val plannedSourceProviders = (
+            mediaEngine.installed().filter {
+                mediaEngine.isExtensionEnabled(it.descriptor.id) && "stream" in it.descriptor.resources
+            }.map { it.descriptor.name } + configuredPluginProviderKeys(request)
+        ).distinct()
 
         fun markProviderLoading(provider: String) {
             val key = provider.trim().ifBlank { "Other" }
             synchronized(loadingProviders) {
                 loadingProviders += key
+                completedSourceProviders -= key
             }
         }
 
@@ -106,6 +113,7 @@ class SourceDiscoveryEngine(
             val key = provider.trim().ifBlank { "Other" }
             synchronized(loadingProviders) {
                 loadingProviders -= key
+                completedSourceProviders += key
             }
         }
 
@@ -247,6 +255,8 @@ class SourceDiscoveryEngine(
                     subtitlesResolved = subtitlesResolved,
                     activityLog = activityLog.toList(),
                     loadingProviders = loadingProviderSnapshot(),
+                    completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                    plannedSourceProviders = plannedSourceProviders,
                 )
             )
         }
@@ -301,11 +311,11 @@ class SourceDiscoveryEngine(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                subtitles = emptyList()
+                // Retain any tracks already published before a later request failed.
                 activity(
                     "subtitles",
                     level = "error",
-                    message = "Subtitle discovery failed before completion",
+                    message = "Subtitle discovery failed before completion • retaining ${subtitles.size} received tracks",
                 )
             } finally {
                 if (!subtitlesResolved) {
@@ -559,6 +569,8 @@ class SourceDiscoveryEngine(
                 subtitlesResolved = subtitlesResolved,
                 activityLog = activityLog.toList(),
                 loadingProviders = emptyList(),
+                completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                plannedSourceProviders = plannedSourceProviders,
             )
         )
 
@@ -582,6 +594,8 @@ class SourceDiscoveryEngine(
                 subtitlesResolved = true,
                 activityLog = activityLog.toList(),
                 loadingProviders = emptyList(),
+                completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                plannedSourceProviders = plannedSourceProviders,
             )
         )
         finalBundle
@@ -717,6 +731,8 @@ data class SourceDiscoverySnapshot(
     val loadingProviders: List<String> = emptyList(),
     val pluginsStopped: Boolean = false,
     val sourcesStopped: Boolean = false,
+    val completedSourceProviders: List<String> = emptyList(),
+    val plannedSourceProviders: List<String> = emptyList(),
 )
 
 data class SourceDiscoveryActivity(

@@ -158,7 +158,7 @@ fun TvPlayerScreen(
     sourcesStopped: Boolean = false,
     onStopSources: () -> Unit = {},
     onLibraryChanged: () -> Unit,
-    onPlayNextEpisode: (EpisodeItem) -> Unit = {},
+    onPlayNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
     episodeSwitching: Boolean = false,
     onEpisodeFrameReady: () -> Unit = {},
     onEpisodePlaybackFailed: (String) -> Unit = {},
@@ -210,8 +210,12 @@ fun TvPlayerScreen(
         ?.subtitles
         .orEmpty()
     LaunchedEffect(latestDiscoveredSubtitles) {
-        liveSubtitles = (liveSubtitles + latestDiscoveredSubtitles)
-            .distinctBy { it.url }
+        val merged = (liveSubtitles + latestDiscoveredSubtitles).distinctBy { it.url }
+        if (merged != liveSubtitles) {
+            liveSubtitles = merged
+            com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLES_MERGED",
+                "episode=${episode?.episode ?: 0} received=${latestDiscoveredSubtitles.size} total=${merged.size}")
+        }
     }
     val externalSubtitlesBySelectionId = remember(liveSubtitles) {
         liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)
@@ -727,6 +731,8 @@ fun TvPlayerScreen(
         player.replaceMediaItem(currentIndex, updatedMediaItem)
         player.seekTo(currentIndex, currentPosition)
         appliedSubtitleUrls = latestSubtitleUrls
+        com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLES_REGISTERED",
+            "episode=${episode?.episode ?: 0} tracks=${liveSubtitles.size} positionMs=$currentPosition")
     }
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -935,6 +941,11 @@ fun TvPlayerScreen(
             warningShown = true
             warningVisible = true
         }
+    }
+
+    LaunchedEffect(bundle.videoId, textTracks.map { it.selectionId }) {
+        com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLE_TRACKS_VISIBLE",
+            "episode=${episode?.episode ?: 0} tracks=${textTracks.size} external=${liveSubtitles.size}")
     }
 
     LaunchedEffect(player, activeSource.url, bundle.videoId) {
@@ -1163,7 +1174,7 @@ fun TvPlayerScreen(
         autoNextCompletedCurrent = true
         clearPendingSeek()
         saveProgress()
-        onPlayNextEpisode(targetEpisode)
+        onPlayNextEpisode(targetEpisode, activeSource)
     }
 
     LaunchedEffect(episodeSwitching) {
@@ -1677,7 +1688,7 @@ fun TvPlayerScreen(
                     nextCountdown = 0
                     clearPendingSeek()
                     saveProgress()
-                    onPlayNextEpisode(it)
+                    onPlayNextEpisode(it, activeSource)
                 }
             },
             onOpenPanel = { panel ->
@@ -1704,7 +1715,7 @@ fun TvPlayerScreen(
                     nextCountdown = 0
                     clearPendingSeek()
                     saveProgress()
-                    onPlayNextEpisode(target)
+                    onPlayNextEpisode(target, activeSource)
                 }
             },
             onPanelSelected = { option ->
@@ -1731,7 +1742,7 @@ fun TvPlayerScreen(
                             if (isCurrent) closePanel()
                             else {
                                 saveProgress()
-                                onPlayNextEpisode(target)
+                                onPlayNextEpisode(target, activeSource)
                             }
                         }
                     }

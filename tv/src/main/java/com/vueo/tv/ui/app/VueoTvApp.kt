@@ -131,6 +131,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoveryControl by remember { mutableStateOf<SourceDiscoveryControl?>(null) }
     var failedSourceKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var switchingEpisode by remember { mutableStateOf<EpisodeItem?>(null) }
+    var switchingPreferredSource by remember { mutableStateOf<StreamSource?>(null) }
     var switchingBundle by remember { mutableStateOf<TvSourceBundle?>(null) }
     var switchingError by remember { mutableStateOf<String?>(null) }
     var switchingShowSources by remember { mutableStateOf(false) }
@@ -274,6 +275,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     fun cancelEpisodeSwitch() {
         stopSourceDiscovery(markStopped = true)
         switchingEpisode = null
+        switchingPreferredSource = null
         switchingBundle = null
         switchingError = null
         switchingShowSources = false
@@ -293,7 +295,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         playerSessionId += 1
     }
 
-    fun startEpisodeSwitch(target: EpisodeItem, force: Boolean = false) {
+    fun startEpisodeSwitch(target: EpisodeItem, force: Boolean = false, preferredSource: StreamSource? = selectedSource) {
         val media = selectedMedia ?: return
         if (route != TvRoute.PLAYER) return
         if (!force && switchingEpisode != null) return
@@ -303,6 +305,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         val discoveryControl = SourceDiscoveryControl()
         sourceDiscoveryControl = discoveryControl
         switchingEpisode = target
+        switchingPreferredSource = preferredSource
         switchingBundle = null
         switchingError = null
         switchingShowSources = false
@@ -313,22 +316,49 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         sourceDiscoveryError = null
         var committed = false
         val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
+        var lastSubtitleCount = -1
+        var waitLogged = false
+        RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_START",
+            "episode=S${target.season}E${target.episode} provider=${preferredSource?.providerName.orEmpty()} server=${preferredSource?.let(com.vueo.shared.core.player.PlayerSourceDisplay::title).orEmpty()}")
 
         fun accept(nextBundle: TvSourceBundle, completed: Boolean) {
             if (sourceDiscoveryGeneration != generation || route != TvRoute.PLAYER) return
             switchingBundle = nextBundle
-            if (committed) {
+            if (nextBundle.subtitles.size != lastSubtitleCount) {
+                lastSubtitleCount = nextBundle.subtitles.size
+                RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_SUBTITLES_RECEIVED",
+                    "episode=S${target.season}E${target.episode} tracks=$lastSubtitleCount committed=$committed")
+            }
+            if (committed || (switchingCommitted && selectedEpisode?.id == target.id)) {
                 // Late subtitle/source results belong only to the committed episode.
-                if (sourceBundle?.videoId == nextBundle.videoId) sourceBundle = nextBundle
+                if (sourceBundle?.videoId == nextBundle.videoId) {
+                    val previous = sourceBundle
+                    sourceBundle = nextBundle.copy(subtitles =
+                        (previous?.subtitles.orEmpty() + nextBundle.subtitles).distinctBy { it.url })
+                }
                 return
             }
-            val ranked = nextBundle.sources.filter { it.isDirectPlayable }
-                .sortedWith(PlayerSourcePolicy.comparator(preferredQuality, media.originalLanguage))
-            val candidate = ranked.firstOrNull {
-                val assessment = PlayerSourcePolicy.assess(it, preferredQuality, media.originalLanguage)
-                assessment.quality.automaticRecoveryEligible && assessment.audioMatch.recommendationEligible
-            } ?: ranked.firstOrNull()?.takeIf { completed }
+            val preferredProviderDone = preferredSource == null ||
+                sourceDiscoverySnapshot?.completedSourceProviders.orEmpty().any {
+                    it.trim().equals(preferredSource.providerName.trim(), true)
+                } || sourceDiscoverySnapshot?.let { snapshot ->
+                    snapshot.plannedSourceProviders.none {
+                        it.trim().equals(preferredSource?.providerName?.trim(), true)
+                    }
+                } == true
+            val candidate = com.vueo.shared.core.player.NextEpisodeSourcePolicy.select(
+                sources = nextBundle.sources, current = preferredSource,
+                preferredProviderDone = preferredProviderDone, completed = completed,
+                preferredQuality = preferredQuality, originalLanguage = media.originalLanguage,
+            )
+            if (candidate == null && !preferredProviderDone && !waitLogged && nextBundle.sources.isNotEmpty()) {
+                waitLogged = true
+                RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_WAIT_CURRENT_PROVIDER",
+                    "episode=S${target.season}E${target.episode} fallbackSources=${nextBundle.sources.size}")
+            }
             if (candidate != null) {
+                RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_SOURCE_SELECTED",
+                    "episode=S${target.season}E${target.episode} provider=${candidate.providerName} server=${com.vueo.shared.core.player.PlayerSourceDisplay.title(candidate)} preferredProviderDone=$preferredProviderDone")
                 committed = true
                 failedSourceKeys = failedSourceKeys - targetKey
                 commitEpisodeSwitch(target, nextBundle, candidate)
@@ -353,6 +383,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     },
                 )
                 accept(result, completed = true)
+                RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_DISCOVERY_FINISHED",
+                    "episode=S${target.season}E${target.episode} sources=${result.sources.size} subtitleTracks=${result.subtitles.size}")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -720,7 +752,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                     route = playerReturnRoute
                                 },
                                 onLibraryChanged = { refreshToken++ },
-                                onPlayNextEpisode = { startEpisodeSwitch(it) },
+                                onPlayNextEpisode = { target, current -> startEpisodeSwitch(target, preferredSource = current) },
                                 episodeSwitching = switchingEpisode != null,
                                 onEpisodeFrameReady = {
                                     if (playerSessionId == playbackSession && switchingCommitted && switchingEpisode?.id == bundle.videoId) {
@@ -743,7 +775,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 error = switchingError,
                                 showSources = switchingShowSources,
                                 sources = switchingBundle?.sources.orEmpty().filter { it.isDirectPlayable },
-                                onRetry = { startEpisodeSwitch(target, force = true) },
+                                onRetry = { startEpisodeSwitch(target, force = true, preferredSource = switchingPreferredSource) },
                                 onShowSources = { switchingShowSources = true },
                                 onSelectSource = { candidate ->
                                     switchingBundle?.let { commitEpisodeSwitch(target, it, candidate) }
