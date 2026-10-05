@@ -2844,6 +2844,16 @@ internal fun PlayerScreen(
             )
         }
 
+        MobileBufferingIndicator(
+            buffering =
+                playbackPhase == PlayerPlaybackPhase.LOADING ||
+                    playbackPhase == PlayerPlaybackPhase.BUFFERING,
+            enabled =
+                playbackError == null &&
+                    !resumePromptVisible,
+            modifier = Modifier.align(Alignment.Center),
+        )
+
         if (
             showContentWarnings &&
             contentWarnings.isNotEmpty()
@@ -2955,22 +2965,18 @@ internal fun PlayerScreen(
                     )
                 }
 
-                if (
-                    playbackPhase == PlayerPlaybackPhase.LOADING ||
-                    playbackPhase == PlayerPlaybackPhase.BUFFERING ||
-                    playbackPhase == PlayerPlaybackPhase.RECOVERING
-                ) {
+                if (playbackPhase == PlayerPlaybackPhase.RECOVERING) {
                     Text(
-                        when (playbackPhase) {
-                            PlayerPlaybackPhase.LOADING -> "LOADING SOURCE"
-                            PlayerPlaybackPhase.BUFFERING -> "BUFFERING"
-                            PlayerPlaybackPhase.RECOVERING -> "TRYING NEXT SOURCE"
-                            else -> ""
-                        },
+                        "TRYING NEXT SOURCE",
                         color = VueoPalette.Accent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                     )
+                }
+
+                if (translatingSubtitleSelectionId != null) {
+                    Spacer(Modifier.width(8.dp))
+                    MobileTranslationStatusPill()
                 }
 
                 if (nextEpisode != null) {
