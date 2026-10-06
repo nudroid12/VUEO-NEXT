@@ -4,6 +4,7 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourceAssessment
+import com.vueo.shared.core.player.PlayerSourceDisplay
 import com.vueo.shared.core.player.PlayerSourceAudioMatch
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.core.TvSourceBundle
@@ -77,7 +78,8 @@ internal fun StreamSource.toTvSourceCardModel(
     preferredQuality: String?,
     logoUrl: String?,
 ): TvSourceCardModel {
-    val provider = sourceProviderDisplayName(sourceProviderKey(this))
+    // Match the in-player Sources presentation: repository/group first, then provider/server details.
+    val provider = PlayerSourceDisplay.groupTitle(this)
         .lineSequence()
         .map(String::trim)
         .firstOrNull(String::isNotBlank)
@@ -87,9 +89,18 @@ internal fun StreamSource.toTvSourceCardModel(
         ?.let { sourceCardLabelParts(it).joinToString("\n") }
         ?.takeIf(String::isNotBlank)
         ?: sourceCardMediaTitle(mediaName, releaseInfo, episode)
-    val server = sourceServerDisplayName(this)
-        ?.let { cleanSourceCardServerLabel(it, provider) }
-        ?.takeUnless { it.equals(title, ignoreCase = true) }
+    val groupedDetails = PlayerSourceDisplay.groupedDetails(this)
+        .split(" • ")
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .filterNot { it.equals(provider, ignoreCase = true) }
+        .distinctBy { it.lowercase() }
+        .joinToString(" • ")
+        .takeIf(String::isNotBlank)
+    val server = groupedDetails
+        ?: sourceServerDisplayName(this)
+            ?.let { cleanSourceCardServerLabel(it, provider) }
+            ?.takeUnless { it.equals(title, ignoreCase = true) }
     val assessment = PlayerSourcePolicy.assess(
         source = this,
         preferredQuality = preferredQuality,

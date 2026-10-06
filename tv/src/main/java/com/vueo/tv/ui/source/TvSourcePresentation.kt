@@ -484,6 +484,45 @@ private fun SourceResultsSection(
     val selectedProviderLoading =
         state.selectedProvider != SOURCE_PROVIDER_ALL &&
             state.selectedProvider in state.loadingProviders
+    val sourceFocusScope = rememberCoroutineScope()
+    val latestFilteredSources = rememberUpdatedState(state.filteredSources)
+    val sourceEntryJob = remember { arrayOfNulls<Job>(1) }
+
+    fun focusFirstSource(): Boolean {
+        val target = latestFilteredSources.value.firstOrNull() ?: return false
+        val targetKey = sourceStableKey(target)
+        sourceEntryJob[0]?.cancel()
+        sourceEntryJob[0] = sourceFocusScope.launch {
+            try {
+                repeat(6) {
+                    val latest = latestFilteredSources.value
+                    val index = latest.indexOfFirst { sourceStableKey(it) == targetKey }
+                    if (index < 0) return@launch
+                    if (listState.layoutInfo.visibleItemsInfo.none { it.key == targetKey }) {
+                        listState.scrollToItem(index)
+                    }
+                    withFrameNanos { }
+                    val current = latestFilteredSources.value
+                        .firstOrNull { sourceStableKey(it) == targetKey }
+                        ?: return@launch
+                    if (runCatching { sourceRequester(current).requestFocus() }.getOrDefault(false)) {
+                        return@launch
+                    }
+                    delay(16L)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                android.util.Log.w("VUEO_SOURCE_FOCUS", "Source-list entry focus failed", error)
+            }
+        }
+        return true
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { sourceEntryJob[0]?.cancel() }
+    }
+
     Column(
         modifier = modifier.padding(
             top = SourceRightTopPadding,
@@ -496,7 +535,7 @@ private fun SourceResultsSection(
             refreshRequester = refreshRequester,
             allRequester = allRequester,
             providerRequester = providerRequester,
-            firstSourceRequester = state.filteredSources.firstOrNull()?.let { sourceRequester(it) },
+            onFocusFirstSource = ::focusFirstSource,
             onInteraction = onInteraction,
             onSelectProvider = onSelectProvider,
             onRefresh = onRefresh,
@@ -574,7 +613,7 @@ private fun SourceFilterRow(
     refreshRequester: FocusRequester,
     allRequester: FocusRequester,
     providerRequester: (String) -> FocusRequester,
-    firstSourceRequester: FocusRequester?,
+    onFocusFirstSource: () -> Boolean,
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
     onRefresh: () -> Unit,
@@ -695,7 +734,7 @@ private fun SourceFilterRow(
             searching = discoveryActive,
             requester = refreshRequester,
             rightRequester = chips.firstOrNull()?.requester,
-            downRequester = firstSourceRequester,
+            onDown = onFocusFirstSource,
             onInteraction = onInteraction,
             onClick = onRefresh,
         )
@@ -714,7 +753,7 @@ private fun SourceFilterRow(
                     requester = chip.requester,
                     leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
                     rightRequester = chips.getOrNull(index + 1)?.requester,
-                    downRequester = firstSourceRequester,
+                    onDown = onFocusFirstSource,
                     onInteraction = onInteraction,
                     onFocused = {
                         focusedChipId = chip.id
@@ -732,7 +771,7 @@ private fun SourceRefreshButton(
     searching: Boolean,
     requester: FocusRequester,
     rightRequester: FocusRequester?,
-    downRequester: FocusRequester?,
+    onDown: () -> Boolean,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -751,11 +790,10 @@ private fun SourceRefreshButton(
                         runCatching { it.requestFocus() }
                         true
                     } ?: false
-                    KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
                         onInteraction()
-                        runCatching { it.requestFocus() }
-                        true
-                    } ?: false
+                        onDown()
+                    }
                     else -> false
                 }
             }
@@ -808,7 +846,7 @@ private fun SourceFilterChip(
     requester: FocusRequester,
     leftRequester: FocusRequester?,
     rightRequester: FocusRequester?,
-    downRequester: FocusRequester?,
+    onDown: () -> Boolean,
     onInteraction: () -> Unit,
     onFocused: () -> Unit,
     onClick: () -> Unit,
@@ -839,11 +877,10 @@ private fun SourceFilterChip(
                         runCatching { it.requestFocus() }
                         true
                     } ?: false
-                    KeyEvent.KEYCODE_DPAD_DOWN -> downRequester?.let {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
                         onInteraction()
-                        runCatching { it.requestFocus() }
-                        true
-                    } ?: false
+                        onDown()
+                    }
                     else -> false
                 }
             }
