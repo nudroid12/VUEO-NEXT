@@ -258,9 +258,50 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+internal class MobileHomeRetainedState {
+    var catalogRows by mutableStateOf(
+        CatalogDiscoveryCache
+            .home(allowStale = true)
+            .orEmpty()
+    )
+        internal set
+
+    var loadedContentVersion by mutableIntStateOf(Int.MIN_VALUE)
+        internal set
+
+    var featuredMediaKey by mutableStateOf<String?>(null)
+        internal set
+}
+
+@Composable
+internal fun rememberMobileHomeRetainedState(): MobileHomeRetainedState =
+    remember {
+        MobileHomeRetainedState()
+    }
+
+private fun mergeHomeCatalogRows(
+    baseline: List<CatalogRow>,
+    fresh: List<CatalogRow>,
+): List<CatalogRow> {
+    if (baseline.isEmpty()) return fresh
+    if (fresh.isEmpty()) return baseline
+
+    val freshById = fresh.associateBy { it.id }
+
+    return baseline.map { row ->
+        freshById[row.id] ?: row
+    } + fresh.filter { freshRow ->
+        baseline.none { it.id == freshRow.id }
+    }
+}
+
+private fun MediaItem.homeFeaturedKey(): String =
+    "${type.lowercase()}:$id"
+
 @Composable
 internal fun HomeScreen(
     engine: UnifiedMediaEngine,
+    retainedState: MobileHomeRetainedState,
     contentVersion: Int,
     booting: Boolean,
     libraryStore: LibraryStore,
@@ -350,20 +391,27 @@ internal fun HomeScreen(
         catalogOrder,
         disabledCatalogKeys,
     ) {
-        mutableStateOf(
-            HomeCatalogPolicy.orderRows(
-                rows =
+        val restoredRows =
+            retainedState.catalogRows
+                .ifEmpty {
                     CatalogDiscoveryCache
                         .home(
                             allowStale = true
                         )
-                        .orEmpty(),
-                catalogOrder =
-                    catalogOrder,
-                disabledCatalogKeys =
-                    disabledCatalogKeys,
+                        .orEmpty()
+                }
+
+        mutableStateOf(
+            HomeCatalogPolicy.orderRows(
+                rows = restoredRows,
+                catalogOrder = catalogOrder,
+                disabledCatalogKeys = disabledCatalogKeys,
             )
         )
+    }
+
+    LaunchedEffect(rows) {
+        retainedState.catalogRows = rows
     }
 
     var loading by remember {
@@ -403,26 +451,41 @@ internal fun HomeScreen(
     LaunchedEffect(
         contentVersion
     ) {
-        CatalogDiscoveryCache
-            .home(
-                allowStale = true
-            )
-            ?.takeIf {
-                it.isNotEmpty()
-            }
-            ?.let {
-                rows =
-                    HomeCatalogPolicy.orderRows(
-                        rows = it,
-                        catalogOrder =
-                            catalogOrder,
-                        disabledCatalogKeys =
-                            disabledCatalogKeys,
-                    )
-            }
+        val cachedRows =
+            CatalogDiscoveryCache
+                .home(
+                    allowStale = true
+                )
+                .orEmpty()
+
+        if (cachedRows.isNotEmpty()) {
+            rows =
+                HomeCatalogPolicy.orderRows(
+                    rows = cachedRows,
+                    catalogOrder = catalogOrder,
+                    disabledCatalogKeys = disabledCatalogKeys,
+                )
+        }
 
         if (booting) {
             loading = false
+            return@LaunchedEffect
+        }
+
+        val hasFreshCache =
+            !CatalogDiscoveryCache
+                .home(
+                    allowStale = false
+                )
+                .isNullOrEmpty()
+
+        val shouldRefresh =
+            retainedState.loadedContentVersion != contentVersion ||
+                !hasFreshCache
+
+        if (!shouldRefresh) {
+            loading = false
+            error = null
             return@LaunchedEffect
         }
 
@@ -430,10 +493,12 @@ internal fun HomeScreen(
             rows.isEmpty()
         error = null
 
+        val refreshBaseline = rows
+
         runCatching {
             engine.loadCatalogRows(
                 forceRefresh =
-                    rows.isNotEmpty(),
+                    refreshBaseline.isNotEmpty(),
                 catalogOrder =
                     catalogOrder,
                 disabledCatalogKeys =
@@ -442,7 +507,11 @@ internal fun HomeScreen(
                     if (partialRows.isNotEmpty()) {
                         rows =
                             HomeCatalogPolicy.orderRows(
-                                rows = partialRows,
+                                rows =
+                                    mergeHomeCatalogRows(
+                                        baseline = refreshBaseline,
+                                        fresh = partialRows,
+                                    ),
                                 catalogOrder = catalogOrder,
                                 disabledCatalogKeys = disabledCatalogKeys,
                             )
@@ -472,8 +541,15 @@ internal fun HomeScreen(
                         rows = fresh,
                     )
             }
+
+            retainedState.loadedContentVersion =
+                contentVersion
         }.onFailure {
             failure ->
+            if (failure is CancellationException) {
+                throw failure
+            }
+
             error =
                 failure.message
 
@@ -495,6 +571,9 @@ internal fun HomeScreen(
                             disabledCatalogKeys,
                     )
             }
+
+            retainedState.loadedContentVersion =
+                contentVersion
         }
 
         loading = false
@@ -606,6 +685,11 @@ internal fun HomeScreen(
                 HomeFeaturedCarousel(
                     items =
                         featuredItems,
+                    selectedMediaKey =
+                        retainedState.featuredMediaKey,
+                    onSelectedMediaKeyChange = {
+                        retainedState.featuredMediaKey = it
+                    },
                     onViewDetails =
                         onMediaClick,
                 )
@@ -838,46 +922,28 @@ internal fun HomeScreen(
 @Composable
 private fun HomeFeaturedCarousel(
     items: List<MediaItem>,
+    selectedMediaKey: String?,
+    onSelectedMediaKeyChange:
+        (String) -> Unit,
     onViewDetails:
         (MediaItem) -> Unit,
 ) {
-    var selectedIndex by remember(
-        items
-    ) {
-        mutableIntStateOf(0)
-    }
-
-    LaunchedEffect(
-        items.size
-    ) {
-        selectedIndex =
-            selectedIndex
-                .coerceIn(
-                    0,
-                    (
-                        items.size - 1
-                    )
-                        .coerceAtLeast(
-                            0
-                        ),
-                )
-
-        if (
-            items.size <= 1
-        ) {
-            return@LaunchedEffect
+    val itemKeys =
+        remember(items) {
+            items.map {
+                it.homeFeaturedKey()
+            }
         }
 
-        while (true) {
-            delay(6500L)
-
-            selectedIndex =
-                (
-                    selectedIndex +
-                        1
-                ) % items.size
-        }
-    }
+    val selectedIndex =
+        itemKeys
+            .indexOf(
+                selectedMediaKey
+            )
+            .takeIf {
+                it >= 0
+            }
+            ?: 0
 
     val item =
         items[
@@ -887,6 +953,51 @@ private fun HomeFeaturedCarousel(
                     items.lastIndex
                 )
         ]
+
+    LaunchedEffect(
+        itemKeys,
+        selectedMediaKey,
+    ) {
+        if (itemKeys.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        if (
+            selectedMediaKey !in
+                itemKeys
+        ) {
+            onSelectedMediaKeyChange(
+                itemKeys.first()
+            )
+            return@LaunchedEffect
+        }
+
+        if (
+            itemKeys.size <= 1
+        ) {
+            return@LaunchedEffect
+        }
+
+        delay(6500L)
+
+        val currentIndex =
+            itemKeys
+                .indexOf(
+                    selectedMediaKey
+                )
+                .coerceAtLeast(
+                    0
+                )
+
+        onSelectedMediaKeyChange(
+            itemKeys[
+                (
+                    currentIndex +
+                        1
+                ) % itemKeys.size
+            ]
+        )
+    }
 
     Column(
         verticalArrangement =

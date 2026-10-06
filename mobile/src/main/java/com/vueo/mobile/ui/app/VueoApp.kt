@@ -357,6 +357,8 @@ fun VueoApp() {
     }
 
     val engine = remember { UnifiedMediaEngine() }
+    val homeRetainedState =
+        rememberMobileHomeRetainedState()
     val store = remember {
         AddonStore(context.applicationContext)
     }
@@ -858,6 +860,7 @@ fun VueoApp() {
                 when (currentTab) {
                 AppTab.HOME -> HomeScreen(
                     engine = engine,
+                    retainedState = homeRetainedState,
                     contentVersion = contentVersion,
                     booting = booting,
                     libraryStore = libraryStore,
