@@ -1,7 +1,10 @@
 package com.vueo.mobile.ui
 
 import android.content.Context
+import android.graphics.Paint
 import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.SpannedString
@@ -34,7 +37,9 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private var lastDisplayedCommentaryCues: List<Cue> = emptyList()
     private var lastDisplayCommentary = true
     private var lastNormalBottomLineCount = 0
+    private var lastNormalBottomText: CharSequence? = null
     private var lastNormalFontSizeSp = 26
+    private var upperLayerUsesCommentarySize = true
 
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
@@ -84,6 +89,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             lastDisplayedCues = emptyList()
             lastDisplayedCommentaryCues = emptyList()
             lastNormalBottomLineCount = 0
+            lastNormalBottomText = null
         }
         subtitleView?.visibility = View.GONE
         registerListener()
@@ -101,6 +107,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         lastInputCues = null
         lastDisplayedCues = emptyList()
         lastDisplayedCommentaryCues = emptyList()
+        lastNormalBottomText = null
         super.onDetachedFromWindow()
     }
 
@@ -129,11 +136,12 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             )
             lastNormalFontSizeSp = style.fontSizeSp
         }
-        if (previous == null || previous.commentaryFontSizeSp != style.commentaryFontSizeSp) {
-            commentarySubtitleView.setFixedTextSize(
-                TypedValue.COMPLEX_UNIT_SP,
-                style.commentaryFontSizeSp.toFloat(),
-            )
+        if (
+            previous == null ||
+            previous.commentaryFontSizeSp != style.commentaryFontSizeSp ||
+            previous.fontSizeSp != style.fontSizeSp
+        ) {
+            applyUpperLayerTextSize(style)
         }
         if (
             previous == null ||
@@ -176,8 +184,8 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             managedSubtitleView.setBottomPaddingFraction(bottomPadding)
             lastBottomPadding = bottomPadding
         }
-        updateCommentaryBottomPadding()
         lastStyle = style
+        updateCommentaryBottomPadding()
         if (showCommentary != style.showCommentary) {
             showCommentary = style.showCommentary
             displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
@@ -187,31 +195,90 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private fun displayCues(cues: List<Cue>) {
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
 
-        // Use two real caption layers so commentary has an explicit visual gap above
-        // the normal subtitle instead of relying on blank lines inside one cue.
-        val mainDisplayed = mobileStackCollidingSubtitleCues(cues, showCommentary = false)
-        val commentaryDisplayed = if (showCommentary) {
-            mobileStackCollidingSubtitleCues(
-                cues.filter(::mobileIsTaggedSubtitleCommentary),
-                showCommentary = true,
-            )
-        } else {
-            emptyList()
-        }
+        // Space simultaneous lower-screen subtitle layers by occupancy rather than
+        // commentary classification alone. This keeps translated/addon subtitles apart
+        // even when their styling metadata was stripped before reaching VUEO.
+        val layers = splitLowerSubtitleLayers(cues, showCommentary)
+        val mainDisplayed = mobileStackCollidingSubtitleCues(layers.lowerCues, showCommentary = false)
+        val upperDisplayed = mobileStackCollidingSubtitleCues(layers.upperCues, showCommentary = true)
 
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
+        if (upperLayerUsesCommentarySize != layers.upperUsesCommentarySize) {
+            upperLayerUsesCommentarySize = layers.upperUsesCommentarySize
+            lastStyle?.let(::applyUpperLayerTextSize)
+        }
         lastNormalBottomLineCount = normalBottomLineCount(mainDisplayed)
+        lastNormalBottomText = normalBottomText(mainDisplayed)
         updateCommentaryBottomPadding()
 
         if (lastDisplayedCues != mainDisplayed) {
             managedSubtitleView.setCues(mainDisplayed)
             lastDisplayedCues = mainDisplayed
         }
-        if (lastDisplayedCommentaryCues != commentaryDisplayed) {
-            commentarySubtitleView.setCues(commentaryDisplayed)
-            lastDisplayedCommentaryCues = commentaryDisplayed
+        if (lastDisplayedCommentaryCues != upperDisplayed) {
+            commentarySubtitleView.setCues(upperDisplayed)
+            lastDisplayedCommentaryCues = upperDisplayed
         }
+    }
+
+    private fun splitLowerSubtitleLayers(
+        cues: List<Cue>,
+        commentaryEnabled: Boolean,
+    ): MobileSubtitleLayerSplit {
+        val nonLower = mutableListOf<Cue>()
+        val lowerNormal = mutableListOf<Cue>()
+        val taggedCommentary = mutableListOf<Cue>()
+
+        for (cue in cues) {
+            if (cue.bitmap == null && cue.verticalType == Cue.TYPE_UNSET && !cue.text.isNullOrBlank()) {
+                if (mobileIsTaggedSubtitleCommentary(cue)) {
+                    if (commentaryEnabled) taggedCommentary += cue
+                    continue
+                }
+                if (isLowerTextCue(cue)) {
+                    lowerNormal += cue
+                    continue
+                }
+            }
+            nonLower += cue
+        }
+
+        val normalUnique = lowerNormal.distinctBy { it.text.toString() }
+        val commentaryUnique = taggedCommentary.distinctBy { it.text.toString() }
+        return when {
+            commentaryUnique.isNotEmpty() -> MobileSubtitleLayerSplit(
+                lowerCues = nonLower + normalUnique,
+                upperCues = commentaryUnique,
+                upperUsesCommentarySize = true,
+            )
+            normalUnique.size >= 2 -> MobileSubtitleLayerSplit(
+                lowerCues = nonLower + normalUnique.last(),
+                upperCues = normalUnique.dropLast(1),
+                upperUsesCommentarySize = false,
+            )
+            else -> MobileSubtitleLayerSplit(
+                lowerCues = nonLower + normalUnique,
+                upperCues = emptyList(),
+                upperUsesCommentarySize = false,
+            )
+        }
+    }
+
+    private fun isLowerTextCue(cue: Cue): Boolean = when {
+        cue.line == Cue.DIMEN_UNSET -> true
+        cue.lineType == Cue.LINE_TYPE_FRACTION -> cue.line >= .70f
+        cue.lineType == Cue.LINE_TYPE_NUMBER -> cue.line in -3f..-1f
+        else -> false
+    }
+
+    private fun applyUpperLayerTextSize(style: PlayerSubtitleStyleState) {
+        val sizeSp = if (upperLayerUsesCommentarySize) {
+            style.commentaryFontSizeSp
+        } else {
+            style.fontSizeSp
+        }
+        commentarySubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp.toFloat())
     }
 
     private fun normalBottomLineCount(cues: List<Cue>): Int {
@@ -220,6 +287,39 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             .mapNotNull { it.text?.toString() }
             .maxOfOrNull { text -> text.count { it == '\n' } + 1 }
         return lineCount ?: 0
+    }
+
+    private fun normalBottomText(cues: List<Cue>): CharSequence? = cues.asSequence()
+        .filter { it.bitmap == null && it.verticalType == Cue.TYPE_UNSET && it.line == Cue.DIMEN_UNSET }
+        .mapNotNull { it.text }
+        .maxByOrNull { it.length }
+
+    private fun measuredNormalBottomHeightPx(): Float {
+        val text = lastNormalBottomText?.takeIf { it.isNotBlank() } ?: return 0f
+        val metrics = resources.displayMetrics
+        val fontPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            lastNormalFontSizeSp.toFloat(),
+            metrics,
+        )
+        val fallback = fontPx * SUBTITLE_LINE_HEIGHT_FACTOR * lastNormalBottomLineCount.coerceAtLeast(1)
+        val availableWidthPx = (width * SUBTITLE_MEASURE_WIDTH_FRACTION).toInt()
+        if (availableWidthPx <= 0) return fallback
+
+        val subtitleStyle = lastStyle
+        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontPx
+            typeface = com.vueo.shared.core.player.SubtitleFonts.resolve(
+                context,
+                subtitleStyle?.fontFamily ?: "default",
+                subtitleStyle?.bold ?: false,
+            )
+        }
+        val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, availableWidthPx)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setIncludePad(true)
+            .build()
+        return maxOf(layout.height.toFloat(), fallback)
     }
 
     private fun updateCommentaryBottomPadding() {
@@ -232,18 +332,13 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         }
 
         val metrics = resources.displayMetrics
-        val fontPx = TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_SP,
-            lastNormalFontSizeSp.toFloat(),
-            metrics,
-        )
         val gapPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
             COMMENTARY_GAP_DP,
             metrics,
         )
         val extraPx = if (lastNormalBottomLineCount > 0) {
-            fontPx * SUBTITLE_LINE_HEIGHT_FACTOR * lastNormalBottomLineCount + gapPx
+            measuredNormalBottomHeightPx() + gapPx
         } else {
             0f
         }
@@ -251,9 +346,16 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         commentarySubtitleView.setBottomPaddingFraction((base + extraFraction).coerceAtMost(MAX_COMMENTARY_BOTTOM_PADDING))
     }
 
+    private data class MobileSubtitleLayerSplit(
+        val lowerCues: List<Cue>,
+        val upperCues: List<Cue>,
+        val upperUsesCommentarySize: Boolean,
+    )
+
     private companion object {
-        const val COMMENTARY_GAP_DP = 14f
-        const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.25f
+        const val COMMENTARY_GAP_DP = 28f
+        const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.35f
+        const val SUBTITLE_MEASURE_WIDTH_FRACTION = 0.90f
         const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f
     }
 }
