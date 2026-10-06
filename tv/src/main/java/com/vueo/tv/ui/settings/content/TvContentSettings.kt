@@ -391,6 +391,8 @@ internal fun TvProviderSettings(
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
     val providerCodeStore = remember(context) { ProviderCodeStore(context.applicationContext) }
     var diagnosticTarget by remember { mutableStateOf<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>?>(null) }
+    var showCrashDiagnostics by remember { mutableStateOf(false) }
+    var showPerformanceDiagnostics by remember { mutableStateOf(false) }
     var refreshingRepositoryUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(repositories, selectedRepositoryUrl) {
@@ -474,6 +476,12 @@ internal fun TvProviderSettings(
             onDismiss = { diagnosticTarget = null },
         )
     }
+    if (showCrashDiagnostics) {
+        TvRuntimeDiagnosticsDialog(onDismiss = { showCrashDiagnostics = false })
+    }
+    if (showPerformanceDiagnostics) {
+        TvPerformanceDiagnosticsDialog(onDismiss = { showPerformanceDiagnostics = false })
+    }
 
     val allEntries = buildList {
         add(toggleEntry("plugins-master", "Providers", "Master switch for plugin provider discovery.", pluginsEnabled) {
@@ -497,6 +505,30 @@ internal fun TvProviderSettings(
                 },
                 section = "PROVIDER SYSTEM",
                 icon = Icons.Default.SettingsInputComponent,
+                accented = true,
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "runtime-diagnostics",
+                title = "Crash Diagnostics",
+                subtitle = "Crash, native/QuickJS, provider failure and stall evidence.",
+                value = "Open",
+                onActivate = { showCrashDiagnostics = true },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.Settings,
+                accented = true,
+            )
+        )
+        add(
+            TvSettingsEntry(
+                id = "performance-diagnostics",
+                title = "Performance Diagnostics",
+                subtitle = "Opt-in page, player, provider and system performance recorder.",
+                value = "Open",
+                onActivate = { showPerformanceDiagnostics = true },
+                section = "PROVIDER SYSTEM",
+                icon = Icons.Default.Settings,
                 accented = true,
             )
         )
@@ -631,7 +663,7 @@ internal fun TvProviderSettings(
     }
 
     val entries = buildList {
-        listOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics").forEach { id ->
+        listOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics", "performance-diagnostics").forEach { id ->
             allEntries.firstOrNull { it.id == id }?.let { add(it.copy(section = null)) }
         }
         repositories.forEach { repository ->
@@ -644,7 +676,7 @@ internal fun TvProviderSettings(
             ))
         }
         allEntries.filterNot {
-            it.id in setOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics")
+            it.id in setOf("add-repo", "plugins-master", "refresh-repository", "provider-health", "runtime-diagnostics", "performance-diagnostics")
         }.forEach { add(it.copy(section = null)) }
     }
 

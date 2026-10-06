@@ -327,6 +327,9 @@ internal fun PluginsScreen(
     var showRuntimeDiagnostics by remember {
         mutableStateOf(false)
     }
+    var showPerformanceDiagnostics by remember {
+        mutableStateOf(false)
+    }
     var showProviderHealth by remember {
         mutableStateOf(false)
     }
@@ -505,13 +508,50 @@ internal fun PluginsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Performance & Crash Diagnostics",
+                                text = "Crash Diagnostics",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                text = "Source scan timing, UI stalls, memory and crash evidence.",
+                                text = "Crash, QuickJS/native, provider failure and stall evidence.",
+                                color = VueoPalette.Muted,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = .82f),
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+            }
+
+            item(key = "plugins-performance-diagnostics") {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showPerformanceDiagnostics = true },
+                    shape = RoundedCornerShape(17.dp),
+                    color = VueoPalette.SurfaceElevated,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Performance Diagnostics",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "Opt-in recorder with page, player, provider and system timeline tabs.",
                                 color = VueoPalette.Muted,
                                 fontSize = 10.5.sp,
                                 maxLines = 1,
@@ -857,6 +897,11 @@ internal fun PluginsScreen(
     if (showRuntimeDiagnostics) {
         RuntimeDiagnosticsDialog(
             onDismiss = { showRuntimeDiagnostics = false },
+        )
+    }
+    if (showPerformanceDiagnostics) {
+        PerformanceDiagnosticsDialog(
+            onDismiss = { showPerformanceDiagnostics = false },
         )
     }
 }

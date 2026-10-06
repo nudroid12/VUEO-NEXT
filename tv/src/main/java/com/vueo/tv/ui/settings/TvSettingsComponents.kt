@@ -1562,7 +1562,7 @@ private fun TvSettingsEntry.isWorkspaceTab(): Boolean =
     id.startsWith("addon-category-") || id.startsWith("repository-tab-")
 
 private fun TvSettingsEntry.isAddonControl(): Boolean =
-    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "provider-health", "runtime-diagnostics") || isWorkspaceTab()
+    id in setOf("add", "refresh-addons", "add-repo", "plugins-master", "provider-health", "runtime-diagnostics", "performance-diagnostics") || isWorkspaceTab()
 
 @Composable
 private fun TvAddonControls(
@@ -1573,7 +1573,7 @@ private fun TvAddonControls(
 ) {
     val actions = entries.filter { it.id in setOf("add", "refresh-addons", "add-repo", "plugins-master") }
     val categories = entries.filter { it.isWorkspaceTab() }
-    val systemCards = entries.filter { it.id in setOf("provider-health", "runtime-diagnostics") }
+    val systemCards = entries.filter { it.id in setOf("provider-health", "runtime-diagnostics", "performance-diagnostics") }
     val selected = categories.firstOrNull { it.value == "Selected" } ?: categories.firstOrNull()
     val firstAddon = entries.firstOrNull { it.enabled && !it.isAddonControl() && !it.isRepositoryAction() }
     Column(modifier = Modifier.padding(bottom = if (entries.any { it.providerStatus != null }) 8.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

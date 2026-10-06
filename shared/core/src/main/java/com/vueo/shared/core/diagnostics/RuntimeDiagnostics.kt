@@ -30,6 +30,8 @@ import java.util.zip.ZipOutputStream
 
 object RuntimeDiagnostics {
     private const val FILE_NAME = "vueo_runtime_diagnostics.log"
+    private const val PREFS = "vueo_crash_diagnostics"
+    private const val KEY_ENABLED = "enabled"
     private const val ROTATE_AT_BYTES = 512 * 1024L
     private const val KEEP_BYTES = 256 * 1024
     private const val BATCH_DELAY_MS = 120L
@@ -46,13 +48,18 @@ object RuntimeDiagnostics {
     }
 
     private val installed = AtomicBoolean(false)
+    private val crashDiagnosticsEnabled = AtomicBoolean(true)
+    private val stallWatchdogStarted = AtomicBoolean(false)
+    private val lifecycleCallbacksInstalled = AtomicBoolean(false)
     private val scanSequence = AtomicLong(0L)
     private val quickJsSequence = AtomicLong(0L)
     private val activeScans = AtomicInteger(0)
     private val activeProviders = AtomicInteger(0)
-    private val writer = Executors.newSingleThreadScheduledExecutor { runnable ->
-        Thread(runnable, "vueo-runtime-diagnostics").apply { isDaemon = true }
-    }
+    @Volatile
+    private var stallWatchdogExecutor: java.util.concurrent.ScheduledExecutorService? = null
+
+    @Volatile
+    private var writer = newWriterExecutor()
     private val fileLock = Any()
     private val pendingLines = ConcurrentLinkedQueue<String>()
     private val flushScheduled = AtomicBoolean(false)
@@ -121,25 +128,66 @@ object RuntimeDiagnostics {
 
     fun install(context: Context) {
         appContext = context.applicationContext
+        PerformanceDiagnostics.install(context.applicationContext)
         if (!installed.compareAndSet(false, true)) return
 
-        runCatching { CrashReportStore.startSession(context.applicationContext) }
-        installCrashHandler()
-        startStallWatchdog(context.applicationContext)
-        record(
-            "SESSION_START android=${Build.VERSION.SDK_INT} " +
-                "device=${safeToken(Build.MANUFACTURER)}_${safeToken(Build.MODEL)} " +
-                memoryLabel()
+        crashDiagnosticsEnabled.set(
+            context.applicationContext
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ENABLED, true)
         )
+        installCrashHandler()
+        if (crashDiagnosticsEnabled.get()) {
+            runCatching { CrashReportStore.startSession(context.applicationContext) }
+            startStallWatchdog(context.applicationContext)
+            record(
+                "SESSION_START android=${Build.VERSION.SDK_INT} " +
+                    "device=${safeToken(Build.MANUFACTURER)}_${safeToken(Build.MODEL)} " +
+                    memoryLabel()
+            )
+        }
+    }
+
+    fun isEnabled(context: Context): Boolean {
+        install(context)
+        return crashDiagnosticsEnabled.get()
+    }
+
+    fun setEnabled(context: Context, value: Boolean) {
+        install(context)
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ENABLED, value)
+            .apply()
+        val changed = crashDiagnosticsEnabled.getAndSet(value) != value
+        if (!changed) return
+        if (value) {
+            ensureWriter()
+            runCatching { CrashReportStore.startSession(context.applicationContext) }
+            startStallWatchdog(context.applicationContext)
+            record("CRASH_DIAGNOSTICS_ENABLED")
+        } else {
+            flushWriter()
+            pendingLines.clear()
+            stopStallWatchdog()
+            writer.shutdownNow()
+            flushScheduled.set(false)
+        }
     }
 
     fun recordScreen(label: String) {
-        CrashReportStore.screen(label)
-        forceSystemSummary.set(true)
+        PerformanceDiagnostics.observeScreen(label)
+        if (!shouldCollect()) return
+        if (crashDiagnosticsEnabled.get()) {
+            CrashReportStore.screen(label)
+            forceSystemSummary.set(true)
+        }
         record("SCREEN ${safeText(label, 120)}")
     }
 
     fun beginSourceScan(requestLabel: String, targetProviders: Int): Long {
+        if (!shouldCollect()) return 0L
         val id = scanSequence.incrementAndGet()
         val onMain = Looper.myLooper() == Looper.getMainLooper()
         scanStates[id] = ScanState(
@@ -161,6 +209,7 @@ object RuntimeDiagnostics {
         completedProviders: Int,
         outcome: String = "complete",
     ) {
+        if (scanId <= 0L) return
         val state = scanStates.remove(scanId)
         val scans = activeScans.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
         if (state == null) return
@@ -178,6 +227,7 @@ object RuntimeDiagnostics {
     }
 
     fun recordPlayerEvent(platform: String, event: String, details: String) {
+        if (!shouldCollect()) return
         record("PLAYER_EVENT platform=${safeToken(platform)} event=${safeToken(event)} ${safeText(details, 360)}")
     }
 
@@ -187,6 +237,7 @@ object RuntimeDiagnostics {
         details: String,
         providerName: String? = null,
     ) {
+        if (!shouldCollect()) return
         val providerPart = providerName
             ?.takeIf { it.isNotBlank() }
             ?.let {
@@ -213,6 +264,7 @@ object RuntimeDiagnostics {
         state: Int,
         error: Throwable,
     ) {
+        if (!shouldCollect()) return
         // Omit paths too: signed credentials may live in path segments, not just query parameters.
         fun redact(value: String): String = CrashRecoveryPolicy.sanitize(value)
             .replace(playbackUrlPattern) { match ->
@@ -242,6 +294,11 @@ object RuntimeDiagnostics {
     }
 
     fun failSourceScan(scanId: Long, error: Throwable, completedProviders: Int) {
+        if (scanId <= 0L) return
+        if (!shouldCollect()) {
+            finishSourceScan(scanId, streams = 0, completedProviders = completedProviders, outcome = "failed")
+            return
+        }
         record(
             "SCAN_ERROR id=$scanId type=${safeToken(error::class.java.simpleName)} " +
                 "message=${safeText(error.message.orEmpty(), 180)} providers=$completedProviders"
@@ -255,6 +312,9 @@ object RuntimeDiagnostics {
     }
 
     fun beginProvider(scanId: Long, providerName: String): ProviderToken {
+        if (!shouldCollect() || scanId <= 0L) {
+            return ProviderToken(0L, providerName, 0L, 0L, false)
+        }
         val globalActive = activeProviders.incrementAndGet()
         val state = scanStates[scanId]
         val scanActive = state?.activeProviders?.incrementAndGet() ?: 0
@@ -282,6 +342,13 @@ object RuntimeDiagnostics {
         streamCount: Int,
         errorType: String? = null,
     ) {
+        if (token.scanId <= 0L) return
+        if (!shouldCollect()) {
+            activeProviders.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+            scanStates[token.scanId]?.activeProviders?.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
+            providerPhases.remove(providerKey(token.scanId, token.providerName))
+            return
+        }
         val elapsedMs = elapsedMs(token.startedNs)
         val heapDeltaMb = (heapUsedBytes() - token.heapStartBytes) / (1024.0 * 1024.0)
         val globalActive = activeProviders.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
@@ -314,6 +381,9 @@ object RuntimeDiagnostics {
      * a native abort can terminate the process before the normal batched writer gets another chance.
      */
     fun beginQuickJsExecution(scanId: Long, providerName: String): QuickJsToken {
+        if (!shouldCollect()) {
+            return QuickJsToken(scanId = 0L, providerName = providerName, executionId = 0L, startedNs = 0L)
+        }
         val token = QuickJsToken(
             scanId = scanId,
             providerName = providerName,
@@ -332,6 +402,7 @@ object RuntimeDiagnostics {
             phase == "QJS_EVAL_BEGIN" || phase == "QJS_EVAL_END" ||
             phase == "QJS_ABORT",
     ) {
+        if (token.executionId <= 0L || !shouldCollect()) return
         updateProviderPhase(token.scanId, token.providerName, phase, token.executionId)
         // Memory probes (especially PSS) are cached so diagnostics do not become provider work.
         val memory = detailedMemorySnapshot(force = phase == "QJS_ABORT")
@@ -530,20 +601,22 @@ object RuntimeDiagnostics {
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            runCatching { appContext?.let { CrashReportStore.capture(it, thread, throwable) } }
-            runCatching {
-                val stack = throwable.stackTrace
-                    .take(36)
-                    .joinToString(" | ") { frame ->
-                        "${frame.className}.${frame.methodName}:${frame.lineNumber}"
-                    }
-                recordCritical(
-                    "CRASH thread=${safeText(thread.name, 60)} " +
-                        "type=${safeToken(throwable::class.java.simpleName)} " +
-                        "message=${safeText(throwable.message.orEmpty(), 220)} ${memoryLabel()} " +
-                        "stack=${safeText(stack, 5000)}",
-                    "CRASH ${safeToken(throwable::class.java.simpleName)} ${detailedMemorySnapshot(force = true).compact()}",
-                )
+            if (crashDiagnosticsEnabled.get()) {
+                runCatching { appContext?.let { CrashReportStore.capture(it, thread, throwable) } }
+                runCatching {
+                    val stack = throwable.stackTrace
+                        .take(36)
+                        .joinToString(" | ") { frame ->
+                            "${frame.className}.${frame.methodName}:${frame.lineNumber}"
+                        }
+                    recordCritical(
+                        "CRASH thread=${safeText(thread.name, 60)} " +
+                            "type=${safeToken(throwable::class.java.simpleName)} " +
+                            "message=${safeText(throwable.message.orEmpty(), 220)} ${memoryLabel()} " +
+                            "stack=${safeText(stack, 5000)}",
+                        "CRASH ${safeToken(throwable::class.java.simpleName)} ${detailedMemorySnapshot(force = true).compact()}",
+                    )
+                }
             }
             if (previous != null) previous.uncaughtException(thread, throwable)
             else {
@@ -555,22 +628,27 @@ object RuntimeDiagnostics {
 
     // Runs independently of the main looper: captures stacks while it is stalled.
     private fun startStallWatchdog(context: Context) {
-        (context as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityResumed(activity: Activity) { resumedActivities.incrementAndGet() }
-            override fun onActivityPaused(activity: Activity) { resumedActivities.updateAndGet { maxOf(0, it - 1) } }
-            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
-            override fun onActivityStarted(activity: Activity) = Unit
-            override fun onActivityStopped(activity: Activity) = Unit
-            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
-            override fun onActivityDestroyed(activity: Activity) = Unit
-        })
+        if (!stallWatchdogStarted.compareAndSet(false, true)) return
+        if (lifecycleCallbacksInstalled.compareAndSet(false, true)) {
+            (context as? Application)?.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityResumed(activity: Activity) { resumedActivities.incrementAndGet() }
+                override fun onActivityPaused(activity: Activity) { resumedActivities.updateAndGet { maxOf(0, it - 1) } }
+                override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+                override fun onActivityStarted(activity: Activity) = Unit
+                override fun onActivityStopped(activity: Activity) = Unit
+                override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+                override fun onActivityDestroyed(activity: Activity) = Unit
+            })
+        }
         val pendingSince = AtomicLong(0L)
         val probe = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "vueo-anr-watchdog").apply { isDaemon = true }
         }
+        stallWatchdogExecutor = probe
         var samples = 0
         probe.scheduleWithFixedDelay({
             runCatching {
+                if (!crashDiagnosticsEnabled.get()) return@runCatching
                 if (resumedActivities.get() == 0) {
                     pendingSince.set(0L)
                     samples = 0
@@ -596,7 +674,18 @@ object RuntimeDiagnostics {
         }, 1_000L, 1_000L, TimeUnit.MILLISECONDS)
     }
 
+    private fun shouldCollect(): Boolean =
+        crashDiagnosticsEnabled.get() || PerformanceDiagnostics.isCollecting()
+
+    private fun stopStallWatchdog() {
+        stallWatchdogExecutor?.shutdownNow()
+        stallWatchdogExecutor = null
+        stallWatchdogStarted.set(false)
+    }
+
     private fun record(message: String) {
+        PerformanceDiagnostics.captureRuntimeEvent(message)
+        if (!crashDiagnosticsEnabled.get()) return
         val line = timestamped(message)
         CrashReportStore.note(line)
         latestSummaryLine.set(line)
@@ -605,6 +694,8 @@ object RuntimeDiagnostics {
     }
 
     private fun recordCritical(message: String, compactState: String) {
+        PerformanceDiagnostics.captureRuntimeEvent(message)
+        if (!crashDiagnosticsEnabled.get()) return
         val line = timestamped(message)
         CrashReportStore.note(line)
         latestSummaryLine.set(line)
@@ -615,8 +706,18 @@ object RuntimeDiagnostics {
         appContext?.let { CrashReportStore.criticalState(it, compactState) }
     }
 
+    private fun newWriterExecutor() = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "vueo-runtime-diagnostics").apply { isDaemon = true }
+    }
+
+    @Synchronized
+    private fun ensureWriter() {
+        if (writer.isShutdown || writer.isTerminated) writer = newWriterExecutor()
+    }
+
     private fun scheduleFlush() {
         if (!flushScheduled.compareAndSet(false, true)) return
+        ensureWriter()
         writer.schedule({
             try {
                 synchronized(fileLock) { appendPendingLocked() }
@@ -673,6 +774,7 @@ object RuntimeDiagnostics {
 
     private fun flushWriter() {
         runCatching {
+            ensureWriter()
             writer.submit {
                 synchronized(fileLock) { appendPendingLocked() }
             }.get(800, TimeUnit.MILLISECONDS)
@@ -689,10 +791,12 @@ object RuntimeDiagnostics {
             executionId = executionId,
             updatedMs = System.currentTimeMillis(),
         )
-        CrashReportStore.observedState(
-            "s$scanId ${safeToken(safeProvider).take(28)} ${safePhase.take(24)}" +
-                (executionId?.let { " e$it" } ?: "")
-        )
+        if (crashDiagnosticsEnabled.get()) {
+            CrashReportStore.observedState(
+                "s$scanId ${safeToken(safeProvider).take(28)} ${safePhase.take(24)}" +
+                    (executionId?.let { " e$it" } ?: "")
+            )
+        }
     }
 
     private fun providerKey(scanId: Long, providerName: String): String = "$scanId|$providerName"
