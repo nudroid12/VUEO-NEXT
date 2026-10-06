@@ -74,6 +74,45 @@ internal fun vueoFadeThrough(): ContentTransform =
                 )
         )
 
+/**
+ * Returning to Home needs a near-sequential fade-through. Poster-heavy
+ * surfaces otherwise overlap long enough to read as a flick/ghost frame.
+ * Keep the same depth language, but let the outgoing page become almost
+ * transparent before Home starts to appear.
+ */
+internal fun vueoHomeReturnFadeThrough(): ContentTransform =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = 220,
+                delayMillis = 105,
+                easing = VueoMotion.EaseOut,
+            ),
+        ) +
+            scaleIn(
+                initialScale = 0.93f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = 240f,
+                ),
+            )
+    ) togetherWith
+        (
+            fadeOut(
+                animationSpec = tween(
+                    durationMillis = 130,
+                    easing = VueoMotion.EaseOut,
+                ),
+            ) +
+                scaleOut(
+                    targetScale = 0.985f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = 400f,
+                    ),
+                )
+        )
+
 internal fun vueoPlayerFadeThrough(
     enterDurationMillis: Int = 260,
     exitDurationMillis: Int = 150,

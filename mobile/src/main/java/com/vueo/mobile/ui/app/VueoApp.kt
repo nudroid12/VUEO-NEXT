@@ -846,7 +846,11 @@ fun VueoApp() {
             AnimatedContent(
                 targetState = selectedTab to settingsPage,
                 transitionSpec = {
-                    vueoFadeThrough()
+                    if (targetState.first == AppTab.HOME && initialState.first != AppTab.HOME) {
+                        vueoHomeReturnFadeThrough()
+                    } else {
+                        vueoFadeThrough()
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "VUEO main navigation transition",
