@@ -27,6 +27,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private data class DetailLibrarySnapshot(
+    val watchlisted: Boolean,
+    val movieWatched: Boolean,
+    val history: List<LibraryPlaybackEntry>,
+    val playbackEntries: List<LibraryPlaybackEntry>,
+)
+
 /**
  * TV Details follows Mobile's orchestration upstream:
  * instant shell -> identity preparation -> core metadata -> progressive extras.
@@ -51,11 +58,15 @@ fun TvDetailScreen(
 
     var item by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(initialShell) }
     var loading by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(true) }
-    var watchlisted by remember(initial.id, initial.type, initial.sourceExtensionId) {
-        mutableStateOf(runtime.libraryStore.isWatchlisted(initialShell))
+    // Keep the first Details composition storage-free. Library JSON can be large on TV,
+    // so watch/history state is hydrated from Dispatchers.IO after the shell is visible.
+    var watchlisted by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(false) }
+    var movieWatched by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(false) }
+    var history by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
     }
-    var movieWatched by remember(initial.id, initial.type, initial.sourceExtensionId) {
-        mutableStateOf(runtime.libraryStore.isMarkedWatched(initialShell))
+    var playbackEntries by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
     }
     var vueoExtras by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf(TvTitleArtwork.cached(initialShell, artworkApiKey) ?: TvDetailVueoExtras())
@@ -96,6 +107,7 @@ fun TvDetailScreen(
 
     fun syncEpisodeSelection(
         media: MediaItem,
+        entries: List<LibraryPlaybackEntry>,
         preserveCurrent: Boolean,
     ) {
         if (!media.isDetailSeries() || media.episodes.isEmpty()) {
@@ -122,7 +134,7 @@ fun TvDetailScreen(
 
         val playbackTarget = detailPlaybackTargetEpisode(
             media = media,
-            entries = runtime.libraryStore.continueWatchingPlaybackEntries(),
+            entries = entries,
             initialEntry = initialLibraryEntry,
         )
         val target = playbackTarget
@@ -166,9 +178,24 @@ fun TvDetailScreen(
         supplementalRatings = emptyList()
         episodeRatings = emptyMap()
         publishRatings(shell)
-        watchlisted = runtime.libraryStore.isWatchlisted(shell)
-        movieWatched = runtime.libraryStore.isMarkedWatched(shell)
-        syncEpisodeSelection(shell, preserveCurrent = false)
+        syncEpisodeSelection(shell, entries = playbackEntries, preserveCurrent = false)
+
+        // Hydrate local library state without blocking the first Details frame.
+        launch {
+            val snapshot = withContext(Dispatchers.IO) {
+                DetailLibrarySnapshot(
+                    watchlisted = runtime.libraryStore.isWatchlisted(shell),
+                    movieWatched = runtime.libraryStore.isMarkedWatched(shell),
+                    history = runtime.libraryStore.history(),
+                    playbackEntries = runtime.libraryStore.continueWatchingPlaybackEntries(),
+                )
+            }
+            watchlisted = snapshot.watchlisted
+            movieWatched = snapshot.movieWatched
+            history = snapshot.history
+            playbackEntries = snapshot.playbackEntries
+            syncEpisodeSelection(item, entries = snapshot.playbackEntries, preserveCurrent = true)
+        }
 
         // Actor Search / More Like This can produce tmdb:<id>. Resolve that identity before Stremio core.
         val prepared = runCatching { runtime.prepareDetailForCore(initial) }.getOrDefault(initial)
@@ -177,9 +204,14 @@ fun TvDetailScreen(
 
         item = core
         publishRatings(core)
-        watchlisted = runtime.libraryStore.isWatchlisted(core)
-        movieWatched = runtime.libraryStore.isMarkedWatched(core)
-        syncEpisodeSelection(core, preserveCurrent = true)
+        syncEpisodeSelection(core, entries = playbackEntries, preserveCurrent = true)
+        launch {
+            val flags = withContext(Dispatchers.IO) {
+                runtime.libraryStore.isWatchlisted(core) to runtime.libraryStore.isMarkedWatched(core)
+            }
+            watchlisted = flags.first
+            movieWatched = flags.second
+        }
 
         // Match Mobile's perceived-load flow: core metadata is enough to
         // release Detail. Local/remote recommendations continue after the
@@ -209,18 +241,14 @@ fun TvDetailScreen(
             if (enriched != core) {
                 item = enriched
                 publishRatings(enriched)
-                watchlisted = runtime.libraryStore.isWatchlisted(enriched)
-                movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(enriched, preserveCurrent = true)
+                syncEpisodeSelection(enriched, entries = playbackEntries, preserveCurrent = true)
             }
             val rich = runCatching { runtime.enrichDetailRichDetails(enriched) }.getOrDefault(enriched)
             if (rich != enriched) {
                 enriched = rich
                 item = enriched
                 publishRatings(enriched)
-                watchlisted = runtime.libraryStore.isWatchlisted(enriched)
-                movieWatched = runtime.libraryStore.isMarkedWatched(enriched)
-                syncEpisodeSelection(enriched, preserveCurrent = true)
+                syncEpisodeSelection(enriched, entries = playbackEntries, preserveCurrent = true)
             }
         }
 
@@ -236,9 +264,7 @@ fun TvDetailScreen(
 
     }
 
-    val history = remember(item.id, item.type, selectedEpisode, loading) {
-        runtime.libraryStore.history()
-    }
+    // `history` is hydrated off-main above and retained as Compose state.
     val playbackEntry = remember(item.id, item.type, selectedEpisode?.id, history, initialLibraryEntry) {
         detailPlaybackEntry(item, selectedEpisode, history)
             ?: detailInitialPlaybackEntry(item, selectedEpisode, initialLibraryEntry)

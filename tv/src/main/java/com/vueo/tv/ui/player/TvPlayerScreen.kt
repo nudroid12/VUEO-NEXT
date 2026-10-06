@@ -117,9 +117,11 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.motion.tvPanelEnter
 import com.vueo.tv.ui.motion.tvPanelExit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 internal enum class TvPlayerPanel {
@@ -141,6 +143,11 @@ internal data class TvPlayerOption(
     val qualityLabel: String? = null,
     val playbackFailed: Boolean = false,
 )
+
+// Persistence launched from this scope survives the Player composable leaving the tree.
+// That lets Back/navigation happen immediately instead of waiting for JSON history writes.
+private val tvPlayerPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val tvPlayerCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
 @Composable
 fun TvPlayerScreen(
@@ -366,6 +373,8 @@ fun TvPlayerScreen(
     val seekCommitJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
     val seekAnchorClearJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
     var controlFocusHandoffPending by remember { mutableStateOf(true) }
+    var exitingPlayer by remember(playerSessionId) { mutableStateOf(false) }
+    var startupAudioMuted by remember(playerSessionId) { mutableStateOf(true) }
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     LaunchedEffect(activeSource.url) { onActiveSourceChanged(activeSource) }
@@ -535,12 +544,6 @@ fun TvPlayerScreen(
         val duration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
         val position = if (autoNextCompletedCurrent && duration > 0L) duration
             else player.currentPosition.coerceAtLeast(0L)
-        runtime.playbackStore.savePositionMs(
-            mediaKey = mediaKey,
-            positionMs = position,
-            durationMs = duration,
-        )
-
         val persistLibrary = {
             runtime.libraryStore.recordPlayback(
                 media = media,
@@ -553,8 +556,22 @@ fun TvPlayerScreen(
             )
         }
         if (backgroundLibrary) {
-            focusScope.launch(Dispatchers.IO) { persistLibrary() }
+            val playbackPosition = position
+            val playbackDuration = duration
+            tvPlayerPersistenceScope.launch {
+                runtime.playbackStore.savePositionMs(
+                    mediaKey = mediaKey,
+                    positionMs = playbackPosition,
+                    durationMs = playbackDuration,
+                )
+                persistLibrary()
+            }
         } else {
+            runtime.playbackStore.savePositionMs(
+                mediaKey = mediaKey,
+                positionMs = position,
+                durationMs = duration,
+            )
             persistLibrary()
         }
         libraryProgressRevision += 1
@@ -570,7 +587,13 @@ fun TvPlayerScreen(
     }
 
     fun exitPlayer() {
-        saveProgress()
+        if (exitingPlayer) return
+        exitingPlayer = true
+        // Silence playback before any persistence/navigation work. ExoPlayer can
+        // otherwise keep audio alive while Compose disposes the Player route.
+        player.volume = 0f
+        player.pause()
+        saveProgress(backgroundLibrary = true)
         onBack()
     }
 
@@ -641,6 +664,8 @@ fun TvPlayerScreen(
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
+        startupAudioMuted = true
+        player.volume = 0f
         isBuffering = false
         httpFactory.setUserAgent(
             activeSource.headers.entries.firstOrNull {
@@ -838,6 +863,7 @@ fun TvPlayerScreen(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
                 if (
+                    !exitingPlayer &&
                     !isPlaying &&
                     player.playbackState != Player.STATE_ENDED &&
                     !player.playWhenReady
@@ -853,6 +879,10 @@ fun TvPlayerScreen(
             }
 
             override fun onRenderedFirstFrame() {
+                if (startupAudioMuted) {
+                    player.volume = 1f
+                    startupAudioMuted = false
+                }
                 if (!hasRenderedFirstFrame && episode != null) {
                     saveProgress(backgroundLibrary = true)
                 }
@@ -1305,8 +1335,17 @@ fun TvPlayerScreen(
 
     DisposableEffect(player) {
         onDispose {
-            runCatching { saveProgress() }
-            player.release()
+            player.volume = 0f
+            runCatching { player.pause() }
+            if (!exitingPlayer) {
+                runCatching { saveProgress(backgroundLibrary = true) }
+            }
+            // Defer codec/player release by a frame so Back can present the return
+            // route immediately. Audio is already muted/paused above.
+            tvPlayerCleanupScope.launch {
+                delay(64L)
+                runCatching { player.release() }
+            }
         }
     }
 
@@ -1601,22 +1640,23 @@ fun TvPlayerScreen(
         val orderedEpisodes = remember(media.episodes) {
             media.episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
         }
-        val watchedEpisodeKeys = remember(
-            media.id,
-            media.type,
-            libraryProgressRevision,
-        ) {
-            runtime.libraryStore.history()
-                .asSequence()
-                .filter { entry ->
-                    entry.media.id == media.id &&
-                        entry.media.type == media.type &&
-                        entry.isCompleted &&
-                        entry.season != null &&
-                        entry.episode != null
-                }
-                .map { entry -> entry.season!! to entry.episode!! }
-                .toSet()
+        var watchedEpisodeKeys by remember(media.id, media.type) {
+            mutableStateOf<Set<Pair<Int, Int>>>(emptySet())
+        }
+        LaunchedEffect(media.id, media.type, libraryProgressRevision) {
+            watchedEpisodeKeys = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runtime.libraryStore.history()
+                    .asSequence()
+                    .filter { entry ->
+                        entry.media.id == media.id &&
+                            entry.media.type == media.type &&
+                            entry.isCompleted &&
+                            entry.season != null &&
+                            entry.episode != null
+                    }
+                    .map { entry -> entry.season!! to entry.episode!! }
+                    .toSet()
+            }
         }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
@@ -1706,6 +1746,8 @@ fun TvPlayerScreen(
                 playbackError = null
                 recoveryInProgress = false
                 hasRenderedFirstFrame = false
+                startupAudioMuted = true
+                player.volume = 0f
                 isBuffering = false
                 retryGeneration += 1
                 player.prepare()
