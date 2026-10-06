@@ -23,6 +23,7 @@ import androidx.media3.ui.SubtitleView
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) {
     private val managedSubtitleView = SubtitleView(context)
+    private val commentarySubtitleView = SubtitleView(context)
     private var boundPlayer: Player? = null
     private var listenerRegistered = false
     private var lastStyle: PlayerSubtitleStyleState? = null
@@ -30,7 +31,10 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private var showCommentary = true
     private var lastInputCues: List<Cue>? = null
     private var lastDisplayedCues: List<Cue> = emptyList()
+    private var lastDisplayedCommentaryCues: List<Cue> = emptyList()
     private var lastDisplayCommentary = true
+    private var lastNormalBottomLineCount = 0
+    private var lastFontSizeSp = 26
 
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
@@ -40,11 +44,8 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
 
     init {
         subtitleView?.visibility = View.GONE
-        managedSubtitleView.setApplyEmbeddedStyles(false)
-        managedSubtitleView.setApplyEmbeddedFontSizes(false)
-        managedSubtitleView.isFocusable = false
-        managedSubtitleView.isFocusableInTouchMode = false
-        managedSubtitleView.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        configureSubtitleView(managedSubtitleView)
+        configureSubtitleView(commentarySubtitleView)
         addView(
             managedSubtitleView,
             FrameLayout.LayoutParams(
@@ -52,6 +53,24 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+        addView(
+            commentarySubtitleView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateCommentaryBottomPadding()
+        }
+    }
+
+    private fun configureSubtitleView(view: SubtitleView) {
+        view.setApplyEmbeddedStyles(false)
+        view.setApplyEmbeddedFontSizes(false)
+        view.isFocusable = false
+        view.isFocusableInTouchMode = false
+        view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
     fun bindPlayer(next: Player?) {
@@ -60,8 +79,11 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             boundPlayer = next
             player = next
             managedSubtitleView.setCues(emptyList())
+            commentarySubtitleView.setCues(emptyList())
             lastInputCues = null
             lastDisplayedCues = emptyList()
+            lastDisplayedCommentaryCues = emptyList()
+            lastNormalBottomLineCount = 0
         }
         subtitleView?.visibility = View.GONE
         registerListener()
@@ -75,8 +97,10 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     override fun onDetachedFromWindow() {
         unregisterListener()
         managedSubtitleView.setCues(emptyList())
+        commentarySubtitleView.setCues(emptyList())
         lastInputCues = null
         lastDisplayedCues = emptyList()
+        lastDisplayedCommentaryCues = emptyList()
         super.onDetachedFromWindow()
     }
 
@@ -103,6 +127,11 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
                 TypedValue.COMPLEX_UNIT_SP,
                 style.fontSizeSp.toFloat(),
             )
+            commentarySubtitleView.setFixedTextSize(
+                TypedValue.COMPLEX_UNIT_SP,
+                style.fontSizeSp.toFloat(),
+            )
+            lastFontSizeSp = style.fontSizeSp
         }
         if (
             previous == null ||
@@ -115,36 +144,37 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             previous.backgroundColor != style.backgroundColor ||
             previous.backgroundOpacityPercent != style.backgroundOpacityPercent
         ) {
-            managedSubtitleView.setStyle(
-                CaptionStyleCompat(
-                    style.textColor,
-                    if (style.backgroundEnabled) {
-                        mobileSubtitleWithAlpha(
-                            style.backgroundColor,
-                            style.backgroundOpacityPercent,
-                        )
-                    } else {
-                        android.graphics.Color.TRANSPARENT
-                    },
-                    android.graphics.Color.TRANSPARENT,
-                    if (style.outlineEnabled) {
-                        CaptionStyleCompat.EDGE_TYPE_OUTLINE
-                    } else {
-                        CaptionStyleCompat.EDGE_TYPE_NONE
-                    },
-                    style.outlineColor,
-                    com.vueo.shared.core.player.SubtitleFonts.resolve(
-                        context,
-                        style.fontFamily,
-                        style.bold,
-                    ),
-                )
+            val captionStyle = CaptionStyleCompat(
+                style.textColor,
+                if (style.backgroundEnabled) {
+                    mobileSubtitleWithAlpha(
+                        style.backgroundColor,
+                        style.backgroundOpacityPercent,
+                    )
+                } else {
+                    android.graphics.Color.TRANSPARENT
+                },
+                android.graphics.Color.TRANSPARENT,
+                if (style.outlineEnabled) {
+                    CaptionStyleCompat.EDGE_TYPE_OUTLINE
+                } else {
+                    CaptionStyleCompat.EDGE_TYPE_NONE
+                },
+                style.outlineColor,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(
+                    context,
+                    style.fontFamily,
+                    style.bold,
+                ),
             )
+            managedSubtitleView.setStyle(captionStyle)
+            commentarySubtitleView.setStyle(captionStyle)
         }
         if (lastBottomPadding != bottomPadding) {
             managedSubtitleView.setBottomPaddingFraction(bottomPadding)
             lastBottomPadding = bottomPadding
         }
+        updateCommentaryBottomPadding()
         lastStyle = style
         if (showCommentary != style.showCommentary) {
             showCommentary = style.showCommentary
@@ -154,13 +184,75 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
 
     private fun displayCues(cues: List<Cue>) {
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
-        val displayed = mobileStackCollidingSubtitleCues(cues, showCommentary)
+
+        // Use two real caption layers so commentary has an explicit visual gap above
+        // the normal subtitle instead of relying on blank lines inside one cue.
+        val mainDisplayed = mobileStackCollidingSubtitleCues(cues, showCommentary = false)
+        val commentaryDisplayed = if (showCommentary) {
+            mobileStackCollidingSubtitleCues(
+                cues.filter(::mobileIsTaggedSubtitleCommentary),
+                showCommentary = true,
+            )
+        } else {
+            emptyList()
+        }
+
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
-        if (lastDisplayedCues != displayed) {
-            managedSubtitleView.setCues(displayed)
-            lastDisplayedCues = displayed
+        lastNormalBottomLineCount = normalBottomLineCount(mainDisplayed)
+        updateCommentaryBottomPadding()
+
+        if (lastDisplayedCues != mainDisplayed) {
+            managedSubtitleView.setCues(mainDisplayed)
+            lastDisplayedCues = mainDisplayed
         }
+        if (lastDisplayedCommentaryCues != commentaryDisplayed) {
+            commentarySubtitleView.setCues(commentaryDisplayed)
+            lastDisplayedCommentaryCues = commentaryDisplayed
+        }
+    }
+
+    private fun normalBottomLineCount(cues: List<Cue>): Int {
+        val lineCount = cues.asSequence()
+            .filter { it.bitmap == null && it.verticalType == Cue.TYPE_UNSET && it.line == Cue.DIMEN_UNSET }
+            .mapNotNull { it.text?.toString() }
+            .maxOfOrNull { text -> text.count { it == '\n' } + 1 }
+        return lineCount ?: 0
+    }
+
+    private fun updateCommentaryBottomPadding() {
+        val base = lastBottomPadding
+        if (base.isNaN()) return
+        val playerHeight = height
+        if (playerHeight <= 0) {
+            commentarySubtitleView.setBottomPaddingFraction(base)
+            return
+        }
+
+        val metrics = resources.displayMetrics
+        val fontPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            lastFontSizeSp.toFloat(),
+            metrics,
+        )
+        val gapPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            COMMENTARY_GAP_DP,
+            metrics,
+        )
+        val extraPx = if (lastNormalBottomLineCount > 0) {
+            fontPx * SUBTITLE_LINE_HEIGHT_FACTOR * lastNormalBottomLineCount + gapPx
+        } else {
+            0f
+        }
+        val extraFraction = extraPx / playerHeight.toFloat()
+        commentarySubtitleView.setBottomPaddingFraction((base + extraFraction).coerceAtMost(MAX_COMMENTARY_BOTTOM_PADDING))
+    }
+
+    private companion object {
+        const val COMMENTARY_GAP_DP = 14f
+        const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.25f
+        const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f
     }
 }
 
@@ -170,8 +262,8 @@ private fun mobileSubtitleWithAlpha(colour: Int, opacityPercent: Int): Int {
 }
 
 /**
- * Match the TV renderer: combine simultaneous lower-screen captions and keep
- * commentary in the same lower subtitle block, one blank line above normal subs.
+ * Match the TV renderer: combine simultaneous lower-screen captions. Commentary may be
+ * filtered out by the owning PlayerView and rendered in its own lower caption layer.
  * Authored upper/middle placements remain separate.
  */
 internal fun mobileStackCollidingSubtitleCues(
