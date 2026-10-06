@@ -46,30 +46,30 @@ internal fun vueoFadeThrough(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
-                durationMillis = 280,
+                durationMillis = 260,
                 easing = VueoMotion.EaseOut,
             ),
         ) +
             scaleIn(
-                initialScale = 0.965f,
+                initialScale = 0.93f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = 430f,
+                    stiffness = 300f,
                 ),
             )
     ) togetherWith
         (
             fadeOut(
                 animationSpec = tween(
-                    durationMillis = 220,
+                    durationMillis = 190,
                     easing = VueoMotion.EaseOut,
                 ),
             ) +
                 scaleOut(
-                    targetScale = 0.985f,
+                    targetScale = 0.97f,
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = 500f,
+                        stiffness = 340f,
                     ),
                 )
         )
