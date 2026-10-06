@@ -4,8 +4,6 @@ import android.content.Context
 import android.os.Looper
 import android.text.Layout
 import android.text.SpannableStringBuilder
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import android.text.SpannedString
 import androidx.media3.common.C
 import androidx.media3.common.text.Cue
@@ -302,27 +300,18 @@ internal class TvSubtitleOffsetRenderersFactory(
 }
 
 /** Stack simultaneous lower-screen captions even when their horizontal metadata differs.
- * Upper and middle authored placements remain separate.
- * Tagged commentary is kept in the same lower subtitle block, one blank line above
- * the normal subtitle, so both follow the configured Bottom Position together.
+ * Commentary classification is owned by TvSubtitlePlayerView using the global v101
+ * full-parentheses rule. This helper only combines cues within the layer it receives.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
-internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boolean = true): List<Cue> {
+internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
     if (cues.isEmpty()) return emptyList()
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
     val bottomGroup = mutableListOf<Cue>()
-    val commentaryGroup = mutableListOf<Cue>()
     for (cue in cues) {
         if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank()) {
             orderedGroups.add(mutableListOf(cue))
-            continue
-        }
-        if (tvIsTaggedSubtitleCommentary(cue)) {
-            if (showCommentary) {
-                if (commentaryGroup.isEmpty()) orderedGroups.add(commentaryGroup)
-                commentaryGroup.add(cue)
-            }
             continue
         }
         if (tvIsBottomSubtitleCue(cue)) {
@@ -347,13 +336,7 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boole
     return orderedGroups.mapNotNull { group ->
         val unique = group.distinctBy { it.text.toString() }
         when {
-            // When normal lower subtitles are present, commentary is rendered together
-            // with them at the normal Bottom Position, not as a second top-screen cue.
-            group === commentaryGroup && bottomGroup.isNotEmpty() -> null
-            group === bottomGroup && commentaryGroup.isNotEmpty() ->
-                tvBuildBottomSubtitleCue(commentaryGroup, bottomGroup)
-            group === bottomGroup || group === commentaryGroup ->
-                tvBuildBottomSubtitleCue(emptyList(), unique)
+            group === bottomGroup -> tvBuildBottomSubtitleCue(unique)
             unique.size == 1 -> unique.first()
             else -> {
                 val builder = unique.first().buildUpon()
@@ -368,17 +351,11 @@ internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, showCommentary: Boole
     }
 }
 
-private fun tvBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue>): Cue {
-    val commentaryUnique = commentary.distinctBy { it.text.toString() }
-    val normalUnique = normal.distinctBy { it.text.toString() }
-    val seed = normalUnique.firstOrNull() ?: commentaryUnique.first()
+private fun tvBuildBottomSubtitleCue(cues: List<Cue>): Cue {
+    val unique = cues.distinctBy { it.text.toString() }
+    val seed = unique.first()
     val text = SpannableStringBuilder()
-    commentaryUnique.forEachIndexed { index, item ->
-        if (index > 0) text.append('\n')
-        text.append(requireNotNull(item.text))
-    }
-    if (commentaryUnique.isNotEmpty() && normalUnique.isNotEmpty()) text.append("\n\n")
-    normalUnique.forEachIndexed { index, item ->
+    unique.forEachIndexed { index, item ->
         if (index > 0) text.append('\n')
         text.append(requireNotNull(item.text))
     }
@@ -392,25 +369,6 @@ private fun tvBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue>): 
         .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
         .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
         .build()
-}
-
-/** Recognize the fully colored parenthetical commentary convention in the EP814 file.
- * Parentheses alone or an arbitrary colored fragment are not role metadata.
- * Inspect parser spans before SubtitleView applies the user's styling preferences.
- */
-internal fun tvIsTaggedSubtitleCommentary(cue: Cue): Boolean {
-    val text = cue.text as? Spanned ?: return false
-    val trimmed = text.toString().trim()
-    if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return false
-    val markers = text.getSpans(0, text.length, ForegroundColorSpan::class.java)
-        .filter { (it.foregroundColor and 0x00FFFFFF) == 0x00FFFFCC }
-    if (markers.isEmpty()) return false
-    for (index in text.indices) {
-        if (!text[index].isWhitespace() && markers.none {
-            text.getSpanStart(it) <= index && text.getSpanEnd(it) > index
-        }) return false
-    }
-    return true
 }
 
 private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = when {

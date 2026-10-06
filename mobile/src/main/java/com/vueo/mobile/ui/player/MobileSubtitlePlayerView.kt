@@ -6,9 +6,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.SpannableStringBuilder
-import android.text.Spanned
 import android.text.SpannedString
-import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.View
 import android.widget.FrameLayout
@@ -199,8 +197,8 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         // commentary classification alone. This keeps translated/addon subtitles apart
         // even when their styling metadata was stripped before reaching VUEO.
         val layers = splitLowerSubtitleLayers(cues, showCommentary)
-        val mainDisplayed = mobileStackCollidingSubtitleCues(layers.lowerCues, showCommentary = false)
-        val upperDisplayed = mobileStackCollidingSubtitleCues(layers.upperCues, showCommentary = true)
+        val mainDisplayed = mobileStackCollidingSubtitleCues(layers.lowerCues)
+        val upperDisplayed = mobileStackCollidingSubtitleCues(layers.upperCues)
 
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
@@ -228,27 +226,25 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     ): MobileSubtitleLayerSplit {
         val nonLower = mutableListOf<Cue>()
         val lowerNormal = mutableListOf<Cue>()
-        val taggedCommentary = mutableListOf<Cue>()
 
         for (cue in cues) {
-            if (cue.bitmap == null && cue.verticalType == Cue.TYPE_UNSET && !cue.text.isNullOrBlank()) {
-                // Preserve authored commentary metadata regardless of placement.
-                if (mobileIsTaggedSubtitleCommentary(cue)) {
-                    taggedCommentary += cue
-                    continue
-                }
-                if (isLowerTextCue(cue)) {
-                    lowerNormal += cue
-                    continue
-                }
+            if (
+                cue.bitmap == null &&
+                cue.verticalType == Cue.TYPE_UNSET &&
+                !cue.text.isNullOrBlank() &&
+                isLowerTextCue(cue)
+            ) {
+                lowerNormal += cue
+                continue
             }
             nonLower += cue
         }
 
         val normalUnique = lowerNormal.distinctBy { it.text.toString() }
-        val taggedUnique = taggedCommentary.distinctBy { it.text.toString() }
-        val activeLowerCount = normalUnique.size + taggedUnique.count(::isLowerTextCue)
-        val parentheticalCommentary = if (activeLowerCount >= 2) {
+        // Global commentary rule: when two or more lower subtitle cues are active,
+        // only a cue whose entire trimmed text is wrapped by one outer (...) pair
+        // is commentary. Embedded colour/style metadata is deliberately ignored.
+        val parentheticalCommentary = if (normalUnique.size >= 2) {
             normalUnique.filter(::isFullyParenthesizedCue)
         } else {
             emptyList()
@@ -257,8 +253,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             .map { it.text.toString() }
             .toSet()
         val remainingNormal = normalUnique.filterNot { it.text.toString() in parentheticalTexts }
-        val commentaryUnique = (taggedUnique + parentheticalCommentary)
-            .distinctBy { it.text.toString() }
+        val commentaryUnique = parentheticalCommentary
             .let { if (commentaryEnabled) it else emptyList() }
 
         return when {
@@ -389,7 +384,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     )
 
     private companion object {
-        const val COMMENTARY_GAP_DP = 28f
+        const val COMMENTARY_GAP_DP = 20f
         const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.35f
         const val SUBTITLE_MEASURE_WIDTH_FRACTION = 0.90f
         const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f
@@ -406,27 +401,16 @@ private fun mobileSubtitleWithAlpha(colour: Int, opacityPercent: Int): Int {
  * filtered out by the owning PlayerView and rendered in its own lower caption layer.
  * Authored upper/middle placements remain separate.
  */
-internal fun mobileStackCollidingSubtitleCues(
-    cues: List<Cue>,
-    showCommentary: Boolean = true,
-): List<Cue> {
+internal fun mobileStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
     if (cues.isEmpty()) return emptyList()
 
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<MobileSubtitlePlacement, MutableList<Cue>>()
     val bottomGroup = mutableListOf<Cue>()
-    val commentaryGroup = mutableListOf<Cue>()
 
     for (cue in cues) {
         if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank()) {
             orderedGroups.add(mutableListOf(cue))
-            continue
-        }
-        if (mobileIsTaggedSubtitleCommentary(cue)) {
-            if (showCommentary) {
-                if (commentaryGroup.isEmpty()) orderedGroups.add(commentaryGroup)
-                commentaryGroup.add(cue)
-            }
             continue
         }
         if (mobileIsBottomSubtitleCue(cue)) {
@@ -454,11 +438,7 @@ internal fun mobileStackCollidingSubtitleCues(
     return orderedGroups.mapNotNull { group ->
         val unique = group.distinctBy { it.text.toString() }
         when {
-            group === commentaryGroup && bottomGroup.isNotEmpty() -> null
-            group === bottomGroup && commentaryGroup.isNotEmpty() ->
-                mobileBuildBottomSubtitleCue(commentaryGroup, bottomGroup)
-            group === bottomGroup || group === commentaryGroup ->
-                mobileBuildBottomSubtitleCue(emptyList(), unique)
+            group === bottomGroup -> mobileBuildBottomSubtitleCue(unique)
             unique.size == 1 -> unique.first()
             else -> {
                 val builder = unique.first().buildUpon()
@@ -473,17 +453,11 @@ internal fun mobileStackCollidingSubtitleCues(
     }
 }
 
-private fun mobileBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue>): Cue {
-    val commentaryUnique = commentary.distinctBy { it.text.toString() }
-    val normalUnique = normal.distinctBy { it.text.toString() }
-    val seed = normalUnique.firstOrNull() ?: commentaryUnique.first()
+private fun mobileBuildBottomSubtitleCue(cues: List<Cue>): Cue {
+    val unique = cues.distinctBy { it.text.toString() }
+    val seed = unique.first()
     val text = SpannableStringBuilder()
-    commentaryUnique.forEachIndexed { index, item ->
-        if (index > 0) text.append('\n')
-        text.append(requireNotNull(item.text))
-    }
-    if (commentaryUnique.isNotEmpty() && normalUnique.isNotEmpty()) text.append("\n\n")
-    normalUnique.forEachIndexed { index, item ->
+    unique.forEachIndexed { index, item ->
         if (index > 0) text.append('\n')
         text.append(requireNotNull(item.text))
     }
@@ -497,28 +471,6 @@ private fun mobileBuildBottomSubtitleCue(commentary: List<Cue>, normal: List<Cue
         .setTextAlignment(Layout.Alignment.ALIGN_CENTER)
         .setMultiRowAlignment(Layout.Alignment.ALIGN_CENTER)
         .build()
-}
-
-internal fun mobileIsTaggedSubtitleCommentary(cue: Cue): Boolean {
-    val text = cue.text as? Spanned ?: return false
-    val trimmed = text.toString().trim()
-    if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return false
-
-    val markers = text.getSpans(0, text.length, ForegroundColorSpan::class.java)
-        .filter { (it.foregroundColor and 0x00FFFFFF) == 0x00FFFFCC }
-    if (markers.isEmpty()) return false
-
-    for (index in text.indices) {
-        if (
-            !text[index].isWhitespace() &&
-            markers.none {
-                text.getSpanStart(it) <= index && text.getSpanEnd(it) > index
-            }
-        ) {
-            return false
-        }
-    }
-    return true
 }
 
 private fun mobileIsBottomSubtitleCue(cue: Cue): Boolean = when {

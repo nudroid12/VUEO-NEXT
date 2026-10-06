@@ -164,12 +164,12 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
 
         // Separate simultaneous lower-screen subtitle layers by occupancy, not only by
-        // commentary metadata. Tagged commentary still gets Commentary Size, but two
+        // the global parenthetical commentary rule. A full (...) cue gets Commentary Size, while two
         // ordinary tracks (for example original + translated addon subtitles) are also
         // rendered as distinct lower/upper layers with the same collision gap.
         val layers = splitLowerSubtitleLayers(cues, showCommentary)
-        val mainDisplayed = tvStackCollidingSubtitleCues(layers.lowerCues, showCommentary = false)
-        val upperDisplayed = tvStackCollidingSubtitleCues(layers.upperCues, showCommentary = true)
+        val mainDisplayed = tvStackCollidingSubtitleCues(layers.lowerCues)
+        val upperDisplayed = tvStackCollidingSubtitleCues(layers.upperCues)
 
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
@@ -197,27 +197,25 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     ): TvSubtitleLayerSplit {
         val nonLower = mutableListOf<Cue>()
         val lowerNormal = mutableListOf<Cue>()
-        val taggedCommentary = mutableListOf<Cue>()
 
         for (cue in cues) {
-            if (cue.bitmap == null && cue.verticalType == Cue.TYPE_UNSET && !cue.text.isNullOrBlank()) {
-                // Preserve authored commentary metadata regardless of placement.
-                if (tvIsTaggedSubtitleCommentary(cue)) {
-                    taggedCommentary += cue
-                    continue
-                }
-                if (isLowerTextCue(cue)) {
-                    lowerNormal += cue
-                    continue
-                }
+            if (
+                cue.bitmap == null &&
+                cue.verticalType == Cue.TYPE_UNSET &&
+                !cue.text.isNullOrBlank() &&
+                isLowerTextCue(cue)
+            ) {
+                lowerNormal += cue
+                continue
             }
             nonLower += cue
         }
 
         val normalUnique = lowerNormal.distinctBy { it.text.toString() }
-        val taggedUnique = taggedCommentary.distinctBy { it.text.toString() }
-        val activeLowerCount = normalUnique.size + taggedUnique.count(::isLowerTextCue)
-        val parentheticalCommentary = if (activeLowerCount >= 2) {
+        // Global commentary rule: when two or more lower subtitle cues are active,
+        // only a cue whose entire trimmed text is wrapped by one outer (...) pair
+        // is commentary. Embedded colour/style metadata is deliberately ignored.
+        val parentheticalCommentary = if (normalUnique.size >= 2) {
             normalUnique.filter(::isFullyParenthesizedCue)
         } else {
             emptyList()
@@ -226,8 +224,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             .map { it.text.toString() }
             .toSet()
         val remainingNormal = normalUnique.filterNot { it.text.toString() in parentheticalTexts }
-        val commentaryUnique = (taggedUnique + parentheticalCommentary)
-            .distinctBy { it.text.toString() }
+        val commentaryUnique = parentheticalCommentary
             .let { if (commentaryEnabled) it else emptyList() }
 
         return when {
@@ -358,7 +355,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     )
 
     private companion object {
-        const val COMMENTARY_GAP_DP = 28f
+        const val COMMENTARY_GAP_DP = 20f
         const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.35f
         const val SUBTITLE_MEASURE_WIDTH_FRACTION = 0.90f
         const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f
