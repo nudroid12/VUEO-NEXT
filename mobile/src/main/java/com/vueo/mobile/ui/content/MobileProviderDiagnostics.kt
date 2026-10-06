@@ -32,6 +32,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -654,48 +655,65 @@ internal fun PerformanceDiagnosticsDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val tabs = remember {
+        listOf(
+            PerformanceDiagnostics.Tab.FULL,
+            PerformanceDiagnostics.Tab.HOME,
+            PerformanceDiagnostics.Tab.SEARCH,
+            PerformanceDiagnostics.Tab.DETAILS,
+            PerformanceDiagnostics.Tab.PLAYER,
+            PerformanceDiagnostics.Tab.SOURCES,
+            PerformanceDiagnostics.Tab.EPISODES,
+            PerformanceDiagnostics.Tab.LIBRARY,
+            PerformanceDiagnostics.Tab.SETTINGS,
+            PerformanceDiagnostics.Tab.PROVIDER,
+            PerformanceDiagnostics.Tab.SYSTEM,
+            PerformanceDiagnostics.Tab.OTHER,
+        )
+    }
     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
-    var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
-    var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
-    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.export(selectedTab)) }
+    var showRaw by remember { mutableStateOf(false) }
+    var diagnosticsEnabled by remember {
+        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
+    }
+    var diagnosticText by remember {
+        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
+    }
     var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val logScroll = rememberScrollState()
 
-    LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
-        diagnosticText = PerformanceDiagnostics.export(selectedTab)
-        if (recording) {
+    fun refreshPreview(): String =
+        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab)
+        else PerformanceDiagnostics.previewSummary(selectedTab)
+
+    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
+        diagnosticText = refreshPreview()
+        logScroll.scrollTo(0)
+        if (diagnosticsEnabled) {
             while (true) {
-                kotlinx.coroutines.delay(1_000L)
-                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                kotlinx.coroutines.delay(1_250L)
+                diagnosticText = refreshPreview()
             }
         }
     }
 
-    LaunchedEffect(diagnosticText, searchQuery) {
-        if (recording && searchQuery.isBlank()) {
+    LaunchedEffect(diagnosticText, searchQuery, showRaw) {
+        if (showRaw && diagnosticsEnabled && searchQuery.isBlank()) {
             logScroll.scrollTo(logScroll.maxValue)
         }
     }
 
-    val recentPreview = remember(diagnosticText) {
-        if (diagnosticText.length > 30_000) {
-            "[Recent preview. Copy and Save use the complete selected log.]\n\n" +
-                diagnosticText.takeLast(30_000)
-        } else {
-            diagnosticText
-        }
-    }
-    val visibleLog = remember(recentPreview, searchQuery) {
+    val visibleLog = remember(diagnosticText, searchQuery) {
         val query = searchQuery.trim()
         if (query.isBlank()) {
-            recentPreview
+            diagnosticText
         } else {
-            recentPreview
+            diagnosticText
                 .lineSequence()
                 .filter { line -> line.contains(query, ignoreCase = true) }
                 .joinToString("\n")
-                .ifBlank { "No log lines match \"$query\"." }
+                .ifBlank { "No diagnostic lines match \"$query\"." }
         }
     }
 
@@ -721,106 +739,90 @@ internal fun PerformanceDiagnosticsDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
                         Text(
                             "Performance Diagnostics",
-                            fontSize = 20.sp,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            when {
-                                !diagnosticsEnabled -> "Recorder off"
-                                recording -> "Recording runtime activity"
-                                else -> "Recorder armed"
+                            if (diagnosticsEnabled) {
+                                "ON • recording runtime activity"
+                            } else {
+                                "OFF • diagnostics inactive • recorded log retained"
                             },
                             color = VueoPalette.Muted,
-                            fontSize = 11.sp,
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = if (recording) {
-                            VueoPalette.SurfaceStrong
-                        } else {
-                            VueoPalette.SurfaceElevated
-                        },
-                    ) {
-                        Text(
-                            when {
-                                !diagnosticsEnabled -> "OFF"
-                                recording -> "REC"
-                                else -> "ON"
-                            },
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            color = if (recording) VueoPalette.Accent else VueoPalette.Muted,
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Text(
+                        if (diagnosticsEnabled) "ON" else "OFF",
+                        color = if (diagnosticsEnabled) VueoPalette.Accent else VueoPalette.Muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 6.dp, end = 4.dp),
+                    )
+                    Switch(
+                        checked = diagnosticsEnabled,
+                        onCheckedChange = { value ->
+                            PerformanceDiagnostics.setEnabled(context.applicationContext, value)
+                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
+                            diagnosticText = refreshPreview()
+                        },
+                    )
                 }
 
-                Surface(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = VueoPalette.SurfaceElevated,
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(VueoPalette.SurfaceElevated)
+                        .padding(3.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (!showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
+                            .clickable { showRaw = false }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Performance recorder", fontWeight = FontWeight.Bold)
-                                Text(
-                                    when {
-                                        !diagnosticsEnabled -> "No sampler, frame probe or event buffering"
-                                        recording -> "Collecting page, player, provider and system events"
-                                        else -> "Enabled, waiting for Start Recording"
-                                    },
-                                    color = VueoPalette.Muted,
-                                    fontSize = 10.5.sp,
-                                )
-                            }
-                            Switch(
-                                checked = diagnosticsEnabled,
-                                onCheckedChange = { value ->
-                                    PerformanceDiagnostics.setEnabled(context.applicationContext, value)
-                                    diagnosticsEnabled = value
-                                    recording = PerformanceDiagnostics.isRecording()
-                                    diagnosticText = PerformanceDiagnostics.export(selectedTab)
-                                },
-                            )
-                        }
-
-                        Button(
-                            enabled = diagnosticsEnabled,
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                if (recording) PerformanceDiagnostics.stopRecording()
-                                else PerformanceDiagnostics.startRecording(context.applicationContext)
-                                recording = PerformanceDiagnostics.isRecording()
-                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
-                            },
-                        ) {
-                            Text(if (recording) "Stop Recording" else "Start Recording")
-                        }
-
                         Text(
-                            "Recording stays in memory. Disk is used only when Save Log is pressed.",
-                            color = VueoPalette.Muted,
-                            fontSize = 10.sp,
+                            if (!showRaw) "✓  Summary" else "Summary",
+                            fontSize = 12.sp,
+                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
+                            color = if (!showRaw) Color.White else VueoPalette.Muted,
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
+                            .clickable { showRaw = true }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (showRaw) "✓  Raw" else "Raw",
+                            fontSize = 12.sp,
+                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
+                            color = if (showRaw) Color.White else VueoPalette.Muted,
                         )
                     }
                 }
@@ -829,59 +831,101 @@ internal fun PerformanceDiagnosticsDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    PerformanceDiagnostics.Tab.entries.forEach { tab ->
-                        FilterChip(
-                            selected = selectedTab == tab,
+                    tabs.forEach { tab ->
+                        val selected = selectedTab == tab
+                        Surface(
                             onClick = { selectedTab = tab },
-                            label = {
-                                Text(
-                                    tab.label,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
-                                )
-                            },
-                        )
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected) VueoPalette.SurfaceStrong else Color.Transparent,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (selected) Color.White.copy(alpha = .22f) else VueoPalette.Muted.copy(alpha = .28f),
+                            ),
+                        ) {
+                            Text(
+                                tab.label,
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selected) Color.White else VueoPalette.Muted,
+                            )
+                        }
                     }
                 }
 
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp),
-                    singleLine = true,
-                    label = { Text("Search log") },
-                    placeholder = { Text("provider, jank, source, QuickJS…") },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        .padding(horizontal = 12.dp, vertical = 3.dp)
+                        .height(40.dp)
+                        .border(
+                            width = 1.dp,
+                            color = VueoPalette.Muted.copy(alpha = .35f),
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .padding(start = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = VueoPalette.Muted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = Color.White.copy(alpha = .90f),
+                            fontSize = 13.sp,
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(VueoPalette.Accent),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isBlank()) {
+                                    Text(
+                                        "Search diagnostic…",
+                                        color = VueoPalette.Muted,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                                innerTextField()
                             }
+                        },
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear search")
                         }
-                    },
-                )
+                    }
+                }
 
                 Surface(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(14.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = VueoPalette.Surface,
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(logScroll)
-                            .padding(12.dp),
+                            .padding(horizontal = 10.dp, vertical = 9.dp),
                     ) {
                         Text(
                             text = visibleLog,
-                            color = Color.White.copy(alpha = .86f),
+                            color = Color.White.copy(alpha = .88f),
                             fontSize = 10.sp,
                             lineHeight = 14.sp,
                             fontFamily = FontFamily.Monospace,
@@ -897,18 +941,29 @@ internal fun PerformanceDiagnosticsDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
                         TextButton(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                val fullText = PerformanceDiagnostics.export(selectedTab)
+                                val fullText = if (showRaw) {
+                                    PerformanceDiagnostics.exportRaw(selectedTab)
+                                } else {
+                                    PerformanceDiagnostics.exportSummary(selectedTab)
+                                }
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                                 clipboard?.setPrimaryClip(
-                                    ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText)
+                                    ClipData.newPlainText(
+                                        "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
+                                        fullText,
+                                    )
                                 )
-                                Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "${if (showRaw) "Raw" else "Summary"} ${selectedTab.label} copied",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             },
                         ) { Text("Copy") }
 
@@ -943,7 +998,7 @@ internal fun PerformanceDiagnosticsDialog(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 PerformanceDiagnostics.clear()
-                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                                diagnosticText = refreshPreview()
                             },
                         ) { Text("Clear") }
 

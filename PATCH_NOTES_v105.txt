@@ -1,0 +1,49 @@
+VUEO Performance Diagnostics v105
+Baseline: VUEO-NEXT-main (40) / v104 already applied
+
+SCOPE
+- Mobile + TV Performance Diagnostics redesign.
+- One master ON/OFF toggle. No separate Start/Stop Recording control.
+- ON starts collection immediately; OFF stops collection immediately.
+- Existing in-memory logs remain after OFF; Clear is the only action that removes them.
+- Persisted ON state auto-resumes collection when PerformanceDiagnostics installs on next app start.
+- Summary + Raw modes on both Mobile and TV.
+- Full tab moved to the front of the UI tab order, followed by Home/Search/Details/Player/Sources/etc.
+- Compact search field and denser log-first layout inspired by the supplied Cloudstream reference.
+- Bottom actions stay Copy / Save / Clear / Close.
+- Copy follows the currently selected Summary/Raw mode and selected tab.
+- Save exports a complete ZIP containing metadata, raw logs and generated summaries for every tab.
+
+MOBILE
+- Removed the large Performance recorder card.
+- Removed duplicate recorder toggle and Start/Stop Recording button.
+- Master toggle moved into the compact header.
+- Added segmented Summary / Raw selector.
+- Reworked tabs, compact search, larger log viewport and compact fixed bottom actions.
+
+TV
+- Replaced the small recorder-oriented AlertDialog layout with a full-screen diagnostics workspace.
+- Same master ON/OFF semantics as Mobile.
+- Added Summary / Raw selector, category tabs, search, large log area and Copy/Save/Clear/Close actions.
+- Added D-pad focus paths for toggle -> mode -> tabs -> search -> log -> actions.
+
+SHARED CORE CHANGE
+- PerformanceDiagnostics was already shared by Mobile and TV; v105 changes that shared core directly so both platforms use identical ON/OFF semantics and identical Summary/Raw generation.
+- This is not a TV-only or Mobile-only implementation duplicated across platforms.
+- Compatibility export()/preview() aliases remain and still map to Raw output.
+
+SUMMARY SIGNALS
+- Selected/total/dropped event counts.
+- Current screen and selected event window duration.
+- Jank event count + worst frame gap.
+- UI stall count + worst stall delay.
+- Source scan/provider/QuickJS activity counts.
+- Provider, QuickJS and playback issue signals.
+- Recent notable events.
+
+VALIDATION
+- No Gradle build was run.
+- git diff --check passed for all five changed Kotlin files.
+- Lexical state, delimiter balance and duplicate-import checks passed for all five changed Kotlin files.
+- Repo comparison confirms only these five source files changed.
+- Old UI strings/controls for Performance recorder / Start Recording / Stop Recording / armed state are absent from the new implementation.

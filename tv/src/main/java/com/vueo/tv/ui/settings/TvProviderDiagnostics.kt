@@ -1,10 +1,13 @@
 package com.vueo.tv.settings
 
 import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
+import androidx.activity.compose.BackHandler
 
 import android.view.KeyEvent
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
@@ -23,12 +26,16 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -46,8 +53,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
@@ -420,39 +430,82 @@ internal fun TvPerformanceDiagnosticsDialog(
     val context = LocalContext.current
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
     val scope = rememberCoroutineScope()
+    val tabs = remember {
+        listOf(
+            PerformanceDiagnostics.Tab.FULL,
+            PerformanceDiagnostics.Tab.HOME,
+            PerformanceDiagnostics.Tab.SEARCH,
+            PerformanceDiagnostics.Tab.DETAILS,
+            PerformanceDiagnostics.Tab.PLAYER,
+            PerformanceDiagnostics.Tab.SOURCES,
+            PerformanceDiagnostics.Tab.EPISODES,
+            PerformanceDiagnostics.Tab.LIBRARY,
+            PerformanceDiagnostics.Tab.SETTINGS,
+            PerformanceDiagnostics.Tab.PROVIDER,
+            PerformanceDiagnostics.Tab.SYSTEM,
+            PerformanceDiagnostics.Tab.OTHER,
+        )
+    }
     val tabScroll = rememberScrollState()
     val logScroll = rememberScrollState()
-    val tabFocusers = remember { PerformanceDiagnostics.Tab.entries.map { FocusRequester() } }
-    val recordFocus = remember { FocusRequester() }
+    val toggleFocus = remember { FocusRequester() }
+    val summaryFocus = remember { FocusRequester() }
+    val rawFocus = remember { FocusRequester() }
+    val tabFocusers = remember { tabs.map { FocusRequester() } }
+    val searchFocus = remember { FocusRequester() }
     val logFocus = remember { FocusRequester() }
     val copyFocus = remember { FocusRequester() }
     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
-    var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
-    var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
-    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.preview(selectedTab)) }
+    var showRaw by remember { mutableStateOf(false) }
+    var diagnosticsEnabled by remember {
+        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
+    }
+    var diagnosticText by remember {
+        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
+    }
+    var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var logFocused by remember { mutableStateOf(false) }
+    var searchFocused by remember { mutableStateOf(false) }
     var focusedTabIndex by remember { mutableStateOf(0) }
-    val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
+    val scrollStep = with(LocalDensity.current) { 112.dp.roundToPx() }
 
     fun closeAndRestore() {
         onDismiss()
         restoreSettingsFocus()
     }
 
-    LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
-        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
+    fun refreshPreview(): String =
+        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab, maxEvents = 320)
+        else PerformanceDiagnostics.previewSummary(selectedTab)
+
+    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
+        diagnosticText = refreshPreview()
         logScroll.scrollTo(0)
-        if (recording) {
+        if (diagnosticsEnabled) {
             while (true) {
                 kotlinx.coroutines.delay(1_500L)
-                diagnosticText = PerformanceDiagnostics.preview(selectedTab)
+                diagnosticText = refreshPreview()
             }
         }
     }
+
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        runCatching { tabFocusers.first().requestFocus() }
+        runCatching { summaryFocus.requestFocus() }
+    }
+
+    val visibleLog = remember(diagnosticText, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isBlank()) {
+            diagnosticText
+        } else {
+            diagnosticText
+                .lineSequence()
+                .filter { line -> line.contains(query, ignoreCase = true) }
+                .joinToString("\n")
+                .ifBlank { "No diagnostic lines match \"$query\"." }
+        }
     }
 
     val bottomButtonNavigation = Modifier
@@ -465,101 +518,227 @@ internal fun TvPerformanceDiagnosticsDialog(
             } else false
         }
 
-    AlertDialog(
+    BackHandler(onBack = ::closeAndRestore)
+
+    Dialog(
         onDismissRequest = ::closeAndRestore,
-        title = { Text("Performance Diagnostics") },
-        text = {
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = TvDesign.Black,
+        ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 44.dp, vertical = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Performance recorder", fontWeight = FontWeight.Bold)
+                    TextButton(
+                        onClick = ::closeAndRestore,
+                        modifier = Modifier.focusProperties { right = toggleFocus },
+                    ) {
+                        Text("‹", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         Text(
-                            when {
-                                !diagnosticsEnabled -> "OFF • no sampler, frame probe or event buffering"
-                                recording -> "ON • recording runtime activity"
-                                else -> "ON • armed, not recording"
+                            "Performance Diagnostics",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (diagnosticsEnabled) {
+                                "ON • recording runtime activity"
+                            } else {
+                                "OFF • diagnostics inactive • recorded log retained"
                             },
                             color = TvDesign.Muted,
-                            fontSize = 10.5.sp,
+                            fontSize = 11.sp,
                         )
                     }
+                    Text(
+                        if (diagnosticsEnabled) "ON" else "OFF",
+                        color = if (diagnosticsEnabled) TvDesign.Accent else TvDesign.Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
                     Switch(
                         checked = diagnosticsEnabled,
                         onCheckedChange = { value ->
                             PerformanceDiagnostics.setEnabled(context.applicationContext, value)
-                            diagnosticsEnabled = value
-                            recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
+                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
+                            diagnosticText = refreshPreview()
                         },
+                        modifier = Modifier
+                            .focusRequester(toggleFocus)
+                            .focusProperties { down = summaryFocus },
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TvDesign.Surface, RoundedCornerShape(10.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     TextButton(
                         modifier = Modifier
-                            .focusRequester(recordFocus)
-                            .focusProperties { down = tabFocusers.first() },
-                        enabled = diagnosticsEnabled,
-                        onClick = {
-                            if (recording) PerformanceDiagnostics.stopRecording()
-                            else PerformanceDiagnostics.startRecording(context.applicationContext)
-                            recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
-                        },
+                            .weight(1f)
+                            .focusRequester(summaryFocus)
+                            .background(
+                                if (!showRaw) TvDesign.SurfaceRaised else Color.Transparent,
+                                RoundedCornerShape(8.dp),
+                            )
+                            .focusProperties {
+                                up = toggleFocus
+                                right = rawFocus
+                                down = tabFocusers.first()
+                            },
+                        onClick = { showRaw = false },
                     ) {
-                        Text(if (recording) "Stop Recording" else "Start Recording")
+                        Text(
+                            if (!showRaw) "✓  Summary" else "Summary",
+                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
                     }
-                    Text(
-                        "Recording stays in memory. Disk is touched only when Save Log is pressed.",
-                        color = TvDesign.Muted,
-                        fontSize = 10.sp,
-                    )
+                    TextButton(
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(rawFocus)
+                            .background(
+                                if (showRaw) TvDesign.SurfaceRaised else Color.Transparent,
+                                RoundedCornerShape(8.dp),
+                            )
+                            .focusProperties {
+                                up = toggleFocus
+                                left = summaryFocus
+                                down = tabFocusers.first()
+                            },
+                        onClick = { showRaw = true },
+                    ) {
+                        Text(
+                            if (showRaw) "✓  Raw" else "Raw",
+                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
                 }
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(tabScroll),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    PerformanceDiagnostics.Tab.entries.forEachIndexed { index, tab ->
+                    tabs.forEachIndexed { index, tab ->
+                        val selected = selectedTab == tab
                         TextButton(
                             modifier = Modifier
                                 .focusRequester(tabFocusers[index])
+                                .background(
+                                    if (selected) TvDesign.SurfaceRaised else Color.Transparent,
+                                    RoundedCornerShape(8.dp),
+                                )
                                 .onFocusChanged { state ->
                                     if (state.isFocused) focusedTabIndex = index
                                 }
                                 .focusProperties {
-                                    up = recordFocus
-                                    down = logFocus
+                                    up = if (showRaw) rawFocus else summaryFocus
+                                    down = searchFocus
                                 },
                             onClick = { selectedTab = tab },
                         ) {
                             Text(
-                                tab.label,
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 10.5.sp,
+                                if (selected) "✓ ${tab.label}" else tab.label,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 11.sp,
                             )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .background(TvDesign.Surface, RoundedCornerShape(8.dp))
+                        .border(
+                            width = if (searchFocused) 2.dp else 1.dp,
+                            color = if (searchFocused) TvDesign.Focus else TvDesign.White.copy(alpha = .14f),
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .padding(start = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(searchFocus)
+                            .onFocusChanged { searchFocused = it.isFocused }
+                            .focusProperties {
+                                up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
+                                down = logFocus
+                            },
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = TvDesign.White,
+                            fontSize = 13.sp,
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(TvDesign.Accent),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isBlank()) {
+                                    Text(
+                                        "Search diagnostic…",
+                                        color = TvDesign.Muted,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        TextButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.focusProperties { left = searchFocus; down = logFocus },
+                        ) {
+                            Text("×", fontSize = 20.sp)
                         }
                     }
                 }
 
                 Column(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .heightIn(max = 390.dp)
-                        .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .background(TvDesign.Surface, RoundedCornerShape(10.dp))
+                        .border(
+                            2.dp,
+                            if (logFocused) TvDesign.Focus.copy(alpha = .9f) else Color.Transparent,
+                            RoundedCornerShape(10.dp),
+                        )
                         .focusRequester(logFocus)
                         .onFocusChanged { logFocused = it.isFocused }
                         .focusProperties {
-                            up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
+                            up = searchFocus
                             down = copyFocus
                         }
                         .onPreviewKeyEvent { event ->
@@ -571,9 +750,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                                         if (down && logScroll.value >= logScroll.maxValue) {
                                             runCatching { copyFocus.requestFocus() }
                                         } else if (!down && logScroll.value <= 0) {
-                                            runCatching {
-                                                tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)].requestFocus()
-                                            }
+                                            runCatching { searchFocus.requestFocus() }
                                         } else {
                                             val target = (logScroll.value + if (down) scrollStep else -scrollStep)
                                                 .coerceIn(0, logScroll.maxValue)
@@ -591,63 +768,89 @@ internal fun TvPerformanceDiagnosticsDialog(
                         }
                         .focusable()
                         .verticalScroll(logScroll)
-                        .padding(8.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
                     Text(
-                        text = if (diagnosticText.length > 30_000) {
-                            "[Recent preview. Copy and Save use the complete selected log.]\n\n" + diagnosticText.takeLast(30_000)
-                        } else diagnosticText,
+                        text = visibleLog,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 9.5.sp,
-                        color = TvDesign.Muted,
+                        fontSize = 10.sp,
+                        color = TvDesign.White.copy(alpha = .88f),
                     )
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                modifier = Modifier
-                    .focusRequester(copyFocus)
-                    .then(bottomButtonNavigation),
-                onClick = {
-                    val fullText = PerformanceDiagnostics.export(selectedTab)
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText))
-                    Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
-                },
-            ) { Text("Copy") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(
-                    modifier = bottomButtonNavigation,
-                    enabled = !saving,
-                    onClick = {
-                        saving = true
-                        scope.launch {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(copyFocus)
+                            .then(bottomButtonNavigation),
+                        onClick = {
+                            val fullText = if (showRaw) {
+                                PerformanceDiagnostics.exportRaw(selectedTab)
+                            } else {
+                                PerformanceDiagnostics.exportSummary(selectedTab)
                             }
-                            saving = false
-                            result.onSuccess { saved ->
-                                Toast.makeText(context, "Saved ${saved.displayName} to ${saved.location}", Toast.LENGTH_LONG).show()
-                            }.onFailure { error ->
-                                Toast.makeText(context, "Save failed: ${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            clipboard?.setPrimaryClip(
+                                ClipData.newPlainText(
+                                    "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
+                                    fullText,
+                                )
+                            )
+                            Toast.makeText(
+                                context,
+                                "${if (showRaw) "Raw" else "Summary"} ${selectedTab.label} copied",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    ) { Text("Copy") }
+
+                    TextButton(
+                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
+                        enabled = !saving,
+                        onClick = {
+                            saving = true
+                            scope.launch {
+                                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
+                                }
+                                saving = false
+                                result.onSuccess { saved ->
+                                    Toast.makeText(
+                                        context,
+                                        "Saved ${saved.displayName} to ${saved.location}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }.onFailure { error ->
+                                    Toast.makeText(
+                                        context,
+                                        "Save failed: ${error.javaClass.simpleName}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
                             }
-                        }
-                    },
-                ) { Text(if (saving) "Saving…" else "Save Log") }
-                TextButton(
-                    modifier = bottomButtonNavigation,
-                    onClick = {
-                        PerformanceDiagnostics.clear()
-                        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
-                    },
-                ) { Text("Clear") }
-                TextButton(modifier = bottomButtonNavigation, onClick = ::closeAndRestore) { Text("Close") }
+                        },
+                    ) { Text(if (saving) "Saving…" else "Save") }
+
+                    TextButton(
+                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
+                        onClick = {
+                            PerformanceDiagnostics.clear()
+                            diagnosticText = refreshPreview()
+                        },
+                    ) { Text("Clear") }
+
+                    TextButton(
+                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
+                        onClick = ::closeAndRestore,
+                    ) { Text("Close") }
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable

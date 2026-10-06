@@ -41,7 +41,7 @@ internal fun TvDiagnosticsSettings(
         TvSettingsEntry(
             id = "performance-diagnostics",
             title = "Performance Diagnostics",
-            subtitle = "Opt-in page, player, provider and system performance recorder.",
+            subtitle = "Master ON/OFF runtime performance diagnostics with Summary and Raw logs.",
             value = "Open",
             icon = Icons.Default.SettingsInputComponent,
             onActivate = { showPerformanceDiagnostics = true },

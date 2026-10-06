@@ -540,7 +540,7 @@ internal fun VueoSettingsHub(
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow(
                                 "Performance Diagnostics",
-                                "Opt-in page, player, provider and system performance recorder.",
+                                "Master ON/OFF runtime performance diagnostics with Summary and Raw logs.",
                                 "Open",
                                 Icons.Default.SettingsInputComponent,
                             ) {

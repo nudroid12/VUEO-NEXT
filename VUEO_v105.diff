@@ -1,0 +1,1378 @@
+===== shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt =====
+diff --git a/mnt/data/vueo_repo40/VUEO-NEXT-main/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt b/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt
+index 2dac462..356fa1f 100644
+--- a/mnt/data/vueo_repo40/VUEO-NEXT-main/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt
++++ b/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt
+@@ -30,10 +30,12 @@ import java.util.zip.ZipOutputStream
+ /**
+  * Opt-in performance recorder shared by TV and Mobile.
+  *
+- * OFF means no frame probe, no sampler and no event buffering. ON merely arms the
+- * feature; Start Recording is what attaches the frame probe and periodic sampler.
+- * RuntimeDiagnostics forwards its already-existing breadcrumbs here, so provider,
+- * player and page activity can be correlated without duplicating instrumentation.
++ * The persisted master switch has only two user-facing states:
++ * OFF = no frame probe, sampler or new event buffering.
++ * ON  = collection starts immediately and remains active until switched off.
++ * Existing in-memory events are retained when collection is stopped; only clear()
++ * removes them. RuntimeDiagnostics forwards its existing breadcrumbs here so page,
++ * player and provider activity can be correlated without duplicate instrumentation.
+  */
+ object PerformanceDiagnostics {
+     private const val PREFS = "vueo_performance_diagnostics"
+@@ -70,6 +72,23 @@ object PerformanceDiagnostics {
+         val line: String,
+     )
+ 
++    private data class SummaryStats(
++        val matchingEvents: Int,
++        val firstTimestampMs: Long?,
++        val lastTimestampMs: Long?,
++        val jankEvents: Int,
++        val worstFrameGapMs: Long,
++        val stallEvents: Int,
++        val worstStallMs: Long,
++        val scanStarts: Int,
++        val providerStarts: Int,
++        val providerIssues: Int,
++        val quickJsEvents: Int,
++        val quickJsIssues: Int,
++        val playbackIssues: Int,
++        val recentSignals: List<String>,
++    )
++
+     private val installed = AtomicBoolean(false)
+     private val enabled = AtomicBoolean(false)
+     private val recording = AtomicBoolean(false)
+@@ -121,11 +140,11 @@ object PerformanceDiagnostics {
+     fun install(context: Context) {
+         appContext = context.applicationContext
+         if (!installed.compareAndSet(false, true)) return
+-        enabled.set(
+-            context.applicationContext
+-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+-                .getBoolean(KEY_ENABLED, false)
+-        )
++        val storedEnabled = context.applicationContext
++            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++            .getBoolean(KEY_ENABLED, false)
++        enabled.set(storedEnabled)
++        if (storedEnabled) startRecording(context.applicationContext)
+     }
+ 
+     fun isEnabled(context: Context): Boolean {
+@@ -145,7 +164,7 @@ object PerformanceDiagnostics {
+             .putBoolean(KEY_ENABLED, value)
+             .apply()
+         enabled.set(value)
+-        if (!value) stopRecording()
++        if (value) startRecording(context.applicationContext) else stopRecording()
+     }
+ 
+     fun startRecording(context: Context) {
+@@ -169,6 +188,9 @@ object PerformanceDiagnostics {
+     fun stopRecording() {
+         if (!recording.compareAndSet(true, false)) return
+         appendEvent(Tab.SYSTEM, "RECORDING_STOP")
++        activeScans.set(0)
++        activeProviders.set(0)
++        activeQuickJs.set(0)
+         sampler?.shutdownNow()
+         sampler = null
+         mainHandler.post {
+@@ -205,14 +227,15 @@ object PerformanceDiagnostics {
+         appendEvent(categoryFor(trimmed), trimmed)
+     }
+ 
+-    fun export(tab: Tab): String {
++    /** Full chronological raw export for Copy/Save and offline inspection. */
++    fun exportRaw(tab: Tab): String {
+         val snapshot = snapshot(tab)
+         return buildString {
+-            appendLine("VUEO Performance Diagnostics — ${tab.label}")
+-            appendLine("Enabled: ${enabled.get()} | Recording: ${recording.get()} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
++            appendLine("VUEO Performance Diagnostics — Raw / ${tab.label}")
++            appendLine("State: ${if (isCollecting()) "ON • recording" else "OFF • inactive"} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+             appendLine("Active: scans=${activeScans.get()} providers=${activeProviders.get()} quickJs=${activeQuickJs.get()}")
+             appendLine("Current screen: ${currentScreen.get()}")
+-            appendLine("Sampling: system=${SYSTEM_SAMPLE_MS}ms | jank threshold=${JANK_THRESHOLD_MS}ms | disk writes during recording=none")
++            appendLine("Sampling: system=${SYSTEM_SAMPLE_MS}ms | jank threshold=${JANK_THRESHOLD_MS}ms | disk writes while recording=none")
+             appendLine()
+             if (snapshot.isEmpty()) {
+                 appendLine("No events recorded for this tab.")
+@@ -223,18 +246,17 @@ object PerformanceDiagnostics {
+     }
+ 
+     /**
+-     * Bounded UI preview. Unlike [export], this never copies/filters the whole
+-     * ring buffer, so an open diagnostics viewer does not become its own source
+-     * of jank while a performance recording is running.
++     * Bounded raw UI preview so the diagnostics viewer does not become its own
++     * performance problem while recording is active.
+      */
+-    fun preview(tab: Tab, maxEvents: Int = 220): String {
++    fun previewRaw(tab: Tab, maxEvents: Int = 220): String {
+         val snapshot = recentSnapshot(tab, maxEvents.coerceIn(20, 500))
+         return buildString {
+-            appendLine("VUEO Performance Diagnostics — ${tab.label}")
+-            appendLine("Enabled: ${enabled.get()} | Recording: ${recording.get()} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
++            appendLine("VUEO Performance Diagnostics — Raw / ${tab.label}")
++            appendLine("State: ${if (isCollecting()) "ON • recording" else "OFF • inactive"} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+             appendLine("Active: scans=${activeScans.get()} providers=${activeProviders.get()} quickJs=${activeQuickJs.get()}")
+             appendLine("Current screen: ${currentScreen.get()}")
+-            appendLine("Preview: latest ${snapshot.size} matching events • full log only on Copy/Save")
++            appendLine("Preview: latest ${snapshot.size} matching events • Copy/Save retain the complete raw log")
+             appendLine()
+             if (snapshot.isEmpty()) {
+                 appendLine("No events recorded for this tab.")
+@@ -244,6 +266,163 @@ object PerformanceDiagnostics {
+         }
+     }
+ 
++    /** Human-readable performance overview for the selected tab. */
++    fun exportSummary(tab: Tab): String = buildSummary(tab)
++
++    /** Summary is already bounded to counters plus a few recent signals. */
++    fun previewSummary(tab: Tab): String = buildSummary(tab)
++
++    // Compatibility aliases for callers/older patches that still use export()/preview().
++    fun export(tab: Tab): String = exportRaw(tab)
++
++    fun preview(tab: Tab, maxEvents: Int = 220): String = previewRaw(tab, maxEvents)
++
++    private fun buildSummary(tab: Tab): String {
++        val stats = summaryStats(tab)
++        val state = if (isCollecting()) "ON • recording" else "OFF • inactive"
++        return buildString {
++            appendLine("VUEO PERFORMANCE SUMMARY — ${tab.label.uppercase(Locale.US)}")
++            appendLine()
++            appendLine("State: $state")
++            appendLine("Current screen: ${currentScreen.get()}")
++            appendLine("Selected events: ${stats.matchingEvents} | Total buffered: ${eventCount()} | Dropped: ${droppedEvents.get()}")
++            appendLine("Window: ${summaryWindow(stats.firstTimestampMs, stats.lastTimestampMs)}")
++            appendLine()
++            appendLine("FRAME / UI")
++            appendLine("Jank events: ${stats.jankEvents}${if (stats.jankEvents > 0) " | worst frame gap: ${stats.worstFrameGapMs}ms" else ""}")
++            appendLine("UI stalls: ${stats.stallEvents}${if (stats.stallEvents > 0) " | worst stall: ${stats.worstStallMs}ms" else ""}")
++            appendLine()
++            appendLine("RUNTIME ACTIVITY")
++            appendLine("Source scans started: ${stats.scanStarts} | active now: ${activeScans.get()}")
++            appendLine("Provider runs started: ${stats.providerStarts} | active now: ${activeProviders.get()} | issue signals: ${stats.providerIssues}")
++            appendLine("QuickJS events: ${stats.quickJsEvents} | active now: ${activeQuickJs.get()} | issue signals: ${stats.quickJsIssues}")
++            appendLine("Playback issue signals: ${stats.playbackIssues}")
++            appendLine()
++            appendLine("SIGNALS TO INSPECT")
++            var wroteSignal = false
++            if (stats.worstFrameGapMs >= 80L) {
++                appendLine("• High frame gap detected: ${stats.worstFrameGapMs}ms")
++                wroteSignal = true
++            }
++            if (stats.stallEvents > 0) {
++                appendLine("• UI stall evidence: ${stats.stallEvents} event(s), worst ${stats.worstStallMs}ms")
++                wroteSignal = true
++            }
++            if (stats.providerIssues > 0) {
++                appendLine("• Provider failure/timeout signals: ${stats.providerIssues}")
++                wroteSignal = true
++            }
++            if (stats.quickJsIssues > 0) {
++                appendLine("• QuickJS error/abort signals: ${stats.quickJsIssues}")
++                wroteSignal = true
++            }
++            if (stats.playbackIssues > 0) {
++                appendLine("• Playback error/failure signals: ${stats.playbackIssues}")
++                wroteSignal = true
++            }
++            if (droppedEvents.get() > 0L) {
++                appendLine("• Ring buffer dropped ${droppedEvents.get()} old event(s); Save still contains only the retained window")
++                wroteSignal = true
++            }
++            if (!wroteSignal) appendLine("• No obvious jank/stall/error signal in the selected event window.")
++            appendLine()
++            appendLine("RECENT SIGNALS")
++            if (stats.recentSignals.isEmpty()) {
++                appendLine("No notable events recorded for this tab yet.")
++            } else {
++                stats.recentSignals.forEach { appendLine("• $it") }
++            }
++        }
++    }
++
++    private fun summaryStats(tab: Tab): SummaryStats = synchronized(eventsLock) {
++        var matchingEvents = 0
++        var firstTimestampMs: Long? = null
++        var lastTimestampMs: Long? = null
++        var jankEvents = 0
++        var worstFrameGapMs = 0L
++        var stallEvents = 0
++        var worstStallMs = 0L
++        var scanStarts = 0
++        var providerStarts = 0
++        var providerIssues = 0
++        var quickJsEvents = 0
++        var quickJsIssues = 0
++        var playbackIssues = 0
++        val recentSignals = ArrayDeque<String>(8)
++
++        events.forEach { event ->
++            if (!matchesTab(tab, event)) return@forEach
++            matchingEvents++
++            if (firstTimestampMs == null) firstTimestampMs = event.timestampMs
++            lastTimestampMs = event.timestampMs
++            val upper = event.line.uppercase(Locale.US)
++
++            if ("FRAME_JANK" in upper) {
++                jankEvents++
++                worstFrameGapMs = maxOf(worstFrameGapMs, extractMs(event.line, "gap"))
++            }
++            if ("UI_STALL" in upper) {
++                stallEvents++
++                worstStallMs = maxOf(worstStallMs, extractMs(event.line, "delay"))
++            }
++            if ("SCAN_START" in upper) scanStarts++
++            if ("PROVIDER_START" in upper) providerStarts++
++            if ("PROVIDER_" in upper && containsIssueToken(upper)) providerIssues++
++            if ("QJS_" in upper || "QUICKJS" in upper) {
++                quickJsEvents++
++                if (containsIssueToken(upper)) quickJsIssues++
++            }
++            if (("PLAYER_" in upper || "PLAYBACK_" in upper) && containsIssueToken(upper)) playbackIssues++
++
++            val notable =
++                "FRAME_JANK" in upper || "UI_STALL" in upper || containsIssueToken(upper) ||
++                    "SCAN_END" in upper || "PROVIDER_END" in upper
++            if (notable) {
++                if (recentSignals.size >= 8) recentSignals.removeFirst()
++                recentSignals.addLast(event.line.take(260))
++            }
++        }
++
++        SummaryStats(
++            matchingEvents = matchingEvents,
++            firstTimestampMs = firstTimestampMs,
++            lastTimestampMs = lastTimestampMs,
++            jankEvents = jankEvents,
++            worstFrameGapMs = worstFrameGapMs,
++            stallEvents = stallEvents,
++            worstStallMs = worstStallMs,
++            scanStarts = scanStarts,
++            providerStarts = providerStarts,
++            providerIssues = providerIssues,
++            quickJsEvents = quickJsEvents,
++            quickJsIssues = quickJsIssues,
++            playbackIssues = playbackIssues,
++            recentSignals = recentSignals.toList(),
++        )
++    }
++
++    private fun containsIssueToken(upper: String): Boolean =
++        "ERROR" in upper || "FAIL" in upper || "TIMEOUT" in upper || "ABORT" in upper || "EXCEPTION" in upper
++
++    private fun extractMs(line: String, key: String): Long {
++        val marker = "$key="
++        val start = line.indexOf(marker)
++        if (start < 0) return 0L
++        val valueStart = start + marker.length
++        val value = line.substring(valueStart).takeWhile { it.isDigit() }
++        return value.toLongOrNull() ?: 0L
++    }
++
++    private fun summaryWindow(first: Long?, last: Long?): String {
++        if (first == null || last == null) return "no events"
++        val durationMs = (last - first).coerceAtLeast(0L)
++        val totalSeconds = durationMs / 1_000L
++        val minutes = totalSeconds / 60L
++        val seconds = totalSeconds % 60L
++        return if (minutes > 0L) "${minutes}m ${seconds}s" else "${seconds}s"
++    }
++
+     fun clear() {
+         synchronized(eventsLock) { events.clear() }
+         droppedEvents.set(0L)
+@@ -342,10 +521,7 @@ object PerformanceDiagnostics {
+     }
+ 
+     private fun snapshot(tab: Tab): List<Event> = synchronized(eventsLock) {
+-        if (tab == Tab.FULL) return@synchronized events.toList()
+-        events.filter { event ->
+-            event.category == tab || (isPageTab(tab) && event.page == tab)
+-        }
++        events.filter { event -> matchesTab(tab, event) }
+     }
+ 
+     private fun recentSnapshot(tab: Tab, maxEvents: Int): List<Event> =
+@@ -354,13 +530,7 @@ object PerformanceDiagnostics {
+             val iterator = events.descendingIterator()
+             while (iterator.hasNext() && recent.size < maxEvents) {
+                 val event = iterator.next()
+-                if (
+-                    tab == Tab.FULL ||
+-                    event.category == tab ||
+-                    (isPageTab(tab) && event.page == tab)
+-                ) {
+-                    recent += event
+-                }
++                if (matchesTab(tab, event)) recent += event
+             }
+             recent.reverse()
+             recent
+@@ -368,6 +538,9 @@ object PerformanceDiagnostics {
+ 
+     private fun eventCount(): Int = synchronized(eventsLock) { events.size }
+ 
++    private fun matchesTab(tab: Tab, event: Event): Boolean =
++        tab == Tab.FULL || event.category == tab || (isPageTab(tab) && event.page == tab)
++
+     private fun categoryFor(message: String): Tab {
+         val upper = message.uppercase(Locale.US)
+         return when {
+@@ -404,9 +577,12 @@ object PerformanceDiagnostics {
+     private fun writeZip(output: OutputStream, metadata: String) {
+         ZipOutputStream(output.buffered()).use { zip ->
+             zipText(zip, "metadata.txt", metadata)
++            zipText(zip, "summary.txt", exportSummary(Tab.FULL))
+             Tab.entries.forEach { tab ->
+-                val name = if (tab == Tab.FULL) "full.log" else "${tab.name.lowercase(Locale.US)}.log"
+-                zipText(zip, name, export(tab))
++                val rawName = if (tab == Tab.FULL) "full.log" else "${tab.name.lowercase(Locale.US)}.log"
++                zipText(zip, rawName, exportRaw(tab))
++                val summaryName = "summary/${tab.name.lowercase(Locale.US)}.txt"
++                zipText(zip, summaryName, exportSummary(tab))
+             }
+         }
+     }
+===== mobile/src/main/java/com/vueo/mobile/ui/content/MobileProviderDiagnostics.kt =====
+diff --git a/mnt/data/vueo_repo40/VUEO-NEXT-main/mobile/src/main/java/com/vueo/mobile/ui/content/MobileProviderDiagnostics.kt b/mobile/src/main/java/com/vueo/mobile/ui/content/MobileProviderDiagnostics.kt
+index f7581da..75238fa 100644
+--- a/mnt/data/vueo_repo40/VUEO-NEXT-main/mobile/src/main/java/com/vueo/mobile/ui/content/MobileProviderDiagnostics.kt
++++ b/mobile/src/main/java/com/vueo/mobile/ui/content/MobileProviderDiagnostics.kt
+@@ -32,6 +32,7 @@ import androidx.compose.foundation.horizontalScroll
+ import androidx.compose.foundation.Image
+ import androidx.compose.foundation.combinedClickable
+ import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.text.BasicTextField
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.foundation.gestures.awaitEachGesture
+ import androidx.compose.foundation.gestures.awaitFirstDown
+@@ -654,48 +655,65 @@ internal fun PerformanceDiagnosticsDialog(
+ ) {
+     val context = LocalContext.current
+     val scope = rememberCoroutineScope()
++    val tabs = remember {
++        listOf(
++            PerformanceDiagnostics.Tab.FULL,
++            PerformanceDiagnostics.Tab.HOME,
++            PerformanceDiagnostics.Tab.SEARCH,
++            PerformanceDiagnostics.Tab.DETAILS,
++            PerformanceDiagnostics.Tab.PLAYER,
++            PerformanceDiagnostics.Tab.SOURCES,
++            PerformanceDiagnostics.Tab.EPISODES,
++            PerformanceDiagnostics.Tab.LIBRARY,
++            PerformanceDiagnostics.Tab.SETTINGS,
++            PerformanceDiagnostics.Tab.PROVIDER,
++            PerformanceDiagnostics.Tab.SYSTEM,
++            PerformanceDiagnostics.Tab.OTHER,
++        )
++    }
+     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
+-    var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
+-    var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
+-    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.export(selectedTab)) }
++    var showRaw by remember { mutableStateOf(false) }
++    var diagnosticsEnabled by remember {
++        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
++    }
++    var diagnosticText by remember {
++        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
++    }
+     var searchQuery by remember { mutableStateOf("") }
+     var saving by remember { mutableStateOf(false) }
+     val logScroll = rememberScrollState()
+ 
+-    LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
+-        diagnosticText = PerformanceDiagnostics.export(selectedTab)
+-        if (recording) {
++    fun refreshPreview(): String =
++        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab)
++        else PerformanceDiagnostics.previewSummary(selectedTab)
++
++    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
++        diagnosticText = refreshPreview()
++        logScroll.scrollTo(0)
++        if (diagnosticsEnabled) {
+             while (true) {
+-                kotlinx.coroutines.delay(1_000L)
+-                diagnosticText = PerformanceDiagnostics.export(selectedTab)
++                kotlinx.coroutines.delay(1_250L)
++                diagnosticText = refreshPreview()
+             }
+         }
+     }
+ 
+-    LaunchedEffect(diagnosticText, searchQuery) {
+-        if (recording && searchQuery.isBlank()) {
++    LaunchedEffect(diagnosticText, searchQuery, showRaw) {
++        if (showRaw && diagnosticsEnabled && searchQuery.isBlank()) {
+             logScroll.scrollTo(logScroll.maxValue)
+         }
+     }
+ 
+-    val recentPreview = remember(diagnosticText) {
+-        if (diagnosticText.length > 30_000) {
+-            "[Recent preview. Copy and Save use the complete selected log.]\n\n" +
+-                diagnosticText.takeLast(30_000)
+-        } else {
+-            diagnosticText
+-        }
+-    }
+-    val visibleLog = remember(recentPreview, searchQuery) {
++    val visibleLog = remember(diagnosticText, searchQuery) {
+         val query = searchQuery.trim()
+         if (query.isBlank()) {
+-            recentPreview
++            diagnosticText
+         } else {
+-            recentPreview
++            diagnosticText
+                 .lineSequence()
+                 .filter { line -> line.contains(query, ignoreCase = true) }
+                 .joinToString("\n")
+-                .ifBlank { "No log lines match \"$query\"." }
++                .ifBlank { "No diagnostic lines match \"$query\"." }
+         }
+     }
+ 
+@@ -721,106 +739,90 @@ internal fun PerformanceDiagnosticsDialog(
+                 Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+-                        .padding(horizontal = 12.dp, vertical = 8.dp),
++                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                     verticalAlignment = Alignment.CenterVertically,
+                 ) {
+                     IconButton(onClick = onDismiss) {
+                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                     }
+-                    Column(modifier = Modifier.weight(1f)) {
++                    Column(
++                        modifier = Modifier.weight(1f),
++                        verticalArrangement = Arrangement.spacedBy(1.dp),
++                    ) {
+                         Text(
+                             "Performance Diagnostics",
+-                            fontSize = 20.sp,
++                            fontSize = 18.sp,
+                             fontWeight = FontWeight.Bold,
++                            maxLines = 1,
++                            overflow = TextOverflow.Ellipsis,
+                         )
+                         Text(
+-                            when {
+-                                !diagnosticsEnabled -> "Recorder off"
+-                                recording -> "Recording runtime activity"
+-                                else -> "Recorder armed"
++                            if (diagnosticsEnabled) {
++                                "ON • recording runtime activity"
++                            } else {
++                                "OFF • diagnostics inactive • recorded log retained"
+                             },
+                             color = VueoPalette.Muted,
+-                            fontSize = 11.sp,
+-                        )
+-                    }
+-                    Surface(
+-                        shape = RoundedCornerShape(999.dp),
+-                        color = if (recording) {
+-                            VueoPalette.SurfaceStrong
+-                        } else {
+-                            VueoPalette.SurfaceElevated
+-                        },
+-                    ) {
+-                        Text(
+-                            when {
+-                                !diagnosticsEnabled -> "OFF"
+-                                recording -> "REC"
+-                                else -> "ON"
+-                            },
+-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+-                            color = if (recording) VueoPalette.Accent else VueoPalette.Muted,
+                             fontSize = 10.sp,
+-                            fontWeight = FontWeight.Bold,
++                            maxLines = 1,
++                            overflow = TextOverflow.Ellipsis,
+                         )
+                     }
++                    Text(
++                        if (diagnosticsEnabled) "ON" else "OFF",
++                        color = if (diagnosticsEnabled) VueoPalette.Accent else VueoPalette.Muted,
++                        fontSize = 10.sp,
++                        fontWeight = FontWeight.Bold,
++                        modifier = Modifier.padding(start = 6.dp, end = 4.dp),
++                    )
++                    Switch(
++                        checked = diagnosticsEnabled,
++                        onCheckedChange = { value ->
++                            PerformanceDiagnostics.setEnabled(context.applicationContext, value)
++                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
++                            diagnosticText = refreshPreview()
++                        },
++                    )
+                 }
+ 
+-                Surface(
++                Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+-                        .padding(horizontal = 14.dp),
+-                    shape = RoundedCornerShape(16.dp),
+-                    color = VueoPalette.SurfaceElevated,
++                        .padding(horizontal = 12.dp, vertical = 4.dp)
++                        .clip(RoundedCornerShape(10.dp))
++                        .background(VueoPalette.SurfaceElevated)
++                        .padding(3.dp),
+                 ) {
+-                    Column(
+-                        modifier = Modifier.padding(14.dp),
+-                        verticalArrangement = Arrangement.spacedBy(10.dp),
++                    Box(
++                        modifier = Modifier
++                            .weight(1f)
++                            .clip(RoundedCornerShape(8.dp))
++                            .background(if (!showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
++                            .clickable { showRaw = false }
++                            .padding(vertical = 8.dp),
++                        contentAlignment = Alignment.Center,
+                     ) {
+-                        Row(
+-                            modifier = Modifier.fillMaxWidth(),
+-                            verticalAlignment = Alignment.CenterVertically,
+-                            horizontalArrangement = Arrangement.SpaceBetween,
+-                        ) {
+-                            Column(modifier = Modifier.weight(1f)) {
+-                                Text("Performance recorder", fontWeight = FontWeight.Bold)
+-                                Text(
+-                                    when {
+-                                        !diagnosticsEnabled -> "No sampler, frame probe or event buffering"
+-                                        recording -> "Collecting page, player, provider and system events"
+-                                        else -> "Enabled, waiting for Start Recording"
+-                                    },
+-                                    color = VueoPalette.Muted,
+-                                    fontSize = 10.5.sp,
+-                                )
+-                            }
+-                            Switch(
+-                                checked = diagnosticsEnabled,
+-                                onCheckedChange = { value ->
+-                                    PerformanceDiagnostics.setEnabled(context.applicationContext, value)
+-                                    diagnosticsEnabled = value
+-                                    recording = PerformanceDiagnostics.isRecording()
+-                                    diagnosticText = PerformanceDiagnostics.export(selectedTab)
+-                                },
+-                            )
+-                        }
+-
+-                        Button(
+-                            enabled = diagnosticsEnabled,
+-                            modifier = Modifier.fillMaxWidth(),
+-                            onClick = {
+-                                if (recording) PerformanceDiagnostics.stopRecording()
+-                                else PerformanceDiagnostics.startRecording(context.applicationContext)
+-                                recording = PerformanceDiagnostics.isRecording()
+-                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+-                            },
+-                        ) {
+-                            Text(if (recording) "Stop Recording" else "Start Recording")
+-                        }
+-
+                         Text(
+-                            "Recording stays in memory. Disk is used only when Save Log is pressed.",
+-                            color = VueoPalette.Muted,
+-                            fontSize = 10.sp,
++                            if (!showRaw) "✓  Summary" else "Summary",
++                            fontSize = 12.sp,
++                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
++                            color = if (!showRaw) Color.White else VueoPalette.Muted,
++                        )
++                    }
++                    Box(
++                        modifier = Modifier
++                            .weight(1f)
++                            .clip(RoundedCornerShape(8.dp))
++                            .background(if (showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
++                            .clickable { showRaw = true }
++                            .padding(vertical = 8.dp),
++                        contentAlignment = Alignment.Center,
++                    ) {
++                        Text(
++                            if (showRaw) "✓  Raw" else "Raw",
++                            fontSize = 12.sp,
++                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
++                            color = if (showRaw) Color.White else VueoPalette.Muted,
+                         )
+                     }
+                 }
+@@ -829,59 +831,101 @@ internal fun PerformanceDiagnosticsDialog(
+                     modifier = Modifier
+                         .fillMaxWidth()
+                         .horizontalScroll(rememberScrollState())
+-                        .padding(horizontal = 14.dp, vertical = 10.dp),
++                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                     horizontalArrangement = Arrangement.spacedBy(6.dp),
+                 ) {
+-                    PerformanceDiagnostics.Tab.entries.forEach { tab ->
+-                        FilterChip(
+-                            selected = selectedTab == tab,
++                    tabs.forEach { tab ->
++                        val selected = selectedTab == tab
++                        Surface(
+                             onClick = { selectedTab = tab },
+-                            label = {
+-                                Text(
+-                                    tab.label,
+-                                    fontSize = 11.sp,
+-                                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
+-                                )
+-                            },
+-                        )
++                            shape = RoundedCornerShape(10.dp),
++                            color = if (selected) VueoPalette.SurfaceStrong else Color.Transparent,
++                            border = androidx.compose.foundation.BorderStroke(
++                                1.dp,
++                                if (selected) Color.White.copy(alpha = .22f) else VueoPalette.Muted.copy(alpha = .28f),
++                            ),
++                        ) {
++                            Text(
++                                tab.label,
++                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
++                                fontSize = 11.sp,
++                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
++                                color = if (selected) Color.White else VueoPalette.Muted,
++                            )
++                        }
+                     }
+                 }
+ 
+-                OutlinedTextField(
+-                    value = searchQuery,
+-                    onValueChange = { searchQuery = it },
++                Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+-                        .padding(horizontal = 14.dp),
+-                    singleLine = true,
+-                    label = { Text("Search log") },
+-                    placeholder = { Text("provider, jank, source, QuickJS…") },
+-                    trailingIcon = {
+-                        if (searchQuery.isNotEmpty()) {
+-                            IconButton(onClick = { searchQuery = "" }) {
+-                                Icon(Icons.Default.Close, contentDescription = "Clear search")
++                        .padding(horizontal = 12.dp, vertical = 3.dp)
++                        .height(40.dp)
++                        .border(
++                            width = 1.dp,
++                            color = VueoPalette.Muted.copy(alpha = .35f),
++                            shape = RoundedCornerShape(8.dp),
++                        )
++                        .padding(start = 10.dp),
++                    verticalAlignment = Alignment.CenterVertically,
++                ) {
++                    Icon(
++                        Icons.Default.Search,
++                        contentDescription = null,
++                        tint = VueoPalette.Muted,
++                        modifier = Modifier.size(18.dp),
++                    )
++                    Spacer(Modifier.width(8.dp))
++                    BasicTextField(
++                        value = searchQuery,
++                        onValueChange = { searchQuery = it },
++                        modifier = Modifier.weight(1f),
++                        singleLine = true,
++                        textStyle = androidx.compose.ui.text.TextStyle(
++                            color = Color.White.copy(alpha = .90f),
++                            fontSize = 13.sp,
++                        ),
++                        cursorBrush = androidx.compose.ui.graphics.SolidColor(VueoPalette.Accent),
++                        decorationBox = { innerTextField ->
++                            Box(contentAlignment = Alignment.CenterStart) {
++                                if (searchQuery.isBlank()) {
++                                    Text(
++                                        "Search diagnostic…",
++                                        color = VueoPalette.Muted,
++                                        fontSize = 13.sp,
++                                    )
++                                }
++                                innerTextField()
+                             }
++                        },
++                    )
++                    if (searchQuery.isNotEmpty()) {
++                        IconButton(
++                            onClick = { searchQuery = "" },
++                            modifier = Modifier.size(38.dp),
++                        ) {
++                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                         }
+-                    },
+-                )
++                    }
++                }
+ 
+                 Surface(
+                     modifier = Modifier
+                         .weight(1f)
+                         .fillMaxWidth()
+-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+-                    shape = RoundedCornerShape(14.dp),
++                        .padding(horizontal = 12.dp, vertical = 6.dp),
++                    shape = RoundedCornerShape(10.dp),
+                     color = VueoPalette.Surface,
+                 ) {
+                     Column(
+                         modifier = Modifier
+                             .fillMaxSize()
+                             .verticalScroll(logScroll)
+-                            .padding(12.dp),
++                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                     ) {
+                         Text(
+                             text = visibleLog,
+-                            color = Color.White.copy(alpha = .86f),
++                            color = Color.White.copy(alpha = .88f),
+                             fontSize = 10.sp,
+                             lineHeight = 14.sp,
+                             fontFamily = FontFamily.Monospace,
+@@ -897,18 +941,29 @@ internal fun PerformanceDiagnosticsDialog(
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .navigationBarsPadding()
+-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
++                            .padding(horizontal = 6.dp, vertical = 4.dp),
++                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                     ) {
+                         TextButton(
+                             modifier = Modifier.weight(1f),
+                             onClick = {
+-                                val fullText = PerformanceDiagnostics.export(selectedTab)
++                                val fullText = if (showRaw) {
++                                    PerformanceDiagnostics.exportRaw(selectedTab)
++                                } else {
++                                    PerformanceDiagnostics.exportSummary(selectedTab)
++                                }
+                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                 clipboard?.setPrimaryClip(
+-                                    ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText)
++                                    ClipData.newPlainText(
++                                        "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
++                                        fullText,
++                                    )
+                                 )
+-                                Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
++                                Toast.makeText(
++                                    context,
++                                    "${if (showRaw) "Raw" else "Summary"} ${selectedTab.label} copied",
++                                    Toast.LENGTH_SHORT,
++                                ).show()
+                             },
+                         ) { Text("Copy") }
+ 
+@@ -943,7 +998,7 @@ internal fun PerformanceDiagnosticsDialog(
+                             modifier = Modifier.weight(1f),
+                             onClick = {
+                                 PerformanceDiagnostics.clear()
+-                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
++                                diagnosticText = refreshPreview()
+                             },
+                         ) { Text("Clear") }
+ 
+===== tv/src/main/java/com/vueo/tv/ui/settings/TvProviderDiagnostics.kt =====
+diff --git a/mnt/data/vueo_repo40/VUEO-NEXT-main/tv/src/main/java/com/vueo/tv/ui/settings/TvProviderDiagnostics.kt b/tv/src/main/java/com/vueo/tv/ui/settings/TvProviderDiagnostics.kt
+index 2f47b76..0e9114a 100644
+--- a/mnt/data/vueo_repo40/VUEO-NEXT-main/tv/src/main/java/com/vueo/tv/ui/settings/TvProviderDiagnostics.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/settings/TvProviderDiagnostics.kt
+@@ -1,10 +1,13 @@
+ package com.vueo.tv.settings
+ 
+ import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
++import androidx.activity.compose.BackHandler
+ 
+ import android.view.KeyEvent
+ import androidx.compose.foundation.border
++import androidx.compose.foundation.background
+ import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.text.BasicTextField
+ import androidx.compose.foundation.focusable
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.runtime.LaunchedEffect
+@@ -23,12 +26,16 @@ import android.content.ClipboardManager
+ import android.content.Context
+ import android.widget.Toast
+ import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.Spacer
+ import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.heightIn
++import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.material3.AlertDialog
+@@ -46,8 +53,11 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.font.FontFamily
+ import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import androidx.compose.ui.window.Dialog
++import androidx.compose.ui.window.DialogProperties
+ import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+ import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+ import com.vueo.shared.core.plugin.PluginProviderDescriptor
+@@ -420,39 +430,82 @@ internal fun TvPerformanceDiagnosticsDialog(
+     val context = LocalContext.current
+     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+     val scope = rememberCoroutineScope()
++    val tabs = remember {
++        listOf(
++            PerformanceDiagnostics.Tab.FULL,
++            PerformanceDiagnostics.Tab.HOME,
++            PerformanceDiagnostics.Tab.SEARCH,
++            PerformanceDiagnostics.Tab.DETAILS,
++            PerformanceDiagnostics.Tab.PLAYER,
++            PerformanceDiagnostics.Tab.SOURCES,
++            PerformanceDiagnostics.Tab.EPISODES,
++            PerformanceDiagnostics.Tab.LIBRARY,
++            PerformanceDiagnostics.Tab.SETTINGS,
++            PerformanceDiagnostics.Tab.PROVIDER,
++            PerformanceDiagnostics.Tab.SYSTEM,
++            PerformanceDiagnostics.Tab.OTHER,
++        )
++    }
+     val tabScroll = rememberScrollState()
+     val logScroll = rememberScrollState()
+-    val tabFocusers = remember { PerformanceDiagnostics.Tab.entries.map { FocusRequester() } }
+-    val recordFocus = remember { FocusRequester() }
++    val toggleFocus = remember { FocusRequester() }
++    val summaryFocus = remember { FocusRequester() }
++    val rawFocus = remember { FocusRequester() }
++    val tabFocusers = remember { tabs.map { FocusRequester() } }
++    val searchFocus = remember { FocusRequester() }
+     val logFocus = remember { FocusRequester() }
+     val copyFocus = remember { FocusRequester() }
+     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
+-    var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
+-    var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
+-    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.preview(selectedTab)) }
++    var showRaw by remember { mutableStateOf(false) }
++    var diagnosticsEnabled by remember {
++        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
++    }
++    var diagnosticText by remember {
++        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
++    }
++    var searchQuery by remember { mutableStateOf("") }
+     var saving by remember { mutableStateOf(false) }
+     var logFocused by remember { mutableStateOf(false) }
++    var searchFocused by remember { mutableStateOf(false) }
+     var focusedTabIndex by remember { mutableStateOf(0) }
+-    val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
++    val scrollStep = with(LocalDensity.current) { 112.dp.roundToPx() }
+ 
+     fun closeAndRestore() {
+         onDismiss()
+         restoreSettingsFocus()
+     }
+ 
+-    LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
+-        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
++    fun refreshPreview(): String =
++        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab, maxEvents = 320)
++        else PerformanceDiagnostics.previewSummary(selectedTab)
++
++    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
++        diagnosticText = refreshPreview()
+         logScroll.scrollTo(0)
+-        if (recording) {
++        if (diagnosticsEnabled) {
+             while (true) {
+                 kotlinx.coroutines.delay(1_500L)
+-                diagnosticText = PerformanceDiagnostics.preview(selectedTab)
++                diagnosticText = refreshPreview()
+             }
+         }
+     }
++
+     LaunchedEffect(Unit) {
+         withFrameNanos { }
+-        runCatching { tabFocusers.first().requestFocus() }
++        runCatching { summaryFocus.requestFocus() }
++    }
++
++    val visibleLog = remember(diagnosticText, searchQuery) {
++        val query = searchQuery.trim()
++        if (query.isBlank()) {
++            diagnosticText
++        } else {
++            diagnosticText
++                .lineSequence()
++                .filter { line -> line.contains(query, ignoreCase = true) }
++                .joinToString("\n")
++                .ifBlank { "No diagnostic lines match \"$query\"." }
++        }
+     }
+ 
+     val bottomButtonNavigation = Modifier
+@@ -465,101 +518,227 @@ internal fun TvPerformanceDiagnosticsDialog(
+             } else false
+         }
+ 
+-    AlertDialog(
++    BackHandler(onBack = ::closeAndRestore)
++
++    Dialog(
+         onDismissRequest = ::closeAndRestore,
+-        title = { Text("Performance Diagnostics") },
+-        text = {
++        properties = DialogProperties(
++            usePlatformDefaultWidth = false,
++            dismissOnClickOutside = false,
++        ),
++    ) {
++        Surface(
++            modifier = Modifier.fillMaxSize(),
++            color = TvDesign.Black,
++        ) {
+             Column(
+-                modifier = Modifier.fillMaxWidth(),
+-                verticalArrangement = Arrangement.spacedBy(8.dp),
++                modifier = Modifier
++                    .fillMaxSize()
++                    .padding(horizontal = 44.dp, vertical = 28.dp),
++                verticalArrangement = Arrangement.spacedBy(10.dp),
+             ) {
+                 Row(
+                     modifier = Modifier.fillMaxWidth(),
+                     verticalAlignment = Alignment.CenterVertically,
+-                    horizontalArrangement = Arrangement.SpaceBetween,
+                 ) {
+-                    Column(modifier = Modifier.weight(1f)) {
+-                        Text("Performance recorder", fontWeight = FontWeight.Bold)
++                    TextButton(
++                        onClick = ::closeAndRestore,
++                        modifier = Modifier.focusProperties { right = toggleFocus },
++                    ) {
++                        Text("‹", fontSize = 28.sp, fontWeight = FontWeight.Bold)
++                    }
++                    Column(
++                        modifier = Modifier.weight(1f),
++                        verticalArrangement = Arrangement.spacedBy(2.dp),
++                    ) {
+                         Text(
+-                            when {
+-                                !diagnosticsEnabled -> "OFF • no sampler, frame probe or event buffering"
+-                                recording -> "ON • recording runtime activity"
+-                                else -> "ON • armed, not recording"
++                            "Performance Diagnostics",
++                            fontSize = 22.sp,
++                            fontWeight = FontWeight.Bold,
++                            maxLines = 1,
++                            overflow = TextOverflow.Ellipsis,
++                        )
++                        Text(
++                            if (diagnosticsEnabled) {
++                                "ON • recording runtime activity"
++                            } else {
++                                "OFF • diagnostics inactive • recorded log retained"
+                             },
+                             color = TvDesign.Muted,
+-                            fontSize = 10.5.sp,
++                            fontSize = 11.sp,
+                         )
+                     }
++                    Text(
++                        if (diagnosticsEnabled) "ON" else "OFF",
++                        color = if (diagnosticsEnabled) TvDesign.Accent else TvDesign.Muted,
++                        fontSize = 11.sp,
++                        fontWeight = FontWeight.Bold,
++                        modifier = Modifier.padding(end = 8.dp),
++                    )
+                     Switch(
+                         checked = diagnosticsEnabled,
+                         onCheckedChange = { value ->
+                             PerformanceDiagnostics.setEnabled(context.applicationContext, value)
+-                            diagnosticsEnabled = value
+-                            recording = PerformanceDiagnostics.isRecording()
+-                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
++                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
++                            diagnosticText = refreshPreview()
+                         },
++                        modifier = Modifier
++                            .focusRequester(toggleFocus)
++                            .focusProperties { down = summaryFocus },
+                     )
+                 }
+ 
+-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .background(TvDesign.Surface, RoundedCornerShape(10.dp))
++                        .padding(3.dp),
++                    horizontalArrangement = Arrangement.spacedBy(4.dp),
++                ) {
+                     TextButton(
+                         modifier = Modifier
+-                            .focusRequester(recordFocus)
+-                            .focusProperties { down = tabFocusers.first() },
+-                        enabled = diagnosticsEnabled,
+-                        onClick = {
+-                            if (recording) PerformanceDiagnostics.stopRecording()
+-                            else PerformanceDiagnostics.startRecording(context.applicationContext)
+-                            recording = PerformanceDiagnostics.isRecording()
+-                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
+-                        },
++                            .weight(1f)
++                            .focusRequester(summaryFocus)
++                            .background(
++                                if (!showRaw) TvDesign.SurfaceRaised else Color.Transparent,
++                                RoundedCornerShape(8.dp),
++                            )
++                            .focusProperties {
++                                up = toggleFocus
++                                right = rawFocus
++                                down = tabFocusers.first()
++                            },
++                        onClick = { showRaw = false },
+                     ) {
+-                        Text(if (recording) "Stop Recording" else "Start Recording")
++                        Text(
++                            if (!showRaw) "✓  Summary" else "Summary",
++                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
++                        )
++                    }
++                    TextButton(
++                        modifier = Modifier
++                            .weight(1f)
++                            .focusRequester(rawFocus)
++                            .background(
++                                if (showRaw) TvDesign.SurfaceRaised else Color.Transparent,
++                                RoundedCornerShape(8.dp),
++                            )
++                            .focusProperties {
++                                up = toggleFocus
++                                left = summaryFocus
++                                down = tabFocusers.first()
++                            },
++                        onClick = { showRaw = true },
++                    ) {
++                        Text(
++                            if (showRaw) "✓  Raw" else "Raw",
++                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
++                        )
+                     }
+-                    Text(
+-                        "Recording stays in memory. Disk is touched only when Save Log is pressed.",
+-                        color = TvDesign.Muted,
+-                        fontSize = 10.sp,
+-                    )
+                 }
+ 
+                 Row(
+                     modifier = Modifier
+                         .fillMaxWidth()
+                         .horizontalScroll(tabScroll),
+-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
++                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                 ) {
+-                    PerformanceDiagnostics.Tab.entries.forEachIndexed { index, tab ->
++                    tabs.forEachIndexed { index, tab ->
++                        val selected = selectedTab == tab
+                         TextButton(
+                             modifier = Modifier
+                                 .focusRequester(tabFocusers[index])
++                                .background(
++                                    if (selected) TvDesign.SurfaceRaised else Color.Transparent,
++                                    RoundedCornerShape(8.dp),
++                                )
+                                 .onFocusChanged { state ->
+                                     if (state.isFocused) focusedTabIndex = index
+                                 }
+                                 .focusProperties {
+-                                    up = recordFocus
+-                                    down = logFocus
++                                    up = if (showRaw) rawFocus else summaryFocus
++                                    down = searchFocus
+                                 },
+                             onClick = { selectedTab = tab },
+                         ) {
+                             Text(
+-                                tab.label,
+-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
+-                                fontSize = 10.5.sp,
++                                if (selected) "✓ ${tab.label}" else tab.label,
++                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
++                                fontSize = 11.sp,
+                             )
+                         }
+                     }
+                 }
+ 
++                Row(
++                    modifier = Modifier
++                        .fillMaxWidth()
++                        .height(44.dp)
++                        .background(TvDesign.Surface, RoundedCornerShape(8.dp))
++                        .border(
++                            width = if (searchFocused) 2.dp else 1.dp,
++                            color = if (searchFocused) TvDesign.Focus else TvDesign.White.copy(alpha = .14f),
++                            shape = RoundedCornerShape(8.dp),
++                        )
++                        .padding(start = 12.dp),
++                    verticalAlignment = Alignment.CenterVertically,
++                ) {
++                    Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
++                    Spacer(Modifier.width(8.dp))
++                    BasicTextField(
++                        value = searchQuery,
++                        onValueChange = { searchQuery = it },
++                        modifier = Modifier
++                            .weight(1f)
++                            .focusRequester(searchFocus)
++                            .onFocusChanged { searchFocused = it.isFocused }
++                            .focusProperties {
++                                up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
++                                down = logFocus
++                            },
++                        singleLine = true,
++                        textStyle = androidx.compose.ui.text.TextStyle(
++                            color = TvDesign.White,
++                            fontSize = 13.sp,
++                        ),
++                        cursorBrush = androidx.compose.ui.graphics.SolidColor(TvDesign.Accent),
++                        decorationBox = { innerTextField ->
++                            Box(contentAlignment = Alignment.CenterStart) {
++                                if (searchQuery.isBlank()) {
++                                    Text(
++                                        "Search diagnostic…",
++                                        color = TvDesign.Muted,
++                                        fontSize = 13.sp,
++                                    )
++                                }
++                                innerTextField()
++                            }
++                        },
++                    )
++                    if (searchQuery.isNotEmpty()) {
++                        TextButton(
++                            onClick = { searchQuery = "" },
++                            modifier = Modifier.focusProperties { left = searchFocus; down = logFocus },
++                        ) {
++                            Text("×", fontSize = 20.sp)
++                        }
++                    }
++                }
++
+                 Column(
+                     modifier = Modifier
++                        .weight(1f)
+                         .fillMaxWidth()
+-                        .heightIn(max = 390.dp)
+-                        .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
++                        .background(TvDesign.Surface, RoundedCornerShape(10.dp))
++                        .border(
++                            2.dp,
++                            if (logFocused) TvDesign.Focus.copy(alpha = .9f) else Color.Transparent,
++                            RoundedCornerShape(10.dp),
++                        )
+                         .focusRequester(logFocus)
+                         .onFocusChanged { logFocused = it.isFocused }
+                         .focusProperties {
+-                            up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
++                            up = searchFocus
+                             down = copyFocus
+                         }
+                         .onPreviewKeyEvent { event ->
+@@ -571,9 +750,7 @@ internal fun TvPerformanceDiagnosticsDialog(
+                                         if (down && logScroll.value >= logScroll.maxValue) {
+                                             runCatching { copyFocus.requestFocus() }
+                                         } else if (!down && logScroll.value <= 0) {
+-                                            runCatching {
+-                                                tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)].requestFocus()
+-                                            }
++                                            runCatching { searchFocus.requestFocus() }
+                                         } else {
+                                             val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                                 .coerceIn(0, logScroll.maxValue)
+@@ -591,63 +768,89 @@ internal fun TvPerformanceDiagnosticsDialog(
+                         }
+                         .focusable()
+                         .verticalScroll(logScroll)
+-                        .padding(8.dp),
++                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                 ) {
+                     Text(
+-                        text = if (diagnosticText.length > 30_000) {
+-                            "[Recent preview. Copy and Save use the complete selected log.]\n\n" + diagnosticText.takeLast(30_000)
+-                        } else diagnosticText,
++                        text = visibleLog,
+                         fontFamily = FontFamily.Monospace,
+-                        fontSize = 9.5.sp,
+-                        color = TvDesign.Muted,
++                        fontSize = 10.sp,
++                        color = TvDesign.White.copy(alpha = .88f),
+                     )
+                 }
+-            }
+-        },
+-        confirmButton = {
+-            TextButton(
+-                modifier = Modifier
+-                    .focusRequester(copyFocus)
+-                    .then(bottomButtonNavigation),
+-                onClick = {
+-                    val fullText = PerformanceDiagnostics.export(selectedTab)
+-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+-                    clipboard?.setPrimaryClip(ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText))
+-                    Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
+-                },
+-            ) { Text("Copy") }
+-        },
+-        dismissButton = {
+-            Row {
+-                TextButton(
+-                    modifier = bottomButtonNavigation,
+-                    enabled = !saving,
+-                    onClick = {
+-                        saving = true
+-                        scope.launch {
+-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+-                                runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
++
++                Row(
++                    modifier = Modifier.fillMaxWidth(),
++                    horizontalArrangement = Arrangement.spacedBy(8.dp),
++                ) {
++                    TextButton(
++                        modifier = Modifier
++                            .weight(1f)
++                            .focusRequester(copyFocus)
++                            .then(bottomButtonNavigation),
++                        onClick = {
++                            val fullText = if (showRaw) {
++                                PerformanceDiagnostics.exportRaw(selectedTab)
++                            } else {
++                                PerformanceDiagnostics.exportSummary(selectedTab)
+                             }
+-                            saving = false
+-                            result.onSuccess { saved ->
+-                                Toast.makeText(context, "Saved ${saved.displayName} to ${saved.location}", Toast.LENGTH_LONG).show()
+-                            }.onFailure { error ->
+-                                Toast.makeText(context, "Save failed: ${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
++                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
++                            clipboard?.setPrimaryClip(
++                                ClipData.newPlainText(
++                                    "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
++                                    fullText,
++                                )
++                            )
++                            Toast.makeText(
++                                context,
++                                "${if (showRaw) "Raw" else "Summary"} ${selectedTab.label} copied",
++                                Toast.LENGTH_SHORT,
++                            ).show()
++                        },
++                    ) { Text("Copy") }
++
++                    TextButton(
++                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
++                        enabled = !saving,
++                        onClick = {
++                            saving = true
++                            scope.launch {
++                                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
++                                    runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
++                                }
++                                saving = false
++                                result.onSuccess { saved ->
++                                    Toast.makeText(
++                                        context,
++                                        "Saved ${saved.displayName} to ${saved.location}",
++                                        Toast.LENGTH_LONG,
++                                    ).show()
++                                }.onFailure { error ->
++                                    Toast.makeText(
++                                        context,
++                                        "Save failed: ${error.javaClass.simpleName}",
++                                        Toast.LENGTH_LONG,
++                                    ).show()
++                                }
+                             }
+-                        }
+-                    },
+-                ) { Text(if (saving) "Saving…" else "Save Log") }
+-                TextButton(
+-                    modifier = bottomButtonNavigation,
+-                    onClick = {
+-                        PerformanceDiagnostics.clear()
+-                        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
+-                    },
+-                ) { Text("Clear") }
+-                TextButton(modifier = bottomButtonNavigation, onClick = ::closeAndRestore) { Text("Close") }
++                        },
++                    ) { Text(if (saving) "Saving…" else "Save") }
++
++                    TextButton(
++                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
++                        onClick = {
++                            PerformanceDiagnostics.clear()
++                            diagnosticText = refreshPreview()
++                        },
++                    ) { Text("Clear") }
++
++                    TextButton(
++                        modifier = Modifier.weight(1f).then(bottomButtonNavigation),
++                        onClick = ::closeAndRestore,
++                    ) { Text("Close") }
++                }
+             }
+-        },
+-    )
++        }
++    }
+ }
+ 
+ @Composable
+===== mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt =====
+diff --git a/mnt/data/vueo_repo40/VUEO-NEXT-main/mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt b/mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt
+index 08502b6..fc1fee7 100644
+--- a/mnt/data/vueo_repo40/VUEO-NEXT-main/mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt
++++ b/mobile/src/main/java/com/vueo/mobile/ui/settings/VueoSettings.kt
+@@ -540,7 +540,7 @@ internal fun VueoSettingsHub(
+                             VueoSettingsHubDivider()
+                             VueoSettingsHubRow(
+                                 "Performance Diagnostics",
+-                                "Opt-in page, player, provider and system performance recorder.",
++                                "Master ON/OFF runtime performance diagnostics with Summary and Raw logs.",
+                                 "Open",
+                                 Icons.Default.SettingsInputComponent,
+                             ) {
+===== tv/src/main/java/com/vueo/tv/ui/settings/TvDiagnosticsSettings.kt =====
+diff --git a/mnt/data/vueo_repo40/VUEO-NEXT-main/tv/src/main/java/com/vueo/tv/ui/settings/TvDiagnosticsSettings.kt b/tv/src/main/java/com/vueo/tv/ui/settings/TvDiagnosticsSettings.kt
+index a634b7a..276713e 100644
+--- a/mnt/data/vueo_repo40/VUEO-NEXT-main/tv/src/main/java/com/vueo/tv/ui/settings/TvDiagnosticsSettings.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/settings/TvDiagnosticsSettings.kt
+@@ -41,7 +41,7 @@ internal fun TvDiagnosticsSettings(
+         TvSettingsEntry(
+             id = "performance-diagnostics",
+             title = "Performance Diagnostics",
+-            subtitle = "Opt-in page, player, provider and system performance recorder.",
++            subtitle = "Master ON/OFF runtime performance diagnostics with Summary and Raw logs.",
+             value = "Open",
+             icon = Icons.Default.SettingsInputComponent,
+             onActivate = { showPerformanceDiagnostics = true },
