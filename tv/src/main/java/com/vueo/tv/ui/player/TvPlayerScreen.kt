@@ -1220,10 +1220,27 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(activeSkip?.key, nextCountdown > 0, activePanel, controlsVisible, playbackError) {
+    LaunchedEffect(activeSkip?.key, nextCountdown > 0, activePanel, controlsVisible, playbackError, pauseBackdropVisible) {
         if (activePanel != TvPlayerPanel.NONE || playbackError != null) return@LaunchedEffect
+
+        // When Skip is the only contextual action on a clean playback screen,
+        // give it focus immediately so OK activates it without an extra D-pad move.
+        // Do not steal focus when full controls or the Next Episode card are visible.
+        val skipPromptVisible = activeSkip != null && !pauseBackdropVisible
+        val standaloneSkip = skipPromptVisible && nextCountdown <= 0 && !controlsVisible
+        if (standaloneSkip) {
+            val focused = requestFocusNow(skipRequester)
+            if (focused) {
+                focusedPrompt = TvPlayerPromptTarget.SKIP
+                controlFocusHandoffPending = false
+            } else {
+                requestFocusReliably(rootRequester)
+            }
+            return@LaunchedEffect
+        }
+
         val removedFocusedPrompt = when (focusedPrompt) {
-            TvPlayerPromptTarget.SKIP -> activeSkip == null
+            TvPlayerPromptTarget.SKIP -> !skipPromptVisible
             TvPlayerPromptTarget.NEXT -> nextCountdown <= 0
             TvPlayerPromptTarget.NONE -> false
         }
