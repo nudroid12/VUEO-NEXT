@@ -501,152 +501,320 @@ internal fun RuntimeDiagnosticsDialog(
     var showRaw by remember { mutableStateOf(false) }
     var diagnosticText by remember { mutableStateOf("Loading diagnostics…") }
     var saving by remember { mutableStateOf(false) }
-    var diagnosticsEnabled by remember { mutableStateOf(RuntimeDiagnostics.isEnabled(context.applicationContext)) }
+    var diagnosticsEnabled by remember {
+        mutableStateOf(RuntimeDiagnostics.isEnabled(context.applicationContext))
+    }
+    var searchQuery by remember { mutableStateOf("") }
+    val logScroll = rememberScrollState()
+
+    suspend fun loadDiagnostics(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+        else RuntimeDiagnostics.exportSummary(context.applicationContext)
+    }
 
     LaunchedEffect(showRaw, diagnosticsEnabled) {
-        diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
-            else RuntimeDiagnostics.exportSummary(context.applicationContext)
+        diagnosticText = loadDiagnostics()
+        logScroll.scrollTo(0)
+        if (diagnosticsEnabled) {
+            while (true) {
+                kotlinx.coroutines.delay(1_250L)
+                diagnosticText = loadDiagnostics()
+            }
         }
     }
 
-    AlertDialog(
+    LaunchedEffect(diagnosticText, searchQuery, showRaw) {
+        if (showRaw && diagnosticsEnabled && searchQuery.isBlank()) {
+            logScroll.scrollTo(logScroll.maxValue)
+        }
+    }
+
+    val visibleLog = remember(diagnosticText, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isBlank()) {
+            diagnosticText
+        } else {
+            diagnosticText
+                .lineSequence()
+                .filter { line -> line.contains(query, ignoreCase = true) }
+                .joinToString("\n")
+                .ifBlank { "No diagnostic lines match \"$query\"." }
+        }
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Crash Diagnostics") },
-        text = {
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = VueoPalette.Background,
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .fillMaxSize()
+                    .statusBarsPadding(),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Crash Diagnostics", fontWeight = FontWeight.Bold)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
                         Text(
-                            if (diagnosticsEnabled) "ON • crash, native/QuickJS and stall evidence active" else "OFF • crash collector and stall watchdog disabled",
+                            "Crash Diagnostics",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            if (diagnosticsEnabled) {
+                                "ON • crash/native, QuickJS and stall evidence active"
+                            } else {
+                                "OFF • diagnostics inactive • recorded log retained"
+                            },
                             color = VueoPalette.Muted,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Text(
+                        if (diagnosticsEnabled) "ON" else "OFF",
+                        color = if (diagnosticsEnabled) VueoPalette.Accent else VueoPalette.Muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 6.dp, end = 4.dp),
+                    )
                     Switch(
                         checked = diagnosticsEnabled,
                         onCheckedChange = { value ->
                             RuntimeDiagnostics.setEnabled(context.applicationContext, value)
-                            diagnosticsEnabled = value
+                            diagnosticsEnabled = RuntimeDiagnostics.isEnabled(context.applicationContext)
                         },
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { showRaw = false }) {
-                        Text(
-                            "Summary",
-                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                    TextButton(onClick = { showRaw = true }) {
-                        Text(
-                            "Raw",
-                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
-                Text(
-                    text = if (showRaw) {
-                        "Raw keeps the chronological technical events. Save Log exports the full bundle, including a native tombstone when Android provides one."
-                    } else {
-                        "Summary highlights active provider phases, QuickJS/native boundaries, memory and recent failures without hiding the raw evidence."
-                    },
-                    color = VueoPalette.Muted,
-                    fontSize = 11.sp,
-                )
-                Column(
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 390.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(VueoPalette.SurfaceElevated)
+                        .padding(3.dp),
                 ) {
-                    Text(
-                        text = if (diagnosticText.length > 24_000) {
-                            "[Recent preview. Copy Log and Save Log use the full selected log.]\n\n" +
-                                diagnosticText.takeLast(24_000)
-                        } else diagnosticText,
-                        color = Color.White.copy(alpha = .82f),
-                        fontSize = 9.5.sp,
-                        lineHeight = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(
-                        ClipData.newPlainText(
-                            if (showRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
-                            diagnosticText,
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (!showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
+                            .clickable { showRaw = false }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (!showRaw) "✓  Summary" else "Summary",
+                            fontSize = 12.sp,
+                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
+                            color = if (!showRaw) Color.White else VueoPalette.Muted,
                         )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (showRaw) VueoPalette.SurfaceStrong else Color.Transparent)
+                            .clickable { showRaw = true }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (showRaw) "✓  Raw" else "Raw",
+                            fontSize = 12.sp,
+                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
+                            color = if (showRaw) Color.White else VueoPalette.Muted,
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 3.dp)
+                        .height(40.dp)
+                        .border(
+                            width = 1.dp,
+                            color = VueoPalette.Muted.copy(alpha = .35f),
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .padding(start = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = VueoPalette.Muted,
+                        modifier = Modifier.size(18.dp),
                     )
-                    Toast.makeText(context, "Diagnostic log copied", Toast.LENGTH_SHORT).show()
-                },
-            ) {
-                Text("Copy Log")
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(
-                    enabled = !saving,
-                    onClick = {
-                        saving = true
-                        scope.launch {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                runCatching { RuntimeDiagnostics.saveBundle(context.applicationContext) }
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = Color.White.copy(alpha = .90f),
+                            fontSize = 13.sp,
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(VueoPalette.Accent),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isBlank()) {
+                                    Text(
+                                        "Search diagnostic…",
+                                        color = VueoPalette.Muted,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                                innerTextField()
                             }
-                            saving = false
-                            result.onSuccess { saved ->
+                        },
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(38.dp),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        }
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = VueoPalette.Surface,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(logScroll)
+                            .padding(horizontal = 10.dp, vertical = 9.dp),
+                    ) {
+                        Text(
+                            text = if (visibleLog.length > 24_000) {
+                                "[Recent preview. Copy and Save use the full selected log.]\n\n" +
+                                    visibleLog.takeLast(24_000)
+                            } else visibleLog,
+                            color = Color.White.copy(alpha = .88f),
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = VueoPalette.Nav,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                    ) {
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val fullText = if (showRaw) {
+                                    RuntimeDiagnostics.exportRaw(context.applicationContext)
+                                } else {
+                                    RuntimeDiagnostics.exportSummary(context.applicationContext)
+                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                clipboard?.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        if (showRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
+                                        fullText,
+                                    )
+                                )
                                 Toast.makeText(
                                     context,
-                                    "Saved ${saved.displayName} to ${saved.location}",
-                                    Toast.LENGTH_LONG,
+                                    if (showRaw) "Raw diagnostic copied" else "Diagnostic summary copied",
+                                    Toast.LENGTH_SHORT,
                                 ).show()
-                            }.onFailure { error ->
-                                Toast.makeText(
-                                    context,
-                                    "Save failed: ${error.javaClass.simpleName}",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        }
-                    },
-                ) {
-                    Text(if (saving) "Saving…" else "Save Log")
-                }
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                RuntimeDiagnostics.clear(context.applicationContext)
-                                if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
-                                else RuntimeDiagnostics.exportSummary(context.applicationContext)
-                            }
-                        }
-                    },
-                ) {
-                    Text("Clear Log")
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
+                            },
+                        ) { Text("Copy") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            enabled = !saving,
+                            onClick = {
+                                saving = true
+                                scope.launch {
+                                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        runCatching { RuntimeDiagnostics.saveBundle(context.applicationContext) }
+                                    }
+                                    saving = false
+                                    result.onSuccess { saved ->
+                                        Toast.makeText(
+                                            context,
+                                            "Saved ${saved.displayName} to ${saved.location}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }.onFailure { error ->
+                                        Toast.makeText(
+                                            context,
+                                            "Save failed: ${error.javaClass.simpleName}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                }
+                            },
+                        ) { Text(if (saving) "Saving…" else "Save") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                scope.launch {
+                                    diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        RuntimeDiagnostics.clear(context.applicationContext)
+                                        if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+                                        else RuntimeDiagnostics.exportSummary(context.applicationContext)
+                                    }
+                                    logScroll.scrollTo(0)
+                                }
+                            },
+                        ) { Text("Clear") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss,
+                        ) { Text("Close") }
+                    }
                 }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable
