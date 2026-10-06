@@ -232,6 +232,7 @@ fun TvPlayerScreen(
     }
     val latestExternalSubtitlesBySelectionId =
         androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
+    val latestLiveSubtitles = androidx.compose.runtime.rememberUpdatedState(liveSubtitles)
     var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
@@ -259,6 +260,7 @@ fun TvPlayerScreen(
         mutableStateOf(
             TvPlayerSubtitleStyleState(
                 fontSizeSp = storedSubtitleFontSizeSp,
+                commentaryFontSizeSp = settings.subtitleCommentaryFontSizeSp(),
                 fontFamily = settings.subtitleFontFamily(),
                 bold = settings.subtitleBold(),
                 showCommentary = settings.tvSubtitleCommentaryEnabled(),
@@ -719,6 +721,22 @@ fun TvPlayerScreen(
         appliedSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
     }
 
+    // Keep newly discovered external subtitles visible in the workspace immediately,
+    // even before Media3 has published the matching text TrackGroups. This mirrors
+    // Mobile's late-subtitle behavior and prevents an episode switch from showing
+    // only "Off" while subtitle registration is still catching up.
+    LaunchedEffect(player, liveSubtitles) {
+        val playerChoices = tvPlayerTrackChoices(
+            tracks = player.currentTracks,
+            trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = externalSubtitlesBySelectionId,
+        )
+        textTracks = tvMergeDiscoveredSubtitleChoices(
+            playerChoices = playerChoices,
+            discoveredSubtitles = liveSubtitles,
+        )
+    }
+
     LaunchedEffect(player, activeSource.url, liveSubtitles) {
         val url = activeSource.url ?: return@LaunchedEffect
         val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
@@ -770,6 +788,50 @@ fun TvPlayerScreen(
         appliedSubtitleUrls = latestSubtitleUrls
         com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLES_REGISTERED",
             "episode=${episode?.episode ?: 0} tracks=${liveSubtitles.size} positionMs=$currentPosition")
+
+        // Media3 may briefly publish an empty/intermediate text-track snapshot after
+        // replaceMediaItem(). Reconcile until every late external subtitle has a real
+        // TrackGroup, while keeping provisional discovered choices visible meanwhile.
+        val expectedExternalSelectionIds = liveSubtitles
+            .map(::tvExternalSubtitleSelectionId)
+            .toSet()
+        var refreshAttempts = 0
+        while (refreshAttempts < TV_LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS) {
+            val latestSubtitles = latestLiveSubtitles.value
+            val latestMap = latestSubtitles.associateBy(::tvExternalSubtitleSelectionId)
+            val refreshedPlayerChoices = tvPlayerTrackChoices(
+                tracks = player.currentTracks,
+                trackType = C.TRACK_TYPE_TEXT,
+                externalSubtitles = latestMap,
+            )
+            textTracks = tvMergeDiscoveredSubtitleChoices(
+                playerChoices = refreshedPlayerChoices,
+                discoveredSubtitles = latestSubtitles,
+            )
+            val visibleExternalSelectionIds = refreshedPlayerChoices
+                .asSequence()
+                .filter { it.externalSubtitle != null }
+                .map { it.selectionId }
+                .toSet()
+            if (expectedExternalSelectionIds.isEmpty() ||
+                expectedExternalSelectionIds.all(visibleExternalSelectionIds::contains)
+            ) {
+                break
+            }
+            delay(TV_LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS)
+            refreshAttempts += 1
+        }
+        subtitleTrackRefreshInProgress = false
+        val finalSubtitles = latestLiveSubtitles.value
+        val finalPlayerChoices = tvPlayerTrackChoices(
+            tracks = player.currentTracks,
+            trackType = C.TRACK_TYPE_TEXT,
+            externalSubtitles = finalSubtitles.associateBy(::tvExternalSubtitleSelectionId),
+        )
+        textTracks = tvMergeDiscoveredSubtitleChoices(
+            playerChoices = finalPlayerChoices,
+            discoveredSubtitles = finalSubtitles,
+        )
     }
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -783,7 +845,10 @@ fun TvPlayerScreen(
                 val keepPreviousTextTracks =
                     subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
                 if (!keepPreviousTextTracks) {
-                    textTracks = currentTextTracks
+                    textTracks = tvMergeDiscoveredSubtitleChoices(
+                        playerChoices = currentTextTracks,
+                        discoveredSubtitles = latestLiveSubtitles.value,
+                    )
                 }
                 val effectiveTextTracks =
                     if (keepPreviousTextTracks) textTracks else currentTextTracks
@@ -824,7 +889,10 @@ fun TvPlayerScreen(
                             trackType = C.TRACK_TYPE_TEXT,
                             externalSubtitles = latestExternalSubtitlesBySelectionId.value,
                         )
-                        textTracks = finalTextTracks
+                        textTracks = tvMergeDiscoveredSubtitleChoices(
+                            playerChoices = finalTextTracks,
+                            discoveredSubtitles = latestLiveSubtitles.value,
+                        )
                         val confirmedSubtitleSelectionId = finalTextTracks
                             .firstOrNull { it.selected }
                             ?.selectionId
@@ -1020,7 +1088,10 @@ fun TvPlayerScreen(
                 val keepPreviousTextTracks =
                     subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
                 if (!keepPreviousTextTracks) {
-                    textTracks = currentTextTracks
+                    textTracks = tvMergeDiscoveredSubtitleChoices(
+                        playerChoices = currentTextTracks,
+                        discoveredSubtitles = latestLiveSubtitles.value,
+                    )
                 }
                 audioTracks = currentAudioTracks
 
@@ -1645,23 +1716,53 @@ fun TvPlayerScreen(
         val orderedEpisodes = remember(media.episodes) {
             media.episodes.sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
         }
-        var watchedEpisodeKeys by remember(media.id, media.type) {
-            mutableStateOf<Set<Pair<Int, Int>>>(emptySet())
+        var savedEpisodeProgress by remember(media.id, media.type) {
+            mutableStateOf<Map<Pair<Int, Int>, TvEpisodeProgress>>(emptyMap())
         }
         LaunchedEffect(media.id, media.type, libraryProgressRevision) {
-            watchedEpisodeKeys = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            savedEpisodeProgress = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                val result = linkedMapOf<Pair<Int, Int>, TvEpisodeProgress>()
                 runtime.libraryStore.history()
                     .asSequence()
                     .filter { entry ->
                         entry.media.id == media.id &&
                             entry.media.type == media.type &&
-                            entry.isCompleted &&
                             entry.season != null &&
                             entry.episode != null
                     }
-                    .map { entry -> entry.season!! to entry.episode!! }
-                    .toSet()
+                    .forEach { entry ->
+                        val key = entry.season!! to entry.episode!!
+                        if (key !in result) {
+                            result[key] = TvEpisodeProgress(
+                                positionMs = entry.positionMs,
+                                durationMs = entry.durationMs,
+                            )
+                        }
+                    }
+                result
             }
+        }
+        val episodeProgress = remember(
+            savedEpisodeProgress,
+            episode?.season,
+            episode?.episode,
+            positionMs,
+            durationMs,
+        ) {
+            val result = savedEpisodeProgress.toMutableMap()
+            episode?.let { current ->
+                val key = current.season to current.episode
+                val saved = result[key]
+                val liveDuration = durationMs.takeIf { it > 0L } ?: (saved?.durationMs ?: 0L)
+                val livePosition = if (positionMs > 0L || liveDuration > 0L) positionMs else (saved?.positionMs ?: 0L)
+                if (livePosition > 0L || liveDuration > 0L) {
+                    result[key] = TvEpisodeProgress(livePosition, liveDuration)
+                }
+            }
+            result
+        }
+        val watchedEpisodeKeys = remember(episodeProgress) {
+            episodeProgress.filterValues { it.completed }.keys
         }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
@@ -1716,6 +1817,7 @@ fun TvPlayerScreen(
             panelOptions = panelOptions,
             episodes = orderedEpisodes,
             watchedEpisodeKeys = watchedEpisodeKeys,
+            episodeProgress = episodeProgress,
             hasSubtitles = hasSubtitleControl,
             hasAudio = hasAudioControl,
             hasSources = hasSourcesControl,
@@ -2031,6 +2133,7 @@ fun TvPlayerScreen(
                 onStyleChange = { updated ->
                     subtitleStyle = updated
                     settings.setSubtitleFontSizeSp(updated.fontSizeSp)
+                    settings.setSubtitleCommentaryFontSizeSp(updated.commentaryFontSizeSp)
                     settings.setSubtitleFontFamily(updated.fontFamily)
                     settings.setSubtitleBold(updated.bold)
                     settings.setTvSubtitleCommentaryEnabled(updated.showCommentary)
@@ -2211,6 +2314,8 @@ private suspend fun applyAndConfirmTvSubtitleChoice(
 
 private const val TV_SUBTITLE_SELECTION_CONFIRM_ATTEMPTS = 60
 private const val TV_SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS = 50L
+private const val TV_LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS = 60
+private const val TV_LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS = 100L
 private val TV_SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)
 
 private fun buildMediaItem(

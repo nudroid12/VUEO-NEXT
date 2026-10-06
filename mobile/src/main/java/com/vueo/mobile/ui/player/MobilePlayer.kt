@@ -636,6 +636,7 @@ internal fun PlayerScreen(
         mutableStateOf(
             PlayerSubtitleStyleState(
                 fontSizeSp = settingsStore.subtitleFontSizeSp(),
+                commentaryFontSizeSp = settingsStore.subtitleCommentaryFontSizeSp(),
                 fontFamily = settingsStore.subtitleFontFamily(),
                 bold = settingsStore.subtitleBold(),
                 showCommentary = settingsStore.subtitleCommentaryEnabled(),
@@ -2377,6 +2378,9 @@ internal fun PlayerScreen(
                 settingsStore.setSubtitleFontSizeSp(
                     updated.fontSizeSp
                 )
+                settingsStore.setSubtitleCommentaryFontSizeSp(
+                    updated.commentaryFontSizeSp
+                )
                 settingsStore.setSubtitleFontFamily(
                     updated.fontFamily
                 )
@@ -2434,6 +2438,7 @@ internal fun PlayerScreen(
             onStyleChange = { updated ->
                 subtitleStyle = updated
                 settingsStore.setSubtitleFontSizeSp(updated.fontSizeSp)
+                settingsStore.setSubtitleCommentaryFontSizeSp(updated.commentaryFontSizeSp)
                 settingsStore.setSubtitleFontFamily(updated.fontFamily)
                 settingsStore.setSubtitleBold(updated.bold)
                 settingsStore.setSubtitleCommentaryEnabled(updated.showCommentary)

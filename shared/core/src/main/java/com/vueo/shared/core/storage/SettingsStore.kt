@@ -451,6 +451,24 @@ class SettingsStore(
             .apply()
     }
 
+    fun subtitleCommentaryFontSizeSp(): Int {
+        val key = profileKey(KEY_SUBTITLE_COMMENTARY_FONT_SIZE_SP)
+        return if (prefs.contains(key)) {
+            prefs.getInt(key, subtitleFontSizeSp()).coerceIn(12, 40)
+        } else {
+            subtitleFontSizeSp()
+        }
+    }
+
+    fun setSubtitleCommentaryFontSizeSp(value: Int) {
+        prefs.edit()
+            .putInt(
+                profileKey(KEY_SUBTITLE_COMMENTARY_FONT_SIZE_SP),
+                value.coerceIn(12, 40),
+            )
+            .apply()
+    }
+
     /**
      * One-time migration for the TV player subtitle presentation refresh.
      * Called by TV; missing values use the shared defaults without replacing saved choices.
@@ -1094,6 +1112,9 @@ class SettingsStore(
 
         private const val KEY_SUBTITLE_FONT_SIZE_SP =
             "subtitle_font_size_sp"
+
+        private const val KEY_SUBTITLE_COMMENTARY_FONT_SIZE_SP =
+            "subtitle_commentary_font_size_sp"
 
         private const val KEY_TV_SUBTITLE_PRESENTATION_V2 =
             "tv_subtitle_presentation_v2"

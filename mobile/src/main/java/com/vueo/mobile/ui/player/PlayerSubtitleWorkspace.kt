@@ -72,6 +72,7 @@ import kotlin.math.roundToInt
 internal data class PlayerSubtitleStyleState(
     val fontFamily: String = "default",
     val fontSizeSp: Int = 26,
+    val commentaryFontSizeSp: Int = 26,
     val bold: Boolean = false,
     val showCommentary: Boolean = true,
     val textColor: Int = 0xFFFFFFFF.toInt(),
@@ -766,6 +767,26 @@ private fun SubtitleStyleControls(
                     style.copy(showCommentary = !style.showCommentary)
                 )
             }
+        }
+        item {
+            StyleStepper(
+                label = "Commentary Size",
+                value = "${style.commentaryFontSizeSp}sp",
+                onDecrease = {
+                    onStyleChange(
+                        style.copy(
+                            commentaryFontSizeSp = (style.commentaryFontSizeSp - 2).coerceAtLeast(12)
+                        )
+                    )
+                },
+                onIncrease = {
+                    onStyleChange(
+                        style.copy(
+                            commentaryFontSizeSp = (style.commentaryFontSizeSp + 2).coerceAtMost(40)
+                        )
+                    )
+                },
+            )
         }
         item {
             StyleStepper(

@@ -482,6 +482,22 @@ private fun VueoOptionRow(
     }
 }
 
+internal data class TvEpisodeProgress(
+    val positionMs: Long,
+    val durationMs: Long,
+) {
+    val fraction: Float
+        get() = if (durationMs > 0L) {
+            (positionMs.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        } else 0f
+
+    val completed: Boolean
+        get() = durationMs > 0L && (positionMs >= durationMs - 20_000L || fraction >= 0.95f)
+
+    val resumable: Boolean
+        get() = !completed && positionMs > 0L && durationMs > 0L
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun VueoPlayerEpisodesPanel(
@@ -489,6 +505,7 @@ internal fun VueoPlayerEpisodesPanel(
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
     watchedEpisodeKeys: Set<Pair<Int, Int>>,
+    episodeProgress: Map<Pair<Int, Int>, TvEpisodeProgress>,
     onInteraction: () -> Unit,
     onDismiss: () -> Unit,
     onSelected: (EpisodeItem) -> Unit,
@@ -597,6 +614,7 @@ internal fun VueoPlayerEpisodesPanel(
                         episodes = ranges.visible,
                         currentEpisode = currentEpisode,
                         watchedEpisodeKeys = watchedEpisodeKeys,
+                        episodeProgress = episodeProgress,
                         entryFocusRequester = episodeEntryRequester,
                         entryRequest = episodeEntryRequest,
                         topRequester = listTopRequester,
@@ -605,12 +623,6 @@ internal fun VueoPlayerEpisodesPanel(
                         targetEpisodeId = if (ranges.enabled) ranges.targetId else null,
                         rangeFocusRequest = ranges.focusRequest,
                         focusRangeCards = ranges.focusCards,
-                        onRange = { forward ->
-                            val next = ranges.group + if (forward) 1 else -1
-                            if (ranges.enabled && next in ranges.groups.indices) {
-                                ranges.select(next, focusCards = true, last = !forward); true
-                            } else false
-                        },
                     )
                 }
             }
@@ -695,6 +707,7 @@ private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
     watchedEpisodeKeys: Set<Pair<Int, Int>>,
+    episodeProgress: Map<Pair<Int, Int>, TvEpisodeProgress>,
     entryFocusRequester: FocusRequester,
     entryRequest: Int,
     topRequester: FocusRequester,
@@ -703,7 +716,6 @@ private fun VueoEpisodeList(
     targetEpisodeId: String? = null,
     rangeFocusRequest: Int = 0,
     focusRangeCards: Boolean = false,
-    onRange: (Boolean) -> Boolean = { false },
 ) {
     val currentIndex = episodes.indexOfFirst { episode ->
         if (targetEpisodeId != null) targetEpisodeId == episode.id else currentEpisode?.let {
@@ -773,13 +785,13 @@ private fun VueoEpisodeList(
                     episode = episode,
                     selected = selected,
                     watched = (episode.season to episode.episode) in watchedEpisodeKeys,
+                    progress = episodeProgress[episode.season to episode.episode],
                     requester = requesters[index],
                     topRequester = topRequester,
                     blockUp = index == 0,
                     blockDown = index == episodes.lastIndex,
                     onInteraction = onInteraction,
                     onSelected = { onSelected(episode) },
-                    onRange = onRange,
                 )
             }
         }
@@ -791,13 +803,13 @@ private fun VueoEpisodeRow(
     episode: EpisodeItem,
     selected: Boolean,
     watched: Boolean,
+    progress: TvEpisodeProgress?,
     requester: FocusRequester,
     topRequester: FocusRequester,
     blockUp: Boolean,
     blockDown: Boolean,
     onInteraction: () -> Unit,
     onSelected: () -> Unit,
-    onRange: (Boolean) -> Boolean,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
@@ -817,12 +829,13 @@ private fun VueoEpisodeRow(
             }
             .onPreviewKeyEvent { event ->
                 val native = event.nativeKeyEvent
-                if (native.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
-                    (native.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && blockDown)) {
-                    if (event.type == KeyEventType.KeyDown && native.repeatCount == 0) {
-                        onInteraction()
-                        return@onPreviewKeyEvent onRange(native.keyCode != KeyEvent.KEYCODE_DPAD_LEFT)
-                    }
+                if (native.keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                    native.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
+                    (native.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && blockDown)
+                ) {
+                    if (event.type == KeyEventType.KeyDown && native.repeatCount == 0) onInteraction()
+                    // Episode cards never change the 50-episode group. Range changes
+                    // belong exclusively to the range chips above the list.
                     return@onPreviewKeyEvent true
                 }
                 if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
@@ -860,6 +873,22 @@ private fun VueoEpisodeRow(
                 TvDesign.SurfaceRaised,
                 fadeEnabled = false,
             )
+            progress?.takeIf { it.durationMs > 0L && it.positionMs > 0L }?.let { saved ->
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color.Black.copy(alpha = .48f))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(saved.fraction.coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .background(TvDesign.Accent)
+                    )
+                }
+            }
             Text(
                 "S${episode.season}E${episode.episode}",
                 color = Color.White,
@@ -921,15 +950,37 @@ private fun VueoEpisodeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (watched && !selected) {
-                Text(
-                    "Watched",
-                    color = Color.White.copy(alpha = .62f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+            when {
+                watched && !selected -> {
+                    Text(
+                        "Watched",
+                        color = Color.White.copy(alpha = .62f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                progress?.resumable == true -> {
+                    Text(
+                        "Resume ${vueoEpisodeProgressTime(progress.positionMs)}",
+                        color = if (selected) Color.Black.copy(alpha = .72f) else TvDesign.Accent.copy(alpha = .86f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
+    }
+}
+
+private fun vueoEpisodeProgressTime(positionMs: Long): String {
+    val totalSeconds = (positionMs.coerceAtLeast(0L) / 1_000L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
     }
 }
 

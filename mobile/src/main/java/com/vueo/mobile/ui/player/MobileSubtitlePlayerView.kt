@@ -34,7 +34,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private var lastDisplayedCommentaryCues: List<Cue> = emptyList()
     private var lastDisplayCommentary = true
     private var lastNormalBottomLineCount = 0
-    private var lastFontSizeSp = 26
+    private var lastNormalFontSizeSp = 26
 
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
@@ -127,11 +127,13 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
                 TypedValue.COMPLEX_UNIT_SP,
                 style.fontSizeSp.toFloat(),
             )
+            lastNormalFontSizeSp = style.fontSizeSp
+        }
+        if (previous == null || previous.commentaryFontSizeSp != style.commentaryFontSizeSp) {
             commentarySubtitleView.setFixedTextSize(
                 TypedValue.COMPLEX_UNIT_SP,
-                style.fontSizeSp.toFloat(),
+                style.commentaryFontSizeSp.toFloat(),
             )
-            lastFontSizeSp = style.fontSizeSp
         }
         if (
             previous == null ||
@@ -232,7 +234,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         val metrics = resources.displayMetrics
         val fontPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_SP,
-            lastFontSizeSp.toFloat(),
+            lastNormalFontSizeSp.toFloat(),
             metrics,
         )
         val gapPx = TypedValue.applyDimension(

@@ -156,6 +156,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     val sizeRequester = remember { FocusRequester() }
     val boldRequester = remember { FocusRequester() }
     val commentaryRequester = remember { FocusRequester() }
+    val commentarySizeRequester = remember { FocusRequester() }
     val textColorRequester = remember { FocusRequester() }
     val opacityRequester = remember { FocusRequester() }
     val outlineRequester = remember { FocusRequester() }
@@ -511,17 +512,40 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     enabled = style.showCommentary,
                                     requester = commentaryRequester,
                                     upRequester = boldRequester,
-                                    downRequester = textColorRequester,
+                                    downRequester = commentarySizeRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onToggle = { onStyleChange(style.copy(showCommentary = !style.showCommentary)) },
+                                )
+                                VueoSubtitleStepperRow(
+                                    title = "Commentary Size",
+                                    value = "${style.commentaryFontSizeSp}sp",
+                                    requester = commentarySizeRequester,
+                                    upRequester = commentaryRequester,
+                                    downRequester = textColorRequester,
+                                    leftRequester = styleLeftRequester,
+                                    onInteraction = onInteraction,
+                                    onDecrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                commentaryFontSizeSp = (style.commentaryFontSizeSp - 2).coerceAtLeast(12)
+                                            )
+                                        )
+                                    },
+                                    onIncrease = {
+                                        onStyleChange(
+                                            style.copy(
+                                                commentaryFontSizeSp = (style.commentaryFontSizeSp + 2).coerceAtMost(40)
+                                            )
+                                        )
+                                    },
                                 )
                                 VueoSubtitleColorRow(
                                     title = "Text Color",
                                     colours = textColours,
                                     selectedColour = style.textColor,
                                     requester = textColorRequester,
-                                    upRequester = commentaryRequester,
+                                    upRequester = commentarySizeRequester,
                                     downRequester = opacityRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,

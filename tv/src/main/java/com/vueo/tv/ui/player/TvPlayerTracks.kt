@@ -27,7 +27,7 @@ private const val TV_SUBTITLE_LABEL_PREFIX = PlayerTrackPolicy.SUBTITLE_LABEL_PR
 internal data class TvPlayerTrackChoice(
     val key: String,
     val label: String,
-    val override: TrackSelectionOverride,
+    val override: TrackSelectionOverride?,
     val selected: Boolean,
     val language: String?,
     val sourceLabel: String,
@@ -45,6 +45,7 @@ internal data class TvSubtitleLanguageGroup(
 internal data class TvPlayerSubtitleStyleState(
     val fontFamily: String = "default",
     val fontSizeSp: Int = 26,
+    val commentaryFontSizeSp: Int = 26,
     val bold: Boolean = false,
     val showCommentary: Boolean = true,
     val textColor: Int = 0xFFFFFFFF.toInt(),
@@ -61,6 +62,38 @@ internal fun tvExternalSubtitleSelectionId(track: SubtitleTrack): String =
 
 internal fun tvExternalSubtitleLabel(track: SubtitleTrack): String =
     PlayerTrackPolicy.externalSubtitleLabel(track)
+
+/**
+ * Subtitle discovery can finish before Media3 publishes matching text TrackGroups.
+ * Keep those external tracks visible in the TV workspace immediately, then resolve
+ * the provisional entry back to a real override when the user selects it.
+ */
+internal fun tvMergeDiscoveredSubtitleChoices(
+    playerChoices: List<TvPlayerTrackChoice>,
+    discoveredSubtitles: List<SubtitleTrack>,
+): List<TvPlayerTrackChoice> {
+    val knownSelectionIds = playerChoices.asSequence().map { it.selectionId }.toMutableSet()
+    val result = playerChoices.toMutableList()
+
+    discoveredSubtitles.forEach { subtitle ->
+        val selectionId = tvExternalSubtitleSelectionId(subtitle)
+        if (!subtitle.url.startsWith("https://") || !knownSelectionIds.add(selectionId)) {
+            return@forEach
+        }
+        result += TvPlayerTrackChoice(
+            key = "discovered:$selectionId",
+            label = subtitle.name?.takeIf { it.isNotBlank() } ?: tvFriendlyLanguage(subtitle.language),
+            override = null,
+            selected = false,
+            language = subtitle.language,
+            sourceLabel = subtitle.providerName.takeIf { it.isNotBlank() } ?: "External",
+            metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
+            selectionId = selectionId,
+            externalSubtitle = subtitle,
+        )
+    }
+    return result
+}
 
 internal fun tvPlayerTrackChoices(
     tracks: Tracks,
@@ -177,10 +210,11 @@ internal fun tvApplyTrackChoice(
     trackType: Int,
     choice: TvPlayerTrackChoice,
 ) {
+    val trackOverride = choice.override ?: return
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .setTrackTypeDisabled(trackType, false)
         .clearOverridesOfType(trackType)
-        .setOverrideForType(choice.override)
+        .setOverrideForType(trackOverride)
         .build()
 }
 

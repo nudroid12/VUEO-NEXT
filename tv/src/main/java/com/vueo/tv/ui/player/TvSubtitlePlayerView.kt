@@ -26,7 +26,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     private var lastDisplayedCommentaryCues: List<Cue> = emptyList()
     private var lastDisplayCommentary = true
     private var lastNormalBottomLineCount = 0
-    private var lastFontSizeSp = 26
+    private var lastNormalFontSizeSp = 26
 
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
@@ -120,8 +120,13 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         val previous = lastStyle
         if (previous == null || previous.fontSizeSp != style.fontSizeSp) {
             managedSubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
-            commentarySubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
-            lastFontSizeSp = style.fontSizeSp
+            lastNormalFontSizeSp = style.fontSizeSp
+        }
+        if (previous == null || previous.commentaryFontSizeSp != style.commentaryFontSizeSp) {
+            commentarySubtitleView.setFixedTextSize(
+                TypedValue.COMPLEX_UNIT_SP,
+                style.commentaryFontSizeSp.toFloat(),
+            )
         }
         if (previous == null || previous.textColor != style.textColor ||
             previous.bold != style.bold || previous.fontFamily != style.fontFamily || previous.outlineEnabled != style.outlineEnabled ||
@@ -196,7 +201,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         val metrics = resources.displayMetrics
         val fontPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_SP,
-            lastFontSizeSp.toFloat(),
+            lastNormalFontSizeSp.toFloat(),
             metrics,
         )
         val gapPx = TypedValue.applyDimension(

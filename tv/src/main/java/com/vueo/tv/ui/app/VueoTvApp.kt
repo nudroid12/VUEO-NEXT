@@ -427,6 +427,26 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         val preferredQuality = runtime.settingsStore.preferredQuality().rankKey
         var lastSubtitleCount = -1
         var waitLogged = false
+
+        fun publishCommittedSubtitles(nextBundle: TvSourceBundle) {
+            if (
+                sourceDiscoveryGeneration != generation ||
+                route != TvRoute.PLAYER ||
+                selectedEpisode?.id != target.id ||
+                sourceBundle?.videoId != nextBundle.videoId
+            ) return
+            val previous = sourceBundle ?: return
+            val mergedSubtitles = (previous.subtitles + nextBundle.subtitles).distinctBy { it.url }
+            if (mergedSubtitles != previous.subtitles) {
+                sourceBundle = previous.copy(subtitles = mergedSubtitles)
+                RuntimeDiagnostics.recordPlayerEvent(
+                    "TV",
+                    "NEXT_SUBTITLES_HANDOFF",
+                    "episode=S${target.season}E${target.episode} tracks=${mergedSubtitles.size}",
+                )
+            }
+        }
+
         RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_START",
             "episode=S${target.season}E${target.episode} provider=${preferredSource?.providerName.orEmpty()} server=${preferredSource?.let(com.vueo.shared.core.player.PlayerSourceDisplay::title).orEmpty()}")
 
@@ -439,12 +459,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     "episode=S${target.season}E${target.episode} tracks=$lastSubtitleCount committed=$committed")
             }
             if (committed || (switchingCommitted && selectedEpisode?.id == target.id)) {
-                // Late subtitle/source results belong only to the committed episode.
-                if (sourceBundle?.videoId == nextBundle.videoId) {
-                    val previous = sourceBundle
-                    sourceBundle = nextBundle.copy(subtitles =
-                        (previous?.subtitles.orEmpty() + nextBundle.subtitles).distinctBy { it.url })
-                }
+                // Late subtitle results belong to the committed episode even after the
+                // source was selected and the new Player composable already started.
+                publishCommittedSubtitles(nextBundle)
                 return
             }
             val preferredProviderDone = preferredSource == null ||
@@ -487,9 +504,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     it.copy(bundle = withPrefetchedSubtitles(it.bundle),
                         subtitlesResolved = prefetched?.subtitlesResolved == true)
                 }
-                if (sourceBundle?.videoId == target.id) {
-                    sourceBundle = sourceBundle?.let(::withPrefetchedSubtitles)
-                }
+                prefetched?.bundle?.let(::publishCommittedSubtitles)
             }
         }
         sourceDiscoveryJob = sourceDiscoveryScope.launch {
@@ -512,6 +527,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         )
                         accept(standby, completed = true)
                         prefetched.job?.join()
+                        prefetched.bundle?.let(::publishCommittedSubtitles)
                         return@launch
                     }
                     RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_PREFETCH_FALLBACK",
