@@ -152,6 +152,10 @@ internal fun VueoPlayerProgressRail(
             .then(inputModifier),
         contentAlignment = Alignment.CenterStart,
     ) {
+        // Capture the BoxWithConstraints width before entering nested BoxScope
+        // receivers. This avoids ambiguous/invalid implicit receiver access.
+        val availableWidth = maxWidth
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -161,7 +165,7 @@ internal fun VueoPlayerProgressRail(
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(maxWidth * progress)
+                    .width(availableWidth * progress)
                     .background(TvDesign.Accent.copy(alpha = 1f), shape),
             )
         }
@@ -169,7 +173,7 @@ internal fun VueoPlayerProgressRail(
         val thumbSize = if (focused) 12.dp else 10.dp
         Box(
             modifier = Modifier
-                .offset(x = (maxWidth - thumbSize) * progress)
+                .offset(x = (availableWidth - thumbSize) * progress)
                 .size(thumbSize)
                 .background(TvDesign.Accent, CircleShape),
         )
