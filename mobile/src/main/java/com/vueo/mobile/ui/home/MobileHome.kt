@@ -1233,8 +1233,9 @@ private fun HomeFeaturedCarousel(
                                             7.dp,
                                     )
                                     .clickable {
-                                        selectedIndex =
-                                            index
+                                        onSelectedMediaKeyChange(
+                                            itemKeys[index]
+                                        )
                                     },
                         )
                     }
