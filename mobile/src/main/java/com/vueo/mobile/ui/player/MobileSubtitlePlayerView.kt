@@ -232,8 +232,9 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
 
         for (cue in cues) {
             if (cue.bitmap == null && cue.verticalType == Cue.TYPE_UNSET && !cue.text.isNullOrBlank()) {
+                // Preserve authored commentary metadata regardless of placement.
                 if (mobileIsTaggedSubtitleCommentary(cue)) {
-                    if (commentaryEnabled) taggedCommentary += cue
+                    taggedCommentary += cue
                     continue
                 }
                 if (isLowerTextCue(cue)) {
@@ -245,24 +246,59 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         }
 
         val normalUnique = lowerNormal.distinctBy { it.text.toString() }
-        val commentaryUnique = taggedCommentary.distinctBy { it.text.toString() }
+        val taggedUnique = taggedCommentary.distinctBy { it.text.toString() }
+        val activeLowerCount = normalUnique.size + taggedUnique.count(::isLowerTextCue)
+        val parentheticalCommentary = if (activeLowerCount >= 2) {
+            normalUnique.filter(::isFullyParenthesizedCue)
+        } else {
+            emptyList()
+        }
+        val parentheticalTexts = parentheticalCommentary
+            .map { it.text.toString() }
+            .toSet()
+        val remainingNormal = normalUnique.filterNot { it.text.toString() in parentheticalTexts }
+        val commentaryUnique = (taggedUnique + parentheticalCommentary)
+            .distinctBy { it.text.toString() }
+            .let { if (commentaryEnabled) it else emptyList() }
+
         return when {
             commentaryUnique.isNotEmpty() -> MobileSubtitleLayerSplit(
-                lowerCues = nonLower + normalUnique,
+                lowerCues = nonLower + remainingNormal,
                 upperCues = commentaryUnique,
                 upperUsesCommentarySize = true,
             )
-            normalUnique.size >= 2 -> MobileSubtitleLayerSplit(
-                lowerCues = nonLower + normalUnique.last(),
-                upperCues = normalUnique.dropLast(1),
+            remainingNormal.size >= 2 -> MobileSubtitleLayerSplit(
+                // When there is no commentary role, retain generic dual-layer spacing.
+                lowerCues = nonLower + remainingNormal.last(),
+                upperCues = remainingNormal.dropLast(1),
                 upperUsesCommentarySize = false,
             )
             else -> MobileSubtitleLayerSplit(
-                lowerCues = nonLower + normalUnique,
+                lowerCues = nonLower + remainingNormal,
                 upperCues = emptyList(),
                 upperUsesCommentarySize = false,
             )
         }
+    }
+
+    private fun isFullyParenthesizedCue(cue: Cue): Boolean {
+        val value = cue.text?.toString()?.trim().orEmpty()
+        if (value.length < 2 || value.first() != '(' || value.last() != ')') return false
+
+        var depth = 0
+        value.forEachIndexed { index, char ->
+            when (char) {
+                '(' -> depth += 1
+                ')' -> {
+                    depth -= 1
+                    if (depth < 0) return false
+                }
+            }
+            // The outer pair must wrap the whole cue. A closing parenthesis followed by
+            // dialogue means this is an ordinary subtitle, not commentary.
+            if (depth == 0 && index < value.lastIndex) return false
+        }
+        return depth == 0
     }
 
     private fun isLowerTextCue(cue: Cue): Boolean = when {
