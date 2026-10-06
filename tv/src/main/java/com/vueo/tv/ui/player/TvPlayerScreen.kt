@@ -370,6 +370,7 @@ fun TvPlayerScreen(
     var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
     var resumeAfterLifecyclePause by remember(playerSessionId) { mutableStateOf(false) }
     var pendingSeekPositionMs by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
+    var hiddenSeekProgressVisible by remember(bundle.videoId) { mutableStateOf(false) }
     val seekCommitJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
     val seekAnchorClearJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
     var controlFocusHandoffPending by remember { mutableStateOf(true) }
@@ -445,6 +446,7 @@ fun TvPlayerScreen(
 
     fun requestControlFocus(requester: FocusRequester = progressRequester) {
         if (latestEpisodeSwitching.value) return
+        hiddenSeekProgressVisible = false
         val targetRequester = if (!controlsVisible && playbackError == null) progressRequester else requester
         focusedPrompt = TvPlayerPromptTarget.NONE
         controlsVisible = true
@@ -473,6 +475,7 @@ fun TvPlayerScreen(
     fun commitPendingSeek() {
         seekCommitJob[0]?.cancel()
         seekCommitJob[0] = null
+        hiddenSeekProgressVisible = false
         val target = pendingSeekPositionMs ?: return
         player.seekTo(target)
         positionMs = target
@@ -488,6 +491,7 @@ fun TvPlayerScreen(
     fun clearPendingSeek() {
         seekCommitJob[0]?.cancel()
         seekCommitJob[0] = null
+        hiddenSeekProgressVisible = false
         seekAnchorClearJob[0]?.cancel()
         seekAnchorClearJob[0] = null
         pendingSeekPositionMs = null
@@ -517,6 +521,7 @@ fun TvPlayerScreen(
         }
         seekAnchorClearJob[0]?.cancel()
         seekAnchorClearJob[0] = null
+        hiddenSeekProgressVisible = !controlsVisible
         pendingSeekPositionMs = target
         positionMs = target
         seekCommitJob[0]?.cancel()
@@ -1691,6 +1696,7 @@ fun TvPlayerScreen(
             episode = episode,
             activeSource = activeSource,
             controlsVisible = controlsVisible,
+            hiddenSeekProgressVisible = hiddenSeekProgressVisible,
             activePanel = activePanel,
             playing = playing,
             isBuffering = isBuffering,

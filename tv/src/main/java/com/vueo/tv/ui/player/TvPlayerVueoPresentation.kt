@@ -72,6 +72,7 @@ internal fun VueoPlayerPresentation(
     episode: EpisodeItem?,
     activeSource: StreamSource,
     controlsVisible: Boolean,
+    hiddenSeekProgressVisible: Boolean,
     activePanel: TvPlayerPanel,
     playing: Boolean,
     isBuffering: Boolean,
@@ -144,7 +145,7 @@ internal fun VueoPlayerPresentation(
     val density = LocalDensity.current
     var bottomControlsHeight by remember { mutableStateOf(72.dp) }
     Box(Modifier.fillMaxSize()) {
-        val showPrompts = activePanel == TvPlayerPanel.NONE && playbackError == null
+        val showPrompts = activePanel == TvPlayerPanel.NONE && playbackError == null && !hiddenSeekProgressVisible
         // The progress rail is the first item in the measured bottom controls.
         // Hidden feedback has a 3dp rail above its existing 22dp bottom inset.
         val promptBottomPadding = if (controlsVisible) bottomControlsHeight + 12.dp else 22.dp + 3.dp + 12.dp
@@ -166,6 +167,7 @@ internal fun VueoPlayerPresentation(
 
         VueoPlayerControls(
             visible = showChrome,
+            hiddenSeekProgressVisible = hiddenSeekProgressVisible && !showChrome,
             onBottomControlsHeightChanged = { heightPx ->
                 bottomControlsHeight = with(density) { heightPx.toDp() }
             },
@@ -447,6 +449,7 @@ private fun VueoPlayerCinematicScrim(strong: Boolean) {
 @Composable
 private fun VueoPlayerControls(
     visible: Boolean,
+    hiddenSeekProgressVisible: Boolean,
     onBottomControlsHeightChanged: (Int) -> Unit,
     media: MediaItem,
     episode: EpisodeItem?,
@@ -589,7 +592,10 @@ private fun VueoPlayerControls(
             }
 
             AnimatedVisibility(
-                visible = visible,
+                // Hidden long-seek reuses this exact bottom layout so the rail
+                // never jumps when full chrome is revealed. Non-rail content
+                // keeps its layout space but is visually suppressed.
+                visible = visible || hiddenSeekProgressVisible,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically(
                     animationSpec = tween(240, easing = chromeEnterEasing),
@@ -616,9 +622,13 @@ private fun VueoPlayerControls(
                         onSeekBy = onSeekBy,
                         onSeekCommit = onSeekCommit,
                         onTogglePlayback = onPlayPause,
+                        emphasized = hiddenSeekProgressVisible && !visible,
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp)
+                            .alpha(if (visible) 1f else 0f),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -641,6 +651,7 @@ private fun VueoPlayerControls(
                         Row(
                             modifier = Modifier
                                 .align(Alignment.CenterHorizontally)
+                                .alpha(if (visible) 1f else 0f)
                                 .clip(RoundedCornerShape(22.dp))
                                 .background(Color(0xFF111316).copy(alpha = .88f))
                                 .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(22.dp))

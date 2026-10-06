@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -68,10 +69,11 @@ internal fun VueoPlayerProgressRail(
     onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
     interactive: Boolean = true,
+    emphasized: Boolean = false,
 ) {
     val acceptsInput = interactive && LocalPlayerChromeInteractive.current
     var hasFocus by remember { mutableStateOf(false) }
-    val focused = hasFocus && acceptsInput
+    val focused = (hasFocus && acceptsInput) || emphasized
     val targetProgress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
@@ -140,18 +142,36 @@ internal fun VueoPlayerProgressRail(
             .focusable()
     } else Modifier
 
+    // Keep a small fixed visual lane so the progress thumb can sit around the
+    // rail without changing its horizontal geometry. The actual line remains
+    // 3dp/5dp and is centered inside this lane.
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(railHeight)
-            .then(inputModifier)
-            .background(Color.White.copy(alpha = .14f), shape),
+            .height(12.dp)
+            .then(inputModifier),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .width(maxWidth * progress)
-                .background(TvDesign.Accent.copy(alpha = 1f), shape),
+                .fillMaxWidth()
+                .height(railHeight)
+                .background(Color.White.copy(alpha = .14f), shape),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(maxWidth * progress)
+                    .background(TvDesign.Accent.copy(alpha = 1f), shape),
+            )
+        }
+
+        val thumbSize = if (focused) 12.dp else 10.dp
+        Box(
+            modifier = Modifier
+                .offset(x = (maxWidth - thumbSize) * progress)
+                .size(thumbSize)
+                .background(TvDesign.Accent, CircleShape),
         )
     }
 
