@@ -960,9 +960,17 @@ private fun emptyDiscoveryResult():
             providerRuntimeTimeoutMs(provider)
 
         val executionTasks = ProviderExecutionTasks()
+        val quickJsToken = RuntimeDiagnostics.beginQuickJsExecution(
+            scanId = runtimeDiagnosticScanId,
+            providerName = provider.name,
+        )
         return try {
             val resultJson =
                 quickJs {
+                    RuntimeDiagnostics.recordQuickJsPhase(
+                        token = quickJsToken,
+                        phase = "QJS_CREATE_END",
+                    )
                     evaluationTimeoutMillis =
                         providerTimeoutMs
 
@@ -1217,7 +1225,12 @@ private fun emptyDiscoveryResult():
                         } ?: false
                     }
 
-                    evaluate<String>(
+                    RuntimeDiagnostics.recordQuickJsPhase(
+                        token = quickJsToken,
+                        phase = "QJS_EVAL_BEGIN",
+                        details = "scriptChars=${source.length} timeoutMs=$providerTimeoutMs",
+                    )
+                    val evaluationResult = evaluate<String>(
                         buildRuntimeScript(
                             providerScript =
                                 source,
@@ -1233,10 +1246,30 @@ private fun emptyDiscoveryResult():
                         filename =
                             "${provider.id}.js",
                     )
+                    RuntimeDiagnostics.recordQuickJsPhase(
+                        token = quickJsToken,
+                        phase = "QJS_EVAL_END",
+                        details = "resultChars=${evaluationResult.length}",
+                    )
+                    evaluationResult
                 }
 
+            RuntimeDiagnostics.recordQuickJsPhase(
+                token = quickJsToken,
+                phase = "QJS_CLOSE",
+            )
             progress.stage("Parsing provider results")
+            RuntimeDiagnostics.recordQuickJsPhase(
+                token = quickJsToken,
+                phase = "RESULT_PARSE_BEGIN",
+                details = "resultChars=${resultJson.length}",
+            )
             val streams = parseProviderStreams(repository, provider, resultJson)
+            RuntimeDiagnostics.recordQuickJsPhase(
+                token = quickJsToken,
+                phase = "RESULT_PARSE_END",
+                details = "streams=${streams.size}",
+            )
             progress.stage("Provider finished: ${streams.size} sources")
             ProviderExecution(
                 streams =
@@ -1247,8 +1280,19 @@ private fun emptyDiscoveryResult():
                     progress.snapshot(),
             )
         } catch (error: CancellationException) {
+            RuntimeDiagnostics.recordQuickJsPhase(
+                token = quickJsToken,
+                phase = "QJS_CANCELLED",
+                details = "type=${error::class.java.simpleName}",
+                critical = false,
+            )
             throw error
         } catch (error: Throwable) {
+            RuntimeDiagnostics.recordQuickJsPhase(
+                token = quickJsToken,
+                phase = "QJS_ABORT",
+                details = "type=${error::class.java.simpleName} message=${error.message.orEmpty().take(120)}",
+            )
             ProviderExecution(
                 streams =
                     emptyList(),

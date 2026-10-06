@@ -190,20 +190,31 @@ internal fun TvRuntimeDiagnosticsDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    var diagnosticText by remember {
-        mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
-    }
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+    val summaryFocus = remember { FocusRequester() }
+    val rawFocus = remember { FocusRequester() }
     val logFocus = remember { FocusRequester() }
     val copyFocus = remember { FocusRequester() }
     val logScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
     var logFocused by remember { mutableStateOf(false) }
+    var showRaw by remember { mutableStateOf(false) }
+    var diagnosticText by remember { mutableStateOf("Loading diagnostics…") }
+    var saving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showRaw) {
+        diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+            else RuntimeDiagnostics.exportSummary(context.applicationContext)
+        }
+        logScroll.scrollTo(0)
+    }
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        runCatching { logFocus.requestFocus() }
+        runCatching { summaryFocus.requestFocus() }
     }
+
     val buttonNavigation = Modifier.focusProperties { up = logFocus }
         .onPreviewKeyEvent { event ->
             val key = event.nativeKeyEvent
@@ -223,64 +234,102 @@ internal fun TvRuntimeDiagnosticsDialog(
         title = { Text("Performance & Crash Diagnostics") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
-                    .focusRequester(logFocus)
-                    .onFocusChanged { logFocused = it.isFocused }
-                    .focusProperties { down = copyFocus }
-                    .onPreviewKeyEvent { event ->
-                        val key = event.nativeKeyEvent
-                        when (key.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                if (key.action == KeyEvent.ACTION_DOWN) {
-                                    val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                                    if (down && logScroll.value >= logScroll.maxValue) {
-                                        runCatching { copyFocus.requestFocus() }
-                                    } else {
-                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
-                                            .coerceIn(0, logScroll.maxValue)
-                                        scope.launch { logScroll.scrollTo(target) }
-                                    }
-                                }
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                                if (key.action == KeyEvent.ACTION_DOWN) runCatching { copyFocus.requestFocus() }
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    .focusable()
-                    .verticalScroll(logScroll)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        modifier = Modifier
+                            .focusRequester(summaryFocus)
+                            .focusProperties { right = rawFocus; down = logFocus },
+                        onClick = { showRaw = false },
+                    ) {
+                        Text(
+                            "Summary",
+                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                    TextButton(
+                        modifier = Modifier
+                            .focusRequester(rawFocus)
+                            .focusProperties { left = summaryFocus; down = logFocus },
+                        onClick = { showRaw = true },
+                    ) {
+                        Text(
+                            "Raw",
+                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
                 Text(
-                    text = "Up/Down: scroll log. OK: Copy Log button. Up from buttons: return to log. Reproduce the issue, then copy the log.",
+                    text = if (showRaw) {
+                        "Raw: chronological events. Save Log exports the complete ZIP, including native tombstone evidence when Android provides it."
+                    } else {
+                        "Summary: provider phases, QuickJS/native boundaries, memory and recent failures."
+                    },
                     color = TvDesign.Muted,
                     fontSize = 11.sp,
                 )
-                Text(
-                    text = if (diagnosticText.length > 24_000)
-                        "[Recent log preview. Copy Log includes the full log.]\n\n" + diagnosticText.takeLast(24_000)
-                    else diagnosticText,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 9.5.sp,
-                    color = TvDesign.Muted,
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 430.dp)
+                        .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .focusRequester(logFocus)
+                        .onFocusChanged { logFocused = it.isFocused }
+                        .focusProperties { up = if (showRaw) rawFocus else summaryFocus; down = copyFocus }
+                        .onPreviewKeyEvent { event ->
+                            val key = event.nativeKeyEvent
+                            when (key.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                    if (key.action == KeyEvent.ACTION_DOWN) {
+                                        val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                        if (down && logScroll.value >= logScroll.maxValue) {
+                                            runCatching { copyFocus.requestFocus() }
+                                        } else if (!down && logScroll.value <= 0) {
+                                            runCatching { (if (showRaw) rawFocus else summaryFocus).requestFocus() }
+                                        } else {
+                                            val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                                .coerceIn(0, logScroll.maxValue)
+                                            scope.launch { logScroll.scrollTo(target) }
+                                        }
+                                    }
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                                    if (key.action == KeyEvent.ACTION_DOWN) runCatching { copyFocus.requestFocus() }
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        .focusable()
+                        .verticalScroll(logScroll)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = if (diagnosticText.length > 24_000) {
+                            "[Recent preview. Copy Log and Save Log use the full selected log.]\n\n" +
+                                diagnosticText.takeLast(24_000)
+                        } else diagnosticText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp,
+                        color = TvDesign.Muted,
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
                 modifier = buttonNavigation.focusRequester(copyFocus),
                 onClick = {
-                    diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                     clipboard?.setPrimaryClip(
-                        ClipData.newPlainText("VUEO performance diagnostic", diagnosticText)
+                        ClipData.newPlainText(
+                            if (showRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
+                            diagnosticText,
+                        )
                     )
                     Toast.makeText(context, "Diagnostic log copied", Toast.LENGTH_SHORT).show()
                 },
@@ -292,12 +341,45 @@ internal fun TvRuntimeDiagnosticsDialog(
             Row {
                 TextButton(
                     modifier = buttonNavigation,
+                    enabled = !saving,
                     onClick = {
-                        RuntimeDiagnostics.clear(context.applicationContext)
-                        diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                        saving = true
+                        scope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { RuntimeDiagnostics.saveBundle(context.applicationContext) }
+                            }
+                            saving = false
+                            result.onSuccess { saved ->
+                                Toast.makeText(
+                                    context,
+                                    "Saved ${saved.displayName} to ${saved.location}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    context,
+                                    "Save failed: ${error.javaClass.simpleName}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
                     },
                 ) {
-                    Text("Clear")
+                    Text(if (saving) "Saving…" else "Save Log")
+                }
+                TextButton(
+                    modifier = buttonNavigation,
+                    onClick = {
+                        scope.launch {
+                            diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                RuntimeDiagnostics.clear(context.applicationContext)
+                                if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+                                else RuntimeDiagnostics.exportSummary(context.applicationContext)
+                            }
+                        }
+                    },
+                ) {
+                    Text("Clear Log")
                 }
                 TextButton(modifier = buttonNavigation, onClick = ::closeAndRestore) { Text("Close") }
             }

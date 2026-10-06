@@ -20,6 +20,8 @@ class VueoDiagnosticApplication : Application() {
 object CrashReportStore {
     private const val PREFS = "vueo_crash_recovery"
     private const val FILE = "last_crash.json"
+    private const val NATIVE_TOMBSTONE_FILE = "last_native_tombstone.pb"
+    private const val MAX_NATIVE_TOMBSTONE_BYTES = 4 * 1024 * 1024L
     private val lock = Any()
     private val breadcrumbs = java.util.ArrayDeque<String>()
     private var currentStartedMs = 0L
@@ -28,6 +30,7 @@ object CrashReportStore {
     private var currentVersion = "unknown"
     private var lastSystemSummaryNs = 0L
     private var lastScreen = "Startup"
+    private var lastCriticalState = ""
     private var lastStall = "No live stall stack captured."
 
     internal fun startSession(context: Context) = synchronized(lock) {
@@ -60,10 +63,27 @@ object CrashReportStore {
         lastStall = sanitize(stack).take(16_000)
     }
 
+    internal fun observedState(compactState: String) = synchronized(lock) {
+        lastCriticalState = compactAscii(compactState, 92)
+    }
+
+    internal fun criticalState(context: Context, compactState: String) {
+        val state = synchronized(lock) {
+            lastCriticalState = compactAscii(compactState, 92)
+            compactProcessState()
+        }
+        if (Build.VERSION.SDK_INT < 30) return
+        runCatching {
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
+                ?.setProcessStateSummary(state.toByteArray(Charsets.US_ASCII))
+        }
+    }
+
     private fun persistEvidence(context: Context) {
         val snapshot = synchronized(lock) {
             JSONObject().put("session", currentStartedMs).put("timestamp", System.currentTimeMillis())
-                .put("screen", lastScreen).put("timeline", breadcrumbs.joinToString("\n"))
+                .put("screen", lastScreen).put("critical", lastCriticalState)
+                .put("timeline", breadcrumbs.joinToString("\n"))
                 .put("stall", lastStall)
         }
         val file = AtomicFile(File(context.noBackupFilesDir, "anr_evidence.json"))
@@ -77,7 +97,7 @@ object CrashReportStore {
         }
     }
 
-    // Invoked by the existing diagnostic writer, never for each event on the UI thread.
+    // Invoked by the batched diagnostic writer, never for each event on the UI thread.
     internal fun updateSystemSummary(context: Context, message: String, force: Boolean = false) {
         val now = System.nanoTime()
         synchronized(lock) {
@@ -87,10 +107,14 @@ object CrashReportStore {
         runCatching { persistEvidence(context) }
         if (Build.VERSION.SDK_INT < 30) return
         runCatching {
-            val state = synchronized(lock) { "Screen: $lastScreen | ${sanitize(message)}" }
-            val bytes = state.toByteArray(Charsets.UTF_8).take(128).toByteArray()
+            val state = synchronized(lock) {
+                if (lastCriticalState.isBlank()) {
+                    lastCriticalState = compactAscii(message, 92)
+                }
+                compactProcessState()
+            }
             (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
-                ?.setProcessStateSummary(bytes)
+                ?.setProcessStateSummary(state.toByteArray(Charsets.US_ASCII))
         }
     }
 
@@ -109,6 +133,7 @@ object CrashReportStore {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Thread: ${thread.name.take(120)}")
             appendLine("Screen: $lastScreen")
+            appendLine("Critical state: ${lastCriticalState.ifBlank { "Unavailable" }}")
             appendLine("Last activity (observed events; not a proven cause):")
             breadcrumbs.forEach { appendLine(it) }
             appendLine("Code location: ${root.stackTrace.firstOrNull() ?: "Unavailable"}")
@@ -161,8 +186,11 @@ object CrashReportStore {
             ApplicationExitInfo.REASON_LOW_MEMORY -> if (foreground) "Android closed the app because device memory was low." else return null
             ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> if (foreground) "Android closed the app because resource usage was excessive." else return null
             ApplicationExitInfo.REASON_UNKNOWN -> if (foreground) "App closed unexpectedly. The exact cause is unavailable." else return null
-            else -> return null // Normal exit, force-stop, update and background process cleanup.
+            else -> return null
         }
+        val nativeTombstoneStatus = if (exit.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
+            captureNativeTombstone(context, exit)
+        } else null
         val details = buildString {
             appendLine("VUEO Crash Report (Android process exit record)")
             appendLine("Package: ${context.packageName}")
@@ -176,6 +204,7 @@ object CrashReportStore {
             exit.processStateSummary?.let {
                 appendLine("Last observed activity: ${String(it, Charsets.UTF_8)}")
             }
+            nativeTombstoneStatus?.let { appendLine("Native tombstone: $it") }
             appendLine("Previous-session evidence (observations, not proven causes):")
             appendLine(runCatching {
                 val file = File(context.noBackupFilesDir, "anr_evidence_previous.json")
@@ -184,7 +213,14 @@ object CrashReportStore {
                     val evidence = JSONObject(file.readText())
                     if (evidence.optLong("session") != previousStartedMs ||
                         evidence.optLong("timestamp") > exit.timestamp) "Unavailable: evidence does not match this exit."
-                    else "Screen: ${evidence.optString("screen")}\nTimeline (last 48 events, each capped at 700 characters):\n${evidence.optString("timeline")}\nLive stall snapshot (capped at 16000 characters):\n${evidence.optString("stall")}" 
+                    else buildString {
+                        appendLine("Screen: ${evidence.optString("screen")}")
+                        appendLine("Critical state: ${evidence.optString("critical").ifBlank { "Unavailable" }}")
+                        appendLine("Timeline (last 48 events, each capped at 700 characters):")
+                        appendLine(evidence.optString("timeline"))
+                        appendLine("Live stall snapshot (capped at 16000 characters):")
+                        append(evidence.optString("stall"))
+                    }
                 }
             }.getOrElse { "Unavailable: previous-session evidence read failed (${it.javaClass.simpleName})." })
             if (exit.reason == ApplicationExitInfo.REASON_ANR) {
@@ -206,10 +242,81 @@ object CrashReportStore {
             }
             appendLine("Snapshots can miss the blocking operation; a stack alone does not prove the root cause.")
         }
-        return AppCrashReport(exit.timestamp, summary, sanitize(details).let { if (it.length > 110_000) it.take(110_000) + "\n[REPORT TRUNCATED]" else it })
+        return AppCrashReport(
+            exit.timestamp,
+            summary,
+            sanitize(details).let { if (it.length > 110_000) it.take(110_000) + "\n[REPORT TRUNCATED]" else it },
+        )
+    }
+
+    @android.annotation.TargetApi(30)
+    private fun captureNativeTombstone(context: Context, exit: ApplicationExitInfo): String = runCatching {
+        val destination = File(context.noBackupFilesDir, NATIVE_TOMBSTONE_FILE)
+        destination.delete()
+        val input = exit.traceInputStream ?: return@runCatching "Unavailable: Android supplied no native tombstone."
+        var total = 0L
+        input.use { stream ->
+            destination.outputStream().buffered().use { output ->
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val count = stream.read(buffer)
+                    if (count <= 0) break
+                    total += count
+                    if (total > MAX_NATIVE_TOMBSTONE_BYTES) {
+                        throw NativeTombstoneTooLargeException()
+                    }
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        if (total == 0L) {
+            destination.delete()
+            "Unavailable: Android supplied an empty native tombstone."
+        } else {
+            "captured ${total} bytes as $NATIVE_TOMBSTONE_FILE"
+        }
+    }.getOrElse { error ->
+        File(context.noBackupFilesDir, NATIVE_TOMBSTONE_FILE).delete()
+        if (error is NativeTombstoneTooLargeException) {
+            "Unavailable: native tombstone exceeded ${MAX_NATIVE_TOMBSTONE_BYTES / (1024 * 1024)}MB safety limit."
+        } else {
+            "Unavailable: native tombstone read failed (${error.javaClass.simpleName})."
+        }
+    }
+
+    private class NativeTombstoneTooLargeException : Exception()
+
+    internal fun nativeTombstoneFile(context: Context): File? =
+        File(context.noBackupFilesDir, NATIVE_TOMBSTONE_FILE)
+            .takeIf { it.exists() && it.length() > 0L }
+
+    internal fun exportCrashReport(context: Context): AppCrashReport? = synchronized(lock) { read(context) }
+
+    internal fun clearDiagnosticArtifacts(context: Context) = synchronized(lock) {
+        breadcrumbs.clear()
+        lastCriticalState = ""
+        lastStall = "No live stall stack captured."
+        reportFile(context).delete()
+        File(context.noBackupFilesDir, NATIVE_TOMBSTONE_FILE).delete()
+        File(context.noBackupFilesDir, "anr_evidence.json").delete()
+        File(context.noBackupFilesDir, "anr_evidence_previous.json").delete()
+    }
+
+    private fun compactProcessState(): String {
+        val screen = compactAscii(lastScreen, 28)
+        val critical = compactAscii(lastCriticalState, 92)
+        return compactAscii("$screen | $critical", 128)
+    }
+
+    private fun compactAscii(value: String, max: Int): String = buildString(minOf(max, value.length)) {
+        value.forEach { char ->
+            if (length >= max) return@forEach
+            append(if (char.code in 32..126) char else '_')
+        }
     }
 
     private fun reportFile(context: Context) = AtomicFile(File(context.noBackupFilesDir, FILE))
+
     private fun read(context: Context): AppCrashReport? = runCatching {
         val file = reportFile(context)
         file.openRead().use { stream ->
@@ -230,8 +337,11 @@ object CrashReportStore {
         val file = reportFile(context)
         val output = file.startWrite()
         try {
-            output.write(JSONObject().put("timestamp", report.timestampMs)
-                .put("summary", report.summary).put("details", report.details).toString().toByteArray(Charsets.UTF_8))
+            output.write(
+                JSONObject().put("timestamp", report.timestampMs)
+                    .put("summary", report.summary).put("details", report.details)
+                    .toString().toByteArray(Charsets.UTF_8)
+            )
             file.finishWrite(output)
         } catch (error: Throwable) {
             file.failWrite(output)

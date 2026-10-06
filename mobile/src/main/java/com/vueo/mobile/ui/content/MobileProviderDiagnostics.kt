@@ -494,8 +494,16 @@ internal fun RuntimeDiagnosticsDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    var diagnosticText by remember {
-        mutableStateOf(RuntimeDiagnostics.export(context.applicationContext))
+    val scope = rememberCoroutineScope()
+    var showRaw by remember { mutableStateOf(false) }
+    var diagnosticText by remember { mutableStateOf("Loading diagnostics…") }
+    var saving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showRaw) {
+        diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+            else RuntimeDiagnostics.exportSummary(context.applicationContext)
+        }
     }
 
     AlertDialog(
@@ -505,31 +513,60 @@ internal fun RuntimeDiagnosticsDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { showRaw = false }) {
+                        Text(
+                            "Summary",
+                            fontWeight = if (!showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                    TextButton(onClick = { showRaw = true }) {
+                        Text(
+                            "Raw",
+                            fontWeight = if (showRaw) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
                 Text(
-                    text = "Run source discovery until the lag/crash happens, then copy this log. It records provider timing, concurrency, main-thread stalls and memory without provider secrets.",
+                    text = if (showRaw) {
+                        "Raw keeps the chronological technical events. Save Log exports the full bundle, including a native tombstone when Android provides one."
+                    } else {
+                        "Summary highlights active provider phases, QuickJS/native boundaries, memory and recent failures without hiding the raw evidence."
+                    },
                     color = VueoPalette.Muted,
                     fontSize = 11.sp,
                 )
-                Text(
-                    text = diagnosticText.takeLast(24_000),
-                    color = Color.White.copy(alpha = .82f),
-                    fontSize = 9.5.sp,
-                    lineHeight = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 390.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = if (diagnosticText.length > 24_000) {
+                            "[Recent preview. Copy Log and Save Log use the full selected log.]\n\n" +
+                                diagnosticText.takeLast(24_000)
+                        } else diagnosticText,
+                        color = Color.White.copy(alpha = .82f),
+                        fontSize = 9.5.sp,
+                        lineHeight = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                     clipboard?.setPrimaryClip(
-                        ClipData.newPlainText("VUEO performance diagnostic", diagnosticText)
+                        ClipData.newPlainText(
+                            if (showRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
+                            diagnosticText,
+                        )
                     )
                     Toast.makeText(context, "Diagnostic log copied", Toast.LENGTH_SHORT).show()
                 },
@@ -540,12 +577,44 @@ internal fun RuntimeDiagnosticsDialog(
         dismissButton = {
             Row {
                 TextButton(
+                    enabled = !saving,
                     onClick = {
-                        RuntimeDiagnostics.clear(context.applicationContext)
-                        diagnosticText = RuntimeDiagnostics.export(context.applicationContext)
+                        saving = true
+                        scope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { RuntimeDiagnostics.saveBundle(context.applicationContext) }
+                            }
+                            saving = false
+                            result.onSuccess { saved ->
+                                Toast.makeText(
+                                    context,
+                                    "Saved ${saved.displayName} to ${saved.location}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    context,
+                                    "Save failed: ${error.javaClass.simpleName}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
                     },
                 ) {
-                    Text("Clear")
+                    Text(if (saving) "Saving…" else "Save Log")
+                }
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                RuntimeDiagnostics.clear(context.applicationContext)
+                                if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+                                else RuntimeDiagnostics.exportSummary(context.applicationContext)
+                            }
+                        }
+                    },
+                ) {
+                    Text("Clear Log")
                 }
                 TextButton(onClick = onDismiss) {
                     Text("Close")
