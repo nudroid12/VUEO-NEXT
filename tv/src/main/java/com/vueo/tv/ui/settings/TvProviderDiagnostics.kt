@@ -422,7 +422,8 @@ internal fun TvPerformanceDiagnosticsDialog(
     val scope = rememberCoroutineScope()
     val tabScroll = rememberScrollState()
     val logScroll = rememberScrollState()
-    val firstTabFocus = remember { FocusRequester() }
+    val tabFocusers = remember { PerformanceDiagnostics.Tab.entries.map { FocusRequester() } }
+    val recordFocus = remember { FocusRequester() }
     val logFocus = remember { FocusRequester() }
     val copyFocus = remember { FocusRequester() }
     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
@@ -431,6 +432,7 @@ internal fun TvPerformanceDiagnosticsDialog(
     var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.export(selectedTab)) }
     var saving by remember { mutableStateOf(false) }
     var logFocused by remember { mutableStateOf(false) }
+    var focusedTabIndex by remember { mutableStateOf(0) }
     val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
 
     fun closeAndRestore() {
@@ -450,8 +452,18 @@ internal fun TvPerformanceDiagnosticsDialog(
     }
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        runCatching { firstTabFocus.requestFocus() }
+        runCatching { tabFocusers.first().requestFocus() }
     }
+
+    val bottomButtonNavigation = Modifier
+        .focusProperties { up = logFocus }
+        .onPreviewKeyEvent { event ->
+            val key = event.nativeKeyEvent
+            if (key.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (key.action == KeyEvent.ACTION_DOWN) runCatching { logFocus.requestFocus() }
+                true
+            } else false
+        }
 
     AlertDialog(
         onDismissRequest = ::closeAndRestore,
@@ -491,6 +503,9 @@ internal fun TvPerformanceDiagnosticsDialog(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
+                        modifier = Modifier
+                            .focusRequester(recordFocus)
+                            .focusProperties { down = tabFocusers.first() },
                         enabled = diagnosticsEnabled,
                         onClick = {
                             if (recording) PerformanceDiagnostics.stopRecording()
@@ -516,7 +531,15 @@ internal fun TvPerformanceDiagnosticsDialog(
                 ) {
                     PerformanceDiagnostics.Tab.entries.forEachIndexed { index, tab ->
                         TextButton(
-                            modifier = if (index == 0) Modifier.focusRequester(firstTabFocus) else Modifier,
+                            modifier = Modifier
+                                .focusRequester(tabFocusers[index])
+                                .onFocusChanged { state ->
+                                    if (state.isFocused) focusedTabIndex = index
+                                }
+                                .focusProperties {
+                                    up = recordFocus
+                                    down = logFocus
+                                },
                             onClick = { selectedTab = tab },
                         ) {
                             Text(
@@ -535,6 +558,10 @@ internal fun TvPerformanceDiagnosticsDialog(
                         .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
                         .focusRequester(logFocus)
                         .onFocusChanged { logFocused = it.isFocused }
+                        .focusProperties {
+                            up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
+                            down = copyFocus
+                        }
                         .onPreviewKeyEvent { event ->
                             val key = event.nativeKeyEvent
                             when (key.keyCode) {
@@ -543,6 +570,10 @@ internal fun TvPerformanceDiagnosticsDialog(
                                         val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
                                         if (down && logScroll.value >= logScroll.maxValue) {
                                             runCatching { copyFocus.requestFocus() }
+                                        } else if (!down && logScroll.value <= 0) {
+                                            runCatching {
+                                                tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)].requestFocus()
+                                            }
                                         } else {
                                             val target = (logScroll.value + if (down) scrollStep else -scrollStep)
                                                 .coerceIn(0, logScroll.maxValue)
@@ -575,7 +606,9 @@ internal fun TvPerformanceDiagnosticsDialog(
         },
         confirmButton = {
             TextButton(
-                modifier = Modifier.focusRequester(copyFocus),
+                modifier = Modifier
+                    .focusRequester(copyFocus)
+                    .then(bottomButtonNavigation),
                 onClick = {
                     val fullText = PerformanceDiagnostics.export(selectedTab)
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -587,6 +620,7 @@ internal fun TvPerformanceDiagnosticsDialog(
         dismissButton = {
             Row {
                 TextButton(
+                    modifier = bottomButtonNavigation,
                     enabled = !saving,
                     onClick = {
                         saving = true
@@ -604,12 +638,13 @@ internal fun TvPerformanceDiagnosticsDialog(
                     },
                 ) { Text(if (saving) "Saving…" else "Save Log") }
                 TextButton(
+                    modifier = bottomButtonNavigation,
                     onClick = {
                         PerformanceDiagnostics.clear()
                         diagnosticText = PerformanceDiagnostics.export(selectedTab)
                     },
                 ) { Text("Clear") }
-                TextButton(onClick = ::closeAndRestore) { Text("Close") }
+                TextButton(modifier = bottomButtonNavigation, onClick = ::closeAndRestore) { Text("Close") }
             }
         },
     )
