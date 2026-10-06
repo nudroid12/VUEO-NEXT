@@ -58,12 +58,17 @@ class PluginHealthStore(
     private var migrationChecked =
         false
 
+    @Volatile
+    private var cachedRecords: List<ProviderHealthRecord>? = null
+
     @Synchronized
     fun records():
         List<ProviderHealthRecord> {
         migrateLegacyIfNeeded()
 
-        return prefs.all
+        cachedRecords?.let { return it }
+
+        val parsed = prefs.all
             .asSequence()
             .filter {
                 (key, value) ->
@@ -89,6 +94,9 @@ class PluginHealthStore(
                     it.providerName
             }
             .toList()
+
+        cachedRecords = parsed
+        return parsed
     }
 
     fun record(
@@ -138,6 +146,7 @@ class PluginHealthStore(
                     .toString(),
             )
             .apply()
+        cachedRecords = null
     }
 
     @Synchronized
@@ -164,6 +173,7 @@ class PluginHealthStore(
             }
 
         editor.apply()
+        cachedRecords = null
     }
 
     fun performance(

@@ -39,6 +39,8 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.lang.ref.WeakReference
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 private object TvImageCache {
@@ -61,20 +63,32 @@ private object TvImageCache {
     // Ordinary posters use at most two slots, leaving capacity for hero/focus.
     private val ordinaryPermits = Semaphore(2)
     private val diskCacheCleaned = AtomicBoolean(false)
+    private val previewByUrl = ConcurrentHashMap<String, WeakReference<Bitmap>>()
 
     private fun key(url: String, size: IntSize) = "$url:${size.width}x${size.height}"
 
+    private fun rememberPreview(url: String, bitmap: Bitmap) {
+        if (!bitmap.isRecycled) {
+            previewByUrl[url] = WeakReference(bitmap)
+        }
+    }
+
     fun memoryEntry(url: String?, size: IntSize): Bitmap? =
-        url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
+        url?.takeIf(String::isNotBlank)?.let { cleanUrl ->
+            memoryCache.get(key(cleanUrl, size))?.also { rememberPreview(cleanUrl, it) }
+        }
 
     // A previous decoded size can paint immediately while layout determines
-    // the exact target size. This reuses the bounded cache without pinning images.
+    // the exact target size. Keep an O(1) weak preview index instead of copying
+    // the whole LruCache with snapshot() for every composed poster.
     fun cachedPreview(url: String?): Bitmap? {
         if (url.isNullOrBlank()) return null
-        val prefix = "$url:"
-        return memoryCache.snapshot().entries.firstOrNull {
-            it.key.startsWith(prefix) && !it.value.isRecycled
-        }?.value
+        val bitmap = previewByUrl[url]?.get()
+        if (bitmap == null || bitmap.isRecycled) {
+            previewByUrl.remove(url)
+            return null
+        }
+        return bitmap
     }
 
     suspend fun load(context: Context, url: String, size: IntSize, highPriority: Boolean): Bitmap? =
@@ -96,6 +110,7 @@ private object TvImageCache {
                     val cacheFile = File(cacheDirectory, url.sha256())
                     readCachedBitmap(cacheFile, size)?.let {
                         memoryCache.put(cacheKey, it)
+                        rememberPreview(url, it)
                         return@withPermit it
                     }
 
@@ -108,7 +123,10 @@ private object TvImageCache {
                     }
 
                     currentCoroutineContext().ensureActive()
-                    downloaded?.also { memoryCache.put(cacheKey, it) }
+                    downloaded?.also {
+                        memoryCache.put(cacheKey, it)
+                        rememberPreview(url, it)
+                    }
                 }
                 if (highPriority) loadWithPermit()
                 else ordinaryPermits.withPermit { loadWithPermit() }
@@ -189,6 +207,7 @@ private object TvImageCache {
         } catch (_: OutOfMemoryError) {
             // A failed image must not terminate navigation on memory-limited TVs.
             memoryCache.evictAll()
+            previewByUrl.clear()
             null
         } catch (_: Exception) {
             null

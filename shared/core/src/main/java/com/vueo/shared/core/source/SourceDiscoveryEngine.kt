@@ -14,10 +14,12 @@ import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.TmdbResolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ConcurrentHashMap
 
@@ -61,11 +63,16 @@ class SourceDiscoveryEngine(
             }
         }
         val cachedCandidates = cached?.sources.orEmpty().map { it.toStreamSource() }
-        val cachedStreams = SourceCleaner.clean(
-            sources = cachedCandidates.filter { rejectionReason(it).isEmpty() },
-            preferredQuality = preferredQuality,
-            originalLanguage = item.originalLanguage,
-        )
+        val cachedStreams = withContext(Dispatchers.Default) {
+            SourceCleaner.clean(
+                sources = cachedCandidates.filter { rejectionReason(it).isEmpty() },
+                preferredQuality = preferredQuality,
+                originalLanguage = item.originalLanguage,
+            )
+        }
+        val configuredPluginProviders = withContext(Dispatchers.Default) {
+            configuredPluginProviderKeys(request)
+        }
 
         val startedAtNs = System.nanoTime()
         val activityLog = CopyOnWriteArrayList<SourceDiscoveryActivity>()
@@ -95,11 +102,15 @@ class SourceDiscoveryEngine(
             .toList()
         val loadingProviders = linkedSetOf<String>()
         val completedSourceProviders = linkedSetOf<String>()
-        val plannedSourceProviders = (
-            mediaEngine.installed().filter {
-                mediaEngine.isExtensionEnabled(it.descriptor.id) && "stream" in it.descriptor.resources
-            }.map { it.descriptor.name }.filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) } + configuredPluginProviderKeys(request)
-        ).distinct()
+        val plannedSourceProviders = withContext(Dispatchers.Default) {
+            (
+                mediaEngine.installed().filter {
+                    mediaEngine.isExtensionEnabled(it.descriptor.id) && "stream" in it.descriptor.resources
+                }.map { it.descriptor.name }
+                    .filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) } +
+                    configuredPluginProviders
+            ).distinct()
+        }
 
         fun markProviderLoading(provider: String) {
             val key = provider.trim().ifBlank { "Other" }
@@ -198,12 +209,27 @@ class SourceDiscoveryEngine(
                 reason.isEmpty()
             }
 
-        fun cleanFresh(): List<StreamSource> =
-            SourceCleaner.clean(
+        var lastCleanAddonRef: List<StreamSource>? = null
+        var lastCleanPluginRef: List<StreamSource>? = null
+        var lastCleanFresh: List<StreamSource> = emptyList()
+
+        fun cleanFresh(): List<StreamSource> {
+            if (
+                freshAddonStreams === lastCleanAddonRef &&
+                freshPluginStreams === lastCleanPluginRef
+            ) {
+                return lastCleanFresh
+            }
+
+            lastCleanAddonRef = freshAddonStreams
+            lastCleanPluginRef = freshPluginStreams
+            lastCleanFresh = SourceCleaner.clean(
                 sources = episodeMatched(freshAddonStreams + freshPluginStreams),
                 preferredQuality = preferredQuality,
                 originalLanguage = item.originalLanguage,
             )
+            return lastCleanFresh
+        }
 
         fun publish(
             progress: String,
@@ -381,7 +407,6 @@ class SourceDiscoveryEngine(
         addonsDeferred.start()
 
         val pluginsDeferred = async(start = CoroutineStart.LAZY) {
-            val configuredPluginProviders = configuredPluginProviderKeys(request)
             try {
                 configuredPluginProviders.forEach(::markProviderLoading)
                 pluginTotal = configuredPluginProviders.size
@@ -401,6 +426,7 @@ class SourceDiscoveryEngine(
                 var loggedPluginDiagnostics = 0
                 val result = discoverPlugins(
                     request = request,
+                    configuredPluginProviders = configuredPluginProviders,
                     onSkipped = { skippedNotice ->
                         notice = skippedNotice
                         publish(
@@ -608,12 +634,12 @@ class SourceDiscoveryEngine(
 
     private suspend fun discoverPlugins(
         request: SourceDiscoveryRequest,
+        configuredPluginProviders: List<String>,
         onSkipped: (String) -> Unit,
         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
         forceRefresh: Boolean,
     ): PluginDiscoveryResult? {
-        if (!pluginStore.pluginsEnabled() || pluginStore.repositories().isEmpty() ||
-            (request.sourceProviderName != null && configuredPluginProviderKeys(request).isEmpty())) {
+        if (!pluginStore.pluginsEnabled() || configuredPluginProviders.isEmpty()) {
             return null
         }
 
@@ -768,12 +794,16 @@ private fun maskedVideoId(value: String): String =
         }
     }
 
+private val ACTIVITY_SECRET_REGEX =
+    Regex("(?i)(token|api[_-]?key|authorization|cookie)=([^&\\s]+)")
+
+private val ACTIVITY_URL_REGEX =
+    Regex("https?://[^\\s]+")
+
 private fun sanitizeActivityText(value: String): String =
     value
-        .replace(
-            Regex("(?i)(token|api[_-]?key|authorization|cookie)=([^&\\s]+)")
-        ) { match ->
+        .replace(ACTIVITY_SECRET_REGEX) { match ->
             "${match.groupValues[1]}=•••"
         }
-        .replace(Regex("https?://[^\\s]+"), "[request URL hidden]")
+        .replace(ACTIVITY_URL_REGEX, "[request URL hidden]")
         .take(280)

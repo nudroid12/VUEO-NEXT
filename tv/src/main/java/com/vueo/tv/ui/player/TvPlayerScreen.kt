@@ -117,6 +117,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.motion.tvPanelEnter
 import com.vueo.tv.ui.motion.tvPanelExit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -530,20 +531,32 @@ fun TvPlayerScreen(
         noteInteraction()
     }
 
-    fun saveProgress() {
+    fun saveProgress(backgroundLibrary: Boolean = false) {
         val duration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
         val position = if (autoNextCompletedCurrent && duration > 0L) duration
             else player.currentPosition.coerceAtLeast(0L)
-        runtime.playbackStore.savePositionMs(mediaKey = mediaKey, positionMs = position, durationMs = duration)
-        runtime.libraryStore.recordPlayback(
-            media = media,
-            videoId = bundle.videoId,
-            episodeTitle = episode?.title,
-            season = episode?.season,
-            episode = episode?.episode,
+        runtime.playbackStore.savePositionMs(
+            mediaKey = mediaKey,
             positionMs = position,
             durationMs = duration,
         )
+
+        val persistLibrary = {
+            runtime.libraryStore.recordPlayback(
+                media = media,
+                videoId = bundle.videoId,
+                episodeTitle = episode?.title,
+                season = episode?.season,
+                episode = episode?.episode,
+                positionMs = position,
+                durationMs = duration,
+            )
+        }
+        if (backgroundLibrary) {
+            focusScope.launch(Dispatchers.IO) { persistLibrary() }
+        } else {
+            persistLibrary()
+        }
         libraryProgressRevision += 1
         onLibraryChanged()
     }
@@ -583,7 +596,7 @@ fun TvPlayerScreen(
 
         if (alternate != null) {
             resumeTargetMs = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
-            saveProgress()
+            saveProgress(backgroundLibrary = true)
             recoveryInProgress = true
             hasRenderedFirstFrame = false
             isBuffering = false
@@ -824,19 +837,25 @@ fun TvPlayerScreen(
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
-                if (!isPlaying && player.playbackState != Player.STATE_ENDED) {
-                    saveProgress()
-                    // A seek/buffer can temporarily stop isPlaying while
-                    // playWhenReady remains true. A deliberate pause while chrome
-                    // is hidden must also stay hidden (OK toggles playback directly).
-                    if (!player.playWhenReady && controlsVisible && activePanel == TvPlayerPanel.NONE) {
+                if (
+                    !isPlaying &&
+                    player.playbackState != Player.STATE_ENDED &&
+                    !player.playWhenReady
+                ) {
+                    // Buffering/seeking can transiently flip isPlaying=false while
+                    // playWhenReady stays true. Do not parse/serialize the full
+                    // library history for those transient state changes.
+                    saveProgress(backgroundLibrary = true)
+                    if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
                         requestControlFocus(progressRequester)
                     }
                 }
             }
 
             override fun onRenderedFirstFrame() {
-                if (!hasRenderedFirstFrame && episode != null) saveProgress()
+                if (!hasRenderedFirstFrame && episode != null) {
+                    saveProgress(backgroundLibrary = true)
+                }
                 hasRenderedFirstFrame = true
                 isBuffering = false
                 sourceRecoverySession.markReady()
@@ -953,28 +972,27 @@ fun TvPlayerScreen(
             playing = player.isPlaying
             ended = player.playbackState == Player.STATE_ENDED
 
-            val currentTextTracks = tvPlayerTrackChoices(
-                tracks = player.currentTracks,
-                trackType = C.TRACK_TYPE_TEXT,
-                externalSubtitles = latestExternalSubtitlesBySelectionId.value,
-            )
-            val currentAudioTracks = tvPlayerTrackChoices(
-                tracks = player.currentTracks,
-                trackType = C.TRACK_TYPE_AUDIO,
-            )
-            val keepPreviousTextTracks =
-                subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
-            if (!keepPreviousTextTracks) {
-                textTracks = currentTextTracks
-            }
-            val effectiveTextTracks =
-                if (keepPreviousTextTracks) textTracks else currentTextTracks
-            audioTracks = currentAudioTracks
+            if (!audioPreferenceRestored || !subtitlePreferenceRestored) {
+                val currentTextTracks = tvPlayerTrackChoices(
+                    tracks = player.currentTracks,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                )
+                val currentAudioTracks = tvPlayerTrackChoices(
+                    tracks = player.currentTracks,
+                    trackType = C.TRACK_TYPE_AUDIO,
+                )
+                val keepPreviousTextTracks =
+                    subtitleTrackRefreshInProgress && currentTextTracks.isEmpty()
+                if (!keepPreviousTextTracks) {
+                    textTracks = currentTextTracks
+                }
+                audioTracks = currentAudioTracks
 
-            val tracksBelongToActiveSource =
-                player.currentMediaItem?.localConfiguration?.uri?.toString() == activeSource.url
+                val tracksBelongToActiveSource =
+                    player.currentMediaItem?.localConfiguration?.uri?.toString() == activeSource.url
 
-            if (tracksBelongToActiveSource && !audioPreferenceRestored && currentAudioTracks.isNotEmpty()) {
+                if (tracksBelongToActiveSource && !audioPreferenceRestored && currentAudioTracks.isNotEmpty()) {
                 val globalSelection = settings.lastAudioSelection()
                 val savedSelection = globalSelection ?: settings.audioSelection(mediaKey)
                 val savedTrack = tvFindSavedAudioTrack(currentAudioTracks, savedSelection)
@@ -1100,6 +1118,7 @@ fun TvPlayerScreen(
                     }
                 }
                 subtitlePreferenceRestored = true
+                }
             }
 
             delay(400)

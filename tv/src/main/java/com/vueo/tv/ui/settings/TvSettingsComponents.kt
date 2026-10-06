@@ -73,6 +73,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -181,6 +182,8 @@ internal fun TvSettingsMasterDetailShell(
     var lastPane by remember { mutableStateOf("category") }
     var navExpanded by remember { mutableStateOf(false) }
     var sidebarFocusIntent by remember { mutableStateOf(false) }
+    var categorySelectJob by remember { mutableStateOf<Job?>(null) }
+    var panelRestoreJob by remember { mutableStateOf<Job?>(null) }
     val shellScope = rememberCoroutineScope()
 
     fun requesterForPanelRow(key: String, rowId: String): FocusRequester =
@@ -222,6 +225,8 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun focusGlobalNav() {
+        categorySelectJob?.cancel()
+        panelRestoreJob?.cancel()
         sidebarFocusIntent = true
         navExpanded = true
         runCatching { navRequesters.getValue("Settings").requestFocus() }
@@ -238,6 +243,7 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun focusPanel(): Boolean {
+        categorySelectJob?.cancel()
         sidebarFocusIntent = false
         navExpanded = false
         val rowId = panelFocusTargetId(panelKey) ?: return false
@@ -251,7 +257,8 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun requestDeferredPanelRestore() {
-        shellScope.launch {
+        panelRestoreJob?.cancel()
+        panelRestoreJob = shellScope.launch {
             // A panel replacement can temporarily leave the focused row detached.
             // Retry until the destination row is genuinely focusable. Do not steal
             // focus back after the user intentionally moved to categories/sidebar.
@@ -338,11 +345,28 @@ internal fun TvSettingsMasterDetailShell(
                                         requestDeferredPanelRestore()
                                     } else {
                                         lastPane = "category"
-                                        onCategorySelected(category.id)
+                                        categorySelectJob?.cancel()
+                                        categorySelectJob = shellScope.launch {
+                                            // Focus often traverses several categories in one
+                                            // remote key burst. Wait a fraction before composing
+                                            // a heavy destination so intermediate pages never
+                                            // block the next DPAD event.
+                                            delay(90L)
+                                            if (
+                                                lastPane == "category" &&
+                                                !sidebarFocusIntent
+                                            ) {
+                                                onCategorySelected(category.id)
+                                            }
+                                        }
                                     }
                                 },
                                 onLeft = ::focusGlobalNav,
-                                onRight = { focusPanel() },
+                                onRight = {
+                                    categorySelectJob?.cancel()
+                                    onCategorySelected(category.id)
+                                    focusPanel()
+                                },
                                 onUp = {
                                     if (index <= 0) true else runCatching {
                                         categoryRequesters.getValue(categories[index - 1].id).requestFocus()

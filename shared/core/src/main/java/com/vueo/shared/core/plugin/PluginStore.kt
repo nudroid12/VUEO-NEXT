@@ -13,6 +13,12 @@ class PluginStore(context: Context) {
         Context.MODE_PRIVATE,
     )
 
+    @Volatile
+    private var cachedRepositoriesRaw: String? = null
+
+    @Volatile
+    private var cachedRepositories: List<PluginRepositoryDescriptor> = emptyList()
+
     fun pluginsEnabled(): Boolean =
         prefs.getBoolean(KEY_PLUGINS_ENABLED, true)
 
@@ -86,13 +92,22 @@ class PluginStore(context: Context) {
     fun isDevelopmentDefault(manifestUrl: String): Boolean =
         manifestUrl in DEVELOPMENT_DEFAULT_MANIFESTS
 
+    @Synchronized
     fun repositories(): List<PluginRepositoryDescriptor> {
         val raw = prefs.getString(
             KEY_REPOSITORIES_JSON,
             null,
-        ) ?: return emptyList()
+        ) ?: run {
+            cachedRepositoriesRaw = null
+            cachedRepositories = emptyList()
+            return emptyList()
+        }
 
-        return runCatching {
+        if (raw == cachedRepositoriesRaw) {
+            return cachedRepositories
+        }
+
+        val parsed = runCatching {
             val array = JSONArray(raw)
 
             (0 until array.length())
@@ -101,6 +116,10 @@ class PluginStore(context: Context) {
                         ?.toRepository()
                 }
         }.getOrDefault(emptyList())
+
+        cachedRepositoriesRaw = raw
+        cachedRepositories = parsed
+        return parsed
     }
 
     fun upsert(repository: PluginRepositoryDescriptor) {
@@ -186,12 +205,15 @@ class PluginStore(context: Context) {
             array.put(repository.toJson())
         }
 
+        val raw = array.toString()
         prefs.edit()
             .putString(
                 KEY_REPOSITORIES_JSON,
-                array.toString(),
+                raw,
             )
             .apply()
+        cachedRepositoriesRaw = raw
+        cachedRepositories = repositories.toList()
     }
 
     private fun repositoryEnabledKey(

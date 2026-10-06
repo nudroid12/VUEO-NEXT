@@ -222,6 +222,28 @@ object PerformanceDiagnostics {
         }
     }
 
+    /**
+     * Bounded UI preview. Unlike [export], this never copies/filters the whole
+     * ring buffer, so an open diagnostics viewer does not become its own source
+     * of jank while a performance recording is running.
+     */
+    fun preview(tab: Tab, maxEvents: Int = 220): String {
+        val snapshot = recentSnapshot(tab, maxEvents.coerceIn(20, 500))
+        return buildString {
+            appendLine("VUEO Performance Diagnostics — ${tab.label}")
+            appendLine("Enabled: ${enabled.get()} | Recording: ${recording.get()} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+            appendLine("Active: scans=${activeScans.get()} providers=${activeProviders.get()} quickJs=${activeQuickJs.get()}")
+            appendLine("Current screen: ${currentScreen.get()}")
+            appendLine("Preview: latest ${snapshot.size} matching events • full log only on Copy/Save")
+            appendLine()
+            if (snapshot.isEmpty()) {
+                appendLine("No events recorded for this tab.")
+            } else {
+                snapshot.forEach { appendLine(it.line) }
+            }
+        }
+    }
+
     fun clear() {
         synchronized(eventsLock) { events.clear() }
         droppedEvents.set(0L)
@@ -325,6 +347,24 @@ object PerformanceDiagnostics {
             event.category == tab || (isPageTab(tab) && event.page == tab)
         }
     }
+
+    private fun recentSnapshot(tab: Tab, maxEvents: Int): List<Event> =
+        synchronized(eventsLock) {
+            val recent = ArrayList<Event>(maxEvents)
+            val iterator = events.descendingIterator()
+            while (iterator.hasNext() && recent.size < maxEvents) {
+                val event = iterator.next()
+                if (
+                    tab == Tab.FULL ||
+                    event.category == tab ||
+                    (isPageTab(tab) && event.page == tab)
+                ) {
+                    recent += event
+                }
+            }
+            recent.reverse()
+            recent
+        }
 
     private fun eventCount(): Int = synchronized(eventsLock) { events.size }
 

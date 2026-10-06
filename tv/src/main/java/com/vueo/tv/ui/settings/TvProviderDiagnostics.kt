@@ -429,7 +429,7 @@ internal fun TvPerformanceDiagnosticsDialog(
     var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
     var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
     var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
-    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.export(selectedTab)) }
+    var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.preview(selectedTab)) }
     var saving by remember { mutableStateOf(false) }
     var logFocused by remember { mutableStateOf(false) }
     var focusedTabIndex by remember { mutableStateOf(0) }
@@ -441,12 +441,12 @@ internal fun TvPerformanceDiagnosticsDialog(
     }
 
     LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
-        diagnosticText = PerformanceDiagnostics.export(selectedTab)
+        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
         logScroll.scrollTo(0)
         if (recording) {
             while (true) {
-                kotlinx.coroutines.delay(1_000L)
-                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                kotlinx.coroutines.delay(1_500L)
+                diagnosticText = PerformanceDiagnostics.preview(selectedTab)
             }
         }
     }
@@ -496,7 +496,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                             PerformanceDiagnostics.setEnabled(context.applicationContext, value)
                             diagnosticsEnabled = value
                             recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
                         },
                     )
                 }
@@ -511,7 +511,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                             if (recording) PerformanceDiagnostics.stopRecording()
                             else PerformanceDiagnostics.startRecording(context.applicationContext)
                             recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                            diagnosticText = PerformanceDiagnostics.preview(selectedTab)
                         },
                     ) {
                         Text(if (recording) "Stop Recording" else "Start Recording")
@@ -641,7 +641,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                     modifier = bottomButtonNavigation,
                     onClick = {
                         PerformanceDiagnostics.clear()
-                        diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                        diagnosticText = PerformanceDiagnostics.preview(selectedTab)
                     },
                 ) { Text("Clear") }
                 TextButton(modifier = bottomButtonNavigation, onClick = ::closeAndRestore) { Text("Close") }

@@ -46,11 +46,19 @@ import com.vueo.tv.ui.TvSidebarPreferences
 import com.vueo.tv.ui.TvSidebarStyle
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdateRelease
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class TvProfilePanelStats(
+    val dna: UserDnaSnapshot?,
+    val myListCount: Int,
+    val watchedTitlesCount: Int,
+)
 
 @Composable
 internal fun TvProfileSettings(
@@ -60,14 +68,37 @@ internal fun TvProfileSettings(
 ) {
     val profile = runtime.profileStore.activeProfile()
     val dnaEnabled = runtime.dnaPreferences.userDnaEnabled(profile.id)
-    val dnaSnapshot = if (dnaEnabled) runtime.dnaEngine.build() else null
-    val myListCount = runtime.libraryStore.watchlist().size
-    val watchedTitlesCount = runtime.libraryStore
-        .history()
-        .filter { it.positionMs > 5_000L }
-        .map { "${it.media.type}:${it.media.id}" }
-        .distinct()
-        .size
+    var profileStats by remember(profile.id, dnaEnabled) {
+        mutableStateOf<TvProfilePanelStats?>(null)
+    }
+
+    LaunchedEffect(profile.id, dnaEnabled) {
+        profileStats = withContext(Dispatchers.IO) {
+            val watchlist = runtime.libraryStore.watchlist()
+            val history = runtime.libraryStore.history()
+            TvProfilePanelStats(
+                dna = if (dnaEnabled) {
+                    runtime.dnaEngine.analyze(
+                        history = history,
+                        myList = watchlist,
+                    )
+                } else {
+                    null
+                },
+                myListCount = watchlist.size,
+                watchedTitlesCount = history
+                    .asSequence()
+                    .filter { it.positionMs > 5_000L }
+                    .map { "${it.media.type}:${it.media.id}" }
+                    .distinct()
+                    .count(),
+            )
+        }
+    }
+
+    val dnaSnapshot = profileStats?.dna
+    val myListCount = profileStats?.myListCount ?: 0
+    val watchedTitlesCount = profileStats?.watchedTitlesCount ?: 0
     val viewingClass = tvViewingClass(watchedTitlesCount)
     val dnaClass = when {
         !dnaEnabled -> "DNA Off"
