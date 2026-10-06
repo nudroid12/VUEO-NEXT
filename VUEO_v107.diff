@@ -1,0 +1,213 @@
+--- /mnt/data/VUEO_Performance_Diagnostics_v105_Patch/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt	2026-10-06 18:47:03.521539491 +0000
++++ /mnt/data/VUEO_Performance_Diagnostics_Log_Cleanup_v107_Patch/shared/core/src/main/java/com/vueo/shared/core/diagnostics/PerformanceDiagnostics.kt	2026-10-06 19:07:42.656950185 +0000
+@@ -230,40 +230,54 @@
+     /** Full chronological raw export for Copy/Save and offline inspection. */
+     fun exportRaw(tab: Tab): String {
+         val snapshot = snapshot(tab)
+-        return buildString {
+-            appendLine("VUEO Performance Diagnostics — Raw / ${tab.label}")
+-            appendLine("State: ${if (isCollecting()) "ON • recording" else "OFF • inactive"} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+-            appendLine("Active: scans=${activeScans.get()} providers=${activeProviders.get()} quickJs=${activeQuickJs.get()}")
+-            appendLine("Current screen: ${currentScreen.get()}")
+-            appendLine("Sampling: system=${SYSTEM_SAMPLE_MS}ms | jank threshold=${JANK_THRESHOLD_MS}ms | disk writes while recording=none")
+-            appendLine()
+-            if (snapshot.isEmpty()) {
+-                appendLine("No events recorded for this tab.")
+-            } else {
+-                snapshot.forEach { appendLine(it.line) }
+-            }
+-        }
++        return buildRaw(
++            tab = tab,
++            snapshot = snapshot,
++            totalMatchingEvents = snapshot.size,
++            isPreview = false,
++        )
+     }
+ 
+     /**
+      * Bounded raw UI preview so the diagnostics viewer does not become its own
+-     * performance problem while recording is active.
++     * performance problem while recording is active. The UI stays intentionally
++     * terse: implementation details live in metadata.txt inside the saved bundle.
+      */
+     fun previewRaw(tab: Tab, maxEvents: Int = 220): String {
+-        val snapshot = recentSnapshot(tab, maxEvents.coerceIn(20, 500))
+-        return buildString {
+-            appendLine("VUEO Performance Diagnostics — Raw / ${tab.label}")
+-            appendLine("State: ${if (isCollecting()) "ON • recording" else "OFF • inactive"} | Events: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+-            appendLine("Active: scans=${activeScans.get()} providers=${activeProviders.get()} quickJs=${activeQuickJs.get()}")
+-            appendLine("Current screen: ${currentScreen.get()}")
+-            appendLine("Preview: latest ${snapshot.size} matching events • Copy/Save retain the complete raw log")
++        val limit = maxEvents.coerceIn(20, 500)
++        val snapshot = recentSnapshot(tab, limit)
++        val totalMatchingEvents = matchingEventCount(tab)
++        return buildRaw(
++            tab = tab,
++            snapshot = snapshot,
++            totalMatchingEvents = totalMatchingEvents,
++            isPreview = true,
++        )
++    }
++
++    private fun buildRaw(
++        tab: Tab,
++        snapshot: List<Event>,
++        totalMatchingEvents: Int,
++        isPreview: Boolean,
++    ): String = buildString {
++        appendLine("RAW PERFORMANCE LOG — ${tab.label.uppercase(Locale.US)}")
++        append("${if (isCollecting()) "ON • recording" else "OFF • inactive"}")
++        append(" • Events: $totalMatchingEvents")
++        if (droppedEvents.get() > 0L) append(" • Dropped: ${droppedEvents.get()}")
++        appendLine()
++
++        if (snapshot.isEmpty()) {
+             appendLine()
+-            if (snapshot.isEmpty()) {
+-                appendLine("No events recorded for this tab.")
+-            } else {
+-                snapshot.forEach { appendLine(it.line) }
+-            }
++            appendLine("No raw events recorded yet.")
++            return@buildString
+         }
++
++        if (isPreview && snapshot.size < totalMatchingEvents) {
++            appendLine("Showing latest ${snapshot.size} of $totalMatchingEvents events.")
++        }
++        appendLine()
++        snapshot.forEach { appendLine(it.line) }
+     }
+ 
+     /** Human-readable performance overview for the selected tab. */
+@@ -279,33 +293,62 @@
+ 
+     private fun buildSummary(tab: Tab): String {
+         val stats = summaryStats(tab)
+-        val state = if (isCollecting()) "ON • recording" else "OFF • inactive"
++        val collecting = isCollecting()
+         return buildString {
+-            appendLine("VUEO PERFORMANCE SUMMARY — ${tab.label.uppercase(Locale.US)}")
++            appendLine("PERFORMANCE SUMMARY — ${tab.label.uppercase(Locale.US)}")
+             appendLine()
+-            appendLine("State: $state")
++            appendLine("Diagnostics: ${if (collecting) "ON • recording" else "OFF"}")
++
++            if (stats.matchingEvents == 0) {
++                appendLine(
++                    if (collecting) {
++                        "No performance data recorded yet. Use VUEO normally while diagnostics runs."
++                    } else {
++                        "No performance data recorded yet."
++                    }
++                )
++                return@buildString
++            }
++
++            append("Events: ${stats.matchingEvents}")
++            if (droppedEvents.get() > 0L) append(" • Dropped: ${droppedEvents.get()}")
++            appendLine()
++            appendLine("Session window: ${summaryWindow(stats.firstTimestampMs, stats.lastTimestampMs)}")
+             appendLine("Current screen: ${currentScreen.get()}")
+-            appendLine("Selected events: ${stats.matchingEvents} | Total buffered: ${eventCount()} | Dropped: ${droppedEvents.get()}")
+-            appendLine("Window: ${summaryWindow(stats.firstTimestampMs, stats.lastTimestampMs)}")
++
+             appendLine()
+             appendLine("FRAME / UI")
+-            appendLine("Jank events: ${stats.jankEvents}${if (stats.jankEvents > 0) " | worst frame gap: ${stats.worstFrameGapMs}ms" else ""}")
+-            appendLine("UI stalls: ${stats.stallEvents}${if (stats.stallEvents > 0) " | worst stall: ${stats.worstStallMs}ms" else ""}")
++            append("Jank: ${stats.jankEvents}")
++            if (stats.jankEvents > 0) append(" • Worst frame: ${stats.worstFrameGapMs}ms")
++            appendLine()
++            append("UI stalls: ${stats.stallEvents}")
++            if (stats.stallEvents > 0) append(" • Worst stall: ${stats.worstStallMs}ms")
++            appendLine()
++
++            appendLine()
++            appendLine("RUNTIME")
++            append("Source scans: ${stats.scanStarts}")
++            if (activeScans.get() > 0) append(" • Active: ${activeScans.get()}")
++            appendLine()
++            append("Providers: ${stats.providerStarts}")
++            if (activeProviders.get() > 0) append(" • Active: ${activeProviders.get()}")
++            if (stats.providerIssues > 0) append(" • Issues: ${stats.providerIssues}")
+             appendLine()
+-            appendLine("RUNTIME ACTIVITY")
+-            appendLine("Source scans started: ${stats.scanStarts} | active now: ${activeScans.get()}")
+-            appendLine("Provider runs started: ${stats.providerStarts} | active now: ${activeProviders.get()} | issue signals: ${stats.providerIssues}")
+-            appendLine("QuickJS events: ${stats.quickJsEvents} | active now: ${activeQuickJs.get()} | issue signals: ${stats.quickJsIssues}")
+-            appendLine("Playback issue signals: ${stats.playbackIssues}")
++            append("QuickJS: ${stats.quickJsEvents}")
++            if (activeQuickJs.get() > 0) append(" • Active: ${activeQuickJs.get()}")
++            if (stats.quickJsIssues > 0) append(" • Issues: ${stats.quickJsIssues}")
++            appendLine()
++            appendLine("Playback issues: ${stats.playbackIssues}")
++
+             appendLine()
+             appendLine("SIGNALS TO INSPECT")
+             var wroteSignal = false
+             if (stats.worstFrameGapMs >= 80L) {
+-                appendLine("• High frame gap detected: ${stats.worstFrameGapMs}ms")
++                appendLine("• High frame gap: ${stats.worstFrameGapMs}ms")
+                 wroteSignal = true
+             }
+             if (stats.stallEvents > 0) {
+-                appendLine("• UI stall evidence: ${stats.stallEvents} event(s), worst ${stats.worstStallMs}ms")
++                appendLine("• UI stalls: ${stats.stallEvents}, worst ${stats.worstStallMs}ms")
+                 wroteSignal = true
+             }
+             if (stats.providerIssues > 0) {
+@@ -321,16 +364,15 @@
+                 wroteSignal = true
+             }
+             if (droppedEvents.get() > 0L) {
+-                appendLine("• Ring buffer dropped ${droppedEvents.get()} old event(s); Save still contains only the retained window")
++                appendLine("• ${droppedEvents.get()} old event(s) were dropped from the in-memory window")
+                 wroteSignal = true
+             }
+-            if (!wroteSignal) appendLine("• No obvious jank/stall/error signal in the selected event window.")
+-            appendLine()
+-            appendLine("RECENT SIGNALS")
+-            if (stats.recentSignals.isEmpty()) {
+-                appendLine("No notable events recorded for this tab yet.")
+-            } else {
+-                stats.recentSignals.forEach { appendLine("• $it") }
++            if (!wroteSignal) appendLine("• No obvious performance issue detected in this window.")
++
++            if (stats.recentSignals.isNotEmpty()) {
++                appendLine()
++                appendLine("RECENT SIGNALS")
++                stats.recentSignals.takeLast(5).forEach { appendLine("• ${compactSignal(it)}") }
+             }
+         }
+     }
+@@ -415,7 +457,7 @@
+     }
+ 
+     private fun summaryWindow(first: Long?, last: Long?): String {
+-        if (first == null || last == null) return "no events"
++        if (first == null || last == null) return "0s"
+         val durationMs = (last - first).coerceAtLeast(0L)
+         val totalSeconds = durationMs / 1_000L
+         val minutes = totalSeconds / 60L
+@@ -423,6 +465,19 @@
+         return if (minutes > 0L) "${minutes}m ${seconds}s" else "${seconds}s"
+     }
+ 
++    private fun compactSignal(line: String): String {
++        val separator = line.indexOf(" | ")
++        if (separator < 0) return line.take(220)
++        val timestamp = line.substring(0, separator)
++        val timeOnly = timestamp.substringAfter(' ', timestamp)
++        val payload = line.substring(separator + 3)
++        return "$timeOnly $payload".take(220)
++    }
++
++    private fun matchingEventCount(tab: Tab): Int = synchronized(eventsLock) {
++        if (tab == Tab.FULL) events.size else events.count { matchesTab(tab, it) }
++    }
++
+     fun clear() {
+         synchronized(eventsLock) { events.clear() }
+         droppedEvents.set(0L)
