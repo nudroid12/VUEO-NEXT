@@ -11,8 +11,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -26,9 +24,9 @@ import androidx.compose.ui.window.DialogProperties
  * restrained fade-through, very shallow depth scaling and no bounce.
  */
 internal object VueoMotion {
-    const val QUICK_MS = 180
-    const val STANDARD_MS = 300
-    const val SCREEN_MS = 360
+    const val QUICK_MS = 140
+    const val STANDARD_MS = 210
+    const val SCREEN_MS = 240
 
     val EaseOut = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
     val EaseInOut = CubicBezierEasing(0.40f, 0f, 0.20f, 1f)
@@ -37,39 +35,41 @@ internal object VueoMotion {
 /**
  * Full-page navigation transition.
  *
- * Both surfaces move at the same time: the outgoing page fades while
- * settling slightly backward, and the incoming page fades in from a
- * shallow zoom. Scale uses a critically damped spring so it decelerates
- * naturally without bounce or overshoot.
+ * Fade-through + micro-scale: the outgoing page leaves quickly while the
+ * incoming page follows with only 1.5% of depth movement. Full-screen page
+ * motion deliberately uses a predictable cubic ease-out instead of spring
+ * settling so frame pacing stays calm on busy playback/catalog surfaces.
  */
 internal fun vueoFadeThrough(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
-                durationMillis = 260,
+                durationMillis = 210,
+                delayMillis = 35,
                 easing = VueoMotion.EaseOut,
             ),
         ) +
             scaleIn(
-                initialScale = 0.93f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = 300f,
+                initialScale = 0.985f,
+                animationSpec = tween(
+                    durationMillis = 240,
+                    delayMillis = 20,
+                    easing = VueoMotion.EaseOut,
                 ),
             )
     ) togetherWith
         (
             fadeOut(
                 animationSpec = tween(
-                    durationMillis = 190,
-                    easing = VueoMotion.EaseOut,
+                    durationMillis = 145,
+                    easing = VueoMotion.EaseInOut,
                 ),
             ) +
                 scaleOut(
-                    targetScale = 0.97f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = 340f,
+                    targetScale = 0.992f,
+                    animationSpec = tween(
+                        durationMillis = 165,
+                        easing = VueoMotion.EaseInOut,
                     ),
                 )
         )
@@ -84,39 +84,40 @@ internal fun vueoHomeReturnFadeThrough(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
-                durationMillis = 220,
-                delayMillis = 105,
+                durationMillis = 200,
+                delayMillis = 55,
                 easing = VueoMotion.EaseOut,
             ),
         ) +
             scaleIn(
-                initialScale = 0.93f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = 240f,
+                initialScale = 0.985f,
+                animationSpec = tween(
+                    durationMillis = 230,
+                    delayMillis = 25,
+                    easing = VueoMotion.EaseOut,
                 ),
             )
     ) togetherWith
         (
             fadeOut(
                 animationSpec = tween(
-                    durationMillis = 130,
-                    easing = VueoMotion.EaseOut,
+                    durationMillis = 125,
+                    easing = VueoMotion.EaseInOut,
                 ),
             ) +
                 scaleOut(
-                    targetScale = 0.985f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = 400f,
+                    targetScale = 0.992f,
+                    animationSpec = tween(
+                        durationMillis = 150,
+                        easing = VueoMotion.EaseInOut,
                     ),
                 )
         )
 
 internal fun vueoPlayerFadeThrough(
-    enterDurationMillis: Int = 260,
-    exitDurationMillis: Int = 150,
-    enterDelayMillis: Int = 70,
+    enterDurationMillis: Int = 200,
+    exitDurationMillis: Int = 120,
+    enterDelayMillis: Int = 20,
 ): ContentTransform =
     fadeIn(
         animationSpec = tween(
@@ -135,7 +136,7 @@ internal fun vueoPlayerFadeThrough(
 internal fun vueoSoftEnter(
     durationMillis: Int = VueoMotion.STANDARD_MS,
     delayMillis: Int = 0,
-    initialScale: Float = 0.96f,
+    initialScale: Float = 0.985f,
 ): EnterTransition =
     fadeIn(
         animationSpec = tween(
@@ -155,7 +156,7 @@ internal fun vueoSoftEnter(
 
 internal fun vueoSoftExit(
     durationMillis: Int = VueoMotion.QUICK_MS,
-    targetScale: Float = 0.97f,
+    targetScale: Float = 0.992f,
 ): ExitTransition =
     fadeOut(
         animationSpec = tween(
