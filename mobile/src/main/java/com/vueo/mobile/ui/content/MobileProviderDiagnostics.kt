@@ -658,8 +658,9 @@ internal fun PerformanceDiagnosticsDialog(
     var diagnosticsEnabled by remember { mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext)) }
     var recording by remember { mutableStateOf(PerformanceDiagnostics.isRecording()) }
     var diagnosticText by remember { mutableStateOf(PerformanceDiagnostics.export(selectedTab)) }
+    var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
-    val tabScroll = rememberScrollState()
+    val logScroll = rememberScrollState()
 
     LaunchedEffect(selectedTab, diagnosticsEnabled, recording) {
         diagnosticText = PerformanceDiagnostics.export(selectedTab)
@@ -671,145 +672,290 @@ internal fun PerformanceDiagnosticsDialog(
         }
     }
 
-    AlertDialog(
+    LaunchedEffect(diagnosticText, searchQuery) {
+        if (recording && searchQuery.isBlank()) {
+            logScroll.scrollTo(logScroll.maxValue)
+        }
+    }
+
+    val recentPreview = remember(diagnosticText) {
+        if (diagnosticText.length > 30_000) {
+            "[Recent preview. Copy and Save use the complete selected log.]\n\n" +
+                diagnosticText.takeLast(30_000)
+        } else {
+            diagnosticText
+        }
+    }
+    val visibleLog = remember(recentPreview, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isBlank()) {
+            recentPreview
+        } else {
+            recentPreview
+                .lineSequence()
+                .filter { line -> line.contains(query, ignoreCase = true) }
+                .joinToString("\n")
+                .ifBlank { "No log lines match \"$query\"." }
+        }
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Performance Diagnostics") },
-        text = {
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnClickOutside = false,
+        ),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = VueoPalette.Background,
+        ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 560.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .fillMaxSize()
+                    .statusBarsPadding(),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Performance recorder", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Performance Diagnostics",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                         Text(
                             when {
-                                !diagnosticsEnabled -> "OFF • no sampler, frame probe or event buffering"
-                                recording -> "ON • recording runtime activity now"
-                                else -> "ON • armed, but not recording"
+                                !diagnosticsEnabled -> "Recorder off"
+                                recording -> "Recording runtime activity"
+                                else -> "Recorder armed"
                             },
                             color = VueoPalette.Muted,
-                            fontSize = 10.5.sp,
+                            fontSize = 11.sp,
                         )
                     }
-                    Switch(
-                        checked = diagnosticsEnabled,
-                        onCheckedChange = { value ->
-                            PerformanceDiagnostics.setEnabled(context.applicationContext, value)
-                            diagnosticsEnabled = value
-                            recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.export(selectedTab)
-                        },
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        enabled = diagnosticsEnabled,
-                        onClick = {
-                            if (recording) PerformanceDiagnostics.stopRecording()
-                            else PerformanceDiagnostics.startRecording(context.applicationContext)
-                            recording = PerformanceDiagnostics.isRecording()
-                            diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = if (recording) {
+                            VueoPalette.SurfaceStrong
+                        } else {
+                            VueoPalette.SurfaceElevated
                         },
                     ) {
-                        Text(if (recording) "Stop Recording" else "Start Recording")
+                        Text(
+                            when {
+                                !diagnosticsEnabled -> "OFF"
+                                recording -> "REC"
+                                else -> "ON"
+                            },
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            color = if (recording) VueoPalette.Accent else VueoPalette.Muted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
-                    Text(
-                        text = "Only records while Start Recording is active. Normal recording stays in memory; disk is touched only when Save Log is pressed.",
-                        color = VueoPalette.Muted,
-                        fontSize = 10.sp,
-                        modifier = Modifier.weight(1f),
-                    )
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = VueoPalette.SurfaceElevated,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Performance recorder", fontWeight = FontWeight.Bold)
+                                Text(
+                                    when {
+                                        !diagnosticsEnabled -> "No sampler, frame probe or event buffering"
+                                        recording -> "Collecting page, player, provider and system events"
+                                        else -> "Enabled, waiting for Start Recording"
+                                    },
+                                    color = VueoPalette.Muted,
+                                    fontSize = 10.5.sp,
+                                )
+                            }
+                            Switch(
+                                checked = diagnosticsEnabled,
+                                onCheckedChange = { value ->
+                                    PerformanceDiagnostics.setEnabled(context.applicationContext, value)
+                                    diagnosticsEnabled = value
+                                    recording = PerformanceDiagnostics.isRecording()
+                                    diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                                },
+                            )
+                        }
+
+                        Button(
+                            enabled = diagnosticsEnabled,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                if (recording) PerformanceDiagnostics.stopRecording()
+                                else PerformanceDiagnostics.startRecording(context.applicationContext)
+                                recording = PerformanceDiagnostics.isRecording()
+                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                            },
+                        ) {
+                            Text(if (recording) "Stop Recording" else "Start Recording")
+                        }
+
+                        Text(
+                            "Recording stays in memory. Disk is used only when Save Log is pressed.",
+                            color = VueoPalette.Muted,
+                            fontSize = 10.sp,
+                        )
+                    }
                 }
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(tabScroll),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     PerformanceDiagnostics.Tab.entries.forEach { tab ->
-                        TextButton(onClick = { selectedTab = tab }) {
-                            Text(
-                                tab.label,
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 11.sp,
-                            )
-                        }
+                        FilterChip(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            label = {
+                                Text(
+                                    tab.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            },
+                        )
                     }
                 }
 
-                Column(
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 350.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Text(
-                        text = if (diagnosticText.length > 30_000) {
-                            "[Recent preview. Copy and Save use the complete selected log.]\n\n" +
-                                diagnosticText.takeLast(30_000)
-                        } else diagnosticText,
-                        color = Color.White.copy(alpha = .82f),
-                        fontSize = 9.5.sp,
-                        lineHeight = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val fullText = PerformanceDiagnostics.export(selectedTab)
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(
-                        ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText)
-                    )
-                    Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
-                },
-            ) { Text("Copy") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(
-                    enabled = !saving,
-                    onClick = {
-                        saving = true
-                        scope.launch {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
-                            }
-                            saving = false
-                            result.onSuccess { saved ->
-                                Toast.makeText(
-                                    context,
-                                    "Saved ${saved.displayName} to ${saved.location}",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }.onFailure { error ->
-                                Toast.makeText(context, "Save failed: ${error.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                        .padding(horizontal = 14.dp),
+                    singleLine = true,
+                    label = { Text("Search log") },
+                    placeholder = { Text("provider, jank, source, QuickJS…") },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
                             }
                         }
                     },
-                ) { Text(if (saving) "Saving…" else "Save Log") }
-                TextButton(
-                    onClick = {
-                        PerformanceDiagnostics.clear()
-                        diagnosticText = PerformanceDiagnostics.export(selectedTab)
-                    },
-                ) { Text("Clear") }
-                TextButton(onClick = onDismiss) { Text("Close") }
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = VueoPalette.Surface,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(logScroll)
+                            .padding(12.dp),
+                    ) {
+                        Text(
+                            text = visibleLog,
+                            color = Color.White.copy(alpha = .86f),
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = VueoPalette.Nav,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                val fullText = PerformanceDiagnostics.export(selectedTab)
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                clipboard?.setPrimaryClip(
+                                    ClipData.newPlainText("VUEO performance ${selectedTab.label}", fullText)
+                                )
+                                Toast.makeText(context, "${selectedTab.label} log copied", Toast.LENGTH_SHORT).show()
+                            },
+                        ) { Text("Copy") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            enabled = !saving,
+                            onClick = {
+                                saving = true
+                                scope.launch {
+                                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
+                                    }
+                                    saving = false
+                                    result.onSuccess { saved ->
+                                        Toast.makeText(
+                                            context,
+                                            "Saved ${saved.displayName} to ${saved.location}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }.onFailure { error ->
+                                        Toast.makeText(
+                                            context,
+                                            "Save failed: ${error.javaClass.simpleName}",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                }
+                            },
+                        ) { Text(if (saving) "Saving…" else "Save") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                PerformanceDiagnostics.clear()
+                                diagnosticText = PerformanceDiagnostics.export(selectedTab)
+                            },
+                        ) { Text("Clear") }
+
+                        TextButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss,
+                        ) { Text("Close") }
+                    }
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable
