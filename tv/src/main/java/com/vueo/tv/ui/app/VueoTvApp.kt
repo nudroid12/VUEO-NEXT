@@ -16,6 +16,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
@@ -157,6 +158,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var sourceDiscoverySnapshot by remember { mutableStateOf<TvSourceDiscoverySnapshot?>(null) }
     var sourceDiscoveryError by remember { mutableStateOf<String?>(null) }
     var sourceDiscoveryKey by remember { mutableStateOf<String?>(null) }
+    // Keep the final Sources frame alive while AnimatedContent fades the route out.
+    // Operational discovery state can be cleared immediately without flashing an empty state.
+    var sourceExitSnapshot by remember { mutableStateOf<TvSourceDiscoverySnapshot?>(null) }
+    var sourceExitError by remember { mutableStateOf<String?>(null) }
+    var sourceExitKey by remember { mutableStateOf<String?>(null) }
+    var sourceExitRunning by remember { mutableStateOf(false) }
     var sourceDiscoveryJob by remember { mutableStateOf<Job?>(null) }
     var sourceDiscoveryGeneration by remember { mutableIntStateOf(0) }
     var sourceDiscoveryControl by remember { mutableStateOf<SourceDiscoveryControl?>(null) }
@@ -573,6 +580,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     ) {
         if (force && route == TvRoute.PLAYER) cancelEpisodePrefetch()
         val key = sourceSessionKey(media, episode)
+        if (route == TvRoute.SOURCE) {
+            sourceExitSnapshot = null
+            sourceExitError = null
+            sourceExitKey = null
+            sourceExitRunning = false
+        }
         val effectiveForce = force || key in failedSourceKeys
         if (
             !effectiveForce &&
@@ -867,19 +880,54 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     if (media == null) {
                         route = sourceReturnRoute
                     } else {
+                        val sessionKey = sourceSessionKey(media, selectedEpisode)
+                        val leavingSource = route != TvRoute.SOURCE
+                        val displayedSnapshot = if (leavingSource) {
+                            sourceExitSnapshot.takeIf { sourceExitKey == sessionKey }
+                        } else {
+                            sourceDiscoverySnapshot.takeIf { sourceDiscoveryKey == sessionKey }
+                        }
+                        val displayedError = if (leavingSource) {
+                            sourceExitError.takeIf { sourceExitKey == sessionKey }
+                        } else {
+                            sourceDiscoveryError.takeIf { sourceDiscoveryKey == sessionKey }
+                        }
+                        val displayedRunning = if (leavingSource && sourceExitKey == sessionKey) {
+                            sourceExitRunning
+                        } else {
+                            sourceDiscoveryJob?.isActive == true && sourceDiscoveryKey == sessionKey
+                        }
+
+                        DisposableEffect(sessionKey) {
+                            onDispose {
+                                if (sourceExitKey == sessionKey) {
+                                    sourceExitSnapshot = null
+                                    sourceExitError = null
+                                    sourceExitKey = null
+                                    sourceExitRunning = false
+                                }
+                            }
+                        }
+
                         TvSourceScreen(
                             runtime = runtime,
                             media = media,
                             episode = selectedEpisode,
-                            discovery = sourceDiscoverySnapshot.takeIf {
-                                sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode)
-                            },
-                            discoveryRunning = sourceDiscoveryJob?.isActive == true &&
-                                sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode),
-                            discoveryError = sourceDiscoveryError.takeIf {
-                                sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode)
-                            },
+                            discovery = displayedSnapshot,
+                            discoveryRunning = displayedRunning,
+                            discoveryError = displayedError,
                             onBack = {
+                                // AnimatedContent keeps the outgoing Sources composable alive briefly.
+                                // Hold its last visible state while cancelling the real discovery state,
+                                // otherwise the outgoing frame flashes "No playable sources".
+                                sourceExitSnapshot = sourceDiscoverySnapshot.takeIf {
+                                    sourceDiscoveryKey == sessionKey
+                                }
+                                sourceExitError = sourceDiscoveryError.takeIf {
+                                    sourceDiscoveryKey == sessionKey
+                                }
+                                sourceExitKey = sessionKey
+                                sourceExitRunning = sourceDiscoveryJob?.isActive == true
                                 stopSourceDiscovery(markStopped = false)
                                 route = sourceReturnRoute
                             },
