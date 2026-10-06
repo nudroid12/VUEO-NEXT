@@ -10,6 +10,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 
@@ -26,8 +28,8 @@ internal object TvMotion {
     const val ELEMENT_MS = 160
     const val PANEL_IN_MS = 190
     const val PANEL_OUT_MS = 110
-    const val SCREEN_IN_MS = 250
-    const val SCREEN_OUT_MS = 130
+    const val SCREEN_IN_MS = 260
+    const val SCREEN_OUT_MS = 190
     const val BACKDROP_MS = 270
 
     val EaseOut = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
@@ -37,9 +39,9 @@ internal object TvMotion {
 internal fun tvScreenFadeThrough(
     enterDurationMillis: Int = TvMotion.SCREEN_IN_MS,
     exitDurationMillis: Int = TvMotion.SCREEN_OUT_MS,
-    enterDelayMillis: Int = 12,
-    initialScale: Float = 0.992f,
-    targetScale: Float = 0.996f,
+    enterDelayMillis: Int = 0,
+    initialScale: Float = 0.93f,
+    targetScale: Float = 0.97f,
 ): ContentTransform =
     (
         fadeIn(
@@ -51,10 +53,9 @@ internal fun tvScreenFadeThrough(
         ) +
             scaleIn(
                 initialScale = initialScale,
-                animationSpec = tween(
-                    durationMillis = enterDurationMillis,
-                    delayMillis = enterDelayMillis,
-                    easing = TvMotion.EaseOut,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = 300f,
                 ),
             )
     ) togetherWith
@@ -62,14 +63,14 @@ internal fun tvScreenFadeThrough(
             fadeOut(
                 animationSpec = tween(
                     durationMillis = exitDurationMillis,
-                    easing = TvMotion.EaseInOut,
+                    easing = TvMotion.EaseOut,
                 ),
             ) +
                 scaleOut(
                     targetScale = targetScale,
-                    animationSpec = tween(
-                        durationMillis = exitDurationMillis,
-                        easing = TvMotion.EaseInOut,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = 340f,
                     ),
                 )
         )

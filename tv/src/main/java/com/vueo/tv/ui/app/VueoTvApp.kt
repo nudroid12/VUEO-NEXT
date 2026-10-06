@@ -63,7 +63,6 @@ import com.vueo.tv.ui.LocalTvModalFocusHost
 import com.vueo.tv.ui.TvModalFocusHost
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.tvPlayerFadeThrough
-import com.vueo.tv.ui.motion.tvImmediateCut
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdatePrompt
@@ -680,11 +679,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     .focusGroup(),
                 targetState = route,
                 transitionSpec = {
-                    if (initialState == TvRoute.STARTUP) {
-                        tvScreenFadeThrough()
-                    } else if (targetState == TvRoute.HOME) {
-                        tvImmediateCut()
-                    } else if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
+                    if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
                         tvPlayerFadeThrough()
                     } else {
                         tvScreenFadeThrough()
