@@ -15,6 +15,18 @@ object PlayerSourceDisplay {
             ?: parts(source.name).firstOrNull()
             ?: source.providerName.trim().ifBlank { "Source" }
 
+    /** Matches the TV player source card: repository/group on the first line. */
+    fun groupTitle(source: StreamSource): String =
+        source.providerName.substringBeforeLast(" / ").trim().ifBlank { "Source" }
+
+    /** Matches the TV player source card metadata line. */
+    fun groupedDetails(source: StreamSource): String =
+        (listOf(source.providerName.substringAfterLast(" / ").trim()) +
+            serverDetails(source).split(" • "))
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .joinToString(" • ")
+
     fun providerTitle(source: StreamSource): String {
         val full = source.providerName.trim()
         val provider = full.substringAfterLast(" / ").trim().ifBlank { "Other" }

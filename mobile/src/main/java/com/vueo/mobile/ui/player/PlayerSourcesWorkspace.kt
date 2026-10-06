@@ -28,6 +28,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -67,6 +70,11 @@ internal fun PlayerSourcesWorkspace(
     providerOrder: List<String>,
     originalLanguage: String?,
     switchingSourceUrl: String?,
+    searching: Boolean,
+    pluginsStopped: Boolean,
+    sourcesStopped: Boolean,
+    onRefresh: () -> Unit,
+    onStop: () -> Unit,
     onSelect: (StreamSource) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -168,20 +176,59 @@ internal fun PlayerSourcesWorkspace(
                 ),
             ) {
                 Column(Modifier.padding(12.dp)) {
-                    Text(
-                        text = "Sources",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "$title • ${sources.size} sources",
-                        color = Color.White.copy(alpha = .52f),
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                Text(
+                                    text = "Sources",
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (searching) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(13.dp),
+                                        color = SourceAccent,
+                                        strokeWidth = 1.5.dp,
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "$title • ${sources.size} sources",
+                                color = Color.White.copy(alpha = .52f),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        SourceScanAction(
+                            searching = searching,
+                            onClick = { if (searching) onStop() else onRefresh() },
+                        )
+                    }
+                    if (searching || pluginsStopped || sourcesStopped) {
+                        Text(
+                            text = when {
+                                sourcesStopped -> "Source scan stopped"
+                                searching && pluginsStopped -> "Addons loading • plugins stopped"
+                                searching -> "Discovering sources…"
+                                pluginsStopped -> "Plugin scan stopped"
+                                else -> ""
+                            },
+                            color = Color.White.copy(alpha = .52f),
+                            fontSize = 9.sp,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
 
                     Spacer(Modifier.height(8.dp))
                     Row(
@@ -322,7 +369,7 @@ private fun SourceListRow(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        text = PlayerSourceDisplay.providerTitle(source),
+                        text = PlayerSourceDisplay.groupTitle(source),
                         color = Color.White.copy(alpha = .92f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -338,7 +385,7 @@ private fun SourceListRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = PlayerSourceDisplay.serverDetails(source),
+                        text = PlayerSourceDisplay.groupedDetails(source),
                         color = Color.White.copy(alpha = .72f),
                         fontSize = 10.sp,
                         maxLines = 1,
@@ -356,6 +403,38 @@ private fun SourceListRow(
 
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SourceScanAction(
+    searching: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = Color.White.copy(alpha = .07f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .10f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                imageVector = if (searching) Icons.Default.Stop else Icons.Default.Refresh,
+                contentDescription = null,
+                tint = if (searching) SourceAccent else Color.White.copy(alpha = .82f),
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = if (searching) "Stop" else "Refresh",
+                color = Color.White.copy(alpha = .86f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

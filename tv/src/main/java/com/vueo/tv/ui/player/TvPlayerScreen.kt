@@ -1604,9 +1604,8 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
-                    title = item.providerName.substringBeforeLast(" / ").trim().ifBlank { "Source" },
-                    meta = (listOf(item.providerName.substringAfterLast(" / ").trim()) +
-                        PlayerSourceDisplay.serverDetails(item).split(" • ")).filter(String::isNotBlank).distinct().joinToString(" • "),
+                    title = PlayerSourceDisplay.groupTitle(item),
+                    meta = PlayerSourceDisplay.groupedDetails(item),
                     providerName = item.providerName,
                     qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
                     selected = item.url == activeSource.url,

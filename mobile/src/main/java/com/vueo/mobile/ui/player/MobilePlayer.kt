@@ -400,6 +400,11 @@ internal fun PlayerScreen(
     source: StreamSource,
     availableSources: List<StreamSource>,
     sourceProviderOrder: List<String>,
+    sourcesSearching: Boolean,
+    pluginsStopped: Boolean,
+    sourcesStopped: Boolean,
+    onRefreshSources: () -> Unit,
+    onStopSources: () -> Unit,
     subtitlesState: State<List<SubtitleTrack>>,
     initialPositionMs: Long,
     episodeSwitchingTo: EpisodeItem?,
@@ -2463,6 +2468,11 @@ internal fun PlayerScreen(
             providerOrder = sourceProviderOrder,
             originalLanguage = media.originalLanguage,
             switchingSourceUrl = switchingSourceUrl,
+            searching = sourcesSearching,
+            pluginsStopped = pluginsStopped,
+            sourcesStopped = sourcesStopped,
+            onRefresh = onRefreshSources,
+            onStop = onStopSources,
             onSelect = { candidate ->
                 val switchPosition = player.currentPosition
                     .coerceAtLeast(0L)

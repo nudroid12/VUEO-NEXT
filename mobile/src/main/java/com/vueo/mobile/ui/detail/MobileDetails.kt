@@ -203,6 +203,7 @@ import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
+import com.vueo.shared.core.source.SourceDiscoveryControl
 import com.vueo.shared.core.source.SourceDiscoveryEngine
 import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.shared.core.source.SourceDiscoveryRequest
@@ -504,6 +505,15 @@ internal fun MediaDetailsScreen(
     }
     var sourceDiscoveryJob by remember {
         mutableStateOf<Job?>(null)
+    }
+    var sourceDiscoveryControl by remember {
+        mutableStateOf<SourceDiscoveryControl?>(null)
+    }
+    var sourcePickerPluginsStopped by remember {
+        mutableStateOf(false)
+    }
+    var sourcePickerSourcesStopped by remember {
+        mutableStateOf(false)
     }
     var sourceDiscoveryGeneration by remember {
         mutableIntStateOf(0)
@@ -1023,10 +1033,21 @@ internal fun MediaDetailsScreen(
         ) ?: return
         val effectiveForceRefresh =
             forceRefresh || targetVideoId in failedSourceVideoIds
+        val retainPlaybackSources =
+            selectedPlaybackSource != null &&
+                selectedPlaybackVideoId == targetVideoId
+        val retainedStreams =
+            sourcePickerStreams.orEmpty().takeIf { retainPlaybackSources }.orEmpty()
+        val retainedSubtitles =
+            sourcePickerSubtitles.takeIf { retainPlaybackSources }.orEmpty()
+        val retainedProviderOrder =
+            sourcePickerProviderOrder.takeIf { retainPlaybackSources }.orEmpty()
 
         sourceDiscoveryGeneration += 1
         val discoveryGeneration = sourceDiscoveryGeneration
         sourceDiscoveryJob?.cancel()
+        val discoveryControl = SourceDiscoveryControl()
+        sourceDiscoveryControl = discoveryControl
 
         var autoPlayCommitted = false
         var sourceDiscoveryCompleted = false
@@ -1086,6 +1107,8 @@ internal fun MediaDetailsScreen(
                 } ?: return
 
             autoPlayCommitted = true
+            discoveryControl.stopPlugins()
+            sourcePickerPluginsStopped = discoveryControl.pluginsStopped
             selectedSeason = targetEpisode?.season ?: selectedSeason
             selectedEpisode = targetEpisode
             selectedPlaybackVideoId = targetVideoId
@@ -1093,18 +1116,21 @@ internal fun MediaDetailsScreen(
             selectedPlaybackSource = candidate
         }
 
-        sourcePickerStreams = emptyList()
-        sourcePickerProviderOrder = emptyList()
-        sourcePickerSubtitles = prefetched?.bundle?.subtitles.orEmpty()
-        sourcePickerRawCount = 0
-        sourcePickerNotice = null
+        sourcePickerStreams = if (retainPlaybackSources) retainedStreams else emptyList()
+        sourcePickerProviderOrder = if (retainPlaybackSources) retainedProviderOrder else emptyList()
+        sourcePickerSubtitles =
+            (retainedSubtitles + prefetched?.bundle?.subtitles.orEmpty()).distinctBy { it.url }
+        if (!retainPlaybackSources) sourcePickerRawCount = 0
+        sourcePickerNotice = if (retainPlaybackSources) sourcePickerNotice else null
         sourcePickerSearching = true
-        sourcePickerFirstResultMs = null
+        sourcePickerPluginsStopped = false
+        sourcePickerSourcesStopped = false
+        sourcePickerFirstResultMs = if (retainPlaybackSources) sourcePickerFirstResultMs else null
         sourcePickerProgress =
-            if (prefetched != null) {
-                "Preparing prefetched next episode…"
-            } else {
-                "Starting source discovery…"
+            when {
+                retainPlaybackSources -> "Refreshing sources…"
+                prefetched != null -> "Preparing prefetched next episode…"
+                else -> "Starting source discovery…"
             }
         sourcePickerActivityLog = emptyList()
         loadingStreams = true
@@ -1144,6 +1170,8 @@ internal fun MediaDetailsScreen(
                         sourcePickerRawCount = readyBundle.sources.size
                         sourcePickerNotice = null
                         sourcePickerSearching = false
+                        sourcePickerPluginsStopped = true
+                        sourcePickerSourcesStopped = true
                         sourcePickerFirstResultMs = 0L
                         sourcePickerProgress = "Next episode ready"
                         sourcePickerActivityLog = emptyList()
@@ -1184,19 +1212,28 @@ internal fun MediaDetailsScreen(
                         subtitleLanguageCodes = subtitleLanguageCodesForDiscovery(),
                         discoverSubtitles = prefetched == null || prefetched.failed,
                     ),
+                    control = discoveryControl,
                     onUpdate = sourceUpdate@ { snapshot ->
                         if (sourceDiscoveryGeneration != discoveryGeneration) {
                             return@sourceUpdate
                         }
 
                         val mergedBundle = withPrefetchedSubtitles(snapshot.bundle)
-                        sourcePickerStreams = mergedBundle.sources
-                        sourcePickerProviderOrder = snapshot.providerOrder
-                        sourcePickerSubtitles = mergedBundle.subtitles
-                        sourcePickerRawCount = snapshot.rawCount
-                        sourcePickerNotice = snapshot.notice
+                        val visibleStreams =
+                            (retainedStreams + mergedBundle.sources).distinctBy { it.url }
+                        val visibleSubtitles =
+                            (retainedSubtitles + mergedBundle.subtitles).distinctBy { it.url }
+                        sourcePickerStreams = visibleStreams
+                        sourcePickerProviderOrder =
+                            (retainedProviderOrder + snapshot.providerOrder +
+                                visibleStreams.map { it.providerName }).distinct()
+                        sourcePickerSubtitles = visibleSubtitles
+                        sourcePickerRawCount = maxOf(sourcePickerRawCount, snapshot.rawCount)
+                        sourcePickerNotice = snapshot.notice ?: sourcePickerNotice
                         sourcePickerSearching = snapshot.searching
-                        sourcePickerFirstResultMs = snapshot.firstResultMs
+                        sourcePickerPluginsStopped = snapshot.pluginsStopped
+                        sourcePickerSourcesStopped = snapshot.sourcesStopped
+                        sourcePickerFirstResultMs = snapshot.firstResultMs ?: sourcePickerFirstResultMs
                         sourcePickerProgress = snapshot.progress
                         sourcePickerActivityLog = snapshot.activityLog
                         loadingStreams = snapshot.searching
@@ -1204,7 +1241,7 @@ internal fun MediaDetailsScreen(
                         sourceDiscoveryCompleted = !snapshot.searching
                         if (sourceDiscoveryCompleted) {
                             failedSourceVideoIds =
-                                if (mergedBundle.sources.any { it.isDirectPlayable }) {
+                                if (visibleStreams.any { it.isDirectPlayable }) {
                                     failedSourceVideoIds - targetVideoId
                                 } else {
                                     failedSourceVideoIds + targetVideoId
@@ -1238,13 +1275,20 @@ internal fun MediaDetailsScreen(
                     return@launch
                 }
                 val mergedResult = withPrefetchedSubtitles(result)
-                sourcePickerStreams = mergedResult.sources
-                sourcePickerSubtitles = mergedResult.subtitles
+                sourcePickerStreams =
+                    (retainedStreams + mergedResult.sources).distinctBy { it.url }
+                sourcePickerProviderOrder =
+                    (retainedProviderOrder + sourcePickerProviderOrder +
+                        sourcePickerStreams.orEmpty().map { it.providerName }).distinct()
+                sourcePickerSubtitles =
+                    (retainedSubtitles + mergedResult.subtitles).distinctBy { it.url }
                 sourcePickerSearching = false
+                sourcePickerPluginsStopped = discoveryControl.pluginsStopped
+                sourcePickerSourcesStopped = discoveryControl.sourcesStopped
                 loadingStreams = false
                 sourceDiscoveryCompleted = true
                 failedSourceVideoIds =
-                    if (mergedResult.sources.any { it.isDirectPlayable }) {
+                    if (sourcePickerStreams.orEmpty().any { it.isDirectPlayable }) {
                         failedSourceVideoIds - targetVideoId
                     } else {
                         failedSourceVideoIds + targetVideoId
@@ -1262,6 +1306,8 @@ internal fun MediaDetailsScreen(
                 sourceDiscoveryCompleted = true
                 failedSourceVideoIds = failedSourceVideoIds + targetVideoId
                 sourcePickerSearching = false
+                sourcePickerPluginsStopped = discoveryControl.pluginsStopped
+                sourcePickerSourcesStopped = discoveryControl.sourcesStopped
                 loadingStreams = false
                 sourcePickerProgress =
                     if (latestAutoPlayCandidates.isEmpty()) {
@@ -1440,6 +1486,22 @@ internal fun MediaDetailsScreen(
                         availableSources = transitionSourceStreams,
                         sourceProviderOrder =
                             sourcePickerProviderOrder,
+                        sourcesSearching = sourcePickerSearching,
+                        pluginsStopped = sourcePickerPluginsStopped,
+                        sourcesStopped = sourcePickerSourcesStopped,
+                        onRefreshSources = {
+                            cancelEpisodePrefetch()
+                            startSourceDiscovery(
+                                targetEpisode = selectedEpisode,
+                                startPositionMs = selectedPlaybackStartPositionMs,
+                                forceRefresh = true,
+                            )
+                        },
+                        onStopSources = {
+                            sourceDiscoveryControl?.stopSources()
+                            sourcePickerPluginsStopped = true
+                            sourcePickerSourcesStopped = true
+                        },
                         subtitlesState = sourcePickerSubtitlesState,
                         initialPositionMs =
                             selectedPlaybackStartPositionMs,
@@ -1517,6 +1579,7 @@ internal fun MediaDetailsScreen(
                             sourceDiscoveryGeneration += 1
                             sourceDiscoveryJob?.cancel()
                             sourceDiscoveryJob = null
+                            sourceDiscoveryControl = null
                             cancelEpisodePrefetch()
                             sourcePickerSearching = false
                             if (!returnToSourcesOnPlayerExit) {
@@ -1562,12 +1625,19 @@ internal fun MediaDetailsScreen(
                         sourceDiscoveryGeneration += 1
                         sourceDiscoveryJob?.cancel()
                         sourceDiscoveryJob = null
+                        sourceDiscoveryControl = null
                         sourcePickerSearching = false
+                        sourcePickerPluginsStopped = false
+                        sourcePickerSourcesStopped = false
                         loadingStreams = false
                         sourcePickerStreams = null
                     },
                     onPlay = { source, returnToSources ->
-                        sourcePickerSearching = false
+                        if (sourcePickerSearching) {
+                            sourceDiscoveryControl?.stopPlugins()
+                            sourcePickerPluginsStopped =
+                                sourceDiscoveryControl?.pluginsStopped == true
+                        }
 
                         val videoId =
                             selectedVideoId(item, selectedEpisode)
