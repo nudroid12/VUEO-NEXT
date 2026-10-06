@@ -29,9 +29,11 @@ fun TvSourceScreen(
     media: MediaItem,
     episode: EpisodeItem?,
     discovery: com.vueo.tv.core.TvSourceDiscoverySnapshot?,
+    discoveryRunning: Boolean,
     discoveryError: String?,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onStop: () -> Unit,
     onPlay: (TvSourceBundle, StreamSource) -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -42,7 +44,7 @@ fun TvSourceScreen(
     val memory = remember(memoryKey) { TvSourceUiMemory.forKey(memoryKey) }
 
     val bundle = discovery?.bundle
-    val searching = discovery?.searching ?: discoveryError == null
+    val searching = discovery?.searching ?: discoveryRunning
     val progress = discovery?.progress ?: "Starting source discovery…"
     val rawCount = discovery?.rawCount ?: 0
     val notice = discovery?.notice
@@ -133,6 +135,7 @@ fun TvSourceScreen(
             memory.showEngineDetails = showEngineDetails
         },
         onRefresh = onRefresh,
+        onStop = onStop,
         onSourceFocused = { source ->
             memory.focusedSourceKey = sourceStableKey(source)
             memory.selectedProvider = selectedProvider

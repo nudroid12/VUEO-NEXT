@@ -84,6 +84,7 @@ internal fun TvSourcePresentation(
     onSelectProvider: (String) -> Unit,
     onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
+    onStop: () -> Unit,
     onSourceFocused: (StreamSource) -> Unit,
     onPlay: (StreamSource) -> Unit,
 ) {
@@ -201,6 +202,10 @@ internal fun TvSourcePresentation(
                     userInteracted = true
                     sourceFocusAssigned = false
                     onRefresh()
+                },
+                onStop = {
+                    userInteracted = true
+                    onStop()
                 },
                 onSourceFocused = onSourceFocused,
                 onCycleProvider = ::cycleProvider,
@@ -475,6 +480,7 @@ private fun SourceResultsSection(
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
     onRefresh: () -> Unit,
+    onStop: () -> Unit,
     onSourceFocused: (StreamSource) -> Unit,
     onCycleProvider: (Int) -> Boolean,
     onPlay: (StreamSource) -> Unit,
@@ -539,6 +545,7 @@ private fun SourceResultsSection(
             onInteraction = onInteraction,
             onSelectProvider = onSelectProvider,
             onRefresh = onRefresh,
+            onStop = onStop,
         )
 
         Spacer(Modifier.height(14.dp))
@@ -617,6 +624,7 @@ private fun SourceFilterRow(
     onInteraction: () -> Unit,
     onSelectProvider: (String) -> Unit,
     onRefresh: () -> Unit,
+    onStop: () -> Unit,
 ) {
     val discoveryActive = state.searching || state.loadingProviders.isNotEmpty()
     val chips = buildList {
@@ -736,7 +744,7 @@ private fun SourceFilterRow(
             rightRequester = chips.firstOrNull()?.requester,
             onDown = onFocusFirstSource,
             onInteraction = onInteraction,
-            onClick = onRefresh,
+            onClick = if (discoveryActive) onStop else onRefresh,
         )
         Spacer(Modifier.width(8.dp))
         LazyRow(
@@ -808,7 +816,7 @@ private fun SourceRefreshButton(
                 else TvDesign.White.copy(alpha = .10f),
                 shape = SourceChipShape,
             )
-            .clickable(enabled = !searching) {
+            .clickable {
                 onInteraction()
                 onClick()
             },
@@ -816,7 +824,7 @@ private fun SourceRefreshButton(
     ) {
         Icon(
             imageVector = Icons.Default.Refresh,
-            contentDescription = if (searching) "Loading sources" else "Refresh sources",
+            contentDescription = if (searching) "Stop source scan" else "Refresh sources",
             tint = when {
                 searching -> TvDesign.Accent
                 focused -> TvDesign.White

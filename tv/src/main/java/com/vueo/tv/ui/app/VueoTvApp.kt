@@ -874,6 +874,8 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             discovery = sourceDiscoverySnapshot.takeIf {
                                 sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode)
                             },
+                            discoveryRunning = sourceDiscoveryJob?.isActive == true &&
+                                sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode),
                             discoveryError = sourceDiscoveryError.takeIf {
                                 sourceDiscoveryKey == sourceSessionKey(media, selectedEpisode)
                             },
@@ -883,6 +885,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             },
                             onRefresh = {
                                 startSourceDiscovery(media, selectedEpisode, force = true)
+                            },
+                            onStop = {
+                                stopSourceDiscovery(markStopped = true)
                             },
                             onPlay = { bundle, source ->
                                 sourceBundle = bundle

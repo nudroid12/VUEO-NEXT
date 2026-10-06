@@ -873,19 +873,25 @@ private fun VueoEpisodeRow(
                 TvDesign.SurfaceRaised,
                 fadeEnabled = false,
             )
-            progress?.takeIf { it.durationMs > 0L && it.positionMs > 0L }?.let { saved ->
+            val progressFraction = when {
+                selected && (progress?.durationMs ?: 0L) > 0L -> progress?.fraction
+                !selected && watched -> 1f
+                (progress?.durationMs ?: 0L) > 0L && (progress?.positionMs ?: 0L) > 0L -> progress?.fraction
+                else -> null
+            }
+            progressFraction?.let { fraction ->
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(4.dp)
-                        .background(Color.Black.copy(alpha = .48f))
+                        .height(6.dp)
+                        .background(Color.Black.copy(alpha = .58f))
                 ) {
                     Box(
                         Modifier
-                            .fillMaxWidth(saved.fraction.coerceIn(0f, 1f))
+                            .fillMaxWidth(fraction.coerceIn(0f, 1f))
                             .fillMaxHeight()
-                            .background(TvDesign.Accent)
+                            .background(Color.White.copy(alpha = .92f))
                     )
                 }
             }
@@ -951,7 +957,15 @@ private fun VueoEpisodeRow(
                 )
             }
             when {
-                watched && !selected -> {
+                selected -> {
+                    Text(
+                        "Playing",
+                        color = Color.Black.copy(alpha = .72f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                watched -> {
                     Text(
                         "Watched",
                         color = Color.White.copy(alpha = .62f),
@@ -962,7 +976,7 @@ private fun VueoEpisodeRow(
                 progress?.resumable == true -> {
                     Text(
                         "Resume ${vueoEpisodeProgressTime(progress.positionMs)}",
-                        color = if (selected) Color.Black.copy(alpha = .72f) else TvDesign.Accent.copy(alpha = .86f),
+                        color = Color.White.copy(alpha = .72f),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
