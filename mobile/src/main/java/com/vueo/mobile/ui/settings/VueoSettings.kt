@@ -295,6 +295,13 @@ internal fun VueoSettingsHub(
         mutableStateOf(false)
     }
 
+    var showRuntimeDiagnostics by remember {
+        mutableStateOf(false)
+    }
+    var showPerformanceDiagnostics by remember {
+        mutableStateOf(false)
+    }
+
     val settingsSurface =
         when {
             showUserDna && dnaEnabled -> 2
@@ -520,6 +527,28 @@ internal fun VueoSettingsHub(
                         }
                     }
 
+                    item(key = "settings-diagnostics-group") {
+                        VueoSettingsHubGroup("DIAGNOSTICS") {
+                            VueoSettingsHubRow(
+                                "Crash Diagnostics",
+                                "Crash, native/QuickJS, provider failure and stall evidence.",
+                                "Open",
+                                Icons.Default.Settings,
+                            ) {
+                                showRuntimeDiagnostics = true
+                            }
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                "Performance Diagnostics",
+                                "Opt-in page, player, provider and system performance recorder.",
+                                "Open",
+                                Icons.Default.SettingsInputComponent,
+                            ) {
+                                showPerformanceDiagnostics = true
+                            }
+                        }
+                    }
+
                     item(key = "settings-app-group") {
                         VueoSettingsHubGroup("APP") {
                             VueoSettingsHubRow(
@@ -545,6 +574,17 @@ internal fun VueoSettingsHub(
                 }
 
         }
+    }
+
+    if (showRuntimeDiagnostics) {
+        RuntimeDiagnosticsDialog(
+            onDismiss = { showRuntimeDiagnostics = false },
+        )
+    }
+    if (showPerformanceDiagnostics) {
+        PerformanceDiagnosticsDialog(
+            onDismiss = { showPerformanceDiagnostics = false },
+        )
     }
 }
 

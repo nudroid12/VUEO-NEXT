@@ -78,7 +78,6 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -191,7 +190,6 @@ import com.vueo.mobile.core.enrichment.MdblistClient
 import com.vueo.mobile.core.enrichment.MediaRating
 import com.vueo.mobile.core.enrichment.RichDetailsClient
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
-import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
@@ -324,12 +322,6 @@ internal fun PluginsScreen(
         )
     }
 
-    var showRuntimeDiagnostics by remember {
-        mutableStateOf(false)
-    }
-    var showPerformanceDiagnostics by remember {
-        mutableStateOf(false)
-    }
     var showProviderHealth by remember {
         mutableStateOf(false)
     }
@@ -494,79 +486,7 @@ internal fun PluginsScreen(
                 }
             }
 
-            item(key = "plugins-runtime-diagnostics") {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showRuntimeDiagnostics = true },
-                    shape = RoundedCornerShape(17.dp),
-                    color = VueoPalette.SurfaceElevated,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Crash Diagnostics",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = "Crash, QuickJS/native, provider failure and stall evidence.",
-                                color = VueoPalette.Muted,
-                                fontSize = 10.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = .82f),
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
-                }
-            }
 
-            item(key = "plugins-performance-diagnostics") {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showPerformanceDiagnostics = true },
-                    shape = RoundedCornerShape(17.dp),
-                    color = VueoPalette.SurfaceElevated,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Performance Diagnostics",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = "Opt-in recorder with page, player, provider and system timeline tabs.",
-                                color = VueoPalette.Muted,
-                                fontSize = 10.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = .82f),
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
-                }
-            }
 
             if (repositories.isEmpty()) {
                 item {
@@ -894,15 +814,5 @@ internal fun PluginsScreen(
         )
     }
 
-    if (showRuntimeDiagnostics) {
-        RuntimeDiagnosticsDialog(
-            onDismiss = { showRuntimeDiagnostics = false },
-        )
-    }
-    if (showPerformanceDiagnostics) {
-        PerformanceDiagnosticsDialog(
-            onDismiss = { showPerformanceDiagnostics = false },
-        )
-    }
 }
 
