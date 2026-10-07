@@ -1940,11 +1940,14 @@ internal fun MediaDetailsScreen(
                 },
         )
 
+    // Snapshot the delegated Compose state into a stable local before checking it.
+    // Kotlin cannot smart-cast delegated properties across the hasUsefulData check.
+    val currentDnaSnapshot = detailsDnaSnapshot
     val dnaMatchPercent =
         if (
             !loadingMeta &&
             showDnaMatch &&
-            detailsDnaSnapshot
+            currentDnaSnapshot
                 ?.hasUsefulData ==
                 true
         ) {
@@ -1952,7 +1955,7 @@ internal fun MediaDetailsScreen(
                 .matchPercent(
                     media = item,
                     dna =
-                        detailsDnaSnapshot,
+                        currentDnaSnapshot,
                 )
         } else {
             null

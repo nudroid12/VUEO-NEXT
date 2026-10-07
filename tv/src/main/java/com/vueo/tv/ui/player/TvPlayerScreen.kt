@@ -1323,9 +1323,11 @@ fun TvPlayerScreen(
                     positionMs = periodicPosition,
                     durationMs = currentDuration,
                 )
-                enqueueTvPlayerPersistence {
-                    runtime.playbackStore.persistSnapshot(periodicSnapshot)
-                }
+                enqueueTvPlayerPersistence(
+                    block = {
+                        runtime.playbackStore.persistSnapshot(periodicSnapshot)
+                    },
+                )
             }
         }
     }

@@ -1695,20 +1695,22 @@ internal fun PlayerScreen(
             } else {
                 initialPlaybackPositionMs
             }
-        enqueueMobilePlayerPersistence {
-            val initialDurationMs =
-                playbackStore.durationMs(mediaKey)
-            libraryStore.recordPlayback(
-                media = media,
-                videoId = videoId,
-                episodeTitle = episode?.title,
-                season = episode?.season,
-                episode = episode?.episode,
-                positionMs = startupPositionMs,
-                durationMs = initialDurationMs,
-                lastWatchedEpochMs = startupEpochMs,
-            )
-        }
+        enqueueMobilePlayerPersistence(
+            block = {
+                val initialDurationMs =
+                    playbackStore.durationMs(mediaKey)
+                libraryStore.recordPlayback(
+                    media = media,
+                    videoId = videoId,
+                    episodeTitle = episode?.title,
+                    season = episode?.season,
+                    episode = episode?.episode,
+                    positionMs = startupPositionMs,
+                    durationMs = initialDurationMs,
+                    lastWatchedEpochMs = startupEpochMs,
+                )
+            },
+        )
     }
 
     LaunchedEffect(
@@ -2104,9 +2106,11 @@ internal fun PlayerScreen(
                             positionMs = stablePositionMs,
                             durationMs = sampledDurationMs,
                         )
-                    enqueueMobilePlayerPersistence {
-                        playbackStore.persistSnapshot(playbackSnapshot)
-                    }
+                    enqueueMobilePlayerPersistence(
+                        block = {
+                            playbackStore.persistSnapshot(playbackSnapshot)
+                        },
+                    )
                 }
                 librarySaveTicks = 0
             }
