@@ -28,6 +28,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -272,37 +275,25 @@ internal fun VueoPlayerSubtitleWorkspace(
                 .fillMaxSize()
                 .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = SubtitleWorkspaceBottomClearance),
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Subtitles",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        when {
-                            refreshing -> "Refreshing subtitle discovery…"
-                            !refreshMessage.isNullOrBlank() -> refreshMessage
-                            else -> "Choose a language, track and style"
-                        },
-                        color = Color.White.copy(alpha = .56f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal,
-                    )
-                }
-                VueoSubtitleHeaderButton(
-                    label = if (refreshing) "Refreshing…" else "Refresh",
-                    requester = refreshRequester,
-                    downRequester = languageRequesters.first(),
-                    leftRequester = FocusRequester.Cancel,
-                    rightRequester = FocusRequester.Cancel,
-                    onInteraction = onInteraction,
-                    onClick = { if (!refreshing) onRefresh() },
+                Text(
+                    "Subtitles",
+                    color = Color.White,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    when {
+                        refreshing -> "Refreshing subtitle discovery…"
+                        !refreshMessage.isNullOrBlank() -> refreshMessage
+                        else -> "Choose a language, track and style"
+                    },
+                    color = Color.White.copy(alpha = .56f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
                 )
             }
             Spacer(Modifier.height(14.dp))
@@ -323,7 +314,22 @@ internal fun VueoPlayerSubtitleWorkspace(
                             .border(1.dp, cardBorder, PanelShape)
                             .padding(horizontal = 14.dp, vertical = 14.dp),
                     ) {
-                        VueoSubtitleColumnTitle("Languages")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                VueoSubtitleColumnTitle("Languages")
+                            }
+                            VueoSubtitleRefreshIconButton(
+                                refreshing = refreshing,
+                                requester = refreshRequester,
+                                downRequester = languageRequesters.first(),
+                                rightRequester = firstTrackRequester,
+                                onInteraction = onInteraction,
+                                onClick = onRefresh,
+                            )
+                        }
                         Spacer(Modifier.height(10.dp))
                         LazyColumn(
                             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -795,6 +801,63 @@ internal fun VueoPlayerSubtitleWorkspace(
 }
 
 
+
+@Composable
+private fun VueoSubtitleRefreshIconButton(
+    refreshing: Boolean,
+    requester: FocusRequester,
+    downRequester: FocusRequester,
+    rightRequester: FocusRequester,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = CircleShape
+
+    Box(
+        modifier = Modifier
+            .requiredSize(32.dp)
+            .focusRequester(requester)
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = downRequester
+                left = FocusRequester.Cancel
+                right = rightRequester
+            }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .onPreviewKeyEvent { event ->
+                if (!event.isTvPanelActivationKey()) return@onPreviewKeyEvent false
+                onInteraction()
+                if (event.type == KeyEventType.KeyUp && !refreshing) onClick()
+                true
+            }
+            .focusable()
+            .background(
+                when {
+                    focused -> Color(0xFF555555)
+                    refreshing -> Color.White.copy(alpha = .035f)
+                    else -> Color.White.copy(alpha = .08f)
+                },
+                shape,
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) Color(0xFF888888) else Color.White.copy(alpha = .10f),
+                shape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Sync,
+            contentDescription = if (refreshing) "Refreshing subtitles" else "Refresh subtitles",
+            tint = Color.White.copy(alpha = if (refreshing) .42f else .90f),
+            modifier = Modifier.size(17.dp),
+        )
+    }
+}
 
 @Composable
 private fun VueoSubtitleHeaderButton(

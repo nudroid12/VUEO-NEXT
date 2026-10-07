@@ -68,7 +68,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val LIBRARY_UI_PREFS = "vueo_library_ui"
 private const val LIBRARY_GRID_VIEW_KEY = "grid_view"
-private const val LIBRARY_HEADER_ITEMS = 2
+private const val LIBRARY_HEADER_ITEMS = 1
 private const val LIBRARY_TARGET_POSTER_WIDTH_DP = 126f
 private const val LIBRARY_GRID_GAP_DP = 16f
 
@@ -81,7 +81,7 @@ private const val LIBRARY_GRID_GAP_DP = 16f
  * source of truth.
  */
 private object TvLibraryFocusMemory {
-    var lastTarget: String = "my-list"
+    var lastTarget: String = "view"
     var lastMediaKey: String? = null
     var firstVisibleItemIndex: Int = 0
     var firstVisibleItemScrollOffset: Int = 0
@@ -111,15 +111,12 @@ fun TvLibraryScreen(
         context.getSharedPreferences(LIBRARY_UI_PREFS, Context.MODE_PRIVATE)
     }
 
-    var cloudSelected by remember { mutableStateOf(false) }
     var gridView by remember {
         mutableStateOf(libraryUiPreferences.getBoolean(LIBRARY_GRID_VIEW_KEY, true))
     }
 
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
-    val myListRequester = remember { FocusRequester() }
-    val cloudRequester = remember { FocusRequester() }
     val viewModeRequester = remember { FocusRequester() }
 
     val mediaKeys = remember(watchlist) {
@@ -161,14 +158,14 @@ fun TvLibraryScreen(
         if (navExpanded) onBack() else focusSidebar()
     }
 
-    fun requestSelectedTabFocus(): Boolean =
+    fun requestHeaderFocus(): Boolean =
         runCatching {
-            if (cloudSelected) cloudRequester.requestFocus() else myListRequester.requestFocus()
+            viewModeRequester.requestFocus()
             true
         }.getOrDefault(false)
 
     fun requestFirstMediaFocus(): Boolean {
-        if (cloudSelected || watchlist.isEmpty()) return false
+        if (watchlist.isEmpty()) return false
         val key = mediaKeys.firstOrNull() ?: return false
         return runCatching {
             mediaRequesters.getValue(key).requestFocus()
@@ -185,19 +182,13 @@ fun TvLibraryScreen(
                     true
                 }.getOrDefault(false)
 
-            lastTarget == "cloud" ->
-                runCatching {
-                    cloudRequester.requestFocus()
-                    true
-                }.getOrDefault(false)
-
             lastTarget == "item" && lastMediaKey != null && mediaRequesters.containsKey(lastMediaKey) ->
                 runCatching {
                     mediaRequesters.getValue(requireNotNull(lastMediaKey)).requestFocus()
                     true
                 }.getOrDefault(false)
 
-            else -> requestSelectedTabFocus()
+            else -> requestHeaderFocus()
         }
     }
 
@@ -214,10 +205,10 @@ fun TvLibraryScreen(
 
     // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
-    LaunchedEffect(mediaKeys, gridView, cloudSelected) {
+    LaunchedEffect(mediaKeys, gridView) {
         delay(110)
         var restored = false
-        if (!cloudSelected && lastTarget == "item") {
+        if (lastTarget == "item") {
             val key = lastMediaKey
             val mediaIndex = key?.let(mediaKeys::indexOf)?.takeIf { it >= 0 }
             val requester = key?.let(mediaRequesters::get)
@@ -241,7 +232,7 @@ fun TvLibraryScreen(
         }
         if (!restored) {
             delay(20)
-            requestSelectedTabFocus()
+            requestHeaderFocus()
         }
     }
 
@@ -276,74 +267,18 @@ fun TvLibraryScreen(
                 key = "library-header",
                 span = { GridItemSpan(maxLineSpan) },
             ) {
-                Text(
-                    text = "Library",
-                    color = TvDesign.White,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = .4.sp,
-                )
-            }
-
-            item(
-                key = "library-controls",
-                span = { GridItemSpan(maxLineSpan) },
-            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        LibraryControlPill(
-                            label = "My List",
-                            selected = !cloudSelected,
-                            requester = myListRequester,
-                            onFocused = {
-                                navExpanded = false
-                                rememberTarget("my-list")
-                            },
-                            onClick = {
-                                cloudSelected = false
-                                rememberTarget("my-list")
-                            },
-                            onLeft = ::focusSidebar,
-                            onRight = {
-                                runCatching { cloudRequester.requestFocus() }
-                                true
-                            },
-                            onDown = {
-                                requestFirstMediaFocus()
-                                true
-                            },
-                        )
-
-                        LibraryControlPill(
-                            label = "Cloud",
-                            selected = cloudSelected,
-                            requester = cloudRequester,
-                            onFocused = {
-                                navExpanded = false
-                                rememberTarget("cloud")
-                            },
-                            onClick = {
-                                cloudSelected = true
-                                rememberTarget("cloud")
-                            },
-                            onLeft = {
-                                runCatching { myListRequester.requestFocus() }
-                                true
-                            },
-                            onRight = {
-                                runCatching { viewModeRequester.requestFocus() }
-                                true
-                            },
-                            onDown = { true },
-                        )
-                    }
+                    Text(
+                        text = "Library",
+                        color = TvDesign.White,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = .4.sp,
+                    )
 
                     LibraryViewModeButton(
                         gridView = gridView,
@@ -362,33 +297,15 @@ fun TvLibraryScreen(
                             rememberTarget("view")
                         },
                         onLeft = {
-                            runCatching {
-                                if (cloudSelected) cloudRequester.requestFocus()
-                                else myListRequester.requestFocus()
-                            }
+                            focusSidebar()
                             true
                         },
-                        onDown = {
-                            requestFirstMediaFocus()
-                            true
-                        },
+                        onDown = ::requestFirstMediaFocus,
                     )
                 }
             }
 
             when {
-                cloudSelected -> {
-                    item(
-                        key = "library-cloud-empty",
-                        span = { GridItemSpan(maxLineSpan) },
-                    ) {
-                        LibraryEmptyState(
-                            title = "Cloud library",
-                            body = "Cloud sync is not connected yet. Your locally saved titles stay available in My List.",
-                        )
-                    }
-                }
-
                 watchlist.isEmpty() -> {
                     item(
                         key = "library-saved-empty",
@@ -423,7 +340,7 @@ fun TvLibraryScreen(
                                 onLongClick = { actionMedia = media },
                                 onUpFromFirstRow = if (index < gridColumns) {
                                     {
-                                        requestSelectedTabFocus()
+                                        requestHeaderFocus()
                                     }
                                 } else null,
                                 onLeftFromFirstColumn = if (index % gridColumns == 0) {
@@ -462,7 +379,7 @@ fun TvLibraryScreen(
                                 onLongClick = { actionMedia = media },
                                 onLeft = ::focusSidebar,
                                 onUpFromFirst = if (index == 0) {
-                                    { requestSelectedTabFocus() }
+                                    { requestHeaderFocus() }
                                 } else null,
                             )
                         }
@@ -494,85 +411,9 @@ fun TvLibraryScreen(
         )
     }
 
-    // `onResume` stays in the existing route contract for compatibility. This
-    // screen intentionally exposes only Mobile-parity My List / Cloud content.
-}
-
-@Composable
-private fun LibraryControlPill(
-    label: String,
-    selected: Boolean,
-    requester: FocusRequester,
-    onFocused: () -> Unit,
-    onClick: () -> Unit,
-    onLeft: () -> Unit,
-    onRight: () -> Boolean,
-    onDown: () -> Boolean,
-) {
-    var focused by remember(label) { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
-            easing = TvMotion.EaseOut,
-        ),
-        label = "libraryControlScale",
-    )
-
-    Box(
-        modifier = Modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .height(44.dp)
-            .focusRequester(requester)
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) onFocused()
-            }
-            .onPreviewKeyEvent { event ->
-                val code = event.nativeKeyEvent.keyCode
-                when {
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        onLeft()
-                        true
-                    }
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> onRight()
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_UP -> true
-                    event.isTvActivationKey() -> {
-                        if (event.type == KeyEventType.KeyUp) onClick()
-                        true
-                    }
-                    else -> false
-                }
-            }
-            .background(
-                color = when {
-                    focused -> TvDesign.White.copy(alpha = .18f)
-                    selected -> TvDesign.White.copy(alpha = .11f)
-                    else -> TvDesign.SurfaceRaised.copy(alpha = .82f)
-                },
-                shape = ControlShape,
-            )
-            .border(
-                width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .42f) else Color.Transparent,
-                shape = ControlShape,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = if (focused || selected) TvDesign.White else TvDesign.Muted,
-            fontSize = 13.sp,
-            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-        )
-    }
+    // `onResume` stays in the existing route contract for compatibility.
+    // Library now exposes the local My List directly; the unused Cloud selector
+    // has been removed from both TV and Mobile.
 }
 
 @Composable

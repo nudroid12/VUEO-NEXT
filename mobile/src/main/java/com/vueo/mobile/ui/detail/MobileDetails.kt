@@ -68,6 +68,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -89,7 +90,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsInputComponent
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -276,6 +276,7 @@ import kotlin.math.roundToInt
 internal fun MediaDetailsScreen(
     engine: UnifiedMediaEngine,
     settingsStore: SettingsStore,
+    active: Boolean,
     initialItem: MediaItem,
     initialLibraryEntry:
         LibraryPlaybackEntry?,
@@ -405,6 +406,12 @@ internal fun MediaDetailsScreen(
         initialItem.type,
     ) {
         mutableStateOf(false)
+    }
+    var watchlistUserOverride by remember(
+        initialItem.id,
+        initialItem.type,
+    ) {
+        mutableStateOf<Boolean?>(null)
     }
 
     var detailPlaybackEntries by remember(
@@ -607,11 +614,12 @@ internal fun MediaDetailsScreen(
         dnaSnapshot: UserDnaSnapshot?,
         preserveCurrentEpisode: Boolean,
     ) {
-        inWatchlist =
+        val storedInWatchlist =
             snapshot.watchlist.any { stored ->
                 stored.id == media.id &&
                     stored.type == media.type
             }
+        inWatchlist = watchlistUserOverride ?: storedInWatchlist
 
         detailPlaybackEntries =
             (
@@ -701,11 +709,27 @@ internal fun MediaDetailsScreen(
         }
     }
 
+    LaunchedEffect(active) {
+        if (!active) {
+            // AnimatedContent keeps the outgoing Details tree alive briefly.
+            // Invalidate any local-library refresh launched from rememberCoroutineScope
+            // immediately instead of waiting for the exit animation to dispose it.
+            detailLibraryHydrationGeneration++
+            sourceDiscoveryGeneration++
+            sourceDiscoveryJob?.cancel()
+            sourceDiscoveryJob = null
+            sourceDiscoveryControl = null
+        }
+    }
+
     LaunchedEffect(
+        active,
         initialItem.id,
         initialItem.type,
         initialItem.sourceExtensionId,
     ) {
+        if (!active) return@LaunchedEffect
+
         loadingMeta = true
         relatedItems = emptyList()
         tmdbMoreLikeThisEnabled = false
@@ -2264,19 +2288,22 @@ internal fun MediaDetailsScreen(
                                 48.dp
                             ),
                         onClick = {
-                            inWatchlist =
+                            // Keep an explicit user override so an in-flight startup
+                            // snapshot cannot repaint the button with its pre-click state.
+                            val updated =
                                 libraryStore
                                     .toggleWatchlist(
                                         item
                                     )
+                            watchlistUserOverride = updated
+                            inWatchlist = updated
 
                             onLibraryChanged()
                         },
                     ) {
                         Icon(
                             if (inWatchlist) {
-                                Icons.Default
-                                    .VideoLibrary
+                                Icons.Default.Check
                             } else {
                                 Icons.Default.Add
                             },

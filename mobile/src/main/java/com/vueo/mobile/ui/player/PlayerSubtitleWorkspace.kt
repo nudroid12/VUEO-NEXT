@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -210,31 +211,24 @@ internal fun PlayerSubtitleWorkspace(
                     .width(710.dp)
                     .fillMaxHeight(),
             ) {
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Subtitles",
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            when {
-                                refreshing -> "Refreshing subtitle discovery…"
-                                !refreshMessage.isNullOrBlank() -> refreshMessage
-                                else -> "Choose a language, track and style"
-                            },
-                            color = Color.White.copy(alpha = .52f),
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                    SubtitleDiscoveryRefreshButton(
-                        refreshing = refreshing,
-                        onClick = onRefresh,
+                    Text(
+                        "Subtitles",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        when {
+                            refreshing -> "Refreshing subtitle discovery…"
+                            !refreshMessage.isNullOrBlank() -> refreshMessage
+                            else -> "Choose a language, track and style"
+                        },
+                        color = Color.White.copy(alpha = .52f),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -248,6 +242,12 @@ internal fun PlayerSubtitleWorkspace(
                     SubtitleSectionCard(
                         title = "Languages",
                         modifier = Modifier.weight(3f),
+                        headerAction = {
+                            SubtitleDiscoveryRefreshButton(
+                                refreshing = refreshing,
+                                onClick = onRefresh,
+                            )
+                        },
                     ) {
                         LazyColumn(
                             verticalArrangement =
@@ -379,6 +379,7 @@ internal fun PlayerSubtitleWorkspace(
 private fun SubtitleSectionCard(
     title: String,
     modifier: Modifier = Modifier,
+    headerAction: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
@@ -399,12 +400,19 @@ private fun SubtitleSectionCard(
         ),
     ) {
         Column(Modifier.padding(13.dp)) {
-            Text(
-                title,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                headerAction?.invoke()
+            }
             Spacer(Modifier.height(10.dp))
             content()
         }
@@ -555,28 +563,21 @@ private fun SubtitleDiscoveryRefreshButton(
     refreshing: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(50)
-    Row(
+    val shape = CircleShape
+    Box(
         modifier = Modifier
+            .size(30.dp)
             .clip(shape)
             .background(SubtitleAccent.copy(alpha = if (refreshing) .06f else .12f))
             .border(1.dp, SubtitleAccent.copy(alpha = if (refreshing) .18f else .36f), shape)
-            .clickable(enabled = !refreshing, onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clickable(enabled = !refreshing, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Default.Refresh,
-            contentDescription = "Refresh subtitles",
-            tint = Color.White.copy(alpha = if (refreshing) .42f else .86f),
-            modifier = Modifier.size(15.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            if (refreshing) "Refreshing…" else "Refresh",
-            color = Color.White.copy(alpha = if (refreshing) .46f else .88f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
+            imageVector = Icons.Default.Sync,
+            contentDescription = if (refreshing) "Refreshing subtitles" else "Refresh subtitles",
+            tint = Color.White.copy(alpha = if (refreshing) .42f else .88f),
+            modifier = Modifier.size(16.dp),
         )
     }
 }

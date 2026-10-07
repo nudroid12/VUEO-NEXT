@@ -275,10 +275,6 @@ internal fun LibraryScreen(
 
     val context = LocalContext.current
 
-    var cloudSelected by remember {
-        mutableStateOf(false)
-    }
-
     val libraryUiPreferences =
         remember {
             context.getSharedPreferences(
@@ -303,11 +299,10 @@ internal fun LibraryScreen(
                 .background(
                     VueoPalette.Background
                 ),
+        // Match Search exactly: the list owns only the bottom inset and the
+        // header owns its own 20/20/24 positioning.
         contentPadding =
             PaddingValues(
-                start = 20.dp,
-                end = 20.dp,
-                top = 24.dp,
                 bottom = 34.dp,
             ),
         verticalArrangement =
@@ -319,16 +314,19 @@ internal fun LibraryScreen(
             key = "library-header"
         ) {
             Column(
-                verticalArrangement =
-                    Arrangement.spacedBy(
-                        20.dp
+                modifier =
+                    Modifier.padding(
+                        start = 20.dp,
+                        end = 20.dp,
+                        top = 24.dp,
+                        bottom = 2.dp,
                     ),
             ) {
                 Row(
                     modifier =
                         Modifier.fillMaxWidth(),
                     verticalAlignment =
-                        Alignment.CenterVertically,
+                        Alignment.Top,
                 ) {
                     Text(
                         text = "Library",
@@ -359,59 +357,26 @@ internal fun LibraryScreen(
                         },
                     )
                 }
-
-                Row(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(
-                            10.dp
-                        ),
-                ) {
-                    LibraryTab(
-                        label = "My List",
-                        selected =
-                            !cloudSelected,
-                        onClick = {
-                            cloudSelected =
-                                false
-                        },
-                    )
-
-                    LibraryTab(
-                        label = "Cloud",
-                        selected =
-                            cloudSelected,
-                        onClick = {
-                            cloudSelected =
-                                true
-                        },
-                    )
-                }
             }
         }
 
-        if (cloudSelected) {
-            item(
-                key = "library-cloud-empty"
-            ) {
-                LibraryEmptyCard(
-                    title =
-                        "Cloud library",
-                    body =
-                        "Cloud sync is not connected yet. Your locally saved titles stay available in My List.",
-                )
-            }
-        } else if (
-            watchlist.isEmpty()
-        ) {
+        if (watchlist.isEmpty()) {
             item(
                 key = "library-saved-empty"
             ) {
-                LibraryEmptyCard(
-                    title =
-                        "Your library is empty",
-                    body =
-                        "Titles added to My List will appear here.",
-                )
+                Box(
+                    modifier =
+                        Modifier.padding(
+                            horizontal = 20.dp
+                        )
+                ) {
+                    LibraryEmptyCard(
+                        title =
+                            "Your library is empty",
+                        body =
+                            "Titles added to My List will appear here.",
+                    )
+                }
             }
         } else if (gridView) {
             watchlist
@@ -427,7 +392,10 @@ internal fun LibraryScreen(
                         Row(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth(),
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = 20.dp
+                                    ),
                             horizontalArrangement =
                                 Arrangement.spacedBy(
                                     10.dp
@@ -479,68 +447,23 @@ internal fun LibraryScreen(
             ) {
                 media ->
 
-                LibrarySavedListRow(
-                    media = media,
-                    onClick = {
-                        onMediaClick(
-                            media
+                Box(
+                    modifier =
+                        Modifier.padding(
+                            horizontal = 20.dp
                         )
-                    },
-                )
+                ) {
+                    LibrarySavedListRow(
+                        media = media,
+                        onClick = {
+                            onMediaClick(
+                                media
+                            )
+                        },
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun LibraryTab(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier =
-            Modifier.clickable(
-                onClick = onClick
-            ),
-        shape =
-            RoundedCornerShape(
-                50
-            ),
-        color =
-            if (selected) {
-                Color.White.copy(
-                    alpha = .14f
-                )
-            } else {
-                VueoPalette
-                    .SurfaceElevated
-                    .copy(
-                        alpha = .58f
-                    )
-            },
-    ) {
-        Text(
-            text = label,
-            modifier =
-                Modifier.padding(
-                    horizontal = 20.dp,
-                    vertical = 10.dp,
-                ),
-            color =
-                if (selected) {
-                    Color.White
-                } else {
-                    VueoPalette.Muted
-                },
-            fontSize = 14.sp,
-            fontWeight =
-                if (selected) {
-                    FontWeight.Bold
-                } else {
-                    FontWeight.Medium
-                },
-        )
     }
 }
 

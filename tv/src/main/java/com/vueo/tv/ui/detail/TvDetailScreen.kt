@@ -61,6 +61,9 @@ fun TvDetailScreen(
     // Keep the first Details composition storage-free. Library JSON can be large on TV,
     // so watch/history state is hydrated from Dispatchers.IO after the shell is visible.
     var watchlisted by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(false) }
+    var watchlistUserOverride by remember(initial.id, initial.type, initial.sourceExtensionId) {
+        mutableStateOf<Boolean?>(null)
+    }
     var movieWatched by remember(initial.id, initial.type, initial.sourceExtensionId) { mutableStateOf(false) }
     var history by remember(initial.id, initial.type, initial.sourceExtensionId) {
         mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
@@ -190,7 +193,7 @@ fun TvDetailScreen(
                     playbackEntries = runtime.libraryStore.continueWatchingPlaybackEntries(),
                 )
             }
-            watchlisted = snapshot.watchlisted
+            watchlisted = watchlistUserOverride ?: snapshot.watchlisted
             movieWatched = snapshot.movieWatched
             history = snapshot.history
             playbackEntries = snapshot.playbackEntries
@@ -209,7 +212,7 @@ fun TvDetailScreen(
             val flags = withContext(Dispatchers.IO) {
                 runtime.libraryStore.isWatchlisted(core) to runtime.libraryStore.isMarkedWatched(core)
             }
-            watchlisted = flags.first
+            watchlisted = watchlistUserOverride ?: flags.first
             movieWatched = flags.second
         }
 
@@ -321,7 +324,11 @@ fun TvDetailScreen(
             }
         },
         onToggleList = {
-            watchlisted = runtime.libraryStore.toggleWatchlist(item)
+            // Preserve the user's immediate visual choice even if startup
+            // hydration is still carrying a pre-click watchlist snapshot.
+            val updated = runtime.libraryStore.toggleWatchlist(item)
+            watchlistUserOverride = updated
+            watchlisted = updated
             onLibraryChanged()
         },
         onToggleWatched = {

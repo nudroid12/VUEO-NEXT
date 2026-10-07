@@ -71,6 +71,34 @@ internal fun vueoFadeThrough(): ContentTransform =
         )
 
 /**
+ * Details -> root is a reverse navigation gesture, so the root surface should
+ * become visible immediately. The outgoing Details composition may still live
+ * for the short fade, but there is deliberately no incoming dead-time.
+ */
+internal fun vueoDetailsBackFadeThrough(): ContentTransform =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = 135,
+                easing = VueoMotion.EaseOut,
+            ),
+        ) +
+            scaleIn(
+                initialScale = 0.998f,
+                animationSpec = tween(
+                    durationMillis = 145,
+                    easing = VueoMotion.EaseOut,
+                ),
+            )
+    ) togetherWith
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = 82,
+                easing = VueoMotion.EaseIn,
+            ),
+        )
+
+/**
  * Home is one of the heaviest poster surfaces. Give the outgoing page a
  * slightly cleaner lead before Home starts drawing, while keeping the total
  * transition short enough that navigation still feels immediate.

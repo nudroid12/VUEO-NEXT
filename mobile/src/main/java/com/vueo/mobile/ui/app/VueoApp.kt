@@ -598,7 +598,14 @@ fun VueoApp() {
     AnimatedContent(
         targetState = appSurface,
         transitionSpec = {
-            vueoFadeThrough()
+            if (
+                initialState == AppSurface.DETAILS &&
+                targetState == AppSurface.ROOT
+            ) {
+                vueoDetailsBackFadeThrough()
+            } else {
+                vueoFadeThrough()
+            }
         },
         modifier = Modifier.fillMaxSize(),
         label = "VUEO app surface transition",
@@ -694,6 +701,7 @@ fun VueoApp() {
                     MediaDetailsScreen(
                         engine = engine,
                         settingsStore = settingsStore,
+                        active = selectedMedia != null,
                         initialItem = detailItem,
                         initialLibraryEntry = transitionLibraryEntry,
                         onLibraryChanged = {
