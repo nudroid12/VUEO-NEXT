@@ -117,6 +117,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.motion.tvPanelEnter
 import com.vueo.tv.ui.motion.tvPanelExit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -165,9 +166,11 @@ fun TvPlayerScreen(
     onRefreshSources: () -> Unit = {},
     sourcesStopped: Boolean = false,
     onStopSources: () -> Unit = {},
+    onRefreshSubtitles: suspend () -> Int = { 0 },
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
     onPrefetchNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
+    onValidateNextEpisodePrefetch: suspend (EpisodeItem, StreamSource, Int) -> Unit = { _, _, _ -> },
     onActiveSourceChanged: (StreamSource) -> Unit = {},
     episodeSwitching: Boolean = false,
     onEpisodeFrameReady: () -> Unit = {},
@@ -297,6 +300,8 @@ fun TvPlayerScreen(
         mutableStateOf<String?>(null)
     }
     var subtitlePreparationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
+    var subtitleDiscoveryRefreshing by remember(mediaKey) { mutableStateOf(false) }
+    var subtitleRefreshMessage by remember(mediaKey) { mutableStateOf<String?>(null) }
 
     val httpFactory = remember(bundle.videoId) {
         DefaultHttpDataSource.Factory()
@@ -381,13 +386,43 @@ fun TvPlayerScreen(
 
     val nextEpisode = remember(media.episodes, episode?.id) { nextEpisode(media.episodes, episode) }
     LaunchedEffect(activeSource.url) { onActiveSourceChanged(activeSource) }
-    var prefetchDispatched by remember(bundle.videoId) { mutableStateOf(false) }
-    val prefetchEligible = playing && !episodeSwitching && nextEpisode != null &&
-        durationMs > 0L && positionMs >= (durationMs - 300_000L).coerceAtLeast(0L)
-    LaunchedEffect(prefetchEligible, nextEpisode?.id) {
+    var prefetchDispatched by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
+    var threeMinutePrefetchCheckDispatched by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
+    var oneMinutePrefetchCheckDispatched by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
+    val prefetchBaseEligible =
+        playing && !episodeSwitching && nextEpisode != null && durationMs > 0L
+    val prefetchEligible =
+        prefetchBaseEligible &&
+            positionMs >= (durationMs - 300_000L).coerceAtLeast(0L)
+    val threeMinutePrefetchCheckEligible =
+        prefetchBaseEligible &&
+            positionMs >= (durationMs - 180_000L).coerceAtLeast(0L)
+    val oneMinutePrefetchCheckEligible =
+        prefetchBaseEligible &&
+            positionMs >= (durationMs - 60_000L).coerceAtLeast(0L)
+
+    LaunchedEffect(prefetchEligible, nextEpisode?.id, activeSource.url) {
         if (prefetchEligible && !prefetchDispatched) {
             prefetchDispatched = true
             nextEpisode?.let { onPrefetchNextEpisode(it, activeSource) }
+        }
+    }
+    LaunchedEffect(threeMinutePrefetchCheckEligible, nextEpisode?.id, activeSource.url) {
+        if (threeMinutePrefetchCheckEligible && !threeMinutePrefetchCheckDispatched) {
+            threeMinutePrefetchCheckDispatched = true
+            nextEpisode?.let { target ->
+                onPrefetchNextEpisode(target, activeSource)
+                onValidateNextEpisodePrefetch(target, activeSource, 180)
+            }
+        }
+    }
+    LaunchedEffect(oneMinutePrefetchCheckEligible, nextEpisode?.id, activeSource.url) {
+        if (oneMinutePrefetchCheckEligible && !oneMinutePrefetchCheckDispatched) {
+            oneMinutePrefetchCheckDispatched = true
+            nextEpisode?.let { target ->
+                onPrefetchNextEpisode(target, activeSource)
+                onValidateNextEpisodePrefetch(target, activeSource, 60)
+            }
         }
     }
 
@@ -1973,6 +2008,29 @@ fun TvPlayerScreen(
             playbackSpeed = playbackSpeed,
         )
 
+        fun requestSubtitleRefresh() {
+            if (subtitleDiscoveryRefreshing) return
+            subtitleDiscoveryRefreshing = true
+            subtitleRefreshMessage = null
+            focusScope.launch {
+                try {
+                    val added = onRefreshSubtitles()
+                    subtitleRefreshMessage =
+                        if (added > 0) {
+                            "Subtitles refreshed • +$added new"
+                        } else {
+                            "No new subtitles found"
+                        }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    subtitleRefreshMessage = "Subtitle refresh failed • existing tracks kept"
+                } finally {
+                    subtitleDiscoveryRefreshing = false
+                }
+            }
+        }
+
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
             requestedSubtitleSelectionId = choice.selectionId
             fun commitSelection(selected: TvPlayerTrackChoice) {
@@ -2083,6 +2141,9 @@ fun TvPlayerScreen(
             exit = tvPlayerWorkspaceFadeOut(),
         ) {
             VueoPlayerSubtitleWorkspace(
+                refreshing = subtitleDiscoveryRefreshing,
+                refreshMessage = subtitleRefreshMessage,
+                onRefresh = ::requestSubtitleRefresh,
                 panelModifier = Modifier.animateEnterExit(
                     enter = tvPlayerSidePanelEnter(),
                     exit = tvPlayerSidePanelExit(),

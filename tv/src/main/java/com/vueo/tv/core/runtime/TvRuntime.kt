@@ -15,6 +15,7 @@ import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
+import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
@@ -373,6 +374,23 @@ class TvRuntime(context: Context) {
             onProgress(snapshot.progress)
             onUpdate(snapshot)
         }
+    }
+
+    suspend fun refreshSubtitles(
+        item: MediaItem,
+        episode: EpisodeItem?,
+        onProgress: (List<SubtitleTrack>) -> Unit = {},
+    ): List<SubtitleTrack> {
+        val videoId = if (MediaTypePolicy.isSeries(item.type)) {
+            episode?.id ?: item.id
+        } else {
+            item.id
+        }
+        return sourceDiscoveryEngine.discoverSubtitlesOnly(
+            item = item,
+            videoId = videoId,
+            onProgress = onProgress,
+        )
     }
 
     fun localRelatedTitles(item: MediaItem): List<MediaItem> =

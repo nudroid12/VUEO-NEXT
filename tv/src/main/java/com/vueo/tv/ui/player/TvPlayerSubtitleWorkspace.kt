@@ -61,6 +61,9 @@ import com.vueo.tv.ui.TvNetworkImage
 @Composable
 internal fun VueoPlayerSubtitleWorkspace(
     panelModifier: Modifier = Modifier,
+    refreshing: Boolean,
+    refreshMessage: String?,
+    onRefresh: () -> Unit,
     tracks: List<TvPlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
@@ -137,6 +140,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         preferredFilterActive && groups.isNotEmpty() -> 1
         else -> 0
     }
+    val refreshRequester = remember { FocusRequester() }
     val languageRequesters = remember(groups.map { it.code }, entryLanguageIndex, entryFocusRequester) {
         List(groups.size + 1) { index ->
             if (index == entryLanguageIndex && !hasSelectedSubtitle) entryFocusRequester else FocusRequester()
@@ -256,19 +260,39 @@ internal fun VueoPlayerSubtitleWorkspace(
                 .fillMaxSize()
                 .padding(start = 44.dp, top = 24.dp, end = 44.dp, bottom = SubtitleWorkspaceBottomClearance),
         ) {
-            Text(
-                "Subtitles",
-                color = Color.White,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Choose a language, track and style",
-                color = Color.White.copy(alpha = .56f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Normal,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Subtitles",
+                        color = Color.White,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        when {
+                            refreshing -> "Refreshing subtitle discovery…"
+                            !refreshMessage.isNullOrBlank() -> refreshMessage
+                            else -> "Choose a language, track and style"
+                        },
+                        color = Color.White.copy(alpha = .56f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                    )
+                }
+                VueoSubtitleHeaderButton(
+                    label = if (refreshing) "Refreshing…" else "Refresh",
+                    requester = refreshRequester,
+                    downRequester = languageRequesters.first(),
+                    leftRequester = FocusRequester.Cancel,
+                    rightRequester = FocusRequester.Cancel,
+                    onInteraction = onInteraction,
+                    onClick = { if (!refreshing) onRefresh() },
+                )
+            }
             Spacer(Modifier.height(14.dp))
 
             Row(
@@ -301,6 +325,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     requester = languageRequesters[0],
                                     blockUp = true,
                                     blockDown = groups.isEmpty(),
+                                    upRequester = refreshRequester,
                                     rightRequester = firstTrackRequester,
                                     onInteraction = onInteraction,
                                 ) {
@@ -799,6 +824,7 @@ private fun VueoSubtitleLanguageRow(
     blockUp: Boolean,
     blockDown: Boolean,
     rightRequester: FocusRequester,
+    upRequester: FocusRequester? = null,
     onRight: (() -> Unit)? = null,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
@@ -811,7 +837,8 @@ private fun VueoSubtitleLanguageRow(
             .fillMaxWidth()
             .focusRequester(requester)
             .focusProperties {
-                if (blockUp) up = FocusRequester.Cancel
+                if (upRequester != null) up = upRequester
+                else if (blockUp) up = FocusRequester.Cancel
                 if (blockDown) down = FocusRequester.Cancel
                 left = FocusRequester.Cancel
                 right = rightRequester

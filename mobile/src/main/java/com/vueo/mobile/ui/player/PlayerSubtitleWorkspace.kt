@@ -96,6 +96,9 @@ private val SubtitleItemShape = RoundedCornerShape(13.dp)
 @Composable
 internal fun PlayerSubtitleWorkspace(
     visible: Boolean,
+    refreshing: Boolean,
+    refreshMessage: String?,
+    onRefresh: () -> Unit,
     tracks: List<PlayerTrackChoice>,
     subtitlesDisabled: Boolean,
     pendingSelectionId: String?,
@@ -207,18 +210,33 @@ internal fun PlayerSubtitleWorkspace(
                     .width(710.dp)
                     .fillMaxHeight(),
             ) {
-                Text(
-                    "Subtitles",
-                    color = Color.White,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Choose a language, track and style",
-                    color = Color.White.copy(alpha = .52f),
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Subtitles",
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            when {
+                                refreshing -> "Refreshing subtitle discovery…"
+                                !refreshMessage.isNullOrBlank() -> refreshMessage
+                                else -> "Choose a language, track and style"
+                            },
+                            color = Color.White.copy(alpha = .52f),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    SubtitleDiscoveryRefreshButton(
+                        refreshing = refreshing,
+                        onClick = onRefresh,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
@@ -528,6 +546,37 @@ private fun ProviderBadge(label: String, selected: Boolean) {
             fontSize = 8.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun SubtitleDiscoveryRefreshButton(
+    refreshing: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(SubtitleAccent.copy(alpha = if (refreshing) .06f else .12f))
+            .border(1.dp, SubtitleAccent.copy(alpha = if (refreshing) .18f else .36f), shape)
+            .clickable(enabled = !refreshing, onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Refresh,
+            contentDescription = "Refresh subtitles",
+            tint = Color.White.copy(alpha = if (refreshing) .42f else .86f),
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (refreshing) "Refreshing…" else "Refresh",
+            color = Color.White.copy(alpha = if (refreshing) .46f else .88f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }

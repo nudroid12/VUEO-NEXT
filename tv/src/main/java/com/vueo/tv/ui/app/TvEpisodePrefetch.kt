@@ -2,11 +2,13 @@ package com.vueo.tv
 
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.NextEpisodeSourcePolicy
 import com.vueo.shared.core.source.SourceDiscoveryControl
 import com.vueo.tv.core.TvSourceBundle
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
 
 /** One source scan and one independent subtitle scan for the next episode. */
 internal class TvEpisodePrefetch(
@@ -14,9 +16,11 @@ internal class TvEpisodePrefetch(
     val originSession: Int,
     val target: EpisodeItem,
     val preferredSource: StreamSource,
+    val seedSubtitles: List<SubtitleTrack> = emptyList(),
 ) {
     val control = SourceDiscoveryControl()
     val sourcesReady = CompletableDeferred<Unit>()
+    val validationMutex = Mutex()
     var job: Job? = null
     var bundle: TvSourceBundle? = null
     var matchedSource: StreamSource? = null

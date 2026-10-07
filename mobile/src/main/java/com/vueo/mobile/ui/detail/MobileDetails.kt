@@ -209,6 +209,8 @@ import com.vueo.shared.core.source.SourceDiscoveryActivity
 import com.vueo.shared.core.source.SourceDiscoveryRequest
 import com.vueo.shared.core.source.SourceDiscoveryBundle
 import com.vueo.shared.core.player.NextEpisodeSourcePolicy
+import com.vueo.shared.core.player.NextEpisodePrefetchValidator
+import com.vueo.shared.core.player.PrefetchedSourceValidation
 import com.vueo.shared.core.player.PlayerSourceDisplay
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.mobile.core.dna.UserDnaEngine
@@ -263,6 +265,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
 
 @Composable
@@ -882,6 +885,40 @@ internal fun MediaDetailsScreen(
             null
         }
 
+    suspend fun refreshPlayerSubtitles(
+        expectedVideoId: String,
+    ): Int {
+        val beforeUrls = sourcePickerSubtitles.mapTo(linkedSetOf()) { it.url }
+        RuntimeDiagnostics.recordPlayerEvent(
+            "Mobile",
+            "SUBTITLE_REFRESH_START",
+            "video=$expectedVideoId existing=${beforeUrls.size}",
+        )
+
+        val refreshed = sourceDiscoveryEngine.discoverSubtitlesOnly(
+            item = item,
+            videoId = expectedVideoId,
+            subtitleLanguageCodes = subtitleLanguageCodesForDiscovery(),
+            onProgress = { discovered ->
+                if (selectedPlaybackVideoId == expectedVideoId) {
+                    sourcePickerSubtitles =
+                        (sourcePickerSubtitles + discovered).distinctBy { it.url }
+                }
+            },
+        )
+
+        if (selectedPlaybackVideoId != expectedVideoId) return 0
+        sourcePickerSubtitles =
+            (sourcePickerSubtitles + refreshed).distinctBy { it.url }
+        val added = sourcePickerSubtitles.count { it.url !in beforeUrls }
+        RuntimeDiagnostics.recordPlayerEvent(
+            "Mobile",
+            "SUBTITLE_REFRESH_DONE",
+            "video=$expectedVideoId added=$added total=${sourcePickerSubtitles.size}",
+        )
+        return added
+    }
+
     fun cancelEpisodePrefetch() {
         playingEpisodePrefetch?.cancel()
         playingEpisodePrefetch = null
@@ -902,6 +939,7 @@ internal fun MediaDetailsScreen(
     fun startEpisodePrefetch(
         target: EpisodeItem,
         current: StreamSource,
+        seedSubtitles: List<SubtitleTrack> = emptyList(),
     ) {
         val originVideoId = selectedPlaybackVideoId ?: return
         if (pendingPlaybackEpisode != null) return
@@ -937,6 +975,7 @@ internal fun MediaDetailsScreen(
             originVideoId = originVideoId,
             target = target,
             preferredSource = current,
+            seedSubtitles = seedSubtitles,
         )
         episodePrefetch = pending
         RuntimeDiagnostics.recordPlayerEvent(
@@ -956,6 +995,7 @@ internal fun MediaDetailsScreen(
                         forceRefresh = true,
                         subtitleLanguageCodes = subtitleLanguageCodesForDiscovery(),
                         sourceProviderName = current.providerName,
+                        discoverSubtitles = seedSubtitles.isEmpty(),
                     ),
                     control = pending.control,
                     onUpdate = prefetchUpdate@ { snapshot ->
@@ -971,7 +1011,8 @@ internal fun MediaDetailsScreen(
                         pending.bundle = snapshot.bundle.copy(
                             subtitles =
                                 (
-                                    previous?.subtitles.orEmpty() +
+                                    pending.seedSubtitles +
+                                        previous?.subtitles.orEmpty() +
                                         snapshot.bundle.subtitles
                                 ).distinctBy { it.url },
                         )
@@ -1013,6 +1054,87 @@ internal fun MediaDetailsScreen(
             } finally {
                 pending.sourcesReady.complete(Unit)
             }
+        }
+    }
+
+    suspend fun validateEpisodePrefetch(
+        target: EpisodeItem,
+        current: StreamSource,
+        checkpointSeconds: Int,
+    ) {
+        // A seek can cross more than one checkpoint at once. Re-read the active
+        // prefetch after waiting on its mutex so a newer refresh is never probed
+        // through a stale object.
+        repeat(2) {
+            val pending = episodePrefetch
+            if (pending == null) {
+                startEpisodePrefetch(target, current)
+                return
+            }
+
+            var restart = false
+            var restartSubtitles = emptyList<SubtitleTrack>()
+            var handled = false
+
+            pending.validationMutex.withLock {
+                if (episodePrefetch !== pending || pending.claimed) {
+                    return@withLock
+                }
+                if (
+                    pending.target.id != target.id ||
+                    !NextEpisodeSourcePolicy.sameServer(pending.preferredSource, current)
+                ) {
+                    return@withLock
+                }
+
+                handled = true
+                val matched = pending.matchedSource
+                if (matched == null) {
+                    // The T-5 scan may still be running. Do not duplicate it. If
+                    // it already finished without the requested server, rerun the
+                    // exact same filtered prefetch pipeline.
+                    if (pending.job?.isActive != true) {
+                        restart = true
+                        restartSubtitles = pending.bundle?.subtitles.orEmpty()
+                    }
+                    RuntimeDiagnostics.recordPlayerEvent(
+                        "Mobile",
+                        "NEXT_PREFETCH_VALIDATE",
+                        "checkpoint=${checkpointSeconds}s state=${if (restart) "missing" else "pending"}",
+                    )
+                    return@withLock
+                }
+
+                val result = NextEpisodePrefetchValidator.validate(matched)
+                RuntimeDiagnostics.recordPlayerEvent(
+                    "Mobile",
+                    "NEXT_PREFETCH_VALIDATE",
+                    "checkpoint=${checkpointSeconds}s result=${result.name.lowercase()} " +
+                        "server=${PlayerSourceDisplay.title(matched)}",
+                )
+                if (result != PrefetchedSourceValidation.VALID) {
+                    restart = true
+                    restartSubtitles = pending.bundle?.subtitles.orEmpty()
+                }
+            }
+
+            if (!handled) return@repeat
+            if (!restart) return
+            if (episodePrefetch === pending) {
+                pending.cancel()
+                episodePrefetch = null
+                RuntimeDiagnostics.recordPlayerEvent(
+                    "Mobile",
+                    "NEXT_PREFETCH_REFRESH",
+                    "checkpoint=${checkpointSeconds}s provider=${current.providerName}",
+                )
+                startEpisodePrefetch(
+                    target = target,
+                    current = current,
+                    seedSubtitles = restartSubtitles,
+                )
+            }
+            return
         }
     }
 
@@ -1502,6 +1624,9 @@ internal fun MediaDetailsScreen(
                             sourcePickerPluginsStopped = true
                             sourcePickerSourcesStopped = true
                         },
+                        onRefreshSubtitles = {
+                            refreshPlayerSubtitles(playerVideoId)
+                        },
                         subtitlesState = sourcePickerSubtitlesState,
                         initialPositionMs =
                             selectedPlaybackStartPositionMs,
@@ -1537,6 +1662,9 @@ internal fun MediaDetailsScreen(
                         },
                         onPrefetchNextEpisode = { target, current ->
                             startEpisodePrefetch(target, current)
+                        },
+                        onValidateNextEpisodePrefetch = { target, current, checkpointSeconds ->
+                            validateEpisodePrefetch(target, current, checkpointSeconds)
                         },
                         onActiveSourceChanged = { current ->
                             episodePrefetch

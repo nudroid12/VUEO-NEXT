@@ -33,6 +33,24 @@ class SourceDiscoveryEngine(
     private val pluginEngine: PluginSourceEngine,
     private val pluginStore: PluginStore,
 ) {
+    /**
+     * Re-run only subtitle discovery for the current video. This intentionally
+     * avoids touching stream/provider discovery so an in-player subtitle refresh
+     * cannot reload the video, switch server, or disturb playback position.
+     */
+    suspend fun discoverSubtitlesOnly(
+        item: MediaItem,
+        videoId: String,
+        subtitleLanguageCodes: Set<String>? = null,
+        onProgress: (List<SubtitleTrack>) -> Unit = {},
+    ): List<SubtitleTrack> =
+        mediaEngine.resolveSubtitles(
+            type = item.type,
+            videoId = videoId,
+            allowedLanguageCodes = subtitleLanguageCodes,
+            onProgress = onProgress,
+        )
+
     suspend fun discover(
         request: SourceDiscoveryRequest,
         control: SourceDiscoveryControl? = null,

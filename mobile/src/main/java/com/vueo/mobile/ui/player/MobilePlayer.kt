@@ -405,6 +405,7 @@ internal fun PlayerScreen(
     sourcesStopped: Boolean,
     onRefreshSources: () -> Unit,
     onStopSources: () -> Unit,
+    onRefreshSubtitles: suspend () -> Int,
     subtitlesState: State<List<SubtitleTrack>>,
     initialPositionMs: Long,
     episodeSwitchingTo: EpisodeItem?,
@@ -414,6 +415,7 @@ internal fun PlayerScreen(
     onLibraryChanged: () -> Unit,
     onSwitchSource: (StreamSource, Long) -> Unit,
     onPrefetchNextEpisode: (EpisodeItem, StreamSource) -> Unit,
+    onValidateNextEpisodePrefetch: suspend (EpisodeItem, StreamSource, Int) -> Unit,
     onActiveSourceChanged: (StreamSource) -> Unit,
     onNextEpisode: (EpisodeItem) -> Unit,
     onEpisodeSelected: (EpisodeItem) -> Unit,
@@ -668,6 +670,8 @@ internal fun PlayerScreen(
         mutableStateOf(false)
     }
     val subtitleSelectionScope = rememberCoroutineScope()
+    var subtitleDiscoveryRefreshing by remember(mediaKey) { mutableStateOf(false) }
+    var subtitleRefreshMessage by remember(mediaKey) { mutableStateOf<String?>(null) }
     val latestSubtitles = rememberUpdatedState(subtitles)
     var pendingSubtitleSelectionId by remember(mediaKey) {
         val contentSelection = settingsStore.subtitleSelection(mediaKey)
@@ -1962,26 +1966,75 @@ internal fun PlayerScreen(
     var nextEpisodePrefetchDispatched by remember(videoId, source.url) {
         mutableStateOf(false)
     }
-    val nextEpisodePrefetchEligible =
+    var nextEpisodeThreeMinuteCheckDispatched by remember(videoId, source.url) {
+        mutableStateOf(false)
+    }
+    var nextEpisodeOneMinuteCheckDispatched by remember(videoId, source.url) {
+        mutableStateOf(false)
+    }
+    val nextEpisodePrefetchBaseEligible =
         isPlaying &&
             episodeSwitchingTo == null &&
             nextEpisode != null &&
-            durationMs > 0L &&
+            durationMs > 0L
+    val nextEpisodePrefetchEligible =
+        nextEpisodePrefetchBaseEligible &&
             currentPositionMs >=
                 (durationMs - 300_000L).coerceAtLeast(0L)
+    val nextEpisodeThreeMinuteCheckEligible =
+        nextEpisodePrefetchBaseEligible &&
+            currentPositionMs >=
+                (durationMs - 180_000L).coerceAtLeast(0L)
+    val nextEpisodeOneMinuteCheckEligible =
+        nextEpisodePrefetchBaseEligible &&
+            currentPositionMs >=
+                (durationMs - 60_000L).coerceAtLeast(0L)
 
     LaunchedEffect(
         nextEpisodePrefetchEligible,
         nextEpisode?.id,
         source.url,
     ) {
-        if (
-            nextEpisodePrefetchEligible &&
-            !nextEpisodePrefetchDispatched
-        ) {
+        if (nextEpisodePrefetchEligible && !nextEpisodePrefetchDispatched) {
             nextEpisodePrefetchDispatched = true
             nextEpisode?.let { target ->
                 onPrefetchNextEpisode(target, source)
+            }
+        }
+    }
+
+    LaunchedEffect(
+        nextEpisodeThreeMinuteCheckEligible,
+        nextEpisode?.id,
+        source.url,
+    ) {
+        if (
+            nextEpisodeThreeMinuteCheckEligible &&
+            !nextEpisodeThreeMinuteCheckDispatched
+        ) {
+            nextEpisodeThreeMinuteCheckDispatched = true
+            nextEpisode?.let { target ->
+                // Ensure the same T-5 pipeline owns the standby object before
+                // validating it. Existing matching prefetches return immediately.
+                onPrefetchNextEpisode(target, source)
+                onValidateNextEpisodePrefetch(target, source, 180)
+            }
+        }
+    }
+
+    LaunchedEffect(
+        nextEpisodeOneMinuteCheckEligible,
+        nextEpisode?.id,
+        source.url,
+    ) {
+        if (
+            nextEpisodeOneMinuteCheckEligible &&
+            !nextEpisodeOneMinuteCheckDispatched
+        ) {
+            nextEpisodeOneMinuteCheckDispatched = true
+            nextEpisode?.let { target ->
+                onPrefetchNextEpisode(target, source)
+                onValidateNextEpisodePrefetch(target, source, 60)
             }
         }
     }
@@ -2298,6 +2351,29 @@ internal fun PlayerScreen(
         }
     }
 
+    fun requestSubtitleRefresh() {
+        if (subtitleDiscoveryRefreshing) return
+        subtitleDiscoveryRefreshing = true
+        subtitleRefreshMessage = null
+        subtitleSelectionScope.launch {
+            try {
+                val added = onRefreshSubtitles()
+                subtitleRefreshMessage =
+                    if (added > 0) {
+                        "Subtitles refreshed • +$added new"
+                    } else {
+                        "No new subtitles found"
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                subtitleRefreshMessage = "Subtitle refresh failed • existing tracks kept"
+            } finally {
+                subtitleDiscoveryRefreshing = false
+            }
+        }
+    }
+
     if (dialogueSyncOpen) {
         SubtitleDialogueSyncDialog(
             player = player,
@@ -2314,6 +2390,9 @@ internal fun PlayerScreen(
 
     PlayerSubtitleWorkspace(
             visible = showSubtitleDialog,
+            refreshing = subtitleDiscoveryRefreshing,
+            refreshMessage = subtitleRefreshMessage,
+            onRefresh = ::requestSubtitleRefresh,
             onSyncByDialogue = {
                 val selected = textTracks.firstOrNull { it.selected }
                 dialogueSyncTrack = if (!subtitlesDisabled && pendingSubtitleSelectionId == null && translatingSubtitleSelectionId == null) {

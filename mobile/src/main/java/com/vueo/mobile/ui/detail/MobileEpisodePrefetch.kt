@@ -2,11 +2,13 @@ package com.vueo.mobile.ui
 
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.NextEpisodeSourcePolicy
 import com.vueo.shared.core.source.SourceDiscoveryBundle
 import com.vueo.shared.core.source.SourceDiscoveryControl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * One filtered next-episode source scan plus its independent subtitle scan.
@@ -20,9 +22,11 @@ internal class MobileEpisodePrefetch(
     val originVideoId: String,
     val target: EpisodeItem,
     val preferredSource: StreamSource,
+    val seedSubtitles: List<SubtitleTrack> = emptyList(),
 ) {
     val control = SourceDiscoveryControl()
     val sourcesReady = CompletableDeferred<Unit>()
+    val validationMutex = Mutex()
     var job: Job? = null
     var bundle: SourceDiscoveryBundle? = null
     var matchedSource: StreamSource? = null

@@ -40,7 +40,10 @@ import com.vueo.shared.core.source.SourceDiscoveryControl
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
+import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerSourcePolicy
+import com.vueo.shared.core.player.NextEpisodePrefetchValidator
+import com.vueo.shared.core.player.PrefetchedSourceValidation
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
@@ -73,6 +76,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 
 private enum class TvRoute {
     STARTUP,
@@ -285,6 +289,57 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     fun sourceSessionKey(media: MediaItem, episode: EpisodeItem?): String =
         "${media.type}:${media.id}:${episode?.id ?: media.id}"
 
+    suspend fun refreshPlayerSubtitles(
+        media: MediaItem,
+        episode: EpisodeItem?,
+        expectedVideoId: String,
+        expectedSession: Int,
+    ): Int {
+        val initialBundle = sourceBundle
+            ?.takeIf { it.videoId == expectedVideoId }
+            ?: return 0
+        val beforeUrls = initialBundle.subtitles.mapTo(linkedSetOf()) { it.url }
+        RuntimeDiagnostics.recordPlayerEvent(
+            "TV",
+            "SUBTITLE_REFRESH_START",
+            "video=$expectedVideoId existing=${beforeUrls.size}",
+        )
+
+        fun mergeIfCurrent(discovered: List<SubtitleTrack>) {
+            if (
+                route != TvRoute.PLAYER ||
+                playerSessionId != expectedSession ||
+                sourceBundle?.videoId != expectedVideoId
+            ) return
+            val current = sourceBundle ?: return
+            sourceBundle = current.copy(
+                subtitles = (current.subtitles + discovered).distinctBy { it.url },
+            )
+        }
+
+        val refreshed = runtime.refreshSubtitles(
+            item = media,
+            episode = episode,
+            onProgress = ::mergeIfCurrent,
+        )
+        mergeIfCurrent(refreshed)
+
+        val current = sourceBundle
+            ?.takeIf {
+                route == TvRoute.PLAYER &&
+                    playerSessionId == expectedSession &&
+                    it.videoId == expectedVideoId
+            }
+            ?: return 0
+        val added = current.subtitles.count { it.url !in beforeUrls }
+        RuntimeDiagnostics.recordPlayerEvent(
+            "TV",
+            "SUBTITLE_REFRESH_DONE",
+            "video=$expectedVideoId added=$added total=${current.subtitles.size}",
+        )
+        return added
+    }
+
     fun cancelEpisodePrefetch() {
         playingEpisodePrefetch?.cancel()
         playingEpisodePrefetch = null
@@ -292,7 +347,11 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         episodePrefetch = null
     }
 
-    fun startEpisodePrefetch(target: EpisodeItem, current: StreamSource) {
+    fun startEpisodePrefetch(
+        target: EpisodeItem,
+        current: StreamSource,
+        seedSubtitles: List<SubtitleTrack> = emptyList(),
+    ) {
         val media = selectedMedia ?: return
         if (route != TvRoute.PLAYER || switchingEpisode != null) return
         if (episodePrefetch?.originSession == playerSessionId) return
@@ -305,7 +364,13 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         } else {
             episodePrefetch?.cancel()
         }
-        val pending = TvEpisodePrefetch("${media.type}:${media.id}", playerSessionId, target, current)
+        val pending = TvEpisodePrefetch(
+            mediaKey = "${media.type}:${media.id}",
+            originSession = playerSessionId,
+            target = target,
+            preferredSource = current,
+            seedSubtitles = seedSubtitles,
+        )
         episodePrefetch = pending
         RuntimeDiagnostics.recordPlayerEvent("TV", "NEXT_PREFETCH_START",
             "episode=S${target.season}E${target.episode} provider=${current.providerName}")
@@ -314,13 +379,15 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 runtime.discover(
                     item = media, episode = target, forceRefresh = true,
                     sourceProviderName = current.providerName,
+                    discoverSubtitles = seedSubtitles.isEmpty(),
                     discoveryControl = pending.control,
                     onUpdate = { snapshot ->
                         if (episodePrefetch === pending || playingEpisodePrefetch === pending) {
                             pending.subtitlesResolved = snapshot.subtitlesResolved
                             val previous = pending.bundle
                             pending.bundle = snapshot.bundle.copy(subtitles =
-                                (previous?.subtitles.orEmpty() + snapshot.bundle.subtitles).distinctBy { it.url })
+                                (pending.seedSubtitles + previous?.subtitles.orEmpty() + snapshot.bundle.subtitles)
+                                    .distinctBy { it.url })
                             if (pending.matchedSource == null) {
                                 pending.matchedSource = com.vueo.shared.core.player.NextEpisodeSourcePolicy.matchingServer(
                                     snapshot.bundle.sources, current,
@@ -349,6 +416,84 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             } finally {
                 pending.sourcesReady.complete(Unit)
             }
+        }
+    }
+
+    suspend fun validateEpisodePrefetch(
+        target: EpisodeItem,
+        current: StreamSource,
+        checkpointSeconds: Int,
+    ) {
+        repeat(2) {
+            val pending = episodePrefetch
+            if (pending == null) {
+                startEpisodePrefetch(target, current)
+                return
+            }
+
+            var restart = false
+            var restartSubtitles = emptyList<SubtitleTrack>()
+            var handled = false
+
+            pending.validationMutex.withLock {
+                if (episodePrefetch !== pending || pending.claimed) {
+                    return@withLock
+                }
+                if (
+                    pending.target.id != target.id ||
+                    !com.vueo.shared.core.player.NextEpisodeSourcePolicy.sameServer(
+                        pending.preferredSource,
+                        current,
+                    )
+                ) {
+                    return@withLock
+                }
+
+                handled = true
+                val matched = pending.matchedSource
+                if (matched == null) {
+                    if (pending.job?.isActive != true) {
+                        restart = true
+                        restartSubtitles = pending.bundle?.subtitles.orEmpty()
+                    }
+                    RuntimeDiagnostics.recordPlayerEvent(
+                        "TV",
+                        "NEXT_PREFETCH_VALIDATE",
+                        "checkpoint=${checkpointSeconds}s state=${if (restart) "missing" else "pending"}",
+                    )
+                    return@withLock
+                }
+
+                val result = NextEpisodePrefetchValidator.validate(matched)
+                RuntimeDiagnostics.recordPlayerEvent(
+                    "TV",
+                    "NEXT_PREFETCH_VALIDATE",
+                    "checkpoint=${checkpointSeconds}s result=${result.name.lowercase()} " +
+                        "server=${com.vueo.shared.core.player.PlayerSourceDisplay.title(matched)}",
+                )
+                if (result != PrefetchedSourceValidation.VALID) {
+                    restart = true
+                    restartSubtitles = pending.bundle?.subtitles.orEmpty()
+                }
+            }
+
+            if (!handled) return@repeat
+            if (!restart) return
+            if (episodePrefetch === pending) {
+                pending.cancel()
+                episodePrefetch = null
+                RuntimeDiagnostics.recordPlayerEvent(
+                    "TV",
+                    "NEXT_PREFETCH_REFRESH",
+                    "checkpoint=${checkpointSeconds}s provider=${current.providerName}",
+                )
+                startEpisodePrefetch(
+                    target = target,
+                    current = current,
+                    seedSubtitles = restartSubtitles,
+                )
+            }
+            return
         }
     }
 
@@ -969,6 +1114,14 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 onRefreshSources = { startSourceDiscovery(media, selectedEpisode, force = true) },
                                 sourcesStopped = sourceDiscoverySnapshot?.sourcesStopped == true,
                                 onStopSources = { sourceDiscoveryControl?.stopSources() },
+                                onRefreshSubtitles = {
+                                    refreshPlayerSubtitles(
+                                        media = media,
+                                        episode = selectedEpisode,
+                                        expectedVideoId = bundle.videoId,
+                                        expectedSession = playbackSession,
+                                    )
+                                },
                                 source = source,
                                 initialPositionMs = initialPositionMs,
                                 playerSessionId = playbackSession,
@@ -979,6 +1132,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 onLibraryChanged = { refreshToken++ },
                                 onPlayNextEpisode = { target, current -> startEpisodeSwitch(target, preferredSource = current) },
                                 onPrefetchNextEpisode = { target, current -> startEpisodePrefetch(target, current) },
+                                onValidateNextEpisodePrefetch = { target, current, checkpointSeconds ->
+                                    validateEpisodePrefetch(target, current, checkpointSeconds)
+                                },
                                 onActiveSourceChanged = { current ->
                                     episodePrefetch?.takeIf {
                                         !it.claimed && !com.vueo.shared.core.player.NextEpisodeSourcePolicy.sameServer(it.preferredSource, current)
