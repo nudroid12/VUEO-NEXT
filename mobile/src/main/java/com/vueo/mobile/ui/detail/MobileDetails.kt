@@ -267,6 +267,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -443,6 +444,22 @@ internal fun MediaDetailsScreen(
         initialItem.type,
     ) {
         mutableIntStateOf(0)
+    }
+
+    var detailSessionGeneration by remember(
+        initialItem.id,
+        initialItem.type,
+        initialItem.sourceExtensionId,
+    ) {
+        mutableIntStateOf(0)
+    }
+
+    var detailStartupJob by remember(
+        initialItem.id,
+        initialItem.type,
+        initialItem.sourceExtensionId,
+    ) {
+        mutableStateOf<Job?>(null)
     }
 
     var selectedSeason by remember { mutableStateOf<Int?>(null) }
@@ -712,8 +729,11 @@ internal fun MediaDetailsScreen(
     LaunchedEffect(active) {
         if (!active) {
             // AnimatedContent keeps the outgoing Details tree alive briefly.
-            // Invalidate any local-library refresh launched from rememberCoroutineScope
-            // immediately instead of waiting for the exit animation to dispose it.
+            // Invalidate all Detail work immediately instead of waiting for
+            // the outgoing composition to be disposed.
+            detailSessionGeneration++
+            detailStartupJob?.cancel()
+            detailStartupJob = null
             detailLibraryHydrationGeneration++
             sourceDiscoveryGeneration++
             sourceDiscoveryJob?.cancel()
@@ -729,6 +749,14 @@ internal fun MediaDetailsScreen(
         initialItem.sourceExtensionId,
     ) {
         if (!active) return@LaunchedEffect
+
+        detailStartupJob = currentCoroutineContext()[Job]
+
+        val detailSession = detailSessionGeneration + 1
+        detailSessionGeneration = detailSession
+
+        fun sessionCurrent(): Boolean =
+            active && detailSessionGeneration == detailSession
 
         loadingMeta = true
         relatedItems = emptyList()
@@ -762,7 +790,8 @@ internal fun MediaDetailsScreen(
                 loadDetailLibraryState()
 
             if (
-                libraryHydrationGeneration == detailLibraryHydrationGeneration
+                libraryHydrationGeneration == detailLibraryHydrationGeneration &&
+                sessionCurrent()
             ) {
                 applyDetailLibrarySnapshot(
                     media = item,
@@ -777,13 +806,24 @@ internal fun MediaDetailsScreen(
             pluginStore
                 .tmdbApiKey()
 
+        val tmdbRecommendationsEnabled =
+            settingsStore
+                .tmdbRecommendationsEnabled()
+        val tmdbSimilarEnabled =
+            settingsStore
+                .tmdbSimilarTitlesEnabled()
+        val tmdbMetadataEnabled =
+            settingsStore
+                .tmdbMetadataEnrichmentEnabled()
+        val tmdbArtworkEnabled =
+            settingsStore
+                .tmdbArtworkEnrichmentEnabled()
+
         tmdbMoreLikeThisEnabled =
             tmdbKey.isNotBlank() &&
             (
-                settingsStore
-                    .tmdbRecommendationsEnabled() ||
-                settingsStore
-                    .tmdbSimilarTitlesEnabled()
+                tmdbRecommendationsEnabled ||
+                tmdbSimilarEnabled
             )
 
         val preparedItem =
@@ -794,26 +834,48 @@ internal fun MediaDetailsScreen(
                         "tmdb:"
                     )
             ) {
-                runCatching {
-                    DetailUpstreamPolicy.prepareForCore(
-                        item = initialItem,
-                        tmdbApiKey = tmdbKey,
-                    )
-                }.getOrDefault(
+                try {
+                    withContext(Dispatchers.IO) {
+                        DetailUpstreamPolicy.prepareForCore(
+                            item = initialItem,
+                            tmdbApiKey = tmdbKey,
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
                     initialItem
-                )
+                }
             } else {
                 initialItem
             }
 
+        if (!sessionCurrent()) return@LaunchedEffect
+
         // Core Stremio metadata is the only stage that controls the
-        // "still resolving" state. The page itself remains fully visible.
+        // "still resolving" state. Network response parsing and episode
+        // normalization stay off Main so an immediate Back is never queued
+        // behind Detail startup work.
         val coreItem =
-            DetailUpstreamPolicy.normalizeSeriesEpisodes(
-                engine.loadMeta(
-                    preparedItem
-                )
-            )
+            try {
+                withContext(Dispatchers.IO) {
+                    DetailUpstreamPolicy.normalizeSeriesEpisodes(
+                        engine.loadMeta(
+                            preparedItem
+                        )
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                withContext(Dispatchers.Default) {
+                    DetailUpstreamPolicy.normalizeSeriesEpisodes(
+                        preparedItem
+                    )
+                }
+            }
+
+        if (!sessionCurrent()) return@LaunchedEffect
 
         item = coreItem
         publishDetailsRatings(
@@ -833,10 +895,14 @@ internal fun MediaDetailsScreen(
             coreItem
 
         val localRelated =
-            RelatedContentOrchestrator.local(
-                item = resolvedItem,
-                limit = 18,
-            )
+            withContext(Dispatchers.Default) {
+                RelatedContentOrchestrator.local(
+                    item = resolvedItem,
+                    limit = 18,
+                )
+            }
+
+        if (!sessionCurrent()) return@LaunchedEffect
 
         relatedItems =
             localRelated
@@ -850,21 +916,27 @@ internal fun MediaDetailsScreen(
             if (
                 tmdbKey.isNotBlank() &&
                 (
-                    settingsStore
-                        .tmdbMetadataEnrichmentEnabled() ||
-                    settingsStore
-                        .tmdbArtworkEnrichmentEnabled()
+                    tmdbMetadataEnabled ||
+                    tmdbArtworkEnabled
                 )
             ) {
                 enrichedItem =
-                    runCatching {
-                        DetailUpstreamPolicy.enrichTmdb(
-                            media = enrichedItem,
-                            tmdbApiKey = tmdbKey,
-                            metadataEnabled = settingsStore.tmdbMetadataEnrichmentEnabled(),
-                            artworkEnabled = settingsStore.tmdbArtworkEnrichmentEnabled(),
-                        )
-                    }.getOrDefault(enrichedItem)
+                    try {
+                        withContext(Dispatchers.IO) {
+                            DetailUpstreamPolicy.enrichTmdb(
+                                media = enrichedItem,
+                                tmdbApiKey = tmdbKey,
+                                metadataEnabled = tmdbMetadataEnabled,
+                                artworkEnabled = tmdbArtworkEnabled,
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        enrichedItem
+                    }
+
+                if (!sessionCurrent()) return@launch
 
                 item =
                     enrichedItem
@@ -880,17 +952,24 @@ internal fun MediaDetailsScreen(
 
             if (
                 tmdbKey.isNotBlank() &&
-                settingsStore
-                    .tmdbMetadataEnrichmentEnabled()
+                tmdbMetadataEnabled
             ) {
                 enrichedItem =
-                    runCatching {
-                        DetailUpstreamPolicy.enrichRichDetails(
-                            media = enrichedItem,
-                            tmdbApiKey = tmdbKey,
-                            enabled = true,
-                        )
-                    }.getOrDefault(enrichedItem)
+                    try {
+                        withContext(Dispatchers.IO) {
+                            DetailUpstreamPolicy.enrichRichDetails(
+                                media = enrichedItem,
+                                tmdbApiKey = tmdbKey,
+                                enabled = true,
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        enrichedItem
+                    }
+
+                if (!sessionCurrent()) return@launch
 
                 item =
                     enrichedItem
@@ -901,19 +980,30 @@ internal fun MediaDetailsScreen(
         }
 
         launch {
-            relatedItems =
-                RelatedContentOrchestrator.mergeRemote(
-                    item = resolvedItem,
-                    localItems = localRelated,
-                    apiKey = tmdbKey,
-                    recommendationsEnabled =
-                        settingsStore
-                            .tmdbRecommendationsEnabled(),
-                    similarEnabled =
-                        settingsStore
-                            .tmdbSimilarTitlesEnabled(),
-                    limit = 18,
-                )
+            val remoteRelated =
+                try {
+                    withContext(Dispatchers.IO) {
+                        RelatedContentOrchestrator.mergeRemote(
+                            item = resolvedItem,
+                            localItems = localRelated,
+                            apiKey = tmdbKey,
+                            recommendationsEnabled =
+                                tmdbRecommendationsEnabled,
+                            similarEnabled =
+                                tmdbSimilarEnabled,
+                            limit = 18,
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    localRelated
+                }
+
+            if (sessionCurrent()) {
+                relatedItems =
+                    remoteRelated
+            }
         }
 
         launch {
@@ -930,17 +1020,23 @@ internal fun MediaDetailsScreen(
             }
 
             val fetched =
-                runCatching {
-                    MdblistClient
-                        .ratings(
-                            media =
-                                resolvedItem,
-                            apiKey =
-                                mdblistKey,
-                        )
-                }.getOrDefault(
+                try {
+                    withContext(Dispatchers.IO) {
+                        MdblistClient
+                            .ratings(
+                                media =
+                                    resolvedItem,
+                                apiKey =
+                                    mdblistKey,
+                            )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
                     emptyList()
-                )
+                }
+
+            if (!sessionCurrent()) return@launch
 
             supplementalRatings =
                 fetched.filter {
@@ -1604,17 +1700,29 @@ internal fun MediaDetailsScreen(
     val playbackSource = selectedPlaybackSource
     val playbackVideoId = selectedPlaybackVideoId
 
+    fun leaveDetailPage() {
+        // Invalidate Detail work before navigation changes the outer route.
+        // This keeps late metadata/library results from publishing while the
+        // outgoing Details tree is still retained by AnimatedContent.
+        detailSessionGeneration += 1
+        detailStartupJob?.cancel()
+        detailStartupJob = null
+        detailLibraryHydrationGeneration += 1
+        sourceDiscoveryGeneration += 1
+        sourceDiscoveryJob?.cancel()
+        sourceDiscoveryJob = null
+        sourceDiscoveryControl = null
+        cancelEpisodePrefetch()
+        loadingStreams = false
+        onBack()
+    }
+
     BackHandler(
         enabled =
             playbackSource == null &&
                 sourcePickerStreams == null,
     ) {
-        sourceDiscoveryGeneration += 1
-        sourceDiscoveryJob?.cancel()
-        sourceDiscoveryJob = null
-        cancelEpisodePrefetch()
-        loadingStreams = false
-        onBack()
+        leaveDetailPage()
     }
 
     var transitionSourceStreams by remember {
@@ -2069,7 +2177,7 @@ internal fun MediaDetailsScreen(
                             ),
                     ) {
                         IconButton(
-                            onClick = onBack,
+                            onClick = ::leaveDetailPage,
                         ) {
                             Icon(
                                 Icons.Default

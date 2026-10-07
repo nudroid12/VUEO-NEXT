@@ -1,40 +1,45 @@
-VUEO Next Episode Handoff Optimization v120
+VUEO Details Immediate-Back Responsiveness v121
 
-Base: v119 TV Diagnostics Focus + Tab Layout
-Scope: Mobile + TV Player handoff only. No shared-core changes.
+Base: v120 Next Episode Handoff Optimization
+Scope: Mobile + TV Details orchestration. No shared-core changes.
 No Gradle build.
 
 Goal
-Reduce the burst of codec allocation, LibraryStore/PlaybackStore writes, and late subtitle MediaItem churn when an episode ends and the user/auto-play advances to the next episode.
+Remove the remaining delay when the user opens Details and immediately presses Back. Waiting on Details for a moment already made Back fast; the remaining hitch came from startup metadata/enrichment work still resuming and parsing on Main before Back could be handled.
 
 Changes
-1. Immediate old-player release for episode-to-episode handoff
-   - Mobile and TV no longer keep the outgoing ExoPlayer/MediaCodec alive for the extra 64 ms during an episode switch.
-   - The outgoing player is muted/paused and released immediately when the handoff disposes it.
-   - The existing 64 ms deferred release is retained for normal Back/navigation (and Mobile source disposal), where it still helps the return surface render first.
+1. Core Detail startup moved off Main
+   - Mobile TMDB identity preparation now runs on Dispatchers.IO.
+   - Mobile core Stremio metadata load + episode normalization now run off Main.
+   - TV prepareDetailForCore() + loadCoreDetail() now run off Main.
+   - Heavy fallback episode normalization runs on Dispatchers.Default.
+   - The visible Detail shell is still published immediately from the catalog/search item.
 
-2. Completion/progress persistence de-duplication
-   - STATE_ENDED queues the completion snapshot once per video.
-   - Pressing Play Next after STATE_ENDED reuses that queued completion instead of writing PlaybackStore + LibraryStore again.
-   - Early-next during safe credits still queues completion once because STATE_ENDED has not happened yet.
-   - Player disposal skips another progress/history write when the episode handoff already captured it.
-   - Completed episodes also skip the redundant dispose write.
-   - TV next/manual-episode persistence is now dispatched through the existing serialized IO queue instead of synchronous saveProgress() on the UI path.
+2. Immediate Detail-session cancellation on Back
+   - Mobile and TV retain a reference to the active Detail startup coroutine.
+   - Back invalidates the Detail session and cancels that coroutine before outer navigation changes the route.
+   - Mobile's visible back button uses the same cancellation path as system Back.
+   - Mobile also invalidates library hydration, source discovery and episode prefetch before leaving Details.
 
-3. Manual episode switches
-   - Mobile and TV capture the current episode progress once before switching to a manually selected episode.
-   - Disposal does not serialize the same cursor a second time.
-   - If a TV switch is cancelled/failed and the old Player survives, normal persistence is re-armed.
+3. Late-result protection
+   - Each Detail open receives a generation/session token.
+   - Library hydration, artwork, metadata, recommendations, enrichment and ratings verify that the session is still current before publishing Compose state.
+   - Results from an outgoing or replaced Detail page cannot repaint the retained AnimatedContent tree.
 
-4. Late subtitle registration is batched around decoder startup
-   - Newly discovered subtitle choices still appear in the workspace immediately.
-   - If prefetched/late subtitles arrive while the next episode is producing its first frame, MediaItem replacement waits for startup/handoff to settle, then applies once after a short settle delay.
-   - This reduces replaceMediaItem()/seek/track-rebuild pressure during the decoder handoff.
+4. Progressive enrichment no longer competes with Back on Main
+   - TV artwork, related-title remote work, TMDB/rich enrichment, episode ratings and supplemental ratings run off Main.
+   - Mobile local related scoring runs on Dispatchers.Default.
+   - Mobile remote recommendations, TMDB/rich enrichment and MDBList requests run on Dispatchers.IO.
+   - Compose state publication remains on Main after the background work completes.
+
+5. Cancellation is no longer treated as a normal metadata failure in the Detail orchestration
+   - CancellationException is rethrown in Mobile/TV Detail fallback paths.
+   - Normal network/provider errors still fall back gracefully.
 
 Unchanged
-- T-5 / T-3 / T-1 next-episode prefetch/validation policy
-- Same-server-first source selection and fallback policy
-- Subtitle discovery itself and SmartSubs/OpenSubtitles behavior
+- v117 cross-transition motion
+- Details UI/focus layout
+- source selection behavior
+- Player / Next Episode logic from v120
 - Continue Watching / resume cursor rules
-- Back-navigation deferred-release behavior
 - shared/core
