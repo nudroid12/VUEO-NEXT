@@ -3,50 +3,43 @@ name: VUEO Smart Build and Publish
 on:
   workflow_dispatch:
 
-  repository_dispatch:
+  # Automatic builds start only after Apply ZIP Patch has fully completed green.
+  # This deliberately replaces push/repository_dispatch triggers so the build
+  # cannot race the patch workflow while it is still finishing.
+  workflow_run:
+    workflows:
+      - Apply ZIP Patch
     types:
-      - vueo_build
-
-  push:
+      - completed
     branches:
       - main
-    paths:
-      - "mobile/**"
-      - "tv/**"
-      - "shared/**"
-      - "gradle/**"
-      - "buildSrc/**"
-      - "build-logic/**"
-      - "*.gradle.kts"
-      - "gradle.properties"
-      - "settings.gradle.kts"
-      - "gradlew"
-      - "gradlew.bat"
-      - ".github/workflows/build-vueo-apk-auto.yml"
 
 permissions:
   contents: write
 
-# Only the newest main build matters for the rolling dev release.
-# Cancelling stale runs avoids wasting hosted-runner minutes.
-concurrency:
-  group: vueo-dev-publish
-  cancel-in-progress: true
-
 jobs:
   build-publish:
     name: Smart build, verify and publish
+    # Apply ZIP Patch can start again on its own [zip-applied] commit because
+    # that commit removes the ZIP. Ignore that follow-up run so it cannot
+    # create a duplicate automatic build.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && !contains(github.event.workflow_run.head_commit.message, '[zip-applied]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Only meaningful build jobs enter this group. A workflow_run whose job is
+    # skipped above never gets to evict the real build.
+    concurrency:
+      group: vueo-dev-publish
+      cancel-in-progress: true
 
     steps:
-      - name: Checkout latest main
+      - name: Checkout main
         uses: actions/checkout@v6
         with:
           ref: main
-          # Two commits are enough for ZIP-patch repository_dispatch runs.
-          # Direct multi-commit pushes fetch their before SHA only when needed.
-          fetch-depth: 2
+          # Keep enough history to identify the exact [zip-applied] commit that
+          # belongs to the completed Apply ZIP Patch workflow.
+          fetch-depth: 20
 
       - name: Determine build scope
         id: scope
@@ -54,7 +47,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
+          APPLY_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
@@ -68,69 +61,94 @@ jobs:
             BUILD_TV=true
           }
 
+          classify_changes() {
+            local base_sha="$1"
+            local target_sha="$2"
+
+            mapfile -t CHANGED_FILES < <(git diff --name-only "$base_sha" "$target_sha")
+            CHANGED_FILE_LIST="$(printf '%s\n' "${CHANGED_FILES[@]:-}" | sed '/^$/d')"
+
+            echo "Changed files since ${base_sha:0:7}:"
+            if [ -n "$CHANGED_FILE_LIST" ]; then
+              printf '%s\n' "$CHANGED_FILE_LIST"
+            else
+              echo "(none)"
+            fi
+
+            for path in "${CHANGED_FILES[@]:-}"; do
+              [ -n "$path" ] || continue
+
+              case "$path" in
+                mobile/*)
+                  BUILD_MOBILE=true
+                  ;;
+                tv/*)
+                  BUILD_TV=true
+                  ;;
+                shared/*|gradle/*|buildSrc/*|build-logic/*|build.gradle.kts|settings.gradle.kts|gradle.properties|gradlew|gradlew.bat|.github/workflows/build-vueo-apk-auto.yml)
+                  force_both
+                  ;;
+              esac
+            done
+
+            if [ "$BUILD_MOBILE" = "true" ] && [ "$BUILD_TV" = "true" ]; then
+              REASON="Shared/build configuration or both apps changed"
+            elif [ "$BUILD_MOBILE" = "true" ]; then
+              REASON="Mobile-only change"
+            elif [ "$BUILD_TV" = "true" ]; then
+              REASON="TV-only change"
+            else
+              REASON="No app-impacting files changed"
+            fi
+          }
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             force_both
             REASON="Manual build requested"
-          else
-            BASE_SHA=""
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            SOURCE_SHA="$APPLY_HEAD_SHA"
+            CURRENT_HEAD="$(git rev-parse HEAD)"
+            APPLIED_SHA=""
 
-            if [ "$EVENT_NAME" = "repository_dispatch" ]; then
-              BASE_SHA="$(git rev-parse HEAD^ 2>/dev/null || true)"
-            elif [ "$EVENT_NAME" = "push" ]; then
-              BASE_SHA="$BEFORE_SHA"
-              case "$BASE_SHA" in
-                ""|0000000000000000000000000000000000000000)
-                  BASE_SHA=""
-                  ;;
-              esac
-
-              if [ -n "$BASE_SHA" ] && ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-                # Keep checkout shallow in the common case; fetch only the exact
-                # pre-push commit when a direct push contains multiple commits.
-                git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
-              fi
-            fi
-
-            if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-              force_both
-              REASON="No reliable comparison base; safe full build"
+            if [ -z "$SOURCE_SHA" ]; then
+              REASON="Completed Apply ZIP Patch run did not expose a source commit; no automatic build"
             else
-              mapfile -t CHANGED_FILES < <(git diff --name-only "$BASE_SHA" HEAD)
-              CHANGED_FILE_LIST="$(printf '%s\n' "${CHANGED_FILES[@]:-}" | sed '/^$/d')"
-
-              echo "Changed files since ${BASE_SHA:0:7}:"
-              if [ -n "$CHANGED_FILE_LIST" ]; then
-                printf '%s\n' "$CHANGED_FILE_LIST"
-              else
-                echo "(none)"
+              if ! git cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null; then
+                git fetch --no-tags --depth=1 origin "$SOURCE_SHA" || true
               fi
 
-              for path in "${CHANGED_FILES[@]:-}"; do
-                [ -n "$path" ] || continue
-
-                case "$path" in
-                  mobile/*)
-                    BUILD_MOBILE=true
-                    ;;
-                  tv/*)
-                    BUILD_TV=true
-                    ;;
-                  shared/*|gradle/*|buildSrc/*|build-logic/*|build.gradle.kts|settings.gradle.kts|gradle.properties|gradlew|gradlew.bat|.github/workflows/build-vueo-apk-auto.yml)
-                    force_both
-                    ;;
-                esac
-              done
-
-              if [ "$BUILD_MOBILE" = "true" ] && [ "$BUILD_TV" = "true" ]; then
-                REASON="Shared/build configuration or both apps changed"
-              elif [ "$BUILD_MOBILE" = "true" ]; then
-                REASON="Mobile-only change"
-              elif [ "$BUILD_TV" = "true" ]; then
-                REASON="TV-only change"
+              if ! git cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null; then
+                REASON="Could not resolve the Apply ZIP Patch source commit; no automatic build"
+              elif [ "$CURRENT_HEAD" = "$SOURCE_SHA" ]; then
+                REASON="Apply ZIP Patch completed successfully but produced no repository commit"
+              elif ! git merge-base --is-ancestor "$SOURCE_SHA" "$CURRENT_HEAD" 2>/dev/null; then
+                REASON="Latest main is not descended from the completed Apply ZIP Patch source commit"
               else
-                REASON="No app-impacting files changed"
+                while IFS= read -r candidate; do
+                  [ -n "$candidate" ] || continue
+                  parent="$(git rev-parse "${candidate}^" 2>/dev/null || true)"
+                  message="$(git log -1 --format=%B "$candidate")"
+                  if [ "$parent" = "$SOURCE_SHA" ] && printf '%s' "$message" | grep -Fq '[zip-applied]'; then
+                    APPLIED_SHA="$candidate"
+                    break
+                  fi
+                done < <(git rev-list --reverse "${SOURCE_SHA}..${CURRENT_HEAD}")
+
+                if [ -z "$APPLIED_SHA" ]; then
+                  REASON="Apply ZIP Patch finished green but no matching [zip-applied] commit was found"
+                else
+                  if [ "$APPLIED_SHA" != "$CURRENT_HEAD" ]; then
+                    echo "Newer commits exist on main; building the exact applied-patch commit ${APPLIED_SHA:0:7}."
+                    git checkout --detach "$APPLIED_SHA"
+                  fi
+
+                  classify_changes "$SOURCE_SHA" "$APPLIED_SHA"
+                  REASON="$REASON; auto-triggered after Apply ZIP Patch completed successfully"
+                fi
               fi
             fi
+          else
+            REASON="Unsupported trigger: $EVENT_NAME"
           fi
 
           # A selective upload deliberately leaves the unchanged app assets on
@@ -495,7 +513,7 @@ jobs:
 
           if ! gh release view vueo-dev >/dev/null 2>&1; then
             gh release create vueo-dev \
-              --target "$GITHUB_SHA" \
+              --target "$(git rev-parse HEAD)" \
               --title "VUEO Dev" \
               --prerelease \
               --notes "Rolling development release. Only successful signed builds are published."
@@ -530,7 +548,7 @@ jobs:
           {
             echo "## VUEO Smart Build"
             echo
-            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Commit: \`$(git rev-parse HEAD 2>/dev/null || printf '%s' "$GITHUB_SHA")\`"
             echo "- Scope: \`${{ steps.scope.outputs.scope_label || 'unknown' }}\`"
             echo "- Reason: ${{ steps.scope.outputs.reason || 'scope step did not finish' }}"
             echo "- Build mode: Release only"
