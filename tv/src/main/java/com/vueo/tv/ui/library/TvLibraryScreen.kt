@@ -92,6 +92,7 @@ private object TvLibraryFocusMemory {
 fun TvLibraryScreen(
     runtime: TvRuntime,
     refreshToken: Int,
+    active: Boolean = true,
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
@@ -154,7 +155,7 @@ fun TvLibraryScreen(
         runCatching { navRequesters.getValue("Library").requestFocus() }
     }
 
-    BackHandler {
+    BackHandler(enabled = active) {
         if (navExpanded) onBack() else focusSidebar()
     }
 
@@ -205,7 +206,8 @@ fun TvLibraryScreen(
 
     // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
-    LaunchedEffect(mediaKeys, gridView) {
+    LaunchedEffect(active, mediaKeys, gridView) {
+        if (!active) return@LaunchedEffect
         delay(110)
         var restored = false
         if (lastTarget == "item") {

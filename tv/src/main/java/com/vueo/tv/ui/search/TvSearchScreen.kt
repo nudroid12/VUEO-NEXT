@@ -137,6 +137,7 @@ internal fun TvSearchScreen(
     runtime: TvRuntime,
     contentVersion: Int,
     session: TvSearchSession,
+    active: Boolean = true,
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
@@ -161,7 +162,8 @@ internal fun TvSearchScreen(
     val profileRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
         delay(120)
         if (!session.restoreResultsFocus) {
             runCatching { fieldRequester.requestFocus() }
@@ -420,8 +422,8 @@ internal fun TvSearchScreen(
             }
     }
 
-    LaunchedEffect(session.restoreResultsFocus, filteredItems) {
-        if (!session.restoreResultsFocus) return@LaunchedEffect
+    LaunchedEffect(active, session.restoreResultsFocus, filteredItems) {
+        if (!active || !session.restoreResultsFocus) return@LaunchedEffect
         val key = session.focusedMediaKey ?: return@LaunchedEffect
         val index = filteredItems.indexOfFirst { mediaKey(it) == key }
         if (index < 0) return@LaunchedEffect
@@ -450,8 +452,8 @@ internal fun TvSearchScreen(
         scope.launch { delay(40); restoreFocus?.invoke() }
     }
 
-    BackHandler(enabled = choiceDialog != null) { dismissChoiceDialog() }
-    BackHandler(enabled = choiceDialog == null) {
+    BackHandler(enabled = active && choiceDialog != null) { dismissChoiceDialog() }
+    BackHandler(enabled = active && choiceDialog == null) {
         if (navExpanded) {
             onBack()
         } else {

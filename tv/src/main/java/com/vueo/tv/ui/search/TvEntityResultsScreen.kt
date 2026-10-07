@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -60,10 +61,11 @@ private const val ENTITY_COLUMNS = 6
 internal fun TvEntityResultsScreen(
     runtime: TvRuntime,
     target: MediaEntityTarget,
+    active: Boolean = true,
     onBack: () -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(enabled = active, onBack = onBack)
 
     var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember(target) { mutableStateOf(true) }
@@ -76,6 +78,16 @@ internal fun TvEntityResultsScreen(
     val popularRequester = remember(target) { FocusRequester() }
     val selectedOrderRequester =
         if (resultOrder == EntityResultOrder.NEWEST) newestRequester else popularRequester
+    val gridState = rememberLazyGridState()
+    var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
+    val resultKeys = remember(orderedResults) {
+        orderedResults.map { "${it.type}:${it.id}" }
+    }
+    val requesters = remember(resultKeys, firstRequester) {
+        resultKeys.mapIndexed { index, key ->
+            key to if (index == 0) firstRequester else FocusRequester()
+        }.toMap()
+    }
 
     LaunchedEffect(target) {
         loading = true
@@ -91,9 +103,16 @@ internal fun TvEntityResultsScreen(
         loading = false
     }
 
-    LaunchedEffect(orderedResults.firstOrNull()?.id, loading) {
-        if (orderedResults.isNotEmpty()) {
-            delay(100)
+    LaunchedEffect(active, orderedResults, loading, focusedMediaKey) {
+        if (!active || loading || orderedResults.isEmpty()) return@LaunchedEffect
+        delay(90)
+        val focusedKey = focusedMediaKey
+        val restored = focusedKey?.let { key ->
+            requesters[key]?.let { requester ->
+                runCatching { requester.requestFocus() }.isSuccess
+            }
+        } == true
+        if (!restored) {
             runCatching { firstRequester.requestFocus() }
         }
     }
@@ -162,16 +181,9 @@ internal fun TvEntityResultsScreen(
 
         when {
             orderedResults.isNotEmpty() -> {
-                val keys = remember(orderedResults) {
-                    orderedResults.map { "${it.type}:${it.id}" }
-                }
-                val requesters = remember(keys, firstRequester) {
-                    keys.mapIndexed { index, key ->
-                        key to if (index == 0) firstRequester else FocusRequester()
-                    }.toMap()
-                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(ENTITY_COLUMNS),
+                    state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         start = 68.dp,
@@ -186,15 +198,20 @@ internal fun TvEntityResultsScreen(
                         items = orderedResults,
                         key = { _, item -> "${target.kind}:${item.type}:${item.id}" },
                     ) { index, item ->
+                        val mediaKey = "${item.type}:${item.id}"
                         TvEntityPosterTile(
                             item = item,
-                            requester = requesters.getValue("${item.type}:${item.id}"),
+                            requester = requesters.getValue(mediaKey),
                             upRequester = if (index < ENTITY_COLUMNS) {
                                 selectedOrderRequester
                             } else {
                                 null
                             },
-                            onClick = { onOpenMedia(item) },
+                            onFocused = { focusedMediaKey = mediaKey },
+                            onClick = {
+                                focusedMediaKey = mediaKey
+                                onOpenMedia(item)
+                            },
                         )
                     }
                 }
@@ -287,6 +304,7 @@ private fun TvEntityPosterTile(
     item: MediaItem,
     requester: FocusRequester,
     upRequester: FocusRequester? = null,
+    onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
@@ -312,7 +330,10 @@ private fun TvEntityPosterTile(
                     up = upRequester
                 }
             }
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (state.isFocused) onFocused()
+            }
             .clickable(onClick = onClick)
             .focusable(),
     ) {

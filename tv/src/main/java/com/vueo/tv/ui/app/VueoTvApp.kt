@@ -99,6 +99,22 @@ private enum class TvRoute {
     PLAYER,
 }
 
+private data class TvEntityReturnDetailState(
+    val media: MediaItem,
+    val libraryEntry: LibraryPlaybackEntry?,
+    val episode: EpisodeItem?,
+    val initialPositionMs: Long,
+    val backStack: List<MediaItem>,
+    val returnRoute: TvRoute,
+)
+
+private val retainedDetailParentRoutes = setOf(
+    TvRoute.HOME,
+    TvRoute.SEARCH,
+    TvRoute.LIBRARY,
+    TvRoute.ENTITY_RESULTS,
+)
+
 @Composable
 fun VueoTvApp(
     onExit: () -> Unit = {},
@@ -139,6 +155,7 @@ fun VueoTvApp(
     var playerSessionId by remember { mutableIntStateOf(0) }
     var updatePromptRelease by remember { mutableStateOf<TvUpdateRelease?>(null) }
     var detailBackStack by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var entityReturnDetailState by remember { mutableStateOf<TvEntityReturnDetailState?>(null) }
 
     var profileReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var profilePickerOpenedFromApp by remember { mutableStateOf(false) }
@@ -193,7 +210,8 @@ fun VueoTvApp(
     var switchingShowSources by remember { mutableStateOf(false) }
     var switchingCommitted by remember { mutableStateOf(false) }
     var launcherAutoPlayKey by remember { mutableStateOf<String?>(null) }
-    var homeRevealTraceToken by remember { mutableIntStateOf(0) }
+    var detailParentRevealTraceToken by remember { mutableIntStateOf(0) }
+    var detailParentRevealRoute by remember { mutableStateOf<TvRoute?>(null) }
 
 
     LaunchedEffect(runtime) {
@@ -285,6 +303,8 @@ fun VueoTvApp(
     }
 
     fun openDetail(media: MediaItem, from: TvRoute) {
+        selectedEntityTarget = null
+        entityReturnDetailState = null
         selectedMedia = media
         selectedLibraryEntry = null
         selectedEpisode = null
@@ -295,12 +315,55 @@ fun VueoTvApp(
     }
 
     fun openPlaybackDetail(entry: LibraryPlaybackEntry, from: TvRoute) {
+        selectedEntityTarget = null
+        entityReturnDetailState = null
         selectedMedia = entry.media
         selectedLibraryEntry = entry
         selectedEpisode = null
         initialPositionMs = 0L
         detailBackStack = emptyList()
         detailReturnRoute = from
+        route = TvRoute.DETAIL
+    }
+
+    fun openEntityResults(target: MediaEntityTarget) {
+        val media = selectedMedia ?: return
+        entityReturnDetailState = TvEntityReturnDetailState(
+            media = media,
+            libraryEntry = selectedLibraryEntry,
+            episode = selectedEpisode,
+            initialPositionMs = initialPositionMs,
+            backStack = detailBackStack,
+            returnRoute = detailReturnRoute,
+        )
+        selectedEntityTarget = target
+        route = TvRoute.ENTITY_RESULTS
+    }
+
+    fun closeEntityResults() {
+        val previous = entityReturnDetailState
+        selectedEntityTarget = null
+        entityReturnDetailState = null
+        if (previous == null) {
+            route = TvRoute.DETAIL
+            return
+        }
+        selectedMedia = previous.media
+        selectedLibraryEntry = previous.libraryEntry
+        selectedEpisode = previous.episode
+        initialPositionMs = previous.initialPositionMs
+        detailBackStack = previous.backStack
+        detailReturnRoute = previous.returnRoute
+        route = TvRoute.DETAIL
+    }
+
+    fun openDetailFromEntityResults(media: MediaItem) {
+        selectedMedia = media
+        selectedLibraryEntry = null
+        selectedEpisode = null
+        initialPositionMs = 0L
+        detailBackStack = emptyList()
+        detailReturnRoute = TvRoute.ENTITY_RESULTS
         route = TvRoute.DETAIL
     }
 
@@ -359,22 +422,26 @@ fun VueoTvApp(
             selectedEpisode = null
             initialPositionMs = 0L
         } else {
-            val returningHome = detailReturnRoute == TvRoute.HOME
+            val returnRoute = detailReturnRoute
+            val retainedParent = returnRoute in retainedDetailParentRoutes
             PerformanceDiagnostics.captureRuntimeEvent(
-                "DETAIL_BACK_REQUEST retainedHome=$returningHome",
+                "DETAIL_BACK_REQUEST retainedParent=$retainedParent parent=${returnRoute.name}",
             )
             // Detach the heavy Detail payload in the same snapshot as the route
-            // change. Home-origin Details uses a retained Home layer, so Back only
-            // removes Details instead of rebuilding the entire Home composition.
+            // change. Browsing parents stay composed underneath Details, so Back
+            // reveals the existing parent instead of rebuilding its grid/tree.
             selectedMedia = null
             selectedLibraryEntry = null
             selectedEpisode = null
             initialPositionMs = 0L
-            route = detailReturnRoute
+            route = returnRoute
             PerformanceDiagnostics.captureRuntimeEvent(
-                "DETAIL_ROUTE_RETURN target=${detailReturnRoute.name} retainedHome=$returningHome",
+                "DETAIL_ROUTE_RETURN target=${returnRoute.name} retainedParent=$retainedParent",
             )
-            if (returningHome) homeRevealTraceToken += 1
+            if (retainedParent) {
+                detailParentRevealRoute = returnRoute
+                detailParentRevealTraceToken += 1
+            }
         }
     }
 
@@ -959,16 +1026,30 @@ fun VueoTvApp(
         }
     }
 
-    LaunchedEffect(homeRevealTraceToken) {
-        if (homeRevealTraceToken <= 0 || route != TvRoute.HOME) return@LaunchedEffect
-        PerformanceDiagnostics.captureRuntimeEvent("HOME_REVEALED retained=true")
+    LaunchedEffect(detailParentRevealTraceToken) {
+        if (detailParentRevealTraceToken <= 0) return@LaunchedEffect
+        val parent = detailParentRevealRoute ?: return@LaunchedEffect
+        if (route != parent) return@LaunchedEffect
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "DETAIL_PARENT_REVEALED parent=${parent.name} retained=true",
+        )
+        if (parent == TvRoute.HOME) {
+            PerformanceDiagnostics.captureRuntimeEvent("HOME_REVEALED retained=true")
+        }
         withFrameNanos { }
-        PerformanceDiagnostics.captureRuntimeEvent("HOME_FIRST_FRAME retained=true")
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "DETAIL_PARENT_FIRST_FRAME parent=${parent.name} retained=true",
+        )
+        if (parent == TvRoute.HOME) {
+            PerformanceDiagnostics.captureRuntimeEvent("HOME_FIRST_FRAME retained=true")
+        }
     }
 
-    val retainedHomeDetailActive =
-        route == TvRoute.DETAIL && detailReturnRoute == TvRoute.HOME && selectedMedia != null
-    val displayedRootRoute = if (retainedHomeDetailActive) TvRoute.HOME else route
+    val retainedDetailParentRoute = detailReturnRoute.takeIf { parent ->
+        route == TvRoute.DETAIL && selectedMedia != null && parent in retainedDetailParentRoutes
+    }
+    val retainedDetailActive = retainedDetailParentRoute != null
+    val displayedRootRoute = retainedDetailParentRoute ?: route
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -1055,10 +1136,17 @@ fun VueoTvApp(
                 }
 
                 TvRoute.SEARCH -> {
+                    DisposableEffect(Unit) {
+                        PerformanceDiagnostics.captureRuntimeEvent("SEARCH_COMPOSE_ENTER")
+                        onDispose {
+                            PerformanceDiagnostics.captureRuntimeEvent("SEARCH_COMPOSE_DISPOSE")
+                        }
+                    }
                     TvSearchScreen(
                         runtime = runtime,
                         contentVersion = refreshToken,
                         session = searchSession,
+                        active = route == TvRoute.SEARCH,
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SEARCH) },
                         onOpenMedia = { openDetail(it, TvRoute.SEARCH) },
@@ -1067,9 +1155,16 @@ fun VueoTvApp(
                 }
 
                 TvRoute.LIBRARY -> {
+                    DisposableEffect(Unit) {
+                        PerformanceDiagnostics.captureRuntimeEvent("LIBRARY_COMPOSE_ENTER")
+                        onDispose {
+                            PerformanceDiagnostics.captureRuntimeEvent("LIBRARY_COMPOSE_DISPOSE")
+                        }
+                    }
                     TvLibraryScreen(
                         runtime = runtime,
                         refreshToken = refreshToken,
+                        active = route == TvRoute.LIBRARY,
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.LIBRARY) },
                         onOpenMedia = { openDetail(it, TvRoute.LIBRARY) },
@@ -1151,10 +1246,7 @@ fun VueoTvApp(
                                 selectedEpisode = null
                                 initialPositionMs = 0L
                             },
-                            onOpenEntity = { target ->
-                                selectedEntityTarget = target
-                                route = TvRoute.ENTITY_RESULTS
-                            },
+                            onOpenEntity = ::openEntityResults,
                             onLibraryChanged = { notifyLibraryChanged() },
                         )
                     }
@@ -1165,24 +1257,22 @@ fun VueoTvApp(
                     if (target == null) {
                         route = TvRoute.DETAIL
                     } else {
+                        DisposableEffect(target.kind, target.tmdbId, target.name) {
+                            PerformanceDiagnostics.captureRuntimeEvent(
+                                "ENTITY_RESULTS_COMPOSE_ENTER kind=${target.kind} tmdb=${target.tmdbId ?: 0} name=${target.name}",
+                            )
+                            onDispose {
+                                PerformanceDiagnostics.captureRuntimeEvent(
+                                    "ENTITY_RESULTS_COMPOSE_DISPOSE kind=${target.kind} tmdb=${target.tmdbId ?: 0} name=${target.name}",
+                                )
+                            }
+                        }
                         TvEntityResultsScreen(
                             runtime = runtime,
                             target = target,
-                            onBack = {
-                                selectedEntityTarget = null
-                                route = TvRoute.DETAIL
-                            },
-                            onOpenMedia = { next ->
-                                selectedMedia?.let { current ->
-                                    detailBackStack = detailBackStack + current
-                                }
-                                selectedMedia = next
-                                selectedLibraryEntry = null
-                                selectedEpisode = null
-                                initialPositionMs = 0L
-                                selectedEntityTarget = null
-                                route = TvRoute.DETAIL
-                            },
+                            active = route == TvRoute.ENTITY_RESULTS,
+                            onBack = ::closeEntityResults,
+                            onOpenMedia = ::openDetailFromEntityResults,
                         )
                     }
                 }
@@ -1343,17 +1433,21 @@ fun VueoTvApp(
                 }
             }
 
-            if (retainedHomeDetailActive) {
+            if (retainedDetailActive) {
                 val media = selectedMedia
-                if (media != null) {
-                    RetainedHomeDetailLayer(mediaKey = "${media.type}:${media.id}") {
-                        DisposableEffect(media.id, media.type, media.sourceExtensionId) {
+                val parent = retainedDetailParentRoute
+                if (media != null && parent != null) {
+                    RetainedDetailLayer(
+                        mediaKey = "${media.type}:${media.id}",
+                        parentRoute = parent,
+                    ) {
+                        DisposableEffect(media.id, media.type, media.sourceExtensionId, parent) {
                             PerformanceDiagnostics.captureRuntimeEvent(
-                                "DETAIL_RETAINED_ATTACH media=${media.type}:${media.id}",
+                                "DETAIL_RETAINED_ATTACH parent=${parent.name} media=${media.type}:${media.id}",
                             )
                             onDispose {
                                 PerformanceDiagnostics.captureRuntimeEvent(
-                                    "DETAIL_DETACHED retainedHome=true media=${media.type}:${media.id}",
+                                    "DETAIL_DETACHED retainedParent=true parent=${parent.name} media=${media.type}:${media.id}",
                                 )
                             }
                         }
@@ -1379,10 +1473,7 @@ fun VueoTvApp(
                                 selectedEpisode = null
                                 initialPositionMs = 0L
                             },
-                            onOpenEntity = { target ->
-                                selectedEntityTarget = target
-                                route = TvRoute.ENTITY_RESULTS
-                            },
+                            onOpenEntity = ::openEntityResults,
                             onLibraryChanged = { notifyLibraryChanged() },
                         )
                     }
@@ -1408,23 +1499,24 @@ fun VueoTvApp(
 }
 
 @Composable
-private fun RetainedHomeDetailLayer(
+private fun RetainedDetailLayer(
     mediaKey: String,
+    parentRoute: TvRoute,
     content: @Composable () -> Unit,
 ) {
-    var entered by remember(mediaKey) { mutableStateOf(false) }
+    var entered by remember(mediaKey, parentRoute) { mutableStateOf(false) }
     val alpha by animateFloatAsState(
         targetValue = if (entered) 1f else 0f,
         animationSpec = tween(durationMillis = 175),
-        label = "retainedHomeDetailAlpha",
+        label = "retainedDetailAlpha",
     )
     val scale by animateFloatAsState(
         targetValue = if (entered) 1f else 0.990f,
         animationSpec = tween(durationMillis = 190),
-        label = "retainedHomeDetailScale",
+        label = "retainedDetailScale",
     )
 
-    LaunchedEffect(mediaKey) { entered = true }
+    LaunchedEffect(mediaKey, parentRoute) { entered = true }
 
     Box(
         modifier = Modifier
