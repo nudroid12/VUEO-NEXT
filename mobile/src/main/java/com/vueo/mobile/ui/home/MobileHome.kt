@@ -323,6 +323,7 @@ internal fun HomeScreen(
     retainedState: MobileHomeRetainedState,
     contentVersion: Int,
     booting: Boolean,
+    addonsPrepared: Boolean,
     libraryStore: LibraryStore,
     libraryVersion: Int,
     onLibraryChanged: () -> Unit,
@@ -389,13 +390,6 @@ internal fun HomeScreen(
                 .activeProfileId()
         }
 
-    LaunchedEffect(engine, contentVersion, activeProfileId, booting) {
-        if (booting) return@LaunchedEffect
-        if (ContinueWatchingMetadataRefresh.refresh(libraryStore, engine::loadMeta)) {
-            onLibraryChanged()
-        }
-    }
-
     val personalizedHomeEnabled =
         dnaPreferences
             .shouldPersonalizeRecommendations(
@@ -433,6 +427,24 @@ internal fun HomeScreen(
         retainedState.catalogRows = rows
     }
 
+    // Metadata repair is optional background work. Wait until Home has actual
+    // content and give first paint a short head start so cold startup is not
+    // competing with extra metadata requests/profile writes.
+    LaunchedEffect(
+        engine,
+        contentVersion,
+        activeProfileId,
+        booting,
+        addonsPrepared,
+        rows.isNotEmpty(),
+    ) {
+        if (booting || !addonsPrepared || rows.isEmpty()) return@LaunchedEffect
+        delay(900L)
+        if (ContinueWatchingMetadataRefresh.refresh(libraryStore, engine::loadMeta)) {
+            onLibraryChanged()
+        }
+    }
+
     var loading by remember {
         mutableStateOf(false)
     }
@@ -468,7 +480,8 @@ internal fun HomeScreen(
     }
 
     LaunchedEffect(
-        contentVersion
+        contentVersion,
+        addonsPrepared,
     ) {
         val cachedRows =
             CatalogDiscoveryCache
@@ -488,6 +501,14 @@ internal fun HomeScreen(
 
         if (booting) {
             loading = false
+            return@LaunchedEffect
+        }
+
+        if (!addonsPrepared) {
+            // Remote manifests are deliberately outside the app boot gate.
+            // Cached rows remain visible, while a cache miss keeps a lightweight
+            // Home loading state until the configured addon set is ready.
+            loading = rows.isEmpty()
             return@LaunchedEffect
         }
 
@@ -745,7 +766,7 @@ internal fun HomeScreen(
         }
 
         if (
-            (booting || loading) &&
+            (booting || !addonsPrepared || loading) &&
             rows.isEmpty()
         ) {
             item(
@@ -758,6 +779,7 @@ internal fun HomeScreen(
 
         if (
             !booting &&
+            addonsPrepared &&
             !loading &&
             rows.isEmpty()
         ) {

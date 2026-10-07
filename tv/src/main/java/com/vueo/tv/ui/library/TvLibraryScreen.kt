@@ -275,6 +275,7 @@ fun TvLibraryScreen(
                 ) {
                     Text(
                         text = "Library",
+                        modifier = Modifier.padding(start = 16.dp),
                         color = TvDesign.White,
                         fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,

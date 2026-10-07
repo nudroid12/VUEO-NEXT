@@ -103,8 +103,9 @@ internal fun TvHomePresentation(
         if (focusedEntry?.key == next.key) heroScene = TvHomeHeroScene(next, artwork)
     }
 
-    // Nuvio preloads one adjacent item after a short settle. Bound the work to
-    // this row and cancel it on navigation; use the same artwork/image caches.
+    // Preload one adjacent item only after Home has had time to paint the
+    // focused hero. This stays best-effort and cancellable so optional artwork
+    // work cannot compete with cold-start first-frame rendering.
     LaunchedEffect(focusedEntry?.key, artworkApiKey, rows) {
         val selected = focusedEntry ?: return@LaunchedEffect
         val row = rows.firstOrNull { it.entries.any { item -> item.key == selected.key } }
@@ -112,7 +113,7 @@ internal fun TvHomePresentation(
         val index = row.entries.indexOfFirst { it.key == selected.key }
         val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
             ?: return@LaunchedEffect
-        delay(120L)
+        delay(750L)
         try {
             val artwork = TvTitleArtwork.load(adjacent.media, artworkApiKey)
             tvPrefetchImage(context, artwork.logo, logoSize)

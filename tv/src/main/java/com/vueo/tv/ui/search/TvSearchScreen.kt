@@ -477,6 +477,7 @@ internal fun TvSearchScreen(
             ) {
                 Text(
                     text = "Search",
+                    modifier = Modifier.padding(start = 16.dp),
                     color = TvDesign.White,
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,

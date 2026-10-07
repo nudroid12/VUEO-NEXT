@@ -423,6 +423,9 @@ fun VueoApp() {
     var booting by remember {
         mutableStateOf(true)
     }
+    var addonsPrepared by remember {
+        mutableStateOf(false)
+    }
     var startupDestinationResolved by remember {
         mutableStateOf(false)
     }
@@ -491,8 +494,6 @@ fun VueoApp() {
             }
         }
 
-        contentVersion++
-
         store.seedDevelopmentDefaultsIfNeeded()
         pluginStore.seedDevelopmentDefaultsIfNeeded()
 
@@ -502,24 +503,48 @@ fun VueoApp() {
             )
         }
 
-        store.manifestUrls().forEach { manifestUrl ->
-            runCatching {
-                ExtensionInstaller.installStremioAddon(manifestUrl)
-            }.onSuccess { extension ->
-                engine.install(extension)
-                engine.setExtensionEnabled(
-                    id =
-                        extension.descriptor.id,
-                    enabled =
-                        store.isAddonEnabled(
-                            manifestUrl
-                        ),
-                )
-            }
-        }
-
+        // Local startup is complete at this point. Do not hold the entire app on
+        // remote addon manifests; cached Home can render while addon preparation
+        // continues in a child coroutine. Keep manifest work sequential here on
+        // purpose to avoid replacing one startup bottleneck with a network/CPU burst.
         booting = false
         contentVersion++
+
+        launch {
+            store.manifestUrls().forEach { manifestUrl ->
+                try {
+                    val extension =
+                        ExtensionInstaller
+                            .installStremioAddon(
+                                manifestUrl
+                            )
+
+                    engine.install(
+                        extension
+                    )
+                    engine.setExtensionEnabled(
+                        id =
+                            extension
+                                .descriptor
+                                .id,
+                        enabled =
+                            store
+                                .isAddonEnabled(
+                                    manifestUrl
+                                ),
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Keep cached/local Home usable if one addon is unavailable.
+                }
+            }
+
+            // Trigger one catalog/search refresh after the configured addon set
+            // has settled. Avoid restarting Home once per manifest.
+            addonsPrepared = true
+            contentVersion++
+        }
     }
 
     BackHandler(
@@ -873,6 +898,7 @@ fun VueoApp() {
                     retainedState = homeRetainedState,
                     contentVersion = contentVersion,
                     booting = booting,
+                    addonsPrepared = addonsPrepared,
                     libraryStore = libraryStore,
                     libraryVersion = libraryVersion,
                     onLibraryChanged = {

@@ -29,6 +29,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -46,7 +47,12 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var presentationRefreshToken = Int.MIN_VALUE
     internal var presentationLibraryRevision = Int.MIN_VALUE
     internal var presentationCatalogRows: List<CatalogRow>? = null
-    internal var presentationRows by mutableStateOf<List<TvHomeRow>>(emptyList())
+    internal var presentationRows by mutableStateOf(
+        buildTvHomeRows(
+            catalogRows = catalogRows,
+            continueWatching = emptyList(),
+        )
+    )
 }
 
 @Composable
@@ -79,13 +85,6 @@ fun TvHomeScreen(
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
     val libraryRevision = retainedState.libraryRevision
-
-    LaunchedEffect(runtime, refreshToken, runtime.isHomeCatalogRuntimeReady()) {
-        if (!runtime.isHomeCatalogRuntimeReady()) return@LaunchedEffect
-        if (ContinueWatchingMetadataRefresh.refresh(runtime.libraryStore, runtime.engine::loadMeta)) {
-            retainedState.libraryRevision += 1
-        }
-    }
 
     LaunchedEffect(runtime, refreshToken, retryAttempt) {
         val requestedRetryAttempt = retryAttempt
@@ -147,23 +146,46 @@ fun TvHomeScreen(
                 retainedState.presentationLibraryRevision == libraryRevision &&
                 retainedState.presentationCatalogRows === catalogRows
         if (presentationIsCurrent) return@LaunchedEffect
-        val continueWatching = withContext(Dispatchers.Default) { runtime.libraryStore.continueWatching() }
-        val immediateRows = withContext(Dispatchers.Default) { buildTvHomeRows(catalogRows, continueWatching) }
+
+        // Keep cached/catalog rows paintable immediately. LibraryStore hydration
+        // is intentionally a second stage so JSON parsing cannot hold first Home.
+        if (retainedState.presentationRows.isEmpty() && catalogRows.isNotEmpty()) {
+            retainedState.presentationRows = withContext(Dispatchers.Default) {
+                buildTvHomeRows(
+                    catalogRows = catalogRows,
+                    continueWatching = emptyList(),
+                )
+            }
+        }
+
+        // Continue Watching + History share the same backing profile JSON.
+        // Parse them once instead of calling continueWatching() and history()
+        // separately during the same Home refresh.
+        val librarySnapshot = withContext(Dispatchers.IO) {
+            runtime.libraryStore.detailSnapshot()
+        }
+        val continueWatching = librarySnapshot.continueWatching
+        val immediateRows = withContext(Dispatchers.Default) {
+            buildTvHomeRows(catalogRows, continueWatching)
+        }
+
         // Publish local/cache content before recommendation scoring. Preserve the
         // previous recommendation targets during incoming catalog updates.
         val retainedRecommendations = retainedState.presentationRows.filter {
             it.key == "for-you" || it.key == "because-you-watched"
         }
-        retainedState.presentationRows = immediateRows.filter { it.key == "continue-watching" } +
-            retainedRecommendations + immediateRows.filter { it.key != "continue-watching" }
+        retainedState.presentationRows =
+            immediateRows.filter { it.key == "continue-watching" } +
+                retainedRecommendations +
+                immediateRows.filter { it.key != "continue-watching" }
+
         val rebuiltRows = withContext(Dispatchers.Default) {
-            val watchHistory = runtime.libraryStore.history()
             val activeProfileId = runtime.profileStore.activeProfileId()
             val personalizedHomeEnabled =
                 runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
             val homeRecommendations = HomeRecommendationPolicy.build(
                 catalogRows = catalogRows,
-                watchHistory = watchHistory,
+                watchHistory = librarySnapshot.history,
                 dnaEngine = runtime.dnaEngine,
                 personalizationEnabled = personalizedHomeEnabled,
                 limit = 12,
@@ -174,6 +196,23 @@ fun TvHomeScreen(
         retainedState.presentationRefreshToken = refreshToken
         retainedState.presentationLibraryRevision = libraryRevision
         retainedState.presentationCatalogRows = catalogRows
+    }
+
+    // Continue-Watching metadata repair is best-effort. Let Home paint and give
+    // the first frame/hero work a short head start before starting extra network
+    // and profile writes.
+    LaunchedEffect(
+        runtime,
+        refreshToken,
+        runtime.isHomeCatalogRuntimeReady(),
+        rows.isNotEmpty(),
+    ) {
+        if (!runtime.isHomeCatalogRuntimeReady() || rows.isEmpty()) return@LaunchedEffect
+        withFrameNanos { }
+        delay(700L)
+        if (ContinueWatchingMetadataRefresh.refresh(runtime.libraryStore, runtime.engine::loadMeta)) {
+            retainedState.libraryRevision += 1
+        }
     }
 
     LaunchedEffect(rows.isNotEmpty()) {
