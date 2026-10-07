@@ -257,7 +257,8 @@ fun TvLibraryScreen(
             contentPadding = PaddingValues(
                 start = contentStartPadding,
                 end = 52.dp,
-                top = 82.dp,
+                // Match Search's title/header top position exactly.
+                top = 46.dp,
                 bottom = 48.dp,
             ),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -276,8 +277,7 @@ fun TvLibraryScreen(
                         text = "Library",
                         color = TvDesign.White,
                         fontSize = 30.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = .4.sp,
+                        fontWeight = FontWeight.Bold,
                     )
 
                     LibraryViewModeButton(

@@ -993,6 +993,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             runtime = runtime,
                             initial = media,
                             initialLibraryEntry = selectedLibraryEntry,
+                            active = route == TvRoute.DETAIL,
                             onBack = ::closeDetail,
                             onWatch = { enriched, episode, startPositionMs ->
                                 selectedMedia = enriched

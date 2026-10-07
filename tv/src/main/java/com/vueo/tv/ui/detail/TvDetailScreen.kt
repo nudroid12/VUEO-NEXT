@@ -44,6 +44,7 @@ fun TvDetailScreen(
     runtime: TvRuntime,
     initial: MediaItem,
     initialLibraryEntry: LibraryPlaybackEntry? = null,
+    active: Boolean = true,
     onBack: () -> Unit,
     onWatch: (MediaItem, EpisodeItem?, Long) -> Unit,
     onOpenRelated: (MediaItem) -> Unit = {},
@@ -149,7 +150,9 @@ fun TvDetailScreen(
         VueoDetailFocusMemory.episodeId = null
     }
 
-    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
+    LaunchedEffect(active, initial.id, initial.type, initial.sourceExtensionId) {
+        if (!active) return@LaunchedEffect
+
         val mediaKey = "${initial.type}:${initial.id}"
         val restoringSameTitle = VueoDetailFocusMemory.mediaKey == mediaKey
         if (!restoringSameTitle) VueoDetailFocusMemory.resetFor(mediaKey)
@@ -280,7 +283,11 @@ fun TvDetailScreen(
     val episodesForSeason = remember(item.episodes, selectedSeason) {
         item.episodes.filter { it.season == selectedSeason }
     }
-    LaunchedEffect(item, loading) {
+    LaunchedEffect(active, item, loading) {
+        if (!active) {
+            dnaMatch = null
+            return@LaunchedEffect
+        }
         if (loading) {
             dnaMatch = null
         } else {
