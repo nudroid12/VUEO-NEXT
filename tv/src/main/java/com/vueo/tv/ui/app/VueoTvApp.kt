@@ -73,6 +73,7 @@ import com.vueo.tv.ui.motion.tvTabCrossTransition
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdatePrompt
 import com.vueo.tv.update.TvUpdateRelease
+import com.vueo.tv.watchnext.TvWatchNextPublisher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,7 +96,11 @@ private enum class TvRoute {
 }
 
 @Composable
-fun VueoTvApp(onExit: () -> Unit = {}) {
+fun VueoTvApp(
+    onExit: () -> Unit = {},
+    watchNextMediaKey: String? = null,
+    onWatchNextConsumed: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
     var crashRecoveryLoaded by remember { mutableStateOf(false) }
@@ -118,6 +123,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
     var refreshToken by remember { mutableIntStateOf(0) }
+    var watchNextSyncToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
     var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
     var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
@@ -182,6 +188,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
     var switchingError by remember { mutableStateOf<String?>(null) }
     var switchingShowSources by remember { mutableStateOf(false) }
     var switchingCommitted by remember { mutableStateOf(false) }
+    var launcherAutoPlayKey by remember { mutableStateOf<String?>(null) }
 
 
     LaunchedEffect(runtime) {
@@ -196,6 +203,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         }
         route = if (showProfilePicker) TvRoute.PROFILE else TvRoute.HOME
         profileReturnRoute = TvRoute.HOME
+
+        if (!showProfilePicker) {
+            launch(Dispatchers.IO) {
+                TvWatchNextPublisher(context.applicationContext).sync()
+            }
+        }
 
         // Cache first, then prepare addons. Home can render the restored rows as
         // soon as disk IO completes, while the network refresh remains off the
@@ -231,6 +244,18 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
 
     LaunchedEffect(route) {
         RuntimeDiagnostics.recordScreen("TV ${route.name}")
+    }
+
+    LaunchedEffect(watchNextSyncToken) {
+        if (watchNextSyncToken <= 0) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            TvWatchNextPublisher(context.applicationContext).sync()
+        }
+    }
+
+    fun notifyLibraryChanged() {
+        refreshToken++
+        watchNextSyncToken++
     }
 
     fun navigate(label: String) {
@@ -272,6 +297,49 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         detailBackStack = emptyList()
         detailReturnRoute = from
         route = TvRoute.DETAIL
+    }
+
+    LaunchedEffect(watchNextMediaKey, route) {
+        val mediaKey = watchNextMediaKey?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        if (route == TvRoute.STARTUP || route == TvRoute.PROFILE) return@LaunchedEffect
+
+        val entry = withContext(Dispatchers.IO) {
+            (runtime.libraryStore.continueWatching() +
+                runtime.libraryStore.continueWatchingPlaybackEntries())
+                .firstOrNull { it.mediaKey == mediaKey }
+        }
+        onWatchNextConsumed(mediaKey)
+        if (entry == null) {
+            launcherAutoPlayKey = null
+            return@LaunchedEffect
+        }
+
+        val resumeSeason = entry.season
+        val resumeEpisode = entry.episode
+        val targetEpisode =
+            if (resumeSeason != null && resumeEpisode != null) {
+                entry.media.episodes.firstOrNull { candidate ->
+                    candidate.season == resumeSeason && candidate.episode == resumeEpisode
+                } ?: EpisodeItem(
+                    id = entry.videoId,
+                    title = entry.episodeTitle ?: "Episode $resumeEpisode",
+                    season = resumeSeason,
+                    episode = resumeEpisode,
+                )
+            } else {
+                null
+            }
+
+        selectedMedia = entry.media
+        selectedLibraryEntry = entry
+        selectedEpisode = targetEpisode
+        initialPositionMs = entry.positionMs.coerceAtLeast(0L)
+        detailBackStack = emptyList()
+        detailReturnRoute = TvRoute.HOME
+        sourceReturnRoute = TvRoute.HOME
+        playerReturnRoute = TvRoute.HOME
+        launcherAutoPlayKey = mediaKey
+        route = TvRoute.SOURCE
     }
 
     fun closeDetail() {
@@ -759,6 +827,31 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                 sources = (retainedBundle.sources + next.sources).distinctBy { it.url },
                 subtitles = (retainedBundle.subtitles + next.subtitles).distinctBy { it.url },
             ) else next
+
+        fun maybeAutoPlayWatchNext(next: TvSourceBundle) {
+            if (route != TvRoute.SOURCE || launcherAutoPlayKey != key) return
+            val candidate = next.sources
+                .asSequence()
+                .filter(StreamSource::isDirectPlayable)
+                .distinctBy { it.url.orEmpty().trim() }
+                .sortedWith(
+                    PlayerSourcePolicy.comparator(
+                        preferredQuality = runtime.settingsStore.preferredQuality().rankKey,
+                        originalLanguage = media.originalLanguage,
+                    )
+                )
+                .firstOrNull()
+                ?: return
+
+            launcherAutoPlayKey = null
+            sourceBundle = next
+            selectedSource = candidate
+            sourceDiscoveryControl?.stopPlugins()
+            playerReturnRoute = TvRoute.HOME
+            playerSessionId += 1
+            route = TvRoute.PLAYER
+        }
+
         sourceDiscoveryJob?.cancel()
         val discoveryControl = SourceDiscoveryControl()
         sourceDiscoveryControl = discoveryControl
@@ -793,6 +886,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             val displayedBundle = visibleBundle(snapshot.bundle)
                             sourceDiscoverySnapshot = snapshot.copy(bundle = displayedBundle)
                             sourceBundle = displayedBundle
+                            maybeAutoPlayWatchNext(displayedBundle)
                             if (!snapshot.searching) {
                                 failedSourceKeys =
                                     if (snapshot.bundle.sources.any { it.isDirectPlayable }) {
@@ -808,7 +902,9 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     sourceDiscoveryGeneration == generation &&
                     sourceDiscoveryKey == key
                 ) {
-                    sourceBundle = visibleBundle(finalBundle)
+                    val displayedBundle = visibleBundle(finalBundle)
+                    sourceBundle = displayedBundle
+                    maybeAutoPlayWatchNext(displayedBundle)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -833,7 +929,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
         if (route != TvRoute.PLAYER) cancelEpisodePrefetch()
         when (route) {
             TvRoute.SOURCE -> selectedMedia?.let { media ->
-                startSourceDiscovery(media, selectedEpisode)
+                if (launcherAutoPlayKey != null) {
+                    runtime.awaitConfiguredAddonsReady()
+                }
+                if (route == TvRoute.SOURCE && selectedMedia?.id == media.id) {
+                    startSourceDiscovery(media, selectedEpisode)
+                }
             }
             TvRoute.PLAYER -> Unit
             else -> if (sourceDiscoveryJob?.isActive == true) {
@@ -950,7 +1051,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SETTINGS) },
                         onBack = { route = TvRoute.HOME },
-                        onDataChanged = { refreshToken++ },
+                        onDataChanged = { notifyLibraryChanged() },
                         onResetComplete = { openProfilePicker(TvRoute.HOME) },
                     )
                 }
@@ -972,12 +1073,12 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     TvProfilePickerScreen(
                         profileStore = runtime.profileStore,
                         onProfileSelected = {
-                            refreshToken++
+                            notifyLibraryChanged()
                             profilePickerOpenedFromApp = false
                             route = profileReturnRoute
                         },
                         onProfilesChanged = {
-                            refreshToken++
+                            notifyLibraryChanged()
                         },
                         onBack = {
                             if (profilePickerOpenedFromApp) {
@@ -1021,7 +1122,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                 selectedEntityTarget = target
                                 route = TvRoute.ENTITY_RESULTS
                             },
-                            onLibraryChanged = { refreshToken++ },
+                            onLibraryChanged = { notifyLibraryChanged() },
                         )
                     }
                 }
@@ -1095,6 +1196,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                             discoveryRunning = displayedRunning,
                             discoveryError = displayedError,
                             onBack = {
+                                launcherAutoPlayKey = null
                                 // AnimatedContent keeps the outgoing Sources composable alive briefly.
                                 // Hold its last visible state while cancelling the real discovery state,
                                 // otherwise the outgoing frame flashes "No playable sources".
@@ -1162,7 +1264,7 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                                     cancelEpisodeSwitch()
                                     route = playerReturnRoute
                                 },
-                                onLibraryChanged = { refreshToken++ },
+                                onLibraryChanged = { notifyLibraryChanged() },
                                 onPlayNextEpisode = { target, current -> startEpisodeSwitch(target, preferredSource = current) },
                                 onPrefetchNextEpisode = { target, current -> startEpisodePrefetch(target, current) },
                                 onValidateNextEpisodePrefetch = { target, current, checkpointSeconds ->

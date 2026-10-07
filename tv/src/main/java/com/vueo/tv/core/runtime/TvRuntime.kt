@@ -130,6 +130,14 @@ class TvRuntime(context: Context) {
 
     fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
 
+    suspend fun awaitConfiguredAddonsReady() {
+        while (!addonsPrepared) {
+            val observedRevision = addonRevision.value
+            if (addonsPrepared) return
+            addonRevision.first { it != observedRevision }
+        }
+    }
+
     fun needsHomeRefresh(): Boolean =
         CatalogDiscoveryCache.home(allowStale = false).isNullOrEmpty() ||
             homeCachePrefs.getString("configuration", null) != homeConfigurationKey()

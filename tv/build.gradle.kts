@@ -85,6 +85,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.tv:tv-material:1.1.0-rc01")
+    implementation("androidx.tvprovider:tvprovider:1.1.0")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
