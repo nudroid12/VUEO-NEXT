@@ -1,6 +1,7 @@
 package com.vueo.tv.detail
 
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
@@ -68,9 +69,13 @@ fun TvDetailScreen(
     fun leaveDetails() {
         // Cancel the complete Detail startup tree before the outer route changes.
         // This prevents the 8s metadata timeout window from owning Back latency.
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "DETAIL_CANCEL_REQUEST startupActive=${detailStartupJob?.isActive == true}",
+        )
         detailSessionGeneration += 1
         detailStartupJob?.cancel()
         detailStartupJob = null
+        PerformanceDiagnostics.captureRuntimeEvent("DETAIL_CANCEL_SIGNALLED")
         onBack()
     }
 

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,6 +15,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.media.CatalogRow
@@ -71,6 +73,7 @@ fun TvHomeScreen(
     runtime: TvRuntime,
     retainedState: TvHomeRetainedState,
     refreshToken: Int,
+    active: Boolean = true,
     onNavigate: (String) -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
@@ -85,6 +88,18 @@ fun TvHomeScreen(
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
     val libraryRevision = retainedState.libraryRevision
+
+    DisposableEffect(Unit) {
+        PerformanceDiagnostics.captureRuntimeEvent("HOME_COMPOSE_ENTER")
+        onDispose {
+            PerformanceDiagnostics.captureRuntimeEvent("HOME_COMPOSE_DISPOSE")
+        }
+    }
+
+    LaunchedEffect(active) {
+        PerformanceDiagnostics.captureRuntimeEvent("HOME_ACTIVE active=$active")
+        if (!active) actionEntry = null
+    }
 
     LaunchedEffect(runtime, refreshToken, retryAttempt) {
         val requestedRetryAttempt = retryAttempt
@@ -235,8 +250,21 @@ fun TvHomeScreen(
         runCatching { navRequesters.getValue("Home").requestFocus() }
     }
 
-    BackHandler {
+    BackHandler(enabled = active) {
         if (navExpanded) onBack() else focusSidebar()
+    }
+
+    var previousActive by remember { mutableStateOf(active) }
+    LaunchedEffect(active) {
+        val returningFromCoveredRoute = active && !previousActive
+        previousActive = active
+        if (returningFromCoveredRoute) {
+            withFrameNanos { }
+            val restored = runCatching { contentFocusRequester.requestFocus() }.isSuccess
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "HOME_FOCUS_READY restored=$restored",
+            )
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

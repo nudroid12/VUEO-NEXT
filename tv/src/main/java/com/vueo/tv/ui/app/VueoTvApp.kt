@@ -3,8 +3,11 @@ package com.vueo.tv
 import com.vueo.shared.core.diagnostics.AppCrashReport
 import com.vueo.shared.core.diagnostics.CrashReportStore
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -33,6 +36,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -189,6 +193,7 @@ fun VueoTvApp(
     var switchingShowSources by remember { mutableStateOf(false) }
     var switchingCommitted by remember { mutableStateOf(false) }
     var launcherAutoPlayKey by remember { mutableStateOf<String?>(null) }
+    var homeRevealTraceToken by remember { mutableIntStateOf(0) }
 
 
     LaunchedEffect(runtime) {
@@ -345,20 +350,31 @@ fun VueoTvApp(
     fun closeDetail() {
         val previous = detailBackStack.lastOrNull()
         if (previous != null) {
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "DETAIL_BACK_RELATED remaining=${detailBackStack.size - 1}",
+            )
             detailBackStack = detailBackStack.dropLast(1)
             selectedMedia = previous
             selectedLibraryEntry = null
             selectedEpisode = null
             initialPositionMs = 0L
         } else {
+            val returningHome = detailReturnRoute == TvRoute.HOME
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "DETAIL_BACK_REQUEST retainedHome=$returningHome",
+            )
             // Detach the heavy Detail payload in the same snapshot as the route
-            // change. AnimatedContent can then compose the returning tab without
-            // retaining a live Details tree full of episodes/cast/enrichment.
+            // change. Home-origin Details uses a retained Home layer, so Back only
+            // removes Details instead of rebuilding the entire Home composition.
             selectedMedia = null
             selectedLibraryEntry = null
             selectedEpisode = null
             initialPositionMs = 0L
             route = detailReturnRoute
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "DETAIL_ROUTE_RETURN target=${detailReturnRoute.name} retainedHome=$returningHome",
+            )
+            if (returningHome) homeRevealTraceToken += 1
         }
     }
 
@@ -943,6 +959,17 @@ fun VueoTvApp(
         }
     }
 
+    LaunchedEffect(homeRevealTraceToken) {
+        if (homeRevealTraceToken <= 0 || route != TvRoute.HOME) return@LaunchedEffect
+        PerformanceDiagnostics.captureRuntimeEvent("HOME_REVEALED retained=true")
+        withFrameNanos { }
+        PerformanceDiagnostics.captureRuntimeEvent("HOME_FIRST_FRAME retained=true")
+    }
+
+    val retainedHomeDetailActive =
+        route == TvRoute.DETAIL && detailReturnRoute == TvRoute.HOME && selectedMedia != null
+    val displayedRootRoute = if (retainedHomeDetailActive) TvRoute.HOME else route
+
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = TvDesign.White,
@@ -954,13 +981,18 @@ fun VueoTvApp(
         Box(
             modifier = Modifier.fillMaxSize().background(TvDesign.Black),
         ) {
-            AnimatedContent(
-                modifier = Modifier.focusRequester(backgroundFocus)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRequester(backgroundFocus)
                     .focusProperties {
                         onEnter = { if (modalDepth > 0) cancelFocusChange() }
                     }
                     .focusGroup(),
-                targetState = route,
+            ) {
+            AnimatedContent(
+                modifier = Modifier.fillMaxSize(),
+                targetState = displayedRootRoute,
                 transitionSpec = {
                     val initialIsTab = initialState in setOf(
                         TvRoute.HOME,
@@ -1012,6 +1044,7 @@ fun VueoTvApp(
                         runtime = runtime,
                         retainedState = homeRetainedState,
                         refreshToken = refreshToken,
+                        active = route == TvRoute.HOME,
                         onNavigate = ::navigate,
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },
                         onResume = { openPlaybackDetail(it, TvRoute.HOME) },
@@ -1310,6 +1343,53 @@ fun VueoTvApp(
                 }
             }
 
+            if (retainedHomeDetailActive) {
+                val media = selectedMedia
+                if (media != null) {
+                    RetainedHomeDetailLayer(mediaKey = "${media.type}:${media.id}") {
+                        DisposableEffect(media.id, media.type, media.sourceExtensionId) {
+                            PerformanceDiagnostics.captureRuntimeEvent(
+                                "DETAIL_RETAINED_ATTACH media=${media.type}:${media.id}",
+                            )
+                            onDispose {
+                                PerformanceDiagnostics.captureRuntimeEvent(
+                                    "DETAIL_DETACHED retainedHome=true media=${media.type}:${media.id}",
+                                )
+                            }
+                        }
+                        TvDetailScreen(
+                            runtime = runtime,
+                            initial = media,
+                            initialLibraryEntry = selectedLibraryEntry,
+                            active = route == TvRoute.DETAIL,
+                            onBack = ::closeDetail,
+                            onWatch = { enriched, episode, startPositionMs ->
+                                selectedMedia = enriched
+                                selectedEpisode = episode
+                                initialPositionMs = startPositionMs
+                                sourceReturnRoute = TvRoute.DETAIL
+                                route = TvRoute.SOURCE
+                            },
+                            onOpenRelated = { related ->
+                                selectedMedia?.let { current ->
+                                    detailBackStack = detailBackStack + current
+                                }
+                                selectedMedia = related
+                                selectedLibraryEntry = null
+                                selectedEpisode = null
+                                initialPositionMs = 0L
+                            },
+                            onOpenEntity = { target ->
+                                selectedEntityTarget = target
+                                route = TvRoute.ENTITY_RESULTS
+                            },
+                            onLibraryChanged = { notifyLibraryChanged() },
+                        )
+                    }
+                }
+            }
+            }
+
             if (route != TvRoute.STARTUP && route != TvRoute.PROFILE) {
                 pendingCrash?.let { report ->
                     TvCrashRecoveryPopup(report = report, onClosed = { pendingCrash = null })
@@ -1324,5 +1404,37 @@ fun VueoTvApp(
 
         }
         }
+    }
+}
+
+@Composable
+private fun RetainedHomeDetailLayer(
+    mediaKey: String,
+    content: @Composable () -> Unit,
+) {
+    var entered by remember(mediaKey) { mutableStateOf(false) }
+    val alpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(durationMillis = 175),
+        label = "retainedHomeDetailAlpha",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.990f,
+        animationSpec = tween(durationMillis = 190),
+        label = "retainedHomeDetailScale",
+    )
+
+    LaunchedEffect(mediaKey) { entered = true }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                this.alpha = alpha
+                scaleX = scale
+                scaleY = scale
+            },
+    ) {
+        content()
     }
 }
