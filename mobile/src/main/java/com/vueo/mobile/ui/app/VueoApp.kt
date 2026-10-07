@@ -359,6 +359,8 @@ fun VueoApp() {
     val engine = remember { UnifiedMediaEngine() }
     val homeRetainedState =
         rememberMobileHomeRetainedState()
+    val settingsRetainedState =
+        rememberMobileSettingsRetainedState()
     val store = remember {
         AddonStore(context.applicationContext)
     }
@@ -969,7 +971,10 @@ fun VueoApp() {
                             engine = engine,
                             settingsStore = settingsStore,
                             profileStore = profileStore,
+                            retainedState = settingsRetainedState,
                             profileVersion = profileVersion,
+                            libraryVersion = libraryVersion,
+                            contentVersion = contentVersion,
                             onProfiles = {
                                 showProfilePicker = true
                                 profilePickerOpenedFromApp = true

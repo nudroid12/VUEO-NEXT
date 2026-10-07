@@ -52,6 +52,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,7 +94,9 @@ import com.vueo.mobile.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
 import com.vueo.mobile.core.update.VueoUpdateManager
 import com.vueo.mobile.core.update.VueoUpdateStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -110,6 +113,30 @@ internal enum class SeekGestureSensitivity(
 private const val PLAYER_GESTURE_PREFS = "vueo_player_gestures"
 private const val SEEK_SENSITIVITY_KEY = "seek_sensitivity"
 private const val CONTENT_WARNINGS_KEY = "content_warnings"
+
+internal data class MobileSettingsHubSnapshot(
+    val profileId: String,
+    val dnaEnabled: Boolean,
+    val dnaSnapshot: UserDnaSnapshot?,
+    val myListCount: Int,
+    val watchedTitlesCount: Int,
+    val addonCount: Int,
+    val repositoryCount: Int,
+    val providerCount: Int,
+    val tmdbConfigured: Boolean,
+    val mdblistConfigured: Boolean,
+)
+
+internal class MobileSettingsRetainedState {
+    var hubSnapshot by mutableStateOf<MobileSettingsHubSnapshot?>(null)
+        internal set
+}
+
+@Composable
+internal fun rememberMobileSettingsRetainedState(): MobileSettingsRetainedState =
+    remember {
+        MobileSettingsRetainedState()
+    }
 
 internal fun Context.seekGestureSensitivity(): SeekGestureSensitivity {
     val stored = getSharedPreferences(
@@ -157,7 +184,10 @@ internal fun VueoSettingsHub(
     engine: UnifiedMediaEngine,
     settingsStore: SettingsStore,
     profileStore: ProfileStore,
+    retainedState: MobileSettingsRetainedState,
     profileVersion: Int,
+    libraryVersion: Int,
+    contentVersion: Int,
     onProfiles: () -> Unit,
     onContentManager: () -> Unit,
     onEnhancements: () -> Unit,
@@ -176,13 +206,6 @@ internal fun VueoSettingsHub(
         LibraryStore(context.applicationContext)
     }
 
-    val addons = engine.stremioAddons()
-    val repositories = pluginStore.repositories()
-    val providers = pluginStore.totalProviderCount()
-    val tmdbConfigured =
-        pluginStore.tmdbApiKey().isNotBlank()
-    val mdblistConfigured =
-        settingsStore.mdblistApiKey().isNotBlank()
     val activeProfile =
         remember(
             profileVersion
@@ -203,19 +226,77 @@ internal fun VueoSettingsHub(
                 activeProfile.id
             )
 
-    val dnaSnapshot =
-        if (dnaEnabled) {
-            remember(
-                activeProfile.id,
-                profileVersion,
-            ) {
-                UserDnaEngine(
-                    libraryStore
-                ).build()
-            }
-        } else {
-            null
+    var hubSnapshot by remember(activeProfile.id, dnaEnabled) {
+        mutableStateOf(
+            retainedState.hubSnapshot
+                ?.takeIf { cached ->
+                    cached.profileId == activeProfile.id &&
+                        cached.dnaEnabled == dnaEnabled
+                }
+        )
+    }
+
+    // Render the Settings shell first. Plugin repository parsing, Library JSON
+    // reads and User DNA analysis used to run synchronously in first
+    // composition, making this tab feel heavier than Search/Library. Keep a
+    // warm summary across tab switches and refresh it off Main.
+    LaunchedEffect(
+        activeProfile.id,
+        profileVersion,
+        libraryVersion,
+        contentVersion,
+        dnaEnabled,
+    ) {
+        val librarySnapshot = withContext(Dispatchers.IO) {
+            libraryStore.detailSnapshot()
         }
+
+        val freshDna =
+            if (dnaEnabled) {
+                withContext(Dispatchers.Default) {
+                    UserDnaEngine(
+                        libraryStore
+                    ).analyze(
+                        history = librarySnapshot.history,
+                        myList = librarySnapshot.watchlist,
+                    )
+                }
+            } else {
+                null
+            }
+
+        val contentSummary = withContext(Dispatchers.IO) {
+            MobileSettingsHubSnapshot(
+                profileId = activeProfile.id,
+                dnaEnabled = dnaEnabled,
+                dnaSnapshot = freshDna,
+                myListCount = librarySnapshot.watchlist.size,
+                watchedTitlesCount =
+                    librarySnapshot.history
+                        .asSequence()
+                        .filter {
+                            it.positionMs > 5_000L
+                        }
+                        .map {
+                            "${it.media.type}:${it.media.id}"
+                        }
+                        .distinct()
+                        .count(),
+                addonCount = engine.stremioAddons().size,
+                repositoryCount = pluginStore.repositories().size,
+                providerCount = pluginStore.totalProviderCount(),
+                tmdbConfigured =
+                    pluginStore.tmdbApiKey().isNotBlank(),
+                mdblistConfigured =
+                    settingsStore.mdblistApiKey().isNotBlank(),
+            )
+        }
+
+        hubSnapshot = contentSummary
+        retainedState.hubSnapshot = contentSummary
+    }
+
+    val dnaSnapshot = hubSnapshot?.dnaSnapshot
 
     val dnaTastePreview =
         dnaSnapshot
@@ -228,40 +309,17 @@ internal fun VueoSettingsHub(
             }
             .orEmpty()
 
-    val myListCount =
-        remember(
-            activeProfile.id,
-            profileVersion,
-        ) {
-            libraryStore
-                .watchlist()
-                .size
-        }
-
     val watchedTitlesCount =
-        remember(
-            activeProfile.id,
-            profileVersion,
-        ) {
-            libraryStore
-                .history()
-                .filter {
-                    it.positionMs > 5_000L
-                }
-                .map {
-                    "${it.media.type}:${it.media.id}"
-                }
-                .distinct()
-                .size
-        }
+        hubSnapshot
+            ?.watchedTitlesCount
 
     val vueoClass =
         remember(
             watchedTitlesCount
         ) {
-            vueoViewingClass(
-                watchedTitlesCount
-            )
+            watchedTitlesCount
+                ?.let(::vueoViewingClass)
+                ?: "Loading"
         }
 
     val dnaClass =
@@ -446,12 +504,16 @@ internal fun VueoSettingsHub(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    VueoProfileStat(Modifier.weight(1f), "My List", myListCount.toString())
-                                    VueoProfileStat(Modifier.weight(1f), "Watched", watchedTitlesCount.toString())
+                                    VueoProfileStat(Modifier.weight(1f), "My List", hubSnapshot?.myListCount?.toString() ?: "…")
+                                    VueoProfileStat(Modifier.weight(1f), "Watched", watchedTitlesCount?.toString() ?: "…")
                                     VueoProfileStat(
                                         modifier = Modifier.weight(1f),
                                         label = "DNA",
-                                        value = dnaSnapshot?.let { "${it.confidencePercent}%" } ?: "Off",
+                                        value = when {
+                                            !dnaEnabled -> "Off"
+                                            dnaSnapshot != null -> "${dnaSnapshot.confidencePercent}%"
+                                            else -> "…"
+                                        },
                                     )
                                 }
 
@@ -490,15 +552,22 @@ internal fun VueoSettingsHub(
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow(
                                 "Content Manager", "Addons, providers & catalogs.",
-                                "${addons.size} addons • ${repositories.size} repos • $providers providers",
+                                hubSnapshot?.let { summary ->
+                                    "${summary.addonCount} addons • ${summary.repositoryCount} repos • ${summary.providerCount} providers"
+                                } ?: "Loading…",
                                 Icons.Default.Extension, onContentManager,
                             )
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow(
                                 "Enhancements", "Metadata, ratings & external services.",
                                 buildString {
-                                    append("TMDB ${if (tmdbConfigured) "configured" else "optional"}")
-                                    append(" • MDBList ${if (mdblistConfigured) "configured" else "optional"}")
+                                    val summary = hubSnapshot
+                                    if (summary == null) {
+                                        append("Loading…")
+                                    } else {
+                                        append("TMDB ${if (summary.tmdbConfigured) "configured" else "optional"}")
+                                        append(" • MDBList ${if (summary.mdblistConfigured) "configured" else "optional"}")
+                                    }
                                 },
                                 Icons.Default.SettingsInputComponent, onEnhancements,
                             )

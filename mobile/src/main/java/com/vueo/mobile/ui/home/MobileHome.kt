@@ -193,6 +193,7 @@ import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.home.HomeCatalogPolicy
 import com.vueo.shared.core.home.HomeRecommendationPolicy
+import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
 import com.vueo.shared.core.search.SearchResultOrderPolicy
@@ -251,11 +252,13 @@ import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 internal class MobileHomeRetainedState {
@@ -270,6 +273,22 @@ internal class MobileHomeRetainedState {
         internal set
 
     var featuredMediaKey by mutableStateOf<String?>(null)
+        internal set
+
+    // Keep the expensive presentation layer warm across bottom-tab switches.
+    // Catalog rows were already retained; v114 extends the same idea to the
+    // featured strip, Continue Watching and recommendation sections so Home can
+    // paint immediately while fresh library state hydrates off Main.
+    var featuredItems by mutableStateOf<List<MediaItem>>(emptyList())
+        internal set
+
+    var continueWatching by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+        internal set
+
+    var recommendations by mutableStateOf(HomeRecommendationSections())
+        internal set
+
+    var presentationProfileId by mutableStateOf<String?>(null)
         internal set
 }
 
@@ -579,8 +598,12 @@ internal fun HomeScreen(
         loading = false
     }
 
-    val featuredItems =
-        remember(rows) {
+    var featuredItems by remember {
+        mutableStateOf(retainedState.featuredItems)
+    }
+
+    LaunchedEffect(rows) {
+        val freshFeatured = withContext(Dispatchers.Default) {
             val allItems =
                 rows
                     .asSequence()
@@ -591,9 +614,11 @@ internal fun HomeScreen(
                     .distinctBy {
                         "${it.type}:${it.id}"
                     }
+                    .toList()
 
             val withBackdrop =
                 allItems
+                    .asSequence()
                     .filter {
                         !it.background
                             .isNullOrBlank()
@@ -601,57 +626,80 @@ internal fun HomeScreen(
                     .take(7)
                     .toList()
 
-            if (
-                withBackdrop
-                    .isNotEmpty()
-            ) {
+            if (withBackdrop.isNotEmpty()) {
                 withBackdrop
             } else {
-                rows
-                    .asSequence()
-                    .flatMap {
-                        it.items
-                            .asSequence()
-                    }
-                    .distinctBy {
-                        "${it.type}:${it.id}"
-                    }
-                    .take(7)
-                    .toList()
+                allItems.take(7)
             }
         }
 
-    val continueWatching =
-        remember(
-            libraryVersion
-        ) {
-            libraryStore
-                .continueWatching()
+        featuredItems = freshFeatured
+        retainedState.featuredItems = freshFeatured
+    }
+
+    var continueWatching by remember(activeProfileId) {
+        mutableStateOf(
+            if (retainedState.presentationProfileId == activeProfileId) {
+                retainedState.continueWatching
+            } else {
+                emptyList()
+            }
+        )
+    }
+
+    var homeRecommendations by remember(
+        activeProfileId,
+        personalizedHomeEnabled,
+    ) {
+        mutableStateOf(
+            if (
+                personalizedHomeEnabled &&
+                retainedState.presentationProfileId == activeProfileId
+            ) {
+                retainedState.recommendations
+            } else {
+                HomeRecommendationSections()
+            }
+        )
+    }
+
+    // Home used to synchronously parse Continue Watching + History and score
+    // recommendations during first composition. That made Home feel heavier
+    // than Search/Library even when catalog rows were already cached. Publish
+    // the retained presentation immediately, then hydrate storage/CPU work in
+    // the background.
+    LaunchedEffect(
+        rows,
+        libraryVersion,
+        activeProfileId,
+        personalizedHomeEnabled,
+    ) {
+        val librarySnapshot = withContext(Dispatchers.IO) {
+            libraryStore.detailSnapshot()
         }
 
-    val watchHistory =
-        remember(
-            libraryVersion
-        ) {
-            libraryStore.history()
-        }
+        continueWatching = librarySnapshot.continueWatching
+        retainedState.continueWatching = librarySnapshot.continueWatching
+        retainedState.presentationProfileId = activeProfileId
 
-    val homeRecommendations =
-        remember(
-            rows,
-            watchHistory,
-            activeProfileId,
-            libraryVersion,
-            personalizedHomeEnabled,
-        ) {
-            HomeRecommendationPolicy.build(
-                catalogRows = rows,
-                watchHistory = watchHistory,
-                dnaEngine = dnaEngine,
-                personalizationEnabled = personalizedHomeEnabled,
-                limit = 12,
-            )
-        }
+        val freshRecommendations =
+            if (personalizedHomeEnabled) {
+                withContext(Dispatchers.Default) {
+                    HomeRecommendationPolicy.build(
+                        catalogRows = rows,
+                        watchHistory = librarySnapshot.history,
+                        dnaEngine = dnaEngine,
+                        personalizationEnabled = true,
+                        limit = 12,
+                    )
+                }
+            } else {
+                HomeRecommendationSections()
+            }
+
+        homeRecommendations = freshRecommendations
+        retainedState.recommendations = freshRecommendations
+    }
 
     val forYouItems = homeRecommendations.forYou
     val becauseYouWatchedSeed = homeRecommendations.becauseYouWatchedSeed
