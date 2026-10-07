@@ -214,6 +214,7 @@ import com.vueo.shared.core.player.PrefetchedSourceValidation
 import com.vueo.shared.core.player.PlayerSourceDisplay
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.mobile.core.dna.UserDnaEngine
+import com.vueo.mobile.core.dna.UserDnaSnapshot
 import com.vueo.mobile.core.dna.UserDnaPreferences
 import com.vueo.mobile.core.model.CatalogRow
 import com.vueo.mobile.BuildConfig
@@ -223,6 +224,7 @@ import com.vueo.mobile.core.storage.LibraryStore
 import com.vueo.mobile.core.storage.ProfileStore
 import com.vueo.mobile.core.storage.VueoProfile
 import com.vueo.mobile.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.LibraryDetailSnapshot
 import com.vueo.mobile.core.storage.PreferredQuality
 import com.vueo.mobile.core.storage.PlayerOrientation
 import com.vueo.mobile.core.storage.PlayerVideoFit
@@ -260,12 +262,14 @@ import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -325,22 +329,17 @@ internal fun MediaDetailsScreen(
                 detailsProfileId
             )
 
-    val detailsDnaSnapshot =
-        remember(
-            detailsProfileId,
-            showDnaMatch,
-            initialItem.id,
-            initialItem.type,
-        ) {
-            if (
-                showDnaMatch
-            ) {
-                detailsDnaEngine
-                    .build()
-            } else {
-                null
-            }
-        }
+    // Keep the first Details composition storage-free. The DNA engine reads
+    // history + My List JSON, so hydrate it with the rest of the local library
+    // state after the shell has already been published.
+    var detailsDnaSnapshot by remember(
+        detailsProfileId,
+        showDnaMatch,
+        initialItem.id,
+        initialItem.type,
+    ) {
+        mutableStateOf<UserDnaSnapshot?>(null)
+    }
 
     val pluginEngine = remember {
         PluginSourceEngine(
@@ -397,16 +396,15 @@ internal fun MediaDetailsScreen(
         >(emptyList())
     }
 
+    // Do not parse LibraryStore JSON during the first composition. Use the
+    // navigation payload immediately, then hydrate the complete local snapshot
+    // from Dispatchers.IO. This mirrors the responsiveness pattern already used
+    // by TV Details.
     var inWatchlist by remember(
         initialItem.id,
         initialItem.type,
     ) {
-        mutableStateOf(
-            libraryStore
-                .isWatchlisted(
-                    initialItem
-                )
-        )
+        mutableStateOf(false)
     }
 
     var detailPlaybackEntries by remember(
@@ -415,57 +413,29 @@ internal fun MediaDetailsScreen(
         initialLibraryEntry,
     ) {
         mutableStateOf(
-            (
-                libraryStore
-                    .continueWatching() +
-                    libraryStore
-                        .history() +
-                    listOfNotNull(
-                        initialLibraryEntry
-                    )
+            listOfNotNull(
+                initialLibraryEntry
             )
-                .distinctBy { entry ->
-                    listOf(
-                        entry.media.type,
-                        entry.media.id,
-                        entry.season
-                            ?.toString()
-                            .orEmpty(),
-                        entry.episode
-                            ?.toString()
-                            .orEmpty(),
-                    ).joinToString(
-                        ":"
-                    )
-                }
         )
     }
 
-    fun refreshDetailPlaybackEntries() {
-        detailPlaybackEntries =
-            (
-                libraryStore
-                    .continueWatching() +
-                    libraryStore
-                        .history() +
-                    listOfNotNull(
-                        initialLibraryEntry
-                    )
+    var detailEpisodePlaybackEntries by remember(
+        initialItem.id,
+        initialItem.type,
+        initialLibraryEntry,
+    ) {
+        mutableStateOf(
+            listOfNotNull(
+                initialLibraryEntry
             )
-                .distinctBy { entry ->
-                    listOf(
-                        entry.media.type,
-                        entry.media.id,
-                        entry.season
-                            ?.toString()
-                            .orEmpty(),
-                        entry.episode
-                            ?.toString()
-                            .orEmpty(),
-                    ).joinToString(
-                        ":"
-                    )
-                }
+        )
+    }
+
+    var detailLibraryHydrationGeneration by remember(
+        initialItem.id,
+        initialItem.type,
+    ) {
+        mutableIntStateOf(0)
     }
 
     var selectedSeason by remember { mutableStateOf<Int?>(null) }
@@ -574,6 +544,7 @@ internal fun MediaDetailsScreen(
 
     fun syncEpisodeSelection(
         media: MediaItem,
+        entries: List<LibraryPlaybackEntry>,
         preserveCurrent: Boolean,
     ) {
         if (
@@ -613,9 +584,7 @@ internal fun MediaDetailsScreen(
         val playbackTarget =
             detailsPlaybackTargetEpisode(
                 media = media,
-                entries =
-                    libraryStore
-                        .continueWatchingPlaybackEntries(),
+                entries = entries,
                 initialEntry =
                     initialLibraryEntry,
             )
@@ -630,6 +599,106 @@ internal fun MediaDetailsScreen(
             target?.season
         selectedEpisode =
             target
+    }
+
+    fun applyDetailLibrarySnapshot(
+        media: MediaItem,
+        snapshot: LibraryDetailSnapshot,
+        dnaSnapshot: UserDnaSnapshot?,
+        preserveCurrentEpisode: Boolean,
+    ) {
+        inWatchlist =
+            snapshot.watchlist.any { stored ->
+                stored.id == media.id &&
+                    stored.type == media.type
+            }
+
+        detailPlaybackEntries =
+            (
+                snapshot.continueWatching +
+                    snapshot.history +
+                    listOfNotNull(
+                        initialLibraryEntry
+                    )
+            )
+                .distinctBy { entry ->
+                    listOf(
+                        entry.media.type,
+                        entry.media.id,
+                        entry.season
+                            ?.toString()
+                            .orEmpty(),
+                        entry.episode
+                            ?.toString()
+                            .orEmpty(),
+                    ).joinToString(":")
+                }
+
+        detailEpisodePlaybackEntries =
+            (
+                snapshot.playbackEntries +
+                    listOfNotNull(
+                        initialLibraryEntry
+                    )
+            ).distinctBy {
+                it.mediaKey
+            }
+
+        detailsDnaSnapshot =
+            dnaSnapshot
+
+        syncEpisodeSelection(
+            media = media,
+            entries = detailEpisodePlaybackEntries,
+            preserveCurrent = preserveCurrentEpisode,
+        )
+    }
+
+    suspend fun loadDetailLibraryState(): Pair<LibraryDetailSnapshot, UserDnaSnapshot?> {
+        val snapshot =
+            withContext(Dispatchers.IO) {
+                libraryStore.detailSnapshot()
+            }
+
+        val dnaSnapshot =
+            if (showDnaMatch) {
+                withContext(Dispatchers.Default) {
+                    detailsDnaEngine.analyze(
+                        history = snapshot.history,
+                        myList = snapshot.watchlist,
+                    )
+                }
+            } else {
+                null
+            }
+
+        return snapshot to dnaSnapshot
+    }
+
+    fun refreshDetailLibraryState() {
+        val mediaAtRequest = item
+        val generation =
+            ++detailLibraryHydrationGeneration
+
+        scope.launch {
+            val (snapshot, dnaSnapshot) =
+                loadDetailLibraryState()
+
+            if (
+                generation != detailLibraryHydrationGeneration ||
+                item.id != mediaAtRequest.id ||
+                item.type != mediaAtRequest.type
+            ) {
+                return@launch
+            }
+
+            applyDetailLibrarySnapshot(
+                media = item,
+                snapshot = snapshot,
+                dnaSnapshot = dnaSnapshot,
+                preserveCurrentEpisode = true,
+            )
+        }
     }
 
     LaunchedEffect(
@@ -655,14 +724,30 @@ internal fun MediaDetailsScreen(
         )
         syncEpisodeSelection(
             media = shellItem,
+            entries = detailEpisodePlaybackEntries,
             preserveCurrent = false,
         )
-        inWatchlist =
-            libraryStore
-                .isWatchlisted(
-                    shellItem
+
+        // Hydrate all local library/DNA state off the UI thread. LibraryStore's
+        // detailSnapshot() parses watchlist/history/cursors once and shares the
+        // result across watchlist, resume, episode targeting and DNA.
+        val libraryHydrationGeneration =
+            ++detailLibraryHydrationGeneration
+        launch {
+            val (snapshot, dnaSnapshot) =
+                loadDetailLibraryState()
+
+            if (
+                libraryHydrationGeneration == detailLibraryHydrationGeneration
+            ) {
+                applyDetailLibrarySnapshot(
+                    media = item,
+                    snapshot = snapshot,
+                    dnaSnapshot = dnaSnapshot,
+                    preserveCurrentEpisode = true,
                 )
-        refreshDetailPlaybackEntries()
+            }
+        }
 
         val tmdbKey =
             pluginStore
@@ -712,14 +797,9 @@ internal fun MediaDetailsScreen(
         )
         syncEpisodeSelection(
             media = coreItem,
+            entries = detailEpisodePlaybackEntries,
             preserveCurrent = true,
         )
-        inWatchlist =
-            libraryStore
-                .isWatchlisted(
-                    coreItem
-                )
-        refreshDetailPlaybackEntries()
 
         // Do not make TMDB/Rich Details/ratings/recommendations part of the
         // perceived page load. Core meta is enough to release the UI.
@@ -769,6 +849,7 @@ internal fun MediaDetailsScreen(
                 )
                 syncEpisodeSelection(
                     media = enrichedItem,
+                    entries = detailEpisodePlaybackEntries,
                     preserveCurrent = true,
                 )
             }
@@ -1650,7 +1731,7 @@ internal fun MediaDetailsScreen(
                             pendingPlaybackFailed = true
                         },
                         onLibraryChanged = {
-                            refreshDetailPlaybackEntries()
+                            refreshDetailLibraryState()
                             onLibraryChanged()
                         },
                         onSwitchSource = {

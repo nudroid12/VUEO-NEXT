@@ -8,6 +8,13 @@ import com.vueo.shared.core.media.MediaPerson
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class LibraryDetailSnapshot(
+    val watchlist: List<MediaItem>,
+    val history: List<LibraryPlaybackEntry>,
+    val continueWatching: List<LibraryPlaybackEntry>,
+    val playbackEntries: List<LibraryPlaybackEntry>,
+)
+
 data class LibraryPlaybackEntry(
     val media: MediaItem,
     val videoId: String,
@@ -205,6 +212,59 @@ class LibraryStore(
             .sortedByDescending {
                 it.lastWatchedEpochMs
             }
+
+    /**
+     * One-pass local snapshot for Details hydration.
+     *
+     * Details screens need watchlist, history, continue-watching and dedicated
+     * playback cursors at the same time. Reading each public accessor separately
+     * reparses the same profile JSON more than once, so this keeps those reads
+     * together and reuses the parsed history for every derived collection.
+     */
+    @Synchronized
+    fun detailSnapshot(): LibraryDetailSnapshot {
+        val watchlist =
+            readWatchlist()
+                .sortedByDescending(::watchlistTimestamp)
+                .map { entry ->
+                    mediaFromJson(
+                        entry.getJSONObject("media")
+                    )
+                }
+
+        val history =
+            readHistory()
+                .sortedByDescending {
+                    it.lastWatchedEpochMs
+                }
+
+        val playbackEntries =
+            (readContinueWatching() + history)
+                .sortedByDescending {
+                    it.lastWatchedEpochMs
+                }
+                .distinctBy {
+                    it.mediaKey
+                }
+
+        val hiddenTitleKeys =
+            dismissedContinueWatchingKeys() +
+                markedWatchedKeys()
+
+        val continueWatching =
+            ContinueWatchingPolicy
+                .resolve(playbackEntries)
+                .filterNot {
+                    continueWatchingTitleKey(it.media) in hiddenTitleKeys
+                }
+
+        return LibraryDetailSnapshot(
+            watchlist = watchlist,
+            history = history,
+            continueWatching = continueWatching,
+            playbackEntries = playbackEntries,
+        )
+    }
 
     @Synchronized
     fun continueWatching():
