@@ -271,6 +271,11 @@ fun TvPlayerScreen(
     var autoNextCancelled by remember(bundle.videoId) { mutableStateOf(false) }
     var nextEpisodeDispatched by remember(bundle.videoId) { mutableStateOf(false) }
     var autoNextCompletedCurrent by remember(bundle.videoId) { mutableStateOf(false) }
+    // End-of-episode persistence can be triggered by STATE_ENDED, the contextual
+    // Next action, auto-next, and Player disposal within a few hundred ms. Keep
+    // one completion write and one explicit handoff write at most per video.
+    var completionPersistenceQueued by remember(bundle.videoId) { mutableStateOf(false) }
+    var episodeHandoffPersistenceQueued by remember(bundle.videoId) { mutableStateOf(false) }
     var libraryProgressRevision by remember(media.id, media.type) { mutableIntStateOf(0) }
     var focusedPrompt by remember { mutableStateOf(TvPlayerPromptTarget.NONE) }
 
@@ -648,6 +653,22 @@ fun TvPlayerScreen(
         }
     }
 
+    fun queueEpisodeHandoffProgress(markCompleted: Boolean) {
+        if (episodeHandoffPersistenceQueued) return
+        episodeHandoffPersistenceQueued = true
+
+        if (markCompleted) {
+            autoNextCompletedCurrent = true
+            // STATE_ENDED already queued the exact completion snapshot. Reusing it
+            // avoids serializing PlaybackStore + LibraryStore a second time when
+            // the user immediately presses Play Next. During credits, no ended
+            // callback exists yet, so queue the completion once here.
+            if (completionPersistenceQueued) return
+            completionPersistenceQueued = true
+        }
+        saveProgress(backgroundLibrary = true)
+    }
+
     fun closePanel(restoreFocus: Boolean = true) {
         val closingPanel = activePanel
         activePanel = TvPlayerPanel.NONE
@@ -804,7 +825,16 @@ fun TvPlayerScreen(
         val url = activeSource.url ?: return@LaunchedEffect
         val latestSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
         if (latestSubtitleUrls == appliedSubtitleUrls) return@LaunchedEffect
-        delay(350L)
+        // A prefetched episode can keep resolving subtitles after its video source
+        // is already committed. Do not rebuild Media3's playing item while the new
+        // decoder is still producing its first frame. Workspace choices remain
+        // visible immediately; registration is batched once startup settles.
+        var startupWaits = 0
+        while ((latestEpisodeSwitching.value || !hasRenderedFirstFrame) && startupWaits < 30) {
+            delay(100L)
+            startupWaits += 1
+        }
+        delay(if (startupWaits > 0) 500L else 350L)
         if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
         val currentPosition = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
             currentPositionMs = player.currentPosition,
@@ -971,31 +1001,34 @@ fun TvPlayerScreen(
                     playbackError = null
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    val completedDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
-                    val completionSnapshot = runtime.playbackStore.capturePosition(
-                        mediaKey = mediaKey,
-                        positionMs = completedDuration,
-                        durationMs = completedDuration,
-                    )
-                    enqueueTvPlayerPersistence(
-                        block = {
-                            runtime.playbackStore.persistSnapshot(completionSnapshot)
-                            runtime.libraryStore.recordPlayback(
-                                media = media,
-                                videoId = bundle.videoId,
-                                episodeTitle = episode?.title,
-                                season = episode?.season,
-                                episode = episode?.episode,
-                                positionMs = completedDuration,
-                                durationMs = completedDuration,
-                                lastWatchedEpochMs = completionSnapshot.updatedAtEpochMs,
-                            )
-                        },
-                        afterPersist = {
-                            libraryProgressRevision += 1
-                            onLibraryChanged()
-                        },
-                    )
+                    if (!completionPersistenceQueued) {
+                        completionPersistenceQueued = true
+                        val completedDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+                        val completionSnapshot = runtime.playbackStore.capturePosition(
+                            mediaKey = mediaKey,
+                            positionMs = completedDuration,
+                            durationMs = completedDuration,
+                        )
+                        enqueueTvPlayerPersistence(
+                            block = {
+                                runtime.playbackStore.persistSnapshot(completionSnapshot)
+                                runtime.libraryStore.recordPlayback(
+                                    media = media,
+                                    videoId = bundle.videoId,
+                                    episodeTitle = episode?.title,
+                                    season = episode?.season,
+                                    episode = episode?.episode,
+                                    positionMs = completedDuration,
+                                    durationMs = completedDuration,
+                                    lastWatchedEpochMs = completionSnapshot.updatedAtEpochMs,
+                                )
+                            },
+                            afterPersist = {
+                                libraryProgressRevision += 1
+                                onLibraryChanged()
+                            },
+                        )
+                    }
                     ended = true
                     playing = false
                     if (!endedControlsDismissed &&
@@ -1370,9 +1403,8 @@ fun TvPlayerScreen(
             return@LaunchedEffect
         }
         nextEpisodeDispatched = true
-        autoNextCompletedCurrent = true
         clearPendingSeek()
-        saveProgress()
+        queueEpisodeHandoffProgress(markCompleted = true)
         onPlayNextEpisode(targetEpisode, activeSource)
     }
 
@@ -1381,6 +1413,10 @@ fun TvPlayerScreen(
             activePanel = TvPlayerPanel.NONE
             hideControls()
         } else {
+            // If discovery was cancelled/failed and this same Player survived,
+            // allow future progress saves. A successful handoff disposes this
+            // videoId and the next Player starts with fresh flags instead.
+            episodeHandoffPersistenceQueued = false
             nextEpisodeDispatched = false
             requestFocusReliably(rootRequester)
         }
@@ -1499,14 +1535,23 @@ fun TvPlayerScreen(
         onDispose {
             player.volume = 0f
             runCatching { player.pause() }
-            if (!exitingPlayer) {
+            if (!exitingPlayer && !episodeHandoffPersistenceQueued && !completionPersistenceQueued) {
                 runCatching { saveProgress(backgroundLibrary = true) }
             }
-            // Defer codec/player release by a frame so Back can present the return
-            // route immediately. Audio is already muted/paused above.
-            tvPlayerCleanupScope.launch {
-                delay(64L)
+
+            val episodeHandoff = episodeHandoffPersistenceQueued || latestEpisodeSwitching.value
+            if (episodeHandoff) {
+                // Episode-to-episode handoff stays inside the Player. Release the
+                // old MediaCodec immediately so low-resource TV devices never hold
+                // the old and new video decoders for an artificial extra 64 ms.
                 runCatching { player.release() }
+            } else {
+                // Keep the one-frame defer only for actual navigation/source disposal,
+                // where it lets the return surface present before codec teardown.
+                tvPlayerCleanupScope.launch {
+                    delay(64L)
+                    runCatching { player.release() }
+                }
             }
         }
     }
@@ -1953,6 +1998,8 @@ fun TvPlayerScreen(
                 autoNextCancelled = false
                 nextEpisodeDispatched = false
                 autoNextCompletedCurrent = false
+                completionPersistenceQueued = false
+                episodeHandoffPersistenceQueued = false
                 player.seekTo(0L)
                 positionMs = 0L
                 if (!player.isPlaying) player.play()
@@ -1970,8 +2017,7 @@ fun TvPlayerScreen(
                     // The contextual Next action only appears after the episode
                     // ended or during credits that safely reach the video end.
                     // Persist the current episode as completed before switching.
-                    autoNextCompletedCurrent = true
-                    saveProgress()
+                    queueEpisodeHandoffProgress(markCompleted = true)
                     onPlayNextEpisode(it, activeSource)
                 }
             },
@@ -1998,7 +2044,7 @@ fun TvPlayerScreen(
                     nextEpisodeDispatched = true
                     nextCountdown = 0
                     clearPendingSeek()
-                    saveProgress()
+                    queueEpisodeHandoffProgress(markCompleted = false)
                     onPlayNextEpisode(target, activeSource)
                 }
             },
@@ -2025,7 +2071,7 @@ fun TvPlayerScreen(
                             } == true
                             if (isCurrent) closePanel()
                             else {
-                                saveProgress()
+                                queueEpisodeHandoffProgress(markCompleted = false)
                                 onPlayNextEpisode(target, activeSource)
                             }
                         }

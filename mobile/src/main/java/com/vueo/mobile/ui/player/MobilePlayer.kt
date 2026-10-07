@@ -604,6 +604,22 @@ internal fun PlayerScreen(
     var playbackEnded by remember(mediaKey) {
         mutableStateOf(false)
     }
+    // Prevent STATE_ENDED, Play Next, and Player disposal from serializing the
+    // same completion/progress snapshot multiple times during one handoff.
+    var completionPersistenceQueued by remember(mediaKey) {
+        mutableStateOf(false)
+    }
+    var episodeHandoffPersistenceQueued by remember(mediaKey) {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(episodeSwitchingTo?.id, mediaKey) {
+        if (episodeSwitchingTo == null) {
+            // Failed/cancelled discovery can leave this same Player alive. A
+            // successful switch changes mediaKey, so only surviving Players are
+            // re-armed for normal progress persistence here.
+            episodeHandoffPersistenceQueued = false
+        }
+    }
     var episodeHistoryRevision by remember(media.id, media.type) {
         mutableIntStateOf(0)
     }
@@ -1147,7 +1163,15 @@ internal fun PlayerScreen(
             PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
 
         if (latestSubtitleUrls != appliedSubtitleUrls) {
-            delay(350L)
+            // Prefetch subtitle results may arrive while the next episode decoder
+            // is still starting. Keep them visible in the workspace immediately,
+            // but batch MediaItem replacement until the first frame/handoff settles.
+            var startupWaits = 0
+            while ((latestEpisodeSwitchingTo.value != null || !hasRenderedFirstFrame) && startupWaits < 30) {
+                delay(100L)
+                startupWaits += 1
+            }
+            delay(if (startupWaits > 0) 500L else 350L)
             val positionMs = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
                 currentPositionMs = player.currentPosition,
                 lastKnownPositionMs = lastValidPlaybackPositionMs,
@@ -1321,6 +1345,10 @@ internal fun PlayerScreen(
     }
 
     fun markCurrentEpisodeCompletedForNext() {
+        episodeHandoffPersistenceQueued = true
+        if (completionPersistenceQueued) return
+        completionPersistenceQueued = true
+
         val completedDuration = player.duration
             .takeIf { it > 0L && it != C.TIME_UNSET }
             ?.coerceAtLeast(0L)
@@ -1335,6 +1363,12 @@ internal fun PlayerScreen(
             clearPlaybackPosition = true,
             notifyLibrary = true,
         )
+    }
+
+    fun saveCurrentForEpisodeHandoff() {
+        if (episodeHandoffPersistenceQueued) return
+        episodeHandoffPersistenceQueued = true
+        savePosition()
     }
 
     fun startNextEpisode() {
@@ -1868,14 +1902,17 @@ internal fun PlayerScreen(
                         playbackState ==
                             Player.STATE_ENDED
                     ) {
-                        val completedDurationMs =
-                            player.duration.coerceAtLeast(0L)
-                        enqueuePlaybackProgress(
-                            positionMs = completedDurationMs,
-                            durationMs = completedDurationMs,
-                            clearPlaybackPosition = true,
-                            notifyLibrary = true,
-                        )
+                        if (!completionPersistenceQueued) {
+                            completionPersistenceQueued = true
+                            val completedDurationMs =
+                                player.duration.coerceAtLeast(0L)
+                            enqueuePlaybackProgress(
+                                positionMs = completedDurationMs,
+                                durationMs = completedDurationMs,
+                                clearPlaybackPosition = true,
+                                notifyLibrary = true,
+                            )
+                        }
                         if (
                             nextEpisode != null &&
                             !nextEpisodeCardDismissed
@@ -1939,7 +1976,7 @@ internal fun PlayerScreen(
         onDispose {
             player.volume = 0f
             runCatching { player.pause() }
-            if (!playerExitRequested) {
+            if (!playerExitRequested && !episodeHandoffPersistenceQueued && !completionPersistenceQueued) {
                 val livePositionMs =
                     player.currentPosition.coerceAtLeast(0L)
                 val liveDurationMs =
@@ -1962,11 +1999,18 @@ internal fun PlayerScreen(
                 }
             }
 
-            // Give the return/new-source composition a frame before codec teardown.
-            // Audio is already muted and paused, so delayed release is inaudible.
-            mobilePlayerCleanupScope.launch {
-                delay(64L)
+            val episodeHandoff =
+                episodeHandoffPersistenceQueued || latestEpisodeSwitchingTo.value != null
+            if (episodeHandoff) {
+                // A next-episode switch stays inside Player. Free the old codec now
+                // instead of holding two decoder allocations for another 64 ms.
                 runCatching { player.release() }
+            } else {
+                // Preserve the one-frame defer for actual Back/source disposal.
+                mobilePlayerCleanupScope.launch {
+                    delay(64L)
+                    runCatching { player.release() }
+                }
             }
         }
     }
@@ -2843,7 +2887,7 @@ internal fun PlayerScreen(
             switchingFailed =
                 episodeSwitchFailed,
             onEpisodeSelected = { candidate ->
-                savePosition()
+                saveCurrentForEpisodeHandoff()
                 nextEpisodeCountdown = null
                 showNextEpisodeCard = false
                 nextEpisodeCardDismissed = true
@@ -3488,7 +3532,7 @@ internal fun PlayerScreen(
                         ) {
                             nextEpisodeSwitching = true
                             nextEpisodeCountdown = null
-                            savePosition()
+                            saveCurrentForEpisodeHandoff()
                             onEpisodeSelected(
                                 cardEpisode
                             )
