@@ -185,6 +185,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         mutableIntStateOf(selectedVisibleTrackIndex.coerceAtLeast(0))
     }
     var pendingTrackFocusLanguage by remember { mutableStateOf<String?>(null) }
+    var pendingTrackFocusRequest by remember { mutableIntStateOf(0) }
     val styleLeftRequester = if (styleFloatMode) {
         FocusRequester.Cancel
     } else {
@@ -225,14 +226,25 @@ internal fun VueoPlayerSubtitleWorkspace(
         }
     }
 
-    LaunchedEffect(activeLanguageCode, visibleTracks, pendingTrackFocusLanguage) {
+    LaunchedEffect(
+        activeLanguageCode,
+        visibleTracks.map { it.key },
+        pendingTrackFocusLanguage,
+        pendingTrackFocusRequest,
+    ) {
         if (
             pendingTrackFocusLanguage != activeLanguageCode ||
             visibleTracks.isEmpty()
         ) {
             return@LaunchedEffect
         }
-        if (trackRequesters.first().requestTvFocus()) {
+
+        // Switching Languages rebuilds the track column and its FocusRequesters.
+        // Scroll the first row into composition, then retry across enough frames
+        // to survive the panel/layout recomposition instead of leaving D-pad focus
+        // stuck in the Languages card.
+        trackListState.scrollToItem(0)
+        if (trackRequesters.first().requestTvFocus(attempts = 14)) {
             pendingTrackFocusLanguage = null
         }
     }
@@ -362,12 +374,18 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     requester = languageRequesters[index + 1],
                                     blockUp = false,
                                     blockDown = index == groups.lastIndex,
-                                    rightRequester = if (group.code == activeLanguageCode) firstTrackRequester else FocusRequester.Cancel,
-                                    onRight = if (group.code != activeLanguageCode && group.tracks.isNotEmpty()) {
+                                    // Always route D-pad Right through the explicit
+                                    // handoff below. A direct FocusRequester can point at
+                                    // the previous track list for one composition frame
+                                    // after changing language, which is the intermittent
+                                    // "stuck in Languages" failure seen on TV.
+                                    rightRequester = FocusRequester.Cancel,
+                                    onRight = if (group.tracks.isNotEmpty()) {
                                         {
                                             activeLanguageCode = group.code
                                             styleOpen = !subtitlesDisabled && group.code == selectedLanguageCode
                                             pendingTrackFocusLanguage = group.code
+                                            pendingTrackFocusRequest += 1
                                         }
                                     } else {
                                         null

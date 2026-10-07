@@ -467,7 +467,10 @@ fun TvPlayerScreen(
         !recoveryInProgress && pendingSeekPositionMs == null && player.playWhenReady &&
         (ended || (skipSegmentsEnabled && earlyNextEligible && playing && !isBuffering && hasRenderedFirstFrame))
     val latestAutoNextEligible = androidx.compose.runtime.rememberUpdatedState(autoNextEligible)
-    val hasSubtitleControl = textTracks.isNotEmpty() || liveSubtitles.isNotEmpty()
+    // Keep the subtitle workspace reachable even when discovery currently has no
+    // tracks. The workspace owns the explicit Off state and Refresh action, so
+    // hiding the chrome action here would strand the user with no way to retry.
+    val hasSubtitleControl = true
     val hasAudioControl = audioTracks.isNotEmpty() || !activeSource.audio.isNullOrBlank()
     val hasSourcesControl = playableSources.isNotEmpty()
     val hasEpisodesControl = media.episodes.isNotEmpty()
