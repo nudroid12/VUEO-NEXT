@@ -252,11 +252,17 @@ import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
 
 private fun extractPlayerImdbId(value: String?): String? =
@@ -286,6 +292,30 @@ private fun Context.setPlayerSubtitleDelayMs(
 
 private const val LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS = 60
 private const val LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS = 100L
+
+// Player persistence is serialized off the UI thread so progress/history JSON
+// work cannot stall player navigation or race older snapshots over newer ones.
+private val mobilePlayerPersistenceScope =
+    CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val mobilePlayerCleanupScope =
+    CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+private val mobilePlayerPersistenceMutex = Mutex()
+
+private fun enqueueMobilePlayerPersistence(
+    block: () -> Unit,
+    afterPersist: (() -> Unit)? = null,
+) {
+    mobilePlayerPersistenceScope.launch {
+        mobilePlayerPersistenceMutex.withLock {
+            block()
+        }
+        afterPersist?.let { callback ->
+            withContext(Dispatchers.Main.immediate) {
+                callback()
+            }
+        }
+    }
+}
 
 @Composable
 private fun PlayerContentWarningsOverlay(
@@ -437,6 +467,7 @@ internal fun PlayerScreen(
     val currentConfigurationOrientation =
         LocalConfiguration.current.orientation
     val latestOnBack = rememberUpdatedState(onBack)
+    val latestOnLibraryChanged = rememberUpdatedState(onLibraryChanged)
     var playerExitRequested by remember {
         mutableStateOf(false)
     }
@@ -448,36 +479,6 @@ internal fun PlayerScreen(
         if (!playerExitCommitted) {
             playerExitCommitted = true
             latestOnBack.value()
-        }
-    }
-
-    fun requestPlayerExit() {
-        if (playerExitRequested) return
-
-        playerExitRequested = true
-        activity?.requestedOrientation =
-            when (previousRequestedOrientation) {
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED ->
-                    when (entryConfigurationOrientation) {
-                        android.content.res.Configuration
-                            .ORIENTATION_LANDSCAPE ->
-                            ActivityInfo
-                                .SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-
-                        else ->
-                            ActivityInfo
-                                .SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    }
-
-                else -> previousRequestedOrientation
-            }
-
-        if (
-            activity == null ||
-            currentConfigurationOrientation ==
-                entryConfigurationOrientation
-        ) {
-            commitPlayerExit()
         }
     }
 
@@ -809,37 +810,13 @@ internal fun PlayerScreen(
             )
     }
 
-    BackHandler {
-        when {
-            showAudioDialog ->
-                showAudioDialog = false
-
-            showSubtitleStyleOverlay -> {
-                showSubtitleStyleOverlay = false
-                controlsVisible = true
-            }
-
-            showSubtitleDialog -> {
-                showSubtitleDialog = false
-                controlsVisible = true
-            }
-
-            showSourceDialog -> {
-                showSourceDialog = false
-                switchingSourceUrl = null
-            }
-
-            showEpisodeDialog ->
-                showEpisodeDialog = false
-
-            showMoreDialog ->
-                showMoreDialog = false
-
-            controlsLocked ->
-                controlsLocked = false
-
-            else -> requestPlayerExit()
-        }
+    val startupAudioMuted = remember(
+        source.url,
+        source.headers,
+        mediaKey,
+        initialPositionMs,
+    ) {
+        mutableStateOf(true)
     }
 
     val player = remember(
@@ -884,6 +861,22 @@ internal fun PlayerScreen(
                 setAudioAttributes(
                     AudioAttributes.DEFAULT,
                     true,
+                )
+                // Register the audio gate before prepare(), so even an unusually
+                // fast first frame cannot be missed by the Compose listener added
+                // later in this composition. Retry re-arms the same gate.
+                addListener(
+                    object : Player.Listener {
+                        override fun onRenderedFirstFrame() {
+                            if (
+                                startupAudioMuted.value &&
+                                !playerExitRequested
+                            ) {
+                                volume = 1f
+                                startupAudioMuted.value = false
+                            }
+                        }
+                    }
                 )
 
                 val playerMediaItem =
@@ -948,10 +941,138 @@ internal fun PlayerScreen(
                 trackSelectionParameters =
                     initialTrackParameters.build()
 
+                // Do not let audio run ahead of the first decoded video frame.
+                volume = 0f
                 prepare()
                 playWhenReady =
                     !resumePromptVisible
             }
+    }
+
+    fun enqueuePlaybackProgress(
+        positionMs: Long,
+        durationMs: Long,
+        clearPlaybackPosition: Boolean = false,
+        notifyLibrary: Boolean = false,
+    ) {
+        enqueueMobilePlayerPersistence(
+            block = {
+                if (clearPlaybackPosition) {
+                    playbackStore.clearPosition(mediaKey)
+                } else {
+                    playbackStore.savePositionMs(
+                        mediaKey = mediaKey,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                    )
+                }
+                libraryStore.recordPlayback(
+                    media = media,
+                    videoId = videoId,
+                    episodeTitle = episode?.title,
+                    season = episode?.season,
+                    episode = episode?.episode,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                )
+            },
+            afterPersist = if (notifyLibrary) {
+                {
+                    episodeHistoryRevision += 1
+                    latestOnLibraryChanged.value()
+                }
+            } else {
+                null
+            },
+        )
+    }
+
+    fun requestPlayerExit() {
+        if (playerExitRequested) return
+
+        playerExitRequested = true
+
+        // Silence/pause immediately. Orientation restoration and JSON persistence
+        // must never leave audio running while the return route is being prepared.
+        player.volume = 0f
+        runCatching { player.pause() }
+
+        val livePositionMs = player.currentPosition.coerceAtLeast(0L)
+        val liveDurationMs = player.duration.coerceAtLeast(0L)
+        if (livePositionMs > minimumResumePositionMs) {
+            lastValidPlaybackPositionMs = livePositionMs
+        }
+        val stablePositionMs =
+            if (livePositionMs > minimumResumePositionMs) {
+                livePositionMs
+            } else {
+                lastValidPlaybackPositionMs
+            }
+        if (stablePositionMs > minimumResumePositionMs) {
+            enqueuePlaybackProgress(
+                positionMs = stablePositionMs,
+                durationMs = liveDurationMs,
+                notifyLibrary = true,
+            )
+        }
+
+        activity?.requestedOrientation =
+            when (previousRequestedOrientation) {
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED ->
+                    when (entryConfigurationOrientation) {
+                        android.content.res.Configuration
+                            .ORIENTATION_LANDSCAPE ->
+                            ActivityInfo
+                                .SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+                        else ->
+                            ActivityInfo
+                                .SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    }
+
+                else -> previousRequestedOrientation
+            }
+
+        if (
+            activity == null ||
+            currentConfigurationOrientation ==
+                entryConfigurationOrientation
+        ) {
+            commitPlayerExit()
+        }
+    }
+
+    BackHandler {
+        when {
+            showAudioDialog ->
+                showAudioDialog = false
+
+            showSubtitleStyleOverlay -> {
+                showSubtitleStyleOverlay = false
+                controlsVisible = true
+            }
+
+            showSubtitleDialog -> {
+                showSubtitleDialog = false
+                controlsVisible = true
+            }
+
+            showSourceDialog -> {
+                showSourceDialog = false
+                switchingSourceUrl = null
+            }
+
+            showEpisodeDialog ->
+                showEpisodeDialog = false
+
+            showMoreDialog ->
+                showMoreDialog = false
+
+            controlsLocked ->
+                controlsLocked = false
+
+            else -> requestPlayerExit()
+        }
     }
 
     var appliedSubtitleUrls by remember(player) {
@@ -1155,37 +1276,18 @@ internal fun PlayerScreen(
         return stablePositionMs to liveDurationMs
     }
 
-    fun recordLibraryProgress(
-        positionMs: Long,
-        durationMs: Long,
-    ) {
-        libraryStore.recordPlayback(
-            media = media,
-            videoId = videoId,
-            episodeTitle = episode?.title,
-            season = episode?.season,
-            episode = episode?.episode,
-            positionMs = positionMs,
-            durationMs = durationMs,
-        )
-    }
-
     fun savePosition() {
         val (positionMs, durationMs) =
             stablePlaybackSnapshot()
 
         // Pause/exit/dispose can briefly report 0 ms. Never let that
-        // transient value clear an already-valid resume point.
+        // transient value clear an already-valid resume point. Persistence is
+        // serialized off Main so JSON history work cannot hitch the player UI.
         if (positionMs <= minimumResumePositionMs) {
             return
         }
 
-        playbackStore.savePositionMs(
-            mediaKey = mediaKey,
-            positionMs = positionMs,
-            durationMs = durationMs,
-        )
-        recordLibraryProgress(
+        enqueuePlaybackProgress(
             positionMs = positionMs,
             durationMs = durationMs,
         )
@@ -1200,13 +1302,12 @@ internal fun PlayerScreen(
             savePosition()
             return
         }
-        playbackStore.clearPosition(mediaKey)
-        recordLibraryProgress(
+        enqueuePlaybackProgress(
             positionMs = completedDuration,
             durationMs = completedDuration,
+            clearPlaybackPosition = true,
+            notifyLibrary = true,
         )
-        episodeHistoryRevision += 1
-        onLibraryChanged()
     }
 
     fun startNextEpisode() {
@@ -1557,16 +1658,19 @@ internal fun PlayerScreen(
     }
 
     LaunchedEffect(mediaKey) {
-        libraryStore.recordPlayback(
-            media = media,
-            videoId = videoId,
-            episodeTitle = episode?.title,
-            season = episode?.season,
-            episode = episode?.episode,
-            positionMs = initialPlaybackPositionMs,
-            durationMs =
-                playbackStore.durationMs(mediaKey),
-        )
+        enqueueMobilePlayerPersistence {
+            val initialDurationMs =
+                playbackStore.durationMs(mediaKey)
+            libraryStore.recordPlayback(
+                media = media,
+                videoId = videoId,
+                episodeTitle = episode?.title,
+                season = episode?.season,
+                episode = episode?.episode,
+                positionMs = initialPlaybackPositionMs,
+                durationMs = initialDurationMs,
+            )
+        }
     }
 
     LaunchedEffect(
@@ -1724,25 +1828,14 @@ internal fun PlayerScreen(
                         playbackState ==
                             Player.STATE_ENDED
                     ) {
-                        playbackStore.clearPosition(
-                            mediaKey
+                        val completedDurationMs =
+                            player.duration.coerceAtLeast(0L)
+                        enqueuePlaybackProgress(
+                            positionMs = completedDurationMs,
+                            durationMs = completedDurationMs,
+                            clearPlaybackPosition = true,
+                            notifyLibrary = true,
                         )
-                        libraryStore.recordPlayback(
-                            media = media,
-                            videoId = videoId,
-                            episodeTitle =
-                                episode?.title,
-                            season = episode?.season,
-                            episode = episode?.episode,
-                            positionMs =
-                                player.duration
-                                    .coerceAtLeast(0L),
-                            durationMs =
-                                player.duration
-                                    .coerceAtLeast(0L),
-                        )
-                        episodeHistoryRevision += 1
-                        onLibraryChanged()
                         if (
                             nextEpisode != null &&
                             !nextEpisodeCardDismissed
@@ -1758,8 +1851,15 @@ internal fun PlayerScreen(
                 ) {
                     isPlaying = playing
                     if (!playing) {
-                        savePosition()
                         controlsVisible = true
+                        if (
+                            !playerExitRequested &&
+                            player.playbackState != Player.STATE_ENDED &&
+                            !player.playWhenReady
+                        ) {
+                            // Ignore transient isPlaying=false during buffering/seek.
+                            savePosition()
+                        }
                     }
                 }
 
@@ -1792,9 +1892,42 @@ internal fun PlayerScreen(
 
         onDispose {
             player.removeListener(listener)
-            savePosition()
-            onLibraryChanged()
-            player.release()
+        }
+    }
+
+    DisposableEffect(player) {
+        onDispose {
+            player.volume = 0f
+            runCatching { player.pause() }
+            if (!playerExitRequested) {
+                val livePositionMs =
+                    player.currentPosition.coerceAtLeast(0L)
+                val liveDurationMs =
+                    player.duration.coerceAtLeast(0L)
+                if (livePositionMs > minimumResumePositionMs) {
+                    lastValidPlaybackPositionMs = livePositionMs
+                }
+                val stablePositionMs =
+                    if (livePositionMs > minimumResumePositionMs) {
+                        livePositionMs
+                    } else {
+                        lastValidPlaybackPositionMs
+                    }
+                if (stablePositionMs > minimumResumePositionMs) {
+                    enqueuePlaybackProgress(
+                        positionMs = stablePositionMs,
+                        durationMs = liveDurationMs,
+                        notifyLibrary = true,
+                    )
+                }
+            }
+
+            // Give the return/new-source composition a frame before codec teardown.
+            // Audio is already muted and paused, so delayed release is inaudible.
+            mobilePlayerCleanupScope.launch {
+                delay(64L)
+                runCatching { player.release() }
+            }
         }
     }
 
@@ -1927,11 +2060,13 @@ internal fun PlayerScreen(
                     }
 
                 if (stablePositionMs > minimumResumePositionMs) {
-                    playbackStore.savePositionMs(
-                        mediaKey = mediaKey,
-                        positionMs = stablePositionMs,
-                        durationMs = sampledDurationMs,
-                    )
+                    enqueueMobilePlayerPersistence {
+                        playbackStore.savePositionMs(
+                            mediaKey = mediaKey,
+                            positionMs = stablePositionMs,
+                            durationMs = sampledDurationMs,
+                        )
+                    }
                 }
                 librarySaveTicks = 0
             }
@@ -2572,16 +2707,26 @@ internal fun PlayerScreen(
             },
         )
 
-    val episodeHistory = remember(
+    var episodeHistory by remember(
+        media.id,
+        media.type,
+    ) {
+        mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    }
+    LaunchedEffect(
         media.id,
         media.type,
         episodeHistoryRevision,
     ) {
-        libraryStore.history()
-            .filter { entry ->
-                entry.media.type == media.type &&
-                    entry.media.id == media.id
+        episodeHistory = withContext(Dispatchers.IO) {
+            mobilePlayerPersistenceMutex.withLock {
+                libraryStore.history()
+                    .filter { entry ->
+                        entry.media.type == media.type &&
+                            entry.media.id == media.id
+                    }
             }
+        }
     }
     val progressByEpisodeId = episodes.associate { candidate ->
             val stored = episodeHistory.firstOrNull { entry ->
@@ -3176,7 +3321,6 @@ internal fun PlayerScreen(
                     icon = Icons.Default.ArrowBack,
                     contentDescription = "Back",
                     onClick = {
-                        savePosition()
                         requestPlayerExit()
                     },
                 )
@@ -3315,6 +3459,8 @@ internal fun PlayerScreen(
                                 PlayerPlaybackPhase.LOADING
                             recoveryInProgress = false
                             hasRenderedFirstFrame = false
+                            startupAudioMuted.value = true
+                            player.volume = 0f
                             retryGeneration++
                             player.prepare()
                             player.play()
