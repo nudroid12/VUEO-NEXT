@@ -24,27 +24,16 @@ enum class AddonCategory(
     CATALOG_METADATA("Catalog & Metadata"),
     STREAMS("Streams"),
     SUBTITLES("Subtitles"),
-    MULTI_PURPOSE("Multi-purpose"),
     OTHER("Other"),
 }
 
 fun ExtensionDescriptor.primaryAddonCategory(): AddonCategory {
-    val hasCatalog = "catalog" in resources
-    val hasMeta = "meta" in resources
-    val hasStream = "stream" in resources
-    val hasSubtitles = "subtitles" in resources
-
-    val capabilityGroups = listOf(
-        hasCatalog || hasMeta,
-        hasStream,
-        hasSubtitles,
-    ).count { it }
-
+    // One canonical category per addon. Stream capability wins even when the
+    // same addon also exposes catalogs/meta/subtitles, matching the TV behavior.
     return when {
-        capabilityGroups >= 2 -> AddonCategory.MULTI_PURPOSE
-        hasStream -> AddonCategory.STREAMS
-        hasSubtitles -> AddonCategory.SUBTITLES
-        hasCatalog || hasMeta -> AddonCategory.CATALOG_METADATA
+        "stream" in resources -> AddonCategory.STREAMS
+        "subtitles" in resources -> AddonCategory.SUBTITLES
+        "catalog" in resources || "meta" in resources -> AddonCategory.CATALOG_METADATA
         else -> AddonCategory.OTHER
     }
 }

@@ -254,6 +254,8 @@ internal fun AddonsScreen(
     engine: UnifiedMediaEngine,
     store: AddonStore,
     contentVersion: Int,
+    pendingInstallManifestUrl: String? = null,
+    onPendingInstallConsumed: () -> Unit = {},
     onContentChanged: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -268,6 +270,15 @@ internal fun AddonsScreen(
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var refreshingId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(pendingInstallManifestUrl) {
+        pendingInstallManifestUrl?.let { incomingUrl ->
+            manifestUrl = incomingUrl
+            status = null
+            showInstallDialog = true
+            onPendingInstallConsumed()
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -320,8 +331,12 @@ internal fun AddonsScreen(
                 }
             }
         } else {
-            val groupedAddons = AddonCategory.values().toList()
-                .mapNotNull { category ->
+            val groupedAddons = listOf(
+                AddonCategory.CATALOG_METADATA,
+                AddonCategory.STREAMS,
+                AddonCategory.SUBTITLES,
+                AddonCategory.OTHER,
+            ).mapNotNull { category ->
                     val addons = installed.filter {
                         it.descriptor.primaryAddonCategory() == category
                     }
@@ -353,8 +368,6 @@ internal fun AddonsScreen(
                                         "Playback source providers"
                                     AddonCategory.SUBTITLES ->
                                         "Subtitle providers"
-                                    AddonCategory.MULTI_PURPOSE ->
-                                        "Addons with more than one content capability"
                                     AddonCategory.OTHER ->
                                         "Other addon resources"
                                 },

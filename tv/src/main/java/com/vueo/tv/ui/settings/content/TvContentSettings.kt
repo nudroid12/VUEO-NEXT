@@ -231,13 +231,8 @@ internal fun TvAddonSettings(
         )
     }
 
-    fun addonCategory(descriptor: com.vueo.shared.core.extensions.ExtensionDescriptor?): String = when {
-        descriptor == null -> "Other"
-        "stream" in descriptor.resources -> "Streams"
-        "subtitles" in descriptor.resources -> "Subtitles"
-        "catalog" in descriptor.resources || "meta" in descriptor.resources -> "Catalog & Metadata"
-        else -> "Other"
-    }
+    fun addonCategory(descriptor: com.vueo.shared.core.extensions.ExtensionDescriptor?): String =
+        descriptor?.primaryAddonCategory()?.label ?: "Other"
     val categories = listOf("Catalog & Metadata", "Streams", "Subtitles")
     val entries = buildList {
         add(

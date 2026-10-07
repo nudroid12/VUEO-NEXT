@@ -347,7 +347,10 @@ internal enum class SearchMode(
 }
 
 @Composable
-fun VueoApp() {
+fun VueoApp(
+    pendingAddonManifestUrl: String? = null,
+    onPendingAddonManifestConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
     LaunchedEffect(Unit) {
@@ -459,6 +462,28 @@ fun VueoApp() {
         mutableStateOf<
             LibraryPlaybackEntry?
         >(null)
+    }
+
+    LaunchedEffect(
+        pendingAddonManifestUrl,
+        booting,
+        startupDestinationResolved,
+        showProfilePicker,
+    ) {
+        if (
+            pendingAddonManifestUrl != null &&
+            !booting &&
+            startupDestinationResolved &&
+            !showProfilePicker
+        ) {
+            selectedMedia = null
+            selectedEntityTarget = null
+            selectedCatalogRow = null
+            selectedLibraryEntry = null
+            mediaBackStack = emptyList()
+            selectedTab = AppTab.SETTINGS
+            settingsPage = SettingsPage.ADDONS
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1062,6 +1087,8 @@ fun VueoApp() {
                             engine = engine,
                             store = store,
                             contentVersion = contentVersion,
+                            pendingInstallManifestUrl = pendingAddonManifestUrl,
+                            onPendingInstallConsumed = onPendingAddonManifestConsumed,
                             onContentChanged = {
                                 contentVersion++
                             },
