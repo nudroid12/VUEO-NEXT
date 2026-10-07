@@ -2083,6 +2083,17 @@ fun TvPlayerScreen(
         }
 
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
+            val sameRequestInFlight =
+                pendingSubtitleSelectionId == choice.selectionId &&
+                    subtitlePreparationJob?.isActive == true
+            if (sameRequestInFlight) {
+                requestedSubtitleSelectionId = choice.selectionId
+                return
+            }
+
+            val forceNetworkRetry =
+                requestedSubtitleSelectionId == choice.selectionId ||
+                    (!subtitlesDisabled && choice.selected)
             requestedSubtitleSelectionId = choice.selectionId
             fun commitSelection(selected: TvPlayerTrackChoice) {
                 tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
@@ -2108,6 +2119,7 @@ fun TvPlayerScreen(
                 subtitlePreparationJob = focusScope.launch {
                     val ready = SubtitleReadinessProbe.awaitReady(
                         url = externalSubtitle.url,
+                        forceNetwork = forceNetworkRetry,
                         onWaiting = {
                             if (pendingSubtitleSelectionId == choice.selectionId) {
                                 translatingSubtitleSelectionId = choice.selectionId
@@ -2129,7 +2141,7 @@ fun TvPlayerScreen(
                         ready &&
                         pendingSubtitleSelectionId == choice.selectionId &&
                         latestChoice == null &&
-                        trackWaitAttempts < 200
+                        trackWaitAttempts < TV_SUBTITLE_TRACK_ATTACH_WAIT_ATTEMPTS
                     ) {
                         latestChoice = tvPlayerTrackChoices(
                             tracks = player.currentTracks,
@@ -2150,6 +2162,13 @@ fun TvPlayerScreen(
                         pendingSubtitleSelectionId == choice.selectionId &&
                         preparedChoice != null
                     ) {
+                        if (forceNetworkRetry && preparedChoice.selected) {
+                            // Reselecting the same external subtitle is a deliberate
+                            // delivery retry: force the text renderer to reopen the
+                            // freshly warmed subtitle session instead of toggling Off.
+                            tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
+                            delay(50L)
+                        }
                         val confirmed = applyAndConfirmTvSubtitleChoice(
                             player = player,
                             selectionId = preparedChoice.selectionId,
@@ -2175,8 +2194,9 @@ fun TvPlayerScreen(
                         pendingSubtitleSelectionId == choice.selectionId &&
                         !selectionConfirmed
                     ) {
+                        // Preserve the user's requested selection after a slow/late
+                        // delivery. Reselecting the same row explicitly retries it.
                         pendingSubtitleSelectionId = null
-                        requestedSubtitleSelectionId = null
                     }
                     if (translatingSubtitleSelectionId == choice.selectionId) {
                         translatingSubtitleSelectionId = null
@@ -2426,6 +2446,7 @@ private suspend fun applyAndConfirmTvSubtitleChoice(
 
 private const val TV_SUBTITLE_SELECTION_CONFIRM_ATTEMPTS = 60
 private const val TV_SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS = 50L
+private const val TV_SUBTITLE_TRACK_ATTACH_WAIT_ATTEMPTS = 1_200
 private const val TV_LATE_SUBTITLE_TRACK_REFRESH_ATTEMPTS = 60
 private const val TV_LATE_SUBTITLE_TRACK_REFRESH_INTERVAL_MS = 100L
 private val TV_SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)

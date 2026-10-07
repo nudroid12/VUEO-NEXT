@@ -22,6 +22,7 @@ object SubtitleReadinessProbe {
     suspend fun awaitReady(
         url: String,
         timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+        forceNetwork: Boolean = false,
         onWaiting: suspend () -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
         val normalizedUrl = url.trim()
@@ -30,9 +31,11 @@ object SubtitleReadinessProbe {
         val timeoutNs = timeoutMs.coerceAtLeast(1L) * NANOS_PER_MILLISECOND
         val deadlineNs = System.nanoTime() + timeoutNs
         val nowMs = System.currentTimeMillis()
-        readyAtMs[normalizedUrl]
-            ?.takeIf { nowMs - it <= READY_CACHE_MS }
-            ?.let { return@withContext true }
+        if (!forceNetwork) {
+            readyAtMs[normalizedUrl]
+                ?.takeIf { nowMs - it <= READY_CACHE_MS }
+                ?.let { return@withContext true }
+        }
 
         val probeLock = probeLocks.computeIfAbsent(normalizedUrl) { Mutex() }
         var waitingReported = false
@@ -48,6 +51,7 @@ object SubtitleReadinessProbe {
             // was waiting for the per-URL single-flight lock.
             val cachedAtMs = readyAtMs[normalizedUrl]
             if (
+                !forceNetwork &&
                 cachedAtMs != null &&
                 System.currentTimeMillis() - cachedAtMs <= READY_CACHE_MS
             ) {

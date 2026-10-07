@@ -2403,6 +2403,17 @@ internal fun PlayerScreen(
         )
 
     fun requestSubtitleChoice(choice: PlayerTrackChoice) {
+        val sameRequestInFlight =
+            pendingSubtitleSelectionId == choice.selectionId &&
+                subtitlePreparationJob?.isActive == true
+        if (sameRequestInFlight) {
+            requestedSubtitleSelectionId = choice.selectionId
+            return
+        }
+
+        val forceNetworkRetry =
+            requestedSubtitleSelectionId == choice.selectionId ||
+                (!subtitlesDisabled && choice.selected)
         requestedSubtitleSelectionId = choice.selectionId
         fun commitSelection(selected: PlayerTrackChoice) {
             applyTrackChoice(
@@ -2441,6 +2452,7 @@ internal fun PlayerScreen(
             subtitlePreparationJob = subtitleSelectionScope.launch {
                 val ready = SubtitleReadinessProbe.awaitReady(
                     url = externalSubtitle.url,
+                    forceNetwork = forceNetworkRetry,
                     onWaiting = {
                         if (pendingSubtitleSelectionId == choice.selectionId) {
                             translatingSubtitleSelectionId = choice.selectionId
@@ -2462,7 +2474,7 @@ internal fun PlayerScreen(
                     ready &&
                     pendingSubtitleSelectionId == choice.selectionId &&
                     latestChoice == null &&
-                    trackWaitAttempts < 200
+                    trackWaitAttempts < SUBTITLE_TRACK_ATTACH_WAIT_ATTEMPTS
                 ) {
                     val latestExternalSubtitles = latestSubtitles.value
                         .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
@@ -2485,6 +2497,17 @@ internal fun PlayerScreen(
                     pendingSubtitleSelectionId == choice.selectionId &&
                     preparedChoice != null
                 ) {
+                    if (forceNetworkRetry && preparedChoice.selected) {
+                        // Explicitly reselecting the active external track is a manual
+                        // delivery retry. Re-open the text renderer after the forced
+                        // readiness GET has refreshed the session cache.
+                        clearTrackOverride(
+                            player = player,
+                            trackType = C.TRACK_TYPE_TEXT,
+                            disable = true,
+                        )
+                        delay(50L)
+                    }
                     val confirmed = applyAndConfirmMobileSubtitleChoice(
                         player = player,
                         selectionId = preparedChoice.selectionId,
@@ -2519,8 +2542,10 @@ internal fun PlayerScreen(
                     pendingSubtitleSelectionId == choice.selectionId &&
                     !selectionConfirmed
                 ) {
+                    // Keep the user's requested track as the visible intent. A slow
+                    // generated subtitle can be retried by tapping the same selected
+                    // row again instead of bouncing back to the previous selection.
                     pendingSubtitleSelectionId = null
-                    requestedSubtitleSelectionId = null
                 }
                 if (translatingSubtitleSelectionId == choice.selectionId) {
                     translatingSubtitleSelectionId = null
@@ -3803,4 +3828,5 @@ private suspend fun applyAndConfirmMobileSubtitleChoice(
 
 private const val SUBTITLE_SELECTION_CONFIRM_ATTEMPTS = 60
 private const val SUBTITLE_SELECTION_CONFIRM_INTERVAL_MS = 50L
+private const val SUBTITLE_TRACK_ATTACH_WAIT_ATTEMPTS = 1_200
 private val SUBTITLE_SELECTION_REAPPLY_ATTEMPTS = setOf(0, 6, 18, 36)

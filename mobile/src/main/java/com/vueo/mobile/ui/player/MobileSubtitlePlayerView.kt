@@ -182,12 +182,27 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
             managedSubtitleView.setBottomPaddingFraction(bottomPadding)
             lastBottomPadding = bottomPadding
         }
+        val presentationChanged = previous != null && previous != style
         lastStyle = style
         updateCommentaryBottomPadding()
         if (showCommentary != style.showCommentary) {
             showCommentary = style.showCommentary
             displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
+        } else if (presentationChanged) {
+            refreshRenderedCues()
         }
+    }
+
+    private fun refreshRenderedCues() {
+        // SubtitleView can retain the already-laid-out cue when only presentation
+        // properties change. Rebind the active cues in the same frame so font,
+        // background, outline and opacity changes are visible immediately.
+        managedSubtitleView.setCues(emptyList())
+        commentarySubtitleView.setCues(emptyList())
+        managedSubtitleView.setCues(lastDisplayedCues)
+        commentarySubtitleView.setCues(lastDisplayedCommentaryCues)
+        managedSubtitleView.postInvalidateOnAnimation()
+        commentarySubtitleView.postInvalidateOnAnimation()
     }
 
     private fun displayCues(cues: List<Cue>) {
@@ -384,7 +399,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     )
 
     private companion object {
-        const val COMMENTARY_GAP_DP = 20f
+        const val COMMENTARY_GAP_DP = 12f
         const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.35f
         const val SUBTITLE_MEASURE_WIDTH_FRACTION = 0.90f
         const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f

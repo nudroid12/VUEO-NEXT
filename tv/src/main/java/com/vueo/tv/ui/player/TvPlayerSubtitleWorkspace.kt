@@ -189,6 +189,18 @@ internal fun VueoPlayerSubtitleWorkspace(
             ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
     }
     var initialFocusAssigned by remember { mutableStateOf(false) }
+    var latestStyle by remember { mutableStateOf(style) }
+
+    LaunchedEffect(style) {
+        latestStyle = style
+    }
+
+    fun updateStyle(transform: (TvPlayerSubtitleStyleState) -> TvPlayerSubtitleStyleState) {
+        val updated = transform(latestStyle)
+        if (updated == latestStyle) return
+        latestStyle = updated
+        onStyleChange(updated)
+    }
 
     LaunchedEffect(styleOpen, subtitlesDisabled) {
         if (!styleOpen || subtitlesDisabled) styleFloatMode = false
@@ -417,16 +429,10 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         onInteraction = onInteraction,
                                         onFocused = { styleReturnTrackIndex = index },
                                     ) {
-                                        val selected = !subtitlesDisabled && (
-                                            track.selectionId == uiSelectionId ||
-                                                (uiSelectionId == null && track.selected)
-                                            )
-                                        if (selected) {
-                                            onDisable()
-                                        } else {
-                                            styleOpen = true
-                                            onSelect(track)
-                                        }
+                                        // Re-selecting the active track is an explicit retry/re-apply.
+                                        // Only the dedicated Off row disables subtitles.
+                                        styleOpen = true
+                                        onSelect(track)
                                     }
                                 }
                             }
@@ -516,10 +522,14 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)))
+                                        updateStyle { current ->
+                                            current.copy(fontSizeSp = (current.fontSizeSp - 2).coerceAtLeast(12))
+                                        }
                                     },
                                     onIncrease = {
-                                        onStyleChange(style.copy(fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)))
+                                        updateStyle { current ->
+                                            current.copy(fontSizeSp = (current.fontSizeSp + 2).coerceAtMost(40))
+                                        }
                                     },
                                 )
                                 VueoSubtitleToggleRow(
@@ -530,7 +540,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     downRequester = commentaryRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
-                                    onToggle = { onStyleChange(style.copy(bold = !style.bold)) },
+                                    onToggle = {
+                                        updateStyle { current -> current.copy(bold = !current.bold) }
+                                    },
                                 )
                                 VueoSubtitleToggleRow(
                                     title = "Commentary",
@@ -540,7 +552,11 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     downRequester = commentarySizeRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
-                                    onToggle = { onStyleChange(style.copy(showCommentary = !style.showCommentary)) },
+                                    onToggle = {
+                                        updateStyle { current ->
+                                            current.copy(showCommentary = !current.showCommentary)
+                                        }
+                                    },
                                 )
                                 VueoSubtitleStepperRow(
                                     title = "Commentary Size",
@@ -551,18 +567,18 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                commentaryFontSizeSp = (style.commentaryFontSizeSp - 2).coerceAtLeast(12)
+                                        updateStyle { current ->
+                                            current.copy(
+                                                commentaryFontSizeSp = (current.commentaryFontSizeSp - 2).coerceAtLeast(12)
                                             )
-                                        )
+                                        }
                                     },
                                     onIncrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                commentaryFontSizeSp = (style.commentaryFontSizeSp + 2).coerceAtMost(40)
+                                        updateStyle { current ->
+                                            current.copy(
+                                                commentaryFontSizeSp = (current.commentaryFontSizeSp + 2).coerceAtMost(40)
                                             )
-                                        )
+                                        }
                                     },
                                 )
                                 VueoSubtitleColorRow(
@@ -575,11 +591,14 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                 ) { colour ->
-                                    onStyleChange(
-                                        style.copy(
-                                            textColor = subtitleWithAlpha(colour, opacity)
+                                    updateStyle { current ->
+                                        current.copy(
+                                            textColor = subtitleWithAlpha(
+                                                colour,
+                                                subtitleAlphaPercent(current.textColor),
+                                            )
                                         )
-                                    )
+                                    }
                                 }
                                 VueoSubtitleStepperRow(
                                     title = "Text Opacity",
@@ -590,18 +609,26 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                textColor = subtitleWithAlpha(style.textColor, (opacity - 10).coerceAtLeast(30))
+                                        updateStyle { current ->
+                                            val currentOpacity = subtitleAlphaPercent(current.textColor)
+                                            current.copy(
+                                                textColor = subtitleWithAlpha(
+                                                    current.textColor,
+                                                    (currentOpacity - 10).coerceAtLeast(30),
+                                                )
                                             )
-                                        )
+                                        }
                                     },
                                     onIncrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                textColor = subtitleWithAlpha(style.textColor, (opacity + 10).coerceAtMost(100))
+                                        updateStyle { current ->
+                                            val currentOpacity = subtitleAlphaPercent(current.textColor)
+                                            current.copy(
+                                                textColor = subtitleWithAlpha(
+                                                    current.textColor,
+                                                    (currentOpacity + 10).coerceAtMost(100),
+                                                )
                                             )
-                                        )
+                                        }
                                     },
                                 )
                                 VueoSubtitleToggleRow(
@@ -612,7 +639,11 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     downRequester = if (style.outlineEnabled) outlineColorRequester else backgroundRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
-                                    onToggle = { onStyleChange(style.copy(outlineEnabled = !style.outlineEnabled)) },
+                                    onToggle = {
+                                        updateStyle { current ->
+                                            current.copy(outlineEnabled = !current.outlineEnabled)
+                                        }
+                                    },
                                 )
                                 if (style.outlineEnabled) {
                                     VueoSubtitleColorRow(
@@ -625,7 +656,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         leftRequester = styleLeftRequester,
                                         onInteraction = onInteraction,
                                     ) { colour ->
-                                        onStyleChange(style.copy(outlineColor = colour))
+                                        updateStyle { current ->
+                                            current.copy(outlineColor = colour)
+                                        }
                                     }
                                 }
                                 VueoSubtitleToggleRow(
@@ -637,9 +670,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onToggle = {
-                                        onStyleChange(
-                                            style.copy(backgroundEnabled = !style.backgroundEnabled)
-                                        )
+                                        updateStyle { current ->
+                                            current.copy(backgroundEnabled = !current.backgroundEnabled)
+                                        }
                                     },
                                 )
                                 if (style.backgroundEnabled) {
@@ -653,7 +686,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         leftRequester = styleLeftRequester,
                                         onInteraction = onInteraction,
                                     ) { colour ->
-                                        onStyleChange(style.copy(backgroundColor = colour))
+                                        updateStyle { current ->
+                                            current.copy(backgroundColor = colour)
+                                        }
                                     }
                                     VueoSubtitleStepperRow(
                                         title = "Background Opacity",
@@ -664,22 +699,22 @@ internal fun VueoPlayerSubtitleWorkspace(
                                         leftRequester = styleLeftRequester,
                                         onInteraction = onInteraction,
                                         onDecrease = {
-                                            onStyleChange(
-                                                style.copy(
+                                            updateStyle { current ->
+                                                current.copy(
                                                     backgroundOpacityPercent =
-                                                        (style.backgroundOpacityPercent - 10)
+                                                        (current.backgroundOpacityPercent - 10)
                                                             .coerceAtLeast(10)
                                                 )
-                                            )
+                                            }
                                         },
                                         onIncrease = {
-                                            onStyleChange(
-                                                style.copy(
+                                            updateStyle { current ->
+                                                current.copy(
                                                     backgroundOpacityPercent =
-                                                        (style.backgroundOpacityPercent + 10)
+                                                        (current.backgroundOpacityPercent + 10)
                                                             .coerceAtMost(100)
                                                 )
-                                            )
+                                            }
                                         },
                                     )
                                 }
@@ -695,18 +730,18 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                bottomPaddingPercent = (style.bottomPaddingPercent - 2).coerceAtLeast(5)
+                                        updateStyle { current ->
+                                            current.copy(
+                                                bottomPaddingPercent = (current.bottomPaddingPercent - 2).coerceAtLeast(5)
                                             )
-                                        )
+                                        }
                                     },
                                     onIncrease = {
-                                        onStyleChange(
-                                            style.copy(
-                                                bottomPaddingPercent = (style.bottomPaddingPercent + 2).coerceAtMost(40)
+                                        updateStyle { current ->
+                                            current.copy(
+                                                bottomPaddingPercent = (current.bottomPaddingPercent + 2).coerceAtMost(40)
                                             )
-                                        )
+                                        }
                                     },
                                 )
                                 VueoSubtitleStepperRow(
@@ -717,8 +752,20 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     downRequester = resetRequester,
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
-                                    onDecrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, -1))) },
-                                    onIncrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, 1))) },
+                                    onDecrease = {
+                                        updateStyle { current ->
+                                            current.copy(
+                                                fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(current.fontFamily, -1)
+                                            )
+                                        }
+                                    },
+                                    onIncrease = {
+                                        updateStyle { current ->
+                                            current.copy(
+                                                fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(current.fontFamily, 1)
+                                            )
+                                        }
+                                    },
                                     decreaseLabel = "‹", increaseLabel = "›", controlWidth = 148.dp,
                                 )
                                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -730,7 +777,9 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                 ) {
-                                    onStyleChange(TvPlayerSubtitleStyleState())
+                                    val reset = TvPlayerSubtitleStyleState()
+                                    latestStyle = reset
+                                    onStyleChange(reset)
                                 }
                                 }
                             }

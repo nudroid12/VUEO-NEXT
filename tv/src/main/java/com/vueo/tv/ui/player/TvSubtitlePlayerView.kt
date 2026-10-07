@@ -151,13 +151,27 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             managedSubtitleView.setBottomPaddingFraction(bottomPadding)
             lastBottomPadding = bottomPadding
         }
+        val presentationChanged = previous != null && previous != style
         lastStyle = style
         updateCommentaryBottomPadding()
         if (showCommentary != style.showCommentary) {
             showCommentary = style.showCommentary
             // Re-filter the active group immediately, without seeking or restarting playback.
             displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
+        } else if (presentationChanged) {
+            refreshRenderedCues()
         }
+    }
+
+    private fun refreshRenderedCues() {
+        // Force the currently visible cue layout through SubtitleView again. Media3
+        // otherwise may keep the previous glyph/background layout until the next cue.
+        managedSubtitleView.setCues(emptyList())
+        commentarySubtitleView.setCues(emptyList())
+        managedSubtitleView.setCues(lastDisplayedCues)
+        commentarySubtitleView.setCues(lastDisplayedCommentaryCues)
+        managedSubtitleView.postInvalidateOnAnimation()
+        commentarySubtitleView.postInvalidateOnAnimation()
     }
 
     private fun displayCues(cues: List<Cue>) {
@@ -355,7 +369,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     )
 
     private companion object {
-        const val COMMENTARY_GAP_DP = 20f
+        const val COMMENTARY_GAP_DP = 12f
         const val SUBTITLE_LINE_HEIGHT_FACTOR = 1.35f
         const val SUBTITLE_MEASURE_WIDTH_FRACTION = 0.90f
         const val MAX_COMMENTARY_BOTTOM_PADDING = 0.55f

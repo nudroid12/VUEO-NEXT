@@ -790,6 +790,18 @@ private fun SubtitleStyleControls(
     onSubtitleDelayChange: (Int) -> Unit,
     onStyleChange: (PlayerSubtitleStyleState) -> Unit,
 ) {
+    var latestStyle by remember { mutableStateOf(style) }
+    LaunchedEffect(style) {
+        latestStyle = style
+    }
+
+    fun updateStyle(transform: (PlayerSubtitleStyleState) -> PlayerSubtitleStyleState) {
+        val updated = transform(latestStyle)
+        if (updated == latestStyle) return
+        latestStyle = updated
+        onStyleChange(updated)
+    }
+
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 12.dp),
@@ -812,9 +824,9 @@ private fun SubtitleStyleControls(
         }
         item {
             StyleToggle("Commentary", style.showCommentary) {
-                onStyleChange(
-                    style.copy(showCommentary = !style.showCommentary)
-                )
+                updateStyle { current ->
+                    current.copy(showCommentary = !current.showCommentary)
+                }
             }
         }
         item {
@@ -822,18 +834,18 @@ private fun SubtitleStyleControls(
                 label = "Commentary Size",
                 value = "${style.commentaryFontSizeSp}sp",
                 onDecrease = {
-                    onStyleChange(
-                        style.copy(
-                            commentaryFontSizeSp = (style.commentaryFontSizeSp - 2).coerceAtLeast(12)
+                    updateStyle { current ->
+                        current.copy(
+                            commentaryFontSizeSp = (current.commentaryFontSizeSp - 2).coerceAtLeast(12)
                         )
-                    )
+                    }
                 },
                 onIncrease = {
-                    onStyleChange(
-                        style.copy(
-                            commentaryFontSizeSp = (style.commentaryFontSizeSp + 2).coerceAtMost(40)
+                    updateStyle { current ->
+                        current.copy(
+                            commentaryFontSizeSp = (current.commentaryFontSizeSp + 2).coerceAtMost(40)
                         )
-                    )
+                    }
                 },
             )
         }
@@ -842,24 +854,26 @@ private fun SubtitleStyleControls(
                 label = "Font Size",
                 value = "${style.fontSizeSp}sp",
                 onDecrease = {
-                    onStyleChange(
-                        style.copy(
-                            fontSizeSp = (style.fontSizeSp - 2).coerceAtLeast(12)
+                    updateStyle { current ->
+                        current.copy(
+                            fontSizeSp = (current.fontSizeSp - 2).coerceAtLeast(12)
                         )
-                    )
+                    }
                 },
                 onIncrease = {
-                    onStyleChange(
-                        style.copy(
-                            fontSizeSp = (style.fontSizeSp + 2).coerceAtMost(40)
+                    updateStyle { current ->
+                        current.copy(
+                            fontSizeSp = (current.fontSizeSp + 2).coerceAtMost(40)
                         )
-                    )
+                    }
                 },
             )
         }
         item {
             StyleToggle("Bold", style.bold) {
-                onStyleChange(style.copy(bold = !style.bold))
+                updateStyle { current ->
+                    current.copy(bold = !current.bold)
+                }
             }
         }
         item {
@@ -874,13 +888,13 @@ private fun SubtitleStyleControls(
                     0xFFFF6577.toInt(),
                 ),
                 onSelect = { colour ->
-                    val alpha = style.textColor ushr 24
-                    onStyleChange(
-                        style.copy(
+                    updateStyle { current ->
+                        val alpha = current.textColor ushr 24
+                        current.copy(
                             textColor = (alpha shl 24) or
                                 (colour and 0x00FFFFFF)
                         )
-                    )
+                    }
                 },
             )
         }
@@ -890,32 +904,34 @@ private fun SubtitleStyleControls(
                 label = "Text Opacity",
                 value = "$opacity%",
                 onDecrease = {
-                    onStyleChange(
-                        style.copy(
+                    updateStyle { current ->
+                        val currentOpacity = ((current.textColor ushr 24) * 100 + 127) / 255
+                        current.copy(
                             textColor = withAlpha(
-                                style.textColor,
-                                (opacity - 10).coerceAtLeast(30),
+                                current.textColor,
+                                (currentOpacity - 10).coerceAtLeast(30),
                             )
                         )
-                    )
+                    }
                 },
                 onIncrease = {
-                    onStyleChange(
-                        style.copy(
+                    updateStyle { current ->
+                        val currentOpacity = ((current.textColor ushr 24) * 100 + 127) / 255
+                        current.copy(
                             textColor = withAlpha(
-                                style.textColor,
-                                (opacity + 10).coerceAtMost(100),
+                                current.textColor,
+                                (currentOpacity + 10).coerceAtMost(100),
                             )
                         )
-                    )
+                    }
                 },
             )
         }
         item {
             StyleToggle("Outline", style.outlineEnabled) {
-                onStyleChange(
-                    style.copy(outlineEnabled = !style.outlineEnabled)
-                )
+                updateStyle { current ->
+                    current.copy(outlineEnabled = !current.outlineEnabled)
+                }
             }
         }
         if (style.outlineEnabled) {
@@ -930,16 +946,18 @@ private fun SubtitleStyleControls(
                         0xFFFF6577.toInt(),
                     ),
                     onSelect = {
-                        onStyleChange(style.copy(outlineColor = it))
+                        updateStyle { current ->
+                            current.copy(outlineColor = it)
+                        }
                     },
                 )
             }
         }
         item {
             StyleToggle("Background", style.backgroundEnabled) {
-                onStyleChange(
-                    style.copy(backgroundEnabled = !style.backgroundEnabled)
-                )
+                updateStyle { current ->
+                    current.copy(backgroundEnabled = !current.backgroundEnabled)
+                }
             }
         }
         if (style.backgroundEnabled) {
@@ -954,7 +972,9 @@ private fun SubtitleStyleControls(
                         0xFF3B1F2B.toInt(),
                     ),
                     onSelect = {
-                        onStyleChange(style.copy(backgroundColor = it))
+                        updateStyle { current ->
+                            current.copy(backgroundColor = it)
+                        }
                     },
                 )
             }
@@ -963,22 +983,22 @@ private fun SubtitleStyleControls(
                     label = "Background Opacity",
                     value = "${style.backgroundOpacityPercent}%",
                     onDecrease = {
-                        onStyleChange(
-                            style.copy(
+                        updateStyle { current ->
+                            current.copy(
                                 backgroundOpacityPercent =
-                                    (style.backgroundOpacityPercent - 10)
+                                    (current.backgroundOpacityPercent - 10)
                                         .coerceAtLeast(10)
                             )
-                        )
+                        }
                     },
                     onIncrease = {
-                        onStyleChange(
-                            style.copy(
+                        updateStyle { current ->
+                            current.copy(
                                 backgroundOpacityPercent =
-                                    (style.backgroundOpacityPercent + 10)
+                                    (current.backgroundOpacityPercent + 10)
                                         .coerceAtMost(100)
                             )
-                        )
+                        }
                     },
                 )
             }
@@ -988,22 +1008,22 @@ private fun SubtitleStyleControls(
                 label = "Bottom Offset",
                 value = "${style.bottomPaddingPercent}%",
                 onDecrease = {
-                    onStyleChange(
-                        style.copy(
+                    updateStyle { current ->
+                        current.copy(
                             bottomPaddingPercent =
-                                (style.bottomPaddingPercent - 2)
+                                (current.bottomPaddingPercent - 2)
                                     .coerceAtLeast(5)
                         )
-                    )
+                    }
                 },
                 onIncrease = {
-                    onStyleChange(
-                        style.copy(
+                    updateStyle { current ->
+                        current.copy(
                             bottomPaddingPercent =
-                                (style.bottomPaddingPercent + 2)
+                                (current.bottomPaddingPercent + 2)
                                     .coerceAtMost(40)
                         )
-                    )
+                    }
                 },
             )
         }
@@ -1011,8 +1031,20 @@ private fun SubtitleStyleControls(
             StyleStepper(
                 label = "Font",
                 value = com.vueo.shared.core.player.SubtitleFonts.label(style.fontFamily),
-                onDecrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, -1))) },
-                onIncrease = { onStyleChange(style.copy(fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(style.fontFamily, 1))) },
+                onDecrease = {
+                    updateStyle { current ->
+                        current.copy(
+                            fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(current.fontFamily, -1)
+                        )
+                    }
+                },
+                onIncrease = {
+                    updateStyle { current ->
+                        current.copy(
+                            fontFamily = com.vueo.shared.core.player.SubtitleFonts.next(current.fontFamily, 1)
+                        )
+                    }
+                },
                 decreaseLabel = "‹", increaseLabel = "›", controlWidth = 140.dp,
             )
         }
@@ -1023,7 +1055,9 @@ private fun SubtitleStyleControls(
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color.White.copy(alpha = .06f))
                     .clickable {
-                        onStyleChange(PlayerSubtitleStyleState())
+                        val reset = PlayerSubtitleStyleState()
+                        latestStyle = reset
+                        onStyleChange(reset)
                     }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
