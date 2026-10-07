@@ -124,6 +124,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal enum class TvPlayerPanel {
     NONE,
@@ -149,6 +152,23 @@ internal data class TvPlayerOption(
 // That lets Back/navigation happen immediately instead of waiting for JSON history writes.
 private val tvPlayerPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val tvPlayerCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+private val tvPlayerPersistenceMutex = Mutex()
+
+private fun enqueueTvPlayerPersistence(
+    block: () -> Unit,
+    afterPersist: (() -> Unit)? = null,
+) {
+    tvPlayerPersistenceScope.launch {
+        tvPlayerPersistenceMutex.withLock {
+            block()
+        }
+        afterPersist?.let { callback ->
+            withContext(Dispatchers.Main.immediate) {
+                callback()
+            }
+        }
+    }
+}
 
 @Composable
 fun TvPlayerScreen(
@@ -200,13 +220,17 @@ fun TvPlayerScreen(
 
     val minimumResumePositionMs = if (episode != null) 0L else 5_000L
     val savedPosition = remember(mediaKey) { runtime.playbackStore.positionMs(mediaKey) }
-    val startPosition = remember(mediaKey, initialPositionMs) {
+    // If Back just captured a newer cursor, Details may still hold the previous
+    // persisted position for a few milliseconds. The process-local cursor wins
+    // regardless of whether playback moved forward or was deliberately rewound.
+    val liveSessionSnapshot = runtime.playbackStore.sessionSnapshot(mediaKey)
+    val startPosition =
         when {
+            liveSessionSnapshot != null -> liveSessionSnapshot.resumePositionMs
             initialPositionMs > minimumResumePositionMs -> initialPositionMs
             settings.resumePlaybackEnabled() && savedPosition > minimumResumePositionMs -> savedPosition
             else -> 0L
         }
-    }
 
     val playableSources = remember(bundle.sources, source.url) {
         (listOf(source) + bundle.sources)
@@ -586,7 +610,17 @@ fun TvPlayerScreen(
         val duration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
         val position = if (autoNextCompletedCurrent && duration > 0L) duration
             else player.currentPosition.coerceAtLeast(0L)
-        val persistLibrary = {
+
+        // Capture before dispatch so Back -> reopen can resolve the newest cursor
+        // immediately. The event stamp also makes older IO harmless if it finishes
+        // after a newer rewind or episode interaction.
+        val playbackSnapshot = runtime.playbackStore.capturePosition(
+            mediaKey = mediaKey,
+            positionMs = position,
+            durationMs = duration,
+        )
+        val persistProgress = {
+            runtime.playbackStore.persistSnapshot(playbackSnapshot)
             runtime.libraryStore.recordPlayback(
                 media = media,
                 videoId = bundle.videoId,
@@ -595,29 +629,23 @@ fun TvPlayerScreen(
                 episode = episode?.episode,
                 positionMs = position,
                 durationMs = duration,
+                lastWatchedEpochMs = playbackSnapshot.updatedAtEpochMs,
             )
         }
+        val notifyPersisted = {
+            libraryProgressRevision += 1
+            onLibraryChanged()
+        }
+
         if (backgroundLibrary) {
-            val playbackPosition = position
-            val playbackDuration = duration
-            tvPlayerPersistenceScope.launch {
-                runtime.playbackStore.savePositionMs(
-                    mediaKey = mediaKey,
-                    positionMs = playbackPosition,
-                    durationMs = playbackDuration,
-                )
-                persistLibrary()
-            }
-        } else {
-            runtime.playbackStore.savePositionMs(
-                mediaKey = mediaKey,
-                positionMs = position,
-                durationMs = duration,
+            enqueueTvPlayerPersistence(
+                block = persistProgress,
+                afterPersist = notifyPersisted,
             )
-            persistLibrary()
+        } else {
+            persistProgress()
+            notifyPersisted()
         }
-        libraryProgressRevision += 1
-        onLibraryChanged()
     }
 
     fun closePanel(restoreFocus: Boolean = true) {
@@ -944,14 +972,30 @@ fun TvPlayerScreen(
                 }
                 if (playbackState == Player.STATE_ENDED) {
                     val completedDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
-                    runtime.playbackStore.clearPosition(mediaKey)
-                    runtime.libraryStore.recordPlayback(
-                        media = media, videoId = bundle.videoId, episodeTitle = episode?.title,
-                        season = episode?.season, episode = episode?.episode,
-                        positionMs = completedDuration, durationMs = completedDuration,
+                    val completionSnapshot = runtime.playbackStore.capturePosition(
+                        mediaKey = mediaKey,
+                        positionMs = completedDuration,
+                        durationMs = completedDuration,
                     )
-                    libraryProgressRevision += 1
-                    onLibraryChanged()
+                    enqueueTvPlayerPersistence(
+                        block = {
+                            runtime.playbackStore.persistSnapshot(completionSnapshot)
+                            runtime.libraryStore.recordPlayback(
+                                media = media,
+                                videoId = bundle.videoId,
+                                episodeTitle = episode?.title,
+                                season = episode?.season,
+                                episode = episode?.episode,
+                                positionMs = completedDuration,
+                                durationMs = completedDuration,
+                                lastWatchedEpochMs = completionSnapshot.updatedAtEpochMs,
+                            )
+                        },
+                        afterPersist = {
+                            libraryProgressRevision += 1
+                            onLibraryChanged()
+                        },
+                    )
                     ended = true
                     playing = false
                     if (!endedControlsDismissed &&
@@ -1272,11 +1316,16 @@ fun TvPlayerScreen(
             val currentPosition = player.currentPosition.coerceAtLeast(0L)
             val currentDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
             if (currentPosition > 0L) {
-                runtime.playbackStore.savePositionMs(
+                val periodicPosition =
+                    if (autoNextCompletedCurrent && currentDuration > 0L) currentDuration else currentPosition
+                val periodicSnapshot = runtime.playbackStore.capturePosition(
                     mediaKey = mediaKey,
-                    positionMs = if (autoNextCompletedCurrent && currentDuration > 0L) currentDuration else currentPosition,
+                    positionMs = periodicPosition,
                     durationMs = currentDuration,
                 )
+                enqueueTvPlayerPersistence {
+                    runtime.playbackStore.persistSnapshot(periodicSnapshot)
+                }
             }
         }
     }
@@ -1468,7 +1517,7 @@ fun TvPlayerScreen(
                     pauseBackdropVisible = false
                     resumeAfterLifecyclePause = player.playWhenReady
                     if (player.playWhenReady) player.pause()
-                    runCatching { saveProgress() }
+                    runCatching { saveProgress(backgroundLibrary = true) }
                 }
                 Lifecycle.Event.ON_START -> {
                     playerForeground = true

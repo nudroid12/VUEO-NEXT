@@ -208,6 +208,7 @@ import com.vueo.mobile.core.model.CatalogRow
 import com.vueo.mobile.BuildConfig
 import com.vueo.mobile.R
 import com.vueo.mobile.core.storage.PlaybackStore
+import com.vueo.shared.core.storage.PlaybackUpdateClock
 import com.vueo.mobile.core.storage.LibraryStore
 import com.vueo.mobile.core.storage.ProfileStore
 import com.vueo.mobile.core.storage.VueoProfile
@@ -534,19 +535,34 @@ internal fun PlayerScreen(
     val savedPositionMs = remember(mediaKey) {
         playbackStore.positionMs(mediaKey)
     }
+    // A cursor captured during this app process is newer than a Details snapshot
+    // that may still be waiting for async persistence. It is position-agnostic:
+    // a newer rewind must beat an older larger position too.
+    val liveSessionSnapshot =
+        playbackStore.sessionSnapshot(mediaKey)
     val resumePlaybackEnabled = remember(mediaKey) {
         settingsStore.resumePlaybackEnabled()
     }
     val minimumResumePositionMs = if (episode != null) 0L else 5_000L
     val sourceSwitchPosition = initialPositionMs
         .coerceAtLeast(0L)
+    val liveSessionPosition =
+        liveSessionSnapshot
+            ?.resumePositionMs
+            ?.coerceAtLeast(0L)
+    val effectiveIncomingPosition =
+        liveSessionPosition
+            ?: sourceSwitchPosition
     val shouldPromptResume =
-        sourceSwitchPosition <= minimumResumePositionMs &&
+        liveSessionSnapshot == null &&
+            effectiveIncomingPosition <= minimumResumePositionMs &&
             resumePlaybackEnabled &&
             savedPositionMs > minimumResumePositionMs
     val initialPlaybackPositionMs =
-        if (sourceSwitchPosition > minimumResumePositionMs) {
-            sourceSwitchPosition
+        if (liveSessionSnapshot != null) {
+            liveSessionPosition ?: 0L
+        } else if (effectiveIncomingPosition > minimumResumePositionMs) {
+            effectiveIncomingPosition
         } else if (!shouldPromptResume && resumePlaybackEnabled) {
             savedPositionMs
         } else {
@@ -955,17 +971,27 @@ internal fun PlayerScreen(
         clearPlaybackPosition: Boolean = false,
         notifyLibrary: Boolean = false,
     ) {
+        // Capture on the caller thread before dispatch. This immediately publishes
+        // the newest cursor for a rapid Back -> reopen, while persistence remains
+        // off Main. Completion naturally normalizes resumePositionMs to 0.
+        val playbackSnapshot =
+            if (clearPlaybackPosition) {
+                playbackStore.capturePosition(
+                    mediaKey = mediaKey,
+                    positionMs = durationMs.coerceAtLeast(positionMs),
+                    durationMs = durationMs,
+                )
+            } else {
+                playbackStore.capturePosition(
+                    mediaKey = mediaKey,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                )
+            }
+
         enqueueMobilePlayerPersistence(
             block = {
-                if (clearPlaybackPosition) {
-                    playbackStore.clearPosition(mediaKey)
-                } else {
-                    playbackStore.savePositionMs(
-                        mediaKey = mediaKey,
-                        positionMs = positionMs,
-                        durationMs = durationMs,
-                    )
-                }
+                playbackStore.persistSnapshot(playbackSnapshot)
                 libraryStore.recordPlayback(
                     media = media,
                     videoId = videoId,
@@ -974,6 +1000,7 @@ internal fun PlayerScreen(
                     episode = episode?.episode,
                     positionMs = positionMs,
                     durationMs = durationMs,
+                    lastWatchedEpochMs = playbackSnapshot.updatedAtEpochMs,
                 )
             },
             afterPersist = if (notifyLibrary) {
@@ -1658,6 +1685,16 @@ internal fun PlayerScreen(
     }
 
     LaunchedEffect(mediaKey) {
+        // Opening the player is a real playback interaction, but the timestamp
+        // belongs to this interaction, not to whichever background IO finishes
+        // last. If a resume prompt is visible, keep its saved cursor intact.
+        val startupEpochMs = PlaybackUpdateClock.next()
+        val startupPositionMs =
+            if (resumePromptVisible) {
+                savedPositionMs
+            } else {
+                initialPlaybackPositionMs
+            }
         enqueueMobilePlayerPersistence {
             val initialDurationMs =
                 playbackStore.durationMs(mediaKey)
@@ -1667,8 +1704,9 @@ internal fun PlayerScreen(
                 episodeTitle = episode?.title,
                 season = episode?.season,
                 episode = episode?.episode,
-                positionMs = initialPlaybackPositionMs,
+                positionMs = startupPositionMs,
                 durationMs = initialDurationMs,
+                lastWatchedEpochMs = startupEpochMs,
             )
         }
     }
@@ -2060,12 +2098,14 @@ internal fun PlayerScreen(
                     }
 
                 if (stablePositionMs > minimumResumePositionMs) {
-                    enqueueMobilePlayerPersistence {
-                        playbackStore.savePositionMs(
+                    val playbackSnapshot =
+                        playbackStore.capturePosition(
                             mediaKey = mediaKey,
                             positionMs = stablePositionMs,
                             durationMs = sampledDurationMs,
                         )
+                    enqueueMobilePlayerPersistence {
+                        playbackStore.persistSnapshot(playbackSnapshot)
                     }
                 }
                 librarySaveTicks = 0

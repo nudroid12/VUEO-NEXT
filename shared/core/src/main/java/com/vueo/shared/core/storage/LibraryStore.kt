@@ -337,55 +337,79 @@ class LibraryStore(
         episode: Int?,
         positionMs: Long,
         durationMs: Long,
+        lastWatchedEpochMs: Long = PlaybackUpdateClock.next(),
     ) {
-        restoreContinueWatching(
-            media
-        )
+        // LibraryStore is instantiated by more than one screen. A class-wide
+        // lock is required because @Synchronized only protects one instance.
+        synchronized(PLAYBACK_PERSISTENCE_LOCK) {
+            val key =
+                "${media.type}:${media.id}:$videoId"
+            val updateEpochMs =
+                lastWatchedEpochMs
+                    .takeIf { it > 0L }
+                    ?: PlaybackUpdateClock.next()
+            PlaybackUpdateClock.observe(updateEpochMs)
 
-        val key =
-            "${media.type}:${media.id}:$videoId"
+            val entries =
+                readHistory()
+                    .toMutableList()
 
-        val entries =
-            readHistory()
-                .toMutableList()
+            // Async persistence must never let an older snapshot overwrite a newer
+            // cursor for the same episode. Position itself cannot be compared because
+            // a deliberate rewind is a perfectly valid newer playback event.
+            val existingForMediaKey =
+                entries.firstOrNull {
+                    it.mediaKey == key
+                }
+            if (
+                existingForMediaKey != null &&
+                existingForMediaKey.lastWatchedEpochMs > updateEpochMs
+            ) {
+                return@synchronized
+            }
 
-        entries.removeAll {
-            it.mediaKey == key
-        }
-
-        entries.add(
-            0,
-            LibraryPlaybackEntry(
-                media = media,
-                videoId = videoId,
-                episodeTitle =
-                    episodeTitle,
-                season = season,
-                episode = episode,
-                positionMs =
-                    positionMs
-                        .coerceAtLeast(
-                            0L
-                        ),
-                durationMs =
-                    durationMs
-                        .coerceAtLeast(
-                            0L
-                        ),
-                lastWatchedEpochMs =
-                    System
-                        .currentTimeMillis(),
-            ),
-        )
-
-        val updated = entries.first()
-        writeContinueWatching(updated)
-
-        writeHistory(
-            entries.take(
-                MAX_HISTORY
+            restoreContinueWatching(
+                media
             )
-        )
+
+            entries.removeAll {
+                it.mediaKey == key
+            }
+
+            val updated =
+                LibraryPlaybackEntry(
+                    media = media,
+                    videoId = videoId,
+                    episodeTitle =
+                        episodeTitle,
+                    season = season,
+                    episode = episode,
+                    positionMs =
+                        positionMs
+                            .coerceAtLeast(
+                                0L
+                            ),
+                    durationMs =
+                        durationMs
+                            .coerceAtLeast(
+                                0L
+                            ),
+                    lastWatchedEpochMs = updateEpochMs,
+                )
+            entries.add(updated)
+
+            writeContinueWatching(updated)
+
+            writeHistory(
+                entries
+                    .sortedByDescending {
+                        it.lastWatchedEpochMs
+                    }
+                    .take(
+                        MAX_HISTORY
+                    )
+            )
+        }
     }
 
     @Synchronized
@@ -608,7 +632,25 @@ class LibraryStore(
         val titleKey = continueWatchingTitleKey(entry.media)
         val old = existing.firstOrNull { continueWatchingTitleKey(it.media) == titleKey }
         val episodes = (entry.media.episodes + old?.media?.episodes.orEmpty()).distinctBy { it.season to it.episode }
-        val cursor = entry.copy(media = entry.media.copy(episodes = episodes))
+
+        // The title cursor follows the newest playback event, not whichever IO
+        // job happens to finish last. This keeps EP4/EP5 switching and rewinds
+        // deterministic even when player saves are dispatched in the background.
+        val newest =
+            if (
+                old != null &&
+                old.lastWatchedEpochMs > entry.lastWatchedEpochMs
+            ) {
+                old
+            } else {
+                entry
+            }
+        val cursor = newest.copy(
+            media = newest.media.copy(
+                episodes = (newest.media.episodes + episodes)
+                    .distinctBy { it.season to it.episode }
+            )
+        )
         writeArray(scopedKey(continueWatchingStorageKey),
             (listOf(cursor) + existing.filterNot { continueWatchingTitleKey(it.media) == titleKey }).map(::playbackToJson))
     }
@@ -1004,5 +1046,7 @@ class LibraryStore(
 
         private const val MAX_HISTORY =
             150
+
+        private val PLAYBACK_PERSISTENCE_LOCK = Any()
     }
 }
