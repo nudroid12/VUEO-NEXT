@@ -6,7 +6,6 @@ import androidx.activity.compose.BackHandler
 import android.view.KeyEvent
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -418,7 +417,7 @@ internal fun TvRuntimeDiagnosticsDialog(
                             .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = if (showRaw) rawFocus else summaryFocus
-                                down = logFocus
+                                down = copyFocus
                             },
                         singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(
@@ -442,7 +441,7 @@ internal fun TvRuntimeDiagnosticsDialog(
                     if (searchQuery.isNotEmpty()) {
                         TextButton(
                             onClick = { searchQuery = "" },
-                            modifier = Modifier.focusProperties { left = searchFocus; down = logFocus },
+                            modifier = Modifier.focusProperties { left = searchFocus; down = copyFocus },
                         ) {
                             Text("×", fontSize = 20.sp)
                         }
@@ -461,30 +460,22 @@ internal fun TvRuntimeDiagnosticsDialog(
                         )
                         .focusRequester(logFocus)
                         .onFocusChanged { logFocused = it.isFocused }
-                        .focusProperties {
-                            up = searchFocus
-                            down = copyFocus
-                        }
                         .onPreviewKeyEvent { event ->
                             val key = event.nativeKeyEvent
                             when (key.keyCode) {
                                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                                     if (key.action == KeyEvent.ACTION_DOWN) {
                                         val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                                        if (down && logScroll.value >= logScroll.maxValue) {
-                                            runCatching { copyFocus.requestFocus() }
-                                        } else if (!down && logScroll.value <= 0) {
-                                            runCatching { searchFocus.requestFocus() }
-                                        } else {
-                                            val target = (logScroll.value + if (down) scrollStep else -scrollStep)
-                                                .coerceIn(0, logScroll.maxValue)
-                                            scope.launch { logScroll.scrollTo(target) }
-                                        }
+                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                            .coerceIn(0, logScroll.maxValue)
+                                        scope.launch { logScroll.scrollTo(target) }
                                     }
                                     true
                                 }
-                                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                                    if (key.action == KeyEvent.ACTION_DOWN) runCatching { copyFocus.requestFocus() }
+                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    if (key.action == KeyEvent.ACTION_DOWN) {
+                                        runCatching { searchFocus.requestFocus() }
+                                    }
                                     true
                                 }
                                 else -> false
@@ -609,7 +600,6 @@ internal fun TvPerformanceDiagnosticsDialog(
             PerformanceDiagnostics.Tab.OTHER,
         )
     }
-    val tabScroll = rememberScrollState()
     val logScroll = rememberScrollState()
     val toggleFocus = remember { FocusRequester() }
     val summaryFocus = remember { FocusRequester() }
@@ -801,15 +791,14 @@ internal fun TvPerformanceDiagnosticsDialog(
                 }
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(tabScroll),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         val selected = selectedTab == tab
                         TextButton(
                             modifier = Modifier
+                                .weight(1f)
                                 .focusRequester(tabFocusers[index])
                                 .background(
                                     if (selected) TvDesign.SurfaceRaised else Color.Transparent,
@@ -821,13 +810,17 @@ internal fun TvPerformanceDiagnosticsDialog(
                                 .focusProperties {
                                     up = if (showRaw) rawFocus else summaryFocus
                                     down = searchFocus
+                                    if (index > 0) left = tabFocusers[index - 1]
+                                    if (index < tabFocusers.lastIndex) right = tabFocusers[index + 1]
                                 },
                             onClick = { selectedTab = tab },
                         ) {
                             Text(
                                 if (selected) "✓ ${tab.label}" else tab.label,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -857,7 +850,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                             .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
-                                down = logFocus
+                                down = copyFocus
                             },
                         singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(
@@ -881,7 +874,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                     if (searchQuery.isNotEmpty()) {
                         TextButton(
                             onClick = { searchQuery = "" },
-                            modifier = Modifier.focusProperties { left = searchFocus; down = logFocus },
+                            modifier = Modifier.focusProperties { left = searchFocus; down = copyFocus },
                         ) {
                             Text("×", fontSize = 20.sp)
                         }
@@ -900,30 +893,22 @@ internal fun TvPerformanceDiagnosticsDialog(
                         )
                         .focusRequester(logFocus)
                         .onFocusChanged { logFocused = it.isFocused }
-                        .focusProperties {
-                            up = searchFocus
-                            down = copyFocus
-                        }
                         .onPreviewKeyEvent { event ->
                             val key = event.nativeKeyEvent
                             when (key.keyCode) {
                                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                                     if (key.action == KeyEvent.ACTION_DOWN) {
                                         val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                                        if (down && logScroll.value >= logScroll.maxValue) {
-                                            runCatching { copyFocus.requestFocus() }
-                                        } else if (!down && logScroll.value <= 0) {
-                                            runCatching { searchFocus.requestFocus() }
-                                        } else {
-                                            val target = (logScroll.value + if (down) scrollStep else -scrollStep)
-                                                .coerceIn(0, logScroll.maxValue)
-                                            scope.launch { logScroll.scrollTo(target) }
-                                        }
+                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
+                                            .coerceIn(0, logScroll.maxValue)
+                                        scope.launch { logScroll.scrollTo(target) }
                                     }
                                     true
                                 }
-                                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                                    if (key.action == KeyEvent.ACTION_DOWN) runCatching { copyFocus.requestFocus() }
+                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    if (key.action == KeyEvent.ACTION_DOWN) {
+                                        runCatching { searchFocus.requestFocus() }
+                                    }
                                     true
                                 }
                                 else -> false
