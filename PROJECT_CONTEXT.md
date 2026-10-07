@@ -705,3 +705,11 @@ Home presentation is now calibrated around the current 29C.4 floating sidebar. T
 ## TV 42A - Settings Mobile Category Rebuild (2026-09-08)
 
 The TV Settings root now uses the current Mobile Settings groups as its category model. `VUEO` contains Profile, Personalization, Content Manager and Enhancements. `PLAYBACK` contains Playback, Subtitles and Sources. `APP` contains Appearance, Data & Storage, Updates and About VUEO. Root rows use Mobile-style icon wells, grouped separators and the same compact status summaries where the TV runtime exposes the same preference. Existing Settings subpages, runtime wiring, Shared Core behavior and global TV sidebar navigation are unchanged.
+
+## v130 — TV Continue Watching Fast Hydration
+TV Home now hydrates Continue Watching independently from catalog partial
+updates. A cursor-only local pass can publish in-progress CW immediately, then a
+Home-specific full snapshot resolves exact series next-episode state and History
+for recommendations. Catalog loading no longer restarts the CW parse. Shared
+LibraryStore gained `fastContinueWatching()` and `homeSnapshot()` helpers; Mobile
+behavior is unchanged.

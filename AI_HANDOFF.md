@@ -339,3 +339,19 @@ Do not reintroduce top navigation. Home keeps the 29C.4 floating `TvSidebar`. Pr
 - Thumbnail uses target episode artwork, falling back to media background; header/title remain during loading, failure, retry and manual source selection.
 - Spinner matches progress accent; error/retry/source selection grow upward within the same card. Existing Back press cancellation and discovery/commit logic preserved.
 - Static inspection and ZIP integrity only; no build or tests executed per user instruction.
+
+## v130 TV Continue Watching Fast Hydration
+- Base: v129.
+- TV Home library hydration is no longer keyed by `catalogRows`; partial Home
+  catalog publishes therefore cannot cancel/restart Continue Watching parsing.
+- Shared `LibraryStore.fastContinueWatching()` provides a safe cursor-only fast
+  stage for in-progress titles. Completed series are deferred to the exact pass.
+- Shared `LibraryStore.homeSnapshot()` resolves exact CW + History without
+  parsing watchlist data.
+- TV Home publishes fast CW first, exact CW/History second, and personalized
+  recommendations afterward. Existing fast catalog first paint is preserved.
+- New Performance Diagnostics markers: HOME_CW_FAST_BEGIN,
+  HOME_CW_FAST_PUBLISHED, HOME_CW_FULL_BEGIN, HOME_CW_FULL_PUBLISHED,
+  HOME_CW_FIRST_FRAME.
+- Mobile behavior is unchanged; v127 Watch Next and v128/v129 retained Details
+  flows are unchanged.

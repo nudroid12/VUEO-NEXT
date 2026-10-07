@@ -46,8 +46,12 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
         internal set
 
     internal var loadedRefreshToken = Int.MIN_VALUE
-    internal var presentationRefreshToken = Int.MIN_VALUE
-    internal var presentationLibraryRevision = Int.MIN_VALUE
+    internal var libraryHydrationRefreshToken = Int.MIN_VALUE
+    internal var libraryHydrationRevision = Int.MIN_VALUE
+    internal var libraryHydrationProfileId: String? = null
+    internal var continueWatching by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    internal var watchHistory by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    internal var homeRecommendations by mutableStateOf(HomeRecommendationSections())
     internal var presentationCatalogRows: List<CatalogRow>? = null
     internal var presentationRows by mutableStateOf(
         buildTvHomeRows(
@@ -153,64 +157,115 @@ fun TvHomeScreen(
         }
     }
 
-    val rows = retainedState.presentationRows
+    val activeProfileId = runtime.profileStore.activeProfileId()
 
-    LaunchedEffect(runtime, refreshToken, libraryRevision, catalogRows) {
-        val presentationIsCurrent =
-            retainedState.presentationRefreshToken == refreshToken &&
-                retainedState.presentationLibraryRevision == libraryRevision &&
-                retainedState.presentationCatalogRows === catalogRows
-        if (presentationIsCurrent) return@LaunchedEffect
+    // Hydrate Continue Watching independently from catalog streaming. Before v130
+    // this effect was keyed by catalogRows, so every partial Home catalog publish
+    // could cancel/restart the LibraryStore parse and postpone the CW row until
+    // catalog loading settled. The dedicated cursor pass is tiny and publishes
+    // first; the exact history-backed snapshot follows without blocking first paint.
+    LaunchedEffect(runtime, activeProfileId, refreshToken, libraryRevision) {
+        val hydrationIsCurrent =
+            retainedState.libraryHydrationProfileId == activeProfileId &&
+                retainedState.libraryHydrationRefreshToken == refreshToken &&
+                retainedState.libraryHydrationRevision == libraryRevision
+        if (hydrationIsCurrent) return@LaunchedEffect
 
-        // Keep cached/catalog rows paintable immediately. LibraryStore hydration
-        // is intentionally a second stage so JSON parsing cannot hold first Home.
-        if (retainedState.presentationRows.isEmpty() && catalogRows.isNotEmpty()) {
-            retainedState.presentationRows = withContext(Dispatchers.Default) {
-                buildTvHomeRows(
-                    catalogRows = catalogRows,
-                    continueWatching = emptyList(),
-                )
-            }
+        if (retainedState.libraryHydrationProfileId != activeProfileId) {
+            retainedState.continueWatching = emptyList()
+            retainedState.watchHistory = emptyList()
+            retainedState.homeRecommendations = HomeRecommendationSections()
+            retainedState.libraryHydrationProfileId = activeProfileId
         }
 
-        // Continue Watching + History share the same backing profile JSON.
-        // Parse them once instead of calling continueWatching() and history()
-        // separately during the same Home refresh.
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "HOME_CW_FAST_BEGIN revision=$libraryRevision refresh=$refreshToken"
+        )
+        val fastContinueWatching = withContext(Dispatchers.IO) {
+            runtime.libraryStore.fastContinueWatching()
+        }
+        retainedState.continueWatching = fastContinueWatching
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "HOME_CW_FAST_PUBLISHED count=${fastContinueWatching.size}"
+        )
+
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "HOME_CW_FULL_BEGIN revision=$libraryRevision refresh=$refreshToken"
+        )
         val librarySnapshot = withContext(Dispatchers.IO) {
-            runtime.libraryStore.detailSnapshot()
+            runtime.libraryStore.homeSnapshot()
         }
-        val continueWatching = librarySnapshot.continueWatching
-        val immediateRows = withContext(Dispatchers.Default) {
-            buildTvHomeRows(catalogRows, continueWatching)
-        }
+        retainedState.continueWatching = librarySnapshot.continueWatching
+        retainedState.watchHistory = librarySnapshot.history
+        retainedState.libraryHydrationRefreshToken = refreshToken
+        retainedState.libraryHydrationRevision = libraryRevision
+        retainedState.libraryHydrationProfileId = activeProfileId
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "HOME_CW_FULL_PUBLISHED count=${librarySnapshot.continueWatching.size} " +
+                "history=${librarySnapshot.history.size}"
+        )
+    }
 
-        // Publish local/cache content before recommendation scoring. Preserve the
-        // previous recommendation targets during incoming catalog updates.
-        val retainedRecommendations = retainedState.presentationRows.filter {
-            it.key == "for-you" || it.key == "because-you-watched"
-        }
-        retainedState.presentationRows =
-            immediateRows.filter { it.key == "continue-watching" } +
-                retainedRecommendations +
-                immediateRows.filter { it.key != "continue-watching" }
+    val continueWatching = retainedState.continueWatching
+    val homeRecommendations = retainedState.homeRecommendations
 
-        val rebuiltRows = withContext(Dispatchers.Default) {
-            val activeProfileId = runtime.profileStore.activeProfileId()
+    // Presentation is now a cheap pure build. Catalog partials may still arrive
+    // rapidly, but they no longer restart disk/library hydration.
+    LaunchedEffect(catalogRows, continueWatching, homeRecommendations) {
+        retainedState.presentationRows = withContext(Dispatchers.Default) {
+            buildTvHomeRows(
+                catalogRows = catalogRows,
+                continueWatching = continueWatching,
+                homeRecommendations = homeRecommendations,
+            )
+        }
+        retainedState.presentationCatalogRows = catalogRows
+    }
+
+    // Personalized rows depend on full history, so keep them behind the exact
+    // library snapshot. They can be recomputed/cancelled as catalog partials
+    // stream without holding back Continue Watching.
+    LaunchedEffect(
+        runtime,
+        activeProfileId,
+        refreshToken,
+        libraryRevision,
+        catalogRows,
+        retainedState.libraryHydrationRefreshToken,
+        retainedState.libraryHydrationRevision,
+    ) {
+        val libraryIsCurrent =
+            retainedState.libraryHydrationProfileId == activeProfileId &&
+                retainedState.libraryHydrationRefreshToken == refreshToken &&
+                retainedState.libraryHydrationRevision == libraryRevision
+        if (!libraryIsCurrent) return@LaunchedEffect
+
+        val history = retainedState.watchHistory
+        val rebuilt = withContext(Dispatchers.Default) {
             val personalizedHomeEnabled =
                 runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-            val homeRecommendations = HomeRecommendationPolicy.build(
+            HomeRecommendationPolicy.build(
                 catalogRows = catalogRows,
-                watchHistory = librarySnapshot.history,
+                watchHistory = history,
                 dnaEngine = runtime.dnaEngine,
                 personalizationEnabled = personalizedHomeEnabled,
                 limit = 12,
             )
-            buildTvHomeRows(catalogRows, continueWatching, homeRecommendations)
         }
-        retainedState.presentationRows = rebuiltRows
-        retainedState.presentationRefreshToken = refreshToken
-        retainedState.presentationLibraryRevision = libraryRevision
-        retainedState.presentationCatalogRows = catalogRows
+        retainedState.homeRecommendations = rebuilt
+    }
+
+    val rows = retainedState.presentationRows
+    val visibleContinueWatchingCount =
+        rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
+
+    LaunchedEffect(visibleContinueWatchingCount) {
+        if (visibleContinueWatchingCount > 0) {
+            withFrameNanos { }
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "HOME_CW_FIRST_FRAME count=$visibleContinueWatchingCount"
+            )
+        }
     }
 
     // Continue-Watching metadata repair is best-effort. Let Home paint and give

@@ -15,6 +15,11 @@ data class LibraryDetailSnapshot(
     val playbackEntries: List<LibraryPlaybackEntry>,
 )
 
+data class LibraryHomeSnapshot(
+    val history: List<LibraryPlaybackEntry>,
+    val continueWatching: List<LibraryPlaybackEntry>,
+)
+
 data class LibraryPlaybackEntry(
     val media: MediaItem,
     val videoId: String,
@@ -214,6 +219,54 @@ class LibraryStore(
             }
 
     /**
+     * Fast first-stage Continue Watching hydration for Home.
+     *
+     * The dedicated title cursors are intentionally read without reparsing the
+     * bounded history. In-progress cursors are safe to publish immediately; a
+     * completed series cursor is deferred to [homeSnapshot], where full history
+     * is available to resolve the next released unwatched episode correctly.
+     */
+    @Synchronized
+    fun fastContinueWatching(): List<LibraryPlaybackEntry> {
+        val hiddenTitleKeys =
+            dismissedContinueWatchingKeys() +
+                markedWatchedKeys()
+
+        return readContinueWatching()
+            .sortedByDescending { it.lastWatchedEpochMs }
+            .distinctBy { continueWatchingTitleKey(it.media) }
+            .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
+            .filter { entry ->
+                if (ContinueWatchingPolicy.isSeries(entry.media)) {
+                    !entry.isCompleted
+                } else {
+                    entry.positionMs > 5_000L && !entry.isCompleted
+                }
+            }
+    }
+
+    /**
+     * Home-only snapshot. It skips watchlist parsing while still resolving
+     * Continue Watching against full history for exact series next-episode rules.
+     */
+    @Synchronized
+    fun homeSnapshot(): LibraryHomeSnapshot {
+        val history =
+            readHistory()
+                .sortedByDescending { it.lastWatchedEpochMs }
+        val (_, continueWatching) =
+            resolveContinueWatching(
+                cursors = readContinueWatching(),
+                history = history,
+            )
+
+        return LibraryHomeSnapshot(
+            history = history,
+            continueWatching = continueWatching,
+        )
+    }
+
+    /**
      * One-pass local snapshot for Details hydration.
      *
      * Details screens need watchlist, history, continue-watching and dedicated
@@ -237,26 +290,11 @@ class LibraryStore(
                 .sortedByDescending {
                     it.lastWatchedEpochMs
                 }
-
-        val playbackEntries =
-            (readContinueWatching() + history)
-                .sortedByDescending {
-                    it.lastWatchedEpochMs
-                }
-                .distinctBy {
-                    it.mediaKey
-                }
-
-        val hiddenTitleKeys =
-            dismissedContinueWatchingKeys() +
-                markedWatchedKeys()
-
-        val continueWatching =
-            ContinueWatchingPolicy
-                .resolve(playbackEntries)
-                .filterNot {
-                    continueWatchingTitleKey(it.media) in hiddenTitleKeys
-                }
+        val (playbackEntries, continueWatching) =
+            resolveContinueWatching(
+                cursors = readContinueWatching(),
+                history = history,
+            )
 
         return LibraryDetailSnapshot(
             watchlist = watchlist,
@@ -264,6 +302,25 @@ class LibraryStore(
             continueWatching = continueWatching,
             playbackEntries = playbackEntries,
         )
+    }
+
+    private fun resolveContinueWatching(
+        cursors: List<LibraryPlaybackEntry>,
+        history: List<LibraryPlaybackEntry>,
+    ): Pair<List<LibraryPlaybackEntry>, List<LibraryPlaybackEntry>> {
+        val playbackEntries =
+            (cursors + history)
+                .sortedByDescending { it.lastWatchedEpochMs }
+                .distinctBy { it.mediaKey }
+        val hiddenTitleKeys =
+            dismissedContinueWatchingKeys() +
+                markedWatchedKeys()
+        val continueWatching =
+            ContinueWatchingPolicy
+                .resolve(playbackEntries)
+                .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
+
+        return playbackEntries to continueWatching
     }
 
     @Synchronized
