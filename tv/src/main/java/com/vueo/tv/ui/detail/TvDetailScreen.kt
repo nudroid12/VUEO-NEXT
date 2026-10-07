@@ -66,15 +66,21 @@ fun TvDetailScreen(
     ) { mutableStateOf<Job?>(null) }
 
     fun leaveDetails() {
-        // Invalidate in-flight Detail work before navigation changes the route.
-        // AnimatedContent may keep this outgoing tree alive for a few frames.
+        // Cancel the complete Detail startup tree before the outer route changes.
+        // This prevents the 8s metadata timeout window from owning Back latency.
         detailSessionGeneration += 1
         detailStartupJob?.cancel()
         detailStartupJob = null
         onBack()
     }
 
-    BackHandler(onBack = ::leaveDetails)
+    BackHandler(enabled = active, onBack = ::leaveDetails)
+
+    // AnimatedContent retains the outgoing route briefly. Do not keep composing
+    // the full Details tree after the route already left DETAIL: no episodes,
+    // people rows, artwork or focus work should compete with the returning Home.
+    if (!active) return
+
     val initialShell = remember(initial) {
         DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
     }
@@ -173,21 +179,13 @@ fun TvDetailScreen(
         VueoDetailFocusMemory.episodeId = null
     }
 
-    LaunchedEffect(active, initial.id, initial.type, initial.sourceExtensionId) {
-        if (!active) {
-            detailSessionGeneration += 1
-            detailStartupJob?.cancel()
-            detailStartupJob = null
-            return@LaunchedEffect
-        }
-
+    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
         detailStartupJob = currentCoroutineContext()[Job]
-
         val detailSession = detailSessionGeneration + 1
         detailSessionGeneration = detailSession
 
         fun sessionCurrent(): Boolean =
-            active && detailSessionGeneration == detailSession
+            detailSessionGeneration == detailSession
 
         val mediaKey = "${initial.type}:${initial.id}"
         val restoringSameTitle = VueoDetailFocusMemory.mediaKey == mediaKey
@@ -247,9 +245,8 @@ fun TvDetailScreen(
             syncEpisodeSelection(item, entries = snapshot.playbackEntries, preserveCurrent = true)
         }
 
-        // Actor Search / More Like This can produce tmdb:<id>. Resolve identity and
-        // parse/normalize core metadata away from Main so Back remains responsive
-        // even when the user leaves Details immediately after opening it.
+        // Identity resolution, addon metadata response parsing and episode
+        // normalization stay off Main. Back must never wait for these.
         val prepared = try {
             withContext(Dispatchers.IO) {
                 runtime.prepareDetailForCore(initial)
@@ -302,7 +299,6 @@ fun TvDetailScreen(
                 emptyList()
             }
             if (!sessionCurrent()) return@launch
-
             related = localRelated
 
             val remoteRelated = try {

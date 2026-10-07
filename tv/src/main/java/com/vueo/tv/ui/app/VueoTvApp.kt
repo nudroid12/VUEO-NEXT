@@ -283,7 +283,13 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
             selectedEpisode = null
             initialPositionMs = 0L
         } else {
+            // Detach the heavy Detail payload in the same snapshot as the route
+            // change. AnimatedContent can then compose the returning tab without
+            // retaining a live Details tree full of episodes/cast/enrichment.
+            selectedMedia = null
             selectedLibraryEntry = null
+            selectedEpisode = null
+            initialPositionMs = 0L
             route = detailReturnRoute
         }
     }

@@ -14,7 +14,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -1292,7 +1294,7 @@ class UnifiedMediaEngine {
             }
         val primaryMetadata =
             primaryProvider?.let { provider ->
-                runCatching {
+                try {
                     withTimeoutOrNull(
                         ADDON_REQUEST_TIMEOUT_MS
                     ) {
@@ -1301,8 +1303,17 @@ class UnifiedMediaEngine {
                             item.id,
                         )
                     }
-                }.getOrNull()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
             }
+
+        // Detail Back cancels the caller. Never let a provider failure wrapper
+        // turn that cancellation into a normal "no metadata" result and continue
+        // towards the 8s/4s fallback windows.
+        currentCoroutineContext().ensureActive()
         val primaryResult =
             primaryMetadata?.let { metadata ->
                 mergeMediaMetadata(
@@ -1323,7 +1334,7 @@ class UnifiedMediaEngine {
                 }
                 .map { provider ->
                     async {
-                        runCatching {
+                        try {
                             withTimeoutOrNull(
                                 METADATA_FALLBACK_TIMEOUT_MS
                             ) {
@@ -1332,11 +1343,17 @@ class UnifiedMediaEngine {
                                     item.id,
                                 )
                             }
-                        }.getOrNull()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
                     }
                 }
                 .awaitAll()
                 .filterNotNull()
+
+        currentCoroutineContext().ensureActive()
 
         fallbackMetadata.fold(primaryResult) { merged, candidate ->
             mergeMediaMetadata(
