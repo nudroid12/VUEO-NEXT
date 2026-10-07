@@ -241,7 +241,11 @@ internal fun WhosWatchingScreen(
     AnimatedContent(
         targetState = managingProfiles,
         transitionSpec = {
-            vueoFadeThrough()
+            if (!targetState) {
+                vueoScreenBackTransition()
+            } else {
+                vueoScreenForwardTransition()
+            }
         },
         modifier = Modifier
             .fillMaxSize()
@@ -393,7 +397,11 @@ internal fun ProfileSettingsScreen(
     AnimatedContent(
         targetState = editor,
         transitionSpec = {
-            vueoFadeThrough()
+            if (targetState == null) {
+                vueoScreenBackTransition()
+            } else {
+                vueoScreenForwardTransition()
+            }
         },
         modifier = Modifier
             .fillMaxSize()

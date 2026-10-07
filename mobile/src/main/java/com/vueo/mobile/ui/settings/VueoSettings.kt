@@ -401,7 +401,11 @@ internal fun VueoSettingsHub(
     AnimatedContent(
         targetState = settingsSurface,
         transitionSpec = {
-            vueoFadeThrough()
+            if (targetState < initialState) {
+                vueoScreenBackTransition()
+            } else {
+                vueoScreenForwardTransition()
+            }
         },
         label = "VUEO settings personalization transition",
         modifier = Modifier.fillMaxSize(),

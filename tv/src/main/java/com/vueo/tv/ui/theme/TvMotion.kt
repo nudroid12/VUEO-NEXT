@@ -16,10 +16,13 @@ import androidx.compose.ui.graphics.Color
 /**
  * VUEO TV motion language.
  *
- * Full-screen motion is deliberately lightweight: near-sequential fade-through
- * plus a tiny incoming-only depth cue. This avoids two complex TV surfaces
- * scaling at the same time, which can read as a hitch even when navigation is
- * otherwise responsive.
+ * Screen changes use an overlapping handoff instead of the old delayed
+ * fade-through. The incoming surface starts immediately; the outgoing surface
+ * remains opaque for a short hold before fading. This prevents the black app
+ * background from flashing between two expensive TV Compose trees.
+ *
+ * Only the incoming screen receives a very small depth scale so full-screen
+ * surfaces are never both scaling at once.
  */
 internal object TvMotion {
     const val FOCUS_IN_MS = 120
@@ -28,8 +31,8 @@ internal object TvMotion {
     const val ELEMENT_MS = 160
     const val PANEL_IN_MS = 200
     const val PANEL_OUT_MS = 125
-    const val SCREEN_IN_MS = 180
-    const val SCREEN_OUT_MS = 96
+    const val SCREEN_IN_MS = 175
+    const val SCREEN_OUT_MS = 128
     const val BACKDROP_MS = 270
 
     val EaseOut = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
@@ -37,26 +40,23 @@ internal object TvMotion {
     val EaseInOut = CubicBezierEasing(0.40f, 0f, 0.20f, 1f)
 }
 
+/** Forward/deeper route transition with no incoming delay. */
 internal fun tvScreenFadeThrough(
     enterDurationMillis: Int = TvMotion.SCREEN_IN_MS,
     exitDurationMillis: Int = TvMotion.SCREEN_OUT_MS,
-    enterDelayMillis: Int = 72,
-    initialScale: Float = 0.996f,
-    @Suppress("UNUSED_PARAMETER") targetScale: Float = 0.992f,
+    initialScale: Float = 0.990f,
 ): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
                 durationMillis = enterDurationMillis,
-                delayMillis = enterDelayMillis,
                 easing = TvMotion.EaseOut,
             ),
         ) +
             scaleIn(
                 initialScale = initialScale,
                 animationSpec = tween(
-                    durationMillis = enterDurationMillis,
-                    delayMillis = (enterDelayMillis - 8).coerceAtLeast(0),
+                    durationMillis = (enterDurationMillis + 15),
                     easing = TvMotion.EaseOut,
                 ),
             )
@@ -64,29 +64,79 @@ internal fun tvScreenFadeThrough(
         fadeOut(
             animationSpec = tween(
                 durationMillis = exitDurationMillis,
-                easing = TvMotion.EaseIn,
+                delayMillis = 42,
+                easing = TvMotion.EaseInOut,
+            ),
+        )
+
+/** Reverse route transition. The returning screen starts immediately. */
+internal fun tvScreenBackTransition(): ContentTransform =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = 150,
+                easing = TvMotion.EaseOut,
+            ),
+        ) +
+            scaleIn(
+                initialScale = 1.008f,
+                animationSpec = tween(
+                    durationMillis = 165,
+                    easing = TvMotion.EaseOut,
+                ),
+            )
+    ) togetherWith
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = 112,
+                delayMillis = 34,
+                easing = TvMotion.EaseInOut,
+            ),
+        )
+
+/** Top-level Home/Search/Library/Settings navigation stays short and subtle. */
+internal fun tvTabCrossTransition(): ContentTransform =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = 130,
+                easing = TvMotion.EaseOut,
+            ),
+        ) +
+            scaleIn(
+                initialScale = 0.997f,
+                animationSpec = tween(
+                    durationMillis = 145,
+                    easing = TvMotion.EaseOut,
+                ),
+            )
+    ) togetherWith
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = 96,
+                delayMillis = 28,
+                easing = TvMotion.EaseInOut,
             ),
         )
 
 internal fun tvImmediateCut(): ContentTransform =
     EnterTransition.None togetherWith ExitTransition.None
 
-/** Player workspace uses fade only so video never appears to zoom. */
+/** Player route uses fade only so video never appears to zoom. */
 internal fun tvPlayerFadeThrough(
-    enterDurationMillis: Int = 190,
+    enterDurationMillis: Int = 165,
     exitDurationMillis: Int = 105,
-    enterDelayMillis: Int = 15,
 ): ContentTransform =
     fadeIn(
         animationSpec = tween(
             durationMillis = enterDurationMillis,
-            delayMillis = enterDelayMillis,
             easing = TvMotion.EaseOut,
         ),
     ) togetherWith
         fadeOut(
             animationSpec = tween(
                 durationMillis = exitDurationMillis,
+                delayMillis = 32,
                 easing = TvMotion.EaseInOut,
             ),
         )

@@ -599,12 +599,16 @@ fun VueoApp() {
         targetState = appSurface,
         transitionSpec = {
             if (
-                initialState == AppSurface.DETAILS &&
-                targetState == AppSurface.ROOT
+                targetState == AppSurface.ROOT &&
+                initialState in setOf(
+                    AppSurface.DETAILS,
+                    AppSurface.CATALOG,
+                    AppSurface.ENTITY_RESULTS,
+                )
             ) {
-                vueoDetailsBackFadeThrough()
+                vueoScreenBackTransition()
             } else {
-                vueoFadeThrough()
+                vueoScreenForwardTransition()
             }
         },
         modifier = Modifier.fillMaxSize(),
@@ -858,11 +862,7 @@ fun VueoApp() {
             AnimatedContent(
                 targetState = selectedTab to settingsPage,
                 transitionSpec = {
-                    if (targetState.first == AppTab.HOME && initialState.first != AppTab.HOME) {
-                        vueoHomeReturnFadeThrough()
-                    } else {
-                        vueoFadeThrough()
-                    }
+                    vueoTabCrossTransition()
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "VUEO main navigation transition",

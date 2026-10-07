@@ -72,6 +72,7 @@ import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.ui.TvModalDialog
 import com.vueo.tv.R
 import com.vueo.tv.ui.motion.tvFocusSpec
+import com.vueo.tv.ui.motion.tvScreenBackTransition
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
 import kotlinx.coroutines.delay
 
@@ -132,7 +133,11 @@ fun TvProfilePickerScreen(
     AnimatedContent(
         targetState = editor,
         transitionSpec = {
-            tvScreenFadeThrough()
+            if (targetState == null) {
+                tvScreenBackTransition()
+            } else {
+                tvScreenFadeThrough()
+            }
         },
         modifier = Modifier.fillMaxSize().background(PickerBlack),
         label = "tvProfileEditorTransition",
@@ -152,7 +157,11 @@ fun TvProfilePickerScreen(
             AnimatedContent(
                 targetState = mode,
                 transitionSpec = {
-                    tvScreenFadeThrough()
+                    if (targetState == ProfilePickerMode.WATCHING) {
+                        tvScreenBackTransition()
+                    } else {
+                        tvScreenFadeThrough()
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
                 label = "tvProfileManageTransition",

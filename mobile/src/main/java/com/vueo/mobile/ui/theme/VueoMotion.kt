@@ -20,62 +20,84 @@ import androidx.compose.ui.window.DialogProperties
 /**
  * VUEO motion language.
  *
- * Full-page navigation prioritises frame continuity over visible effects:
- * the outgoing surface fades away first, then the incoming surface finishes
- * the handoff with only a tiny depth movement. Keeping full-page scale work
- * on the incoming surface only avoids the double-moving/ghosted frame that
- * is especially noticeable on poster-heavy screens.
+ * Full-page navigation uses an overlapping handoff: the incoming surface starts
+ * immediately while the outgoing surface is held fully visible for a short
+ * moment before fading. That overlap is deliberate. It prevents the app
+ * background from becoming visible between two expensive Compose trees, which
+ * used to read as a black/dark flicker on poster-heavy screens.
+ *
+ * Only the incoming page gets a tiny depth movement. Scaling both full-screen
+ * trees at the same time costs more GPU work and makes the handoff look like it
+ * catches for a frame on slower devices.
  */
 internal object VueoMotion {
-    const val QUICK_MS = 140
-    const val STANDARD_MS = 210
-    const val SCREEN_MS = 240
+    const val QUICK_MS = 120
+    const val STANDARD_MS = 180
+    const val SCREEN_MS = 190
 
     val EaseOut = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)
     val EaseIn = CubicBezierEasing(0.40f, 0f, 1f, 1f)
     val EaseInOut = CubicBezierEasing(0.40f, 0f, 0.20f, 1f)
 }
 
-/**
- * Full-page navigation transition.
- *
- * This is intentionally a near-sequential fade-through rather than a cross
- * dissolve. The incoming surface starts only when the outgoing surface is
- * already faint, so two readable pages never sit on top of each other.
- * Outgoing full-screen scale was removed because scaling two complex Compose
- * trees at once can make the handoff look like it catches for a frame.
- */
-internal fun vueoFadeThrough(): ContentTransform =
+/** Forward/deeper full-screen navigation. No incoming dead-time. */
+internal fun vueoScreenForwardTransition(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
-                durationMillis = 165,
-                delayMillis = 72,
+                durationMillis = 175,
                 easing = VueoMotion.EaseOut,
             ),
         ) +
             scaleIn(
-                initialScale = 0.996f,
+                initialScale = 0.990f,
                 animationSpec = tween(
-                    durationMillis = 180,
-                    delayMillis = 64,
+                    durationMillis = 195,
                     easing = VueoMotion.EaseOut,
                 ),
             )
     ) togetherWith
         fadeOut(
             animationSpec = tween(
-                durationMillis = 96,
-                easing = VueoMotion.EaseIn,
+                durationMillis = 135,
+                delayMillis = 42,
+                easing = VueoMotion.EaseInOut,
             ),
         )
 
 /**
- * Details -> root is a reverse navigation gesture, so the root surface should
- * become visible immediately. The outgoing Details composition may still live
- * for the short fade, but there is deliberately no incoming dead-time.
+ * Reverse/back navigation.
+ *
+ * The previous surface begins immediately from a very small "behind" scale,
+ * while the outgoing page stays opaque briefly. This keeps the visual depth
+ * cue without exposing the app background between frames.
  */
-internal fun vueoDetailsBackFadeThrough(): ContentTransform =
+internal fun vueoScreenBackTransition(): ContentTransform =
+    (
+        fadeIn(
+            animationSpec = tween(
+                durationMillis = 155,
+                easing = VueoMotion.EaseOut,
+            ),
+        ) +
+            scaleIn(
+                initialScale = 1.008f,
+                animationSpec = tween(
+                    durationMillis = 170,
+                    easing = VueoMotion.EaseOut,
+                ),
+            )
+    ) togetherWith
+        fadeOut(
+            animationSpec = tween(
+                durationMillis = 118,
+                delayMillis = 34,
+                easing = VueoMotion.EaseInOut,
+            ),
+        )
+
+/** Root-tab changes are deliberately shorter and shallower than page pushes. */
+internal fun vueoTabCrossTransition(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
@@ -84,55 +106,53 @@ internal fun vueoDetailsBackFadeThrough(): ContentTransform =
             ),
         ) +
             scaleIn(
-                initialScale = 0.998f,
+                initialScale = 0.996f,
                 animationSpec = tween(
-                    durationMillis = 145,
+                    durationMillis = 150,
                     easing = VueoMotion.EaseOut,
                 ),
             )
     ) togetherWith
         fadeOut(
             animationSpec = tween(
-                durationMillis = 82,
-                easing = VueoMotion.EaseIn,
+                durationMillis = 100,
+                delayMillis = 30,
+                easing = VueoMotion.EaseInOut,
             ),
         )
 
 /**
- * Home is one of the heaviest poster surfaces. Give the outgoing page a
- * slightly cleaner lead before Home starts drawing, while keeping the total
- * transition short enough that navigation still feels immediate.
+ * Full-screen player handoff stays fade-only so the video surface never zooms.
+ * The outgoing screen is held briefly while the player/root starts drawing.
  */
-internal fun vueoHomeReturnFadeThrough(): ContentTransform =
-    (
-        fadeIn(
-            animationSpec = tween(
-                durationMillis = 160,
-                delayMillis = 80,
-                easing = VueoMotion.EaseOut,
-            ),
-        ) +
-            scaleIn(
-                initialScale = 0.997f,
-                animationSpec = tween(
-                    durationMillis = 175,
-                    delayMillis = 72,
-                    easing = VueoMotion.EaseOut,
-                ),
-            )
+internal fun vueoPlayerRouteTransition(): ContentTransform =
+    fadeIn(
+        animationSpec = tween(
+            durationMillis = 165,
+            easing = VueoMotion.EaseOut,
+        ),
     ) togetherWith
         fadeOut(
             animationSpec = tween(
-                durationMillis = 92,
-                easing = VueoMotion.EaseIn,
+                durationMillis = 110,
+                delayMillis = 34,
+                easing = VueoMotion.EaseInOut,
             ),
         )
 
-/** Player transitions remain fade-only so the video surface never zooms. */
+/* Compatibility names used by nested VUEO screens. They now use the new
+ * overlap model rather than the old delayed fade-through implementation. */
+internal fun vueoFadeThrough(): ContentTransform = vueoScreenForwardTransition()
+
+internal fun vueoDetailsBackFadeThrough(): ContentTransform = vueoScreenBackTransition()
+
+internal fun vueoHomeReturnFadeThrough(): ContentTransform = vueoTabCrossTransition()
+
+/** Small player overlays/feedback use fade only and keep their configurable timing. */
 internal fun vueoPlayerFadeThrough(
     enterDurationMillis: Int = 200,
     exitDurationMillis: Int = 120,
-    enterDelayMillis: Int = 20,
+    enterDelayMillis: Int = 0,
 ): ContentTransform =
     fadeIn(
         animationSpec = tween(

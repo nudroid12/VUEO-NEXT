@@ -67,7 +67,9 @@ import com.vueo.tv.ui.LocalTvModalFocusHost
 import com.vueo.tv.ui.TvModalFocusHost
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.tvPlayerFadeThrough
+import com.vueo.tv.ui.motion.tvScreenBackTransition
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
+import com.vueo.tv.ui.motion.tvTabCrossTransition
 import com.vueo.tv.update.TvUpdateManager
 import com.vueo.tv.update.TvUpdatePrompt
 import com.vueo.tv.update.TvUpdateRelease
@@ -853,10 +855,34 @@ fun VueoTvApp(onExit: () -> Unit = {}) {
                     .focusGroup(),
                 targetState = route,
                 transitionSpec = {
-                    if (initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER) {
-                        tvPlayerFadeThrough()
-                    } else {
-                        tvScreenFadeThrough()
+                    val initialIsTab = initialState in setOf(
+                        TvRoute.HOME,
+                        TvRoute.SEARCH,
+                        TvRoute.LIBRARY,
+                        TvRoute.SETTINGS,
+                    )
+                    val targetIsTab = targetState in setOf(
+                        TvRoute.HOME,
+                        TvRoute.SEARCH,
+                        TvRoute.LIBRARY,
+                        TvRoute.SETTINGS,
+                    )
+                    val isBackTransition =
+                        (initialState == TvRoute.DETAIL && targetIsTab) ||
+                            (initialState == TvRoute.DNA && targetIsTab) ||
+                            (initialState == TvRoute.PROFILE && targetState != TvRoute.PROFILE) ||
+                            (initialState == TvRoute.ENTITY_RESULTS && targetState == TvRoute.DETAIL) ||
+                            (initialState == TvRoute.SOURCE && targetState == TvRoute.DETAIL)
+
+                    when {
+                        initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER ->
+                            tvPlayerFadeThrough()
+                        initialIsTab && targetIsTab ->
+                            tvTabCrossTransition()
+                        isBackTransition ->
+                            tvScreenBackTransition()
+                        else ->
+                            tvScreenFadeThrough()
                     }
                 },
                 label = "vueoRootRoute",

@@ -1649,13 +1649,12 @@ internal fun MediaDetailsScreen(
     AnimatedContent(
         targetState = detailSurface,
         transitionSpec = {
-            if (
+            when {
                 initialState == DetailSurface.PLAYER ||
-                targetState == DetailSurface.PLAYER
-            ) {
-                vueoPlayerFadeThrough()
-            } else {
-                vueoFadeThrough()
+                    targetState == DetailSurface.PLAYER -> vueoPlayerRouteTransition()
+                initialState == DetailSurface.SOURCES &&
+                    targetState == DetailSurface.DETAILS -> vueoScreenBackTransition()
+                else -> vueoScreenForwardTransition()
             }
         },
         modifier = Modifier.fillMaxSize(),
