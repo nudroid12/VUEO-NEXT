@@ -64,6 +64,7 @@ object RuntimeDiagnostics {
     private val pendingLines = ConcurrentLinkedQueue<String>()
     private val flushScheduled = AtomicBoolean(false)
     private val latestSummaryLine = AtomicReference("")
+    private val latestScreenLabel = AtomicReference("")
     private val forceSystemSummary = AtomicBoolean(false)
     private val scanStates = ConcurrentHashMap<Long, ScanState>()
     private val providerPhases = ConcurrentHashMap<String, ProviderPhase>()
@@ -177,6 +178,7 @@ object RuntimeDiagnostics {
     }
 
     fun recordScreen(label: String) {
+        latestScreenLabel.set(label.take(120))
         PerformanceDiagnostics.observeScreen(label)
         if (!shouldCollect()) return
         if (crashDiagnosticsEnabled.get()) {
@@ -492,66 +494,95 @@ object RuntimeDiagnostics {
             runCatching { logFile().writeText("") }
         }
         runCatching { CrashReportStore.clearDiagnosticArtifacts(context.applicationContext) }
-        record("DIAGNOSTICS_CLEARED")
     }
 
     private fun buildSummary(context: Context, body: String): String {
-        val lines = body.lineSequence().filter { it.isNotBlank() }.toList()
-        val latestScreen = lines.lastOrNull { " | SCREEN " in it }
-            ?.substringAfter(" | SCREEN ")
-            ?.take(120)
-            ?: "Unavailable"
-        val latestScan = lines.lastOrNull { " | SCAN_START " in it || " | SCAN_END " in it }
-            ?.substringAfter(" | ")
-            ?: "No source scan recorded."
-        val recentCritical = lines.filter { " | QJS_PHASE " in it }.takeLast(8)
-        val recentProblems = lines.filter { line ->
-            listOf("CRASH ", "SCAN_ERROR ", "PLAYBACK_ERROR ", "UI_STALL_", "QJS_ABORT", "status=FAILED", "status=TIMEOUT")
-                .any { marker -> marker in line }
-        }.takeLast(12)
-        val recentProviders = lines.filter { " | PROVIDER_END " in it }.takeLast(10)
-        val active = providerPhases.values.sortedWith(compareBy<ProviderPhase> { it.scanId }.thenBy { it.providerName })
+        val eventLines = body.lineSequence().filter(::isTimestampedEventLine).toList()
+        val latestScreen = latestScreenLabel.get().takeIf { it.isNotBlank() }
+            ?: eventLines.lastOrNull { " | SCREEN " in it }
+                ?.substringAfter(" | SCREEN ")
+                ?.take(120)
+                .orEmpty()
         val tombstone = CrashReportStore.nativeTombstoneFile(context)
         val crash = CrashReportStore.exportCrashReport(context)
+        val crashSignals = maxOf(
+            eventLines.count { " | CRASH " in it },
+            if (crash != null) 1 else 0,
+        )
+        val nativeCrashes = if (tombstone != null) 1 else 0
+        val stalls = eventLines.count { line ->
+            " | UI_STALL_RISK " in line ||
+                (" | UI_STALL_LIVE " in line && (" sample=1 " in line || line.endsWith(" sample=1")))
+        }
+        val quickJsFailures = eventLines.count { " | QJS_PHASE " in it && "phase=QJS_ABORT" in it }
+        val providerFailures = eventLines.count { line ->
+            " | PROVIDER_END " in line &&
+                (line.contains("status=FAILED", ignoreCase = true) || line.contains("status=TIMEOUT", ignoreCase = true))
+        }
+        val scanErrors = eventLines.count { " | SCAN_ERROR " in it }
+        val playbackErrors = eventLines.count { " | PLAYBACK_ERROR " in it }
+        val issueCount = crashSignals + nativeCrashes + stalls + quickJsFailures + providerFailures + scanErrors + playbackErrors
+        val active = providerPhases.values
+            .sortedWith(compareBy<ProviderPhase> { it.scanId }.thenBy { it.providerName })
+            .take(5)
+        val recentProblems = eventLines.filter { line ->
+            " | CRASH " in line ||
+                " | SCAN_ERROR " in line ||
+                " | PLAYBACK_ERROR " in line ||
+                " | UI_STALL_RISK " in line ||
+                " | UI_STALL_LIVE " in line ||
+                (" | QJS_PHASE " in line && "phase=QJS_ABORT" in line) ||
+                (" | PROVIDER_END " in line &&
+                    (line.contains("status=FAILED", ignoreCase = true) || line.contains("status=TIMEOUT", ignoreCase = true)))
+        }.takeLast(6)
 
         return buildString {
-            appendLine("VUEO Diagnostics Summary")
-            append(buildMetadata(context))
-            appendLine("Current screen: $latestScreen")
-            appendLine("Runtime: activeScans=${activeScans.get()} activeProviders=${activeProviders.get()} ${detailedMemorySnapshot(force = true).label()}")
-            appendLine("Logging: normal events batched (${BATCH_DELAY_MS}ms); critical QuickJS boundary breadcrumbs sync")
-            appendLine("Last scan: $latestScan")
-            appendLine("Native tombstone: ${if (tombstone != null) "available (${tombstone.length()} bytes)" else "not available"}")
-            crash?.let {
-                appendLine("Stored crash: ${it.summary} @ ${formatTimestamp(it.timestampMs)}")
+            appendLine("CRASH DIAGNOSTICS SUMMARY")
+            appendLine()
+            appendLine("Diagnostics: ${if (crashDiagnosticsEnabled.get()) "ON" else "OFF"}")
+            if (latestScreen.isNotBlank()) appendLine("Current screen: $latestScreen")
+            appendLine("Crash signals: $crashSignals")
+            appendLine("Native crashes: $nativeCrashes")
+            appendLine("Stalls: $stalls")
+            appendLine("QuickJS failures: $quickJsFailures")
+            appendLine("Provider failures: $providerFailures")
+            if (scanErrors > 0) appendLine("Source scan errors: $scanErrors")
+            if (playbackErrors > 0) appendLine("Playback errors: $playbackErrors")
+
+            if (active.isNotEmpty()) {
+                appendLine()
+                appendLine("ACTIVE WORK")
+                active.forEach { phase ->
+                    append("• ${phase.providerName} • ${phase.phase}")
+                    phase.executionId?.let { append(" • exec=$it") }
+                    appendLine()
+                }
             }
-            appendLine()
-            appendLine("Active provider phases")
-            if (active.isEmpty()) appendLine("- none")
-            else active.forEach { phase ->
-                appendLine("- scan=${phase.scanId} provider=${phase.providerName} phase=${phase.phase}" +
-                    (phase.executionId?.let { " exec=$it" } ?: ""))
+
+            if (issueCount == 0 && crash == null) {
+                appendLine()
+                appendLine("No crash or stall signals detected.")
+            } else {
+                appendLine()
+                appendLine("SIGNALS TO INSPECT")
+                crash?.let {
+                    appendLine("• Stored crash • ${it.summary.take(180)} • ${formatTimestamp(it.timestampMs)}")
+                }
+                if (tombstone != null) {
+                    appendLine("• Native tombstone available (${tombstone.length()} bytes)")
+                }
+                recentProblems.forEach { appendLine("• ${compactProblem(it)}") }
             }
-            appendLine()
-            appendLine("Recent QuickJS / native-boundary phases")
-            if (recentCritical.isEmpty()) appendLine("- none") else recentCritical.forEach { appendLine(it) }
-            appendLine()
-            appendLine("Recent problems / stalls")
-            if (recentProblems.isEmpty()) appendLine("- none") else recentProblems.forEach { appendLine(it) }
-            appendLine()
-            appendLine("Recent provider results")
-            if (recentProviders.isEmpty()) appendLine("- none") else recentProviders.forEach { appendLine(it) }
         }
     }
 
     private fun buildRaw(context: Context, body: String): String = buildString {
-        appendLine("VUEO Performance / Crash Diagnostic Log — Raw")
-        append(buildMetadata(context))
-        appendLine("Current: ${detailedMemorySnapshot(force = false).label()}")
+        val eventCount = body.lineSequence().count(::isTimestampedEventLine)
+        appendLine("RAW CRASH LOG")
+        appendLine("Events: $eventCount")
         appendLine()
         if (body.isBlank()) {
-            appendLine("No runtime diagnostics captured yet.")
-            appendLine("Open a title and run source discovery, then reopen this log.")
+            appendLine("No crash events recorded yet.")
         } else {
             append(body.takeLast(400_000))
         }
@@ -561,12 +592,40 @@ object RuntimeDiagnostics {
         val packageInfo = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0)
         }.getOrNull()
+        val tombstone = CrashReportStore.nativeTombstoneFile(context)
+        val latestScreen = latestScreenLabel.get().takeIf { it.isNotBlank() } ?: "unavailable"
         return buildString {
             appendLine("Package: ${context.packageName}")
             appendLine("Version: ${packageInfo?.versionName ?: "unknown"}")
             appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Diagnostics: ${if (crashDiagnosticsEnabled.get()) "ON" else "OFF"}")
+            appendLine("Current screen: $latestScreen")
+            appendLine("Runtime: activeScans=${activeScans.get()} activeProviders=${activeProviders.get()}")
+            appendLine("Memory: ${detailedMemorySnapshot(force = true).label()}")
+            appendLine("Logging: normal events batched (${BATCH_DELAY_MS}ms); critical QuickJS boundary breadcrumbs sync")
+            appendLine("Native tombstone: ${if (tombstone != null) "available (${tombstone.length()} bytes)" else "not available"}")
         }
+    }
+
+    private fun isTimestampedEventLine(line: String): Boolean =
+        line.length >= 26 && line[4] == '-' && line[7] == '-' && " | " in line
+
+    private fun compactProblem(line: String): String {
+        val time = line.substringBefore(" | ", "").substringAfter(' ', "").take(12)
+        val payload = line.substringAfter(" | ", line)
+        val summary = when {
+            payload.startsWith("CRASH ") -> "Crash • ${payload.removePrefix("CRASH ")}"
+            payload.startsWith("UI_STALL_LIVE ") -> "UI stall • ${payload.removePrefix("UI_STALL_LIVE ")}"
+            payload.startsWith("UI_STALL_RISK ") -> "Main-thread stall risk • ${payload.removePrefix("UI_STALL_RISK ")}"
+            payload.startsWith("QJS_PHASE ") && "phase=QJS_ABORT" in payload ->
+                "QuickJS abort • ${payload.removePrefix("QJS_PHASE ")}"
+            payload.startsWith("PROVIDER_END ") -> "Provider failure • ${payload.removePrefix("PROVIDER_END ")}"
+            payload.startsWith("SCAN_ERROR ") -> "Source scan failed • ${payload.removePrefix("SCAN_ERROR ")}"
+            payload.startsWith("PLAYBACK_ERROR ") -> "Playback error • ${payload.removePrefix("PLAYBACK_ERROR ")}"
+            else -> payload
+        }.replace('\n', ' ').take(220)
+        return if (time.isBlank()) summary else "$time  $summary"
     }
 
     private fun writeDiagnosticZip(

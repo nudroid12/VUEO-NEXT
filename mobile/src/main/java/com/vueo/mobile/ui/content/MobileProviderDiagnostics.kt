@@ -583,9 +583,9 @@ internal fun RuntimeDiagnosticsDialog(
                         )
                         Text(
                             if (diagnosticsEnabled) {
-                                "ON • crash/native, QuickJS and stall evidence active"
+                                "ON • recording crash/stall evidence"
                             } else {
-                                "OFF • diagnostics inactive • recorded log retained"
+                                "OFF • diagnostics inactive"
                             },
                             color = VueoPalette.Muted,
                             fontSize = 10.sp,
