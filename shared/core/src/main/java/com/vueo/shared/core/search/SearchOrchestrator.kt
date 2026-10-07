@@ -25,9 +25,54 @@ data class MediaEntityTarget(
     val tmdbId: Long? = null,
 )
 
+enum class EntityResultOrder {
+    NEWEST,
+    POPULAR,
+}
+
 object SearchOrchestrator {
     data class ActorAvailability(val addonSearch: Boolean, val tmdbSearch: Boolean) {
         val available: Boolean get() = addonSearch || tmdbSearch
+    }
+
+    /**
+     * Local-only presentation ordering for entity filmographies. Switching between
+     * Newest and Popular never triggers another provider/TMDB request.
+     */
+    fun orderEntityResults(
+        items: List<MediaItem>,
+        order: EntityResultOrder,
+    ): List<MediaItem> {
+        if (items.size < 2) return items
+
+        data class IndexedItem(
+            val index: Int,
+            val item: MediaItem,
+        )
+
+        fun releaseYear(item: MediaItem): Int =
+            item.releaseInfo
+                ?.take(4)
+                ?.toIntOrNull()
+                ?: Int.MIN_VALUE
+
+        val indexed = items.mapIndexed { index, item -> IndexedItem(index, item) }
+
+        val comparator =
+            when (order) {
+                EntityResultOrder.NEWEST ->
+                    compareByDescending<IndexedItem> { releaseYear(it.item) }
+                        .thenByDescending { it.item.popularity ?: Double.NEGATIVE_INFINITY }
+                        .thenBy { it.index }
+
+                EntityResultOrder.POPULAR ->
+                    compareByDescending<IndexedItem> { it.item.popularity ?: Double.NEGATIVE_INFINITY }
+                        .thenBy { it.index }
+            }
+
+        return indexed
+            .sortedWith(comparator)
+            .map { it.item }
     }
 
     suspend fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
@@ -151,6 +196,9 @@ object SearchOrchestrator {
                 }
 
                 engine.mergeActorResults(remote + local, maxResults)
+                    .also { merged ->
+                        if (merged.isNotEmpty()) onPartial?.invoke(merged)
+                    }
             }
         }
     }

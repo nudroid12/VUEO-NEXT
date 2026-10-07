@@ -434,6 +434,7 @@ object TmdbEnhancementClient {
                                         "TMDB"
                                     ),
                                 tmdbRating = rating,
+                                popularity = popularity.takeIf { it > 0.0 },
                             )
                     )
                 }
@@ -540,7 +541,7 @@ object TmdbEnhancementClient {
             .asSequence()
             .distinctBy { "${it.type}:${it.id}" }
             .sortedWith(
-                compareByDescending<MediaItem> { it.tmdbRating ?: 0.0 }
+                compareByDescending<MediaItem> { it.popularity ?: Double.NEGATIVE_INFINITY }
                     .thenByDescending { it.releaseInfo?.toIntOrNull() ?: 0 }
             )
             .take(limit)
@@ -1648,6 +1649,11 @@ private fun JSONArray?
                     tmdbRating =
                         json.optDouble(
                             "vote_average",
+                            0.0,
+                        ).takeIf { it > 0.0 },
+                    popularity =
+                        json.optDouble(
+                            "popularity",
                             0.0,
                         ).takeIf { it > 0.0 },
                 )

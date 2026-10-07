@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.search.EntityResultOrder
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.search.SearchOrchestrator
@@ -65,7 +67,15 @@ internal fun TvEntityResultsScreen(
 
     var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember(target) { mutableStateOf(true) }
+    var resultOrder by remember(target) { mutableStateOf(EntityResultOrder.NEWEST) }
+    val orderedResults = remember(results, resultOrder) {
+        SearchOrchestrator.orderEntityResults(results, resultOrder)
+    }
     val firstRequester = remember(target) { FocusRequester() }
+    val newestRequester = remember(target) { FocusRequester() }
+    val popularRequester = remember(target) { FocusRequester() }
+    val selectedOrderRequester =
+        if (resultOrder == EntityResultOrder.NEWEST) newestRequester else popularRequester
 
     LaunchedEffect(target) {
         loading = true
@@ -81,8 +91,8 @@ internal fun TvEntityResultsScreen(
         loading = false
     }
 
-    LaunchedEffect(results.firstOrNull()?.id, loading) {
-        if (results.isNotEmpty()) {
+    LaunchedEffect(orderedResults.firstOrNull()?.id, loading) {
+        if (orderedResults.isNotEmpty()) {
             delay(100)
             runCatching { firstRequester.requestFocus() }
         }
@@ -118,6 +128,30 @@ internal fun TvEntityResultsScreen(
                     color = TvDesign.Muted,
                     fontSize = 12.sp,
                 )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TvEntitySortTab(
+                        label = "Newest",
+                        selected = resultOrder == EntityResultOrder.NEWEST,
+                        requester = newestRequester,
+                        leftRequester = FocusRequester.Cancel,
+                        rightRequester = popularRequester,
+                        downRequester = firstRequester,
+                        onClick = { resultOrder = EntityResultOrder.NEWEST },
+                    )
+                    TvEntitySortTab(
+                        label = "Popular",
+                        selected = resultOrder == EntityResultOrder.POPULAR,
+                        requester = popularRequester,
+                        leftRequester = newestRequester,
+                        rightRequester = FocusRequester.Cancel,
+                        downRequester = firstRequester,
+                        onClick = { resultOrder = EntityResultOrder.POPULAR },
+                    )
+                }
             }
             Text(
                 text = if (loading) "Loading…" else "${results.size} titles",
@@ -127,9 +161,9 @@ internal fun TvEntityResultsScreen(
         }
 
         when {
-            results.isNotEmpty() -> {
-                val keys = remember(results) {
-                    results.map { "${it.type}:${it.id}" }
+            orderedResults.isNotEmpty() -> {
+                val keys = remember(orderedResults) {
+                    orderedResults.map { "${it.type}:${it.id}" }
                 }
                 val requesters = remember(keys, firstRequester) {
                     keys.mapIndexed { index, key ->
@@ -149,12 +183,17 @@ internal fun TvEntityResultsScreen(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     itemsIndexed(
-                        items = results,
+                        items = orderedResults,
                         key = { _, item -> "${target.kind}:${item.type}:${item.id}" },
-                    ) { _, item ->
+                    ) { index, item ->
                         TvEntityPosterTile(
                             item = item,
                             requester = requesters.getValue("${item.type}:${item.id}"),
+                            upRequester = if (index < ENTITY_COLUMNS) {
+                                selectedOrderRequester
+                            } else {
+                                null
+                            },
                             onClick = { onOpenMedia(item) },
                         )
                     }
@@ -191,9 +230,63 @@ internal fun TvEntityResultsScreen(
 }
 
 @Composable
+private fun TvEntitySortTab(
+    label: String,
+    selected: Boolean,
+    requester: FocusRequester,
+    leftRequester: FocusRequester,
+    rightRequester: FocusRequester,
+    downRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    var focused by remember(label) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(9.dp)
+
+    Box(
+        modifier = Modifier
+            .focusRequester(requester)
+            .focusProperties {
+                left = leftRequester
+                right = rightRequester
+                down = downRequester
+            }
+            .onFocusChanged { focused = it.isFocused }
+            .background(
+                when {
+                    focused -> TvDesign.SurfaceRaised
+                    selected -> Color.White.copy(alpha = .12f)
+                    else -> Color.White.copy(alpha = .04f)
+                },
+                shape,
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = when {
+                    focused -> TvDesign.Focus
+                    selected -> Color.White.copy(alpha = .26f)
+                    else -> Color.White.copy(alpha = .08f)
+                },
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .focusable()
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (selected) "✓ $label" else label,
+            color = TvDesign.White,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
 private fun TvEntityPosterTile(
     item: MediaItem,
     requester: FocusRequester,
+    upRequester: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
@@ -214,6 +307,11 @@ private fun TvEntityPosterTile(
                 shadowElevation = if (focused) 8.dp.toPx() else 0f
             }
             .focusRequester(requester)
+            .focusProperties {
+                if (upRequester != null) {
+                    up = upRequester
+                }
+            }
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .focusable(),

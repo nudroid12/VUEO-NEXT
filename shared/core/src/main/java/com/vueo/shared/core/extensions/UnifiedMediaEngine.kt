@@ -993,6 +993,11 @@ class UnifiedMediaEngine {
                     catalogs,
                 genres =
                     mergedGenres,
+                popularity =
+                    duplicates
+                        .mapNotNull { it.popularity }
+                        .maxOrNull()
+                        ?: best.popularity,
             )
         }
     }

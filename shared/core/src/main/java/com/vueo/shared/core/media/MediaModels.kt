@@ -49,6 +49,8 @@ data class MediaItem(
     val cast: List<MediaPerson> = emptyList(),
     val productionCompanies: List<MediaCompany> = emptyList(),
     val networks: List<MediaCompany> = emptyList(),
+    /** Transient discovery ranking metadata. Not required by persisted library entries. */
+    val popularity: Double? = null,
 ) {
     val displayType: String
         get() =

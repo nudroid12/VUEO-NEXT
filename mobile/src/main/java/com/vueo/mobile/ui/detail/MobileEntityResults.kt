@@ -199,6 +199,7 @@ import com.vueo.shared.core.search.SearchResultOrderPolicy
 import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.search.SearchOrchestrator
+import com.vueo.shared.core.search.EntityResultOrder
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
 import com.vueo.shared.core.source.SourceDiscoveryEngine
@@ -267,6 +268,10 @@ internal fun MediaEntityResultsScreen(
 ) {
     var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
     var loading by remember(target) { mutableStateOf(true) }
+    var resultOrder by remember(target) { mutableStateOf(EntityResultOrder.NEWEST) }
+    val orderedResults = remember(results, resultOrder) {
+        SearchOrchestrator.orderEntityResults(results, resultOrder)
+    }
 
     BackHandler(onBack = onBack)
 
@@ -324,6 +329,26 @@ internal fun MediaEntityResultsScreen(
             }
         }
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            EntityResultSortButton(
+                label = "Newest",
+                selected = resultOrder == EntityResultOrder.NEWEST,
+                onClick = { resultOrder = EntityResultOrder.NEWEST },
+                modifier = Modifier.weight(1f),
+            )
+            EntityResultSortButton(
+                label = "Popular",
+                selected = resultOrder == EntityResultOrder.POPULAR,
+                onClick = { resultOrder = EntityResultOrder.POPULAR },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
         if (loading) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
@@ -333,7 +358,7 @@ internal fun MediaEntityResultsScreen(
         }
 
         when {
-            results.isNotEmpty() -> {
+            orderedResults.isNotEmpty() -> {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 112.dp),
                     modifier = Modifier.fillMaxSize(),
@@ -347,7 +372,7 @@ internal fun MediaEntityResultsScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     gridItems(
-                        items = results,
+                        items = orderedResults,
                         key = { "entity:${target.kind}:${it.type}:${it.id}" },
                     ) { item ->
                         CatalogGridPoster(
@@ -376,6 +401,35 @@ internal fun MediaEntityResultsScreen(
                 }
             }
         }
+    }
+}
+@Composable
+private fun EntityResultSortButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(10.dp)
+    TextButton(
+        onClick = onClick,
+        modifier = modifier
+            .background(
+                if (selected) Color.White.copy(alpha = .14f) else VueoPalette.SurfaceStrong,
+                shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) Color.White.copy(alpha = .32f) else Color.White.copy(alpha = .08f),
+                shape = shape,
+            ),
+    ) {
+        Text(
+            text = if (selected) "✓ $label" else label,
+            color = if (selected) Color.White else VueoPalette.Muted,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        )
     }
 }
 
