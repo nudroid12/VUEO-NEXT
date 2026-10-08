@@ -2,6 +2,7 @@ package com.vueo.tv.home
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +27,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -44,34 +51,74 @@ import com.vueo.tv.ui.motion.TvMotion
  * Modern Home composition. This avoids dimming the entire Home surface and
  * gives the rows a clean black field beneath the artwork.
  */
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
 internal fun TvModernHomeHero(
     scene: TvHomeHeroScene?,
     heroHeight: Dp,
     rowsViewportHeight: Dp,
+    stableHeroHeight: Dp,
+    stableRowsViewportHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
+    val density = LocalDensity.current
+    val visibleHeroHeightPx = with(density) { heroHeight.toPx() }
+    val copyTranslationPx = with(density) { (stableRowsViewportHeight - rowsViewportHeight).toPx() }
+    // Both planes use one transition clock; same-title enrichment updates do not
+    // restart the fade. Geometry changes never change the image decode target.
+    var readyScene by remember { mutableStateOf<TvHomeHeroScene?>(null) }
+    LaunchedEffect(scene) {
+        if (readyScene == null || readyScene?.entry?.key == scene?.entry?.key) readyScene = scene
+    }
+    val sceneTransition = updateTransition(readyScene ?: scene, label = "homeHeroScene")
+    val mediaClip = remember(visibleHeroHeightPx) {
+        object : Shape {
+            override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: androidx.compose.ui.unit.Density): Outline {
+                return Outline.Rectangle(
+                    androidx.compose.ui.geometry.Rect(0f, 0f, size.width, visibleHeroHeightPx.coerceIn(0f, size.height)),
+                )
+            }
+        }
+    }
     Box(modifier = modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .offset(x = 56.dp)
                 .fillMaxWidth(MODERN_HOME_HERO_MEDIA_WIDTH_FRACTION)
-                .height(heroHeight),
+                .height(stableHeroHeight),
         ) {
-            Crossfade(
-                targetState = scene,
+            // Warm the incoming image at exactly the displayed decode size. Keep
+            // the outgoing scene visible until this cancellable load completes.
+            val incoming = scene
+            if (incoming != null && readyScene != null && incoming.entry.key != readyScene?.entry?.key) {
+                key(incoming.entry.key) {
+                    TvNetworkImage(
+                        url = incoming.entry.media.background ?: incoming.entry.media.poster,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0f },
+                        highPriority = true,
+                        fadeEnabled = false,
+                        onLoadResult = { readyScene = incoming },
+                    )
+                }
+            }
+            sceneTransition.Crossfade(
                 animationSpec = tween(
                     durationMillis = 400,
                     easing = TvMotion.EaseOut,
                 ),
-                label = "modernHomeHeroMedia",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    clip = true
+                    shape = mediaClip
+                },
+                contentKey = { it?.entry?.key },
             ) { displayedEntry ->
                 val media = displayedEntry?.entry?.media
                 TvNetworkImage(
                     highPriority = true,
+                    fadeEnabled = false,
                     url = media?.background ?: media?.poster,
                     contentDescription = media?.name,
                     modifier = Modifier.fillMaxSize(),
@@ -80,24 +127,24 @@ internal fun TvModernHomeHero(
                 )
             }
 
-            HeroMediaGradient(modifier = Modifier.fillMaxSize())
+            HeroMediaGradient(modifier = Modifier.fillMaxWidth().height(heroHeight))
         }
 
-        Crossfade(
-            targetState = scene,
+        sceneTransition.Crossfade(
             animationSpec = tween(
                 durationMillis = 400,
                 easing = TvMotion.EaseOut,
             ),
-            label = "modernHomeHeroCopy",
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
                     start = contentStartPadding,
                     end = 48.dp,
-                    bottom = rowsViewportHeight + 16.dp,
+                    bottom = stableRowsViewportHeight + 16.dp,
                 )
-                .fillMaxWidth(MODERN_HOME_HERO_TEXT_WIDTH_FRACTION),
+                .fillMaxWidth(MODERN_HOME_HERO_TEXT_WIDTH_FRACTION)
+                .graphicsLayer { translationY = copyTranslationPx },
+            contentKey = { it?.entry?.key },
         ) { focusedEntry ->
             if (focusedEntry != null) {
                 HeroCopy(scene = focusedEntry)

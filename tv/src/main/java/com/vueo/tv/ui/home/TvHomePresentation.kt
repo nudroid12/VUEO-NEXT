@@ -48,10 +48,11 @@ internal fun TvHomePresentation(
     onLongClick: (TvHomeEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val settledHeroDelayMs = 180L
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroScene by remember(artworkApiKey) { mutableStateOf<TvHomeHeroScene?>(null) }
     var lastNavigationAt by remember { mutableLongStateOf(0L) }
-    var heroSettleDelay by remember { mutableLongStateOf(MODERN_HOME_HERO_FOCUS_SETTLE_MS) }
+    var heroSettleDelay by remember { mutableLongStateOf(settledHeroDelayMs) }
     val context = LocalContext.current.applicationContext
     val density = LocalDensity.current
     val logoSize = with(density) { IntSize(220.dp.roundToPx(), 100.dp.roundToPx()) }
@@ -144,6 +145,8 @@ internal fun TvHomePresentation(
             scene = heroScene,
             heroHeight = heroHeight,
             rowsViewportHeight = rowsViewportHeight,
+            stableHeroHeight = (screenHeight * 0.68f + 38.dp).coerceAtMost(screenHeight),
+            stableRowsViewportHeight = screenHeight * MODERN_HOME_ROWS_VIEWPORT_FRACTION,
         )
 
         when {
@@ -164,7 +167,7 @@ internal fun TvHomePresentation(
                         if (focusedEntry?.key != entry.key) {
                             val now = SystemClock.uptimeMillis()
                             heroSettleDelay = if (lastNavigationAt != 0L && now - lastNavigationAt < 130L) 400L
-                                else MODERN_HOME_HERO_FOCUS_SETTLE_MS
+                                else settledHeroDelayMs
                             lastNavigationAt = now
                         }
                         focusedEntry = entry
