@@ -529,17 +529,10 @@ internal fun RuntimeDiagnosticsDialog(
         }
     }
 
-    val visibleLog = remember(diagnosticText, searchQuery) {
-        val query = searchQuery.trim()
-        if (query.isBlank()) {
-            diagnosticText
-        } else {
-            diagnosticText
-                .lineSequence()
-                .filter { line -> line.contains(query, ignoreCase = true) }
-                .joinToString("\n")
-                .ifBlank { "No diagnostic lines match \"$query\"." }
-        }
+    val visibleLog = remember(diagnosticText, searchQuery, showRaw) {
+        com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(
+            diagnosticText, showRaw, searchQuery, maxChars = 24_000,
+        )
     }
 
     BackHandler(onBack = onDismiss)
@@ -719,14 +712,11 @@ internal fun RuntimeDiagnosticsDialog(
                             .padding(horizontal = 10.dp, vertical = 9.dp),
                     ) {
                         Text(
-                            text = if (visibleLog.length > 24_000) {
-                                "[Recent preview. Copy and Save use the full selected log.]\n\n" +
-                                    visibleLog.takeLast(24_000)
-                            } else visibleLog,
+                            text = remember(visibleLog) { styledProviderDiagnosticText(visibleLog) },
                             color = Color.White.copy(alpha = .88f),
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontSize = if (!showRaw) 12.sp else 10.sp,
+                            lineHeight = if (!showRaw) 17.sp else 14.sp,
+                            fontFamily = if (!showRaw) FontFamily.SansSerif else FontFamily.Monospace,
                         )
                     }
                 }
@@ -860,10 +850,15 @@ internal fun PerformanceDiagnosticsDialog(
     }
 
     val visibleLog = remember(diagnosticText, searchQuery, providerMode, showRaw) {
+        if (!providerMode) {
+            return@remember com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(
+                diagnosticText, showRaw, searchQuery,
+            )
+        }
         val query = searchQuery.trim()
         if (query.isBlank()) {
             diagnosticText
-        } else if (providerMode && !showRaw) {
+        } else if (!showRaw) {
             diagnosticText.split("\n\n")
                 .filter { block -> block.contains(query, ignoreCase = true) }
                 .joinToString("\n\n")
@@ -1085,12 +1080,12 @@ internal fun PerformanceDiagnosticsDialog(
                     ) {
                         Text(
                             text = remember(visibleLog, providerMode) {
-                            if (providerMode) styledProviderDiagnosticText(visibleLog) else androidx.compose.ui.text.AnnotatedString(visibleLog)
-                        },
+                                styledProviderDiagnosticText(visibleLog)
+                            },
                             color = Color.White.copy(alpha = .88f),
-                            fontSize = if (providerMode && !showRaw) 12.sp else 10.sp,
-                            lineHeight = if (providerMode && !showRaw) 17.sp else 14.sp,
-                            fontFamily = if (providerMode && !showRaw) FontFamily.SansSerif else FontFamily.Monospace,
+                            fontSize = if (!showRaw) 12.sp else 10.sp,
+                            lineHeight = if (!showRaw) 17.sp else 14.sp,
+                            fontFamily = if (!showRaw) FontFamily.SansSerif else FontFamily.Monospace,
                         )
                     }
                 }
@@ -2002,6 +1997,16 @@ private fun styledProviderDiagnosticText(text: String): androidx.compose.ui.text
     androidx.compose.ui.text.buildAnnotatedString {
         text.lineSequence().forEach { line ->
             val color = when {
+                " | CRASH " in line || " | PLAYBACK_ERROR " in line ||
+                    " | SCAN_ERROR " in line || "outcome=failed" in line ||
+                    "• Stored crash" in line || "• Native tombstone" in line -> Color(0xFFE5A1A1)
+                "FRAME_JANK " in line || "UI_STALL " in line || "UI_STALL_LIVE " in line ||
+                    "UI_STALL_RISK " in line || "• High frame gap:" in line ||
+                    "• UI stalls:" in line -> Color(0xFFE0C28C)
+                line == "FRAME / UI" || line == "RUNTIME" || line == "ACTIVE WORK" ||
+                    line == "SIGNALS TO INSPECT" || line == "RECENT SIGNALS" ||
+                    line.startsWith("PERFORMANCE SUMMARY") || line == "CRASH DIAGNOSTICS SUMMARY" ||
+                    line == "RAW CRASH LOG" -> Color(0xFFB8CBE0)
                 line.startsWith("INCOMPLETE RECORD:") || "Status: ERROR" in line ||
                     "status=FAILED " in line || "QJS_ABORT" in line || "ERROR: " in line -> Color(0xFFE5A1A1)
                 "Status: TIMEOUT" in line || "status=TIMEOUT " in line || "QJS_TIMEOUT" in line -> Color(0xFFE0C28C)
