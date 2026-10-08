@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -262,6 +263,7 @@ internal fun VueoPlayerPillAction(
     onClick: () -> Unit,
     downRequester: FocusRequester = FocusRequester.Cancel,
     onFocusChanged: (Boolean) -> Unit = {},
+    iconOnly: Boolean = false,
 ) {
     val acceptsInput = LocalPlayerChromeInteractive.current
     var hasFocus by remember(requester) { mutableStateOf(false) }
@@ -303,16 +305,17 @@ internal fun VueoPlayerPillAction(
             }
             .focusable(acceptsInput)
             .background(if (focused) Color.White else Color.Transparent, shape)
-            .padding(horizontal = 9.dp, vertical = 5.dp),
+            .then(if (iconOnly) Modifier.size(40.dp) else Modifier.padding(horizontal = 9.dp, vertical = 5.dp)),
+        horizontalArrangement = if (iconOnly) Arrangement.Center else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = if (iconOnly) label else null,
             tint = if (focused) Color.Black else Color.White,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(if (iconOnly) 24.dp else 16.dp),
         )
-        Text(
+        if (!iconOnly) Text(
             text = label,
             color = if (focused) Color.Black else Color.White,
             fontSize = 12.sp,

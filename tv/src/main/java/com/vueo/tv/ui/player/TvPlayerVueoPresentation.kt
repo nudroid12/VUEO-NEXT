@@ -622,7 +622,7 @@ private fun VueoPlayerControls(
                         .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.width(110.dp).alpha(if (visible) 1f else 0f)) {
+                        Box(Modifier.width(40.dp).alpha(if (visible) 1f else 0f)) {
                             VueoPlayerPillAction(
                                 icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 label = if (playbackRequested) "Pause" else "Play",
@@ -634,9 +634,10 @@ private fun VueoPlayerControls(
                                 onInteraction = onInteraction,
                                 onClick = onPlayPause,
                                 onFocusChanged = onPlayPauseFocusChanged,
+                                iconOnly = true,
                             )
                         }
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Box(Modifier.weight(1f)) {
                             VueoPlayerProgressRail(
                                 positionMs = positionMs,
@@ -656,7 +657,7 @@ private fun VueoPlayerControls(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 120.dp, top = 2.dp)
+                            .padding(start = 48.dp, top = 2.dp)
                             .alpha(if (visible) 1f else 0f),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,

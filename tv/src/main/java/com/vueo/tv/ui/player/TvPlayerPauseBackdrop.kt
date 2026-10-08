@@ -1,6 +1,9 @@
 package com.vueo.tv.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.tv.ui.TvNetworkImage
 
 /** Presentation only: the player root retains focus and owns dismissal. */
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
 internal fun VueoPlayerPauseBackdrop(
     visible: Boolean,
@@ -54,11 +59,21 @@ internal fun VueoPlayerPauseBackdrop(
             }
         }
     }
+    val pauseEasing = remember { CubicBezierEasing(0.22f, 0f, 0.18f, 1f) }
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(300)),
-        exit = fadeOut(tween(180)),
+        enter = fadeIn(tween(280, easing = pauseEasing)),
+        exit = fadeOut(tween(200, easing = pauseEasing)),
     ) {
+        // This child animation shares the visibility lifetime, so dismissal
+        // retains the text until its exit fade completes.
+        val textAlpha by transition.animateFloat(
+            transitionSpec = {
+                if (targetState == EnterExitState.Visible) tween(220, delayMillis = 60, easing = pauseEasing)
+                else tween(160, easing = pauseEasing)
+            },
+            label = "pauseBackdropText",
+        ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
         Box(Modifier.fillMaxSize()) {
             // A transparent fallback leaves the paused PlayerView frame visible
             // while the backdrop is unavailable, loading or has failed.
@@ -78,7 +93,8 @@ internal fun VueoPlayerPauseBackdrop(
                 ((durationMs - positionMs.coerceIn(0L, durationMs)).toDouble() / validSpeed).toLong()
             } else null
             Column(
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 56.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 56.dp)
+                    .graphicsLayer { alpha = textAlpha },
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -98,7 +114,7 @@ internal fun VueoPlayerPauseBackdrop(
             }
             Column(
                 modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 56.dp, vertical = 56.dp)
-                    .widthIn(max = 680.dp),
+                    .widthIn(max = 680.dp).graphicsLayer { alpha = textAlpha },
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text("Paused", color = Color.White.copy(alpha = .70f), fontSize = 14.sp)
@@ -152,7 +168,8 @@ internal fun VueoPlayerPauseBackdrop(
                 text = "Press OK to resume",
                 color = Color.White.copy(alpha = .65f),
                 fontSize = 14.sp,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = 56.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = 56.dp)
+                    .graphicsLayer { alpha = textAlpha },
             )
         }
     }
