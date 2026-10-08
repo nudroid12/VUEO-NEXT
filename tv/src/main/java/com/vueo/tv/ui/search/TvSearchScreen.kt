@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,12 +83,14 @@ import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 private const val SEARCH_COLUMNS = 6
 private const val FLOATING_SEARCH_COLUMNS = 7
+private val SEARCH_FOCUS_PAINT_INSET = 8.dp
 
 internal enum class TvSearchTypeFilter(val label: String) {
     ALL("All"),
@@ -394,8 +397,10 @@ internal fun TvSearchScreen(
     val resultKeys = remember(filteredItems) { filteredItems.map(::mediaKey) }
     val resultRequesterCache = remember(resultKeys, session.mode) { mutableMapOf<String, FocusRequester>() }
     val resultRequesters = resultKeys.associateWith { key -> resultRequesterCache.getOrPut(key) { FocusRequester() } }
+    val resultFocusJob = remember { arrayOfNulls<Job>(1) }
 
     fun resetGridForFilterChange() {
+        resultFocusJob[0]?.cancel()
         session.focusedMediaKey = null
         session.restoreResultsFocus = false
         session.firstVisibleItemIndex = 0
@@ -439,10 +444,22 @@ internal fun TvSearchScreen(
 
     fun focusFirstResult(): Boolean {
         val firstKey = resultKeys.firstOrNull() ?: return false
-        return runCatching {
-            resultRequesters.getValue(firstKey).requestFocus()
-            true
-        }.getOrDefault(false)
+        resultFocusJob[0]?.cancel()
+        resultFocusJob[0] = scope.launch {
+            // Filter changes rebuild the result FocusRequesters. The old code
+            // consumed Down even when the new first poster was not composed yet,
+            // leaving focus apparently stuck on the filter row. Ensure item 0 is
+            // placed first, then retry the exact poster for a few frames.
+            runCatching { gridState.scrollToItem(0) }
+            repeat(4) {
+                withFrameNanos { }
+                val focused = resultRequesters[firstKey]?.let { requester ->
+                    runCatching { requester.requestFocus() }.getOrDefault(false)
+                } == true
+                if (focused) return@launch
+            }
+        }
+        return true
     }
 
     fun dismissChoiceDialog() {
@@ -713,8 +730,8 @@ internal fun TvSearchScreen(
                         contentPadding = PaddingValues(
                             start = contentStartPadding,
                             end = gridEndPadding,
-                            top = 2.dp,
-                            bottom = 36.dp,
+                            top = SEARCH_FOCUS_PAINT_INSET,
+                            bottom = 36.dp + SEARCH_FOCUS_PAINT_INSET,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -1062,10 +1079,8 @@ private fun TvSearchFilterButton(
                         onUp()
                         true
                     }
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_DOWN ->
                         onDown()
-                        true
-                    }
                     event.isTvActivationKey() -> {
                         if (event.type == KeyEventType.KeyUp) onClick()
                         true

@@ -84,6 +84,12 @@ private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
 private val VerticalRowCacheExtent = 520.dp
 
+private data class HomeVerticalFocusTarget(
+    val rowKey: String,
+    val cardIndex: Int,
+    val token: Int,
+)
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvModernHomeRows(
@@ -107,6 +113,8 @@ internal fun TvModernHomeRows(
     val verticalScope = rememberCoroutineScope()
     val verticalAlignmentJob = remember { arrayOfNulls<Job>(1) }
     val verticalFocusJob = remember { arrayOfNulls<Job>(1) }
+    var verticalFocusToken by remember { mutableIntStateOf(0) }
+    var verticalFocusTarget by remember { mutableStateOf<HomeVerticalFocusTarget?>(null) }
     val currentRows by rememberUpdatedState(rows)
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
@@ -153,27 +161,22 @@ internal fun TvModernHomeRows(
         val targetIndex = (currentRowIndex + delta).coerceIn(0, availableRows.lastIndex)
         if (targetIndex == currentRowIndex) return true
         val targetRow = availableRows[targetIndex]
+        if (targetRow.entries.isEmpty()) return true
         val targetCardIndex = focusedIndex.coerceIn(0, targetRow.entries.lastIndex)
-        TvHomeFocusMemory.activeRowKey = targetRow.key
-        TvHomeFocusMemory.focusedIndexByRow[targetRow.key] = targetCardIndex
 
-        val requester = rowFocusRequesters[targetRow.key]
-        if (requester != null) {
-            runCatching { requester.requestFocus() }
-            requestRowAlignment(targetRow.key)
-            return true
-        }
+        // Address the exact poster instead of focusing the LazyRow container and
+        // hoping focusRestorer resolves the child on a later key press. The row
+        // owns the final card request once it is composed/placed.
+        verticalFocusToken += 1
+        verticalFocusTarget = HomeVerticalFocusTarget(
+            rowKey = targetRow.key,
+            cardIndex = targetCardIndex,
+            token = verticalFocusToken,
+        )
 
         verticalFocusJob[0]?.cancel()
         verticalFocusJob[0] = verticalScope.launch {
-            // If the adjacent row is outside the current composition cache,
-            // bring exactly that row into composition first, then focus it.
-            // Key repeat is consumed while this happens, so it cannot skip rows.
             runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
-            withFrameNanos { }
-            rowFocusRequesters[targetRow.key]?.let { targetRequester ->
-                runCatching { targetRequester.requestFocus() }
-            }
         }
         return true
     }
@@ -189,9 +192,9 @@ internal fun TvModernHomeRows(
         }
     }
 
-    // A new Home composition and every retained Details -> Home reveal reset
-    // the canonical destination to row 1 / card 1. This effect only reacts to
-    // empty -> non-empty rows, so progressive catalog batches never steal focus.
+    // A fresh Home composition starts at row 1 / card 1. Retained Details ->
+    // Home reveals do NOT increment this token, so they restore the exact card
+    // that opened Details. Progressive catalog batches also never steal focus.
     LaunchedEffect(focusResetToken, rows.isNotEmpty()) {
         if (focusResetToken <= 0 || rows.isEmpty() || showContinueWatchingPreview) return@LaunchedEffect
         val firstRow = rows.first()
@@ -259,6 +262,7 @@ internal fun TvModernHomeRows(
                     row = row,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
                     resetFirstCardFocusToken = if (rowIndex == 0) focusResetToken else 0,
+                    verticalFocusTarget = verticalFocusTarget?.takeIf { it.rowKey == row.key },
                     onContentFocused = onContentFocused,
                     onMoveVertical = { focusedRow, focusedIndex, delta ->
                         moveVertical(focusedRow, focusedIndex, delta)
@@ -283,6 +287,7 @@ private fun TvModernHomeRow(
     rowVisible: Boolean,
     rowFocusRequester: FocusRequester,
     resetFirstCardFocusToken: Int,
+    verticalFocusTarget: HomeVerticalFocusTarget?,
     onContentFocused: () -> Unit,
     onMoveVertical: (TvHomeRow, Int, Int) -> Boolean,
     onLeftAtRowStart: (() -> Unit)?,
@@ -347,6 +352,29 @@ private fun TvModernHomeRow(
         }
     }
 
+    LaunchedEffect(verticalFocusTarget?.token) {
+        val target = verticalFocusTarget ?: return@LaunchedEffect
+        if (target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
+        val targetIndex = target.cardIndex.coerceIn(0, row.entries.lastIndex)
+
+        // If the target card is already placed, one D-pad press can hand focus
+        // to it immediately. Otherwise scroll that row horizontally just enough
+        // to compose the requested card, then retry across a few frames.
+        val immediate = itemFocusRequesters[targetIndex]?.let { requester ->
+            runCatching { requester.requestFocus() }.getOrDefault(false)
+        } == true
+        if (immediate) return@LaunchedEffect
+
+        runCatching { rowState.animateScrollToItem(targetIndex) }
+        repeat(4) {
+            withFrameNanos { }
+            val focused = itemFocusRequesters[targetIndex]?.let { requester ->
+                runCatching { requester.requestFocus() }.getOrDefault(false)
+            } == true
+            if (focused) return@LaunchedEffect
+        }
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -401,7 +429,12 @@ private fun TvModernHomeRow(
                                 ?: FocusRequester.Default
                         }
                         .focusGroup(),
-                    contentPadding = PaddingValues(start = focusPaintInset, end = 32.dp),
+                    contentPadding = PaddingValues(
+                        start = focusPaintInset,
+                        top = focusPaintInset,
+                        end = 32.dp,
+                        bottom = focusPaintInset,
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     itemsIndexed(

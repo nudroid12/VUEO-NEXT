@@ -93,9 +93,9 @@ fun TvHomeScreen(
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
-    // Every fresh Home composition starts on row 1 / card 1. Retained Home
-    // increments this token when a covered route (Details) is dismissed so
-    // Back also returns to the canonical Home entry instead of stale focus.
+    // Every fresh Home composition starts on row 1 / card 1. A retained
+    // Details -> Home reveal restores the exact row/card that opened Details
+    // instead of incrementing this reset token.
     var homeFocusResetToken by remember { mutableIntStateOf(1) }
     val libraryRevision = retainedState.libraryRevision
 
@@ -313,10 +313,18 @@ fun TvHomeScreen(
         val returningFromCoveredRoute = active && !previousActive
         previousActive = active
         if (returningFromCoveredRoute) {
-            homeFocusResetToken += 1
-            withFrameNanos { }
+            // The retained Home tree still owns its LazyColumn/LazyRow focus
+            // restorers. Re-enter that focus boundary rather than resetting the
+            // memory to row 1 / card 1. Retry briefly in case Details detaches
+            // one frame before the parent's focus nodes are eligible again.
+            var restored = false
+            for (attempt in 0 until 3) {
+                withFrameNanos { }
+                restored = runCatching { contentFocusRequester.requestFocus() }.getOrDefault(false)
+                if (restored) break
+            }
             PerformanceDiagnostics.captureRuntimeEvent(
-                "HOME_FOCUS_READY resetToFirst=true token=$homeFocusResetToken",
+                "HOME_FOCUS_READY restoreLast=true restored=$restored",
             )
         }
     }
