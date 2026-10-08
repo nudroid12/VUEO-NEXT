@@ -40,6 +40,7 @@ internal fun TvHomePresentation(
     onRetry: () -> Unit,
     navigationVisible: Boolean,
     contentFocusRequester: FocusRequester,
+    focusResetToken: Int,
     onContentFocused: () -> Unit,
     onOpenNavigation: () -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
@@ -148,7 +149,9 @@ internal fun TvHomePresentation(
                     rowsViewportHeight = rowsViewportHeight,
                     showContinueWatchingPreview = showContinueWatchingPreview,
                     contentFocusRequester = contentFocusRequester,
+                    focusResetToken = focusResetToken,
                     onContentFocused = onContentFocused,
+                    onUpFromFirstRow = onOpenNavigation,
                     onLeftAtRowStart =
                         if (floatingPillMode) ({ /* Left boundary stays on the first card. */ }) else null,
                     onFocused = { row, index, entry ->

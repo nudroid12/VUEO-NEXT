@@ -91,6 +91,10 @@ fun TvHomeScreen(
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
+    // Every fresh Home composition starts on row 1 / card 1. Retained Home
+    // increments this token when a covered route (Details) is dismissed so
+    // Back also returns to the canonical Home entry instead of stale focus.
+    var homeFocusResetToken by remember { mutableIntStateOf(1) }
     val libraryRevision = retainedState.libraryRevision
 
     DisposableEffect(Unit) {
@@ -314,10 +318,10 @@ fun TvHomeScreen(
         val returningFromCoveredRoute = active && !previousActive
         previousActive = active
         if (returningFromCoveredRoute) {
+            homeFocusResetToken += 1
             withFrameNanos { }
-            val restored = runCatching { contentFocusRequester.requestFocus() }.isSuccess
             PerformanceDiagnostics.captureRuntimeEvent(
-                "HOME_FOCUS_READY restored=$restored",
+                "HOME_FOCUS_READY resetToFirst=true token=$homeFocusResetToken",
             )
         }
     }
@@ -335,6 +339,7 @@ fun TvHomeScreen(
             },
             navigationVisible = navExpanded,
             contentFocusRequester = contentFocusRequester,
+            focusResetToken = homeFocusResetToken,
             onContentFocused = { navExpanded = false },
             onOpenNavigation = ::focusSidebar,
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },
