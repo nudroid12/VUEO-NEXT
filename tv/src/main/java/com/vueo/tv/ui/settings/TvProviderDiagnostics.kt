@@ -627,7 +627,7 @@ internal fun TvPerformanceDiagnosticsDialog(
     }
 
     val visibleLog = remember(diagnosticText, searchQuery, providerMode, showRaw) {
-        if (!providerMode) {
+        if (!providerMode || showRaw) {
             return@remember com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(
                 diagnosticText, showRaw, searchQuery,
             )
@@ -1189,6 +1189,10 @@ private fun styledProviderDiagnosticText(text: String): androidx.compose.ui.text
     androidx.compose.ui.text.buildAnnotatedString {
         text.lineSequence().forEach { line ->
             val color = when {
+                line.startsWith("Time:") || line.startsWith("Context:") -> Color(0xFF929BAA)
+                line.startsWith("Event:") &&
+                    ("ERROR" in line || "CRASH" in line) -> Color(0xFFE5A1A1)
+                line.startsWith("Event:") -> Color(0xFFB8CBE0)
                 " | CRASH " in line || " | PLAYBACK_ERROR " in line ||
                     " | SCAN_ERROR " in line || "outcome=failed" in line ||
                     "• Stored crash" in line || "• Native tombstone" in line -> Color(0xFFE5A1A1)

@@ -260,6 +260,8 @@ internal fun VueoPlayerPillAction(
     rightRequester: FocusRequester,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
+    downRequester: FocusRequester = FocusRequester.Cancel,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     val acceptsInput = LocalPlayerChromeInteractive.current
     var hasFocus by remember(requester) { mutableStateOf(false) }
@@ -283,12 +285,13 @@ internal fun VueoPlayerPillAction(
             .focusProperties {
                 canFocus = acceptsInput
                 up = upRequester
-                down = FocusRequester.Cancel
+                down = downRequester
                 left = leftRequester
                 right = rightRequester
             }
             .onFocusChanged {
                 hasFocus = it.isFocused
+                onFocusChanged(it.isFocused && acceptsInput)
                 if (it.isFocused && acceptsInput) onInteraction()
             }
             .onPreviewKeyEvent { event ->

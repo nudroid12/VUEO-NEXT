@@ -374,6 +374,7 @@ fun TvPlayerScreen(
     var positionMs by remember { mutableLongStateOf(startPosition) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
+    var playPauseFocused by remember(player) { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
     var nextCountdown by remember { mutableIntStateOf(0) }
     var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
@@ -1119,7 +1120,7 @@ fun TvPlayerScreen(
                     // playWhenReady stays true. Do not parse/serialize the full
                     // library history for those transient state changes.
                     saveProgress(backgroundLibrary = true)
-                    if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
+                    if (controlsVisible && activePanel == TvPlayerPanel.NONE && !playPauseFocused) {
                         requestControlFocus(progressRequester)
                     }
                 }
@@ -1993,6 +1994,7 @@ fun TvPlayerScreen(
             hiddenSeekProgressVisible = hiddenSeekProgressVisible,
             activePanel = activePanel,
             playing = playing,
+            playbackRequested = playbackRequested,
             isBuffering = isBuffering,
             playbackFeedbackToken = playbackFeedbackToken,
             playbackFeedbackPaused = playbackFeedbackPaused,
@@ -2040,6 +2042,7 @@ fun TvPlayerScreen(
             onPromptNavigateUp = { requestControlFocus(restartRequester) },
             onPromptNavigateDown = { requestControlFocus(progressRequester) },
             onPlayPause = ::togglePlayback,
+            onPlayPauseFocusChanged = { playPauseFocused = it },
             onRetryPlayback = {
                 saveProgress()
                 sourceRecoverySession.allowRetry(activeSource.toSourceCandidateForPlayer())

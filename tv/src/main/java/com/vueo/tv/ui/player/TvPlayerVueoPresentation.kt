@@ -30,6 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Subtitles
@@ -75,6 +77,7 @@ internal fun VueoPlayerPresentation(
     hiddenSeekProgressVisible: Boolean,
     activePanel: TvPlayerPanel,
     playing: Boolean,
+    playbackRequested: Boolean,
     isBuffering: Boolean,
     playbackFeedbackToken: Int,
     playbackFeedbackPaused: Boolean,
@@ -119,6 +122,7 @@ internal fun VueoPlayerPresentation(
     onPromptNavigateUp: () -> Unit,
     onPromptNavigateDown: () -> Unit,
     onPlayPause: () -> Unit,
+    onPlayPauseFocusChanged: (Boolean) -> Unit,
     onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
     onSeekImmediateBy: (Long) -> Unit,
@@ -177,7 +181,7 @@ internal fun VueoPlayerPresentation(
             activeSource = activeSource,
             contentWarningVisible = warningVisible,
             reserveTranslationSpace = translatingSubtitles,
-            playing = playing,
+            playbackRequested = playbackRequested,
             positionMs = positionMs,
             durationMs = durationMs,
             nextEpisode = nextEpisode,
@@ -196,6 +200,7 @@ internal fun VueoPlayerPresentation(
             moreRequester = moreRequester,
             onInteraction = onChromeInteraction,
             onPlayPause = onPlayPause,
+            onPlayPauseFocusChanged = onPlayPauseFocusChanged,
             onRestart = onRestart,
             onSeekImmediateBy = onSeekImmediateBy,
             onSeekBy = onSeekBy,
@@ -458,7 +463,7 @@ private fun VueoPlayerControls(
     activeSource: StreamSource,
     contentWarningVisible: Boolean,
     reserveTranslationSpace: Boolean,
-    playing: Boolean,
+    playbackRequested: Boolean,
     positionMs: Long,
     durationMs: Long,
     nextEpisode: EpisodeItem?,
@@ -477,6 +482,7 @@ private fun VueoPlayerControls(
     moreRequester: FocusRequester,
     onInteraction: () -> Unit,
     onPlayPause: () -> Unit,
+    onPlayPauseFocusChanged: (Boolean) -> Unit,
     onRestart: () -> Unit,
     onSeekImmediateBy: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
@@ -484,6 +490,8 @@ private fun VueoPlayerControls(
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
 ) {
+    val playPauseRequester = remember { FocusRequester() }
+
     val episodeLine = episode?.let {
         "S${it.season} E${it.episode} • ${it.title.ifBlank { "Episode ${it.episode}" }}"
     }
@@ -613,23 +621,42 @@ private fun VueoPlayerControls(
                         .onSizeChanged { onBottomControlsHeightChanged(it.height) }
                         .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
                 ) {
-                    VueoPlayerProgressRail(
-                        positionMs = positionMs,
-                        durationMs = durationMs,
-                        requester = progressRequester,
-                        upRequester = progressUpRequester,
-                        downRequester = bottomDefaultRequester,
-                        onInteraction = onInteraction,
-                        onSeekImmediateBy = onSeekImmediateBy,
-                        onSeekBy = onSeekBy,
-                        onSeekCommit = onSeekCommit,
-                        onTogglePlayback = onPlayPause,
-                        emphasized = hiddenSeekProgressVisible && !visible,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.width(110.dp).alpha(if (visible) 1f else 0f)) {
+                            VueoPlayerPillAction(
+                                icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                label = if (playbackRequested) "Pause" else "Play",
+                                requester = playPauseRequester,
+                                upRequester = progressRequester,
+                                downRequester = bottomDefaultRequester,
+                                leftRequester = FocusRequester.Cancel,
+                                rightRequester = progressRequester,
+                                onInteraction = onInteraction,
+                                onClick = onPlayPause,
+                                onFocusChanged = onPlayPauseFocusChanged,
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Box(Modifier.weight(1f)) {
+                            VueoPlayerProgressRail(
+                                positionMs = positionMs,
+                                durationMs = durationMs,
+                                requester = progressRequester,
+                                upRequester = progressUpRequester,
+                                downRequester = playPauseRequester,
+                                onInteraction = onInteraction,
+                                onSeekImmediateBy = onSeekImmediateBy,
+                                onSeekBy = onSeekBy,
+                                onSeekCommit = onSeekCommit,
+                                onTogglePlayback = onPlayPause,
+                                emphasized = hiddenSeekProgressVisible && !visible,
+                            )
+                        }
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 2.dp)
+                            .padding(start = 120.dp, top = 2.dp)
                             .alpha(if (visible) 1f else 0f),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
