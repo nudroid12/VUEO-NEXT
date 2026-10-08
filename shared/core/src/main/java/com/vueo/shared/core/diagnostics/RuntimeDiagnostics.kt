@@ -315,7 +315,7 @@ object RuntimeDiagnostics {
         record(
             "${if (cancelled) "SCAN_CANCELLED" else "SCAN_ERROR"} id=$scanId " +
                 "type=${safeToken(error::class.java.simpleName)} " +
-                "reason=${safeText(redact(error.message.orEmpty()), 180)} providers=$completedProviders"
+                "reason=${safeText(CrashRecoveryPolicy.sanitize(error.message.orEmpty()), 180)} providers=$completedProviders"
         )
         // These are provider candidates, not the final deduplicated stream result.
         // Keep them explicit even when the scan never reaches final merging.
