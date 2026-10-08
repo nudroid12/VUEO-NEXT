@@ -146,7 +146,7 @@ class TvRuntime(context: Context) {
         }
         return (partial ?: CatalogDiscoveryCache.home(allowStale = true))
             .orEmpty()
-            .let(::applyCatalogPreferences)
+            .let(::visibleHomeRows)
     }
 
     fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
@@ -224,7 +224,7 @@ class TvRuntime(context: Context) {
             cachedConfiguration == configurationKey
         ) {
             traceHome("fresh_cache_used", freshCached.size)
-            return@coroutineScope applyCatalogPreferences(freshCached)
+            return@coroutineScope visibleHomeRows(freshCached)
         }
         val staleCached = CatalogDiscoveryCache.home(allowStale = true).orEmpty()
         val freshRows = linkedMapOf<String, CatalogRow>()
@@ -242,7 +242,7 @@ class TvRuntime(context: Context) {
                 // Keep untouched cached rows visible while fresh rows replace them.
                 val combined = staleCached.map { freshRows[it.id] ?: it } +
                     freshRows.values.filter { fresh -> staleCached.none { it.id == fresh.id } }
-                onPartial?.invoke(applyCatalogPreferences(combined))
+                onPartial?.invoke(visibleHomeRows(combined))
             }
             Unit
         }
@@ -281,8 +281,7 @@ class TvRuntime(context: Context) {
                 (cachedConfiguration == null || cachedConfiguration == configurationKey ||
                     activeIds.any { row.id.startsWith("$it:") }) && fresh.none { it.id == row.id }
             }
-            val result = applyCatalogPreferences(fresh + fallback)
-            content.reconcileCatalogOrder(result.map { it.id })
+            val result = visibleHomeRows(fresh + fallback)
             CatalogDiscoveryCache.putHome(result)
             CatalogDiscoveryCache.persistHome(appContext, result)
             homeCachePrefs.edit().putString("configuration", homeConfigurationKey()).apply()
@@ -290,7 +289,7 @@ class TvRuntime(context: Context) {
             result
         } else {
             traceHome("catalogs_finished_using_fallback", staleCached.size)
-            applyCatalogPreferences(staleCached)
+            visibleHomeRows(staleCached)
         }
     }
 
@@ -502,12 +501,23 @@ class TvRuntime(context: Context) {
         return dnaEngine.matchPercent(item)
     }
 
-    private fun applyCatalogPreferences(rows: List<CatalogRow>): List<CatalogRow> =
-        HomeCatalogPolicy.orderRows(
-            rows = rows,
+    fun visibleHomeRows(rows: List<CatalogRow>): List<CatalogRow> {
+        val installed = engine.stremioAddons()
+        val available = HomeCatalogPolicy.defaultOrder(engine.activeStremioAddons()).toSet()
+        val disabledAddons = installed.filterNot { engine.isExtensionEnabled(it.descriptor.id) }
+            .map { it.descriptor.id }
+        val validRows = rows.filter { row ->
+            if (addonsPrepared) row.id in available
+            else disabledAddons.none { row.id.startsWith("$it:") }
+        }
+        return HomeCatalogPolicy.orderRows(
+            rows = validRows,
             catalogOrder = content.catalogOrder(),
             disabledCatalogKeys = content.disabledCatalogKeys(),
+            defaultCatalogOrder = HomeCatalogPolicy.defaultOrder(installed),
+            random = content.randomCatalogOrder(),
         )
+    }
 
 }
 

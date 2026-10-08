@@ -92,23 +92,24 @@ class ContentManagerStore(context: Context) {
             .apply()
     }
 
+    fun randomCatalogOrder(): Boolean = prefs.getBoolean(KEY_RANDOM_CATALOG_ORDER, false)
+
+    fun setRandomCatalogOrder(random: Boolean) {
+        prefs.edit().putBoolean(KEY_RANDOM_CATALOG_ORDER, random).apply()
+    }
+
     fun reconcileCatalogOrder(availableKeys: List<String>): List<String> {
         val available = availableKeys
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
-        val current = catalogOrder().filter { it in available }
+        // Manifests may be incomplete or temporarily unavailable. Never discard
+        // saved positions or OFF choices based on a partial runtime snapshot.
+        val current = catalogOrder()
         val next = (current + available.filterNot { it in current }).distinct()
-        if (next != catalogOrder()) setCatalogOrder(next)
-
-        val disabled = disabledCatalogKeys()
-        val validDisabled = disabled.filterTo(mutableSetOf()) { it in available }
-        if (validDisabled != disabled) {
-            prefs.edit()
-                .putStringSet(KEY_DISABLED_CATALOG_KEYS, validDisabled)
-                .apply()
-        }
-        return next
+        // Leave the default unsaved until the user explicitly reorders it.
+        if (current.isNotEmpty() && next != current) setCatalogOrder(next)
+        return next.filter { it in available }
     }
 
     fun seedDevelopmentDefaultsIfNeeded(): Boolean {
@@ -134,6 +135,7 @@ class ContentManagerStore(context: Context) {
         private const val PREFS_NAME = "vueo_content_manager"
         private const val KEY_MANIFEST_URLS = "stremio_manifest_urls"
         private const val KEY_CATALOG_ORDER = "catalog_order"
+        private const val KEY_RANDOM_CATALOG_ORDER = "random_catalog_order"
         private const val KEY_DISABLED_CATALOG_KEYS = "disabled_catalog_keys"
         private const val KEY_DEV_DEFAULTS_REVISION = "dev_defaults_revision"
         private const val DEV_DEFAULTS_REVISION = 1

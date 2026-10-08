@@ -262,29 +262,10 @@ class UnifiedMediaEngine {
         rows: List<CatalogRow>,
         catalogOrder: List<String>,
         disabledCatalogKeys: Set<String> = emptySet(),
-    ): List<CatalogRow> {
-        val enabledRows =
-            if (disabledCatalogKeys.isEmpty()) {
-                rows
-            } else {
-                rows.filterNot { it.id in disabledCatalogKeys }
-            }
-
-        if (catalogOrder.isEmpty()) {
-            return enabledRows
-        }
-
-        val index =
-            catalogOrder
-                .withIndex()
-                .associate {
-                    it.value to it.index
-                }
-
-        return enabledRows.sortedBy {
-            index[it.id] ?: Int.MAX_VALUE
-        }
-    }
+    ): List<CatalogRow> = com.vueo.shared.core.home.HomeCatalogPolicy.orderRows(
+        rows, catalogOrder, disabledCatalogKeys,
+        defaultCatalogOrder = com.vueo.shared.core.home.HomeCatalogPolicy.defaultOrder(activeStremioAddons()),
+    )
 
     suspend fun search(
         query: String,

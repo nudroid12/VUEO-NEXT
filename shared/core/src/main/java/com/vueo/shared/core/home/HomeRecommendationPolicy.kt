@@ -2,20 +2,37 @@ package com.vueo.shared.core.home
 
 import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.extensions.MediaExtension
+import kotlin.random.Random
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 
 object HomeCatalogPolicy {
+    private val sessionSeed = Random.nextLong()
+
+    /** Stable addon order, preserving each manifest's original catalog order. */
+    fun defaultOrder(extensions: List<MediaExtension>): List<String> = extensions
+        .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.id })
+        .flatMap { extension -> extension.descriptor.catalogs.filter { it.shouldShowOnHome }.map {
+            "${extension.descriptor.id}:${it.type}:${it.id}"
+        } }.distinct()
+
     fun orderRows(
         rows: List<CatalogRow>,
         catalogOrder: List<String>,
         disabledCatalogKeys: Set<String> = emptySet(),
+        defaultCatalogOrder: List<String> = emptyList(),
+        random: Boolean = false,
     ): List<CatalogRow> {
         val enabledRows = if (disabledCatalogKeys.isEmpty()) rows else rows.filterNot { it.id in disabledCatalogKeys }
-        if (catalogOrder.isEmpty()) return enabledRows
-        val index = catalogOrder.withIndex().associate { it.value to it.index }
-        return enabledRows.sortedBy { row -> index[row.id] ?: Int.MAX_VALUE }
+        if (random) return enabledRows.sortedWith(
+            compareBy<CatalogRow> { Random(sessionSeed xor it.id.hashCode().toLong()).nextLong() }.thenBy { it.id },
+        )
+        val order = (catalogOrder + defaultCatalogOrder).distinct()
+        if (order.isEmpty()) return enabledRows
+        val index = order.withIndex().associate { it.value to it.index }
+        return enabledRows.sortedWith(compareBy<CatalogRow> { index[it.id] ?: Int.MAX_VALUE }.thenBy { it.id })
     }
 }
 

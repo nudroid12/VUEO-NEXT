@@ -680,10 +680,13 @@ internal fun TvCatalogSettings(
 
     val addonRuntimeReady = runtime.isHomeCatalogRuntimeReady()
     val installedAddons = runtime.engine.stremioAddons()
+        .sortedWith(compareBy<com.vueo.shared.core.extensions.MediaExtension> { it.descriptor.baseUrl.trim() }
+            .thenBy { it.descriptor.id })
+    var randomOrder by remember { mutableStateOf(runtime.content.randomCatalogOrder()) }
     val availableCatalogs = remember(revision, installedAddons) {
         installedAddons.flatMap { extension ->
             extension.descriptor.catalogs
-                .filter { it.canLoadWithoutExtras }
+                .filter { it.shouldShowOnHome }
                 .map { catalog ->
                     TvCatalogDescriptorEntry(
                         key = "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
@@ -719,24 +722,26 @@ internal fun TvCatalogSettings(
                 catalog?.providerName?.takeIf { it.isNotBlank() },
                 catalog?.type?.takeIf { it.isNotBlank() },
             ).joinToString(" • ").ifBlank { "Home catalog" },
-            detail = "D-pad left/right reorders • OK ${if (enabled) "hide" else "show"}",
+            detail = "Hidden catalogs keep their saved position.",
+            catalogControls = true,
+            switchChecked = enabled,
             value = if (enabled) "Shown" else "Hidden",
-            onPrevious = {
-                if (index > 0) {
+            onPrevious = if (index > 0) {
+                {
                     val next = order.toMutableList().apply { add(index - 1, removeAt(index)) }
                     order = next
-                    runtime.content.setCatalogOrder(next)
+                    runtime.content.setCatalogOrder(next + runtime.content.catalogOrder().filterNot { it in next })
                     onDataChanged()
                 }
-            },
-            onNext = {
-                if (index < order.lastIndex) {
+            } else null,
+            onNext = if (index < order.lastIndex) {
+                {
                     val next = order.toMutableList().apply { add(index + 1, removeAt(index)) }
                     order = next
-                    runtime.content.setCatalogOrder(next)
+                    runtime.content.setCatalogOrder(next + runtime.content.catalogOrder().filterNot { it in next })
                     onDataChanged()
                 }
-            },
+            } else null,
             onActivate = {
                 runtime.content.setCatalogEnabled(key, !enabled)
                 revision++
@@ -750,10 +755,22 @@ internal fun TvCatalogSettings(
 
     val shownCount = order.count { runtime.content.isCatalogEnabled(it) }
 
+    fun changeMode(random: Boolean) {
+        randomOrder = random
+        runtime.content.setRandomCatalogOrder(random)
+        onDataChanged()
+    }
+    val modeEntry = choiceEntry(
+        id = "catalog-home-order", title = "Home order",
+        subtitle = "Random stays stable for this app session. Your saved catalog positions are preserved.",
+        value = if (randomOrder) "Random" else "Catalog Order",
+        previous = { changeMode(!randomOrder) }, next = { changeMode(!randomOrder) },
+    )
+
     TvSettingsListScreen(
         title = "Catalog Order",
         subtitle = "Control Home visibility and ordering. Hidden catalogs keep their position.",
-        entries = entries.ifEmpty {
+        entries = listOf(modeEntry) + entries.ifEmpty {
             listOf(
                 TvSettingsEntry(
                     "loading",
@@ -776,7 +793,7 @@ internal fun TvCatalogSettings(
             TvSettingsMetric(shownCount.toString(), "Shown"),
             TvSettingsMetric((order.size - shownCount).toString(), "Hidden"),
         ),
-        footer = "The numbered badge is the Home position. Hidden catalogs keep their saved place in the order.",
+        footer = "Select ON/OFF, ↑ or ↓ with left/right, then press OK. Catalog Order uses your saved positions; Random preserves them.",
     )
 }
 

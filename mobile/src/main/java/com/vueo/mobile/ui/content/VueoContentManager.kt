@@ -417,9 +417,10 @@ internal fun CatalogOrderScreen(
     val entries =
         remember(contentVersion) {
             engine.stremioAddons()
+                .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.id })
                 .flatMap { extension ->
                     extension.descriptor.catalogs
-                        .filter { it.canLoadWithoutExtras }
+                        .filter { it.shouldShowOnHome }
                         .map { catalog ->
                             val key =
                                 "${extension.descriptor.id}:${catalog.type}:${catalog.id}"
@@ -441,6 +442,8 @@ internal fun CatalogOrderScreen(
         mutableStateOf(store.reconcileCatalogOrder(entries.map { it.key }))
     }
 
+    var randomOrder by remember(contentVersion) { mutableStateOf(store.randomCatalogOrder()) }
+
     fun move(index: Int, delta: Int) {
         val target = index + delta
         if (index !in order.indices || target !in order.indices) return
@@ -448,7 +451,7 @@ internal fun CatalogOrderScreen(
         val moved = next.removeAt(index)
         next.add(target, moved)
         order = next
-        store.setCatalogOrder(next)
+        store.setCatalogOrder(next + store.catalogOrder().filterNot { it in next })
         onContentChanged()
     }
 
@@ -462,6 +465,23 @@ internal fun CatalogOrderScreen(
             subtitle = "Arrange how catalogs appear on Home",
             onBack = onBack,
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf(false to "Catalog Order", true to "Random").forEach { (random, label) ->
+                FilterChip(
+                    selected = randomOrder == random,
+                    onClick = {
+                        randomOrder = random
+                        store.setRandomCatalogOrder(random)
+                        onContentChanged()
+                    },
+                    label = { Text(label) },
+                )
+            }
+        }
 
         if (entries.isEmpty()) {
             Box(
@@ -487,7 +507,7 @@ internal fun CatalogOrderScreen(
         ) {
             item(key = "catalog-order-note") {
                 Text(
-                    text = "Top catalogs appear first. Hide any catalog without changing its saved position.",
+                    text = "Catalog Order follows your saved positions, or the original addon order. Random stays stable until the next app session.",
                     color = VueoPalette.Muted,
                     fontSize = 10.5.sp,
                     lineHeight = 15.sp,

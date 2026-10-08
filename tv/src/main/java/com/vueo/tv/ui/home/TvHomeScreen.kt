@@ -116,10 +116,9 @@ fun TvHomeScreen(
         val explicitRetry = requestedRetryAttempt > handledRetryAttempt
         // Startup restores disk cache after this retained state is created.
         // Publish it before awaiting any fresh catalog/provider result.
-        if (retainedState.catalogRows.isEmpty()) {
-            val restored = runtime.cachedHomeRows()
-            if (restored.isNotEmpty()) retainedState.catalogRows = restored
-        }
+        retainedState.catalogRows = runtime.visibleHomeRows(
+            retainedState.catalogRows.ifEmpty { runtime.cachedHomeRows() },
+        )
         if (explicitRetry || retainedState.loadedRefreshToken != refreshToken || runtime.needsHomeRefresh()) {
             retainedState.loading = retainedState.catalogRows.isEmpty()
             retainedState.error = null
@@ -129,10 +128,8 @@ fun TvHomeScreen(
                     val updates = Channel<List<CatalogRow>>(Channel.CONFLATED)
                     val publisher = launch {
                         for (partialRows in updates) {
-                            if (partialRows.isNotEmpty()) {
-                                retainedState.catalogRows = partialRows
-                                retainedState.loading = false
-                            }
+                            retainedState.catalogRows = runtime.visibleHomeRows(partialRows)
+                            retainedState.loading = false
                         }
                     }
                     try {
@@ -149,7 +146,7 @@ fun TvHomeScreen(
                 }
             }
                 .onSuccess { rows ->
-                    if (rows.isNotEmpty()) retainedState.catalogRows = rows
+                    retainedState.catalogRows = runtime.visibleHomeRows(rows)
                 }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure

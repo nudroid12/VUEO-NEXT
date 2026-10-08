@@ -105,6 +105,7 @@ internal data class TvSettingsEntry(
     val choices: List<String> = emptyList(),
     val selectedChoiceIndex: Int = -1,
     val switchChecked: Boolean? = null,
+    val catalogControls: Boolean = false,
     val providerStatus: String? = null,
     val providerResponse: String? = null,
     val providerFailed: Boolean = false,
@@ -1117,6 +1118,10 @@ internal fun TvSettingsRow(
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
 ) {
+    if (entry.catalogControls) {
+        TvCatalogControlsRow(entry, requester, first, last, modifier, onLeftToSidebar, onFocused)
+        return
+    }
     if (entry.supportingContent != null) {
         TvSubtitleFontSettingsCard(entry, requester, first, last, modifier, onLeftToSidebar, onFocused)
         return

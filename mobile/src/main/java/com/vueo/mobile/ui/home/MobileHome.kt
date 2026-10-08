@@ -358,6 +358,22 @@ internal fun HomeScreen(
                 .disabledCatalogKeys()
         }
 
+    fun arrangeHomeRows(catalogRows: List<CatalogRow>): List<CatalogRow> {
+        val activeKeys = HomeCatalogPolicy.defaultOrder(engine.activeStremioAddons()).toSet()
+        val disabledAddons = engine.stremioAddons()
+            .filterNot { engine.isExtensionEnabled(it.descriptor.id) }.map { it.descriptor.id }
+        val validRows = catalogRows.filter { row ->
+            if (addonsPrepared) row.id in activeKeys
+            else disabledAddons.none { row.id.startsWith("$it:") }
+        }
+        return HomeCatalogPolicy.orderRows(
+            rows = validRows,
+            catalogOrder = homeAddonStore.catalogOrder(),
+            disabledCatalogKeys = homeAddonStore.disabledCatalogKeys(),
+            defaultCatalogOrder = HomeCatalogPolicy.defaultOrder(engine.stremioAddons()),
+            random = homeAddonStore.randomCatalogOrder(),
+        )
+    }
 
     val profileStore =
         remember {
@@ -415,11 +431,7 @@ internal fun HomeScreen(
                 }
 
         mutableStateOf(
-            HomeCatalogPolicy.orderRows(
-                rows = restoredRows,
-                catalogOrder = catalogOrder,
-                disabledCatalogKeys = disabledCatalogKeys,
-            )
+            arrangeHomeRows(restoredRows)
         )
     }
 
@@ -492,11 +504,7 @@ internal fun HomeScreen(
 
         if (cachedRows.isNotEmpty()) {
             rows =
-                HomeCatalogPolicy.orderRows(
-                    rows = cachedRows,
-                    catalogOrder = catalogOrder,
-                    disabledCatalogKeys = disabledCatalogKeys,
-                )
+                arrangeHomeRows(cachedRows)
         }
 
         if (booting) {
@@ -546,14 +554,8 @@ internal fun HomeScreen(
                 onPartial = { partialRows ->
                     if (partialRows.isNotEmpty()) {
                         rows =
-                            HomeCatalogPolicy.orderRows(
-                                rows =
-                                    mergeHomeCatalogRows(
-                                        baseline = refreshBaseline,
-                                        fresh = partialRows,
-                                    ),
-                                catalogOrder = catalogOrder,
-                                disabledCatalogKeys = disabledCatalogKeys,
+                            arrangeHomeRows(
+                                mergeHomeCatalogRows(baseline = refreshBaseline, fresh = partialRows),
                             )
                         loading = false
                     }
@@ -561,18 +563,8 @@ internal fun HomeScreen(
             )
         }.onSuccess {
             fresh ->
-            if (
-                fresh.isNotEmpty()
-            ) {
-                rows =
-                    HomeCatalogPolicy.orderRows(
-                        rows = fresh,
-                        catalogOrder =
-                            catalogOrder,
-                        disabledCatalogKeys =
-                            disabledCatalogKeys,
-                    )
-
+            rows = arrangeHomeRows(fresh)
+            if (fresh.isNotEmpty()) {
                 CatalogDiscoveryCache
                     .persistHome(
                         context =
@@ -597,19 +589,7 @@ internal fun HomeScreen(
                 rows.isEmpty()
             ) {
                 rows =
-                    HomeCatalogPolicy.orderRows(
-                        rows =
-                            CatalogDiscoveryCache
-                                .home(
-                                    allowStale =
-                                        true
-                                )
-                                .orEmpty(),
-                        catalogOrder =
-                            catalogOrder,
-                        disabledCatalogKeys =
-                            disabledCatalogKeys,
-                    )
+                    arrangeHomeRows(CatalogDiscoveryCache.home(allowStale = true).orEmpty())
             }
 
             retainedState.loadedContentVersion =
