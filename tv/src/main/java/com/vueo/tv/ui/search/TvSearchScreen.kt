@@ -137,7 +137,7 @@ internal data class TvSearchPreparedResult(
 )
 
 private fun prepareSearch(input: TvSearchPreparedInput): TvSearchPreparedResult {
-    val animeKeys = input.rows.asSequence()
+    val animeKeys = if (input.type == TvSearchTypeFilter.ALL) emptySet() else input.rows.asSequence()
         .filter { row -> listOf(row.id, row.title, row.providerName).any { it.contains("anime", ignoreCase = true) } }
         .flatMap { it.items.asSequence() }.map(::mediaKey).toSet() + input.animeItems.map(::mediaKey)
     val searching = input.query.isNotBlank()
@@ -161,6 +161,8 @@ private fun prepareSearch(input: TvSearchPreparedInput): TvSearchPreparedResult 
 }
 
 internal class TvSearchSession {
+    var sourceInput: TvSearchPreparedInput? = null
+    var sourceResult = TvSearchPreparedResult()
     var preparedInput: TvSearchPreparedInput? = null
     var preparedResult by mutableStateOf(TvSearchPreparedResult())
     var query by mutableStateOf("")
@@ -228,15 +230,27 @@ internal fun TvSearchScreen(
             session.discoverRows = cached
             session.discoverContentVersion = contentVersion
             discovering = false
-            return@LaunchedEffect
+            if (!runtime.needsHomeRefresh()) return@LaunchedEffect
         }
-        if (!versionChanged && session.discoverRows.isNotEmpty()) {
+        if (!versionChanged && session.discoverRows.isNotEmpty() && !runtime.needsHomeRefresh()) {
             discovering = false
             return@LaunchedEffect
         }
-        if (versionChanged) session.discoverRows = emptyList()
-        discovering = true
-        session.discoverRows = runCatching { runtime.homeRows(forceRefresh = false) }.getOrElse { runtime.cachedHomeRows() }
+        if (versionChanged && cached.isEmpty()) session.discoverRows = emptyList()
+        discovering = session.discoverRows.isEmpty()
+        val rows = try {
+            runtime.homeRows(forceRefresh = false, onPartial = { partial ->
+                if (partial.isNotEmpty()) {
+                    session.discoverRows = partial
+                    discovering = false
+                }
+            })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            runtime.cachedHomeRows()
+        }
+        if (rows.isNotEmpty()) session.discoverRows = rows
         session.discoverContentVersion = contentVersion
         discovering = false
     }
@@ -357,7 +371,14 @@ internal fun TvSearchScreen(
         session.discoverRows, session.animeBrowseItems, session.searchResults,
         normalizedQuery, session.typeFilter, session.genre, session.sortMode, session.mode, contentVersion,
     )
-    val prepared = if (session.preparedInput == prepareInput) session.preparedResult else TvSearchPreparedResult()
+    // Keep the current grid visible while another catalog batch is prepared.
+    // A query/filter/version change still clears results from the previous view.
+    val sameView = session.preparedInput?.copy(
+        rows = prepareInput.rows,
+        animeItems = prepareInput.animeItems,
+        results = prepareInput.results,
+    ) == prepareInput
+    val prepared = if (sameView) session.preparedResult else TvSearchPreparedResult()
     val preparing = session.preparedInput != prepareInput
     val availableGenres = prepared.genres
     val filteredItems = prepared.items
@@ -366,12 +387,26 @@ internal fun TvSearchScreen(
     LaunchedEffect(active, prepareInput) {
         if (!active || session.preparedInput == prepareInput) return@LaunchedEffect
         val started = System.nanoTime()
-        val result = withContext(Dispatchers.Default) { prepareSearch(prepareInput) }
+        // Genre changes reuse the typed, ordered source and its genre list.
+        val sourceInput = prepareInput.copy(genre = null)
+        val cachedSource = session.sourceResult.takeIf { session.sourceInput == sourceInput }
+        val (source, result) = withContext(Dispatchers.Default) {
+            val source = cachedSource ?: prepareSearch(sourceInput)
+            val items = if (prepareInput.genre == null) source.items else source.items.filter {
+                SearchResultOrderPolicy.matchesGenre(it, prepareInput.genre)
+            }
+            source to if (items === source.items) source else source.copy(
+                items = items,
+                keys = items.map(::mediaKey),
+            )
+        }
         // LaunchedEffect cancellation prevents obsolete filter/query work from publishing.
+        session.sourceInput = sourceInput
+        session.sourceResult = source
         session.preparedInput = prepareInput
         session.preparedResult = result
         PerformanceDiagnostics.captureRuntimeEvent(
-            "SEARCH_PREPARE_DONE items=${result.items.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}",
+            "SEARCH_PREPARE_DONE items=${result.items.size} sourceReused=${cachedSource != null} elapsedMs=${(System.nanoTime() - started) / 1_000_000}",
         )
     }
 

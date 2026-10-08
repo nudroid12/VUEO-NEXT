@@ -42,6 +42,13 @@ import kotlinx.coroutines.sync.Semaphore
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 
 /**
  * New TV runtime. It deliberately mirrors Mobile's proven runtime boundaries
@@ -82,6 +89,14 @@ class TvRuntime(context: Context) {
     private var addonsPrepared = false
     private val addonRevision = MutableStateFlow(0)
     private val homeLoadGate = Semaphore(4)
+    private val catalogScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val catalogLoadLock = Any()
+    private class HomeLoad(
+        val configuration: String,
+        val rows: MutableStateFlow<List<CatalogRow>>,
+        val result: Deferred<List<CatalogRow>>,
+    )
+    private var homeLoad: HomeLoad? = null
     private val homeCachePrefs = appContext.getSharedPreferences("vueo_tv_home_freshness", Context.MODE_PRIVATE)
     private val homeStartedAt = SystemClock.elapsedRealtime()
     private val homePresented = AtomicBoolean(false)
@@ -123,10 +138,16 @@ class TvRuntime(context: Context) {
         traceHome("cache_restored", rows.size)
     }
 
-    fun cachedHomeRows(): List<CatalogRow> =
-        CatalogDiscoveryCache.home(allowStale = true)
+    fun cachedHomeRows(): List<CatalogRow> {
+        val configuration = homeConfigurationKey()
+        val partial = synchronized(catalogLoadLock) {
+            homeLoad?.takeIf { it.configuration == configuration && !it.result.isCompleted }
+                ?.rows?.value?.takeIf { it.isNotEmpty() }
+        }
+        return (partial ?: CatalogDiscoveryCache.home(allowStale = true))
             .orEmpty()
             .let(::applyCatalogPreferences)
+    }
 
     fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
 
@@ -163,6 +184,38 @@ class TvRuntime(context: Context) {
     suspend fun homeRows(
         forceRefresh: Boolean = false,
         onPartial: ((List<CatalogRow>) -> Unit)? = null,
+    ): List<CatalogRow> = coroutineScope {
+        val configuration = homeConfigurationKey()
+        val load = synchronized(catalogLoadLock) {
+            homeLoad?.takeIf { it.configuration == configuration && !it.result.isCompleted }
+                ?: run {
+                    // Configuration changes must not publish an older load into cache.
+                    homeLoad?.takeIf { it.configuration != configuration }?.result?.cancel()
+                    val rows = MutableStateFlow(cachedHomeRows())
+                    val result = catalogScope.async(start = CoroutineStart.LAZY) {
+                        loadHomeRows(forceRefresh, onPartial = { rows.value = it })
+                    }
+                    HomeLoad(configuration, rows, result).also { homeLoad = it }
+                }
+        }
+        // Destination changes cancel only this subscriber, not the shared load.
+        val publisher = if (onPartial != null) launch {
+            load.rows.collect { if (it.isNotEmpty()) onPartial(it) }
+        } else null
+        try {
+            load.result.start()
+            val rows = load.result.await()
+            publisher?.cancelAndJoin()
+            onPartial?.invoke(rows)
+            rows
+        } finally {
+            publisher?.cancelAndJoin()
+        }
+    }
+
+    private suspend fun loadHomeRows(
+        forceRefresh: Boolean,
+        onPartial: ((List<CatalogRow>) -> Unit)?,
     ): List<CatalogRow> = coroutineScope {
         val configurationKey = homeConfigurationKey()
         val cachedConfiguration = homeCachePrefs.getString("configuration", null)
@@ -243,6 +296,10 @@ class TvRuntime(context: Context) {
 
     suspend fun refreshAddons(pruneRemoved: Boolean = false): TvAddonRefreshSummary {
         addonLoadMutex.lock()
+        synchronized(catalogLoadLock) {
+            homeLoad?.result?.cancel()
+            homeLoad = null
+        }
         addonsPrepared = false
         try {
             if (pruneRemoved) {
