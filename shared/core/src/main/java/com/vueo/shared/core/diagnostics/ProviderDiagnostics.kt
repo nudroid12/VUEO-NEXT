@@ -137,36 +137,114 @@ object ProviderDiagnostics {
         retentionWarning()?.let { appendLine(it) }
         if (rows.size < total) appendLine("Preview: latest ${rows.size} of $total retained events. Export includes all retained events.")
         if (rows.isEmpty()) appendLine("No provider events recorded yet.")
-        rows.forEach { appendLine(it.line) }
+        var previousScan = ""
+        rows.forEach { event ->
+            val scan = scanId(event)
+            if (scan.isNotBlank() && scan != previousScan) {
+                appendLine()
+                appendLine("SCAN $scan")
+                previousScan = scan
+            }
+            appendLine(event.line)
+            appendLine()
+        }
     }
     fun exportRaw(tab: Tab): String { val rows = snapshot(tab); return raw(tab, rows, rows.size) }
     fun previewRaw(tab: Tab, maxEvents: Int = 220): String {
         val rows = snapshot(tab); return raw(tab, rows.takeLast(maxEvents.coerceIn(20, 500)), rows.size)
     }
-    private fun summary(tab: Tab, rows: List<Event>): String = buildString {
-        fun count(prefix: String) = rows.count { it.message.startsWith(prefix) }
-        fun phase(value: String) = rows.count { it.message.startsWith("QJS_PHASE ") && field(it.message, "phase") == value }
-        val finished = rows.filter { it.message.startsWith("PROVIDER_END ") }
-        appendLine("PROVIDER SUMMARY — ${tab.label}")
-        appendLine("Diagnostics: ${if (isCollecting()) "ON" else "OFF"}")
-        appendLine("Events: ${rows.size} • Dropped: ${dropped.get()}")
-        retentionWarning()?.let { appendLine(it) }
-        appendLine("Scans: ${count("SCAN_START ")} • Cancelled: ${count("SCAN_CANCELLED ")} • Errors: ${count("SCAN_ERROR ")}")
-        appendLine("Providers started: ${count("PROVIDER_START ")}")
-        appendLine("Cancelled: ${finished.count { field(it.message, "status") == "CANCELLED" }}")
-        appendLine("Failed/timeout: ${finished.count { field(it.message, "status") in setOf("FAILED", "TIMEOUT") }}")
-        appendLine("No results: ${finished.count { field(it.message, "status") == "NO_RESULTS" }}")
-        appendLine("QuickJS executions: ${phase("QJS_CREATE_BEGIN")} • Phases: ${count("QJS_PHASE ")}")
-        appendLine("QuickJS cancelled: ${phase("QJS_CANCELLED")} • Errors: ${phase("QJS_ABORT") + phase("QJS_TIMEOUT")}")
-        synchronized(lock) { appendLine("Active scans/providers/QuickJS: ${scans.size}/${providers.size}/${executions.size}") }
-        appendLine("Inspect Requests and Plugin Logs for request status, stages and parsing evidence.")
-        appendLine("Plugin-specific extraction/selector details require the plugin to emit console or trace logs.")
-        appendLine()
-        appendLine("RECENT EVIDENCE")
-        rows.takeLast(8).forEach { appendLine(it.line) }
+    private val labelBoundary = Regex(" [A-Za-z][A-Za-z0-9]*=")
+    private fun label(message: String, key: String): String {
+        val value = message.substringAfter(" $key=", "")
+        val boundary = labelBoundary.find(value)?.range?.first ?: value.length
+        return value.take(boundary).trim()
     }
-    fun exportSummary(tab: Tab): String = summary(tab, snapshot(tab))
-    fun previewSummary(tab: Tab): String = exportSummary(tab)
+    private fun scanId(event: Event): String = if (event.message.startsWith("SCAN_"))
+        field(event.message, "id") else field(event.message, "scan")
+    private fun runKey(event: Event): String {
+        val id = field(event.message, "providerId").ifBlank { label(event.message, "provider") }
+        return if (id.isBlank()) "" else "${scanId(event)}:$id"
+    }
+    private fun duration(value: String): String {
+        val ms = value.removeSuffix("ms").toLongOrNull() ?: return "—"
+        return if (ms < 1000L) "${ms}ms" else String.format(Locale.US, "%.1fs", ms / 1000.0)
+    }
+    private fun statusLabel(status: String): String = when (status) {
+        "ONLINE" -> "OK"
+        "SLOW" -> "OK (slow)"
+        "NO_RESULTS" -> "EMPTY"
+        "FAILED" -> "ERROR"
+        "TIMEOUT" -> "TIMEOUT"
+        "CANCELLED" -> "CANCELLED"
+        else -> status.ifBlank { "RUNNING" }
+    }
+    private fun failureEvidence(run: List<Event>): String? {
+        val console = run.lastOrNull { "ERROR: " in it.message }
+        if (console != null) return console.message.substringAfter("ERROR: ").take(220)
+        val pluginError = run.lastOrNull { "LOG: " in it.message && "error=" in it.message }
+        if (pluginError != null) return pluginError.message.substringAfter("LOG: ").take(220)
+        val parse = run.lastOrNull { "PARSE: " in it.message &&
+            ("rejected:" in it.message || "Invalid result" in it.message) }
+        if (parse != null) return parse.message.substringAfter("PARSE: ").take(220)
+        val phase = run.lastOrNull { field(it.message, "phase") in setOf("QJS_ABORT", "QJS_TIMEOUT") }
+        if (phase != null) return label(phase.message, "type").ifBlank { field(phase.message, "phase") }
+        return null
+    }
+    private fun summary(tab: Tab, all: List<Event>, maxRuns: Int = Int.MAX_VALUE): String = buildString {
+        val selected = all.filter { tab == Tab.FULL || it.tab == tab }
+        val selectedScans = selected.map(::scanId).filter { it.isNotBlank() }.toSet()
+        val selectedKeys = selected.map(::runKey).filter { it.isNotBlank() }.toSet()
+        val grouped = all.filter { runKey(it).isNotBlank() &&
+            (tab == Tab.FULL || (tab == Tab.SCANS && scanId(it) in selectedScans) || runKey(it) in selectedKeys) }
+            .groupBy(::runKey)
+        val finished = grouped.values.mapNotNull { run -> run.lastOrNull { it.message.startsWith("PROVIDER_END ") } }
+        appendLine("PROVIDER SUMMARY — ${tab.label}")
+        appendLine("${if (isCollecting()) "ON • recording" else "OFF • inactive"}")
+        appendLine("Retained events in tab: ${selected.size} • Dropped across all tabs: ${dropped.get()}")
+        retentionWarning()?.let { appendLine(it) }
+        appendLine("Provider runs: ${grouped.size} • OK: ${finished.count { field(it.message, "status") in setOf("ONLINE", "SLOW") }}")
+        appendLine("Empty: ${finished.count { field(it.message, "status") == "NO_RESULTS" }} • Error/timeout: ${finished.count { field(it.message, "status") in setOf("FAILED", "TIMEOUT") }} • Cancelled: ${finished.count { field(it.message, "status") == "CANCELLED" }}")
+        synchronized(lock) { appendLine("Active scans/providers/QuickJS: ${scans.size}/${providers.size}/${executions.size}") }
+        if (grouped.isEmpty()) {
+            appendLine()
+            appendLine("No provider runs recorded in this tab yet. Use Raw for individual events.")
+            return@buildString
+        }
+        val visible = grouped.entries.toList().takeLast(maxRuns)
+        if (visible.size < grouped.size) appendLine("Preview: latest ${visible.size} provider runs. Copy/export includes all retained runs.")
+        var previousScan = ""
+        visible.forEach { (_, run) ->
+            val start = run.firstOrNull { it.message.startsWith("PROVIDER_START ") }
+            val finish = run.lastOrNull { it.message.startsWith("PROVIDER_END ") }
+            val identity = finish ?: start ?: run.first()
+            val scan = scanId(identity)
+            if (scan != previousScan) {
+                appendLine()
+                val end = all.lastOrNull { it.message.startsWith("SCAN_END ") && field(it.message, "id") == scan }
+                appendLine("SCAN $scan • ${end?.let { field(it.message, "outcome").uppercase(Locale.US) } ?: "IN PROGRESS / END NOT RETAINED"}")
+                if (end != null) appendLine("Duration: ${duration(field(end.message, "elapsed"))} • Streams: ${field(end.message, "streams")}")
+                previousScan = scan
+            }
+            appendLine()
+            val name = label(identity.message, "provider").ifBlank { field(identity.message, "providerId") }
+            val plugin = (finish ?: start)?.let { label(it.message, "plugin") }.orEmpty()
+            appendLine(if (plugin.isBlank()) "$name • Scan $scan" else "$name • $plugin • Scan $scan")
+            val status = finish?.let { field(it.message, "status") }.orEmpty()
+            val pendingStatus = if (status.isBlank() && start == null) "UNKNOWN (lifecycle not retained)" else statusLabel(status)
+            appendLine("Status: $pendingStatus • ${finish?.let { duration(field(it.message, "elapsed")) } ?: "—"} • Streams: ${finish?.let { field(it.message, "streams") } ?: "—"}")
+            if (status in setOf("FAILED", "TIMEOUT", "NO_RESULTS", "CANCELLED")) {
+                val reason = failureEvidence(run) ?: when (status) {
+                    "NO_RESULTS" -> "No links returned; plugin did not report a specific cause."
+                    "TIMEOUT" -> "Provider exceeded its runtime timeout."
+                    "CANCELLED" -> "Provider run cancelled."
+                    else -> "No detailed error retained. Inspect Raw."
+                }
+                appendLine("Reason: $reason")
+            }
+        }
+    }
+    fun exportSummary(tab: Tab): String = summary(tab, snapshot(Tab.FULL))
+    fun previewSummary(tab: Tab): String = summary(tab, snapshot(Tab.FULL), maxRuns = 40)
 
     fun saveBundle(context: Context): SaveResult {
         install(context)
@@ -226,7 +304,7 @@ object ProviderDiagnostics {
             Tab.entries.forEach { tab ->
                 val rows = all.filter { tab == Tab.FULL || it.tab == tab }
                 entry("${tab.name.lowercase(Locale.US)}.log", raw(tab, rows, rows.size))
-                entry("summary/${tab.name.lowercase(Locale.US)}.txt", summary(tab, rows))
+                entry("summary/${tab.name.lowercase(Locale.US)}.txt", summary(tab, all))
             }
         }
     }

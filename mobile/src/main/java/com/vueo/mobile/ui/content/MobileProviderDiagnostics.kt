@@ -859,15 +859,20 @@ internal fun PerformanceDiagnosticsDialog(
         }
     }
 
-    val visibleLog = remember(diagnosticText, searchQuery) {
+    val visibleLog = remember(diagnosticText, searchQuery, providerMode, showRaw) {
         val query = searchQuery.trim()
         if (query.isBlank()) {
             diagnosticText
+        } else if (providerMode && !showRaw) {
+            diagnosticText.split("\n\n")
+                .filter { block -> block.contains(query, ignoreCase = true) }
+                .joinToString("\n\n")
+                .ifBlank { "No provider summaries match \"$query\"." }
         } else {
             diagnosticText
                 .lineSequence()
                 .filter { line -> line.contains(query, ignoreCase = true) }
-                .joinToString("\n")
+                .joinToString(if (providerMode) "\n\n" else "\n")
                 .ifBlank { "No diagnostic lines match \"$query\"." }
         }
     }
@@ -1079,11 +1084,13 @@ internal fun PerformanceDiagnosticsDialog(
                             .padding(horizontal = 10.dp, vertical = 9.dp),
                     ) {
                         Text(
-                            text = visibleLog,
+                            text = remember(visibleLog, providerMode) {
+                            if (providerMode) styledProviderDiagnosticText(visibleLog) else androidx.compose.ui.text.AnnotatedString(visibleLog)
+                        },
                             color = Color.White.copy(alpha = .88f),
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontSize = if (providerMode && !showRaw) 12.sp else 10.sp,
+                            lineHeight = if (providerMode && !showRaw) 17.sp else 14.sp,
+                            fontFamily = if (providerMode && !showRaw) FontFamily.SansSerif else FontFamily.Monospace,
                         )
                     }
                 }
@@ -1990,3 +1997,22 @@ internal fun ScreenHeader(
         action?.invoke()
     }
 }
+
+private fun styledProviderDiagnosticText(text: String): androidx.compose.ui.text.AnnotatedString =
+    androidx.compose.ui.text.buildAnnotatedString {
+        text.lineSequence().forEach { line ->
+            val color = when {
+                line.startsWith("INCOMPLETE RECORD:") || "Status: ERROR" in line ||
+                    "status=FAILED " in line || "QJS_ABORT" in line || "ERROR: " in line -> Color(0xFFE5A1A1)
+                "Status: TIMEOUT" in line || "status=TIMEOUT " in line || "QJS_TIMEOUT" in line -> Color(0xFFE0C28C)
+                "Status: OK" in line || "status=ONLINE " in line || "status=SLOW " in line -> Color(0xFFA9D5B7)
+                "Status: EMPTY" in line || "Status: CANCELLED" in line ||
+                    "status=NO_RESULTS " in line || "status=CANCELLED " in line -> Color(0xFFB6BAC4)
+                else -> null
+            }
+            if (color != null) pushStyle(androidx.compose.ui.text.SpanStyle(color = color))
+            append(line)
+            append('\n')
+            if (color != null) pop()
+        }
+    }
