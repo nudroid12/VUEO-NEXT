@@ -80,6 +80,8 @@ private const val SourceKeyRepeatThrottleMs = 112L
 /** Vueo-inspired 40/60 TV source-selection composition. */
 @Composable
 internal fun TvSourcePresentation(
+    active: Boolean = true,
+    initialFocusedSourceKey: String? = null,
     state: TvSourcePresentationState,
     onSelectProvider: (String) -> Unit,
     onToggleDetails: () -> Unit,
@@ -133,19 +135,24 @@ internal fun TvSourcePresentation(
         return true
     }
 
-    LaunchedEffect(state.filteredSources, sourceFocusAssigned, userInteracted) {
+    LaunchedEffect(state.filteredSources, sourceFocusAssigned, userInteracted, active) {
+        if (!active) return@LaunchedEffect
         if (userInteracted || sourceFocusAssigned || state.filteredSources.isEmpty()) {
             return@LaunchedEffect
         }
-        val target = state.filteredSources.first()
-        listState.scrollToItem(0)
+        val restoredIndex = state.filteredSources.indexOfFirst {
+            sourceStableKey(it) == initialFocusedSourceKey
+        }.coerceAtLeast(0)
+        val target = state.filteredSources[restoredIndex]
+        listState.scrollToItem(restoredIndex)
         delay(90)
         if (userInteracted) return@LaunchedEffect
         runCatching { sourceRequester(target).requestFocus() }
         sourceFocusAssigned = true
     }
 
-    LaunchedEffect(state.selectedProvider, state.filteredSources, focusFirstAfterProviderCycle) {
+    LaunchedEffect(state.selectedProvider, state.filteredSources, focusFirstAfterProviderCycle, active) {
+        if (!active) return@LaunchedEffect
         if (!focusFirstAfterProviderCycle || state.filteredSources.isEmpty()) return@LaunchedEffect
         listState.scrollToItem(0)
         delay(60)
@@ -154,7 +161,8 @@ internal fun TvSourcePresentation(
         focusFirstAfterProviderCycle = false
     }
 
-    LaunchedEffect(state.searching, state.error, state.rankedSources.isEmpty(), userInteracted) {
+    LaunchedEffect(state.searching, state.error, state.rankedSources.isEmpty(), userInteracted, active) {
+        if (!active) return@LaunchedEffect
         if (userInteracted || state.searching) return@LaunchedEffect
         if (state.rankedSources.isEmpty()) {
             delay(90)

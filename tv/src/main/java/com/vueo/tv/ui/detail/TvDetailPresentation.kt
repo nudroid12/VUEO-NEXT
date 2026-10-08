@@ -56,6 +56,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvDetailPresentation(
+    active: Boolean = true,
     state: TvDetailPresentationState,
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
@@ -129,6 +130,9 @@ internal fun TvDetailPresentation(
     val navigationScope = rememberCoroutineScope()
     var navigationJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
     var navigationGeneration by remember(mediaKey) { mutableStateOf(0L) }
+    LaunchedEffect(active) {
+        if (!active) navigationJob?.cancel()
+    }
     fun revealAndFocus(index: Int, target: FocusRequester) {
         // Latest navigation replaces the previous center/reveal animation.
         // Attached targets use normal focus relocation, as in Nuvio.
@@ -227,12 +231,14 @@ internal fun TvDetailPresentation(
         VueoDetailFocusMemory.episodeId.takeIf { VueoDetailFocusMemory.mediaKey == mediaKey }
     }
     var entryFocusRestored by remember(mediaKey) { mutableStateOf(false) }
-    LaunchedEffect(mediaKey) {
+    LaunchedEffect(mediaKey, active) {
+        if (!active) return@LaunchedEffect
         delay(110)
         runCatching { playRequester.requestFocus() }
     }
 
-    LaunchedEffect(mediaKey, state.selectedEpisode?.id, hasEpisodes) {
+    LaunchedEffect(mediaKey, state.selectedEpisode?.id, hasEpisodes, active) {
+        if (!active) return@LaunchedEffect
         val rememberedEpisodeId = entryEpisodeId
         val restoreEpisode = state.item.isDetailSeries() &&
             VueoDetailFocusMemory.mediaKey == mediaKey &&

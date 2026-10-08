@@ -25,6 +25,7 @@ import java.net.URI
  */
 @Composable
 fun TvSourceScreen(
+    active: Boolean = true,
     runtime: TvRuntime,
     media: MediaItem,
     episode: EpisodeItem?,
@@ -36,12 +37,13 @@ fun TvSourceScreen(
     onStop: () -> Unit,
     onPlay: (TvSourceBundle, StreamSource) -> Unit,
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(enabled = active, onBack = onBack)
 
     val memoryKey = remember(media.id, media.type, episode?.id) {
         "${media.type}:${media.id}:${episode?.id ?: media.id}"
     }
     val memory = remember(memoryKey) { TvSourceUiMemory.forKey(memoryKey) }
+    val returnFocusKey = remember(memoryKey) { memory.focusedSourceKey }
 
     val bundle = discovery?.bundle
     val searching = discovery?.searching ?: discoveryRunning
@@ -106,6 +108,8 @@ fun TvSourceScreen(
     }
 
     TvSourcePresentation(
+        active = active,
+        initialFocusedSourceKey = returnFocusKey,
         state = TvSourcePresentationState(
             media = media,
             episode = episode,

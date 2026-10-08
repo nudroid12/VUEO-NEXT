@@ -81,10 +81,8 @@ fun TvDetailScreen(
 
     BackHandler(enabled = active, onBack = ::leaveDetails)
 
-    // AnimatedContent retains the outgoing route briefly. Do not keep composing
-    // the full Details tree after the route already left DETAIL: no episodes,
-    // people rows, artwork or focus work should compete with the returning Home.
-    if (!active) return
+    // Outgoing Details keeps its last visual frame until the transition completes.
+    // Only the current route handles Back/focus; disposal cancels its startup tree.
 
     val initialShell = remember(initial) {
         DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
@@ -170,6 +168,16 @@ fun TvDetailScreen(
             }
         }
 
+        val savedEpisode = if (VueoDetailFocusMemory.mediaKey == "${media.type}:${media.id}") {
+            media.episodes.firstOrNull { it.id == VueoDetailFocusMemory.episodeId }
+        } else null
+        if (savedEpisode != null) {
+            selectedSeason = savedEpisode.season
+            selectedEpisode = savedEpisode
+            episodeSelectionTouchedByUser = true
+            return
+        }
+
         val playbackTarget = detailPlaybackTargetEpisode(
             media = media,
             entries = entries,
@@ -184,7 +192,8 @@ fun TvDetailScreen(
         VueoDetailFocusMemory.episodeId = null
     }
 
-    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
+    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId, active) {
+        if (!active) return@LaunchedEffect
         detailStartupJob = currentCoroutineContext()[Job]
         val detailSession = detailSessionGeneration + 1
         detailSessionGeneration = detailSession
@@ -405,10 +414,7 @@ fun TvDetailScreen(
         item.episodes.filter { it.season == selectedSeason }
     }
     LaunchedEffect(active, item, loading) {
-        if (!active) {
-            dnaMatch = null
-            return@LaunchedEffect
-        }
+        if (!active) return@LaunchedEffect
         if (loading) {
             dnaMatch = null
         } else {
@@ -428,6 +434,7 @@ fun TvDetailScreen(
     }
 
     TvDetailPresentation(
+        active = active,
         state = TvDetailPresentationState(
             item = item,
             loading = loading,
