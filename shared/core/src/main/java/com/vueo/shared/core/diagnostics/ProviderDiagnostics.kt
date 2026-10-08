@@ -125,10 +125,17 @@ object ProviderDiagnostics {
     private fun snapshot(tab: Tab): List<Event> = synchronized(lock) {
         events.filter { tab == Tab.FULL || it.tab == tab }
     }
+    private fun retentionWarning(): String? {
+        val removed = dropped.get()
+        return if (removed > 0L) {
+            "INCOMPLETE RECORD: $removed oldest events were discarded across all tabs because the $MAX_EVENTS-event buffer filled. Counts cover retained events only."
+        } else null
+    }
     private fun raw(tab: Tab, rows: List<Event>, total: Int): String = buildString {
         appendLine("PROVIDER RAW LOG — ${tab.label}")
         appendLine("${if (isCollecting()) "ON" else "OFF"} • Events: $total • Dropped: ${dropped.get()}")
-        if (rows.size < total) appendLine("Showing latest ${rows.size} events.")
+        retentionWarning()?.let { appendLine(it) }
+        if (rows.size < total) appendLine("Preview: latest ${rows.size} of $total retained events. Export includes all retained events.")
         if (rows.isEmpty()) appendLine("No provider events recorded yet.")
         rows.forEach { appendLine(it.line) }
     }
@@ -143,6 +150,7 @@ object ProviderDiagnostics {
         appendLine("PROVIDER SUMMARY — ${tab.label}")
         appendLine("Diagnostics: ${if (isCollecting()) "ON" else "OFF"}")
         appendLine("Events: ${rows.size} • Dropped: ${dropped.get()}")
+        retentionWarning()?.let { appendLine(it) }
         appendLine("Scans: ${count("SCAN_START ")} • Cancelled: ${count("SCAN_CANCELLED ")} • Errors: ${count("SCAN_ERROR ")}")
         appendLine("Providers started: ${count("PROVIDER_START ")}")
         appendLine("Cancelled: ${finished.count { field(it.message, "status") == "CANCELLED" }}")
@@ -201,6 +209,9 @@ object ProviderDiagnostics {
         appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLine("Enabled: ${isCollecting()}")
         appendLine("Event limit: $MAX_EVENTS; line limit: $MAX_LINE")
+        appendLine("Per-provider console/stage event cap: none")
+        appendLine("Oldest events discarded across all tabs: ${dropped.get()}")
+        retentionWarning()?.let { appendLine(it) }
         appendLine("No system sampler, frame probes or automatic body/header capture.")
         appendLine("URLs and credential fields redacted before buffering.")
     }

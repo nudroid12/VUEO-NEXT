@@ -770,10 +770,8 @@ private fun emptyDiscoveryResult():
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
 
-        var diagnosticLogCount = 0
         val progress = ProviderExecutionProgress(diagnosticSink = { message ->
-            if (ProviderDiagnostics.isCollecting() && diagnosticLogCount < 120) {
-                diagnosticLogCount++
+            if (ProviderDiagnostics.isCollecting()) {
                 ProviderDiagnostics.recordPluginLog(
                     runtimeDiagnosticScanId, provider.id, provider.name, repository.name, message,
                 )
