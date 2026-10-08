@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -61,9 +62,12 @@ internal fun TvHomePresentation(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
         pill = if (navigationVisible) 0.32f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
     )
+    // One interruptible progress value drives rail height, hero size and copy
+    // position together. A gentle acceleration avoids the abrupt 180ms resize.
+    val menuContentEasing = remember { CubicBezierEasing(0.22f, 0f, 0.18f, 1f) }
     val rowsViewportFraction by animateFloatAsState(
         targetValue = targetRowsViewportFraction,
-        animationSpec = tween(durationMillis = 180),
+        animationSpec = tween(durationMillis = 340, easing = menuContentEasing),
         label = "homeRowsViewportFraction",
     )
 

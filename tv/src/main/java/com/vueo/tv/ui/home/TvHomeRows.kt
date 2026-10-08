@@ -131,9 +131,14 @@ internal fun TvModernHomeRows(
         }
     }
 
-    fun requestRowAlignment(rowKey: String) {
+    fun requestRowAlignment(rowKey: String, skipIfAligned: Boolean = false) {
         val targetIndex = currentRows.indexOfFirst { it.key == rowKey }
         if (targetIndex < 0) return
+        if (skipIfAligned && verticalAlignmentJob[0]?.isActive != true &&
+            verticalFocusJob[0]?.isActive != true && !verticalState.isScrollInProgress &&
+            verticalState.firstVisibleItemIndex == targetIndex &&
+            verticalState.firstVisibleItemScrollOffset == 0
+        ) return
         verticalAlignmentJob[0]?.cancel()
         verticalAlignmentJob[0] = verticalScope.launch {
             // Use LazyColumn's native animation instead of the old custom
@@ -214,10 +219,10 @@ internal fun TvModernHomeRows(
             }
             val previewKey = rows.firstOrNull { it.key == "continue-watching" }?.key
                 ?: rows.firstOrNull()?.key
-            previewKey?.let(::requestRowAlignment)
+            previewKey?.let { requestRowAlignment(it, skipIfAligned = true) }
         } else {
             val returnRowKey = previewReturnRowKey ?: return@LaunchedEffect
-            if (rows.any { it.key == returnRowKey }) requestRowAlignment(returnRowKey)
+            if (rows.any { it.key == returnRowKey }) requestRowAlignment(returnRowKey, skipIfAligned = true)
             previewReturnRowKey = null
         }
     }
