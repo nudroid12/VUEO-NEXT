@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
 
 import android.app.Activity
@@ -681,13 +683,13 @@ internal fun MediaDetailsScreen(
 
     suspend fun loadDetailLibraryState(): Pair<LibraryDetailSnapshot, UserDnaSnapshot?> {
         val snapshot =
-            withContext(Dispatchers.IO) {
+            PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_library_snapshot_1", Tab.DETAILS) {
                 libraryStore.detailSnapshot()
             }
 
         val dnaSnapshot =
             if (showDnaMatch) {
-                withContext(Dispatchers.Default) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_dna_analysis_2", Tab.DETAILS) {
                     detailsDnaEngine.analyze(
                         history = snapshot.history,
                         myList = snapshot.watchlist,
@@ -835,7 +837,7 @@ internal fun MediaDetailsScreen(
                     )
             ) {
                 try {
-                    withContext(Dispatchers.IO) {
+                    PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_hydrate_3", Tab.DETAILS) {
                         DetailUpstreamPolicy.prepareForCore(
                             item = initialItem,
                             tmdbApiKey = tmdbKey,
@@ -858,7 +860,7 @@ internal fun MediaDetailsScreen(
         // behind Detail startup work.
         val coreItem =
             try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_normalize_episodes_4", Tab.DETAILS) {
                     DetailUpstreamPolicy.normalizeSeriesEpisodes(
                         engine.loadMeta(
                             preparedItem
@@ -868,7 +870,7 @@ internal fun MediaDetailsScreen(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                withContext(Dispatchers.Default) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_normalize_episodes_5", Tab.DETAILS) {
                     DetailUpstreamPolicy.normalizeSeriesEpisodes(
                         preparedItem
                     )
@@ -895,7 +897,7 @@ internal fun MediaDetailsScreen(
             coreItem
 
         val localRelated =
-            withContext(Dispatchers.Default) {
+            PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_enrich_metadata_6", Tab.DETAILS) {
                 RelatedContentOrchestrator.local(
                     item = resolvedItem,
                     limit = 18,
@@ -922,7 +924,7 @@ internal fun MediaDetailsScreen(
             ) {
                 enrichedItem =
                     try {
-                        withContext(Dispatchers.IO) {
+                        PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_enrich_metadata_7", Tab.DETAILS) {
                             DetailUpstreamPolicy.enrichTmdb(
                                 media = enrichedItem,
                                 tmdbApiKey = tmdbKey,
@@ -956,7 +958,7 @@ internal fun MediaDetailsScreen(
             ) {
                 enrichedItem =
                     try {
-                        withContext(Dispatchers.IO) {
+                        PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_rich_metadata_8", Tab.DETAILS) {
                             DetailUpstreamPolicy.enrichRichDetails(
                                 media = enrichedItem,
                                 tmdbApiKey = tmdbKey,
@@ -982,7 +984,7 @@ internal fun MediaDetailsScreen(
         launch {
             val remoteRelated =
                 try {
-                    withContext(Dispatchers.IO) {
+                    PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_related_remote_9", Tab.DETAILS) {
                         RelatedContentOrchestrator.mergeRemote(
                             item = resolvedItem,
                             localItems = localRelated,
@@ -1021,7 +1023,7 @@ internal fun MediaDetailsScreen(
 
             val fetched =
                 try {
-                    withContext(Dispatchers.IO) {
+                    PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_ratings_10", Tab.DETAILS) {
                         MdblistClient
                             .ratings(
                                 media =

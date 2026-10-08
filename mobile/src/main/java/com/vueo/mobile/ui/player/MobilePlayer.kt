@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -1829,6 +1831,63 @@ internal fun PlayerScreen(
         ) {
             contentWarningsShown = true
             showContentWarnings = true
+        }
+    }
+
+    // Keep sampler/frame attribution on PLAYER while Details hosts this surface.
+    DisposableEffect(player) {
+        val screenToken = PerformanceDiagnostics.enterPlayerScreen("Mobile")
+        onDispose { PerformanceDiagnostics.exitPlayerScreen(screenToken) }
+    }
+
+    DisposableEffect(player, mediaKey, source.url) {
+        val startedNs = System.nanoTime()
+        var lastState = -1
+        var bufferingNs = 0L
+        var emitted = 0
+        var firstFrameLogged = false
+        fun log(event: String, details: String) {
+            if (PerformanceDiagnostics.isCollecting() && emitted < 120) {
+                emitted++
+                com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent(
+                    "Mobile", event, details,
+                )
+            }
+        }
+        log(if (episode != null) "EPISODE_PLAYBACK_START" else "PLAYBACK_START", "state=${player.playbackState}")
+        val diagnosticsListener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (!PerformanceDiagnostics.isCollecting() || lastState == playbackState) return
+                lastState = playbackState
+                val now = System.nanoTime()
+                val bufferMs = if (bufferingNs > 0L) (now - bufferingNs) / 1_000_000L else 0L
+                if (playbackState == Player.STATE_BUFFERING) bufferingNs = now
+                val event = when (playbackState) {
+                    Player.STATE_BUFFERING -> "BUFFERING"
+                    Player.STATE_READY -> "READY"
+                    Player.STATE_ENDED -> "ENDED"
+                    else -> "IDLE"
+                }
+                log(event, "elapsed=${(now - startedNs) / 1_000_000L}ms buffer=${bufferMs}ms")
+                if (playbackState != Player.STATE_BUFFERING) bufferingNs = 0L
+            }
+            override fun onRenderedFirstFrame() {
+                if (PerformanceDiagnostics.isCollecting() && !firstFrameLogged) {
+                    firstFrameLogged = true
+                    log("FIRST_FRAME", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms")
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (PerformanceDiagnostics.isCollecting()) {
+                    log(if (isPlaying) "PLAYING" else "NOT_PLAYING", "state=${player.playbackState}")
+                }
+            }
+        }
+        player.addListener(diagnosticsListener)
+        diagnosticsListener.onPlaybackStateChanged(player.playbackState)
+        onDispose {
+            player.removeListener(diagnosticsListener)
+            log("PLAYBACK_STOP", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms")
         }
     }
 

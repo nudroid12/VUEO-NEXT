@@ -12,6 +12,7 @@ import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
 import com.vueo.shared.core.source.SourceResolveResult
 import com.vueo.shared.core.source.SourceResolver
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -1282,7 +1283,7 @@ private fun emptyDiscoveryResult():
         } catch (error: CancellationException) {
             RuntimeDiagnostics.recordQuickJsPhase(
                 token = quickJsToken,
-                phase = "QJS_CANCELLED",
+                phase = if (error is TimeoutCancellationException) "QJS_TIMEOUT" else "QJS_CANCELLED",
                 details = "type=${error::class.java.simpleName}",
                 critical = false,
             )

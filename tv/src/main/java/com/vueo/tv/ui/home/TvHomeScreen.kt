@@ -1,5 +1,7 @@
 package com.vueo.tv.home
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -133,7 +135,7 @@ fun TvHomeScreen(
                         }
                     }
                     try {
-                        withContext(Dispatchers.Default) {
+                        PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_load", Tab.HOME) {
                             runtime.homeRows(
                                 forceRefresh = explicitRetry,
                                 onPartial = { updates.trySend(it) },
@@ -174,7 +176,7 @@ fun TvHomeScreen(
         if (hydrationIsCurrent) return@LaunchedEffect
 
         if (retainedState.libraryHydrationProfileId != activeProfileId) {
-            retainedState.continueWatching = withContext(Dispatchers.IO) {
+            retainedState.continueWatching = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_home_hydrate_2", Tab.HOME) {
                 runtime.libraryStore.homeStartupContinueWatching()
             }
             retainedState.watchHistory = emptyList()
@@ -188,7 +190,7 @@ fun TvHomeScreen(
         PerformanceDiagnostics.captureRuntimeEvent(
             "HOME_CW_FULL_BEGIN revision=$libraryRevision refresh=$refreshToken"
         )
-        val librarySnapshot = withContext(Dispatchers.IO) {
+        val librarySnapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_home_hydrate_3", Tab.HOME) {
             runtime.libraryStore.homeSnapshot()
         }
         retainedState.continueWatching = librarySnapshot.continueWatching
@@ -208,7 +210,7 @@ fun TvHomeScreen(
     // Presentation is now a cheap pure build. Catalog partials may still arrive
     // rapidly, but they no longer restart disk/library hydration.
     LaunchedEffect(catalogRows, continueWatching, homeRecommendations) {
-        retainedState.presentationRows = withContext(Dispatchers.Default) {
+        retainedState.presentationRows = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_presentation_4", Tab.HOME) {
             buildTvHomeRows(
                 catalogRows = catalogRows,
                 continueWatching = continueWatching,
@@ -237,7 +239,7 @@ fun TvHomeScreen(
         if (!libraryIsCurrent) return@LaunchedEffect
 
         val history = retainedState.watchHistory
-        val rebuilt = withContext(Dispatchers.Default) {
+        val rebuilt = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_recommendations_5", Tab.HOME) {
             val personalizedHomeEnabled =
                 runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
             HomeRecommendationPolicy.build(

@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -533,28 +535,30 @@ internal fun SearchScreen(
 
     val animeCatalogKeys =
         remember(discoverRows) {
-            discoverRows
-                .filter {
-                    row ->
-                    listOf(
-                        row.id,
-                        row.title,
-                        row.providerName,
-                    ).any {
-                        value ->
-                        value.contains(
-                            "anime",
-                            ignoreCase = true,
-                        )
+            PerformanceDiagnostics.measureBlock("mobile_search_animeCatalogKeys", Tab.SEARCH) {
+                discoverRows
+                    .filter {
+                        row ->
+                        listOf(
+                            row.id,
+                            row.title,
+                            row.providerName,
+                        ).any {
+                            value ->
+                            value.contains(
+                                "anime",
+                                ignoreCase = true,
+                            )
+                        }
                     }
-                }
-                .flatMap {
-                    it.items
-                }
-                .map {
-                    "${it.type}:${it.id}"
-                }
-                .toSet()
+                    .flatMap {
+                        it.items
+                    }
+                    .map {
+                        "${it.type}:${it.id}"
+                    }
+                    .toSet()
+            }
         }
 
     val discoverBaseItems =
@@ -562,10 +566,12 @@ internal fun SearchScreen(
             discoverRows,
             sortMode,
         ) {
-            DiscoverCatalogPolicy.baseItems(
-                rows = discoverRows,
-                mode = sortMode.toDiscoverSortMode(),
-            )
+            PerformanceDiagnostics.measureBlock("mobile_search_discoverBaseItems", Tab.SEARCH) {
+                DiscoverCatalogPolicy.baseItems(
+                    rows = discoverRows,
+                    mode = sortMode.toDiscoverSortMode(),
+                )
+            }
         }
 
     val sourceItems =
@@ -581,33 +587,35 @@ internal fun SearchScreen(
             typeFilter,
             animeCatalogKeys,
         ) {
-            sourceItems
-                .filter { item ->
-                    SearchResultOrderPolicy.matchesType(
-                        item = item,
-                        filter = typeFilter.toSearchMediaFilter(),
-                        animeCatalogKeys = animeCatalogKeys,
-                    )
-                }
-                .flatMap {
-                    it.genres
-                }
-                .map {
-                    it.trim()
-                }
-                .filter {
-                    it.isNotBlank() &&
-                        !it.equals(
-                            "anime",
-                            ignoreCase = true,
+            PerformanceDiagnostics.measureBlock("mobile_search_availableGenres", Tab.SEARCH) {
+                sourceItems
+                    .filter { item ->
+                        SearchResultOrderPolicy.matchesType(
+                            item = item,
+                            filter = typeFilter.toSearchMediaFilter(),
+                            animeCatalogKeys = animeCatalogKeys,
                         )
-                }
-                .distinctBy {
-                    it.lowercase()
-                }
-                .sortedBy {
-                    it.lowercase()
-                }
+                    }
+                    .flatMap {
+                        it.genres
+                    }
+                    .map {
+                        it.trim()
+                    }
+                    .filter {
+                        it.isNotBlank() &&
+                            !it.equals(
+                                "anime",
+                                ignoreCase = true,
+                            )
+                    }
+                    .distinctBy {
+                        it.lowercase()
+                    }
+                    .sortedBy {
+                        it.lowercase()
+                    }
+            }
         }
 
     LaunchedEffect(
@@ -637,40 +645,42 @@ internal fun SearchScreen(
             searchMode,
             animeCatalogKeys,
         ) {
-            val filtered =
-                sourceItems
-                    .filter {
-                        item ->
-                        SearchResultOrderPolicy.matchesType(
-                            item = item,
-                            filter = typeFilter.toSearchMediaFilter(),
-                            animeCatalogKeys = animeCatalogKeys,
-                        ) &&
-                            SearchResultOrderPolicy.matchesGenre(
+            PerformanceDiagnostics.measureBlock("mobile_search_filteredItems", Tab.SEARCH) {
+                val filtered =
+                    sourceItems
+                        .filter {
+                            item ->
+                            SearchResultOrderPolicy.matchesType(
                                 item = item,
-                                genre = genre,
-                            )
-                    }
+                                filter = typeFilter.toSearchMediaFilter(),
+                                animeCatalogKeys = animeCatalogKeys,
+                            ) &&
+                                SearchResultOrderPolicy.matchesGenre(
+                                    item = item,
+                                    genre = genre,
+                                )
+                        }
 
-            if (
-                searchingMode &&
-                searchMode == SearchMode.ACTOR
-            ) {
-                searchSortActorItems(
-                    items = filtered,
-                    mode = sortMode,
-                )
-            } else if (searchingMode) {
-                searchSortItems(
-                    items = filtered,
-                    mode = sortMode,
-                    query = normalizedQuery,
-                )
-            } else {
-                DiscoverCatalogPolicy.orderFiltered(
-                    items = filtered,
-                    mode = sortMode.toDiscoverSortMode(),
-                )
+                if (
+                    searchingMode &&
+                    searchMode == SearchMode.ACTOR
+                ) {
+                    searchSortActorItems(
+                        items = filtered,
+                        mode = sortMode,
+                    )
+                } else if (searchingMode) {
+                    searchSortItems(
+                        items = filtered,
+                        mode = sortMode,
+                        query = normalizedQuery,
+                    )
+                } else {
+                    DiscoverCatalogPolicy.orderFiltered(
+                        items = filtered,
+                        mode = sortMode.toDiscoverSortMode(),
+                    )
+                }
             }
         }
 

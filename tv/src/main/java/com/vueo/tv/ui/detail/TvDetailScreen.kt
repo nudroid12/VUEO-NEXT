@@ -1,5 +1,7 @@
 package com.vueo.tv.detail
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 
@@ -81,8 +83,10 @@ fun TvDetailScreen(
 
     BackHandler(enabled = active, onBack = ::leaveDetails)
 
-    // Outgoing Details keeps its last visual frame until the transition completes.
-    // Only the current route handles Back/focus; disposal cancels its startup tree.
+    // AnimatedContent retains the outgoing route briefly. Do not keep composing
+    // the full Details tree after the route already left DETAIL: no episodes,
+    // people rows, artwork or focus work should compete with the returning Home.
+    if (!active) return
 
     val initialShell = remember(initial) {
         DetailUpstreamPolicy.normalizeSeriesEpisodes(initial)
@@ -168,16 +172,6 @@ fun TvDetailScreen(
             }
         }
 
-        val savedEpisode = if (VueoDetailFocusMemory.mediaKey == "${media.type}:${media.id}") {
-            media.episodes.firstOrNull { it.id == VueoDetailFocusMemory.episodeId }
-        } else null
-        if (savedEpisode != null) {
-            selectedSeason = savedEpisode.season
-            selectedEpisode = savedEpisode
-            episodeSelectionTouchedByUser = true
-            return
-        }
-
         val playbackTarget = detailPlaybackTargetEpisode(
             media = media,
             entries = entries,
@@ -192,8 +186,7 @@ fun TvDetailScreen(
         VueoDetailFocusMemory.episodeId = null
     }
 
-    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId, active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(initial.id, initial.type, initial.sourceExtensionId) {
         detailStartupJob = currentCoroutineContext()[Job]
         val detailSession = detailSessionGeneration + 1
         detailSessionGeneration = detailSession
@@ -220,7 +213,7 @@ fun TvDetailScreen(
         titleArtworkLoading = TvTitleArtwork.cached(initialShell, artworkApiKey) == null && artworkApiKey.isNotBlank()
         launch {
             try {
-                val loadedArtwork = withContext(Dispatchers.IO) {
+                val loadedArtwork = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_hydrate_1", Tab.DETAILS) {
                     TvTitleArtwork.load(initialShell, artworkApiKey)
                 }
                 if (sessionCurrent()) {
@@ -243,7 +236,7 @@ fun TvDetailScreen(
 
         // Hydrate local library state without blocking the first Details frame.
         launch {
-            val snapshot = withContext(Dispatchers.IO) {
+            val snapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_library_flags_2", Tab.DETAILS) {
                 DetailLibrarySnapshot(
                     watchlisted = runtime.libraryStore.isWatchlisted(shell),
                     movieWatched = runtime.libraryStore.isMarkedWatched(shell),
@@ -262,7 +255,7 @@ fun TvDetailScreen(
         // Identity resolution, addon metadata response parsing and episode
         // normalization stay off Main. Back must never wait for these.
         val prepared = try {
-            withContext(Dispatchers.IO) {
+            PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_prepare_core_3", Tab.DETAILS) {
                 runtime.prepareDetailForCore(initial)
             }
         } catch (cancelled: CancellationException) {
@@ -273,13 +266,13 @@ fun TvDetailScreen(
         if (!sessionCurrent()) return@LaunchedEffect
 
         val core = try {
-            withContext(Dispatchers.IO) {
+            PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_load_core_4", Tab.DETAILS) {
                 runtime.loadCoreDetail(prepared)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            withContext(Dispatchers.Default) {
+            PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_details_normalize_episodes_5", Tab.DETAILS) {
                 DetailUpstreamPolicy.normalizeSeriesEpisodes(prepared)
             }
         }
@@ -289,7 +282,7 @@ fun TvDetailScreen(
         publishRatings(core)
         syncEpisodeSelection(core, entries = playbackEntries, preserveCurrent = true)
         launch {
-            val flags = withContext(Dispatchers.IO) {
+            val flags = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_library_flags_6", Tab.DETAILS) {
                 runtime.libraryStore.isWatchlisted(core) to runtime.libraryStore.isMarkedWatched(core)
             }
             if (!sessionCurrent()) return@launch
@@ -304,7 +297,7 @@ fun TvDetailScreen(
 
         launch {
             val localRelated = try {
-                withContext(Dispatchers.Default) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_details_enrich_metadata_7", Tab.DETAILS) {
                     runtime.localRelatedTitles(core)
                 }
             } catch (cancelled: CancellationException) {
@@ -316,7 +309,7 @@ fun TvDetailScreen(
             related = localRelated
 
             val remoteRelated = try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_enrich_metadata_8", Tab.DETAILS) {
                     runtime.relatedTitles(
                         item = core,
                         localItems = localRelated,
@@ -333,7 +326,7 @@ fun TvDetailScreen(
 
         launch {
             var enriched = try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_enrich_metadata_9", Tab.DETAILS) {
                     runtime.enrichDetailTmdb(core)
                 }
             } catch (cancelled: CancellationException) {
@@ -350,7 +343,7 @@ fun TvDetailScreen(
             }
 
             val rich = try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_enrich_metadata_10", Tab.DETAILS) {
                     runtime.enrichDetailRichDetails(enriched)
                 }
             } catch (cancelled: CancellationException) {
@@ -370,7 +363,7 @@ fun TvDetailScreen(
 
         launch {
             val loadedEpisodeRatings = try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_episode_ratings_11", Tab.DETAILS) {
                     DetailEpisodeRatingsClient.load(core, runtime.pluginStore.tmdbApiKey())
                 }
             } catch (cancelled: CancellationException) {
@@ -385,7 +378,7 @@ fun TvDetailScreen(
 
         launch {
             val fetched = try {
-                withContext(Dispatchers.IO) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_ratings_12", Tab.DETAILS) {
                     runtime.ratings(core)
                 }
             } catch (cancelled: CancellationException) {
@@ -414,12 +407,15 @@ fun TvDetailScreen(
         item.episodes.filter { it.season == selectedSeason }
     }
     LaunchedEffect(active, item, loading) {
-        if (!active) return@LaunchedEffect
+        if (!active) {
+            dnaMatch = null
+            return@LaunchedEffect
+        }
         if (loading) {
             dnaMatch = null
         } else {
             dnaMatch = try {
-                withContext(Dispatchers.Default) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_details_dna_match_13", Tab.DETAILS) {
                     runtime.dnaMatch(item)
                 }
             } catch (cancelled: CancellationException) {
@@ -434,7 +430,6 @@ fun TvDetailScreen(
     }
 
     TvDetailPresentation(
-        active = active,
         state = TvDetailPresentationState(
             item = item,
             loading = loading,

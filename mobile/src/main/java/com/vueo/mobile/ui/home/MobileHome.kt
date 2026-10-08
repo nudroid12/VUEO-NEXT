@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -604,7 +606,7 @@ internal fun HomeScreen(
     }
 
     LaunchedEffect(rows) {
-        val freshFeatured = withContext(Dispatchers.Default) {
+        val freshFeatured = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_presentation_1", Tab.HOME) {
             val allItems =
                 rows
                     .asSequence()
@@ -675,7 +677,7 @@ internal fun HomeScreen(
         activeProfileId,
         personalizedHomeEnabled,
     ) {
-        val librarySnapshot = withContext(Dispatchers.IO) {
+        val librarySnapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_home_library_snapshot_2", Tab.HOME) {
             libraryStore.detailSnapshot()
         }
 
@@ -685,7 +687,7 @@ internal fun HomeScreen(
 
         val freshRecommendations =
             if (personalizedHomeEnabled) {
-                withContext(Dispatchers.Default) {
+                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
                     HomeRecommendationPolicy.build(
                         catalogRows = rows,
                         watchHistory = librarySnapshot.history,

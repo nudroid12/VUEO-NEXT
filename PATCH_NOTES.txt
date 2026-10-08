@@ -1,0 +1,21 @@
+VUEO — Performance diagnostics patch (TV + Mobile/shared)
+
+Scope:
+- Summary uses actual event types, phases and statuses. timeoutMs is configuration.
+- Execution, phase, sample, cancellation and failure counts are separate.
+- Active execution counters close once on completion, cancellation or failure.
+- Cancelled scans retain candidateStreams separately from final merged streams.
+- Cancellation reasons come from the exception; timeouts remain failure signals.
+- Opt-in work timings cover catalog loading, search ranking/filtering,
+  Home presentation, Details hydration and metadata loading.
+- Player events cover start/episode change, buffering, ready, first frame and exit.
+- Player screen attribution follows the mounted player surface.
+- Player transition events are capped at 120 per source; no position polling added.
+- QuickJS memory breadcrumbs reuse sampled PSS while recording; abort probes remain.
+
+Verification:
+- Static delimiter and scope review; ZIP integrity checked.
+- Attached log reconciles to 12 executions, 69 phases, 5 cancellations,
+  0 aborts, 105 system samples; terminal active counts 0/0/0.
+- No compilation or Android device test performed.
+- Existing source patches are preserved in overlapping files.

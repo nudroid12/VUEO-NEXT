@@ -1,5 +1,7 @@
 package com.vueo.shared.core.diagnostics
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import android.app.Activity
 import android.app.Application
 import android.content.ContentValues
@@ -85,6 +87,7 @@ object RuntimeDiagnostics {
         val startedNs: Long,
         val heapStartBytes: Long,
         val startedOnMainThread: Boolean,
+        internal val finished: AtomicBoolean = AtomicBoolean(false),
     )
 
     data class QuickJsToken internal constructor(
@@ -104,6 +107,7 @@ object RuntimeDiagnostics {
         val startedOnMainThread: Boolean,
         val activeProviders: AtomicInteger = AtomicInteger(0),
         val maxConcurrentProviders: AtomicInteger = AtomicInteger(0),
+        val candidateStreams: AtomicInteger = AtomicInteger(0),
     )
 
     private data class ProviderPhase(
@@ -212,9 +216,8 @@ object RuntimeDiagnostics {
         outcome: String = "complete",
     ) {
         if (scanId <= 0L) return
-        val state = scanStates.remove(scanId)
+        val state = scanStates.remove(scanId) ?: return
         val scans = activeScans.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
-        if (state == null) return
 
         providerPhases.entries
             .filter { it.value.scanId == scanId }
@@ -222,7 +225,7 @@ object RuntimeDiagnostics {
         val elapsedMs = elapsedMs(state.startedNs)
         record(
             "SCAN_END id=$scanId outcome=${safeToken(outcome)} elapsed=${elapsedMs}ms " +
-                "streams=$streams providers=$completedProviders " +
+                "streams=$streams candidateStreams=${state.candidateStreams.get()} providers=$completedProviders " +
                 "maxConcurrentProviders=${state.maxConcurrentProviders.get()} " +
                 "activeScans=$scans thread=${threadLabel()} ${memoryLabel()}"
         )
@@ -296,21 +299,17 @@ object RuntimeDiagnostics {
     }
 
     fun failSourceScan(scanId: Long, error: Throwable, completedProviders: Int) {
-        if (scanId <= 0L) return
-        if (!shouldCollect()) {
-            finishSourceScan(scanId, streams = 0, completedProviders = completedProviders, outcome = "failed")
-            return
-        }
+        if (scanId <= 0L || !scanStates.containsKey(scanId)) return
+        val cancelled = error is CancellationException && error !is TimeoutCancellationException
+        val outcome = if (cancelled) "cancelled" else "failed"
         record(
-            "SCAN_ERROR id=$scanId type=${safeToken(error::class.java.simpleName)} " +
-                "message=${safeText(error.message.orEmpty(), 180)} providers=$completedProviders"
+            "${if (cancelled) "SCAN_CANCELLED" else "SCAN_ERROR"} id=$scanId " +
+                "type=${safeToken(error::class.java.simpleName)} " +
+                "reason=${safeText(redact(error.message.orEmpty()), 180)} providers=$completedProviders"
         )
-        finishSourceScan(
-            scanId = scanId,
-            streams = 0,
-            completedProviders = completedProviders,
-            outcome = "failed",
-        )
+        // These are provider candidates, not the final deduplicated stream result.
+        // Keep them explicit even when the scan never reaches final merging.
+        finishSourceScan(scanId, streams = 0, completedProviders = completedProviders, outcome = outcome)
     }
 
     fun beginProvider(scanId: Long, providerName: String): ProviderToken {
@@ -344,7 +343,8 @@ object RuntimeDiagnostics {
         streamCount: Int,
         errorType: String? = null,
     ) {
-        if (token.scanId <= 0L) return
+        if (token.scanId <= 0L || !token.finished.compareAndSet(false, true)) return
+        scanStates[token.scanId]?.candidateStreams?.addAndGet(streamCount.coerceAtLeast(0))
         if (!shouldCollect()) {
             activeProviders.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
             scanStates[token.scanId]?.activeProviders?.updateAndGet { current -> (current - 1).coerceAtLeast(0) }
@@ -888,7 +888,11 @@ object RuntimeDiagnostics {
                 javaHeapMb = mb(javaUsed),
                 javaHeapMaxMb = mb(runtime.maxMemory()),
                 nativeHeapMb = mb(Debug.getNativeHeapAllocatedSize()),
-                pssMb = Debug.getPss() / 1024L,
+                pssMb = if (PerformanceDiagnostics.isCollecting() && !force) {
+                    PerformanceDiagnostics.lastSampledPssMb() ?: (Debug.getPss() / 1024L)
+                } else {
+                    Debug.getPss() / 1024L
+                },
                 rssMb = readRssKb() / 1024L,
             )
             cachedMemorySnapshot = snapshot

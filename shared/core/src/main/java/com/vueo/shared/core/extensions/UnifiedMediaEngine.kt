@@ -1,6 +1,8 @@
 package com.vueo.shared.core.extensions
 import com.vueo.shared.core.search.SearchPolicy
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
@@ -93,162 +95,164 @@ class UnifiedMediaEngine {
         extensionIds: Set<String>? = null,
         updateHomeCache: Boolean = true,
         catalogLoadGate: Semaphore? = null,
-    ): List<CatalogRow> = coroutineScope {
-        if (!forceRefresh && extensionIds == null) {
-            CatalogDiscoveryCache
-                .home()
-                ?.let { cachedRows ->
-                    val enabledCachedRows =
-                        orderCatalogRows(
-                            rows = cachedRows,
-                            catalogOrder = catalogOrder,
-                            disabledCatalogKeys = disabledCatalogKeys,
-                        ).take(maxRows)
+    ): List<CatalogRow> = PerformanceDiagnostics.measureWork("catalog_load", Tab.HOME) {
+        coroutineScope {
+            if (!forceRefresh && extensionIds == null) {
+                CatalogDiscoveryCache
+                    .home()
+                    ?.let { cachedRows ->
+                        val enabledCachedRows =
+                            orderCatalogRows(
+                                rows = cachedRows,
+                                catalogOrder = catalogOrder,
+                                disabledCatalogKeys = disabledCatalogKeys,
+                            ).take(maxRows)
 
-                    if (enabledCachedRows.isNotEmpty()) {
-                        return@coroutineScope enabledCachedRows
+                        if (enabledCachedRows.isNotEmpty()) {
+                            return@coroutineScope enabledCachedRows
+                        }
                     }
-                }
-        }
+            }
 
-        val orderIndex =
-            catalogOrder
-                .withIndex()
-                .associate {
-                    it.value to it.index
-                }
+            val orderIndex =
+                catalogOrder
+                    .withIndex()
+                    .associate {
+                        it.value to it.index
+                    }
 
-        val candidates =
-            activeStremioAddons()
-                .filter { extensionIds == null || it.descriptor.id in extensionIds }
-                .flatMap { extension ->
-                    extension.descriptor.catalogs
-                        .filter { catalog ->
-                            catalog.shouldShowOnHome &&
-                                catalogKey(
-                                    extensionId = extension.descriptor.id,
-                                    type = catalog.type,
-                                    catalogId = catalog.id,
-                                ) !in disabledCatalogKeys
-                        }
-                        .map { catalog ->
-                            extension to catalog
-                        }
-                }
-                .sortedBy {
-                    (extension, catalog) ->
-                    orderIndex[
+            val candidates =
+                activeStremioAddons()
+                    .filter { extensionIds == null || it.descriptor.id in extensionIds }
+                    .flatMap { extension ->
+                        extension.descriptor.catalogs
+                            .filter { catalog ->
+                                catalog.shouldShowOnHome &&
+                                    catalogKey(
+                                        extensionId = extension.descriptor.id,
+                                        type = catalog.type,
+                                        catalogId = catalog.id,
+                                    ) !in disabledCatalogKeys
+                            }
+                            .map { catalog ->
+                                extension to catalog
+                            }
+                    }
+                    .sortedBy {
+                        (extension, catalog) ->
+                        orderIndex[
+                            catalogKey(
+                                extensionId =
+                                    extension.descriptor.id,
+                                type = catalog.type,
+                                catalogId = catalog.id,
+                            )
+                        ] ?: Int.MAX_VALUE
+                    }
+                    .let { catalogs ->
+                        if (maxRows == Int.MAX_VALUE) catalogs else catalogs.take(maxRows)
+                    }
+
+            val loadedRows = linkedMapOf<String, CatalogRow>()
+            val loadedRowsMutex = Mutex()
+            val loadSemaphore = catalogLoadGate ?: Semaphore(HOME_CATALOG_LOAD_CONCURRENCY)
+            var lastEmittedRowCount = 0
+            val candidateIndex =
+                candidates
+                    .mapIndexed { index, (extension, catalog) ->
                         catalogKey(
-                            extensionId =
-                                extension.descriptor.id,
+                            extensionId = extension.descriptor.id,
                             type = catalog.type,
                             catalogId = catalog.id,
-                        )
-                    ] ?: Int.MAX_VALUE
-                }
-                .let { catalogs ->
-                    if (maxRows == Int.MAX_VALUE) catalogs else catalogs.take(maxRows)
-                }
+                        ) to index
+                    }
+                    .toMap()
 
-        val loadedRows = linkedMapOf<String, CatalogRow>()
-        val loadedRowsMutex = Mutex()
-        val loadSemaphore = catalogLoadGate ?: Semaphore(HOME_CATALOG_LOAD_CONCURRENCY)
-        var lastEmittedRowCount = 0
-        val candidateIndex =
             candidates
-                .mapIndexed { index, (extension, catalog) ->
-                    catalogKey(
-                        extensionId = extension.descriptor.id,
-                        type = catalog.type,
-                        catalogId = catalog.id,
-                    ) to index
-                }
-                .toMap()
-
-        candidates
-            .map { (extension, catalog) ->
-                async {
-                    loadSemaphore.withPermit {
-                        runCatching {
-                            val page =
-                                withTimeoutOrNull(
-                                    ADDON_REQUEST_TIMEOUT_MS
-                                ) {
-                                    extension.catalog(
-                                        catalog.type,
-                                        catalog.id,
-                                    )
-                                }
-                                    ?: return@runCatching null
-
-                            val row = CatalogRow(
-                                id =
-                                    catalogKey(
-                                        extensionId =
-                                            extension.descriptor.id,
-                                        type =
+                .map { (extension, catalog) ->
+                    async {
+                        loadSemaphore.withPermit {
+                            runCatching {
+                                val page =
+                                    withTimeoutOrNull(
+                                        ADDON_REQUEST_TIMEOUT_MS
+                                    ) {
+                                        extension.catalog(
                                             catalog.type,
-                                        catalogId =
                                             catalog.id,
-                                    ),
-                                title =
-                                    catalog.name
-                                        ?: "${extension.descriptor.name} " +
-                                            catalog.type
-                                                .replaceFirstChar {
-                                                    it.uppercase()
-                                                },
-                                providerName =
-                                    extension
-                                        .descriptor
-                                        .name,
-                                items =
-                                    page.items.map {
-                                        item ->
-                                        item.withCatalogSource(
-                                            extension.descriptor.name
                                         )
-                                    },
-                            )
-                            if (row.items.isEmpty()) return@runCatching null
+                                    }
+                                        ?: return@runCatching null
 
-                            loadedRowsMutex.withLock {
-                                loadedRows[row.id] = row
-                                val ordered =
-                                    orderCatalogRows(
-                                        rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
-                                        catalogOrder = catalogOrder,
-                                        disabledCatalogKeys = disabledCatalogKeys,
-                                    )
-                                lastEmittedRowCount = ordered.size
-                                // Publish under the same lock so concurrent completions
-                                // cannot send an older snapshot after a newer one.
-                                onPartial?.invoke(ordered)
-                                ordered to true
-                            }
+                                val row = CatalogRow(
+                                    id =
+                                        catalogKey(
+                                            extensionId =
+                                                extension.descriptor.id,
+                                            type =
+                                                catalog.type,
+                                            catalogId =
+                                                catalog.id,
+                                        ),
+                                    title =
+                                        catalog.name
+                                            ?: "${extension.descriptor.name} " +
+                                                catalog.type
+                                                    .replaceFirstChar {
+                                                        it.uppercase()
+                                                    },
+                                    providerName =
+                                        extension
+                                            .descriptor
+                                            .name,
+                                    items =
+                                        page.items.map {
+                                            item ->
+                                            item.withCatalogSource(
+                                                extension.descriptor.name
+                                            )
+                                        },
+                                )
+                                if (row.items.isEmpty()) return@runCatching null
 
-                            row
-                        }.getOrNull()
+                                loadedRowsMutex.withLock {
+                                    loadedRows[row.id] = row
+                                    val ordered =
+                                        orderCatalogRows(
+                                            rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
+                                            catalogOrder = catalogOrder,
+                                            disabledCatalogKeys = disabledCatalogKeys,
+                                        )
+                                    lastEmittedRowCount = ordered.size
+                                    // Publish under the same lock so concurrent completions
+                                    // cannot send an older snapshot after a newer one.
+                                    onPartial?.invoke(ordered)
+                                    ordered to true
+                                }
+
+                                row
+                            }.getOrNull()
+                        }
                     }
                 }
+                .awaitAll()
+
+            val (rows, shouldEmitFinalRows) = loadedRowsMutex.withLock {
+                val ordered =
+                    orderCatalogRows(
+                        rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
+                        catalogOrder = catalogOrder,
+                        disabledCatalogKeys = disabledCatalogKeys,
+                    )
+                ordered to (ordered.size != lastEmittedRowCount)
             }
-            .awaitAll()
 
-        val (rows, shouldEmitFinalRows) = loadedRowsMutex.withLock {
-            val ordered =
-                orderCatalogRows(
-                    rows = loadedRows.values.sortedBy { candidateIndex[it.id] },
-                    catalogOrder = catalogOrder,
-                    disabledCatalogKeys = disabledCatalogKeys,
-                )
-            ordered to (ordered.size != lastEmittedRowCount)
+            if (shouldEmitFinalRows) onPartial?.invoke(rows)
+
+            if (updateHomeCache) CatalogDiscoveryCache.putHome(rows)
+
+            rows
         }
-
-        if (shouldEmitFinalRows) onPartial?.invoke(rows)
-
-        if (updateHomeCache) CatalogDiscoveryCache.putHome(rows)
-
-        rows
     }
 
     private fun catalogKey(
@@ -1244,104 +1248,106 @@ class UnifiedMediaEngine {
 
     suspend fun loadMeta(
         item: MediaItem,
-    ): MediaItem = coroutineScope {
-        val providers =
-            activeStremioAddons()
-                .filter { extension ->
-                    "meta" in extension.descriptor.resources &&
-                        (
-                            extension.descriptor.types.isEmpty() ||
-                                item.type in extension.descriptor.types
-                            )
-                }
-                .sortedBy { extension ->
-                    if (
-                        extension.descriptor.id ==
-                        item.sourceExtensionId
-                    ) {
-                        0
-                    } else {
-                        1
-                    }
-                }
-
-        if (providers.isEmpty()) {
-            return@coroutineScope item
-        }
-
-        val primaryProvider =
-            providers.firstOrNull {
-                it.descriptor.id == item.sourceExtensionId
-            }
-        val primaryMetadata =
-            primaryProvider?.let { provider ->
-                try {
-                    withTimeoutOrNull(
-                        ADDON_REQUEST_TIMEOUT_MS
-                    ) {
-                        provider.meta(
-                            item.type,
-                            item.id,
-                        )
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    null
-                }
-            }
-
-        // Detail Back cancels the caller. Never let a provider failure wrapper
-        // turn that cancellation into a normal "no metadata" result and continue
-        // towards the 8s/4s fallback windows.
-        currentCoroutineContext().ensureActive()
-        val primaryResult =
-            primaryMetadata?.let { metadata ->
-                mergeMediaMetadata(
-                    current = item,
-                    candidate = metadata,
-                    sourceExtensionId = item.sourceExtensionId,
-                )
-            } ?: item
-
-        if (!needsMetadataFallback(primaryResult)) {
-            return@coroutineScope primaryResult
-        }
-
-        val fallbackMetadata =
-            providers
-                .filterNot {
-                    it.descriptor.id == primaryProvider?.descriptor?.id
-                }
-                .map { provider ->
-                    async {
-                        try {
-                            withTimeoutOrNull(
-                                METADATA_FALLBACK_TIMEOUT_MS
-                            ) {
-                                provider.meta(
-                                    item.type,
-                                    item.id,
+    ): MediaItem = PerformanceDiagnostics.measureWork("metadata_load", Tab.DETAILS) {
+        coroutineScope {
+            val providers =
+                activeStremioAddons()
+                    .filter { extension ->
+                        "meta" in extension.descriptor.resources &&
+                            (
+                                extension.descriptor.types.isEmpty() ||
+                                    item.type in extension.descriptor.types
                                 )
-                            }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            null
+                    }
+                    .sortedBy { extension ->
+                        if (
+                            extension.descriptor.id ==
+                            item.sourceExtensionId
+                        ) {
+                            0
+                        } else {
+                            1
                         }
                     }
+
+            if (providers.isEmpty()) {
+                return@coroutineScope item
+            }
+
+            val primaryProvider =
+                providers.firstOrNull {
+                    it.descriptor.id == item.sourceExtensionId
                 }
-                .awaitAll()
-                .filterNotNull()
+            val primaryMetadata =
+                primaryProvider?.let { provider ->
+                    try {
+                        withTimeoutOrNull(
+                            ADDON_REQUEST_TIMEOUT_MS
+                        ) {
+                            provider.meta(
+                                item.type,
+                                item.id,
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
 
-        currentCoroutineContext().ensureActive()
+            // Detail Back cancels the caller. Never let a provider failure wrapper
+            // turn that cancellation into a normal "no metadata" result and continue
+            // towards the 8s/4s fallback windows.
+            currentCoroutineContext().ensureActive()
+            val primaryResult =
+                primaryMetadata?.let { metadata ->
+                    mergeMediaMetadata(
+                        current = item,
+                        candidate = metadata,
+                        sourceExtensionId = item.sourceExtensionId,
+                    )
+                } ?: item
 
-        fallbackMetadata.fold(primaryResult) { merged, candidate ->
-            mergeMediaMetadata(
-                current = merged,
-                candidate = candidate,
-                sourceExtensionId = item.sourceExtensionId,
-            )
+            if (!needsMetadataFallback(primaryResult)) {
+                return@coroutineScope primaryResult
+            }
+
+            val fallbackMetadata =
+                providers
+                    .filterNot {
+                        it.descriptor.id == primaryProvider?.descriptor?.id
+                    }
+                    .map { provider ->
+                        async {
+                            try {
+                                withTimeoutOrNull(
+                                    METADATA_FALLBACK_TIMEOUT_MS
+                                ) {
+                                    provider.meta(
+                                        item.type,
+                                        item.id,
+                                    )
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
+                    .awaitAll()
+                    .filterNotNull()
+
+            currentCoroutineContext().ensureActive()
+
+            fallbackMetadata.fold(primaryResult) { merged, candidate ->
+                mergeMediaMetadata(
+                    current = merged,
+                    candidate = candidate,
+                    sourceExtensionId = item.sourceExtensionId,
+                )
+            }
         }
     }
 

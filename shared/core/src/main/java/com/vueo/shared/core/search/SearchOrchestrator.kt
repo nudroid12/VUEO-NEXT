@@ -1,5 +1,7 @@
 package com.vueo.shared.core.search
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.UnifiedMediaEngine
@@ -76,7 +78,7 @@ object SearchOrchestrator {
     }
 
     suspend fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
-        withContext(Dispatchers.Default) {
+        PerformanceDiagnostics.measuredContext(Dispatchers.Default, "search_local_rank", Tab.SEARCH) {
             SearchPolicy.rankAndDedupe(
                 CatalogDiscoveryCache.searchLocal(query, limit = limit),
                 query,
@@ -89,7 +91,7 @@ object SearchOrchestrator {
         localResults: List<MediaItem>? = null,
         limit: Int = 80,
         onPartial: ((List<MediaItem>) -> Unit)? = null,
-    ): List<MediaItem> {
+    ): List<MediaItem> = PerformanceDiagnostics.measureWork("search_remote", Tab.SEARCH) {
         val local = localResults ?: localTitleResults(query, limit)
         val remote = coroutineScope {
             // Deliver provider snapshots on the caller context; keep only the newest
@@ -109,18 +111,18 @@ object SearchOrchestrator {
                 }
             }
             for (partial in partials) {
-                val ranked = withContext(Dispatchers.Default) {
+                val ranked = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "search_partial_rank", Tab.SEARCH) {
                     SearchPolicy.rankAndDedupe(partial + local, query).take(limit)
                 }
                 onPartial?.invoke(ranked)
             }
             request.await()
         }
-        val combined = withContext(Dispatchers.Default) {
+        val combined = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "search_final_rank", Tab.SEARCH) {
             SearchPolicy.rankAndDedupe(remote + local, query).take(limit)
         }
         onPartial?.invoke(combined)
-        return combined
+        combined
     }
 
     fun actorAvailability(engine: UnifiedMediaEngine, tmdbApiKey: String): ActorAvailability =
@@ -132,26 +134,28 @@ object SearchOrchestrator {
         tmdbApiKey: String,
         maxResults: Int = 80,
         onPartial: ((List<MediaItem>) -> Unit)? = null,
-    ): List<MediaItem> = coroutineScope {
-        val availability = actorAvailability(engine, tmdbApiKey)
-        if (!availability.available) return@coroutineScope emptyList()
-        var providerItems = emptyList<MediaItem>()
-        var tmdbItems = emptyList<MediaItem>()
-        fun merged() = engine.mergeActorResults(providerItems + tmdbItems, maxResults)
-        fun publish() { onPartial?.invoke(merged()) }
-        val providerJob = launch {
-            providerItems = if (!availability.addonSearch) emptyList() else try {
-                engine.searchActor(query = query, maxResults = maxResults, onPartial = { partial -> providerItems = partial; publish() })
-            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
-            publish()
+    ): List<MediaItem> = PerformanceDiagnostics.measureWork("search_actor", Tab.SEARCH) {
+        coroutineScope {
+            val availability = actorAvailability(engine, tmdbApiKey)
+            if (!availability.available) return@coroutineScope emptyList()
+            var providerItems = emptyList<MediaItem>()
+            var tmdbItems = emptyList<MediaItem>()
+            fun merged() = engine.mergeActorResults(providerItems + tmdbItems, maxResults)
+            fun publish() { onPartial?.invoke(merged()) }
+            val providerJob = launch {
+                providerItems = if (!availability.addonSearch) emptyList() else try {
+                    engine.searchActor(query = query, maxResults = maxResults, onPartial = { partial -> providerItems = partial; publish() })
+                } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
+                publish()
+            }
+            val tmdbJob = launch {
+                tmdbItems = if (!availability.tmdbSearch) emptyList() else try {
+                    TmdbEnhancementClient.actorFilmography(query = query, apiKey = tmdbApiKey).orEmpty()
+                } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
+                publish()
+            }
+            providerJob.join(); tmdbJob.join(); merged()
         }
-        val tmdbJob = launch {
-            tmdbItems = if (!availability.tmdbSearch) emptyList() else try {
-                TmdbEnhancementClient.actorFilmography(query = query, apiKey = tmdbApiKey).orEmpty()
-            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Throwable) { emptyList() }
-            publish()
-        }
-        providerJob.join(); tmdbJob.join(); merged()
     }
 
     suspend fun entityResults(

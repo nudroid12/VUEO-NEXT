@@ -11,6 +11,11 @@ import android.os.Process
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.Choreographer
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStream
 import java.text.SimpleDateFormat
@@ -81,9 +86,15 @@ object PerformanceDiagnostics {
         val stallEvents: Int,
         val worstStallMs: Long,
         val scanStarts: Int,
+        val scanFailures: Int,
         val providerStarts: Int,
         val providerIssues: Int,
         val quickJsEvents: Int,
+        val quickJsExecutions: Int,
+        val quickJsCancelled: Int,
+        val providerCancelled: Int,
+        val scanCancelled: Int,
+        val systemSamples: Int,
         val quickJsIssues: Int,
         val playbackIssues: Int,
         val recentSignals: List<String>,
@@ -93,10 +104,24 @@ object PerformanceDiagnostics {
     private val enabled = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)
     private val sessionSequence = AtomicLong(0L)
+    private val workSequence = AtomicLong(0L)
+    private val providerIssueStatuses = setOf("ERROR", "FAILED", "FAILURE", "TIMEOUT", "UNAVAILABLE", "BLOCKED")
+    private val playbackIssueEvents = setOf("ERROR", "FAILED", "TIMEOUT")
+    private val quickJsIssuePhases = setOf("QJS_ABORT", "QJS_TIMEOUT")
     private val droppedEvents = AtomicLong(0L)
     private val activeScans = AtomicInteger(0)
     private val activeProviders = AtomicInteger(0)
     private val activeQuickJs = AtomicInteger(0)
+    private val activityLock = Any()
+    private val scanKeys = HashSet<String>()
+    private val providerKeys = HashSet<String>()
+    private val quickJsKeys = HashSet<String>()
+    private val screenLock = Any()
+    private var baseScreen = "UNKNOWN"
+    private val playerScreens = LinkedHashMap<Long, String>()
+    private val screenSequence = AtomicLong(0L)
+    @Volatile private var sampledPssMb = -1L
+    fun lastSampledPssMb(): Long? = sampledPssMb.takeIf { it >= 0L }
     private val currentScreen = AtomicReference("UNKNOWN")
     private val currentPage = AtomicReference(Tab.OTHER)
     private val eventsLock = Any()
@@ -170,9 +195,11 @@ object PerformanceDiagnostics {
     fun startRecording(context: Context) {
         install(context)
         if (!enabled.get() || !recording.compareAndSet(false, true)) return
-        activeScans.set(0)
-        activeProviders.set(0)
-        activeQuickJs.set(0)
+        synchronized(activityLock) {
+            scanKeys.clear(); providerKeys.clear(); quickJsKeys.clear()
+            activeScans.set(0); activeProviders.set(0); activeQuickJs.set(0)
+        }
+        sampledPssMb = -1L
         val session = sessionSequence.incrementAndGet()
         appendEvent(Tab.SYSTEM, "RECORDING_START session=$session")
         startSampler()
@@ -188,9 +215,10 @@ object PerformanceDiagnostics {
     fun stopRecording() {
         if (!recording.compareAndSet(true, false)) return
         appendEvent(Tab.SYSTEM, "RECORDING_STOP")
-        activeScans.set(0)
-        activeProviders.set(0)
-        activeQuickJs.set(0)
+        synchronized(activityLock) {
+            scanKeys.clear(); providerKeys.clear(); quickJsKeys.clear()
+            activeScans.set(0); activeProviders.set(0); activeQuickJs.set(0)
+        }
         sampler?.shutdownNow()
         sampler = null
         mainHandler.post {
@@ -199,29 +227,105 @@ object PerformanceDiagnostics {
         }
     }
 
-    fun observeScreen(label: String) {
-        val safeLabel = label.take(140)
-        currentScreen.set(safeLabel)
-        currentPage.set(pageFor(safeLabel))
+    fun observeScreen(label: String) = synchronized(screenLock) {
+        baseScreen = label.take(140)
+        updateScreen(playerScreens.values.lastOrNull() ?: baseScreen)
     }
+
+    private fun updateScreen(label: String) {
+        currentScreen.set(label)
+        currentPage.set(pageFor(label))
+    }
+
+    fun enterPlayerScreen(platform: String): Long = synchronized(screenLock) {
+        val id = screenSequence.incrementAndGet()
+        playerScreens[id] = "$platform PLAYER"
+        updateScreen(playerScreens.getValue(id))
+        if (isCollecting()) appendEvent(Tab.PLAYER, "SCREEN ${currentScreen.get()}")
+        id
+    }
+
+    fun exitPlayerScreen(id: Long) = synchronized(screenLock) {
+        if (playerScreens.remove(id) != null) {
+            updateScreen(playerScreens.values.lastOrNull() ?: baseScreen)
+            if (isCollecting()) appendEvent(currentPage.get(), "SCREEN ${currentScreen.get()}")
+        }
+    }
+
+    /** Timings are collected only within the recording session that started the work. */
+    suspend fun <T> measureWork(name: String, page: Tab, block: suspend () -> T): T {
+        if (!isCollecting()) return block()
+        val session = sessionSequence.get()
+        val workId = workSequence.incrementAndGet()
+        val startedNs = System.nanoTime()
+        appendEvent(page, "WORK_START id=$workId name=$name thread=${Thread.currentThread().name}")
+        var outcome = "complete"
+        try {
+            return block()
+        } catch (error: Throwable) {
+            outcome = if (error is CancellationException && error !is TimeoutCancellationException) "cancelled" else "failed"
+            throw error
+        } finally {
+            if (isCollecting() && session == sessionSequence.get()) {
+                appendEvent(page, "WORK_END id=$workId name=$name outcome=$outcome elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms thread=${Thread.currentThread().name}")
+            }
+        }
+    }
+
+    fun <T> measureBlock(name: String, page: Tab, block: () -> T): T {
+        if (!isCollecting()) return block()
+        val session = sessionSequence.get()
+        val workId = workSequence.incrementAndGet()
+        val startedNs = System.nanoTime()
+        var outcome = "complete"
+        try {
+            return block()
+        } catch (error: Throwable) {
+            outcome = "failed"
+            throw error
+        } finally {
+            if (isCollecting() && session == sessionSequence.get()) {
+                appendEvent(page, "WORK_END id=$workId name=$name outcome=$outcome elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms thread=${Thread.currentThread().name}")
+            }
+        }
+    }
+
+    suspend fun <T> measuredContext(
+        context: CoroutineContext,
+        name: String,
+        page: Tab,
+        block: suspend CoroutineScope.() -> T,
+    ): T = withContext(context) { measureWork(name, page) { block() } }
+
+    private fun field(message: String, key: String): String =
+        message.substringAfter(" $key=", "").substringBefore(' ')
 
     /** Called by RuntimeDiagnostics before its own crash-log enable check. */
     fun captureRuntimeEvent(message: String) {
-        if (!enabled.get() || !recording.get()) return
+        if (!isCollecting()) return
         val trimmed = message.trim()
-        when {
-            trimmed.startsWith("SCAN_START ") -> activeScans.incrementAndGet()
-            trimmed.startsWith("SCAN_END ") -> activeScans.updateAndGet { (it - 1).coerceAtLeast(0) }
-            trimmed.startsWith("PROVIDER_START ") -> activeProviders.incrementAndGet()
-            trimmed.startsWith("PROVIDER_END ") -> activeProviders.updateAndGet { (it - 1).coerceAtLeast(0) }
-            trimmed.startsWith("QJS_PHASE ") && " phase=QJS_CREATE_BEGIN " in " $trimmed " -> activeQuickJs.incrementAndGet()
-            trimmed.startsWith("QJS_PHASE ") && (" phase=QJS_CLOSE " in " $trimmed " || " phase=QJS_ABORT " in " $trimmed ") ->
-                activeQuickJs.updateAndGet { (it - 1).coerceAtLeast(0) }
+        synchronized(activityLock) {
+            if (!isCollecting()) return
+            when {
+                trimmed.startsWith("SCAN_START ") -> scanKeys.add(field(trimmed, "id"))
+                trimmed.startsWith("SCAN_END ") -> scanKeys.remove(field(trimmed, "id"))
+                trimmed.startsWith("PROVIDER_START ") -> providerKeys.add("${field(trimmed, "scan")}:${trimmed.substringAfter(" provider=").substringBefore(" activeProviders=")}")
+                trimmed.startsWith("PROVIDER_END ") -> providerKeys.remove("${field(trimmed, "scan")}:${trimmed.substringAfter(" provider=").substringBefore(" status=")}")
+                trimmed.startsWith("QJS_PHASE ") -> {
+                    val key = "${field(trimmed, "scan")}:${field(trimmed, "exec")}"
+                    when (field(trimmed, "phase")) {
+                        "QJS_CREATE_BEGIN" -> quickJsKeys.add(key)
+                        "QJS_CLOSE", "QJS_ABORT", "QJS_TIMEOUT", "QJS_CANCELLED" -> quickJsKeys.remove(key)
+                    }
+                }
+            }
+            activeScans.set(scanKeys.size)
+            activeProviders.set(providerKeys.size)
+            activeQuickJs.set(quickJsKeys.size)
         }
         if (trimmed.startsWith("SCREEN ")) {
-            val label = trimmed.removePrefix("SCREEN ").take(140)
-            observeScreen(label)
-            appendEvent(currentPage.get(), "SCREEN $label")
+            observeScreen(trimmed.removePrefix("SCREEN "))
+            appendEvent(currentPage.get(), "SCREEN ${currentScreen.get()}")
             return
         }
         appendEvent(categoryFor(trimmed), trimmed)
@@ -327,18 +431,19 @@ object PerformanceDiagnostics {
 
             appendLine()
             appendLine("RUNTIME")
-            append("Source scans: ${stats.scanStarts}")
+            append("Source scans: ${stats.scanStarts} • Cancelled: ${stats.scanCancelled} • Failed: ${stats.scanFailures}")
             if (activeScans.get() > 0) append(" • Active: ${activeScans.get()}")
             appendLine()
-            append("Providers: ${stats.providerStarts}")
+            append("Providers: ${stats.providerStarts} • Cancelled: ${stats.providerCancelled}")
             if (activeProviders.get() > 0) append(" • Active: ${activeProviders.get()}")
             if (stats.providerIssues > 0) append(" • Issues: ${stats.providerIssues}")
             appendLine()
-            append("QuickJS: ${stats.quickJsEvents}")
+            append("QuickJS executions: ${stats.quickJsExecutions} • Phases: ${stats.quickJsEvents} • Cancelled: ${stats.quickJsCancelled}")
             if (activeQuickJs.get() > 0) append(" • Active: ${activeQuickJs.get()}")
             if (stats.quickJsIssues > 0) append(" • Issues: ${stats.quickJsIssues}")
             appendLine()
             appendLine("Playback issues: ${stats.playbackIssues}")
+            appendLine("System samples: ${stats.systemSamples}")
 
             appendLine()
             appendLine("SIGNALS TO INSPECT")
@@ -349,6 +454,10 @@ object PerformanceDiagnostics {
             }
             if (stats.stallEvents > 0) {
                 appendLine("• UI stalls: ${stats.stallEvents}, worst ${stats.worstStallMs}ms")
+                wroteSignal = true
+            }
+            if (stats.scanFailures > 0) {
+                appendLine("• Failed source scans: ${stats.scanFailures}")
                 wroteSignal = true
             }
             if (stats.providerIssues > 0) {
@@ -386,8 +495,14 @@ object PerformanceDiagnostics {
         var stallEvents = 0
         var worstStallMs = 0L
         var scanStarts = 0
+        var scanFailures = 0
         var providerStarts = 0
         var providerIssues = 0
+        var quickJsExecutions = 0
+        var quickJsCancelled = 0
+        var providerCancelled = 0
+        var scanCancelled = 0
+        var systemSamples = 0
         var quickJsEvents = 0
         var quickJsIssues = 0
         var playbackIssues = 0
@@ -398,28 +513,43 @@ object PerformanceDiagnostics {
             matchingEvents++
             if (firstTimestampMs == null) firstTimestampMs = event.timestampMs
             lastTimestampMs = event.timestampMs
-            val upper = event.line.uppercase(Locale.US)
+            val payload = event.line.substringAfter("] ")
+            val upper = payload.uppercase(Locale.US)
 
-            if ("FRAME_JANK" in upper) {
+            if (upper.startsWith("FRAME_JANK ")) {
                 jankEvents++
                 worstFrameGapMs = maxOf(worstFrameGapMs, extractMs(event.line, "gap"))
             }
-            if ("UI_STALL" in upper) {
+            if (upper.startsWith("UI_STALL ")) {
                 stallEvents++
                 worstStallMs = maxOf(worstStallMs, extractMs(event.line, "delay"))
             }
-            if ("SCAN_START" in upper) scanStarts++
-            if ("PROVIDER_START" in upper) providerStarts++
-            if ("PROVIDER_" in upper && containsIssueToken(upper)) providerIssues++
-            if ("QJS_" in upper || "QUICKJS" in upper) {
-                quickJsEvents++
-                if (containsIssueToken(upper)) quickJsIssues++
+            if (upper.startsWith("SCAN_START ")) scanStarts++
+            if (upper.startsWith("SCAN_END ") && field(upper, "OUTCOME") == "FAILED") scanFailures++
+            if (upper.startsWith("SCAN_END ") && field(upper, "OUTCOME") == "CANCELLED") scanCancelled++
+            if (upper.startsWith("SYSTEM_SAMPLE ")) systemSamples++
+            if (upper.startsWith("PROVIDER_START ")) providerStarts++
+            val status = field(upper, "STATUS")
+            if (upper.startsWith("PROVIDER_END ")) {
+                if (status == "CANCELLED") providerCancelled++
+                else if (status in providerIssueStatuses) providerIssues++
             }
-            if (("PLAYER_" in upper || "PLAYBACK_" in upper) && containsIssueToken(upper)) playbackIssues++
+            if (upper.startsWith("QJS_PHASE ")) {
+                quickJsEvents++
+                when (field(upper, "PHASE")) {
+                    "QJS_CREATE_BEGIN" -> quickJsExecutions++
+                    "QJS_CANCELLED" -> quickJsCancelled++
+                    "QJS_ABORT", "QJS_TIMEOUT" -> quickJsIssues++
+                }
+            }
+            val playbackIssue = upper.startsWith("PLAYBACK_ERROR ") ||
+                (upper.startsWith("PLAYER_EVENT ") && field(upper, "EVENT") in playbackIssueEvents)
+            if (playbackIssue) playbackIssues++
 
-            val notable =
-                "FRAME_JANK" in upper || "UI_STALL" in upper || containsIssueToken(upper) ||
-                    "SCAN_END" in upper || "PROVIDER_END" in upper
+            val notable = upper.startsWith("FRAME_JANK ") || upper.startsWith("UI_STALL ") ||
+                upper.startsWith("UI_STALL_RISK ") || playbackIssue ||
+                upper.startsWith("SCAN_END ") || upper.startsWith("SCAN_ERROR ") ||
+                upper.startsWith("PROVIDER_END ") || field(upper, "PHASE") in quickJsIssuePhases
             if (notable) {
                 if (recentSignals.size >= 8) recentSignals.removeFirst()
                 recentSignals.addLast(event.line.take(260))
@@ -435,17 +565,20 @@ object PerformanceDiagnostics {
             stallEvents = stallEvents,
             worstStallMs = worstStallMs,
             scanStarts = scanStarts,
+            scanFailures = scanFailures,
             providerStarts = providerStarts,
             providerIssues = providerIssues,
             quickJsEvents = quickJsEvents,
+            quickJsExecutions = quickJsExecutions,
+            quickJsCancelled = quickJsCancelled,
+            providerCancelled = providerCancelled,
+            scanCancelled = scanCancelled,
+            systemSamples = systemSamples,
             quickJsIssues = quickJsIssues,
             playbackIssues = playbackIssues,
             recentSignals = recentSignals.toList(),
         )
     }
-
-    private fun containsIssueToken(upper: String): Boolean =
-        "ERROR" in upper || "FAIL" in upper || "TIMEOUT" in upper || "ABORT" in upper || "EXCEPTION" in upper
 
     private fun extractMs(line: String, key: String): Long {
         val marker = "$key="
@@ -546,6 +679,7 @@ object PerformanceDiagnostics {
                     cachedPssMb = Debug.getPss() / 1024L
                     lastPssAt = nowWall
                 }
+                sampledPssMb = cachedPssMb
                 val pssMb = cachedPssMb
                 val rssMb = readRssKb() / 1024L
                 appendEvent(
