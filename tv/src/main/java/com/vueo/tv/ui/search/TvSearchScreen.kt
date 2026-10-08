@@ -2,6 +2,7 @@ package com.vueo.tv.search
 import com.vueo.shared.core.search.SearchResultOrderPolicy
 import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.search.SearchOrchestrator
+import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
 
@@ -71,7 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
-import com.vueo.shared.core.extensions.MediaBrowseKind
+import com.vueo.tv.core.browseAnimeProgressive
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
@@ -155,15 +156,18 @@ private fun prepareSearch(input: TvSearchPreparedInput): TvSearchPreparedResult 
     val items = when {
         searching && input.mode == TvSearchMode.ACTOR -> searchSortActorItems(filtered, input.sort)
         searching -> searchSortItems(filtered, input.sort, input.query)
-        else -> DiscoverCatalogPolicy.orderFiltered(filtered, input.sort.toDiscoverSortMode())
+        input.sort == TvSearchSortMode.NEWEST -> filtered.map { it to SearchPolicy.releaseYear(it) }
+            .sortedByDescending { it.second }.map { it.first }
+        else -> filtered
     }
     return TvSearchPreparedResult(items, genres, items.map(::mediaKey), source.isEmpty())
 }
 
 internal class TvSearchSession {
-    var sourceInput: TvSearchPreparedInput? = null
-    var sourceResult = TvSearchPreparedResult()
-    var preparedInput: TvSearchPreparedInput? = null
+    // Bounded cache of filter views for the current dataset; shares MediaItem references.
+    val sources = LinkedHashMap<Pair<TvSearchTypeFilter, TvSearchSortMode>, TvSearchPreparedResult>()
+    var sourceDataset: TvSearchPreparedInput? = null
+    var preparedInput by mutableStateOf<TvSearchPreparedInput?>(null)
     var preparedResult by mutableStateOf(TvSearchPreparedResult())
     var query by mutableStateOf("")
     var typeFilter by mutableStateOf(TvSearchTypeFilter.ALL)
@@ -346,20 +350,24 @@ internal fun TvSearchScreen(
             return@LaunchedEffect
         }
         if (
-            session.animeBrowseContentVersion == contentVersion &&
-            session.animeBrowseItems.isNotEmpty()
+            session.animeBrowseContentVersion == contentVersion
         ) {
             animeDiscovering = false
             return@LaunchedEffect
         }
 
+        if (session.animeBrowseContentVersion != contentVersion) session.animeBrowseItems = emptyList()
         animeDiscovering = true
-        session.animeBrowseItems = runCatching {
-            runtime.engine.browse(
-                kind = MediaBrowseKind.ANIME,
-                catalogOrder = runtime.content.catalogOrder(),
-            )
-        }.getOrElse { emptyList() }
+        try {
+            val items = runtime.browseAnimeProgressive { partial ->
+                session.animeBrowseItems = partial
+            }
+            session.animeBrowseItems = items
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Retain successful partial catalogs if another request fails.
+        }
         session.animeBrowseContentVersion = contentVersion
         animeDiscovering = false
     }
@@ -389,7 +397,13 @@ internal fun TvSearchScreen(
         val started = System.nanoTime()
         // Genre changes reuse the typed, ordered source and its genre list.
         val sourceInput = prepareInput.copy(genre = null)
-        val cachedSource = session.sourceResult.takeIf { session.sourceInput == sourceInput }
+        val dataset = sourceInput.copy(type = TvSearchTypeFilter.ALL, sort = TvSearchSortMode.POPULAR)
+        if (session.sourceDataset != dataset) {
+            session.sources.clear()
+            session.sourceDataset = dataset
+        }
+        val sourceKey = sourceInput.type to sourceInput.sort
+        val cachedSource = session.sources[sourceKey]
         val (source, result) = withContext(Dispatchers.Default) {
             val source = cachedSource ?: prepareSearch(sourceInput)
             val items = if (prepareInput.genre == null) source.items else source.items.filter {
@@ -401,8 +415,9 @@ internal fun TvSearchScreen(
             )
         }
         // LaunchedEffect cancellation prevents obsolete filter/query work from publishing.
-        session.sourceInput = sourceInput
-        session.sourceResult = source
+        session.sources.remove(sourceKey)
+        session.sources[sourceKey] = source
+        while (session.sources.size > 6) session.sources.remove(session.sources.keys.first())
         session.preparedInput = prepareInput
         session.preparedResult = result
         PerformanceDiagnostics.captureRuntimeEvent(
