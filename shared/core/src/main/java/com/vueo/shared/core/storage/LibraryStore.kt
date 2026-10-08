@@ -246,6 +246,25 @@ class LibraryStore(
     }
 
     /**
+     * Tiny persisted snapshot used by TV Home during its very first composition.
+     *
+     * This deliberately avoids reparsing full history/cast/episode metadata on startup.
+     * The cache is maintained when playback/library state changes, then reconciled by
+     * [homeSnapshot] in the background after Home is already visible.
+     */
+    @Synchronized
+    fun homeStartupContinueWatching(): List<LibraryPlaybackEntry> {
+        val key = scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
+        if (prefs.contains(key)) return readHomeContinueWatchingCache()
+
+        // One-time migration for installs upgraded from pre-v133 builds. From the
+        // next write onward this path reads only the lightweight cache.
+        val seeded = fastContinueWatching()
+        writeHomeContinueWatchingCache(seeded)
+        return seeded
+    }
+
+    /**
      * Home-only snapshot. It skips watchlist parsing while still resolving
      * Continue Watching against full history for exact series next-episode rules.
      */
@@ -259,6 +278,8 @@ class LibraryStore(
                 cursors = readContinueWatching(),
                 history = history,
             )
+
+        writeHomeContinueWatchingCache(continueWatching)
 
         return LibraryHomeSnapshot(
             history = history,
@@ -381,6 +402,7 @@ class LibraryStore(
         if (changed) {
             writeHistory(history)
             writeArray(scopedKey(continueWatchingStorageKey), cursors.map(::playbackToJson))
+            refreshHomeContinueWatchingCache(exact = true)
         }
         return changed
     }
@@ -466,6 +488,11 @@ class LibraryStore(
                         MAX_HISTORY
                     )
             )
+            if (updated.isCompleted) {
+                refreshHomeContinueWatchingCache(exact = true)
+            } else {
+                updateHomeContinueWatchingCacheForPlayback(updated)
+            }
         }
     }
 
@@ -482,6 +509,7 @@ class LibraryStore(
                         mediaKey
                 }
         )
+        refreshHomeContinueWatchingCache(exact = true)
     }
 
     @Synchronized
@@ -500,6 +528,7 @@ class LibraryStore(
         writeDismissedContinueWatchingKeys(
             dismissed
         )
+        refreshHomeContinueWatchingCache(exact = false)
     }
 
     @Synchronized
@@ -532,6 +561,7 @@ class LibraryStore(
         writeMarkedWatchedKeys(
             marked
         )
+        refreshHomeContinueWatchingCache(exact = false)
     }
 
     @Synchronized
@@ -557,6 +587,11 @@ class LibraryStore(
                     markedWatchedStorageKey
                 )
             )
+            .remove(
+                scopedKey(
+                    KEY_HOME_CONTINUE_WATCHING_CACHE
+                )
+            )
             .apply()
     }
 
@@ -574,7 +609,95 @@ class LibraryStore(
                     }
                     .toSet()
         )
+        refreshHomeContinueWatchingCache(exact = false)
     }
+
+    private fun updateHomeContinueWatchingCacheForPlayback(
+        entry: LibraryPlaybackEntry,
+    ) {
+        val storageKey = scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
+        val existing =
+            if (prefs.contains(storageKey)) {
+                readHomeContinueWatchingCache()
+            } else {
+                // One-time migration if playback is recorded before Home has ever
+                // seeded the v133 cache. Keep all existing titles, not only this one.
+                fastContinueWatching()
+            }
+        val titleKey = continueWatchingTitleKey(entry.media)
+        val shouldShow =
+            if (ContinueWatchingPolicy.isSeries(entry.media)) {
+                !entry.isCompleted
+            } else {
+                entry.positionMs > 5_000L && !entry.isCompleted
+            }
+        val updated =
+            buildList {
+                if (shouldShow) add(entry)
+                addAll(existing.filterNot { continueWatchingTitleKey(it.media) == titleKey })
+            }.sortedByDescending { it.lastWatchedEpochMs }
+
+        writeHomeContinueWatchingCache(updated)
+    }
+
+    private fun refreshHomeContinueWatchingCache(
+        exact: Boolean,
+    ) {
+        val entries =
+            if (exact) {
+                val history = readHistory().sortedByDescending { it.lastWatchedEpochMs }
+                resolveContinueWatching(
+                    cursors = readContinueWatching(),
+                    history = history,
+                ).second
+            } else {
+                fastContinueWatching()
+            }
+        writeHomeContinueWatchingCache(entries)
+    }
+
+    private fun readHomeContinueWatchingCache(): List<LibraryPlaybackEntry> =
+        readObjectArray(
+            scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
+        ).mapNotNull {
+            runCatching { playbackFromJson(it) }.getOrNull()
+        }
+
+    private fun writeHomeContinueWatchingCache(
+        entries: List<LibraryPlaybackEntry>,
+    ) {
+        writeArray(
+            scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE),
+            entries.map(::playbackToHomeCacheJson),
+        )
+    }
+
+    private fun playbackToHomeCacheJson(
+        entry: LibraryPlaybackEntry,
+    ): JSONObject =
+        JSONObject()
+            .put("media", mediaToHomeCacheJson(entry.media))
+            .put("videoId", entry.videoId)
+            .put("episodeTitle", entry.episodeTitle)
+            .put("season", entry.season)
+            .put("episode", entry.episode)
+            .put("positionMs", entry.positionMs)
+            .put("durationMs", entry.durationMs)
+            .put("lastWatchedEpochMs", entry.lastWatchedEpochMs)
+
+    private fun mediaToHomeCacheJson(
+        media: MediaItem,
+    ): JSONObject =
+        JSONObject()
+            .put("id", media.id)
+            .put("type", media.type)
+            .put("name", media.name)
+            .put("poster", media.poster)
+            .put("background", media.background)
+            .put("description", media.description)
+            .put("releaseInfo", media.releaseInfo)
+            .put("sourceExtensionId", media.sourceExtensionId)
+            .put("catalogSources", JSONArray(media.catalogSources))
 
     private fun continueWatchingTitleKey(
         media: MediaItem,
@@ -1100,6 +1223,9 @@ class LibraryStore(
 
         private const val KEY_MARKED_WATCHED =
             "marked_watched"
+
+        private const val KEY_HOME_CONTINUE_WATCHING_CACHE =
+            "home_continue_watching_cache_v1"
 
         private const val MAX_HISTORY =
             150

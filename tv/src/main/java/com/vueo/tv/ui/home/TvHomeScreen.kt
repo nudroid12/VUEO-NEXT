@@ -36,6 +36,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
+    private val startupContinueWatching = runtime.libraryStore.homeStartupContinueWatching()
+
     var catalogRows by mutableStateOf(runtime.cachedHomeRows())
         internal set
     var loading by mutableStateOf(catalogRows.isEmpty())
@@ -49,14 +51,14 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var libraryHydrationRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRevision = Int.MIN_VALUE
     internal var libraryHydrationProfileId: String? = null
-    internal var continueWatching by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    internal var continueWatching by mutableStateOf(startupContinueWatching)
     internal var watchHistory by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
     internal var homeRecommendations by mutableStateOf(HomeRecommendationSections())
     internal var presentationCatalogRows: List<CatalogRow>? = null
     internal var presentationRows by mutableStateOf(
         buildTvHomeRows(
             catalogRows = catalogRows,
-            continueWatching = emptyList(),
+            continueWatching = startupContinueWatching,
         )
     )
 }
@@ -163,11 +165,10 @@ fun TvHomeScreen(
 
     val activeProfileId = runtime.profileStore.activeProfileId()
 
-    // Hydrate Continue Watching independently from catalog streaming. Before v130
-    // this effect was keyed by catalogRows, so every partial Home catalog publish
-    // could cancel/restart the LibraryStore parse and postpone the CW row until
-    // catalog loading settled. The dedicated cursor pass is tiny and publishes
-    // first; the exact history-backed snapshot follows without blocking first paint.
+    // Continue Watching is already present in retainedState from the tiny persisted
+    // startup cache, so cached catalogs + CW can participate in the same first Home
+    // presentation. Reconcile against full history in the background without gating
+    // first paint or catalog streaming.
     LaunchedEffect(runtime, activeProfileId, refreshToken, libraryRevision) {
         val hydrationIsCurrent =
             retainedState.libraryHydrationProfileId == activeProfileId &&
@@ -176,23 +177,17 @@ fun TvHomeScreen(
         if (hydrationIsCurrent) return@LaunchedEffect
 
         if (retainedState.libraryHydrationProfileId != activeProfileId) {
-            retainedState.continueWatching = emptyList()
+            retainedState.continueWatching = withContext(Dispatchers.IO) {
+                runtime.libraryStore.homeStartupContinueWatching()
+            }
             retainedState.watchHistory = emptyList()
             retainedState.homeRecommendations = HomeRecommendationSections()
             retainedState.libraryHydrationProfileId = activeProfileId
         }
 
         PerformanceDiagnostics.captureRuntimeEvent(
-            "HOME_CW_FAST_BEGIN revision=$libraryRevision refresh=$refreshToken"
+            "HOME_CW_STARTUP_PUBLISHED count=${retainedState.continueWatching.size}"
         )
-        val fastContinueWatching = withContext(Dispatchers.IO) {
-            runtime.libraryStore.fastContinueWatching()
-        }
-        retainedState.continueWatching = fastContinueWatching
-        PerformanceDiagnostics.captureRuntimeEvent(
-            "HOME_CW_FAST_PUBLISHED count=${fastContinueWatching.size}"
-        )
-
         PerformanceDiagnostics.captureRuntimeEvent(
             "HOME_CW_FULL_BEGIN revision=$libraryRevision refresh=$refreshToken"
         )
