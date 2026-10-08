@@ -40,7 +40,7 @@ import java.util.zip.ZipOutputStream
  * ON  = collection starts immediately and remains active until switched off.
  * Existing in-memory events are retained when collection is stopped; only clear()
  * removes them. RuntimeDiagnostics forwards its existing breadcrumbs here so page,
- * player and provider activity can be correlated without duplicate instrumentation.
+ * player activity and overall scan timings can be correlated without provider debug details.
  */
 object PerformanceDiagnostics {
     private const val PREFS = "vueo_performance_diagnostics"
@@ -59,7 +59,6 @@ object PerformanceDiagnostics {
         EPISODES("Episodes"),
         LIBRARY("Library"),
         SETTINGS("Settings"),
-        PROVIDER("Provider"),
         SYSTEM("System"),
         OTHER("Other"),
         FULL("Full"),
@@ -87,15 +86,8 @@ object PerformanceDiagnostics {
         val worstStallMs: Long,
         val scanStarts: Int,
         val scanFailures: Int,
-        val providerStarts: Int,
-        val providerIssues: Int,
-        val quickJsEvents: Int,
-        val quickJsExecutions: Int,
-        val quickJsCancelled: Int,
-        val providerCancelled: Int,
         val scanCancelled: Int,
         val systemSamples: Int,
-        val quickJsIssues: Int,
         val playbackIssues: Int,
         val recentSignals: List<String>,
     )
@@ -105,17 +97,11 @@ object PerformanceDiagnostics {
     private val recording = AtomicBoolean(false)
     private val sessionSequence = AtomicLong(0L)
     private val workSequence = AtomicLong(0L)
-    private val providerIssueStatuses = setOf("ERROR", "FAILED", "FAILURE", "TIMEOUT", "UNAVAILABLE", "BLOCKED")
     private val playbackIssueEvents = setOf("ERROR", "FAILED", "TIMEOUT")
-    private val quickJsIssuePhases = setOf("QJS_ABORT", "QJS_TIMEOUT")
     private val droppedEvents = AtomicLong(0L)
     private val activeScans = AtomicInteger(0)
-    private val activeProviders = AtomicInteger(0)
-    private val activeQuickJs = AtomicInteger(0)
     private val activityLock = Any()
     private val scanKeys = HashSet<String>()
-    private val providerKeys = HashSet<String>()
-    private val quickJsKeys = HashSet<String>()
     private val screenLock = Any()
     private var baseScreen = "UNKNOWN"
     private val playerScreens = LinkedHashMap<Long, String>()
@@ -196,8 +182,8 @@ object PerformanceDiagnostics {
         install(context)
         if (!enabled.get() || !recording.compareAndSet(false, true)) return
         synchronized(activityLock) {
-            scanKeys.clear(); providerKeys.clear(); quickJsKeys.clear()
-            activeScans.set(0); activeProviders.set(0); activeQuickJs.set(0)
+            scanKeys.clear()
+            activeScans.set(0)
         }
         sampledPssMb = -1L
         val session = sessionSequence.incrementAndGet()
@@ -216,8 +202,8 @@ object PerformanceDiagnostics {
         if (!recording.compareAndSet(true, false)) return
         appendEvent(Tab.SYSTEM, "RECORDING_STOP")
         synchronized(activityLock) {
-            scanKeys.clear(); providerKeys.clear(); quickJsKeys.clear()
-            activeScans.set(0); activeProviders.set(0); activeQuickJs.set(0)
+            scanKeys.clear()
+            activeScans.set(0)
         }
         sampler?.shutdownNow()
         sampler = null
@@ -304,25 +290,23 @@ object PerformanceDiagnostics {
     fun captureRuntimeEvent(message: String) {
         if (!isCollecting()) return
         val trimmed = message.trim()
-        synchronized(activityLock) {
-            if (!isCollecting()) return
-            when {
-                trimmed.startsWith("SCAN_START ") -> scanKeys.add(field(trimmed, "id"))
-                trimmed.startsWith("SCAN_END ") -> scanKeys.remove(field(trimmed, "id"))
-                trimmed.startsWith("PROVIDER_START ") -> providerKeys.add("${field(trimmed, "scan")}:${trimmed.substringAfter(" provider=").substringBefore(" activeProviders=")}")
-                trimmed.startsWith("PROVIDER_END ") -> providerKeys.remove("${field(trimmed, "scan")}:${trimmed.substringAfter(" provider=").substringBefore(" status=")}")
-                trimmed.startsWith("QJS_PHASE ") -> {
-                    val key = "${field(trimmed, "scan")}:${field(trimmed, "exec")}"
-                    when (field(trimmed, "phase")) {
-                        "QJS_CREATE_BEGIN" -> quickJsKeys.add(key)
-                        "QJS_CLOSE", "QJS_ABORT", "QJS_TIMEOUT", "QJS_CANCELLED" -> quickJsKeys.remove(key)
-                    }
-                }
+        // Detailed provider evidence belongs exclusively to Provider Diagnose.
+        if (trimmed.startsWith("SCAN_START ") || trimmed.startsWith("SCAN_END ")) {
+            val start = trimmed.startsWith("SCAN_START ")
+            synchronized(activityLock) {
+                if (!isCollecting()) return
+                val id = field(trimmed, "id")
+                if (start) scanKeys.add(id) else scanKeys.remove(id)
+                activeScans.set(scanKeys.size)
             }
-            activeScans.set(scanKeys.size)
-            activeProviders.set(providerKeys.size)
-            activeQuickJs.set(quickJsKeys.size)
+            val timing = if (start) "SCAN_TIMING_START" else
+                "SCAN_TIMING_END outcome=${field(trimmed, "outcome")} elapsed=${field(trimmed, "elapsed")}" 
+            appendEvent(Tab.SYSTEM, timing)
+            return
         }
+        if (trimmed.startsWith("SCAN_") || trimmed.startsWith("PROVIDER_") ||
+            trimmed.startsWith("QJS_") || trimmed.startsWith("DISCOVERY_TRACE ") ||
+            trimmed.startsWith("UI_STALL_RISK ")) return
         if (trimmed.startsWith("SCREEN ")) {
             observeScreen(trimmed.removePrefix("SCREEN "))
             appendEvent(currentPage.get(), "SCREEN ${currentScreen.get()}")
@@ -434,14 +418,6 @@ object PerformanceDiagnostics {
             append("Source scans: ${stats.scanStarts} • Cancelled: ${stats.scanCancelled} • Failed: ${stats.scanFailures}")
             if (activeScans.get() > 0) append(" • Active: ${activeScans.get()}")
             appendLine()
-            append("Providers: ${stats.providerStarts} • Cancelled: ${stats.providerCancelled}")
-            if (activeProviders.get() > 0) append(" • Active: ${activeProviders.get()}")
-            if (stats.providerIssues > 0) append(" • Issues: ${stats.providerIssues}")
-            appendLine()
-            append("QuickJS executions: ${stats.quickJsExecutions} • Phases: ${stats.quickJsEvents} • Cancelled: ${stats.quickJsCancelled}")
-            if (activeQuickJs.get() > 0) append(" • Active: ${activeQuickJs.get()}")
-            if (stats.quickJsIssues > 0) append(" • Issues: ${stats.quickJsIssues}")
-            appendLine()
             appendLine("Playback issues: ${stats.playbackIssues}")
             appendLine("System samples: ${stats.systemSamples}")
 
@@ -460,14 +436,7 @@ object PerformanceDiagnostics {
                 appendLine("• Failed source scans: ${stats.scanFailures}")
                 wroteSignal = true
             }
-            if (stats.providerIssues > 0) {
-                appendLine("• Provider failure/timeout signals: ${stats.providerIssues}")
-                wroteSignal = true
-            }
-            if (stats.quickJsIssues > 0) {
-                appendLine("• QuickJS error/abort signals: ${stats.quickJsIssues}")
-                wroteSignal = true
-            }
+
             if (stats.playbackIssues > 0) {
                 appendLine("• Playback error/failure signals: ${stats.playbackIssues}")
                 wroteSignal = true
@@ -496,15 +465,8 @@ object PerformanceDiagnostics {
         var worstStallMs = 0L
         var scanStarts = 0
         var scanFailures = 0
-        var providerStarts = 0
-        var providerIssues = 0
-        var quickJsExecutions = 0
-        var quickJsCancelled = 0
-        var providerCancelled = 0
         var scanCancelled = 0
         var systemSamples = 0
-        var quickJsEvents = 0
-        var quickJsIssues = 0
         var playbackIssues = 0
         val recentSignals = ArrayDeque<String>(8)
 
@@ -520,36 +482,20 @@ object PerformanceDiagnostics {
                 jankEvents++
                 worstFrameGapMs = maxOf(worstFrameGapMs, extractMs(event.line, "gap"))
             }
-            if (upper.startsWith("UI_STALL ")) {
+            if (upper.startsWith("UI_STALL ") || upper.startsWith("UI_STALL_LIVE ")) {
                 stallEvents++
                 worstStallMs = maxOf(worstStallMs, extractMs(event.line, "delay"))
             }
-            if (upper.startsWith("SCAN_START ")) scanStarts++
-            if (upper.startsWith("SCAN_END ") && field(upper, "OUTCOME") == "FAILED") scanFailures++
-            if (upper.startsWith("SCAN_END ") && field(upper, "OUTCOME") == "CANCELLED") scanCancelled++
+            if (upper.startsWith("SCAN_TIMING_START")) scanStarts++
+            if (upper.startsWith("SCAN_TIMING_END ") && field(upper, "OUTCOME") == "FAILED") scanFailures++
+            if (upper.startsWith("SCAN_TIMING_END ") && field(upper, "OUTCOME") == "CANCELLED") scanCancelled++
             if (upper.startsWith("SYSTEM_SAMPLE ")) systemSamples++
-            if (upper.startsWith("PROVIDER_START ")) providerStarts++
-            val status = field(upper, "STATUS")
-            if (upper.startsWith("PROVIDER_END ")) {
-                if (status == "CANCELLED") providerCancelled++
-                else if (status in providerIssueStatuses) providerIssues++
-            }
-            if (upper.startsWith("QJS_PHASE ")) {
-                quickJsEvents++
-                when (field(upper, "PHASE")) {
-                    "QJS_CREATE_BEGIN" -> quickJsExecutions++
-                    "QJS_CANCELLED" -> quickJsCancelled++
-                    "QJS_ABORT", "QJS_TIMEOUT" -> quickJsIssues++
-                }
-            }
             val playbackIssue = upper.startsWith("PLAYBACK_ERROR ") ||
                 (upper.startsWith("PLAYER_EVENT ") && field(upper, "EVENT") in playbackIssueEvents)
             if (playbackIssue) playbackIssues++
 
             val notable = upper.startsWith("FRAME_JANK ") || upper.startsWith("UI_STALL ") ||
-                upper.startsWith("UI_STALL_RISK ") || playbackIssue ||
-                upper.startsWith("SCAN_END ") || upper.startsWith("SCAN_ERROR ") ||
-                upper.startsWith("PROVIDER_END ") || field(upper, "PHASE") in quickJsIssuePhases
+                playbackIssue || upper.startsWith("SCAN_TIMING_END ")
             if (notable) {
                 if (recentSignals.size >= 8) recentSignals.removeFirst()
                 recentSignals.addLast(event.line.take(260))
@@ -566,15 +512,8 @@ object PerformanceDiagnostics {
             worstStallMs = worstStallMs,
             scanStarts = scanStarts,
             scanFailures = scanFailures,
-            providerStarts = providerStarts,
-            providerIssues = providerIssues,
-            quickJsEvents = quickJsEvents,
-            quickJsExecutions = quickJsExecutions,
-            quickJsCancelled = quickJsCancelled,
-            providerCancelled = providerCancelled,
             scanCancelled = scanCancelled,
             systemSamples = systemSamples,
-            quickJsIssues = quickJsIssues,
             playbackIssues = playbackIssues,
             recentSignals = recentSignals.toList(),
         )
@@ -687,7 +626,6 @@ object PerformanceDiagnostics {
                     "SYSTEM_SAMPLE cpu=${String.format(Locale.US, "%.1f", cpuPercent)}% " +
                         "java=$javaMb/$javaMaxMb MB native=${nativeMb}MB pss=${pssMb}MB rss=${rssMb}MB " +
                         "threads~${Thread.activeCount()} activeScans=${activeScans.get()} " +
-                        "activeProviders=${activeProviders.get()} activeQuickJs=${activeQuickJs.get()} " +
                         "screen=${safe(currentScreen.get(), 100)}"
                 )
             }
@@ -736,8 +674,6 @@ object PerformanceDiagnostics {
             upper.startsWith("PLAYER_EVENT") && ("SOURCE" in upper || "SERVER" in upper) -> Tab.SOURCES
             upper.startsWith("PLAYER_EVENT") && "EPISODE" in upper -> Tab.EPISODES
             upper.startsWith("PLAYER_EVENT") || upper.startsWith("PLAYBACK_") -> Tab.PLAYER
-            upper.startsWith("SCAN_") || upper.startsWith("PROVIDER_") || upper.startsWith("QJS_") ||
-                upper.startsWith("DISCOVERY_TRACE") -> Tab.PROVIDER
             upper.startsWith("UI_STALL") || upper.startsWith("SYSTEM_") -> Tab.SYSTEM
             else -> currentPage.get()
         }
@@ -796,7 +732,7 @@ object PerformanceDiagnostics {
             appendLine("Recording: ${recording.get()}")
             appendLine("Events: ${eventCount()}")
             appendLine("Dropped: ${droppedEvents.get()}")
-            appendLine("Active scans/providers/quickJs: ${activeScans.get()}/${activeProviders.get()}/${activeQuickJs.get()}")
+            appendLine("Active timed scans: ${activeScans.get()}")
             appendLine("Current screen: ${currentScreen.get()}")
             appendLine("System sample interval: ${SYSTEM_SAMPLE_MS}ms")
             appendLine("PSS probe interval: ${PSS_SAMPLE_MS}ms")

@@ -196,7 +196,7 @@ import com.vueo.mobile.core.enrichment.MediaRating
 import com.vueo.mobile.core.enrichment.RichDetailsClient
 import com.vueo.mobile.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
-import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.DiagnosticsViewer
 import com.vueo.shared.core.plugin.providerHealthSortKey
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
@@ -820,40 +820,27 @@ internal fun RuntimeDiagnosticsDialog(
 @Composable
 internal fun PerformanceDiagnosticsDialog(
     onDismiss: () -> Unit,
+    providerMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val tabs = remember {
-        listOf(
-            PerformanceDiagnostics.Tab.FULL,
-            PerformanceDiagnostics.Tab.HOME,
-            PerformanceDiagnostics.Tab.SEARCH,
-            PerformanceDiagnostics.Tab.DETAILS,
-            PerformanceDiagnostics.Tab.PLAYER,
-            PerformanceDiagnostics.Tab.SOURCES,
-            PerformanceDiagnostics.Tab.EPISODES,
-            PerformanceDiagnostics.Tab.LIBRARY,
-            PerformanceDiagnostics.Tab.SETTINGS,
-            PerformanceDiagnostics.Tab.PROVIDER,
-            PerformanceDiagnostics.Tab.SYSTEM,
-            PerformanceDiagnostics.Tab.OTHER,
-        )
-    }
-    var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
+    val diagnostics = remember(providerMode) { DiagnosticsViewer(providerMode) }
+    val tabs = diagnostics.tabs
+    var selectedTab by remember { mutableStateOf(tabs.first()) }
     var showRaw by remember { mutableStateOf(false) }
     var diagnosticsEnabled by remember {
-        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
+        mutableStateOf(diagnostics.isEnabled(context.applicationContext))
     }
     var diagnosticText by remember {
-        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
+        mutableStateOf(diagnostics.previewSummary(selectedTab))
     }
     var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val logScroll = rememberScrollState()
 
     fun refreshPreview(): String =
-        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab)
-        else PerformanceDiagnostics.previewSummary(selectedTab)
+        if (showRaw) diagnostics.previewRaw(selectedTab)
+        else diagnostics.previewSummary(selectedTab)
 
     LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
         diagnosticText = refreshPreview()
@@ -918,7 +905,7 @@ internal fun PerformanceDiagnosticsDialog(
                         verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
                         Text(
-                            "Performance Diagnostics",
+                            diagnostics.title,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -926,7 +913,7 @@ internal fun PerformanceDiagnosticsDialog(
                         )
                         Text(
                             if (diagnosticsEnabled) {
-                                "ON • recording runtime activity"
+                                if (providerMode) "ON • recording provider activity" else "ON • recording runtime activity"
                             } else {
                                 "OFF • diagnostics inactive • recorded log retained"
                             },
@@ -946,8 +933,8 @@ internal fun PerformanceDiagnosticsDialog(
                     Switch(
                         checked = diagnosticsEnabled,
                         onCheckedChange = { value ->
-                            PerformanceDiagnostics.setEnabled(context.applicationContext, value)
-                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
+                            diagnostics.setEnabled(context.applicationContext, value)
+                            diagnosticsEnabled = diagnostics.isCollecting()
                             diagnosticText = refreshPreview()
                         },
                     )
@@ -1116,14 +1103,14 @@ internal fun PerformanceDiagnosticsDialog(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 val fullText = if (showRaw) {
-                                    PerformanceDiagnostics.exportRaw(selectedTab)
+                                    diagnostics.exportRaw(selectedTab)
                                 } else {
-                                    PerformanceDiagnostics.exportSummary(selectedTab)
+                                    diagnostics.exportSummary(selectedTab)
                                 }
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                                 clipboard?.setPrimaryClip(
                                     ClipData.newPlainText(
-                                        "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
+                                        "VUEO ${diagnostics.kind} ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
                                         fullText,
                                     )
                                 )
@@ -1142,7 +1129,7 @@ internal fun PerformanceDiagnosticsDialog(
                                 saving = true
                                 scope.launch {
                                     val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                        runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
+                                        runCatching { diagnostics.saveBundle(context.applicationContext) }
                                     }
                                     saving = false
                                     result.onSuccess { saved ->
@@ -1165,7 +1152,7 @@ internal fun PerformanceDiagnosticsDialog(
                         TextButton(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                PerformanceDiagnostics.clear()
+                                diagnostics.clear()
                                 diagnosticText = refreshPreview()
                             },
                         ) { Text("Clear") }

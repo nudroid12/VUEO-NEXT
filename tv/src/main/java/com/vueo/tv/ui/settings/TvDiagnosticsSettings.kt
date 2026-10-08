@@ -16,11 +16,18 @@ internal fun TvDiagnosticsSettings(
     onBack: () -> Unit,
 ) {
     var showCrashDiagnostics by remember { mutableStateOf(false) }
+    var showProviderDiagnostics by remember { mutableStateOf(false) }
     var showPerformanceDiagnostics by remember { mutableStateOf(false) }
 
     if (showCrashDiagnostics) {
         TvRuntimeDiagnosticsDialog(
             onDismiss = { showCrashDiagnostics = false },
+        )
+    }
+    if (showProviderDiagnostics) {
+        TvPerformanceDiagnosticsDialog(
+            onDismiss = { showProviderDiagnostics = false },
+            providerMode = true,
         )
     }
     if (showPerformanceDiagnostics) {
@@ -45,6 +52,14 @@ internal fun TvDiagnosticsSettings(
             value = "Open",
             icon = Icons.Default.SettingsInputComponent,
             onActivate = { showPerformanceDiagnostics = true },
+        ),
+        TvSettingsEntry(
+            id = "provider-diagnostics",
+            title = "Provider Diagnose",
+            subtitle = "Provider requests, plugin logs, parsing errors and link discovery.",
+            value = "Open",
+            icon = Icons.Default.SettingsInputComponent,
+            onActivate = { showProviderDiagnostics = true },
         ),
     )
 

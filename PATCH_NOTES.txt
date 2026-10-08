@@ -1,21 +1,31 @@
-VUEO — Performance diagnostics patch (TV + Mobile/shared)
+VUEO — Separate Provider Diagnose (TV + Mobile/shared)
 
-Scope:
-- Summary uses actual event types, phases and statuses. timeoutMs is configuration.
-- Execution, phase, sample, cancellation and failure counts are separate.
-- Active execution counters close once on completion, cancellation or failure.
-- Cancelled scans retain candidateStreams separately from final merged streams.
-- Cancellation reasons come from the exception; timeouts remain failure signals.
-- Opt-in work timings cover catalog loading, search ranking/filtering,
-  Home presentation, Details hydration and metadata loading.
-- Player events cover start/episode change, buffering, ready, first frame and exit.
-- Player screen attribution follows the mounted player surface.
-- Player transition events are capped at 120 per source; no position polling added.
-- QuickJS memory breadcrumbs reuse sampled PSS while recording; abort probes remain.
+Provider Diagnose:
+- Separate Settings entry, opt-in preference, bounded memory buffer and ZIP export.
+- Summary/Raw, tabs, search, Copy, Save and Clear use existing Mobile/TV controls.
+- Tabs: Full, Scans, Providers, QuickJS, Requests, Plugin Logs.
+- Records scan/provider outcomes, cancellations, partial candidate counts,
+  QuickJS stages, HTTP/WebView trace, console output and stage evidence.
+- Provider/run identity and plugin repository/version identify the origin.
+- Result parser reports invalid JSON, non-object entries, missing/invalid URLs
+  and empty result arrays. Parsing acceptance and returned results are unchanged.
+- Plugin-specific selectors/extraction require console or trace output from the plugin.
+- 3,000-event buffer; 1,200-character lines; additional console/stage output capped
+  at 120 events per provider run. No new system sampler or automatic body capture.
+- URL paths, query values and recognized credential fields are redacted before buffering.
+
+Performance Diagnostics:
+- Removes Provider tab, provider/QuickJS detail and counters from summary/export.
+- Retains minimal scan start/end timing with outcome and elapsed time.
+- Existing Home/Search/Details/player timing, frame and system sampling remains.
+
+This ZIP includes the preceding performance-diagnostics fixes in overlapping files.
+No provider selection, result filtering or playback behavior changed.
 
 Verification:
-- Static delimiter and scope review; ZIP integrity checked.
-- Attached log reconciles to 12 executions, 69 phases, 5 cancellations,
-  0 aborts, 105 system samples; terminal active counts 0/0/0.
+- Static delimiter/import and diagnostics routing checks passed (20 source files).
+- Source-regex fixtures passed for authorization, cookies, JSON secrets and URLs.
+- Attached log routing reconciliation: 69 QuickJS phases go to Provider;
+  Performance retains only four minimal scan timing events.
+- ZIP integrity and byte equality with source checked.
 - No compilation or Android device test performed.
-- Existing source patches are preserved in overlapping files.

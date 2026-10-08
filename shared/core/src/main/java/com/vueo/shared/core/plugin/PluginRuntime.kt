@@ -7,6 +7,7 @@ import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
+import com.vueo.shared.core.diagnostics.ProviderDiagnostics
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SourceRequest
@@ -361,6 +362,8 @@ suspend fun discoverProgressive(
                                                 RuntimeDiagnostics.beginProvider(
                                                     scanId = runtimeDiagnosticScanId,
                                                     providerName = provider.name,
+                                                    providerId = provider.id,
+                                                    pluginName = repository.name,
                                                 )
                                             try {
                                                 runProvider(
@@ -767,7 +770,19 @@ private fun emptyDiscoveryResult():
         val providerTimeoutMs =
             providerRuntimeTimeoutMs(provider)
 
-        val progress = ProviderExecutionProgress()
+        var diagnosticLogCount = 0
+        val progress = ProviderExecutionProgress(diagnosticSink = { message ->
+            if (ProviderDiagnostics.isCollecting() && diagnosticLogCount < 120) {
+                diagnosticLogCount++
+                ProviderDiagnostics.recordPluginLog(
+                    runtimeDiagnosticScanId, provider.id, provider.name, repository.name, message,
+                )
+            }
+        })
+        ProviderDiagnostics.recordPluginLog(
+            runtimeDiagnosticScanId, provider.id, provider.name, repository.name,
+            "IDENTITY providerVersion=${provider.version} pluginVersion=${repository.version}",
+        )
         progress.stage("Reading provider code")
 
         val execution =
@@ -843,6 +858,9 @@ private fun emptyDiscoveryResult():
         val error =
             execution.error
                 ?: consoleError
+
+        if (error != null) progress.diagnostic("ERROR: $error")
+        if (execution.streams.isEmpty()) progress.diagnostic("RESULT: No playable links returned; inspect preceding evidence")
 
         val status =
             when {
@@ -964,6 +982,8 @@ private fun emptyDiscoveryResult():
         val quickJsToken = RuntimeDiagnostics.beginQuickJsExecution(
             scanId = runtimeDiagnosticScanId,
             providerName = provider.name,
+            providerId = provider.id,
+            pluginName = repository.name,
         )
         return try {
             val resultJson =
@@ -1052,6 +1072,8 @@ private fun emptyDiscoveryResult():
                         RuntimeDiagnostics.recordDiscoveryTrace(
                             scanId = runtimeDiagnosticScanId,
                             providerName = provider.name,
+                            providerId = provider.id,
+                            pluginName = repository.name,
                             stage =
                                 trace
                                     ?.optString("stage")
@@ -1091,6 +1113,8 @@ private fun emptyDiscoveryResult():
                                     RuntimeDiagnostics.recordDiscoveryTrace(
                                         scanId = runtimeDiagnosticScanId,
                                         providerName = provider.name,
+                                        providerId = provider.id,
+                                        pluginName = repository.name,
                                         stage = "HTTP",
                                         details =
                                             summarizeHttpTrace(
@@ -1142,6 +1166,8 @@ private fun emptyDiscoveryResult():
                                     RuntimeDiagnostics.recordDiscoveryTrace(
                                         scanId = runtimeDiagnosticScanId,
                                         providerName = provider.name,
+                                        providerId = provider.id,
+                                        pluginName = repository.name,
                                         stage = "WEBVIEW",
                                         details =
                                             summarizeWebViewTrace(
@@ -1265,7 +1291,12 @@ private fun emptyDiscoveryResult():
                 phase = "RESULT_PARSE_BEGIN",
                 details = "resultChars=${resultJson.length}",
             )
-            val streams = parseProviderStreams(repository, provider, resultJson)
+            val streams = parseProviderStreams(
+                repository, provider, resultJson,
+                onDiagnostic = if (ProviderDiagnostics.isCollecting()) {
+                    { evidence -> progress.diagnostic("PARSE: $evidence") }
+                } else null,
+            )
             RuntimeDiagnostics.recordQuickJsPhase(
                 token = quickJsToken,
                 phase = "RESULT_PARSE_END",

@@ -58,7 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
-import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import com.vueo.shared.core.diagnostics.DiagnosticsViewer
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
 import com.vueo.shared.core.plugin.ProviderHealthRecord
@@ -580,26 +580,13 @@ internal fun TvRuntimeDiagnosticsDialog(
 @Composable
 internal fun TvPerformanceDiagnosticsDialog(
     onDismiss: () -> Unit,
+    providerMode: Boolean = false,
 ) {
     val context = LocalContext.current
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
     val scope = rememberCoroutineScope()
-    val tabs = remember {
-        listOf(
-            PerformanceDiagnostics.Tab.FULL,
-            PerformanceDiagnostics.Tab.HOME,
-            PerformanceDiagnostics.Tab.SEARCH,
-            PerformanceDiagnostics.Tab.DETAILS,
-            PerformanceDiagnostics.Tab.PLAYER,
-            PerformanceDiagnostics.Tab.SOURCES,
-            PerformanceDiagnostics.Tab.EPISODES,
-            PerformanceDiagnostics.Tab.LIBRARY,
-            PerformanceDiagnostics.Tab.SETTINGS,
-            PerformanceDiagnostics.Tab.PROVIDER,
-            PerformanceDiagnostics.Tab.SYSTEM,
-            PerformanceDiagnostics.Tab.OTHER,
-        )
-    }
+    val diagnostics = remember(providerMode) { DiagnosticsViewer(providerMode) }
+    val tabs = diagnostics.tabs
     val logScroll = rememberScrollState()
     val toggleFocus = remember { FocusRequester() }
     val summaryFocus = remember { FocusRequester() }
@@ -608,13 +595,13 @@ internal fun TvPerformanceDiagnosticsDialog(
     val searchFocus = remember { FocusRequester() }
     val logFocus = remember { FocusRequester() }
     val copyFocus = remember { FocusRequester() }
-    var selectedTab by remember { mutableStateOf(PerformanceDiagnostics.Tab.FULL) }
+    var selectedTab by remember { mutableStateOf(tabs.first()) }
     var showRaw by remember { mutableStateOf(false) }
     var diagnosticsEnabled by remember {
-        mutableStateOf(PerformanceDiagnostics.isEnabled(context.applicationContext))
+        mutableStateOf(diagnostics.isEnabled(context.applicationContext))
     }
     var diagnosticText by remember {
-        mutableStateOf(PerformanceDiagnostics.previewSummary(selectedTab))
+        mutableStateOf(diagnostics.previewSummary(selectedTab))
     }
     var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
@@ -629,8 +616,8 @@ internal fun TvPerformanceDiagnosticsDialog(
     }
 
     fun refreshPreview(): String =
-        if (showRaw) PerformanceDiagnostics.previewRaw(selectedTab, maxEvents = 320)
-        else PerformanceDiagnostics.previewSummary(selectedTab)
+        if (showRaw) diagnostics.previewRaw(selectedTab, maxEvents = 320)
+        else diagnostics.previewSummary(selectedTab)
 
     LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
         diagnosticText = refreshPreview()
@@ -705,7 +692,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
-                            "Performance Diagnostics",
+                            diagnostics.title,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -713,7 +700,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                         )
                         Text(
                             if (diagnosticsEnabled) {
-                                "ON • recording runtime activity"
+                                if (providerMode) "ON • recording provider activity" else "ON • recording runtime activity"
                             } else {
                                 "OFF • diagnostics inactive • recorded log retained"
                             },
@@ -731,8 +718,8 @@ internal fun TvPerformanceDiagnosticsDialog(
                     Switch(
                         checked = diagnosticsEnabled,
                         onCheckedChange = { value ->
-                            PerformanceDiagnostics.setEnabled(context.applicationContext, value)
-                            diagnosticsEnabled = PerformanceDiagnostics.isCollecting()
+                            diagnostics.setEnabled(context.applicationContext, value)
+                            diagnosticsEnabled = diagnostics.isCollecting()
                             diagnosticText = refreshPreview()
                         },
                         modifier = Modifier
@@ -937,14 +924,14 @@ internal fun TvPerformanceDiagnosticsDialog(
                             .then(bottomButtonNavigation),
                         onClick = {
                             val fullText = if (showRaw) {
-                                PerformanceDiagnostics.exportRaw(selectedTab)
+                                diagnostics.exportRaw(selectedTab)
                             } else {
-                                PerformanceDiagnostics.exportSummary(selectedTab)
+                                diagnostics.exportSummary(selectedTab)
                             }
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                             clipboard?.setPrimaryClip(
                                 ClipData.newPlainText(
-                                    "VUEO performance ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
+                                    "VUEO ${diagnostics.kind} ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
                                     fullText,
                                 )
                             )
@@ -963,7 +950,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                             saving = true
                             scope.launch {
                                 val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    runCatching { PerformanceDiagnostics.saveBundle(context.applicationContext) }
+                                    runCatching { diagnostics.saveBundle(context.applicationContext) }
                                 }
                                 saving = false
                                 result.onSuccess { saved ->
@@ -986,7 +973,7 @@ internal fun TvPerformanceDiagnosticsDialog(
                     TextButton(
                         modifier = Modifier.weight(1f).then(bottomButtonNavigation),
                         onClick = {
-                            PerformanceDiagnostics.clear()
+                            diagnostics.clear()
                             diagnosticText = refreshPreview()
                         },
                     ) { Text("Clear") }

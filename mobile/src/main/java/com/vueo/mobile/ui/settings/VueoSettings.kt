@@ -356,6 +356,7 @@ internal fun VueoSettingsHub(
     var showRuntimeDiagnostics by remember {
         mutableStateOf(false)
     }
+    var showProviderDiagnostics by remember { mutableStateOf(false) }
     var showPerformanceDiagnostics by remember {
         mutableStateOf(false)
     }
@@ -619,6 +620,13 @@ internal fun VueoSettingsHub(
                             ) {
                                 showPerformanceDiagnostics = true
                             }
+                            VueoSettingsHubDivider()
+                            VueoSettingsHubRow(
+                                "Provider Diagnose",
+                                "Provider requests, plugin logs, parsing errors and link discovery.",
+                                "Open",
+                                Icons.Default.SettingsInputComponent,
+                            ) { showProviderDiagnostics = true }
                         }
                     }
 
@@ -652,6 +660,12 @@ internal fun VueoSettingsHub(
     if (showRuntimeDiagnostics) {
         RuntimeDiagnosticsDialog(
             onDismiss = { showRuntimeDiagnostics = false },
+        )
+    }
+    if (showProviderDiagnostics) {
+        PerformanceDiagnosticsDialog(
+            onDismiss = { showProviderDiagnostics = false },
+            providerMode = true,
         )
     }
     if (showPerformanceDiagnostics) {

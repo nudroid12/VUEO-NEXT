@@ -3,6 +3,7 @@ package com.vueo.shared.core.plugin
 /** Per-run, bounded evidence owned outside the cancellation/timeout scope. */
 internal class ProviderExecutionProgress(
     private val nowNs: () -> Long = System::nanoTime,
+    private val diagnosticSink: ((String) -> Unit)? = null,
 ) {
     private val startedNs = nowNs()
     private val console = BoundedProviderLog(24)
@@ -15,12 +16,16 @@ internal class ProviderExecutionProgress(
     private fun elapsedMs() = ((nowNs() - startedNs) / 1_000_000L).coerceAtLeast(0L)
 
     @Synchronized operator fun plusAssign(message: String) {
+        diagnosticSink?.invoke(message.take(1200))
         console += message.take(1200)
         timeline += "TIMELINE: +${elapsedMs()}ms ${message.take(280)}"
     }
 
+    @Synchronized fun diagnostic(message: String) { diagnosticSink?.invoke(message) }
+
     @Synchronized fun stage(label: String) {
         lastStage = label.replace('\n', ' ').take(280)
+        diagnosticSink?.invoke("STAGE elapsed=${elapsedMs()}ms $lastStage")
         timeline += "TIMELINE: +${elapsedMs()}ms $lastStage"
     }
 

@@ -3,7 +3,6 @@ package com.vueo.tv.detail
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
-import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable

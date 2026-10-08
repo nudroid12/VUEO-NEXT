@@ -17,7 +17,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.media.CatalogRow

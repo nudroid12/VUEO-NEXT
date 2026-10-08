@@ -74,18 +74,28 @@ internal fun parseProviderStreams(
     repository: PluginRepositoryDescriptor,
     provider: PluginProviderDescriptor,
     resultJson: String,
+    onDiagnostic: ((String) -> Unit)? = null,
 ): List<SourceCandidate> {
     val array =
         runCatching {
             JSONArray(resultJson)
         }.getOrNull()
-            ?: return emptyList()
+            ?: run {
+                onDiagnostic?.invoke("Invalid result format: expected JSON array; resultChars=${resultJson.length}")
+                return emptyList()
+            }
+    onDiagnostic?.invoke("Result entries=${array.length()}")
+    if (array.length() == 0) onDiagnostic?.invoke("Provider returned an empty result array")
+
 
     return (0 until array.length())
         .mapNotNull { index ->
             val item =
                 array.optJSONObject(index)
-                    ?: return@mapNotNull null
+                    ?: run {
+                        onDiagnostic?.invoke("Entry $index rejected: expected JSON object")
+                        return@mapNotNull null
+                    }
 
             val url =
                 item.optString("url")
@@ -97,7 +107,10 @@ internal fun parseProviderStreams(
                             "http://"
                         )
                     }
-                    ?: return@mapNotNull null
+                    ?: run {
+                        onDiagnostic?.invoke("Entry $index rejected: url missing or not HTTP(S)")
+                        return@mapNotNull null
+                    }
 
             val headers =
                 item.optJSONObject("headers")

@@ -55,6 +55,7 @@ object RuntimeDiagnostics {
     private val lifecycleCallbacksInstalled = AtomicBoolean(false)
     private val scanSequence = AtomicLong(0L)
     private val quickJsSequence = AtomicLong(0L)
+    private val providerSequence = AtomicLong(0L)
     private val activeScans = AtomicInteger(0)
     private val activeProviders = AtomicInteger(0)
     @Volatile
@@ -88,6 +89,9 @@ object RuntimeDiagnostics {
         val heapStartBytes: Long,
         val startedOnMainThread: Boolean,
         internal val finished: AtomicBoolean = AtomicBoolean(false),
+        val runId: Long = 0L,
+        val providerId: String = "",
+        val pluginName: String = "",
     )
 
     data class QuickJsToken internal constructor(
@@ -95,6 +99,8 @@ object RuntimeDiagnostics {
         val providerName: String,
         val executionId: Long,
         val startedNs: Long,
+        val providerId: String = "",
+        val pluginName: String = "",
     )
 
     data class DiagnosticSaveResult(
@@ -134,6 +140,7 @@ object RuntimeDiagnostics {
     fun install(context: Context) {
         appContext = context.applicationContext
         PerformanceDiagnostics.install(context.applicationContext)
+        ProviderDiagnostics.install(context.applicationContext)
         if (!installed.compareAndSet(false, true)) return
 
         crashDiagnosticsEnabled.set(
@@ -241,8 +248,10 @@ object RuntimeDiagnostics {
         stage: String,
         details: String,
         providerName: String? = null,
+        providerId: String = "",
+        pluginName: String = "",
     ) {
-        if (!shouldCollect()) return
+        if (!shouldCollectProvider()) return
         val providerPart = providerName
             ?.takeIf { it.isNotBlank() }
             ?.let {
@@ -253,6 +262,7 @@ object RuntimeDiagnostics {
 
         record(
             "DISCOVERY_TRACE scan=$scanId stage=${safeToken(stage)}$providerPart " +
+                "providerId=${safeToken(providerId)} plugin=${safeText(pluginName, 80)} " +
                 safeText(details, 360)
         )
     }
@@ -312,8 +322,8 @@ object RuntimeDiagnostics {
         finishSourceScan(scanId, streams = 0, completedProviders = completedProviders, outcome = outcome)
     }
 
-    fun beginProvider(scanId: Long, providerName: String): ProviderToken {
-        if (!shouldCollect() || scanId <= 0L) {
+    fun beginProvider(scanId: Long, providerName: String, providerId: String = "", pluginName: String = ""): ProviderToken {
+        if (!shouldCollectProvider() || scanId <= 0L) {
             return ProviderToken(0L, providerName, 0L, 0L, false)
         }
         val globalActive = activeProviders.incrementAndGet()
@@ -327,12 +337,16 @@ object RuntimeDiagnostics {
             startedNs = System.nanoTime(),
             heapStartBytes = heapUsedBytes(),
             startedOnMainThread = onMain,
+            runId = providerSequence.incrementAndGet(),
+            providerId = providerId,
+            pluginName = pluginName,
         )
         updateProviderPhase(scanId, providerName, "PROVIDER_START", null)
         record(
             "PROVIDER_START scan=$scanId provider=${safeText(providerName, 80)} " +
                 "activeProviders=$scanActive globalActiveProviders=$globalActive " +
-                "thread=${threadLabel()} mainThread=$onMain"
+                "thread=${threadLabel()} mainThread=$onMain run=${token.runId} " +
+                "providerId=${safeToken(providerId)} plugin=${safeText(pluginName, 80)}"
         )
         return token
     }
@@ -368,7 +382,8 @@ object RuntimeDiagnostics {
                 "status=${safeToken(status)} elapsed=${elapsedMs}ms streams=$streamCount " +
                 "heapDelta=${String.format(Locale.US, "%.1f", heapDeltaMb)}MB " +
                 "startedOnMainThread=${token.startedOnMainThread} activeProviders=$scanActive " +
-                "globalActiveProviders=$globalActive$errorSuffix"
+                "globalActiveProviders=$globalActive$errorSuffix run=${token.runId} " +
+                "providerId=${safeToken(token.providerId)} plugin=${safeText(token.pluginName, 80)}"
         )
         if (token.startedOnMainThread && elapsedMs >= STALL_THRESHOLD_MS) {
             record(
@@ -382,8 +397,8 @@ object RuntimeDiagnostics {
      * Marks entry into the native QuickJS boundary. This breadcrumb is synchronously appended because
      * a native abort can terminate the process before the normal batched writer gets another chance.
      */
-    fun beginQuickJsExecution(scanId: Long, providerName: String): QuickJsToken {
-        if (!shouldCollect()) {
+    fun beginQuickJsExecution(scanId: Long, providerName: String, providerId: String = "", pluginName: String = ""): QuickJsToken {
+        if (!shouldCollectProvider()) {
             return QuickJsToken(scanId = 0L, providerName = providerName, executionId = 0L, startedNs = 0L)
         }
         val token = QuickJsToken(
@@ -391,6 +406,8 @@ object RuntimeDiagnostics {
             providerName = providerName,
             executionId = quickJsSequence.incrementAndGet(),
             startedNs = System.nanoTime(),
+            providerId = providerId,
+            pluginName = pluginName,
         )
         recordQuickJsPhase(token, "QJS_CREATE_BEGIN", critical = true)
         return token
@@ -404,13 +421,14 @@ object RuntimeDiagnostics {
             phase == "QJS_EVAL_BEGIN" || phase == "QJS_EVAL_END" ||
             phase == "QJS_ABORT",
     ) {
-        if (token.executionId <= 0L || !shouldCollect()) return
+        if (token.executionId <= 0L || !shouldCollectProvider()) return
         updateProviderPhase(token.scanId, token.providerName, phase, token.executionId)
         // Memory probes (especially PSS) are cached so diagnostics do not become provider work.
         val memory = detailedMemorySnapshot(force = phase == "QJS_ABORT")
         val message = buildString {
             append("QJS_PHASE scan=${token.scanId} exec=${token.executionId} ")
             append("provider=${safeText(token.providerName, 80)} phase=${safeToken(phase)} ")
+            append("providerId=${safeToken(token.providerId)} plugin=${safeText(token.pluginName, 80)} ")
             append("elapsed=${elapsedMs(token.startedNs)}ms thread=${threadLabel()} ${memory.label()}")
             if (details.isNotBlank()) append(" ${safeText(details, 240)}")
         }
@@ -733,8 +751,11 @@ object RuntimeDiagnostics {
         }, 1_000L, 1_000L, TimeUnit.MILLISECONDS)
     }
 
+    private fun shouldCollectProvider(): Boolean =
+        crashDiagnosticsEnabled.get() || ProviderDiagnostics.isCollecting()
+
     private fun shouldCollect(): Boolean =
-        crashDiagnosticsEnabled.get() || PerformanceDiagnostics.isCollecting()
+        crashDiagnosticsEnabled.get() || PerformanceDiagnostics.isCollecting() || ProviderDiagnostics.isCollecting()
 
     private fun stopStallWatchdog() {
         stallWatchdogExecutor?.shutdownNow()
@@ -743,6 +764,7 @@ object RuntimeDiagnostics {
     }
 
     private fun record(message: String) {
+        ProviderDiagnostics.captureRuntimeEvent(message)
         PerformanceDiagnostics.captureRuntimeEvent(message)
         if (!crashDiagnosticsEnabled.get()) return
         val line = timestamped(message)
@@ -753,6 +775,7 @@ object RuntimeDiagnostics {
     }
 
     private fun recordCritical(message: String, compactState: String) {
+        ProviderDiagnostics.captureRuntimeEvent(message)
         PerformanceDiagnostics.captureRuntimeEvent(message)
         if (!crashDiagnosticsEnabled.get()) return
         val line = timestamped(message)
