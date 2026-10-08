@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
@@ -622,22 +623,26 @@ private fun VueoPlayerControls(
                         .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.width(40.dp).alpha(if (visible) 1f else 0f)) {
-                            VueoPlayerPillAction(
-                                icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                label = if (playbackRequested) "Pause" else "Play",
-                                requester = playPauseRequester,
-                                upRequester = progressRequester,
-                                downRequester = bottomDefaultRequester,
-                                leftRequester = FocusRequester.Cancel,
-                                rightRequester = progressRequester,
-                                onInteraction = onInteraction,
-                                onClick = onPlayPause,
-                                onFocusChanged = onPlayPauseFocusChanged,
-                                iconOnly = true,
-                            )
+                        // Preserve the rail's original 12dp lane. The icon paints
+                        // above/below it without increasing the bottom stack height.
+                        Box(Modifier.width(24.dp).height(12.dp).alpha(if (visible) 1f else 0f)) {
+                            Box(Modifier.wrapContentSize(Alignment.Center, unbounded = true)) {
+                                VueoPlayerPillAction(
+                                    icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    label = if (playbackRequested) "Pause" else "Play",
+                                    requester = playPauseRequester,
+                                    upRequester = progressRequester,
+                                    downRequester = bottomDefaultRequester,
+                                    leftRequester = FocusRequester.Cancel,
+                                    rightRequester = progressRequester,
+                                    onInteraction = onInteraction,
+                                    onClick = onPlayPause,
+                                    onFocusChanged = onPlayPauseFocusChanged,
+                                    iconOnly = true,
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(4.dp))
                         Box(Modifier.weight(1f)) {
                             VueoPlayerProgressRail(
                                 positionMs = positionMs,
@@ -657,7 +662,7 @@ private fun VueoPlayerControls(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 48.dp, top = 2.dp)
+                            .padding(start = 28.dp, top = 2.dp)
                             .alpha(if (visible) 1f else 0f),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,

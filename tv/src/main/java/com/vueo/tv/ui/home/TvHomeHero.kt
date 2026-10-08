@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +65,19 @@ internal fun TvModernHomeHero(
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val density = LocalDensity.current
     val visibleHeroHeightPx = with(density) { heroHeight.toPx() }
+    val stableHeroHeightPx = with(density) { stableHeroHeight.toPx() }
+    // Keep decoding at fixed bounds, but draw the same crop as a genuinely
+    // resizing viewport. Uniform scaling preserves the image's aspect ratio.
+    val resizingHeroCrop = remember(visibleHeroHeightPx) {
+        object : ContentScale {
+            override fun computeScaleFactor(srcSize: Size, dstSize: Size): ScaleFactor {
+                if (srcSize.width <= 0f || srcSize.height <= 0f) return ScaleFactor(1f, 1f)
+                val scale = maxOf(dstSize.width / srcSize.width, visibleHeroHeightPx / srcSize.height)
+                return ScaleFactor(scale, scale)
+            }
+        }
+    }
+    val heroImageTranslationPx = (visibleHeroHeightPx - stableHeroHeightPx) / 2f
     val copyTranslationPx = with(density) { (stableRowsViewportHeight - rowsViewportHeight).toPx() }
     // Both planes use one transition clock; same-title enrichment updates do not
     // restart the fade. Geometry changes never change the image decode target.
@@ -121,8 +135,10 @@ internal fun TvModernHomeHero(
                     fadeEnabled = false,
                     url = media?.background ?: media?.poster,
                     contentDescription = media?.name,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        translationY = heroImageTranslationPx
+                    },
+                    contentScale = resizingHeroCrop,
                     fallback = TvDesign.Black,
                 )
             }

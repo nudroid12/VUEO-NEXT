@@ -305,7 +305,7 @@ internal fun VueoPlayerPillAction(
             }
             .focusable(acceptsInput)
             .background(if (focused) Color.White else Color.Transparent, shape)
-            .then(if (iconOnly) Modifier.size(40.dp) else Modifier.padding(horizontal = 9.dp, vertical = 5.dp)),
+            .then(if (iconOnly) Modifier.size(24.dp) else Modifier.padding(horizontal = 9.dp, vertical = 5.dp)),
         horizontalArrangement = if (iconOnly) Arrangement.Center else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
