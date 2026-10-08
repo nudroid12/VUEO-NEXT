@@ -1,3 +1,7 @@
+# Preserve readable class and member names in diagnostic stack traces.
+# Code optimization and code/resource shrinking remain enabled.
+-dontobfuscate
+
 # VUEO Mobile release shrinking rules.
 #
 # Android/Compose/OkHttp dependencies ship their own consumer rules. Keep only
