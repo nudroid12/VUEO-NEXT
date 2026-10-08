@@ -282,6 +282,7 @@ fun VueoTvApp(
     }
 
     fun navigate(label: String) {
+        if (label == "Search") PerformanceDiagnostics.captureRuntimeEvent("SEARCH_TAB_PRESS")
         route = when (label) {
             "Home" -> TvRoute.HOME
             "Search" -> TvRoute.SEARCH
