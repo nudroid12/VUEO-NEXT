@@ -140,16 +140,24 @@ jobs:
           )
 
           if [ "${#TOP_ENTRIES[@]}" -eq 1 ] && [ -d "$EXTRACTED/${TOP_ENTRIES[0]}" ]; then
-            WRAPPER="$EXTRACTED/${TOP_ENTRIES[0]}"
+            WRAPPER_NAME="${TOP_ENTRIES[0]}"
+            WRAPPER="$EXTRACTED/$WRAPPER_NAME"
 
-            if [ -d "$WRAPPER/app" ] \
-              || [ -d "$WRAPPER/.github" ] \
-              || [ -f "$WRAPPER/settings.gradle.kts" ] \
-              || [ -f "$WRAPPER/build.gradle.kts" ] \
-              || [ -f "$WRAPPER/gradlew" ]; then
-              SOURCE_ROOT="$WRAPPER"
-              echo "Detected repository wrapper folder: ${TOP_ENTRIES[0]}"
-            fi
+            # App modules are repository-relative paths, never ZIP wrappers.
+            # A module build.gradle.kts alone is not a repository root marker.
+            case "$WRAPPER_NAME" in
+              tv|mobile|shared|app|gradle|buildSrc|build-logic|src|tests|.github)
+                echo "Preserving repository directory: $WRAPPER_NAME"
+                ;;
+              *)
+                if [ -f "$WRAPPER/settings.gradle.kts" ] \
+                  || [ -f "$WRAPPER/settings.gradle" ] \
+                  || [ -f "$WRAPPER/gradlew" ]; then
+                  SOURCE_ROOT="$WRAPPER"
+                  echo "Detected repository wrapper folder: $WRAPPER_NAME"
+                fi
+                ;;
+            esac
           fi
 
           {
