@@ -71,6 +71,7 @@ internal fun VueoPlayerProgressRail(
     onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
     seekMotionDirect: Boolean = false,
+    seekHoldActive: Boolean = false,
     interactive: Boolean = true,
     emphasized: Boolean = false,
 ) {
@@ -82,11 +83,15 @@ internal fun VueoPlayerProgressRail(
     } else 0f
     val animatedProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = if (seekMotionDirect) snap() else tween(durationMillis = 380, easing = LinearEasing),
+        animationSpec = when {
+            seekHoldActive -> tween(durationMillis = 70, easing = LinearEasing)
+            seekMotionDirect -> snap()
+            else -> tween(durationMillis = 380, easing = LinearEasing)
+        },
         label = "playerProgress",
     )
-    // Seek previews bypass animation immediately, including the release frame.
-    val progress = if (seekMotionDirect) targetProgress else animatedProgress
+    // Smooth held-key repeats; release and single taps still display the exact target.
+    val progress = if (seekMotionDirect && !seekHoldActive) targetProgress else animatedProgress
     val railHeight by animateDpAsState(
         targetValue = if (focused) 5.dp else 3.dp,
         animationSpec = tween(
