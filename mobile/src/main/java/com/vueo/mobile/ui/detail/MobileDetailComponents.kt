@@ -21,6 +21,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -129,6 +130,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -389,6 +392,74 @@ internal fun ImdbRatingMark(
 }
 
 @Composable
+internal fun StableDetailsMetadata(
+    facts: List<String>,
+    ratings: List<MediaRating>,
+    vueoMatchPercent: Int?,
+    media: MediaItem,
+) {
+    val density = LocalDensity.current
+    val rowHeight = with(density) { 22.sp.toDp() }.coerceAtLeast(24.dp)
+    val creditHeight = with(density) { 20.sp.toDp() }.coerceAtLeast(20.dp)
+    val credits = remember(media) { DetailPeoplePolicy.creditLines(media) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.fillMaxWidth().height(rowHeight), contentAlignment = Alignment.CenterStart) {
+            DetailsFactsRow(facts = facts, imdbRating = null)
+        }
+        Box(Modifier.fillMaxWidth().height(rowHeight), contentAlignment = Alignment.CenterStart) {
+            // IMDb stays here from first publication through all enrichments.
+            MediaRatingsStrip(ratings = ratings, vueoMatchPercent = vueoMatchPercent)
+        }
+        // Two permanent slots: Director/Creator and Writer. Missing upstream
+        // data leaves the slot empty instead of moving Overview during loading.
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            repeat(2) { index ->
+                val credit = credits.firstOrNull {
+                    if (index == 0) it.label != "Writer" else it.label == "Writer"
+                }
+                val alpha by animateFloatAsState(
+                    targetValue = if (credit != null) 1f else 0f,
+                    animationSpec = tween(160, easing = VueoMotion.EaseOut),
+                    label = "Details credit fade",
+                )
+                Box(
+                    Modifier.fillMaxWidth().height(creditHeight)
+                        .graphicsLayer { this.alpha = alpha },
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (credit != null) {
+                        Text(
+                            text = "${credit.label}: ${credit.names.take(3).joinToString(", ")}",
+                            color = Color.White.copy(alpha = .78f),
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsMetadataArrival(content: @Composable () -> Unit) {
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
+    val alpha by animateFloatAsState(
+        targetValue = if (revealed) 1f else 0f,
+        animationSpec = tween(160, easing = VueoMotion.EaseOut),
+        label = "Details rating fade",
+    )
+    Box(Modifier.graphicsLayer { this.alpha = alpha }) { content() }
+}
+
+@Composable
 internal fun MediaRatingsStrip(
     ratings: List<MediaRating>,
     vueoMatchPercent: Int?,
@@ -435,18 +506,18 @@ internal fun MediaRatingsStrip(
                 it.source
             },
         ) { rating ->
-            MediaRatingMark(
-                rating = rating
-            )
+            DetailsMetadataArrival {
+                MediaRatingMark(rating = rating)
+            }
         }
 
         vueoMatchPercent?.let { percent ->
             item(
                 key = "dna_match"
             ) {
-                DnaMatchMark(
-                    percent = percent
-                )
+                DetailsMetadataArrival {
+                    DnaMatchMark(percent = percent)
+                }
             }
         }
     }

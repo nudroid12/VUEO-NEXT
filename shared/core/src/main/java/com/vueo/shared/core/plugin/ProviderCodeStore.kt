@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
@@ -122,6 +123,33 @@ class ProviderCodeStore(context: Context) {
         }
     }
 
+    /** Run under the same repository mutation lock as script writes. */
+    internal fun pruneObsoleteCode(repository: PluginRepositoryDescriptor) {
+        if (repository.providers.isEmpty()) return
+        val directory = File(root, hash(repository.manifestUrl))
+        val keepNames = repository.providers.map { fileFor(repository, it).name }.toSet()
+        val obsolete = directory.listFiles().orEmpty().filter {
+            it.isFile && SCRIPT_FILE_PATTERN.matches(it.name) && it.name !in keepNames
+        }
+        if (obsolete.isEmpty()) return
+
+        // Old filenames are hashes, so do not guess which failed provider an
+        // old script belongs to. Retain every old script until the entire
+        // installed manifest has readable replacements, including disabled ones.
+        val installedStore = PluginStore(appContext)
+        fun manifestStillCurrent(): Boolean =
+            installedStore.repositories().firstOrNull {
+                it.manifestUrl == repository.manifestUrl
+            }?.providers == repository.providers
+
+        if (!manifestStillCurrent()) return
+        if (repository.providers.any { read(repository, it) == null }) return
+        for (file in obsolete) {
+            if (!manifestStillCurrent()) return
+            file.delete()
+        }
+    }
+
     private fun fileFor(
         repository: PluginRepositoryDescriptor,
         provider: PluginProviderDescriptor,
@@ -152,6 +180,7 @@ class ProviderCodeStore(context: Context) {
             }
 
     companion object {
+        private val SCRIPT_FILE_PATTERN = Regex("[0-9a-f]{64}\\.js")
         private const val CACHE_DIRECTORY = "vueo_plugin_scrapers"
         private const val LEGACY_CACHE_DIRECTORY = "nuvio_plugin_scrapers"
 
@@ -204,7 +233,13 @@ class ProviderCodeSyncManager(
         // Shared by startup, settings and preflight manager instances.
         private val concurrency = Semaphore(3)
         private val providerLocks = Array(64) { Mutex() }
+        private val repositoryMutationLocks = Array(64) { Mutex() }
     }
+
+    private fun repositoryMutationLock(repository: PluginRepositoryDescriptor): Mutex =
+        repositoryMutationLocks[
+            (repository.manifestUrl.hashCode() and Int.MAX_VALUE) % repositoryMutationLocks.size
+        ]
 
     suspend fun syncRepository(
         repository: PluginRepositoryDescriptor,
@@ -247,11 +282,13 @@ class ProviderCodeSyncManager(
                             val source =
                                 PluginHttp.getText(url)
 
-                            store.write(
-                                repository,
-                                provider,
-                                source,
-                            )
+                            repositoryMutationLock(repository).withLock {
+                                store.write(
+                                    repository,
+                                    provider,
+                                    source,
+                                )
+                            }
 
                             true
                         }.getOrElse { error ->
@@ -271,6 +308,15 @@ class ProviderCodeSyncManager(
             }
         }.awaitAll()
 
+        if (outcomes.all { it }) {
+            withContext(Dispatchers.IO) {
+                repositoryMutationLock(repository).withLock {
+                    // Cleanup is best-effort; it must not turn a successful
+                    // provider sync into a failure.
+                    runCatching { store.pruneObsoleteCode(repository) }
+                }
+            }
+        }
         PluginRuntimeCache.clear()
 
         ProviderCodeSyncResult(

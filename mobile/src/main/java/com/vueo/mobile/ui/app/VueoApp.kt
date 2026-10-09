@@ -649,6 +649,10 @@ fun VueoApp(
         targetState = appSurface,
         transitionSpec = {
             if (
+                targetState == AppSurface.ROOT && initialState == AppSurface.DETAILS
+            ) {
+                vueoDetailsRootBackTransition()
+            } else if (
                 targetState == AppSurface.ROOT &&
                 initialState in setOf(
                     AppSurface.DETAILS,

@@ -96,6 +96,19 @@ internal fun vueoScreenBackTransition(): ContentTransform =
             ),
         )
 
+/** Details -> root: reveal a fully opaque root beneath the outgoing page.
+ * Avoid fading both text-heavy pages together or exposing a dark gap.
+ */
+internal fun vueoDetailsRootBackTransition(): ContentTransform =
+    (scaleIn(
+        initialScale = 1.004f,
+        animationSpec = tween(durationMillis = 160, easing = VueoMotion.EaseOut),
+    ) togetherWith fadeOut(
+        animationSpec = tween(durationMillis = 100, easing = VueoMotion.EaseOut),
+    )).apply {
+        targetContentZIndex = -1f
+    }
+
 /** Root-tab changes are deliberately shorter and shallower than page pushes. */
 internal fun vueoTabCrossTransition(): ContentTransform =
     (

@@ -2501,53 +2501,13 @@ internal fun MediaDetailsScreen(
             }
         }
 
-        val imdbRating =
-            ratings.firstOrNull {
-                it.source == "imdb"
-            }
-        val secondaryRatings =
-            ratings.filterNot {
-                it.source == "imdb"
-            }
-        val showRatingsStrip =
-            secondaryRatings.isNotEmpty() ||
-                dnaMatchPercent != null
-
-        if (
-            detailFacts.isNotEmpty() ||
-            (imdbRating != null && !showRatingsStrip)
-        ) {
-            item {
-                DetailsFactsRow(
-                    facts = detailFacts,
-                    imdbRating =
-                        imdbRating
-                            ?.takeUnless {
-                                showRatingsStrip
-                            },
-                )
-            }
-        }
-
-        if (showRatingsStrip) {
-            item {
-                MediaRatingsStrip(
-                    ratings =
-                        listOfNotNull(
-                            imdbRating
-                        ) + secondaryRatings,
-                    vueoMatchPercent =
-                        dnaMatchPercent,
-                )
-            }
-        }
-
-        if (DetailPeoplePolicy.creditLines(item).isNotEmpty()) {
-            item {
-                MediaCreditsSummary(
-                    media = item
-                )
-            }
+        item(key = "details_metadata") {
+            StableDetailsMetadata(
+                facts = detailFacts,
+                ratings = ratings,
+                vueoMatchPercent = dnaMatchPercent,
+                media = item,
+            )
         }
 
         item.description
