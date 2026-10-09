@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -7,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -59,9 +59,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -304,47 +306,47 @@ private fun TvModernHomeRow(
     val rowState = rememberLazyListState(initialFirstVisibleItemIndex = savedIndex)
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
     val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     // Reserve paint space for the 1.022x focus scale without moving the cards.
     val focusPaintInset = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
 
-    val horizontalScope = rememberCoroutineScope()
-    val horizontalAlignmentJob = remember(row.key) { arrayOfNulls<Job>(1) }
-    val horizontalBringIntoViewSpec = remember {
+    val horizontalBringIntoViewSpec = remember(
+        density,
+        layoutDirection,
+        defaultBringIntoViewSpec,
+        rowHorizontalPadding,
+        focusPaintInset,
+    ) {
+        val startInsetPx = with(density) { focusPaintInset.toPx() }
+        val rtl = layoutDirection == LayoutDirection.Rtl
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
-            // Own relocation so focus and the framework cannot launch competing
-            // scrolls. D-pad focus itself moves immediately.
-            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+            override val scrollAnimationSpec: AnimationSpec<Float> = defaultBringIntoViewSpec.scrollAnimationSpec
+
+            override fun calculateScrollDistance(
+                offset: Float,
+                size: Float,
+                containerSize: Float,
+            ): Float {
+                val childSize = abs(size)
+                return if (rtl) {
+                    val initialTarget = containerSize - startInsetPx
+                    val target = if (childSize <= containerSize && initialTarget < childSize) childSize else initialTarget
+                    (offset + size) - target
+                } else {
+                    val initialTarget = startInsetPx
+                    val available = containerSize - initialTarget
+                    val target = if (childSize <= containerSize && available < childSize) containerSize - childSize else initialTarget
+                    offset - target
+                }
+            }
         }
-    }
-    fun alignFocusedCard(index: Int) {
-        horizontalAlignmentJob[0]?.cancel()
-        horizontalAlignmentJob[0] = horizontalScope.launch {
-            val visibleItems = rowState.layoutInfo.visibleItemsInfo
-            val item = visibleItems.firstOrNull { it.index == index }
-            val anchor = item ?: visibleItems.minByOrNull { abs(it.index - index) } ?: return@launch
-            // Rows have uniform card widths. A newly focused beyond-bounds card
-            // may not be listed yet; derive its offset from the nearest placed card.
-            val spacingPx = with(density) { 12.dp.toPx() }
-            val targetOffset = item?.offset?.toFloat()
-                ?: (anchor.offset + (index - anchor.index) * (anchor.size + spacingPx))
-            // LazyRow item offsets are in logical scroll coordinates, including RTL.
-            val startInsetPx = with(density) { focusPaintInset.toPx() }
-            val distance = targetOffset - startInsetPx
-            if (abs(distance) < 1f) return@launch
-            rowState.animateScrollBy(
-                distance,
-                animationSpec = tween(300, easing = androidx.compose.animation.core.CubicBezierEasing(0.22f, 0f, 0.18f, 1f)),
-            )
-        }
-    }
-    DisposableEffect(rowState) {
-        onDispose { horizontalAlignmentJob[0]?.cancel() }
     }
 
     LaunchedEffect(resetFirstCardFocusToken) {
         if (resetFirstCardFocusToken <= 0 || row.entries.isEmpty()) return@LaunchedEffect
-        horizontalAlignmentJob[0]?.cancel()
         focusedIndex = 0
         TvHomeFocusMemory.activeRowKey = row.key
         TvHomeFocusMemory.focusedIndexByRow[row.key] = 0
@@ -463,7 +465,6 @@ private fun TvModernHomeRow(
                             requester = itemRequester,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                alignFocusedCard(index)
                                 focusedIndex = index
                                 TvHomeFocusMemory.activeRowKey = row.key
                                 TvHomeFocusMemory.focusedIndexByRow[row.key] = index
