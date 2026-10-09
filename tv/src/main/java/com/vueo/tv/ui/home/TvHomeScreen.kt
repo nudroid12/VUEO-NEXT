@@ -48,6 +48,9 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     var libraryRevision by mutableIntStateOf(0)
         internal set
 
+    // Lives above the route composition: Sources may dispose the Home UI.
+    internal var routeFocusAnchor by mutableStateOf<HomeRouteFocusAnchor?>(null)
+
     internal var loadedRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRefreshToken = Int.MIN_VALUE
     internal var libraryHydrationRevision = Int.MIN_VALUE
@@ -301,7 +304,7 @@ fun TvHomeScreen(
     // revoking it earlier makes Compose relocate focus inside the LazyRow.
     var navigationOwnsFocus by remember { mutableStateOf(false) }
     var contentReturnToken by remember { mutableIntStateOf(0) }
-    var routeReturnPending by remember { mutableStateOf(false) }
+    val routeReturnPending = retainedState.routeFocusAnchor != null
 
     fun focusSidebar() {
         if (!navExpanded) navigationOwnsFocus = false
@@ -327,7 +330,9 @@ fun TvHomeScreen(
             },
             active = active,
             routeReturnPending = routeReturnPending,
-            onRouteFocusRestored = { routeReturnPending = false },
+            routeFocusAnchor = retainedState.routeFocusAnchor,
+            onCaptureRouteFocusAnchor = { retainedState.routeFocusAnchor = it },
+            onRouteFocusRestored = { retainedState.routeFocusAnchor = null },
             navigationVisible = navExpanded,
             navigationOwnsFocus = navigationOwnsFocus,
             contentFocusRequester = contentFocusRequester,
@@ -338,11 +343,8 @@ fun TvHomeScreen(
                 navExpanded = false
             },
             onOpenNavigation = ::focusSidebar,
-            onOpen = { entry ->
-                // Set before changing routes so transient focus cannot open navigation.
-                routeReturnPending = true
-                entry.open(onOpenMedia, onResume)
-            },
+            // Rows captures the retained anchor before this changes routes.
+            onOpen = { entry -> entry.open(onOpenMedia, onResume) },
             onLongClick = { entry -> actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )

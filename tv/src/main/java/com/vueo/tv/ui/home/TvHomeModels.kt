@@ -55,6 +55,16 @@ internal data class TvHomeHorizontalPosition(
     val firstVisibleItemScrollOffset: Int,
 )
 
+/** Small value-only snapshot retained across Home -> Details -> Sources. */
+internal data class HomeRouteFocusAnchor(
+    val rowKey: String,
+    val cardKey: String,
+    val cardIndex: Int,
+    val horizontal: TvHomeHorizontalPosition,
+    val verticalIndex: Int,
+    val verticalOffset: Int,
+)
+
 internal object TvHomeFocusMemory {
     var activeRowKey: String? = null
     val focusedIndexByRow = mutableMapOf<String, Int>()

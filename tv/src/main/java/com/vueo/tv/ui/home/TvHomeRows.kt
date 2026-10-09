@@ -108,15 +108,6 @@ private data class HomeVerticalFocusTarget(
     val restorePosition: TvHomeHorizontalPosition? = null,
 )
 
-private data class HomeRouteFocusAnchor(
-    val rowKey: String,
-    val cardKey: String,
-    val cardIndex: Int,
-    val horizontal: TvHomeHorizontalPosition,
-    val verticalIndex: Int,
-    val verticalOffset: Int,
-)
-
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun TvModernHomeRows(
@@ -128,6 +119,8 @@ internal fun TvModernHomeRows(
     contentReturnToken: Int,
     active: Boolean,
     routeReturnPending: Boolean,
+    routeFocusAnchor: HomeRouteFocusAnchor?,
+    onCaptureRouteFocusAnchor: (HomeRouteFocusAnchor) -> Unit,
     onRouteFocusRestored: () -> Unit,
     navigationVisible: Boolean,
     navigationOwnsFocus: Boolean,
@@ -174,9 +167,7 @@ internal fun TvModernHomeRows(
         ?: rows.firstOrNull()?.key
     var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
     var previewReturnCardIndex by remember { mutableIntStateOf(0) }
-    var routeFocusAnchor by remember { mutableStateOf<HomeRouteFocusAnchor?>(null) }
-
-    LaunchedEffect(active, routeReturnPending) {
+    LaunchedEffect(active, routeReturnPending, routeFocusAnchor) {
         if (!active || !routeReturnPending) return@LaunchedEffect
         val anchor = routeFocusAnchor ?: return@LaunchedEffect
         val row = currentRows.firstOrNull { it.key == anchor.rowKey && it.entries.isNotEmpty() }
@@ -186,6 +177,9 @@ internal fun TvModernHomeRows(
             }
         val cardIndex = row.entries.indexOfFirst { it.key == anchor.cardKey }
             .takeIf { it >= 0 } ?: anchor.cardIndex.coerceIn(0, row.entries.lastIndex)
+        // This also owns initial focus when Home was recreated after Sources.
+        // Do not let the later menu effect replay an initial reset over this return.
+        appliedFocusResetToken = focusResetToken
         verticalFocusJob[0]?.cancel()
         if (verticalState.firstVisibleItemIndex != anchor.verticalIndex ||
             verticalState.firstVisibleItemScrollOffset != anchor.verticalOffset
@@ -384,7 +378,7 @@ internal fun TvModernHomeRows(
     // Initial Home focus is separate from horizontal LazyRow position.
     // If Source navigation disposed Home, its new composition must recover the
     // saved row/card rather than resetting to row 1 when returning from Details.
-    LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible) {
+    LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible, routeReturnPending) {
         if (focusResetToken <= 0 || appliedFocusResetToken == focusResetToken ||
             rows.isEmpty() || navigationVisible || routeReturnPending
         ) return@LaunchedEffect
@@ -568,7 +562,6 @@ internal fun TvModernHomeRows(
                                 )
                             }
                             if (target.routeReturn) {
-                                routeFocusAnchor = null
                                 onRouteFocusRestored()
                                 traceHome { "HOME_ROUTE_FOCUS_RESULT success=$focused row=${target.rowKey} card=${target.cardIndex}" }
                             }
@@ -587,11 +580,11 @@ internal fun TvModernHomeRows(
                     },
                     onOpen = { entry ->
                         val cardIndex = row.entries.indexOfFirst { it.key == entry.key }.coerceAtLeast(0)
-                        routeFocusAnchor = HomeRouteFocusAnchor(
+                        onCaptureRouteFocusAnchor(HomeRouteFocusAnchor(
                             row.key, entry.key, cardIndex,
                             TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                             verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
-                        )
+                        ))
                         onOpen(entry)
                     },
                     onPosterLongClick = onPosterLongClick,
