@@ -58,6 +58,9 @@ internal fun TvHomePresentation(
     var heroScene by remember(artworkApiKey) { mutableStateOf<TvHomeHeroScene?>(null) }
     var lastNavigationAt by remember { mutableLongStateOf(0L) }
     var heroSettleDelay by remember { mutableLongStateOf(settledHeroDelayMs) }
+    // Nuvio stable-hero policy: do not replace backdrop/copy while the user is
+    // holding Up/Down or the vertical LazyColumn is actively scrolling.
+    var verticalMotionActive by remember { mutableStateOf(false) }
     val context = LocalContext.current.applicationContext
     val density = LocalDensity.current
     val logoSize = with(density) { IntSize(220.dp.roundToPx(), 100.dp.roundToPx()) }
@@ -126,9 +129,11 @@ internal fun TvHomePresentation(
 
     // Keep the displayed scene while enrichment is pending. A newer focus
     // cancels this job, so an old lookup cannot replace the current selection.
-    LaunchedEffect(focusedEntry?.key, artworkApiKey) {
+    LaunchedEffect(focusedEntry?.key, artworkApiKey, verticalMotionActive) {
+        if (verticalMotionActive) return@LaunchedEffect
         val next = focusedEntry ?: return@LaunchedEffect
         if (heroScene != null) delay(heroSettleDelay)
+        if (verticalMotionActive) return@LaunchedEffect
         val artwork = try {
             TvTitleArtwork.load(next.media, artworkApiKey)
         } catch (cancelled: CancellationException) {
@@ -136,13 +141,16 @@ internal fun TvHomePresentation(
         } catch (_: Exception) {
             null // Optional artwork failure still publishes the text title.
         }
-        if (focusedEntry?.key == next.key) heroScene = TvHomeHeroScene(next, artwork)
+        if (!verticalMotionActive && focusedEntry?.key == next.key) {
+            heroScene = TvHomeHeroScene(next, artwork)
+        }
     }
 
     // Preload one adjacent item only after Home has had time to paint the
     // focused hero. This stays best-effort and cancellable so optional artwork
     // work cannot compete with cold-start first-frame rendering.
-    LaunchedEffect(focusedEntry?.key, artworkApiKey, rows) {
+    LaunchedEffect(focusedEntry?.key, artworkApiKey, rows, verticalMotionActive) {
+        if (verticalMotionActive) return@LaunchedEffect
         val selected = focusedEntry ?: return@LaunchedEffect
         val row = rows.firstOrNull { it.entries.any { item -> item.key == selected.key } }
             ?: return@LaunchedEffect
@@ -190,6 +198,7 @@ internal fun TvHomePresentation(
                     contentReturnToken = contentReturnToken,
                     navigationVisible = navigationVisible,
                     onContentFocused = onContentFocused,
+                    onVerticalMotionChanged = { verticalMotionActive = it },
                     onUpFromFirstRow = onOpenNavigation,
                     onLeftAtRowStart = when {
                         floatingPillMode -> ({ /* Topbar keeps Left on the first card. */ })
