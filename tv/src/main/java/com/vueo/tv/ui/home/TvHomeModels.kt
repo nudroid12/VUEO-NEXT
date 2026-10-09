@@ -49,9 +49,16 @@ internal data class TvHomeRow(
  * keeps for Home. It remembers the active row and the focused item per row,
  * but it does not own navigation or data.
  */
+/** First displayed item and exact pixel offset, never a focused-card index. */
+internal data class TvHomeHorizontalPosition(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+)
+
 internal object TvHomeFocusMemory {
     var activeRowKey: String? = null
     val focusedIndexByRow = mutableMapOf<String, Int>()
+    val horizontalPositionByRow = mutableMapOf<String, TvHomeHorizontalPosition>()
 }
 
 internal fun TvHomeEntry.open(
