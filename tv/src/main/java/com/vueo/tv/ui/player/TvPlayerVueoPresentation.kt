@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
@@ -39,6 +38,7 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,6 +57,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.enrichment.ContentWarning
@@ -493,6 +495,22 @@ private fun VueoPlayerControls(
 ) {
     val playPauseRequester = remember { FocusRequester() }
 
+    val timeTextStyle = LocalTextStyle.current.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    val timeMeasurer = rememberTextMeasurer()
+    val timeDensity = LocalDensity.current
+    // Reserve both time labels once per duration/style, not on each playback
+    // tick. Crossing a minute/hour boundary must not resize the seek rail.
+    val timeTemplate = remember(durationMs) {
+        if (durationMs <= 0L) "88:88:88"
+        else vueoPlayerTime(durationMs).map { if (it.isDigit()) '8' else it }.joinToString("")
+    }
+    val timeLabelWidth = remember(timeTemplate, timeTextStyle, timeMeasurer, timeDensity) {
+        val widthPx = ('0'..'9').maxOf { digit ->
+            timeMeasurer.measure("-${timeTemplate.replace('8', digit)}", style = timeTextStyle).size.width
+        }.coerceAtLeast(timeMeasurer.measure("--:--", style = timeTextStyle).size.width)
+        with(timeDensity) { widthPx.toDp() } + 2.dp
+    }
+
     val episodeLine = episode?.let {
         "S${it.season} E${it.episode} • ${it.title.ifBlank { "Episode ${it.episode}" }}"
     }
@@ -623,26 +641,32 @@ private fun VueoPlayerControls(
                         .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Preserve the rail's original 12dp lane. The icon paints
-                        // above/below it without increasing the bottom stack height.
-                        Box(Modifier.width(24.dp).height(12.dp).alpha(if (visible) 1f else 0f)) {
-                            Box(Modifier.wrapContentSize(Alignment.Center, unbounded = true)) {
-                                VueoPlayerPillAction(
-                                    icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    label = if (playbackRequested) "Pause" else "Play",
-                                    requester = playPauseRequester,
-                                    upRequester = progressRequester,
-                                    downRequester = bottomDefaultRequester,
-                                    leftRequester = FocusRequester.Cancel,
-                                    rightRequester = progressRequester,
-                                    onInteraction = onInteraction,
-                                    onClick = onPlayPause,
-                                    onFocusChanged = onPlayPauseFocusChanged,
-                                    iconOnly = true,
-                                )
-                            }
+                        Box(Modifier.width(24.dp).alpha(if (visible) 1f else 0f)) {
+                            VueoPlayerPillAction(
+                                icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                label = if (playbackRequested) "Pause" else "Play",
+                                requester = playPauseRequester,
+                                upRequester = progressRequester,
+                                downRequester = bottomDefaultRequester,
+                                leftRequester = FocusRequester.Cancel,
+                                rightRequester = progressRequester,
+                                onInteraction = onInteraction,
+                                onClick = onPlayPause,
+                                onFocusChanged = onPlayPauseFocusChanged,
+                                iconOnly = true,
+                            )
                         }
                         Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = vueoPlayerTime(positionMs),
+                            modifier = Modifier.width(timeLabelWidth).alpha(if (visible) 1f else 0f),
+                            color = Color.White.copy(alpha = .90f),
+                            style = timeTextStyle,
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = TextAlign.Start,
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Box(Modifier.weight(1f)) {
                             VueoPlayerProgressRail(
                                 positionMs = positionMs,
@@ -658,26 +682,15 @@ private fun VueoPlayerControls(
                                 emphasized = hiddenSeekProgressVisible && !visible,
                             )
                         }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp, top = 2.dp)
-                            .alpha(if (visible) 1f else 0f),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            vueoPlayerTime(positionMs),
+                            text = vueoPlayerRemainingTime(positionMs, durationMs),
+                            modifier = Modifier.width(timeLabelWidth).alpha(if (visible) 1f else 0f),
                             color = Color.White.copy(alpha = .90f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Text(
-                            vueoPlayerRemainingTime(positionMs, durationMs),
-                            color = Color.White.copy(alpha = .90f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
+                            style = timeTextStyle,
+                            maxLines = 1,
+                            softWrap = false,
+                            textAlign = TextAlign.End,
                         )
                     }
 
