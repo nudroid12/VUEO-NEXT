@@ -296,6 +296,7 @@ fun TvHomeScreen(
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     var navExpanded by remember { mutableStateOf(false) }
+    var contentReturnToken by remember { mutableIntStateOf(0) }
 
     fun focusSidebar() {
         navExpanded = true
@@ -341,6 +342,7 @@ fun TvHomeScreen(
             navigationVisible = navExpanded,
             contentFocusRequester = contentFocusRequester,
             focusResetToken = homeFocusResetToken,
+            contentReturnToken = contentReturnToken,
             onContentFocused = { navExpanded = false },
             onOpenNavigation = ::focusSidebar,
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },
@@ -357,8 +359,14 @@ fun TvHomeScreen(
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = {
-                navExpanded = false
-                runCatching { contentFocusRequester.requestFocus() }.isSuccess
+                if (rows.isNotEmpty()) {
+                    // Keep menu focus until the saved row/card is placed and receives focus.
+                    contentReturnToken += 1
+                    true
+                } else {
+                    navExpanded = false
+                    runCatching { contentFocusRequester.requestFocus() }.getOrDefault(false)
+                }
             },
             modifier = Modifier.align(Alignment.CenterStart),
         )

@@ -42,6 +42,7 @@ internal fun TvHomePresentation(
     navigationVisible: Boolean,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
+    contentReturnToken: Int,
     onContentFocused: () -> Unit,
     onOpenNavigation: () -> Unit,
     onOpen: (TvHomeEntry) -> Unit,
@@ -157,6 +158,8 @@ internal fun TvHomePresentation(
                     showContinueWatchingPreview = showContinueWatchingPreview,
                     contentFocusRequester = contentFocusRequester,
                     focusResetToken = focusResetToken,
+                    contentReturnToken = contentReturnToken,
+                    navigationVisible = navigationVisible,
                     onContentFocused = onContentFocused,
                     onUpFromFirstRow = onOpenNavigation,
                     onLeftAtRowStart =

@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -73,6 +74,7 @@ import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -88,6 +90,8 @@ private data class HomeVerticalFocusTarget(
     val rowKey: String,
     val cardIndex: Int,
     val token: Int,
+    val menuReturn: Boolean = false,
+    val initialReset: Boolean = false,
 )
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -98,6 +102,8 @@ internal fun TvModernHomeRows(
     showContinueWatchingPreview: Boolean,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
+    contentReturnToken: Int,
+    navigationVisible: Boolean,
     onContentFocused: () -> Unit,
     onUpFromFirstRow: () -> Unit,
     onLeftAtRowStart: (() -> Unit)?,
@@ -116,11 +122,15 @@ internal fun TvModernHomeRows(
     var verticalFocusToken by remember { mutableIntStateOf(0) }
     var verticalFocusTarget by remember { mutableStateOf<HomeVerticalFocusTarget?>(null) }
     val currentRows by rememberUpdatedState(rows)
+    val currentNavigationVisible by rememberUpdatedState(navigationVisible)
+    var appliedFocusResetToken by remember { mutableIntStateOf(0) }
+    var appliedContentReturnToken by remember { mutableIntStateOf(0) }
     val rowFocusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     val initialActiveRowKey = TvHomeFocusMemory.activeRowKey
         ?.takeIf { saved -> rows.any { it.key == saved } }
         ?: rows.firstOrNull()?.key
     var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
+    var previewReturnCardIndex by remember { mutableIntStateOf(0) }
 
     val density = LocalDensity.current
     val verticalBringIntoViewSpec = remember {
@@ -149,6 +159,7 @@ internal fun TvModernHomeRows(
     }
 
     fun moveVertical(row: TvHomeRow, focusedIndex: Int, delta: Int): Boolean {
+        if (currentNavigationVisible) return true
         val availableRows = currentRows
         val currentRowIndex = availableRows.indexOfFirst { it.key == row.key }
         if (currentRowIndex < 0) return true
@@ -197,34 +208,72 @@ internal fun TvModernHomeRows(
         }
     }
 
-    // A fresh Home composition starts at row 1 / card 1. Retained Details ->
-    // Home reveals do NOT increment this token, so they restore the exact card
-    // that opened Details. Progressive catalog batches also never steal focus.
-    LaunchedEffect(focusResetToken, rows.isNotEmpty()) {
-        if (focusResetToken <= 0 || rows.isEmpty() || showContinueWatchingPreview) return@LaunchedEffect
+    // The reset is owned outside lazy items. Re-composing row 1 cannot replay it.
+    LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible) {
+        if (focusResetToken <= 0 || appliedFocusResetToken == focusResetToken ||
+            rows.isEmpty() || navigationVisible
+        ) return@LaunchedEffect
+        appliedFocusResetToken = focusResetToken
         val firstRow = rows.first()
         TvHomeFocusMemory.activeRowKey = firstRow.key
         TvHomeFocusMemory.focusedIndexByRow[firstRow.key] = 0
+        verticalFocusTarget = null
         verticalAlignmentJob[0]?.cancel()
         verticalFocusJob[0]?.cancel()
         verticalState.scrollToItem(0, 0)
+        if (!currentNavigationVisible) {
+            verticalFocusToken += 1
+            verticalFocusTarget = HomeVerticalFocusTarget(firstRow.key, 0, verticalFocusToken, initialReset = true)
+        }
     }
 
-    // This scroll is driven only by opening/closing the floating pill. Keeping
-    // rows out of the key prevents incoming catalog batches from restarting it.
-    LaunchedEffect(showContinueWatchingPreview) {
-        if (showContinueWatchingPreview) {
-            if (previewReturnRowKey == null) {
-                previewReturnRowKey = TvHomeFocusMemory.activeRowKey
+    // Opening navigation revokes every old row command before preview scrolling.
+    // Keys exclude rows, so progressive catalog batches cannot restart the preview.
+    LaunchedEffect(navigationVisible) {
+        if (navigationVisible) {
+            verticalFocusTarget = null
+            verticalFocusJob[0]?.cancel()
+            verticalFocusJob[0] = null
+            verticalAlignmentJob[0]?.cancel()
+            verticalAlignmentJob[0] = null
+            previewReturnRowKey = TvHomeFocusMemory.activeRowKey
+            previewReturnCardIndex = previewReturnRowKey?.let {
+                TvHomeFocusMemory.focusedIndexByRow[it]
+            } ?: 0
+            if (showContinueWatchingPreview) {
+                val previewKey = currentRows.firstOrNull { it.key == "continue-watching" }?.key
+                    ?: currentRows.firstOrNull()?.key
+                previewKey?.let { requestRowAlignment(it, skipIfAligned = true) }
             }
-            val previewKey = rows.firstOrNull { it.key == "continue-watching" }?.key
-                ?: rows.firstOrNull()?.key
-            previewKey?.let { requestRowAlignment(it, skipIfAligned = true) }
-        } else {
-            val returnRowKey = previewReturnRowKey ?: return@LaunchedEffect
-            if (rows.any { it.key == returnRowKey }) requestRowAlignment(returnRowKey, skipIfAligned = true)
-            previewReturnRowKey = null
         }
+    }
+
+    // Scroll first while the menu still owns focus. Then address the exact saved
+    // card, even when the original deep row is no longer composed.
+    LaunchedEffect(contentReturnToken, navigationVisible) {
+        if (contentReturnToken <= 0 || appliedContentReturnToken == contentReturnToken ||
+            !navigationVisible
+        ) return@LaunchedEffect
+        appliedContentReturnToken = contentReturnToken
+        val availableRows = currentRows
+        val row = availableRows.firstOrNull { it.key == previewReturnRowKey && it.entries.isNotEmpty() }
+            ?: availableRows.firstOrNull { it.key == TvHomeFocusMemory.activeRowKey && it.entries.isNotEmpty() }
+            ?: availableRows.firstOrNull { it.entries.isNotEmpty() }
+            ?: return@LaunchedEffect
+        if (row.entries.isEmpty()) return@LaunchedEffect
+        val cardIndex = (if (row.key == previewReturnRowKey) previewReturnCardIndex else
+            TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0).coerceIn(0, row.entries.lastIndex)
+        verticalFocusTarget = null
+        verticalFocusJob[0]?.cancel()
+        verticalAlignmentJob[0]?.cancel()
+        try {
+            verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        }
+        if (!currentNavigationVisible) return@LaunchedEffect
+        verticalFocusToken += 1
+        verticalFocusTarget = HomeVerticalFocusTarget(row.key, cardIndex, verticalFocusToken, menuReturn = true)
     }
 
     val focusRestorer = remember {
@@ -244,7 +293,7 @@ internal fun TvModernHomeRows(
                 .focusRequester(contentFocusRequester)
                 .focusRestorer { focusRestorer() }
                 .onFocusChanged { state ->
-                    if (state.hasFocus) onContentFocused()
+                    if (state.hasFocus && !currentNavigationVisible) onContentFocused()
                 },
             contentPadding = PaddingValues(bottom = rowsViewportHeight),
             verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -253,7 +302,7 @@ internal fun TvModernHomeRows(
                 items = rows,
                 key = { _, row -> row.key },
                 contentType = { _, row -> row.kind },
-            ) { rowIndex, row ->
+            ) { _, row ->
                 val rowVisible by remember(verticalState, row.key) {
                     derivedStateOf {
                         verticalState.layoutInfo.visibleItemsInfo.any {
@@ -266,8 +315,16 @@ internal fun TvModernHomeRows(
                     rowVisible = rowVisible,
                     row = row,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
-                    resetFirstCardFocusToken = if (rowIndex == 0) focusResetToken else 0,
+                    contentFocusEnabled = !navigationVisible ||
+                        (verticalFocusTarget?.menuReturn == true && verticalFocusTarget?.rowKey == row.key),
                     verticalFocusTarget = verticalFocusTarget?.takeIf { it.rowKey == row.key },
+                    onFocusTargetConsumed = { token, focused ->
+                        val target = verticalFocusTarget
+                        if (target?.token == token) {
+                            if (target.menuReturn && focused) onContentFocused()
+                            verticalFocusTarget = null
+                        }
+                    },
                     onContentFocused = onContentFocused,
                     onMoveVertical = { focusedRow, focusedIndex, delta ->
                         moveVertical(focusedRow, focusedIndex, delta)
@@ -291,8 +348,9 @@ private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
     rowFocusRequester: FocusRequester,
-    resetFirstCardFocusToken: Int,
+    contentFocusEnabled: Boolean,
     verticalFocusTarget: HomeVerticalFocusTarget?,
+    onFocusTargetConsumed: (Int, Boolean) -> Unit,
     onContentFocused: () -> Unit,
     onMoveVertical: (TvHomeRow, Int, Int) -> Boolean,
     onLeftAtRowStart: (() -> Unit)?,
@@ -305,6 +363,7 @@ private fun TvModernHomeRow(
     var focusedIndex by remember(row.key) { mutableIntStateOf(savedIndex) }
     val rowState = rememberLazyListState(initialFirstVisibleItemIndex = savedIndex)
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
+    val currentContentFocusEnabled by rememberUpdatedState(contentFocusEnabled)
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
@@ -345,39 +404,40 @@ private fun TvModernHomeRow(
         }
     }
 
-    LaunchedEffect(resetFirstCardFocusToken) {
-        if (resetFirstCardFocusToken <= 0 || row.entries.isEmpty()) return@LaunchedEffect
-        focusedIndex = 0
-        TvHomeFocusMemory.activeRowKey = row.key
-        TvHomeFocusMemory.focusedIndexByRow[row.key] = 0
-        rowState.scrollToItem(0, 0)
-        withFrameNanos { }
-        itemFocusRequesters[0]?.let { firstCardRequester ->
-            runCatching { firstCardRequester.requestFocus() }
-        }
-    }
-
-    LaunchedEffect(verticalFocusTarget?.token) {
+    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
-        if (target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
+        if (!contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
         val targetIndex = target.cardIndex.coerceIn(0, row.entries.lastIndex)
-
-        // If the target card is already placed, one D-pad press can hand focus
-        // to it immediately. Otherwise scroll that row horizontally just enough
-        // to compose the requested card, then retry across a few frames.
+        if (target.initialReset) {
+            rowState.scrollToItem(targetIndex, 0)
+            withFrameNanos { }
+            if (!currentContentFocusEnabled) return@LaunchedEffect
+        }
         val immediate = itemFocusRequesters[targetIndex]?.let { requester ->
             runCatching { requester.requestFocus() }.getOrDefault(false)
         } == true
-        if (immediate) return@LaunchedEffect
-
-        runCatching { rowState.animateScrollToItem(targetIndex) }
+        if (immediate) {
+            onFocusTargetConsumed(target.token, true)
+            return@LaunchedEffect
+        }
+        try {
+            rowState.animateScrollToItem(targetIndex)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        }
         repeat(4) {
             withFrameNanos { }
+            if (!currentContentFocusEnabled) return@LaunchedEffect
             val focused = itemFocusRequesters[targetIndex]?.let { requester ->
                 runCatching { requester.requestFocus() }.getOrDefault(false)
             } == true
-            if (focused) return@LaunchedEffect
+            if (focused) {
+                onFocusTargetConsumed(target.token, true)
+                return@LaunchedEffect
+            }
         }
+        // An expired command must not steal focus when this row is later re-composed.
+        onFocusTargetConsumed(target.token, false)
     }
 
     Column(
@@ -463,13 +523,16 @@ private fun TvModernHomeRow(
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
+                            contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                focusedIndex = index
-                                TvHomeFocusMemory.activeRowKey = row.key
-                                TvHomeFocusMemory.focusedIndexByRow[row.key] = index
-                                onContentFocused()
-                                onFocused(row, index, entry)
+                                if (currentContentFocusEnabled) {
+                                    focusedIndex = index
+                                    TvHomeFocusMemory.activeRowKey = row.key
+                                    TvHomeFocusMemory.focusedIndexByRow[row.key] = index
+                                    onContentFocused()
+                                    onFocused(row, index, entry)
+                                }
                             },
                             onOpen = { onOpen(entry) },
                             onHold = openPosterActions,
@@ -487,6 +550,7 @@ private fun TvModernHomeCard(
     loadImage: Boolean,
     kind: TvHomeRowKind,
     requester: FocusRequester,
+    contentFocusEnabled: Boolean,
     onLeftAtStart: (() -> Unit)?,
     onFocused: () -> Unit,
     onOpen: () -> Unit,
@@ -518,6 +582,7 @@ private fun TvModernHomeCard(
                 scaleY = animatedScale
             }
             .focusRequester(requester)
+            .focusProperties { canFocus = contentFocusEnabled }
             .onPreviewKeyEvent { event ->
                 if (
                     onLeftAtStart != null &&
