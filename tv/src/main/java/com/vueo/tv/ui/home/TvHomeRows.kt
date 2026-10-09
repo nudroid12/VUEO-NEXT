@@ -9,7 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +77,7 @@ import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 private val ContinueWatchingWidth = 210.dp
 private val ContinueWatchingHeight = 119.dp
@@ -118,6 +118,7 @@ internal fun TvModernHomeRows(
     }
     val verticalState = rememberLazyListState(cacheWindow = verticalCacheWindow)
     val verticalScope = rememberCoroutineScope()
+    val verticalAlignmentJob = remember { arrayOfNulls<Job>(1) }
     val verticalFocusJob = remember { arrayOfNulls<Job>(1) }
     var verticalFocusToken by remember { mutableIntStateOf(0) }
     var verticalFocusTarget by remember { mutableStateOf<HomeVerticalFocusTarget?>(null) }
@@ -141,27 +142,21 @@ internal fun TvModernHomeRows(
         }
     }
 
-    // Vertical D-pad moves only scroll as far as necessary to reveal the row.
-    // Previously every focus event also called animateScrollToItem(index, 0),
-    // including horizontal focus moves on an already-visible row.
-    suspend fun scrollRowIntoView(targetIndex: Int) {
+    fun requestRowAlignment(rowKey: String, skipIfAligned: Boolean = false) {
+        val targetIndex = currentRows.indexOfFirst { it.key == rowKey }
         if (targetIndex < 0) return
-        val info = verticalState.layoutInfo
-        val item = info.visibleItemsInfo.firstOrNull { it.index == targetIndex }
-        if (item == null) {
-            // A row outside the composed viewport requires a direct relocation.
-            verticalState.animateScrollToItem(targetIndex, 0)
-            return
+        if (skipIfAligned && verticalAlignmentJob[0]?.isActive != true &&
+            verticalFocusJob[0]?.isActive != true && !verticalState.isScrollInProgress &&
+            verticalState.firstVisibleItemIndex == targetIndex &&
+            verticalState.firstVisibleItemScrollOffset == 0
+        ) return
+        verticalAlignmentJob[0]?.cancel()
+        verticalAlignmentJob[0] = verticalScope.launch {
+            // Use LazyColumn's native animation instead of the old custom
+            // frame-by-frame distance estimator. Repeated D-pad input cancels
+            // toward the newest adjacent row without competing relocations.
+            runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
         }
-        val viewportStart = info.viewportStartOffset
-        val viewportEnd = info.viewportEndOffset
-        val distance = when {
-            item.size > viewportEnd - viewportStart -> item.offset - viewportStart
-            item.offset < viewportStart -> item.offset - viewportStart
-            item.offset + item.size > viewportEnd -> item.offset + item.size - viewportEnd
-            else -> 0
-        }
-        if (distance != 0) verticalState.animateScrollBy(distance.toFloat())
     }
 
     fun moveVertical(row: TvHomeRow, focusedIndex: Int, delta: Int): Boolean {
@@ -198,13 +193,18 @@ internal fun TvModernHomeRows(
 
         verticalFocusJob[0]?.cancel()
         verticalFocusJob[0] = verticalScope.launch {
-            scrollRowIntoView(targetIndex)
+            runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
         }
         return true
     }
 
+    fun alignFocusedRow(row: TvHomeRow) {
+        if (!showContinueWatchingPreview) requestRowAlignment(row.key)
+    }
+
     DisposableEffect(verticalState) {
         onDispose {
+            verticalAlignmentJob[0]?.cancel()
             verticalFocusJob[0]?.cancel()
         }
     }
@@ -227,6 +227,7 @@ internal fun TvModernHomeRows(
         TvHomeFocusMemory.activeRowKey = targetRow.key
         TvHomeFocusMemory.focusedIndexByRow[targetRow.key] = targetCardIndex
         verticalFocusTarget = null
+        verticalAlignmentJob[0]?.cancel()
         verticalFocusJob[0]?.cancel()
         verticalState.scrollToItem(targetRowIndex, 0)
         if (!currentNavigationVisible) {
@@ -247,6 +248,8 @@ internal fun TvModernHomeRows(
             verticalFocusTarget = null
             verticalFocusJob[0]?.cancel()
             verticalFocusJob[0] = null
+            verticalAlignmentJob[0]?.cancel()
+            verticalAlignmentJob[0] = null
             previewReturnRowKey = TvHomeFocusMemory.activeRowKey
             previewReturnCardIndex = previewReturnRowKey?.let {
                 TvHomeFocusMemory.focusedIndexByRow[it]
@@ -273,8 +276,9 @@ internal fun TvModernHomeRows(
             TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0).coerceIn(0, row.entries.lastIndex)
         verticalFocusTarget = null
         verticalFocusJob[0]?.cancel()
+        verticalAlignmentJob[0]?.cancel()
         try {
-            scrollRowIntoView(availableRows.indexOfFirst { it.key == row.key })
+            verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
         } catch (cancelled: CancellationException) {
             throw cancelled
         }
@@ -343,7 +347,7 @@ internal fun TvModernHomeRows(
                     },
                     onLeftAtRowStart = onLeftAtRowStart,
                     onFocused = { focusedRow, index, entry ->
-                        // A horizontal card focus must not restart vertical scrolling.
+                        alignFocusedRow(focusedRow)
                         onFocused(focusedRow, index, entry)
                     },
                     onOpen = onOpen,
@@ -401,16 +405,16 @@ private fun TvModernHomeRow(
                 size: Float,
                 containerSize: Float,
             ): Float {
-                // Keep a focused card where it is when already fully visible.
-                // The previous spec always aligned its edge to the start of the
-                // rail, scrolling even for fully visible adjacent posters.
-                val leftEdge = if (rtl) 0f else startInsetPx
-                val rightEdge = if (rtl) containerSize - startInsetPx else containerSize
-                val childEnd = offset + size
-                return when {
-                    offset < leftEdge -> offset - leftEdge
-                    childEnd > rightEdge -> childEnd - rightEdge
-                    else -> 0f
+                val childSize = abs(size)
+                return if (rtl) {
+                    val initialTarget = containerSize - startInsetPx
+                    val target = if (childSize <= containerSize && initialTarget < childSize) childSize else initialTarget
+                    (offset + size) - target
+                } else {
+                    val initialTarget = startInsetPx
+                    val available = containerSize - initialTarget
+                    val target = if (childSize <= containerSize && available < childSize) containerSize - childSize else initialTarget
+                    offset - target
                 }
             }
         }
@@ -433,10 +437,7 @@ private fun TvModernHomeRow(
             return@LaunchedEffect
         }
         try {
-            // Restoration/vertical row entry must not sweep the whole rail.
-            // Normal left/right D-pad scrolling still uses BringIntoViewSpec.
-            rowState.scrollToItem(targetIndex)
-            withFrameNanos { }
+            rowState.animateScrollToItem(targetIndex)
         } catch (cancelled: CancellationException) {
             throw cancelled
         }
