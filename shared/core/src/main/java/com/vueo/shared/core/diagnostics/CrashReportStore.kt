@@ -159,16 +159,11 @@ object CrashReportStore {
         return chosen
     }
 
-    /** Persist dismissal before clearing the displayed report. Back follows the same path. */
+    /** Acknowledge the notice; keep crash evidence until Diagnose explicitly clears it. */
     fun dismiss(context: Context, report: AppCrashReport): Boolean = synchronized(lock) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val cutoff = maxOf(report.timestampMs, currentStartedMs, prefs.getLong("dismissed_through", 0L))
-        val saved = prefs.edit().putLong("dismissed_through", cutoff).commit()
-        if (saved) {
-            val stored = read(context)
-            if (stored == null || stored.timestampMs <= cutoff) reportFile(context).delete()
-        }
-        saved
+        prefs.edit().putLong("dismissed_through", cutoff).commit()
     }
 
     @android.annotation.TargetApi(30)

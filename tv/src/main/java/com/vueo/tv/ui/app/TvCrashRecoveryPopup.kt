@@ -1,163 +1,142 @@
 package com.vueo.tv
 
-import android.view.KeyEvent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.platform.LocalDensity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.diagnostics.AppCrashReport
 import com.vueo.shared.core.diagnostics.CrashReportStore
+import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.TvModalDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.runtime.withFrameNanos
 
 @Composable
-internal fun TvCrashRecoveryPopup(report: AppCrashReport, onClosed: () -> Unit) {
+internal fun TvCrashRecoveryPopup(
+    report: AppCrashReport,
+    onClosed: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var expanded by remember(report.timestampMs) { mutableStateOf(false) }
+    val closeFocus = remember { FocusRequester() }
+    val diagnoseFocus = remember { FocusRequester() }
     var closing by remember(report.timestampMs) { mutableStateOf(false) }
     var message by remember(report.timestampMs) { mutableStateOf<String?>(null) }
     val time = remember(report.timestampMs) {
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(report.timestampMs))
     }
-    val closeFocus = remember { FocusRequester() }
-    val logFocus = remember { FocusRequester() }
-    val detailsFocus = remember { FocusRequester() }
-    val logScroll = rememberScrollState()
-    val scrollStep = with(LocalDensity.current) { 96.dp.roundToPx() }
-    var logFocused by remember { mutableStateOf(false) }
 
-    LaunchedEffect(expanded) {
-        if (expanded) {
-            withFrameNanos { }
-            runCatching { logFocus.requestFocus() }
-        }
-    }
-
-    val buttonNavigation = Modifier.onPreviewKeyEvent { event ->
-        val key = event.nativeKeyEvent
-        if (key.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (key.action == KeyEvent.ACTION_DOWN) runCatching { logFocus.requestFocus() }
-            true
-        } else false
-    }.focusProperties { up = logFocus }
-    LaunchedEffect(report.timestampMs) {
-        withFrameNanos { }
-        runCatching { closeFocus.requestFocus() }
-    }
-
-    fun close() {
+    fun acknowledge(openDiagnostics: Boolean = false) {
         if (closing) return
         closing = true
         scope.launch {
             val saved = withContext(Dispatchers.IO) {
                 runCatching { CrashReportStore.dismiss(context.applicationContext, report) }.getOrDefault(false)
             }
-            if (saved) onClosed()
-            else message = "Couldn't save dismissal. Please try Close again."
+            if (saved) {
+                if (openDiagnostics) onOpenDiagnostics() else onClosed()
+            } else message = "Couldn't save dismissal. Please try again."
             closing = false
         }
     }
 
-    AlertDialog(
-        onDismissRequest = ::close,
-        title = { Text("Previous app crash") },
-        text = {
+    TvModalDialog(onDismissRequest = { acknowledge() }, initialFocus = closeFocus) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = .74f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            val shape = RoundedCornerShape(24.dp)
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
-                    .border(1.dp, if (logFocused) Color.White.copy(alpha = .65f) else Color.Transparent, RoundedCornerShape(8.dp))
-                    .focusRequester(logFocus)
-                    .onFocusChanged { logFocused = it.isFocused }
-                    .focusProperties { down = detailsFocus }
-                    .onPreviewKeyEvent { event ->
-                        val key = event.nativeKeyEvent
-                        when (key.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                if (key.action == KeyEvent.ACTION_DOWN) {
-                                    val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
-                                    if (down && logScroll.value >= logScroll.maxValue) {
-                                        runCatching { detailsFocus.requestFocus() }
-                                    } else {
-                                        val target = (logScroll.value + if (down) scrollStep else -scrollStep)
-                                            .coerceIn(0, logScroll.maxValue)
-                                        scope.launch { logScroll.scrollTo(target) }
-                                    }
-                                }
-                                true
-                            }
-                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                                if (key.action == KeyEvent.ACTION_DOWN) runCatching { detailsFocus.requestFocus() }
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    .focusable()
-                    .verticalScroll(logScroll)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.width(580.dp).heightIn(max = 460.dp)
+                    .clip(shape).background(TvDesign.SurfaceRaised)
+                    .border(1.dp, TvDesign.White.copy(alpha = .14f), shape)
+                    .verticalScroll(rememberScrollState()).padding(30.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text(report.summary)
-                Text(time)
-                Text("The app has restarted. You can copy this report to help investigate.")
-                if (expanded) Text(
-                    if (report.details.length > 12_000) report.details.take(12_000) +
-                        "\n\n[Preview shortened. Copy Log includes the full stored report.]"
-                    else report.details
-                )
-                message?.let { Text(it) }
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { expanded = !expanded }, modifier = buttonNavigation.focusRequester(detailsFocus)) {
-                    Text(if (expanded) "Hide details" else "Details")
-                }
-                TextButton(modifier = buttonNavigation, onClick = {
-                    val copied = runCatching {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("VUEO Crash Report", "$time\n${report.summary}\n\n${report.details}"))
-                    }.isSuccess
-                    message = if (copied) "Log copied." else "Couldn't copy log."
-                }) { Text("Copy Log") }
-                TextButton(onClick = ::close, enabled = !closing, modifier = buttonNavigation.focusRequester(closeFocus)) {
-                    Text("Close")
+                Text("Previous app crash", color = TvDesign.White, fontSize = 27.sp, fontWeight = FontWeight.SemiBold)
+                Text(report.summary, color = TvDesign.White, fontSize = 17.sp)
+                Text(time, color = TvDesign.Muted, fontSize = 14.sp)
+                Text("The app has restarted. The report is available in Crash Diagnose.", color = TvDesign.Muted, fontSize = 16.sp)
+                message?.let { Text(it, color = TvDesign.Muted) }
+                Row(
+                    modifier = Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    CrashNoticeAction(
+                        label = "Open Crash Diagnose",
+                        requester = diagnoseFocus,
+                        neighbour = closeFocus,
+                        busy = closing,
+                        onClick = { acknowledge(openDiagnostics = true) },
+                    )
+                    CrashNoticeAction(
+                        label = "Close",
+                        requester = closeFocus,
+                        neighbour = diagnoseFocus,
+                        busy = closing,
+                        onClick = { acknowledge() },
+                    )
                 }
             }
-        },
-    )
+        }
+    }
+}
+
+@Composable
+private fun CrashNoticeAction(
+    label: String,
+    requester: FocusRequester,
+    neighbour: FocusRequester,
+    busy: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier.focusRequester(requester)
+            .focusProperties { left = neighbour; right = neighbour; up = requester; down = requester }
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .background(TvDesign.White.copy(alpha = if (focused) .18f else .06f))
+            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .14f), shape)
+            // Keep focus during the short acknowledgement write; ignore repeated presses.
+            .clickable { if (!busy) onClick() }
+            .padding(horizontal = 22.dp, vertical = 13.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = TvDesign.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
 }

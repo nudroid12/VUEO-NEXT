@@ -1,6 +1,7 @@
 package com.vueo.tv
 
 import com.vueo.shared.core.diagnostics.AppCrashReport
+import com.vueo.tv.settings.TvRuntimeDiagnosticsDialog
 import com.vueo.shared.core.diagnostics.CrashReportStore
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
@@ -123,6 +124,7 @@ fun VueoTvApp(
 ) {
     val context = LocalContext.current
     var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
+    var showCrashDiagnostics by remember { mutableStateOf(false) }
     var crashRecoveryLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         pendingCrash = withContext(Dispatchers.IO) {
@@ -1489,10 +1491,26 @@ fun VueoTvApp(
 
             if (route != TvRoute.STARTUP && route != TvRoute.PROFILE) {
                 pendingCrash?.let { report ->
-                    TvCrashRecoveryPopup(report = report, onClosed = { pendingCrash = null })
+                    TvCrashRecoveryPopup(
+                        report = report,
+                        onClosed = { pendingCrash = null },
+                        onOpenDiagnostics = {
+                            pendingCrash = null
+                            showCrashDiagnostics = true
+                        },
+                    )
                 }
             }
-            updatePromptRelease?.takeIf { route != TvRoute.PLAYER && crashRecoveryLoaded && pendingCrash == null }?.let { release ->
+            if (showCrashDiagnostics) {
+                DisposableEffect(modalFocusHost) {
+                    modalFocusHost.open()
+                    onDispose { modalFocusHost.close() }
+                }
+                TvRuntimeDiagnosticsDialog(onDismiss = { showCrashDiagnostics = false })
+            }
+            updatePromptRelease?.takeIf {
+                route != TvRoute.PLAYER && crashRecoveryLoaded && pendingCrash == null && !showCrashDiagnostics
+            }?.let { release ->
                 TvUpdatePrompt(
                     release = release,
                     onLater = { updatePromptRelease = null },

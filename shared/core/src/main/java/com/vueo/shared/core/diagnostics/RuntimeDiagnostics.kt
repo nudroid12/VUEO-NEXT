@@ -599,8 +599,14 @@ object RuntimeDiagnostics {
         appendLine("RAW CRASH LOG")
         appendLine("Events: $eventCount")
         appendLine()
+        val crash = CrashReportStore.exportCrashReport(context)
+        crash?.let {
+            appendLine("${formatTimestamp(it.timestampMs)} | STORED_CRASH ${it.summary}")
+            appendLine(it.details)
+            appendLine()
+        }
         if (body.isBlank()) {
-            appendLine("No crash events recorded yet.")
+            if (crash == null) appendLine("No crash events recorded yet.")
         } else {
             append(body.takeLast(400_000))
         }

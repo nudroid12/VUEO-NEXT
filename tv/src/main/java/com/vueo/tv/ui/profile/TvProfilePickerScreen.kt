@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -468,7 +469,7 @@ private fun TvProfileEditorScreen(
                         .fillMaxWidth()
                         .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 18.dp),
+                    contentPadding = PaddingValues(start = 6.dp, top = 8.dp, end = 6.dp, bottom = 18.dp),
                 ) {
                     item(key = "preview") {
                         Surface(
@@ -637,7 +638,7 @@ private fun TvProfileEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 28.dp),
+                    contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 28.dp),
                 ) {
                     items(
                         items = ProfileAvatarCatalog.selectable,
@@ -858,8 +859,7 @@ private fun ManageProfileCard(
             .width(154.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable(),
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(modifier = Modifier.size(126.dp), contentAlignment = Alignment.Center) {
@@ -906,8 +906,7 @@ private fun AddProfileCard(onClick: () -> Unit) {
             .width(154.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable(),
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Surface(
@@ -970,7 +969,6 @@ private fun TvAvatarChoice(
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .focusable()
             .clip(CircleShape)
             .border(
                 width = if (focused) 4.dp else if (selected) 3.dp else 1.dp,
@@ -1022,6 +1020,22 @@ private fun TvProfileBadge(label: String) {
 }
 
 @Composable
+private fun profileSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = PickerBlack,
+    checkedTrackColor = PickerGreen,
+    checkedBorderColor = PickerGreen,
+    uncheckedThumbColor = PickerMuted,
+    uncheckedTrackColor = PickerPanelRaised,
+    uncheckedBorderColor = PickerStroke,
+    disabledCheckedThumbColor = PickerBlack.copy(alpha = .5f),
+    disabledCheckedTrackColor = PickerGreen.copy(alpha = .35f),
+    disabledCheckedBorderColor = PickerGreen.copy(alpha = .35f),
+    disabledUncheckedThumbColor = PickerMuted.copy(alpha = .35f),
+    disabledUncheckedTrackColor = PickerPanel,
+    disabledUncheckedBorderColor = PickerStroke,
+)
+
+@Composable
 private fun TvPickerToggleRow(
     title: String,
     subtitle: String,
@@ -1044,7 +1058,6 @@ private fun TvPickerToggleRow(
             .background(if (focused && enabled) PickerPanelRaised else PickerPanel, RoundedCornerShape(18.dp))
             .border(if (focused && enabled) 2.dp else 1.dp, if (focused && enabled) Color.White else PickerStroke, RoundedCornerShape(18.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .focusable(enabled)
             .padding(horizontal = 18.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1052,7 +1065,7 @@ private fun TvPickerToggleRow(
             Text(title, color = if (enabled) Color.White else PickerMuted.copy(alpha = .5f), fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = PickerMuted.copy(alpha = if (enabled) 1f else .5f), fontSize = 11.sp)
         }
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled, colors = profileSwitchColors())
     }
 }
 
@@ -1078,7 +1091,6 @@ private fun TvEditorToggleRow(
             .background(if (focused) PickerPanelRaised else PickerPanel, RoundedCornerShape(17.dp))
             .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else PickerStroke, RoundedCornerShape(17.dp))
             .clickable(onClick = onClick)
-            .focusable()
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1091,7 +1103,7 @@ private fun TvEditorToggleRow(
             Spacer(Modifier.height(3.dp))
             Text(subtitle, color = PickerMuted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, colors = profileSwitchColors())
     }
 }
 
@@ -1136,8 +1148,7 @@ private fun TvProfileAction(
             .onFocusChanged { focused = it.isFocused }
             .background(background, RoundedCornerShape(50))
             .border(if (focused && enabled) 2.dp else 1.dp, if (focused && enabled) Color.White else PickerStroke, RoundedCornerShape(50))
-            .clickable(enabled = enabled, onClick = onClick)
-            .focusable(enabled),
+            .clickable(enabled = enabled, onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1168,8 +1179,7 @@ private fun TvIconAction(
             .onFocusChanged { focused = it.isFocused }
             .background(if (focused) Color.White.copy(alpha = .16f) else PickerPanel, CircleShape)
             .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else PickerStroke, CircleShape)
-            .clickable(onClick = onClick)
-            .focusable(),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = contentDescription, tint = Color.White, modifier = Modifier.size(24.dp))

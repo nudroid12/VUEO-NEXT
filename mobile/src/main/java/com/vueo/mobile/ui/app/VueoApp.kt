@@ -353,6 +353,7 @@ fun VueoApp(
 ) {
     val context = LocalContext.current
     var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
+    var showCrashDiagnostics by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         pendingCrash = withContext(Dispatchers.IO) {
             runCatching { CrashReportStore.pending(context.applicationContext) }.getOrNull()
@@ -1266,8 +1267,18 @@ fun VueoApp(
     }
     if (startupDestinationResolved && !booting && !showProfilePicker) {
         pendingCrash?.let { report ->
-            MobileCrashRecoveryPopup(report = report, onClosed = { pendingCrash = null })
+            MobileCrashRecoveryPopup(
+                report = report,
+                onClosed = { pendingCrash = null },
+                onOpenDiagnostics = {
+                    pendingCrash = null
+                    showCrashDiagnostics = true
+                },
+            )
         }
+    }
+    if (showCrashDiagnostics) {
+        RuntimeDiagnosticsDialog(onDismiss = { showCrashDiagnostics = false })
     }
 
 }
