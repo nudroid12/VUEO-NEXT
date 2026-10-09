@@ -165,6 +165,10 @@ fun VueoTvApp(
     var dnaReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var detailReturnRoute by remember { mutableStateOf(TvRoute.HOME) }
     var sourceReturnRoute by remember { mutableStateOf(TvRoute.DETAIL) }
+    // After Sources -> Details, render Details directly instead of revealing/recreating
+    // the Home parent beneath a Detail layer that initially has alpha=0.
+    // Normal Home -> Details navigation keeps its retained-parent behavior.
+    var detailReturnedFromSource by remember { mutableStateOf(false) }
     var playerReturnRoute by remember { mutableStateOf(TvRoute.SOURCE) }
     val searchSession = remember { TvSearchSession() }
     val sourceDiscoveryScope = rememberCoroutineScope()
@@ -308,6 +312,7 @@ fun VueoTvApp(
     }
 
     fun openDetail(media: MediaItem, from: TvRoute) {
+        detailReturnedFromSource = false
         selectedEntityTarget = null
         entityReturnDetailState = null
         selectedMedia = media
@@ -320,6 +325,7 @@ fun VueoTvApp(
     }
 
     fun openPlaybackDetail(entry: LibraryPlaybackEntry, from: TvRoute) {
+        detailReturnedFromSource = false
         selectedEntityTarget = null
         entityReturnDetailState = null
         selectedMedia = entry.media
@@ -363,6 +369,7 @@ fun VueoTvApp(
     }
 
     fun openDetailFromEntityResults(media: MediaItem) {
+        detailReturnedFromSource = false
         selectedMedia = media
         selectedLibraryEntry = null
         selectedEpisode = null
@@ -428,7 +435,7 @@ fun VueoTvApp(
             initialPositionMs = 0L
         } else {
             val returnRoute = detailReturnRoute
-            val retainedParent = returnRoute in retainedDetailParentRoutes
+            val retainedParent = returnRoute in retainedDetailParentRoutes && !detailReturnedFromSource
             PerformanceDiagnostics.captureRuntimeEvent(
                 "DETAIL_BACK_REQUEST retainedParent=$retainedParent parent=${returnRoute.name}",
             )
@@ -439,6 +446,7 @@ fun VueoTvApp(
             selectedLibraryEntry = null
             selectedEpisode = null
             initialPositionMs = 0L
+            detailReturnedFromSource = false
             route = returnRoute
             PerformanceDiagnostics.captureRuntimeEvent(
                 "DETAIL_ROUTE_RETURN target=${returnRoute.name} retainedParent=$retainedParent",
@@ -1051,7 +1059,8 @@ fun VueoTvApp(
     }
 
     val retainedDetailParentRoute = detailReturnRoute.takeIf { parent ->
-        route == TvRoute.DETAIL && selectedMedia != null && parent in retainedDetailParentRoutes
+        route == TvRoute.DETAIL && selectedMedia != null &&
+            !detailReturnedFromSource && parent in retainedDetailParentRoutes
     }
     val retainedDetailActive = retainedDetailParentRoute != null
     val displayedRootRoute = retainedDetailParentRoute ?: route
@@ -1340,6 +1349,12 @@ fun VueoTvApp(
                                 sourceExitKey = sessionKey
                                 sourceExitRunning = sourceDiscoveryJob?.isActive == true
                                 stopSourceDiscovery(markStopped = false)
+                                detailReturnedFromSource = sourceReturnRoute == TvRoute.DETAIL
+                                if (detailReturnedFromSource) {
+                                    PerformanceDiagnostics.captureRuntimeEvent(
+                                        "SOURCE_DETAIL_HANDOFF mode=direct",
+                                    )
+                                }
                                 route = sourceReturnRoute
                             },
                             onRefresh = {

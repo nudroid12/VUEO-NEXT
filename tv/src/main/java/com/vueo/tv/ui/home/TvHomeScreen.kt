@@ -94,9 +94,9 @@ fun TvHomeScreen(
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
-    // Every fresh Home composition starts on row 1 / card 1. A retained
-    // Details -> Home reveal restores the exact row/card that opened Details
-    // instead of incrementing this reset token.
+    // Initial Home focus is applied once per composition. TvModernHomeRows
+    // starts at row 1 only if there is no saved session focus; on a rebuild it
+    // restores the saved row/card instead. Retained Home uses its focusRestorer.
     var homeFocusResetToken by remember { mutableIntStateOf(1) }
     val libraryRevision = retainedState.libraryRevision
 

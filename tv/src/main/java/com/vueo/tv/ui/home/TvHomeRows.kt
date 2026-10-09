@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvPosterActivation
@@ -208,22 +209,35 @@ internal fun TvModernHomeRows(
         }
     }
 
-    // The reset is owned outside lazy items. Re-composing row 1 cannot replay it.
+    // Initial Home focus: first row only for a genuinely new app session.
+    // If Source navigation disposed Home, its new composition must recover the
+    // saved row/card rather than resetting to row 1 when returning from Details.
     LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible) {
         if (focusResetToken <= 0 || appliedFocusResetToken == focusResetToken ||
             rows.isEmpty() || navigationVisible
         ) return@LaunchedEffect
         appliedFocusResetToken = focusResetToken
-        val firstRow = rows.first()
-        TvHomeFocusMemory.activeRowKey = firstRow.key
-        TvHomeFocusMemory.focusedIndexByRow[firstRow.key] = 0
+        val savedRowKey = TvHomeFocusMemory.activeRowKey
+        val targetRowIndex = rows.indexOfFirst { it.key == savedRowKey && it.entries.isNotEmpty() }
+            .takeIf { it >= 0 } ?: rows.indexOfFirst { it.entries.isNotEmpty() }
+                .takeIf { it >= 0 } ?: return@LaunchedEffect
+        val targetRow = rows[targetRowIndex]
+        val targetCardIndex = (TvHomeFocusMemory.focusedIndexByRow[targetRow.key] ?: 0)
+            .coerceIn(0, targetRow.entries.lastIndex)
+        TvHomeFocusMemory.activeRowKey = targetRow.key
+        TvHomeFocusMemory.focusedIndexByRow[targetRow.key] = targetCardIndex
         verticalFocusTarget = null
         verticalAlignmentJob[0]?.cancel()
         verticalFocusJob[0]?.cancel()
-        verticalState.scrollToItem(0, 0)
+        verticalState.scrollToItem(targetRowIndex, 0)
         if (!currentNavigationVisible) {
             verticalFocusToken += 1
-            verticalFocusTarget = HomeVerticalFocusTarget(firstRow.key, 0, verticalFocusToken, initialReset = true)
+            verticalFocusTarget = HomeVerticalFocusTarget(
+                targetRow.key, targetCardIndex, verticalFocusToken, initialReset = true,
+            )
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "HOME_FOCUS_TARGET row=${targetRow.key} card=$targetCardIndex saved=${savedRowKey != null}",
+            )
         }
     }
 
@@ -321,6 +335,11 @@ internal fun TvModernHomeRows(
                     onFocusTargetConsumed = { token, focused ->
                         val target = verticalFocusTarget
                         if (target?.token == token) {
+                            if (target.initialReset) {
+                                PerformanceDiagnostics.captureRuntimeEvent(
+                                    "HOME_FOCUS_RESTORED row=${target.rowKey} card=${target.cardIndex} success=$focused",
+                                )
+                            }
                             if (target.menuReturn && focused) onContentFocused()
                             verticalFocusTarget = null
                         }

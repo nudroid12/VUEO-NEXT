@@ -682,7 +682,7 @@ object PerformanceDiagnostics {
     private fun pageFor(label: String): Tab {
         val upper = label.uppercase(Locale.US)
         return when {
-            "SOURCES" in upper -> Tab.SOURCES
+            "SOURCES" in upper || upper == "SOURCE" || upper.endsWith(" SOURCE") -> Tab.SOURCES
             "EPISODES" in upper -> Tab.EPISODES
             "PLAYER" in upper -> Tab.PLAYER
             "DETAIL" in upper -> Tab.DETAILS
