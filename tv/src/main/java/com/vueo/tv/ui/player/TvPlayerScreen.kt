@@ -374,7 +374,6 @@ fun TvPlayerScreen(
     var positionMs by remember { mutableLongStateOf(startPosition) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(false) }
-    var playPauseFocused by remember(player) { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
     var nextCountdown by remember { mutableIntStateOf(0) }
     var resolvedImdbId by remember(mediaKey) { mutableStateOf<String?>(null) }
@@ -409,6 +408,8 @@ fun TvPlayerScreen(
     var contentWarningsEnabled by remember(mediaKey) { mutableStateOf(settings.contentWarningsEnabled()) }
     var resumeAfterLifecyclePause by remember(playerSessionId) { mutableStateOf(false) }
     var pendingSeekPositionMs by remember(bundle.videoId) { mutableStateOf<Long?>(null) }
+    // Display seek targets directly until the existing seek anchor settles.
+    var seekMotionDirect by remember(bundle.videoId) { mutableStateOf(false) }
     var hiddenSeekProgressVisible by remember(bundle.videoId) { mutableStateOf(false) }
     val seekCommitJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
     val seekAnchorClearJob = remember(bundle.videoId) { arrayOfNulls<Job>(1) }
@@ -556,6 +557,7 @@ fun TvPlayerScreen(
             delay(650L)
             if (pendingSeekPositionMs == target) {
                 pendingSeekPositionMs = null
+                seekMotionDirect = false
             }
         }
     }
@@ -567,6 +569,7 @@ fun TvPlayerScreen(
         seekAnchorClearJob[0]?.cancel()
         seekAnchorClearJob[0] = null
         pendingSeekPositionMs = null
+        seekMotionDirect = false
     }
 
     fun seekImmediateBy(deltaMs: Long) {
@@ -578,8 +581,13 @@ fun TvPlayerScreen(
             (base + deltaMs).coerceAtLeast(0L)
         }
         clearPendingSeek()
+        seekMotionDirect = true
         player.seekTo(target)
         positionMs = target
+        seekAnchorClearJob[0] = focusScope.launch {
+            delay(650L)
+            seekMotionDirect = false
+        }
         noteInteraction()
     }
 
@@ -595,6 +603,7 @@ fun TvPlayerScreen(
         seekAnchorClearJob[0] = null
         hiddenSeekProgressVisible = !controlsVisible
         pendingSeekPositionMs = target
+        seekMotionDirect = true
         positionMs = target
         seekCommitJob[0]?.cancel()
         seekCommitJob[0] = focusScope.launch {
@@ -1120,7 +1129,7 @@ fun TvPlayerScreen(
                     // playWhenReady stays true. Do not parse/serialize the full
                     // library history for those transient state changes.
                     saveProgress(backgroundLibrary = true)
-                    if (controlsVisible && activePanel == TvPlayerPanel.NONE && !playPauseFocused) {
+                    if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
                         requestControlFocus(progressRequester)
                     }
                 }
@@ -2002,6 +2011,7 @@ fun TvPlayerScreen(
             statusIndicatorsEnabled = !episodeSwitching && !pauseBackdropVisible,
             positionMs = positionMs,
             durationMs = durationMs,
+            seekMotionDirect = seekMotionDirect,
             nextEpisode = nextEpisode,
             activeSkip = activeSkip.takeUnless { pauseBackdropVisible },
             nextCountdown = nextCountdown,
@@ -2042,7 +2052,6 @@ fun TvPlayerScreen(
             onPromptNavigateUp = { requestControlFocus(restartRequester) },
             onPromptNavigateDown = { requestControlFocus(progressRequester) },
             onPlayPause = ::togglePlayback,
-            onPlayPauseFocusChanged = { playPauseFocused = it },
             onRetryPlayback = {
                 saveProgress()
                 sourceRecoverySession.allowRetry(activeSource.toSourceCandidateForPlayer())

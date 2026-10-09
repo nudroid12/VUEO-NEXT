@@ -5,6 +5,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -69,6 +70,7 @@ internal fun VueoPlayerProgressRail(
     onSeekBy: (Long) -> Unit,
     onSeekCommit: () -> Unit,
     onTogglePlayback: () -> Unit,
+    seekMotionDirect: Boolean = false,
     interactive: Boolean = true,
     emphasized: Boolean = false,
 ) {
@@ -78,11 +80,13 @@ internal fun VueoPlayerProgressRail(
     val targetProgress = if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
-    val progress by animateFloatAsState(
+    val animatedProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = tween(durationMillis = 380, easing = LinearEasing),
+        animationSpec = if (seekMotionDirect) snap() else tween(durationMillis = 380, easing = LinearEasing),
         label = "playerProgress",
     )
+    // Seek previews bypass animation immediately, including the release frame.
+    val progress = if (seekMotionDirect) targetProgress else animatedProgress
     val railHeight by animateDpAsState(
         targetValue = if (focused) 5.dp else 3.dp,
         animationSpec = tween(

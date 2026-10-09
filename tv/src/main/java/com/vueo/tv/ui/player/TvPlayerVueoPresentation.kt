@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AspectRatio
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.getValue
@@ -88,6 +90,7 @@ internal fun VueoPlayerPresentation(
     statusIndicatorsEnabled: Boolean,
     positionMs: Long,
     durationMs: Long,
+    seekMotionDirect: Boolean,
     nextEpisode: EpisodeItem?,
     activeSkip: PlayerSkipSegment?,
     nextCountdown: Int,
@@ -125,7 +128,6 @@ internal fun VueoPlayerPresentation(
     onPromptNavigateUp: () -> Unit,
     onPromptNavigateDown: () -> Unit,
     onPlayPause: () -> Unit,
-    onPlayPauseFocusChanged: (Boolean) -> Unit,
     onRetryPlayback: () -> Unit,
     onRestart: () -> Unit,
     onSeekImmediateBy: (Long) -> Unit,
@@ -187,6 +189,7 @@ internal fun VueoPlayerPresentation(
             playbackRequested = playbackRequested,
             positionMs = positionMs,
             durationMs = durationMs,
+            seekMotionDirect = seekMotionDirect,
             nextEpisode = nextEpisode,
             hasSubtitles = hasSubtitles,
             hasAudio = hasAudio,
@@ -203,7 +206,6 @@ internal fun VueoPlayerPresentation(
             moreRequester = moreRequester,
             onInteraction = onChromeInteraction,
             onPlayPause = onPlayPause,
-            onPlayPauseFocusChanged = onPlayPauseFocusChanged,
             onRestart = onRestart,
             onSeekImmediateBy = onSeekImmediateBy,
             onSeekBy = onSeekBy,
@@ -469,6 +471,7 @@ private fun VueoPlayerControls(
     playbackRequested: Boolean,
     positionMs: Long,
     durationMs: Long,
+    seekMotionDirect: Boolean,
     nextEpisode: EpisodeItem?,
     hasSubtitles: Boolean,
     hasAudio: Boolean,
@@ -485,7 +488,6 @@ private fun VueoPlayerControls(
     moreRequester: FocusRequester,
     onInteraction: () -> Unit,
     onPlayPause: () -> Unit,
-    onPlayPauseFocusChanged: (Boolean) -> Unit,
     onRestart: () -> Unit,
     onSeekImmediateBy: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
@@ -493,8 +495,6 @@ private fun VueoPlayerControls(
     onNext: () -> Unit,
     onOpenPanel: (TvPlayerPanel) -> Unit,
 ) {
-    val playPauseRequester = remember { FocusRequester() }
-
     val timeTextStyle = LocalTextStyle.current.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium)
     val timeMeasurer = rememberTextMeasurer()
     val timeDensity = LocalDensity.current
@@ -641,21 +641,12 @@ private fun VueoPlayerControls(
                         .padding(start = 30.dp, end = 30.dp, bottom = 22.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.width(24.dp).alpha(if (visible) 1f else 0f)) {
-                            VueoPlayerPillAction(
-                                icon = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                label = if (playbackRequested) "Pause" else "Play",
-                                requester = playPauseRequester,
-                                upRequester = progressRequester,
-                                downRequester = bottomDefaultRequester,
-                                leftRequester = FocusRequester.Cancel,
-                                rightRequester = progressRequester,
-                                onInteraction = onInteraction,
-                                onClick = onPlayPause,
-                                onFocusChanged = onPlayPauseFocusChanged,
-                                iconOnly = true,
-                            )
-                        }
+                        Icon(
+                            imageVector = if (playbackRequested) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (playbackRequested) "Playing" else "Paused",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp).alpha(if (visible) 1f else 0f),
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             text = vueoPlayerTime(positionMs),
@@ -664,16 +655,17 @@ private fun VueoPlayerControls(
                             style = timeTextStyle,
                             maxLines = 1,
                             softWrap = false,
-                            textAlign = TextAlign.Start,
+                            textAlign = TextAlign.End,
                         )
                         Spacer(Modifier.width(8.dp))
                         Box(Modifier.weight(1f)) {
                             VueoPlayerProgressRail(
                                 positionMs = positionMs,
                                 durationMs = durationMs,
+                                seekMotionDirect = seekMotionDirect,
                                 requester = progressRequester,
                                 upRequester = progressUpRequester,
-                                downRequester = playPauseRequester,
+                                downRequester = bottomDefaultRequester,
                                 onInteraction = onInteraction,
                                 onSeekImmediateBy = onSeekImmediateBy,
                                 onSeekBy = onSeekBy,
@@ -690,7 +682,7 @@ private fun VueoPlayerControls(
                             style = timeTextStyle,
                             maxLines = 1,
                             softWrap = false,
-                            textAlign = TextAlign.End,
+                            textAlign = TextAlign.Start,
                         )
                     }
 

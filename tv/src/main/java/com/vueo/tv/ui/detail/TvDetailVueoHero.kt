@@ -21,8 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -116,9 +114,6 @@ internal fun VueoDetailHero(
 
         Spacer(Modifier.height(12.dp))
 
-        val watchedRequester = remember(item.id, item.type) { FocusRequester() }
-        val showWatched = !item.isDetailSeries()
-
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -137,22 +132,10 @@ internal fun VueoDetailHero(
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = if (showWatched) watchedRequester else null,
+                rightRequester = null,
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
-            if (showWatched) {
-                VueoCircleAction(
-                    icon = if (state.movieWatched) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    contentDescription = if (state.movieWatched) "Mark unwatched" else "Mark watched",
-                    selected = state.movieWatched,
-                    requester = watchedRequester,
-                    leftRequester = listRequester,
-                    rightRequester = null,
-                    downRequester = downRequester,
-                    onClick = onToggleWatched,
-                )
-            }
         }
 
         Spacer(Modifier.height(12.dp))
