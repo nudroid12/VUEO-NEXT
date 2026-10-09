@@ -241,8 +241,8 @@ internal fun TvModernHomeRows(
         }
     }
 
-    // Opening navigation revokes every old row command before preview scrolling.
-    // Keys exclude rows, so progressive catalog batches cannot restart the preview.
+    // Opening navigation revokes pending row commands without scrolling to a preview.
+    // Keys exclude rows, so progressive catalog batches cannot restart this effect.
     LaunchedEffect(navigationVisible) {
         if (navigationVisible) {
             verticalFocusTarget = null
@@ -254,11 +254,8 @@ internal fun TvModernHomeRows(
             previewReturnCardIndex = previewReturnRowKey?.let {
                 TvHomeFocusMemory.focusedIndexByRow[it]
             } ?: 0
-            if (showContinueWatchingPreview) {
-                val previewKey = currentRows.firstOrNull { it.key == "continue-watching" }?.key
-                    ?: currentRows.firstOrNull()?.key
-                previewKey?.let { requestRowAlignment(it, skipIfAligned = true) }
-            }
+            // Isolation test: opening the sidebar must not auto-scroll the catalog
+            // to Continue Watching. Keep CW, viewport motion, and focus memory intact.
         }
     }
 
