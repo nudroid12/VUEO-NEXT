@@ -183,6 +183,8 @@ internal fun TvSettingsMasterDetailShell(
     var lastPane by remember { mutableStateOf("category") }
     var navExpanded by remember { mutableStateOf(false) }
     var sidebarFocusIntent by remember { mutableStateOf(false) }
+    // Back's exit step belongs to user intent, not transient focus callbacks.
+    var backExitPending by remember { mutableStateOf(false) }
     var categorySelectJob by remember { mutableStateOf<Job?>(null) }
     var panelRestoreJob by remember { mutableStateOf<Job?>(null) }
     val shellScope = rememberCoroutineScope()
@@ -278,9 +280,16 @@ internal fun TvSettingsMasterDetailShell(
 
     BackHandler {
         when {
-            navExpanded -> onBack()
+            backExitPending || navExpanded -> {
+                categorySelectJob?.cancel()
+                panelRestoreJob?.cancel()
+                onBack()
+            }
             panelHasBack -> onPanelBack()
-            else -> focusGlobalNav()
+            else -> {
+                backExitPending = true
+                focusGlobalNav()
+            }
         }
     }
 
@@ -306,6 +315,17 @@ internal fun TvSettingsMasterDetailShell(
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.keyCode in setOf(
+                            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                            KeyEvent.KEYCODE_NUMPAD_ENTER,
+                        )) {
+                        backExitPending = false
+                    }
+                    false
+                }
                 .padding(start = contentStartPadding, end = 42.dp, top = 34.dp, bottom = 28.dp)
                 .background(TvDesign.Surface.copy(alpha = .18f), RoundedCornerShape(22.dp))
                 .border(1.dp, TvDesign.White.copy(alpha = .12f), RoundedCornerShape(22.dp))
@@ -336,7 +356,8 @@ internal fun TvSettingsMasterDetailShell(
                                 selected = category.id == selectedCategoryId,
                                 grouped = false,
                                 requester = categoryRequesters.getValue(category.id),
-                                onFocused = {
+                                onFocused = categoryFocused@{
+                                    if (sidebarFocusIntent) return@categoryFocused
                                     navExpanded = false
                                     if (lastPane == "panel") {
                                         // During panel replacement Compose may momentarily
@@ -400,8 +421,10 @@ internal fun TvSettingsMasterDetailShell(
                     onLeftToCategory = { focusSelectedCategory() },
                     onRowFocused = { rowId ->
                         panelLastFocusedIds[panelKey] = rowId
-                        navExpanded = false
-                        lastPane = "panel"
+                        if (!sidebarFocusIntent) {
+                            navExpanded = false
+                            lastPane = "panel"
+                        }
                     },
                 )
             ) {
@@ -437,6 +460,7 @@ internal fun TvSettingsMasterDetailShell(
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = {
+                backExitPending = false
                 sidebarFocusIntent = false
                 if (lastPane == "panel") focusPanel() else focusSelectedCategory()
             },

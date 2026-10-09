@@ -46,6 +46,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
@@ -159,9 +160,12 @@ class TvRuntime(context: Context) {
         }
     }
 
-    fun needsHomeRefresh(): Boolean =
+    suspend fun needsHomeRefresh(): Boolean = withContext(Dispatchers.Default) {
+        // Called from Home/Search UI effects. Preference reads, hashing and any
+        // concurrent cache handoff must never block the UI dispatcher.
         CatalogDiscoveryCache.home(allowStale = false).isNullOrEmpty() ||
             homeCachePrefs.getString("configuration", null) != homeConfigurationKey()
+    }
 
 
     suspend fun prepareAddonsInBackground() {

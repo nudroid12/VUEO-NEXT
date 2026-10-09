@@ -320,7 +320,6 @@ object CatalogDiscoveryCache {
             )
     }
 
-    @Synchronized
     fun searchLocal(
         query: String,
         limit: Int = 60,
@@ -438,7 +437,6 @@ object CatalogDiscoveryCache {
     }
 
     
-    @Synchronized
     fun companyTitles(
         companyName: String,
         networkOnly: Boolean = false,
@@ -471,7 +469,6 @@ object CatalogDiscoveryCache {
             .toList()
     }
 
-    @Synchronized
     fun related(
         item: MediaItem,
         limit: Int = 16,
@@ -484,8 +481,8 @@ object CatalogDiscoveryCache {
             relatedCanonicalType(
                 item.type
             )
-        val cached =
-            allCachedItems()
+        val snapshot = cacheSnapshot()
+        val cached = snapshot.allItems()
         if (cached.isEmpty()) {
             return emptyList()
         }
@@ -627,7 +624,7 @@ object CatalogDiscoveryCache {
             }
 
         val homePopularity =
-            homeRows
+            snapshot.rows
                 .asSequence()
                 .flatMap {
                     it.items.asSequence()
@@ -732,7 +729,6 @@ object CatalogDiscoveryCache {
      * 70% local semantic relevance + 20% TMDB discovery confidence +
      * 10% diversity, followed by the existing franchise repetition penalty.
      */
-    @Synchronized
     fun blendRelated(
         item: MediaItem,
         localItems: List<MediaItem>,
@@ -743,6 +739,7 @@ object CatalogDiscoveryCache {
             return emptyList()
         }
 
+        val rows = cacheSnapshot().rows
         val targetType =
             relatedCanonicalType(
                 item.type
@@ -886,7 +883,7 @@ object CatalogDiscoveryCache {
                 }
             }
         val homePopularity =
-            homeRows
+            rows
                 .asSequence()
                 .flatMap {
                     it.items.asSequence()
@@ -2580,18 +2577,23 @@ object CatalogDiscoveryCache {
             "woman", "world", "would", "you", "your",
         )
 
-    @Synchronized
-    private fun allCachedItems():
-        List<MediaItem> =
-        buildList {
-            homeRows.forEach {
-                addAll(it.items)
-            }
-
-            searches.values.forEach {
-                addAll(it.items)
-            }
+    // Capture references while protected; flattening, filtering and ranking happen
+    // after releasing the monitor used by Home's cheap freshness/read operations.
+    private data class CacheSnapshot(
+        val rows: List<CatalogRow>,
+        val searchItems: List<List<MediaItem>>,
+    ) {
+        fun allItems(): List<MediaItem> = buildList {
+            rows.forEach { addAll(it.items) }
+            searchItems.forEach { addAll(it) }
         }
+    }
+
+    @Synchronized
+    private fun cacheSnapshot(): CacheSnapshot =
+        CacheSnapshot(homeRows, searches.values.map { it.items })
+
+    private fun allCachedItems(): List<MediaItem> = cacheSnapshot().allItems()
 
     private fun searchableText(
         item: MediaItem,
