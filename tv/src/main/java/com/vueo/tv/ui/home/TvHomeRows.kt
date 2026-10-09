@@ -32,6 +32,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -77,7 +78,15 @@ import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlin.math.abs
+
+// Lazy diagnostic messages: no string construction while diagnostics is OFF.
+private inline fun traceHome(build: () -> String) {
+    if (PerformanceDiagnostics.isCollecting()) {
+        PerformanceDiagnostics.captureRuntimeEvent(build())
+    }
+}
 
 private val ContinueWatchingWidth = 210.dp
 private val ContinueWatchingHeight = 119.dp
@@ -142,6 +151,33 @@ internal fun TvModernHomeRows(
         }
     }
 
+    // Read-only, rate-limited observation of actual LazyColumn movement.
+    LaunchedEffect(verticalState) {
+        if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
+        var lastLoggedAt = 0L
+        var previousIndex = -1
+        var previousOffset = -1
+        var previousMoving = false
+        snapshotFlow {
+            Triple(verticalState.firstVisibleItemIndex,
+                verticalState.firstVisibleItemScrollOffset, verticalState.isScrollInProgress)
+        }.collect { (index, offset, moving) ->
+            val now = android.os.SystemClock.uptimeMillis()
+            val changed = index != previousIndex || offset != previousOffset || moving != previousMoving
+            val boundary = moving != previousMoving || index != previousIndex
+            if (changed && (boundary || now - lastLoggedAt >= 220L)) {
+                traceHome {
+                    "HOME_SCROLL_STATE axis=vertical index=$index offset=$offset moving=$moving " +
+                        "navigation=${currentNavigationVisible}"
+                }
+                lastLoggedAt = now
+            }
+            previousIndex = index
+            previousOffset = offset
+            previousMoving = moving
+        }
+    }
+
     fun requestRowAlignment(rowKey: String, skipIfAligned: Boolean = false) {
         val targetIndex = currentRows.indexOfFirst { it.key == rowKey }
         if (targetIndex < 0) return
@@ -150,12 +186,20 @@ internal fun TvModernHomeRows(
             verticalState.firstVisibleItemIndex == targetIndex &&
             verticalState.firstVisibleItemScrollOffset == 0
         ) return
+        traceHome {
+            "HOME_SCROLL_COMMAND axis=vertical cause=focus_align row=$rowKey target=$targetIndex " +
+                "from=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset} " +
+                "previousActive=${verticalAlignmentJob[0]?.isActive == true}"
+        }
         verticalAlignmentJob[0]?.cancel()
         verticalAlignmentJob[0] = verticalScope.launch {
-            // Use LazyColumn's native animation instead of the old custom
-            // frame-by-frame distance estimator. Repeated D-pad input cancels
-            // toward the newest adjacent row without competing relocations.
-            runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
+            // Original scrolling behavior unchanged; instrumentation only.
+            val outcome = runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
+            traceHome {
+                "HOME_SCROLL_FINISH axis=vertical cause=focus_align row=$rowKey " +
+                    "outcome=${if (outcome.isSuccess) "complete" else "cancelled_or_failed"} " +
+                    "at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+            }
         }
     }
 
@@ -191,9 +235,20 @@ internal fun TvModernHomeRows(
             token = verticalFocusToken,
         )
 
+        traceHome {
+            "HOME_SCROLL_COMMAND axis=vertical cause=dpad fromRow=${row.key} toRow=${targetRow.key} " +
+                "fromCard=$focusedIndex toCard=$targetCardIndex delta=$delta " +
+                "offset=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset} " +
+                "previousActive=${verticalFocusJob[0]?.isActive == true}"
+        }
         verticalFocusJob[0]?.cancel()
         verticalFocusJob[0] = verticalScope.launch {
-            runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
+            val outcome = runCatching { verticalState.animateScrollToItem(targetIndex, 0) }
+            traceHome {
+                "HOME_SCROLL_FINISH axis=vertical cause=dpad target=${targetRow.key} " +
+                    "outcome=${if (outcome.isSuccess) "complete" else "cancelled_or_failed"} " +
+                    "at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+            }
         }
         return true
     }
@@ -229,6 +284,10 @@ internal fun TvModernHomeRows(
         verticalFocusTarget = null
         verticalAlignmentJob[0]?.cancel()
         verticalFocusJob[0]?.cancel()
+        traceHome {
+            "HOME_SCROLL_COMMAND axis=vertical cause=initial_focus_restore target=${targetRow.key} " +
+                "card=$targetCardIndex from=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+        }
         verticalState.scrollToItem(targetRowIndex, 0)
         if (!currentNavigationVisible) {
             verticalFocusToken += 1
@@ -245,6 +304,10 @@ internal fun TvModernHomeRows(
     // Keys exclude rows, so progressive catalog batches cannot restart this effect.
     LaunchedEffect(navigationVisible) {
         if (navigationVisible) {
+            traceHome {
+                "HOME_NAV_OPEN autoScrollCW=false activeRow=${TvHomeFocusMemory.activeRowKey} " +
+                    "vertical=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+            }
             verticalFocusTarget = null
             verticalFocusJob[0]?.cancel()
             verticalFocusJob[0] = null
@@ -277,9 +340,18 @@ internal fun TvModernHomeRows(
         verticalFocusTarget = null
         verticalFocusJob[0]?.cancel()
         verticalAlignmentJob[0]?.cancel()
+        traceHome {
+            "HOME_SCROLL_COMMAND axis=vertical cause=nav_return target=${row.key} card=$cardIndex " +
+                "from=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+        }
         try {
             verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
+            traceHome {
+                "HOME_SCROLL_FINISH axis=vertical cause=nav_return target=${row.key} " +
+                    "at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
+            }
         } catch (cancelled: CancellationException) {
+            traceHome { "HOME_SCROLL_FINISH axis=vertical cause=nav_return outcome=cancelled target=${row.key}" }
             throw cancelled
         }
         if (!currentNavigationVisible) return@LaunchedEffect
@@ -332,6 +404,10 @@ internal fun TvModernHomeRows(
                     onFocusTargetConsumed = { token, focused ->
                         val target = verticalFocusTarget
                         if (target?.token == token) {
+                            traceHome {
+                                "HOME_FOCUS_RESULT row=${target.rowKey} card=${target.cardIndex} " +
+                                    "token=$token success=$focused menuReturn=${target.menuReturn} initial=${target.initialReset}"
+                            }
                             if (target.initialReset) {
                                 PerformanceDiagnostics.captureRuntimeEvent(
                                     "HOME_FOCUS_RESTORED row=${target.rowKey} card=${target.cardIndex} success=$focused",
@@ -420,6 +496,33 @@ private fun TvModernHomeRow(
         }
     }
 
+    // Read-only horizontal trace. It runs only for rows on screen during recording.
+    LaunchedEffect(row.key, rowVisible, rowState) {
+        if (!rowVisible || !PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
+        var lastLoggedAt = 0L
+        var oldIndex = -1
+        var oldOffset = -1
+        var oldMoving = false
+        snapshotFlow {
+            Triple(rowState.firstVisibleItemIndex,
+                rowState.firstVisibleItemScrollOffset, rowState.isScrollInProgress)
+        }.collect { (index, offset, moving) ->
+            val now = android.os.SystemClock.uptimeMillis()
+            val changed = index != oldIndex || offset != oldOffset || moving != oldMoving
+            val boundary = oldIndex != index || oldMoving != moving
+            if (changed && (boundary || now - lastLoggedAt >= 220L)) {
+                traceHome {
+                    "HOME_SCROLL_STATE axis=horizontal row=${row.key} index=$index offset=$offset " +
+                        "moving=$moving focusedCard=$focusedIndex"
+                }
+                lastLoggedAt = now
+            }
+            oldIndex = index
+            oldOffset = offset
+            oldMoving = moving
+        }
+    }
+
     LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
         if (!contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
@@ -437,8 +540,17 @@ private fun TvModernHomeRow(
             return@LaunchedEffect
         }
         try {
+            traceHome {
+                "HOME_SCROLL_COMMAND axis=horizontal cause=focus_target_missing row=${row.key} " +
+                    "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
+            }
             rowState.animateScrollToItem(targetIndex)
+            traceHome {
+                "HOME_SCROLL_FINISH axis=horizontal cause=focus_target_missing row=${row.key} " +
+                    "at=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
+            }
         } catch (cancelled: CancellationException) {
+            traceHome { "HOME_SCROLL_FINISH axis=horizontal cause=focus_target_missing outcome=cancelled row=${row.key}" }
             throw cancelled
         }
         repeat(4) {
@@ -543,6 +655,11 @@ private fun TvModernHomeRow(
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
                                 if (currentContentFocusEnabled) {
+                                    traceHome {
+                                        "HOME_FOCUS_CARD row=${row.key} fromCard=$focusedIndex toCard=$index " +
+                                            "horizontal=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset} " +
+                                            "horizontalMoving=${rowState.isScrollInProgress}"
+                                    }
                                     focusedIndex = index
                                     TvHomeFocusMemory.activeRowKey = row.key
                                     TvHomeFocusMemory.focusedIndexByRow[row.key] = index

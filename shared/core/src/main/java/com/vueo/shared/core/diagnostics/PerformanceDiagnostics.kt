@@ -49,6 +49,9 @@ object PerformanceDiagnostics {
     private const val SYSTEM_SAMPLE_MS = 1_500L
     private const val PSS_SAMPLE_MS = 5_000L
     private const val JANK_THRESHOLD_MS = 48L
+    // Choreographer callback intervals are a frame-pacing proxy, NOT GPU render time.
+    private const val FRAME_WINDOW_MS = 1_500L
+    private const val FRAME_SAMPLES_PER_WINDOW = 240
 
     enum class Tab(val label: String) {
         HOME("Home"),
@@ -82,6 +85,10 @@ object PerformanceDiagnostics {
         val lastTimestampMs: Long?,
         val jankEvents: Int,
         val worstFrameGapMs: Long,
+        val frameWindows: Int,
+        val worstP95CallbackMs: Double,
+        val homeScrollCommands: Int,
+        val routeLayerEvents: Int,
         val stallEvents: Int,
         val worstStallMs: Long,
         val scanStarts: Int,
@@ -127,6 +134,51 @@ object PerformanceDiagnostics {
     @Volatile
     private var lastFrameNs: Long = 0L
 
+    // UI-thread only. Reuse the array, with one compact log line per time window.
+    private val frameGapTenths = IntArray(FRAME_SAMPLES_PER_WINDOW)
+    private var frameGapCount = 0
+    private var frameGapOver17 = 0
+    private var frameGapOver34 = 0
+    private var frameGapOver48 = 0
+    private var frameMaxTenths = 0
+    private var frameWindowStartNs = 0L
+    private var frameWindowScreen = "UNKNOWN"
+
+    private fun resetFrameWindow() {
+        frameGapCount = 0
+        frameGapOver17 = 0
+        frameGapOver34 = 0
+        frameGapOver48 = 0
+        frameMaxTenths = 0
+        frameWindowStartNs = 0L
+        frameWindowScreen = "UNKNOWN"
+    }
+
+    private fun flushFrameWindow(endNs: Long) {
+        val count = frameGapCount
+        val start = frameWindowStartNs
+        if (count == 0 || start == 0L) {
+            resetFrameWindow()
+            return
+        }
+        val ordered = frameGapTenths.copyOf(count).also { it.sort() }
+        fun percentile(p: Int): String {
+            val index = ((count - 1) * p + 99) / 100
+            return String.format(Locale.US, "%.1f", ordered[index] / 10.0)
+        }
+        val elapsed = ((endNs - start) / 1_000_000L).coerceAtLeast(1L)
+        val cadence = String.format(Locale.US, "%.1f", count * 1_000.0 / elapsed)
+        appendEvent(
+            currentPage.get(),
+            "FRAME_WINDOW callbacks=$count elapsed=${elapsed}ms callbackHz=$cadence " +
+                "p50=${percentile(50)}ms p95=${percentile(95)}ms p99=${percentile(99)}ms " +
+                "over17=$frameGapOver17 over34=$frameGapOver34 over48=$frameGapOver48 " +
+                "max=${String.format(Locale.US, "%.1f", frameMaxTenths / 10.0)}ms " +
+                "startScreen=${safe(frameWindowScreen, 80)} endScreen=${safe(currentScreen.get(), 80)}",
+        )
+        resetFrameWindow()
+    }
+
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!recording.get()) {
@@ -136,12 +188,30 @@ object PerformanceDiagnostics {
             val previous = lastFrameNs
             lastFrameNs = frameTimeNanos
             if (previous > 0L) {
+                if (frameWindowStartNs == 0L) {
+                    frameWindowStartNs = previous
+                    frameWindowScreen = currentScreen.get()
+                }
+                val gapTenths = ((frameTimeNanos - previous) / 100_000L)
+                    .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+                if (frameGapCount < FRAME_SAMPLES_PER_WINDOW) {
+                    frameGapTenths[frameGapCount++] = gapTenths
+                }
+                if (gapTenths >= 170) frameGapOver17++
+                if (gapTenths >= 340) frameGapOver34++
+                if (gapTenths >= 480) frameGapOver48++
+                if (gapTenths > frameMaxTenths) frameMaxTenths = gapTenths
                 val gapMs = (frameTimeNanos - previous) / 1_000_000L
                 if (gapMs >= JANK_THRESHOLD_MS) {
                     appendEvent(
                         category = currentPage.get(),
                         message = "FRAME_JANK gap=${gapMs}ms screen=${safe(currentScreen.get(), 100)}",
                     )
+                }
+                if ((frameTimeNanos - frameWindowStartNs) / 1_000_000L >= FRAME_WINDOW_MS ||
+                    frameGapCount == FRAME_SAMPLES_PER_WINDOW
+                ) {
+                    flushFrameWindow(frameTimeNanos)
                 }
             }
             Choreographer.getInstance().postFrameCallback(this)
@@ -192,6 +262,7 @@ object PerformanceDiagnostics {
         mainHandler.post {
             if (recording.get()) {
                 lastFrameNs = 0L
+                resetFrameWindow()
                 Choreographer.getInstance().removeFrameCallback(frameCallback)
                 Choreographer.getInstance().postFrameCallback(frameCallback)
             }
@@ -210,6 +281,7 @@ object PerformanceDiagnostics {
         mainHandler.post {
             Choreographer.getInstance().removeFrameCallback(frameCallback)
             lastFrameNs = 0L
+            resetFrameWindow()
         }
     }
 
@@ -409,6 +481,15 @@ object PerformanceDiagnostics {
             append("Jank: ${stats.jankEvents}")
             if (stats.jankEvents > 0) append(" • Worst frame: ${stats.worstFrameGapMs}ms")
             appendLine()
+            append("Frame callback windows: ${stats.frameWindows}")
+            if (stats.frameWindows > 0) {
+                append(" • Highest window P95 gap: " +
+                    String.format(Locale.US, "%.1fms", stats.worstP95CallbackMs))
+            }
+            appendLine(" (callback cadence, not rendered FPS)")
+            append("Home scroll commands: ${stats.homeScrollCommands}")
+            append(" • Navigation/layer events: ${stats.routeLayerEvents}")
+            appendLine()
             append("UI stalls: ${stats.stallEvents}")
             if (stats.stallEvents > 0) append(" • Worst stall: ${stats.worstStallMs}ms")
             appendLine()
@@ -461,6 +542,10 @@ object PerformanceDiagnostics {
         var lastTimestampMs: Long? = null
         var jankEvents = 0
         var worstFrameGapMs = 0L
+        var frameWindows = 0
+        var worstP95CallbackMs = 0.0
+        var homeScrollCommands = 0
+        var routeLayerEvents = 0
         var stallEvents = 0
         var worstStallMs = 0L
         var scanStarts = 0
@@ -482,6 +567,15 @@ object PerformanceDiagnostics {
                 jankEvents++
                 worstFrameGapMs = maxOf(worstFrameGapMs, extractMs(event.line, "gap"))
             }
+            if (upper.startsWith("FRAME_WINDOW ")) {
+                frameWindows++
+                val p95 = payload.substringAfter("p95=", "").substringBefore("ms")
+                    .toDoubleOrNull() ?: 0.0
+                worstP95CallbackMs = maxOf(worstP95CallbackMs, p95)
+            }
+            if (upper.startsWith("HOME_SCROLL_COMMAND ")) homeScrollCommands++
+            if (upper.startsWith("NAV_ROUTE_") || upper.startsWith("NAV_ROOT_NODE_") ||
+                upper.startsWith("NAV_DETAIL_LAYER_")) routeLayerEvents++
             if (upper.startsWith("UI_STALL ") || upper.startsWith("UI_STALL_LIVE ")) {
                 stallEvents++
                 worstStallMs = maxOf(worstStallMs, extractMs(event.line, "delay"))
@@ -508,6 +602,10 @@ object PerformanceDiagnostics {
             lastTimestampMs = lastTimestampMs,
             jankEvents = jankEvents,
             worstFrameGapMs = worstFrameGapMs,
+            frameWindows = frameWindows,
+            worstP95CallbackMs = worstP95CallbackMs,
+            homeScrollCommands = homeScrollCommands,
+            routeLayerEvents = routeLayerEvents,
             stallEvents = stallEvents,
             worstStallMs = worstStallMs,
             scanStarts = scanStarts,
@@ -737,6 +835,10 @@ object PerformanceDiagnostics {
             appendLine("System sample interval: ${SYSTEM_SAMPLE_MS}ms")
             appendLine("PSS probe interval: ${PSS_SAMPLE_MS}ms")
             appendLine("Jank threshold: ${JANK_THRESHOLD_MS}ms")
+            appendLine("Frame window: ${FRAME_WINDOW_MS}ms, bounded ${FRAME_SAMPLES_PER_WINDOW} callback intervals")
+            appendLine("FRAME_WINDOW callbackHz = Choreographer callback cadence, NOT true rendered FPS")
+            appendLine("FRAME_WINDOW p50/p95/p99 are callback-gap percentiles, NOT GPU frame time")
+            appendLine("Focus/scroll tracing: TV Home only, sampled and opt-in")
             appendLine("Runtime disk writes while recording: none")
         }
     }

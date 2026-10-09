@@ -29,7 +29,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -1065,6 +1067,21 @@ fun VueoTvApp(
     val retainedDetailActive = retainedDetailParentRoute != null
     val displayedRootRoute = retainedDetailParentRoute ?: route
 
+    // Read-only route/layer instrumentation; do not change targetState or animations.
+    LaunchedEffect(route, displayedRootRoute, retainedDetailActive, detailReturnedFromSource) {
+        if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "NAV_ROUTE_STATE route=${route.name} root=${displayedRootRoute.name} " +
+                "retainedDetail=$retainedDetailActive sourceReturn=$detailReturnedFromSource " +
+                "detailParent=${detailReturnRoute.name}"
+        )
+        withFrameNanos { }
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "NAV_ROUTE_NEXT_FRAME route=${route.name} root=${displayedRootRoute.name} " +
+                "retainedDetail=$retainedDetailActive"
+        )
+    }
+
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = TvDesign.White,
@@ -1121,6 +1138,16 @@ fun VueoTvApp(
                 },
                 label = "vueoRootRoute",
             ) { displayedRoute ->
+                DisposableEffect(displayedRoute) {
+                    PerformanceDiagnostics.captureRuntimeEvent(
+                        "NAV_ROOT_NODE_ATTACH node=${displayedRoute.name} logicalRoute=${route.name}"
+                    )
+                    onDispose {
+                        PerformanceDiagnostics.captureRuntimeEvent(
+                            "NAV_ROOT_NODE_DETACH node=${displayedRoute.name}"
+                        )
+                    }
+                }
                 when (displayedRoute) {
                 TvRoute.STARTUP -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1556,6 +1583,21 @@ private fun RetainedDetailLayer(
     )
 
     LaunchedEffect(mediaKey, parentRoute) { entered = true }
+
+    LaunchedEffect(mediaKey, parentRoute) {
+        if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
+        var lastLoggedAt = 0L
+        snapshotFlow { alpha }.collect { visibleAlpha ->
+            val now = android.os.SystemClock.uptimeMillis()
+            if (visibleAlpha >= 0.999f || lastLoggedAt == 0L || now - lastLoggedAt >= 55L) {
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "NAV_DETAIL_LAYER_ALPHA parent=${parentRoute.name} alpha=" +
+                        String.format(java.util.Locale.US, "%.3f", visibleAlpha)
+                )
+                lastLoggedAt = now
+            }
+        }
+    }
 
     Box(
         modifier = Modifier

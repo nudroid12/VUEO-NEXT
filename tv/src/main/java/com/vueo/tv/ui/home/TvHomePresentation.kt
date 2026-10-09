@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,7 +31,9 @@ import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.tv.core.TvTitleArtwork
 
 @Composable
@@ -74,6 +77,30 @@ internal fun TvHomePresentation(
         animationSpec = tween(durationMillis = 340, easing = menuContentEasing),
         label = "homeRowsViewportFraction",
     )
+
+    // Topbar's 340ms viewport resize is intentional. Only record its motion,
+    // making it distinguishable from a real LazyRow/LazyColumn scroll.
+    LaunchedEffect(floatingPillMode, navigationVisible, hideClassicSidebar) {
+        if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "HOME_VIEWPORT_TARGET topbar=$floatingPillMode navigation=$navigationVisible " +
+                "hideSidebar=$hideClassicSidebar target=$targetRowsViewportFraction duration=340ms"
+        )
+        var lastLoggedAt = 0L
+        snapshotFlow { rowsViewportFraction }.collect { fraction ->
+            val now = SystemClock.uptimeMillis()
+            if (lastLoggedAt == 0L || now - lastLoggedAt >= 85L ||
+                kotlin.math.abs(fraction - targetRowsViewportFraction) <= 0.001f
+            ) {
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "HOME_VIEWPORT_PROGRESS fraction=" +
+                        String.format(java.util.Locale.US, "%.4f", fraction) +
+                        " target=" + String.format(java.util.Locale.US, "%.4f", targetRowsViewportFraction)
+                )
+                lastLoggedAt = now
+            }
+        }
+    }
 
     LaunchedEffect(rows) {
         val currentKey = focusedEntry?.key
