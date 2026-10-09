@@ -1,10 +1,19 @@
 package com.vueo.tv.profile
 
 import androidx.activity.compose.BackHandler
+import android.view.KeyEvent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +32,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +42,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,7 +60,8 @@ import com.vueo.shared.core.profile.ProfileAvatarCatalog
 import com.vueo.shared.core.storage.VueoProfile
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
-import com.vueo.tv.ui.tvPremiumFocus
+import com.vueo.tv.ui.motion.TvMotion
+import kotlinx.coroutines.launch
 
 /** TV presentation of Mobile's local-first Your DNA experience. */
 @Composable
@@ -57,9 +74,13 @@ fun TvUserDnaScreen(
     val profile = remember(dataVersion) { runtime.profileStore.activeProfile() }
     val snapshot = remember(profile.id, dataVersion) { runtime.dnaEngine.build() }
     val switchRequester = remember { FocusRequester() }
+    val scrollState = rememberScrollState()
+    val scrollScope = rememberCoroutineScope()
+    val scrollStep = with(LocalDensity.current) { 64.dp.toPx() }
 
     BackHandler(onBack = onBack)
     LaunchedEffect(profile.id) {
+        withFrameNanos { }
         runCatching { switchRequester.requestFocus() }
     }
 
@@ -67,7 +88,21 @@ fun TvUserDnaScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TvDesign.Black)
-            .padding(horizontal = 56.dp, vertical = 34.dp),
+            .padding(horizontal = 56.dp, vertical = 34.dp)
+            .onPreviewKeyEvent { event ->
+                val direction = when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> 1
+                    KeyEvent.KEYCODE_DPAD_UP -> -1
+                    else -> 0
+                }
+                if (direction == 0) false else {
+                    if (event.type == KeyEventType.KeyDown) {
+                        scrollScope.launch { scrollState.scrollBy(direction * scrollStep) }
+                    }
+                    true
+                }
+            }
+            .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -92,11 +127,11 @@ fun TvUserDnaScreen(
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             DnaAffinityCard(
-                modifier = Modifier.weight(1.05f).fillMaxSize(),
+                modifier = Modifier.weight(1.05f).fillMaxHeight(),
                 title = "Top Genres",
                 subtitle = "What your recent watching and My List say about your taste.",
                 affinities = snapshot.topGenres.take(5),
@@ -108,15 +143,15 @@ fun TvUserDnaScreen(
             )
 
             Column(
-                modifier = Modifier.weight(.95f).fillMaxSize(),
+                modifier = Modifier.weight(.95f),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 DnaTasteCard(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     snapshot = snapshot,
                 )
                 DnaViewingCard(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     snapshot = snapshot,
                 )
             }
@@ -214,12 +249,25 @@ private fun DnaProfileCard(
         }
 
         var focused by remember { mutableStateOf(false) }
+        val focusScale by animateFloatAsState(
+            targetValue = if (focused) 1.02f else 1f,
+            animationSpec = tween(
+                durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+                easing = TvMotion.EaseOut,
+            ),
+            label = "DNA switch profile focus",
+        )
         Box(
             modifier = Modifier
                 .focusRequester(switchRequester)
                 .onFocusChanged { focused = it.isFocused }
-                .tvPremiumFocus(scale = 1.02f)
+                .graphicsLayer { scaleX = focusScale; scaleY = focusScale }
                 .clip(RoundedCornerShape(12.dp))
+                .border(
+                    if (focused) 2.dp else 0.dp,
+                    if (focused) TvDesign.Focus.copy(alpha = .92f) else Color.Transparent,
+                    RoundedCornerShape(12.dp),
+                )
                 .background(if (focused) TvDesign.White else TvDesign.White.copy(alpha = .10f))
                 .clickable(onClick = onSwitchProfiles)
                 .padding(horizontal = 18.dp, vertical = 11.dp),

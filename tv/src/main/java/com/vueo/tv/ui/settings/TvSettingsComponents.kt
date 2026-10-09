@@ -528,8 +528,8 @@ internal fun TvSettingsProfilePanel(
     profileName: String,
     profileSubtitle: String,
     avatarDrawableRes: Int?,
-    myListCount: Int,
-    watchedCount: Int,
+    myListCount: Int?,
+    watchedCount: Int?,
     dnaValue: String,
     tastePreview: String,
     onOpenDna: () -> Unit,
@@ -662,8 +662,8 @@ internal fun TvSettingsProfilePanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TvProfileStat(Modifier.weight(1f), "My List", myListCount.toString())
-                TvProfileStat(Modifier.weight(1f), "Watched", watchedCount.toString())
+                TvProfileStat(Modifier.weight(1f), "My List", myListCount?.toString() ?: "—")
+                TvProfileStat(Modifier.weight(1f), "Watched", watchedCount?.toString() ?: "—")
                 TvProfileStat(Modifier.weight(1f), "DNA", dnaValue)
             }
 

@@ -54,7 +54,6 @@ import java.util.Locale
 
 internal enum class TvSettingsPage {
     PROFILE,
-    PROFILE_CHOOSER,
     PERSONALIZATION,
     CONTENT_MANAGER,
     CONTENT_ADDONS,
@@ -95,7 +94,6 @@ private val TvSettingsRootDestinations = listOf(
 )
 
 private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
-    TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
@@ -106,7 +104,6 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
 }
 
 private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
-    TvSettingsPage.PROFILE_CHOOSER,
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
@@ -122,6 +119,8 @@ fun TvSettingsScreen(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
+    onManageProfiles: () -> Unit,
+    dataVersion: Int,
     onDataChanged: () -> Unit = {},
     onResetComplete: () -> Unit = {},
 ) {
@@ -139,7 +138,6 @@ fun TvSettingsScreen(
 
     fun backPanel() {
         page = when (page) {
-            TvSettingsPage.PROFILE_CHOOSER -> TvSettingsPage.PROFILE
             TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvSettingsPage.CONTENT_PROVIDERS
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
@@ -171,15 +169,8 @@ fun TvSettingsScreen(
             TvSettingsPage.PROFILE -> TvProfileSettings(
                 runtime = runtime,
                 onOpenDna = onProfile,
-                onOpenProfiles = { openPanel(TvSettingsPage.PROFILE_CHOOSER) },
-            )
-            TvSettingsPage.PROFILE_CHOOSER -> TvProfileChooserSettings(
-                runtime = runtime,
-                onNavigate = onNavigate,
-                onProfile = onProfile,
-                onDataChanged = onDataChanged,
-                onProfileSelected = { openPanel(TvSettingsPage.PROFILE) },
-                onBack = ::backPanel,
+                onOpenProfiles = onManageProfiles,
+                dataVersion = dataVersion,
             )
             TvSettingsPage.PERSONALIZATION -> TvPersonalizationSettings(
                 runtime, onNavigate, onProfile, onBack

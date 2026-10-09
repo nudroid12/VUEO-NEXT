@@ -53,27 +53,35 @@ import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.WeakHashMap
 
 private data class TvProfilePanelStats(
     val dna: UserDnaSnapshot?,
     val myListCount: Int,
     val watchedTitlesCount: Int,
+    val dataVersion: Int,
 )
+
+// Accessed on Main only. Weak runtime ownership avoids retaining an old app
+// session; each runtime retains at most eight profile/toggle snapshots.
+private val profilePanelCache = WeakHashMap<TvRuntime, LinkedHashMap<Pair<String, Boolean>, TvProfilePanelStats>>()
 
 @Composable
 internal fun TvProfileSettings(
     runtime: TvRuntime,
     onOpenDna: () -> Unit,
     onOpenProfiles: () -> Unit,
+    dataVersion: Int,
 ) {
     val profile = runtime.profileStore.activeProfile()
     val dnaEnabled = runtime.dnaPreferences.userDnaEnabled(profile.id)
-    var profileStats by remember(profile.id, dnaEnabled) {
-        mutableStateOf<TvProfilePanelStats?>(null)
+    val cacheKey = profile.id to dnaEnabled
+    var profileStats by remember(runtime, profile.id, dnaEnabled, dataVersion) {
+        mutableStateOf(profilePanelCache[runtime]?.get(cacheKey)?.takeIf { it.dataVersion == dataVersion })
     }
 
-    LaunchedEffect(profile.id, dnaEnabled) {
-        profileStats = withContext(Dispatchers.IO) {
+    LaunchedEffect(runtime, profile.id, dnaEnabled, dataVersion) {
+        val resolved = withContext(Dispatchers.IO) {
             val watchlist = runtime.libraryStore.watchlist()
             val history = runtime.libraryStore.history()
             TvProfilePanelStats(
@@ -85,6 +93,7 @@ internal fun TvProfileSettings(
                 } else {
                     null
                 },
+                dataVersion = dataVersion,
                 myListCount = watchlist.size,
                 watchedTitlesCount = history
                     .asSequence()
@@ -94,12 +103,18 @@ internal fun TvProfileSettings(
                     .count(),
             )
         }
+        if (runtime.profileStore.activeProfileId() != profile.id) return@LaunchedEffect
+        val cache = profilePanelCache.getOrPut(runtime) { LinkedHashMap() }
+        cache.remove(cacheKey)
+        cache[cacheKey] = resolved
+        while (cache.size > 8) cache.remove(cache.keys.first())
+        profileStats = resolved
     }
 
     val dnaSnapshot = profileStats?.dna
-    val myListCount = profileStats?.myListCount ?: 0
-    val watchedTitlesCount = profileStats?.watchedTitlesCount ?: 0
-    val viewingClass = tvViewingClass(watchedTitlesCount)
+    val myListCount = profileStats?.myListCount
+    val watchedTitlesCount = profileStats?.watchedTitlesCount
+    val viewingClass = watchedTitlesCount?.let(::tvViewingClass)
     val dnaClass = when {
         !dnaEnabled -> "DNA Off"
         dnaSnapshot == null -> "Finding Your Taste"
@@ -111,17 +126,24 @@ internal fun TvProfileSettings(
         ?.joinToString(" • ") { "${it.name} ${it.percent}%" }
         .orEmpty()
         .ifBlank {
-            if (dnaEnabled) "Keep watching to shape your DNA class."
-            else "Enable User DNA in Personalization."
+            when {
+                !dnaEnabled -> "Enable User DNA in Personalization."
+                profileStats == null -> "Loading local taste…"
+                else -> "Keep watching to shape your DNA class."
+            }
         }
 
     TvSettingsProfilePanel(
         profileName = profile.name,
-        profileSubtitle = "$viewingClass • $dnaClass",
+        profileSubtitle = viewingClass?.let { "$it • $dnaClass" } ?: "Loading profile…",
         avatarDrawableRes = ProfileAvatarCatalog.drawableRes(profile.avatar),
         myListCount = myListCount,
         watchedCount = watchedTitlesCount,
-        dnaValue = dnaSnapshot?.let { "${it.confidencePercent}%" } ?: "Off",
+        dnaValue = when {
+            !dnaEnabled -> "Off"
+            dnaSnapshot != null -> "${dnaSnapshot.confidencePercent}%"
+            else -> "—"
+        },
         tastePreview = tastePreview,
         onOpenDna = onOpenDna,
         onSwitchProfiles = onOpenProfiles,
@@ -176,104 +198,3 @@ internal fun tvDnaClass(snapshot: UserDnaSnapshot): String {
         else -> "The Story Hunter"
     }
 }
-
-@Composable
-internal fun TvProfileChooserSettings(
-    runtime: TvRuntime,
-    onNavigate: (String) -> Unit,
-    onProfile: () -> Unit,
-    onDataChanged: () -> Unit,
-    onProfileSelected: () -> Unit,
-    onBack: () -> Unit,
-) {
-    var revision by remember { mutableIntStateOf(0) }
-    val profiles = remember(revision) { runtime.profileStore.profiles() }
-    val activeProfileId = remember(revision) { runtime.profileStore.activeProfileId() }
-    var askStartup by remember { mutableStateOf(runtime.profileStore.askWhoIsWatchingOnStartup()) }
-    var lockedProfileId by remember { mutableStateOf<String?>(null) }
-    var pinError by remember { mutableStateOf<String?>(null) }
-    var pinResetToken by remember { mutableIntStateOf(0) }
-
-    val lockedProfile = lockedProfileId?.let { id -> profiles.firstOrNull { it.id == id } }
-    if (lockedProfile != null) {
-        androidx.compose.runtime.key(lockedProfile.id, pinResetToken) {
-            com.vueo.tv.profile.TvPinEntryOverlay(
-                title = "Unlock ${lockedProfile.name}",
-                subtitle = "Enter the 4-digit profile PIN",
-                errorText = pinError,
-                onComplete = { pin ->
-                    if (runtime.profileStore.verifyProfilePin(lockedProfile.id, pin)) {
-                        pinError = null
-                        lockedProfileId = null
-                        if (runtime.profileStore.setActiveProfile(lockedProfile.id)) {
-                            revision += 1
-                            onDataChanged()
-                            onProfileSelected()
-                        }
-                    } else {
-                        pinError = "Incorrect PIN"
-                        pinResetToken += 1
-                    }
-                },
-                onCancel = {
-                    pinError = null
-                    lockedProfileId = null
-                },
-            )
-        }
-    }
-
-    val entries = buildList {
-        add(
-            toggleEntry(
-                id = "startup-picker",
-                title = "Ask who’s watching on startup",
-                subtitle = "Show profile selection before Home opens.",
-                checked = askStartup,
-            ) {
-                askStartup = it
-                runtime.profileStore.setAskWhoIsWatchingOnStartup(it)
-            }.copy(section = "PROFILE STARTUP", icon = Icons.Default.AccountCircle)
-        )
-        profiles.forEach { profile ->
-            val active = profile.id == activeProfileId
-            val locked = runtime.profileStore.hasProfilePin(profile.id)
-            add(
-                TvSettingsEntry(
-                    id = "profile-${profile.id}",
-                    title = profile.name,
-                    subtitle = buildString {
-                        append(if (profile.isKids) "Kids profile" else "Standard profile")
-                        if (locked) append(" • PIN protected")
-                    },
-                    value = if (active) "Active" else "Switch",
-                    onActivate = {
-                        if (active) {
-                            onProfileSelected()
-                        } else if (locked) {
-                            pinError = null
-                            lockedProfileId = profile.id
-                        } else if (runtime.profileStore.setActiveProfile(profile.id)) {
-                            revision += 1
-                            onDataChanged()
-                            onProfileSelected()
-                        }
-                    },
-                    section = "PROFILES",
-                    icon = Icons.Default.AccountCircle,
-                )
-            )
-        }
-    }
-
-    TvSettingsListScreen(
-        title = "Profiles",
-        subtitle = "Switch the active profile without leaving Settings.",
-        entries = entries,
-        onNavigate = onNavigate,
-        onProfile = onProfile,
-        onBack = onBack,
-        topLabel = "Profile",
-    )
-}
-

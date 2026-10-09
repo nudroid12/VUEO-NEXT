@@ -106,11 +106,14 @@ fun TvProfilePickerScreen(
     onProfileSelected: (String) -> Unit,
     onBack: () -> Unit,
     onProfilesChanged: () -> Unit = {},
+    startInManage: Boolean = false,
 ) {
     var revision by remember { mutableIntStateOf(0) }
     val profiles = remember(revision) { profileStore.profiles() }
     val activeProfileId = remember(revision) { profileStore.activeProfileId() }
-    var mode by remember { mutableStateOf(ProfilePickerMode.WATCHING) }
+    var mode by remember(startInManage) {
+        mutableStateOf(if (startInManage) ProfilePickerMode.MANAGE else ProfilePickerMode.WATCHING)
+    }
     var editor by remember { mutableStateOf<TvProfileEditorState?>(null) }
     var lockedProfile by remember { mutableStateOf<VueoProfile?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
@@ -120,7 +123,7 @@ fun TvProfilePickerScreen(
     BackHandler {
         when {
             editor != null -> editor = null
-            mode == ProfilePickerMode.MANAGE -> mode = ProfilePickerMode.WATCHING
+            mode == ProfilePickerMode.MANAGE && !startInManage -> mode = ProfilePickerMode.WATCHING
             else -> onBack()
         }
     }
@@ -190,7 +193,7 @@ fun TvProfilePickerScreen(
                             onEdit = { editor = TvProfileEditorState(it) },
                             onAdd = { editor = TvProfileEditorState(null) },
                             onChanged = ::refreshProfiles,
-                            onDone = { mode = ProfilePickerMode.WATCHING },
+                            onDone = { if (startInManage) onBack() else mode = ProfilePickerMode.WATCHING },
                         )
                 }
             }
