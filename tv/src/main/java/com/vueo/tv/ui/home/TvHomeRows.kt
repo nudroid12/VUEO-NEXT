@@ -104,6 +104,17 @@ private data class HomeVerticalFocusTarget(
     val fastLanding: Boolean = false,
     val menuReturn: Boolean = false,
     val initialReset: Boolean = false,
+    val routeReturn: Boolean = false,
+    val restorePosition: TvHomeHorizontalPosition? = null,
+)
+
+private data class HomeRouteFocusAnchor(
+    val rowKey: String,
+    val cardKey: String,
+    val cardIndex: Int,
+    val horizontal: TvHomeHorizontalPosition,
+    val verticalIndex: Int,
+    val verticalOffset: Int,
 )
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -115,6 +126,9 @@ internal fun TvModernHomeRows(
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
     contentReturnToken: Int,
+    active: Boolean,
+    routeReturnPending: Boolean,
+    onRouteFocusRestored: () -> Unit,
     navigationVisible: Boolean,
     navigationOwnsFocus: Boolean,
     onContentFocused: () -> Unit,
@@ -160,6 +174,31 @@ internal fun TvModernHomeRows(
         ?: rows.firstOrNull()?.key
     var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
     var previewReturnCardIndex by remember { mutableIntStateOf(0) }
+    var routeFocusAnchor by remember { mutableStateOf<HomeRouteFocusAnchor?>(null) }
+
+    LaunchedEffect(active, routeReturnPending) {
+        if (!active || !routeReturnPending) return@LaunchedEffect
+        val anchor = routeFocusAnchor ?: return@LaunchedEffect
+        val row = currentRows.firstOrNull { it.key == anchor.rowKey && it.entries.isNotEmpty() }
+            ?: run {
+                onRouteFocusRestored()
+                return@LaunchedEffect
+            }
+        val cardIndex = row.entries.indexOfFirst { it.key == anchor.cardKey }
+            .takeIf { it >= 0 } ?: anchor.cardIndex.coerceIn(0, row.entries.lastIndex)
+        verticalFocusJob[0]?.cancel()
+        if (verticalState.firstVisibleItemIndex != anchor.verticalIndex ||
+            verticalState.firstVisibleItemScrollOffset != anchor.verticalOffset
+        ) {
+            verticalState.scrollToItem(anchor.verticalIndex, anchor.verticalOffset)
+        }
+        verticalFocusToken += 1
+        verticalFocusTarget = HomeVerticalFocusTarget(
+            rowKey = row.key, cardIndex = cardIndex, token = verticalFocusToken,
+            routeReturn = true, restorePosition = anchor.horizontal,
+        )
+        traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=true" }
+    }
 
     val density = LocalDensity.current
     val verticalBringIntoViewSpec = remember {
@@ -347,7 +386,7 @@ internal fun TvModernHomeRows(
     // saved row/card rather than resetting to row 1 when returning from Details.
     LaunchedEffect(focusResetToken, rows.isNotEmpty(), navigationVisible) {
         if (focusResetToken <= 0 || appliedFocusResetToken == focusResetToken ||
-            rows.isEmpty() || navigationVisible
+            rows.isEmpty() || navigationVisible || routeReturnPending
         ) return@LaunchedEffect
         appliedFocusResetToken = focusResetToken
         val savedRowKey = TvHomeFocusMemory.activeRowKey
@@ -511,6 +550,8 @@ internal fun TvModernHomeRows(
                     // Do not invalidate the focused card during panel enter.
                     // Once the nav item actually owns focus, allow only an
                     // explicit menu-return target back into the catalog.
+                    active = active,
+                    routeReturnPending = routeReturnPending,
                     contentFocusEnabled = !navigationOwnsFocus ||
                         (verticalFocusTarget?.menuReturn == true && verticalFocusTarget?.rowKey == row.key),
                     verticalFocusTarget = verticalFocusTarget?.takeIf { it.rowKey == row.key },
@@ -526,6 +567,11 @@ internal fun TvModernHomeRows(
                                     "HOME_FOCUS_RESTORED row=${target.rowKey} card=${target.cardIndex} success=$focused",
                                 )
                             }
+                            if (target.routeReturn) {
+                                routeFocusAnchor = null
+                                onRouteFocusRestored()
+                                traceHome { "HOME_ROUTE_FOCUS_RESULT success=$focused row=${target.rowKey} card=${target.cardIndex}" }
+                            }
                             if (target.menuReturn && focused) onContentFocused()
                             if (target.fastLanding) fastVerticalScrolling = false
                             pendingVerticalRowIndex = -1
@@ -539,7 +585,15 @@ internal fun TvModernHomeRows(
                         // card focus must not start another row alignment job.
                         onFocused(focusedRow, index, entry)
                     },
-                    onOpen = onOpen,
+                    onOpen = { entry ->
+                        val cardIndex = row.entries.indexOfFirst { it.key == entry.key }.coerceAtLeast(0)
+                        routeFocusAnchor = HomeRouteFocusAnchor(
+                            row.key, entry.key, cardIndex,
+                            TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
+                            verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
+                        )
+                        onOpen(entry)
+                    },
                     onPosterLongClick = onPosterLongClick,
                 )
             }
@@ -555,6 +609,8 @@ private fun TvModernHomeRow(
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
     contentFocusEnabled: Boolean,
+    active: Boolean,
+    routeReturnPending: Boolean,
     verticalFocusTarget: HomeVerticalFocusTarget?,
     onFocusTargetConsumed: (Int, Boolean) -> Unit,
     onContentFocused: () -> Unit,
@@ -576,6 +632,9 @@ private fun TvModernHomeRow(
     }
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
     val currentContentFocusEnabled by rememberUpdatedState(contentFocusEnabled)
+    val currentActive by rememberUpdatedState(active)
+    val currentRouteReturnPending by rememberUpdatedState(routeReturnPending)
+    val suppressRouteBringIntoView by rememberUpdatedState(!active || routeReturnPending)
     val density = LocalDensity.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
@@ -601,6 +660,9 @@ private fun TvModernHomeRow(
                 size: Float,
                 containerSize: Float,
             ): Float {
+                // Covered-route handoff preserves the captured viewport. Ordinary
+                // Left/Right and Up/Down still use Nuvio's existing alignment.
+                if (suppressRouteBringIntoView) return 0f
                 // Nuvio's LTR leading-edge alignment. The focused poster
                 // scrolls to the left anchor even when already fully visible.
                 // Account for cards wider than the available viewport.
@@ -643,9 +705,9 @@ private fun TvModernHomeRow(
         }
     }
 
-    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled) {
+    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
-        if (!contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
+        if (!active || !contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
         val targetIndex = target.cardIndex.coerceIn(0, row.entries.lastIndex)
 
         // Nuvio uses pendingRowFocus -> scrollToItem(index) before focus.
@@ -657,25 +719,32 @@ private fun TvModernHomeRow(
             withFrameNanos { }
         }
         if (!currentContentFocusEnabled) return@LaunchedEffect
-        val alreadyAnchored = rowState.firstVisibleItemIndex == targetIndex &&
-            rowState.firstVisibleItemScrollOffset == 0
-        if (!alreadyAnchored && !rowState.isScrollInProgress) {
+        val restoreIndex = target.restorePosition?.firstVisibleItemIndex
+            ?.coerceIn(0, row.entries.lastIndex) ?: targetIndex
+        val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
+        val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
+            rowState.firstVisibleItemScrollOffset == restoreOffset
+        if (!alreadyAnchored && (target.routeReturn || !rowState.isScrollInProgress)) {
             traceHome {
                 "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
             }
-            rowState.scrollToItem(targetIndex, 0)
+            rowState.scrollToItem(restoreIndex, restoreOffset)
             withFrameNanos { }
         }
 
-        repeat(6) {
-            if (!currentContentFocusEnabled) return@LaunchedEffect
+        repeat(if (target.routeReturn) 12 else 6) {
+            if (!currentActive || !currentContentFocusEnabled) return@LaunchedEffect
             val requester = itemFocusRequesters[targetIndex]
             val focused = requester?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
             if (focused) {
                 traceHome {
                     "HOME_FOCUS_RESULT row=${row.key} card=$targetIndex " +
                         "horizontal=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
+                }
+                if (target.routeReturn) {
+                    // Let focus-triggered bring-into-view settle while still suppressed.
+                    repeat(2) { withFrameNanos { } }
                 }
                 onFocusTargetConsumed(target.token, true)
                 return@LaunchedEffect
@@ -753,7 +822,12 @@ private fun TvModernHomeRow(
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                if (currentContentFocusEnabled) {
+                                val returningToThisCard = verticalFocusTarget?.let {
+                                    it.routeReturn && it.cardIndex == index
+                                } == true
+                                if (currentActive && currentContentFocusEnabled &&
+                                    (!currentRouteReturnPending || returningToThisCard)
+                                ) {
                                     traceHome {
                                         "HOME_FOCUS_CARD row=${row.key} fromCard=$focusedIndex toCard=$index " +
                                             "horizontal=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset} " +

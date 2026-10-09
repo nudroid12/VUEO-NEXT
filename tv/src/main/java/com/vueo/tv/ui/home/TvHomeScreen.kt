@@ -301,6 +301,7 @@ fun TvHomeScreen(
     // revoking it earlier makes Compose relocate focus inside the LazyRow.
     var navigationOwnsFocus by remember { mutableStateOf(false) }
     var contentReturnToken by remember { mutableIntStateOf(0) }
+    var routeReturnPending by remember { mutableStateOf(false) }
 
     fun focusSidebar() {
         if (!navExpanded) navigationOwnsFocus = false
@@ -311,27 +312,6 @@ fun TvHomeScreen(
 
     BackHandler(enabled = active) {
         if (navExpanded) onBack() else focusSidebar()
-    }
-
-    var previousActive by remember { mutableStateOf(active) }
-    LaunchedEffect(active) {
-        val returningFromCoveredRoute = active && !previousActive
-        previousActive = active
-        if (returningFromCoveredRoute) {
-            // The retained Home tree still owns its LazyColumn/LazyRow focus
-            // restorers. Re-enter that focus boundary rather than resetting the
-            // memory to row 1 / card 1. Retry briefly in case Details detaches
-            // one frame before the parent's focus nodes are eligible again.
-            var restored = false
-            for (attempt in 0 until 3) {
-                withFrameNanos { }
-                restored = runCatching { contentFocusRequester.requestFocus() }.getOrDefault(false)
-                if (restored) break
-            }
-            PerformanceDiagnostics.captureRuntimeEvent(
-                "HOME_FOCUS_READY restoreLast=true restored=$restored",
-            )
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -345,6 +325,9 @@ fun TvHomeScreen(
                 retainedState.loading = retainedState.catalogRows.isEmpty()
                 retryAttempt += 1
             },
+            active = active,
+            routeReturnPending = routeReturnPending,
+            onRouteFocusRestored = { routeReturnPending = false },
             navigationVisible = navExpanded,
             navigationOwnsFocus = navigationOwnsFocus,
             contentFocusRequester = contentFocusRequester,
@@ -355,7 +338,11 @@ fun TvHomeScreen(
                 navExpanded = false
             },
             onOpenNavigation = ::focusSidebar,
-            onOpen = { entry -> entry.open(onOpenMedia, onResume) },
+            onOpen = { entry ->
+                // Set before changing routes so transient focus cannot open navigation.
+                routeReturnPending = true
+                entry.open(onOpenMedia, onResume)
+            },
             onLongClick = { entry -> actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )
@@ -366,8 +353,10 @@ fun TvHomeScreen(
             navRequesters = navRequesters,
             profileRequester = profileRequester,
             onFocused = {
-                navigationOwnsFocus = true
-                navExpanded = true
+                if (active && !routeReturnPending) {
+                    navigationOwnsFocus = true
+                    navExpanded = true
+                }
             },
             onNavigate = onNavigate,
             onProfile = onProfile,
