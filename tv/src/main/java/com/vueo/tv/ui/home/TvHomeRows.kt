@@ -470,13 +470,15 @@ private fun TvModernHomeRow(
     // Reserve paint space for the 1.022x focus scale without moving the cards.
     val focusPaintInset = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
 
-    // Nuvio-style row behavior: focus and scroll position are independent.
-    // A fully visible poster is NEVER repositioned by Up/Down, Left/Right,
-    // focusRestorer, or Home return. Only an off-screen portion is revealed.
+    // Port of NuvioTV 0.8.3-beta ModernHomeRows focus alignment policy.
+    // Left/Right keeps the focused poster at the row start; Up/Down must
+    // restore the row position before asking Compose to focus that poster.
+    // This row already has external left padding, so the local anchor is 0
+    // (or focusPaintInset for scaled Continue Watching cards).
     val horizontalBringIntoViewSpec = remember(
         density, defaultBringIntoViewSpec, focusPaintInset,
     ) {
-        val focusInsetPx = with(density) { focusPaintInset.toPx() }
+        val anchorPx = with(density) { focusPaintInset.toPx() }
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         object : BringIntoViewSpec {
             override val scrollAnimationSpec: AnimationSpec<Float> =
@@ -487,17 +489,17 @@ private fun TvModernHomeRow(
                 size: Float,
                 containerSize: Float,
             ): Float {
-                val childStart = minOf(offset, offset + size)
-                val childEnd = maxOf(offset, offset + size)
-                val viewportStart = focusInsetPx
-                val viewportEnd = (containerSize - focusInsetPx).coerceAtLeast(viewportStart)
-                // Standard minimal-reveal policy instead of pinning focused
-                // cards to the start edge (the source of Card 3 -> Card 1 jumps).
-                return when {
-                    childStart < viewportStart -> childStart - viewportStart
-                    childEnd > viewportEnd -> childEnd - viewportEnd
-                    else -> 0f
+                // Nuvio's LTR leading-edge alignment. The focused poster
+                // scrolls to the left anchor even when already fully visible.
+                // Account for cards wider than the available viewport.
+                val childSize = kotlin.math.abs(size)
+                val available = containerSize - anchorPx
+                val target = if (childSize <= containerSize && available < childSize) {
+                    containerSize - childSize
+                } else {
+                    anchorPx
                 }
+                return offset - target
             }
         }
     }
@@ -534,23 +536,23 @@ private fun TvModernHomeRow(
         if (!contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
         val targetIndex = target.cardIndex.coerceIn(0, row.entries.lastIndex)
 
-        // Lazy items can be composed ahead of the visible viewport. Their
-        // FocusRequester exists but requesting it would scroll the row implicitly.
-        // Wait for layout before deciding whether an explicit reveal is needed.
+        // Nuvio uses pendingRowFocus -> scrollToItem(index) before focus.
+        // Snap only when necessary: if the row is already at Card 3, an
+        // Up/Down return changes focus but does not animate horizontal scroll.
+        // Do NOT change the policy for ordinary Left/Right navigation.
         for (attempt in 0 until 4) {
             if (rowState.layoutInfo.visibleItemsInfo.isNotEmpty()) break
             withFrameNanos { }
         }
         if (!currentContentFocusEnabled) return@LaunchedEffect
-        val visible = rowState.layoutInfo.visibleItemsInfo.any { it.index == targetIndex }
-        if (!visible) {
+        val alreadyAnchored = rowState.firstVisibleItemIndex == targetIndex &&
+            rowState.firstVisibleItemScrollOffset == 0
+        if (!alreadyAnchored && !rowState.isScrollInProgress) {
             traceHome {
-                "HOME_SCROLL_COMMAND axis=horizontal cause=target_outside_viewport row=${row.key} " +
+                "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
             }
-            // Only materialize when actually outside this row's viewport.
-            // No rail-spanning animation just to restore a focus target.
-            rowState.scrollToItem(targetIndex)
+            rowState.scrollToItem(targetIndex, 0)
             withFrameNanos { }
         }
 
@@ -617,18 +619,13 @@ private fun TvModernHomeRow(
                         }
                         .focusRequester(rowFocusRequester)
                         .focusRestorer {
-                            val preferredIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: focusedIndex)
+                            // Match Nuvio: restore the last focused card in this
+                            // row, not an arbitrary first visible item.
+                            val saved = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: focusedIndex)
                                 .coerceIn(0, row.entries.lastIndex)
-                            val preferredVisible = rowState.layoutInfo.visibleItemsInfo.any {
-                                it.index == preferredIndex &&
-                                    it.offset < rowState.layoutInfo.viewportEndOffset &&
-                                    it.offset + it.size > rowState.layoutInfo.viewportStartOffset
-                            }
-                            if (preferredVisible) {
-                                itemFocusRequesters[preferredIndex] ?: FocusRequester.Default
-                            } else {
-                                FocusRequester.Default
-                            }
+                            itemFocusRequesters[saved]
+                                ?: itemFocusRequesters[0]
+                                ?: FocusRequester.Default
                         }
                         .focusGroup(),
                     contentPadding = PaddingValues(
