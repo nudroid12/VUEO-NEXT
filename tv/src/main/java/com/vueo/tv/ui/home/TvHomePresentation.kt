@@ -57,7 +57,11 @@ internal fun TvHomePresentation(
     var focusedEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var heroScene by remember(artworkApiKey) { mutableStateOf<TvHomeHeroScene?>(null) }
     var lastNavigationAt by remember { mutableLongStateOf(0L) }
-    var heroSettleDelay by remember { mutableLongStateOf(settledHeroDelayMs) }
+    // NuvioTV 0.8.3-beta: successive item changes in the same row within
+    // 300ms are rapid horizontal navigation. Keep the last committed hero
+    // visible until the focus has settled; do not change the row's scroll.
+    var lastFocusedRowKey by remember { mutableStateOf<String?>(null) }
+    var rapidHorizontalNavigation by remember { mutableStateOf(false) }
     // Nuvio stable-hero policy: do not replace backdrop/copy while the user is
     // holding Up/Down or the vertical LazyColumn is actively scrolling.
     var verticalMotionActive by remember { mutableStateOf(false) }
@@ -127,13 +131,31 @@ internal fun TvHomePresentation(
         focusedEntry = initial
     }
 
-    // Keep the displayed scene while enrichment is pending. A newer focus
-    // cancels this job, so an old lookup cannot replace the current selection.
-    LaunchedEffect(focusedEntry?.key, artworkApiKey, verticalMotionActive) {
-        if (verticalMotionActive) return@LaunchedEffect
+    // NuvioTV 0.8.3-beta style horizontal settle detector. Re-keying the
+    // effect cancels an earlier settle, so holding Left/Right never commits
+    // a stream of intermediate heroes. Slow single presses are unaffected.
+    LaunchedEffect(focusedEntry?.key, lastNavigationAt) {
+        if (!rapidHorizontalNavigation) return@LaunchedEffect
+        delay(settledHeroDelayMs)
+        rapidHorizontalNavigation = false
+    }
+
+    // Preserve the previous scene during rapid horizontal navigation and
+    // vertical scroll. Once focus stops, finish the *remaining* debounce
+    // rather than waiting twice (first for rapid mode, then for hero load).
+    LaunchedEffect(focusedEntry?.key, artworkApiKey, verticalMotionActive, rapidHorizontalNavigation) {
         val next = focusedEntry ?: return@LaunchedEffect
-        if (heroScene != null) delay(heroSettleDelay)
-        if (verticalMotionActive) return@LaunchedEffect
+        if (verticalMotionActive || (rapidHorizontalNavigation && heroScene != null)) {
+            return@LaunchedEffect
+        }
+        if (heroScene != null) {
+            val elapsed = (SystemClock.uptimeMillis() - lastNavigationAt).coerceAtLeast(0L)
+            val remaining = (settledHeroDelayMs - elapsed).coerceAtLeast(0L)
+            if (remaining > 0L) delay(remaining)
+        }
+        if (verticalMotionActive || (rapidHorizontalNavigation && heroScene != null)) {
+            return@LaunchedEffect
+        }
         val artwork = try {
             TvTitleArtwork.load(next.media, artworkApiKey)
         } catch (cancelled: CancellationException) {
@@ -141,7 +163,7 @@ internal fun TvHomePresentation(
         } catch (_: Exception) {
             null // Optional artwork failure still publishes the text title.
         }
-        if (!verticalMotionActive && focusedEntry?.key == next.key) {
+        if (!verticalMotionActive && !rapidHorizontalNavigation && focusedEntry?.key == next.key) {
             heroScene = TvHomeHeroScene(next, artwork)
         }
     }
@@ -149,8 +171,8 @@ internal fun TvHomePresentation(
     // Preload one adjacent item only after Home has had time to paint the
     // focused hero. This stays best-effort and cancellable so optional artwork
     // work cannot compete with cold-start first-frame rendering.
-    LaunchedEffect(focusedEntry?.key, artworkApiKey, rows, verticalMotionActive) {
-        if (verticalMotionActive) return@LaunchedEffect
+    LaunchedEffect(focusedEntry?.key, artworkApiKey, rows, verticalMotionActive, rapidHorizontalNavigation) {
+        if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         val selected = focusedEntry ?: return@LaunchedEffect
         val row = rows.firstOrNull { it.entries.any { item -> item.key == selected.key } }
             ?: return@LaunchedEffect
@@ -158,6 +180,7 @@ internal fun TvHomePresentation(
         val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
             ?: return@LaunchedEffect
         delay(750L)
+        if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         try {
             val artwork = TvTitleArtwork.load(adjacent.media, artworkApiKey)
             tvPrefetchImage(context, artwork.logo, logoSize)
@@ -210,8 +233,13 @@ internal fun TvHomePresentation(
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
                         if (focusedEntry?.key != entry.key) {
                             val now = SystemClock.uptimeMillis()
-                            heroSettleDelay = if (lastNavigationAt != 0L && now - lastNavigationAt < 130L) 400L
-                                else settledHeroDelayMs
+                            val sameRow = lastFocusedRowKey == row.key
+                            val rapidInterval = lastNavigationAt != 0L &&
+                                now - lastNavigationAt in 1L..300L
+                            // Up/Down switches rows: do not misclassify those
+                            // focus restorations as horizontal fast navigation.
+                            rapidHorizontalNavigation = sameRow && rapidInterval
+                            lastFocusedRowKey = row.key
                             lastNavigationAt = now
                         }
                         focusedEntry = entry
