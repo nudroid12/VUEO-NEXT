@@ -116,6 +116,7 @@ internal fun TvModernHomeRows(
     focusResetToken: Int,
     contentReturnToken: Int,
     navigationVisible: Boolean,
+    navigationOwnsFocus: Boolean,
     onContentFocused: () -> Unit,
     onVerticalMotionChanged: (Boolean) -> Unit,
     onUpFromFirstRow: () -> Unit,
@@ -507,7 +508,10 @@ internal fun TvModernHomeRows(
                     row = row,
                     rowState = rowState,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
-                    contentFocusEnabled = !navigationVisible ||
+                    // Do not invalidate the focused card during panel enter.
+                    // Once the nav item actually owns focus, allow only an
+                    // explicit menu-return target back into the catalog.
+                    contentFocusEnabled = !navigationOwnsFocus ||
                         (verticalFocusTarget?.menuReturn == true && verticalFocusTarget?.rowKey == row.key),
                     verticalFocusTarget = verticalFocusTarget?.takeIf { it.rowKey == row.key },
                     onFocusTargetConsumed = { token, focused ->

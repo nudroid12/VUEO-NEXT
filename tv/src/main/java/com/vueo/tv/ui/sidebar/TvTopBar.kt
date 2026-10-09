@@ -137,18 +137,17 @@ fun TvSidebar(
     val metrics = sidebarMetrics(sidebarStyle)
 
     LaunchedEffect(sidebarStyle, hideClassicSidebar, expanded, selected) {
-        // With a fully hidden classic rail, the caller may request focus before
-        // its items become focusable. Complete the request after recomposition.
-        if (expanded && sidebarStyle == TvSidebarStyle.PILL_ICONS) {
-            request(navRequesters.getValue(selected))
-        } else if (expanded && hideClassicSidebar) {
-            // The 0dp rail needs a layout frame before accepting D-pad focus.
-            repeat(3) {
-                withFrameNanos { }
-                if (runCatching { navRequesters.getValue(selected).requestFocus() }.getOrDefault(false)) {
-                    return@LaunchedEffect
-                }
-            }
+        if (!expanded) return@LaunchedEffect
+        // In Topbar the destination is inside AnimatedVisibility, and a hidden
+        // Sidebar starts at 0dp width. Request AFTER its focus node is attached,
+        // for all three modes, while Home retains its existing focus meanwhile.
+        // requestFocus() returning true (not just no exception) is the handoff.
+        repeat(12) {
+            withFrameNanos { }
+            val accepted = runCatching {
+                navRequesters.getValue(selected).requestFocus()
+            }.getOrDefault(false)
+            if (accepted) return@LaunchedEffect
         }
     }
 

@@ -296,11 +296,17 @@ fun TvHomeScreen(
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     var navExpanded by remember { mutableStateOf(false) }
+    // Opening a hidden navigation panel is asynchronous. Keep the current
+    // poster focusable until a real navigation item has accepted focus;
+    // revoking it earlier makes Compose relocate focus inside the LazyRow.
+    var navigationOwnsFocus by remember { mutableStateOf(false) }
     var contentReturnToken by remember { mutableIntStateOf(0) }
 
     fun focusSidebar() {
+        if (!navExpanded) navigationOwnsFocus = false
         navExpanded = true
-        runCatching { navRequesters.getValue("Home").requestFocus() }
+        // TvSidebar requests focus only after the expanding panel has composed.
+        // An eager request here can target a hidden/unfocusable Topbar/rail.
     }
 
     BackHandler(enabled = active) {
@@ -340,10 +346,14 @@ fun TvHomeScreen(
                 retryAttempt += 1
             },
             navigationVisible = navExpanded,
+            navigationOwnsFocus = navigationOwnsFocus,
             contentFocusRequester = contentFocusRequester,
             focusResetToken = homeFocusResetToken,
             contentReturnToken = contentReturnToken,
-            onContentFocused = { navExpanded = false },
+            onContentFocused = {
+                navigationOwnsFocus = false
+                navExpanded = false
+            },
             onOpenNavigation = ::focusSidebar,
             onOpen = { entry -> entry.open(onOpenMedia, onResume) },
             onLongClick = { entry -> actionEntry = entry },
@@ -355,7 +365,10 @@ fun TvHomeScreen(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = { navExpanded = true },
+            onFocused = {
+                navigationOwnsFocus = true
+                navExpanded = true
+            },
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = {
@@ -364,6 +377,7 @@ fun TvHomeScreen(
                     contentReturnToken += 1
                     true
                 } else {
+                    navigationOwnsFocus = false
                     navExpanded = false
                     runCatching { contentFocusRequester.requestFocus() }.getOrDefault(false)
                 }
