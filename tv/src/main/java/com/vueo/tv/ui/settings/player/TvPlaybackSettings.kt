@@ -233,8 +233,9 @@ internal fun TvAppearanceSettings(
     var theme by remember { mutableStateOf(store.appTheme()) }
     var accent by remember { mutableStateOf(store.appAccent()) }
     var sidebarStyle by remember { mutableStateOf(TvSidebarPreferences.style(context)) }
+    var hideSidebar by remember { mutableStateOf(TvSidebarPreferences.hideSidebar(context)) }
 
-    val entries = listOf(
+    val entries = listOfNotNull(
         choiceEntry("theme", "Theme", "Choose the dark cinematic base palette.", theme.label, {
             theme = cycle(AppTheme.entries, theme, -1); store.setAppTheme(theme); TvDesign.applyTheme(theme)
         }, {
@@ -245,13 +246,24 @@ internal fun TvAppearanceSettings(
         }, {
             accent = cycle(AppAccent.entries, accent, 1); store.setAppAccent(accent); TvDesign.applyAccent(accent)
         }).copy(section = "LOOK & FEEL"),
-        choiceEntry("sidebar-style", "Sidebar style", "Choose how the TV navigation rail is presented.", sidebarStyle.label, {
+        choiceEntry("sidebar-style", "Navigation mode", "Choose between Sidebar and Topbar navigation.", sidebarStyle.label, {
             sidebarStyle = cycle(TvSidebarStyle.entries, sidebarStyle, -1)
             TvSidebarPreferences.setStyle(context, sidebarStyle)
         }, {
             sidebarStyle = cycle(TvSidebarStyle.entries, sidebarStyle, 1)
             TvSidebarPreferences.setStyle(context, sidebarStyle)
         }).copy(section = "NAVIGATION"),
+        if (sidebarStyle == TvSidebarStyle.CLASSIC) {
+            toggleEntry(
+                "hide-sidebar",
+                "Hide Sidebar",
+                "Use full-width content when closed. Press Back or Left to open Sidebar as an overlay.",
+                hideSidebar,
+            ) {
+                hideSidebar = it
+                TvSidebarPreferences.setHideSidebar(context, it)
+            }.copy(section = "NAVIGATION")
+        } else null,
     )
     TvSettingsListScreen("Appearance", "Choose a dark VUEO palette and tune the interactive accent.", entries, onNavigate, onProfile, onBack)
 }

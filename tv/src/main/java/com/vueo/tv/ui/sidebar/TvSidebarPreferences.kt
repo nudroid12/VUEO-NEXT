@@ -12,17 +12,33 @@ import androidx.compose.ui.unit.dp
 enum class TvSidebarStyle(
     val label: String,
 ) {
-    CLASSIC("Classic"),
-    PILL_ICONS("Pill Icons"),
+    CLASSIC("Sidebar"),
+    PILL_ICONS("Topbar"),
 }
 
 internal object TvSidebarStyleState {
     var value by mutableStateOf<TvSidebarStyle?>(null)
+    var hideSidebar by mutableStateOf<Boolean?>(null)
 }
 
 internal object TvSidebarPreferences {
     private const val PREFS_NAME = "vueo_tv_ui"
     private const val KEY_STYLE = "sidebar_style"
+    private const val KEY_HIDE_SIDEBAR = "hide_sidebar"
+
+    fun hideSidebar(context: Context): Boolean =
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HIDE_SIDEBAR, false)
+
+    fun setHideSidebar(context: Context, hidden: Boolean) {
+        context.applicationContext
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HIDE_SIDEBAR, hidden)
+            .apply()
+        TvSidebarStyleState.hideSidebar = hidden
+    }
 
     fun style(context: Context): TvSidebarStyle {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -56,7 +72,8 @@ internal fun tvSidebarContentStartPadding(
 ): Dp {
     val context = LocalContext.current
     val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
-    return if (style == TvSidebarStyle.PILL_ICONS) pill else classic
+    val hidden = TvSidebarStyleState.hideSidebar ?: TvSidebarPreferences.hideSidebar(context)
+    return if (style == TvSidebarStyle.PILL_ICONS || (style == TvSidebarStyle.CLASSIC && hidden)) pill else classic
 }
 
 @Composable
@@ -74,4 +91,12 @@ internal fun tvSidebarIsPillMode(): Boolean {
     val context = LocalContext.current
     val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
     return style == TvSidebarStyle.PILL_ICONS
+}
+
+@Composable
+internal fun tvSidebarIsHiddenClassic(): Boolean {
+    val context = LocalContext.current
+    val style = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
+    val hidden = TvSidebarStyleState.hideSidebar ?: TvSidebarPreferences.hideSidebar(context)
+    return style == TvSidebarStyle.CLASSIC && hidden
 }

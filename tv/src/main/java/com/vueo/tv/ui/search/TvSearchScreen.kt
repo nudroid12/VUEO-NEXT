@@ -83,6 +83,7 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarIsPillMode
+import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -530,8 +531,9 @@ internal fun TvSearchScreen(
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
     val floatingPillMode = tvSidebarIsPillMode()
-    val searchColumns = if (floatingPillMode) FLOATING_SEARCH_COLUMNS else SEARCH_COLUMNS
-    val gridEndPadding = if (floatingPillMode) 28.dp else 52.dp
+    val fullWidthContent = floatingPillMode || tvSidebarIsHiddenClassic()
+    val searchColumns = if (fullWidthContent) FLOATING_SEARCH_COLUMNS else SEARCH_COLUMNS
+    val gridEndPadding = if (fullWidthContent) 28.dp else 52.dp
 
     Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
         Column(

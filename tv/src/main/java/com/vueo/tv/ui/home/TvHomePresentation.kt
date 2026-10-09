@@ -28,6 +28,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
+import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import com.vueo.tv.core.TvTitleArtwork
@@ -59,6 +60,7 @@ internal fun TvHomePresentation(
     val logoSize = with(density) { IntSize(220.dp.roundToPx(), 100.dp.roundToPx()) }
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val floatingPillMode = tvSidebarIsPillMode()
+    val hideClassicSidebar = tvSidebarIsHiddenClassic()
     val showContinueWatchingPreview = floatingPillMode && navigationVisible
     val targetRowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
@@ -162,8 +164,11 @@ internal fun TvHomePresentation(
                     navigationVisible = navigationVisible,
                     onContentFocused = onContentFocused,
                     onUpFromFirstRow = onOpenNavigation,
-                    onLeftAtRowStart =
-                        if (floatingPillMode) ({ /* Left boundary stays on the first card. */ }) else null,
+                    onLeftAtRowStart = when {
+                        floatingPillMode -> ({ /* Topbar keeps Left on the first card. */ })
+                        hideClassicSidebar -> onOpenNavigation
+                        else -> null
+                    },
                     onFocused = { row, index, entry ->
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index

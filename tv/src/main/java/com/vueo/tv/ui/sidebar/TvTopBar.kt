@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -131,16 +132,28 @@ fun TvSidebar(
 
     val context = LocalContext.current
     val sidebarStyle = TvSidebarStyleState.value ?: TvSidebarPreferences.style(context)
+    val hideClassicSidebar = sidebarStyle == TvSidebarStyle.CLASSIC &&
+        (TvSidebarStyleState.hideSidebar ?: TvSidebarPreferences.hideSidebar(context))
     val metrics = sidebarMetrics(sidebarStyle)
 
-    LaunchedEffect(sidebarStyle, expanded, selected) {
-        if (sidebarStyle == TvSidebarStyle.PILL_ICONS && expanded) {
+    LaunchedEffect(sidebarStyle, hideClassicSidebar, expanded, selected) {
+        // With a fully hidden classic rail, the caller may request focus before
+        // its items become focusable. Complete the request after recomposition.
+        if (expanded && sidebarStyle == TvSidebarStyle.PILL_ICONS) {
             request(navRequesters.getValue(selected))
+        } else if (expanded && hideClassicSidebar) {
+            // The 0dp rail needs a layout frame before accepting D-pad focus.
+            repeat(3) {
+                withFrameNanos { }
+                if (runCatching { navRequesters.getValue(selected).requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+            }
         }
     }
 
     val width by animateDpAsState(
-        targetValue = if (expanded) metrics.expandedWidth else metrics.collapsedWidth,
+        targetValue = if (expanded) metrics.expandedWidth else if (hideClassicSidebar) 0.dp else metrics.collapsedWidth,
         animationSpec = tween(
             durationMillis = if (expanded) 180 else 130,
             easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
@@ -270,6 +283,7 @@ fun TvSidebar(
                         expanded = expanded,
                         labelAlpha = labelAlpha,
                         requester = navRequesters.getValue(label),
+                        canFocusWhenCollapsed = !hideClassicSidebar && selected == label,
                         onFocused = onFocused,
                         onClick = { onNavigate(label) },
                         onLeft = { true },
