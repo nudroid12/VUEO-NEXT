@@ -453,7 +453,7 @@ private fun TvModernHomeRow(
     val savedIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
         .coerceIn(0, row.entries.lastIndex)
     var focusedIndex by remember(row.key) { mutableIntStateOf(savedIndex) }
-    val rowState = rememberLazyListState(initialFirstVisibleItemIndex = savedIndex)
+    val rowState = rememberLazyListState()
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
     val currentContentFocusEnabled by rememberUpdatedState(contentFocusEnabled)
     val density = LocalDensity.current
