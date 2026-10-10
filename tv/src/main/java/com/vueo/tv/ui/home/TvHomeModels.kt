@@ -42,6 +42,7 @@ internal data class TvHomeRow(
     val title: String,
     val kind: TvHomeRowKind,
     val entries: List<TvHomeEntry>,
+    val providerName: String? = null,
 )
 
 /**

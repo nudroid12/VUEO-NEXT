@@ -509,7 +509,12 @@ private fun buildTvHomeRows(
                 add(
                     TvHomeRow(
                         key = "catalog:${row.id}",
-                        title = row.title,
+                        title = when (row.id.split(':', limit = 3).getOrNull(1)?.lowercase(java.util.Locale.ROOT)) {
+                            "movie" -> "${row.title} - Movie"
+                            "series", "tv" -> "${row.title} - Series"
+                            else -> row.title
+                        },
+                        providerName = row.providerName.takeIf { it.isNotBlank() },
                         kind = TvHomeRowKind.POSTERS,
                         entries = row.items.mapIndexed { index, media ->
                             TvHomeEntry.Media(
