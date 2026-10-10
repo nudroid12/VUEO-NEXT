@@ -6,7 +6,6 @@ import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.player.PlayerSourceAssessment
 import com.vueo.shared.core.player.PlayerSourceDisplay
 import com.vueo.shared.core.player.PlayerSourceAudioMatch
-import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.tv.core.TvSourceBundle
 
 internal const val SOURCE_PROVIDER_ALL = "__vueo_all_sources__"
@@ -71,153 +70,37 @@ internal fun sourceProviderDisplayName(provider: String): String =
         .ifBlank { "Other" }
 
 internal fun StreamSource.toTvSourceCardModel(
-    mediaName: String,
-    releaseInfo: String?,
-    episode: EpisodeItem?,
-    originalLanguage: String?,
-    preferredQuality: String?,
     logoUrl: String?,
 ): TvSourceCardModel {
-    // Match the in-player Sources presentation: repository/group first, then provider/server details.
     val provider = PlayerSourceDisplay.groupTitle(this)
         .lineSequence()
         .map(String::trim)
         .firstOrNull(String::isNotBlank)
         ?: "Other"
-    // Keep provider text instead of replacing it with the selected media title.
-    val title = sourceTitleDisplayName(this)
-        ?.let { sourceCardLabelParts(it).joinToString("\n") }
-        ?.takeIf(String::isNotBlank)
-        ?: sourceCardMediaTitle(mediaName, releaseInfo, episode)
-    val groupedDetails = PlayerSourceDisplay.groupedDetails(this)
-        .split(" • ")
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .filterNot { it.equals(provider, ignoreCase = true) }
-        .distinctBy { it.lowercase() }
-        .joinToString(" • ")
-        .takeIf(String::isNotBlank)
-    val server = groupedDetails
-        ?: sourceServerDisplayName(this)
-            ?.let { cleanSourceCardServerLabel(it, provider) }
-            ?.takeUnless { it.equals(title, ignoreCase = true) }
-    val assessment = PlayerSourcePolicy.assess(
-        source = this,
-        preferredQuality = preferredQuality,
-        originalLanguage = originalLanguage,
-    )
-    val quality = this.quality
-        ?.trim()
-        ?.takeIf {
-            it.isNotBlank() &&
-                !it.equals("Unknown", ignoreCase = true) &&
-                !it.equals("Other", ignoreCase = true)
-        }
-        ?: assessment.quality.label.takeUnless {
-            it.equals("Unknown", ignoreCase = true)
-        }
-    val metadata = listOfNotNull(
-        quality,
-        codec,
-        hdr,
-        audio,
-        language,
-        sizeBytes?.takeIf { it > 0 }?.let { bytes ->
-            val gb = bytes / (1024.0 * 1024.0 * 1024.0)
-            if (gb >= 1.0) java.lang.String.format(java.util.Locale.US, "%.2f GB", gb)
-            else java.lang.String.format(java.util.Locale.US, "%.0f MB", bytes / (1024.0 * 1024.0))
-        },
-    )
-        .map(String::trim)
-        .filter { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) }
-        .distinctBy { it.lowercase() }
-        .filterNot { title.contains(it, ignoreCase = true) || server?.contains(it, ignoreCase = true) == true }
-        .joinToString(" • ")
-        .takeIf(String::isNotBlank)
+    // Display the provider's text once, without generated media or metadata labels.
+    val providerText = sourceCardProviderText(name)
+    val serverText = serverName?.let(::sourceCardProviderText)?.takeIf(String::isNotBlank)
+    val title = providerText.ifBlank {
+        serverText ?: sourceProviderDisplayName(sourceProviderKey(this))
+    }
 
     return TvSourceCardModel(
         providerName = provider,
-        serverName = server,
+        serverName = serverText?.takeUnless { it == title },
         title = title,
-        metadataLabel = metadata,
+        metadataLabel = null,
         logoUrl = logoUrl,
         detailUrl = url?.trim()?.takeIf(String::isNotBlank),
     )
 }
 
-private fun sourceCardMediaTitle(
-    mediaName: String,
-    releaseInfo: String?,
-    episode: EpisodeItem?,
-): String {
-    val baseName = mediaName.trim().ifBlank { "Unknown title" }
-    if (episode != null) {
-        val cleanName = baseName
-            .replace(SOURCE_CARD_TRAILING_YEAR, "")
-            .trim()
-            .ifBlank { baseName }
-        return buildString {
-            append(cleanName)
-            append(" S")
-            append(episode.season.toString().padStart(2, '0'))
-            append("E")
-            append(episode.episode.toString().padStart(2, '0'))
-        }
-    }
-
-    val year = SOURCE_CARD_YEAR.find(releaseInfo.orEmpty())?.value
-    return if (year != null && SOURCE_CARD_YEAR.find(baseName) == null) {
-        "$baseName ($year)"
-    } else {
-        baseName
-    }
-}
-
-private fun sourceCardLabelParts(value: String): List<String> =
+private fun sourceCardProviderText(value: String): String =
     value
         .replace("\\r\\n", "\n")
         .replace("\\n", "\n")
+        .replace("\r\n", "\n")
         .replace('\r', '\n')
-        .lineSequence()
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .toList()
-
-private fun cleanSourceCardServerLabel(
-    value: String,
-    providerName: String,
-): String? {
-    val candidate = value.trim()
-    if (
-        candidate.isBlank() ||
-        candidate.startsWith("http://", ignoreCase = true) ||
-        candidate.startsWith("https://", ignoreCase = true) ||
-        candidate.equals("Unknown", ignoreCase = true)
-    ) {
-        return null
-    }
-
-    val withoutProvider = if (candidate.startsWith(providerName, ignoreCase = true)) {
-        candidate
-            .drop(providerName.length)
-            .trimStart { character ->
-                character.isWhitespace() ||
-                    character == '-' ||
-                    character == '–' ||
-                    character == '—' ||
-                    character == '|' ||
-                    character == '•' ||
-                    character == ':'
-            }
-    } else {
-        candidate
-    }
-    return withoutProvider.trim().takeIf(String::isNotBlank)
-}
-
-private val SOURCE_CARD_YEAR = Regex("""\b(?:19|20)\d{2}\b""")
-private val SOURCE_CARD_TRAILING_YEAR =
-    Regex("""\s*\((?:19|20)\d{2}(?:\s*[–—-]\s*)?\)\s*$""")
+        .trim()
 
 private fun sourceRepositoryDisplayName(source: StreamSource): String? =
     source.providerName

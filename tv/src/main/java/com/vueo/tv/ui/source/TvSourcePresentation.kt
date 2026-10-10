@@ -987,19 +987,9 @@ private fun SourceList(
             ] ?: state.providerLogos[source.providerId.trim().lowercase()]
             val cardModel = remember(
                 source,
-                state.media.name,
-                state.media.releaseInfo,
-                state.episode,
-                state.media.originalLanguage,
-                state.preferredQuality,
                 providerLogoUrl,
             ) {
                 source.toTvSourceCardModel(
-                    mediaName = state.media.name,
-                    releaseInfo = state.media.releaseInfo,
-                    episode = state.episode,
-                    originalLanguage = state.media.originalLanguage,
-                    preferredQuality = state.preferredQuality,
                     logoUrl = providerLogoUrl,
                 )
             }
