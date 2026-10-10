@@ -123,7 +123,6 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     /** Apply user preferences only when they change, not on progress/focus recompositions. */
     fun applySubtitlePresentation(
         style: TvPlayerSubtitleStyleState,
-        captionStyle: CaptionStyleCompat,
         bottomPadding: Float,
     ) {
         val previous = lastStyle
@@ -145,6 +144,21 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             previous.backgroundColor != style.backgroundColor ||
             previous.backgroundOpacityPercent != style.backgroundOpacityPercent
         ) {
+            // Derive the drawable payload from the same immutable value used
+            // by the change guard and lastStyle. A caller cannot supply a stale
+            // CaptionStyleCompat alongside a newer UI preference snapshot.
+            val backgroundColor = if (style.backgroundEnabled) {
+                val alpha = (255 * style.backgroundOpacityPercent.coerceIn(0, 100) / 100) shl 24
+                (style.backgroundColor and 0x00FFFFFF) or alpha
+            } else android.graphics.Color.TRANSPARENT
+            val captionStyle = CaptionStyleCompat(
+                style.textColor,
+                backgroundColor,
+                android.graphics.Color.TRANSPARENT,
+                if (style.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
+                style.outlineColor,
+                com.vueo.shared.core.player.SubtitleFonts.resolve(context, style.fontFamily, style.bold),
+            )
             managedSubtitleView.setStyle(captionStyle)
             commentarySubtitleView.setStyle(captionStyle)
         }

@@ -86,7 +86,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.vueo.shared.core.enrichment.ContentWarning
 import com.vueo.shared.core.enrichment.ContentWarningRepository
@@ -1887,23 +1886,9 @@ fun TvPlayerScreen(
             .focusable(enabled = activePanel == TvPlayerPanel.NONE),
     ) {
         val exoPlayer = player
-        val appliedSubtitleStyle = remember(subtitleStyle) {
-            CaptionStyleCompat(
-                subtitleStyle.textColor,
-                if (subtitleStyle.backgroundEnabled) {
-                    withAlpha(
-                        subtitleStyle.backgroundColor,
-                        subtitleStyle.backgroundOpacityPercent,
-                    )
-                } else {
-                    android.graphics.Color.TRANSPARENT
-                },
-                android.graphics.Color.TRANSPARENT,
-                if (subtitleStyle.outlineEnabled) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
-                subtitleStyle.outlineColor,
-                com.vueo.shared.core.player.SubtitleFonts.resolve(context, subtitleStyle.fontFamily, subtitleStyle.bold),
-            )
-        }
+        // Capture one immutable value for this AndroidView update. Never pair
+        // a live state read with a separately remembered caption payload.
+        val subtitlePresentation = subtitleStyle
         val resizeMode = when (videoFit) {
             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
             // A TV-style Fill should crop while preserving the source aspect ratio.
@@ -1911,7 +1896,7 @@ fun TvPlayerScreen(
             PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         }
-        val baseSubtitleBottomPaddingFraction = subtitleStyle.bottomPaddingPercent / 100f
+        val baseSubtitleBottomPaddingFraction = subtitlePresentation.bottomPaddingPercent / 100f
         val subtitleBottomPaddingFraction = if (controlsVisible && activePanel == TvPlayerPanel.NONE) {
             maxOf(baseSubtitleBottomPaddingFraction, 0.18f)
         } else {
@@ -1928,7 +1913,7 @@ fun TvPlayerScreen(
                     bindPlayer(exoPlayer)
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     this.resizeMode = resizeMode
-                    applySubtitlePresentation(subtitleStyle, appliedSubtitleStyle, subtitleBottomPaddingFraction)
+                    applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction)
                 }
             },
             update = {
@@ -1937,7 +1922,7 @@ fun TvPlayerScreen(
                 it.isFocusableInTouchMode = false
                 it.keepScreenOn = true
                 it.resizeMode = resizeMode
-                it.applySubtitlePresentation(subtitleStyle, appliedSubtitleStyle, subtitleBottomPaddingFraction)
+                it.applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction)
             },
             modifier = Modifier.fillMaxSize(),
         )
