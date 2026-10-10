@@ -293,8 +293,8 @@ internal fun PluginsScreen(
     }
     var selectedRepositoryUrl by remember {
         mutableStateOf<String?>(
-            repositories.firstOrNull()
-                ?.manifestUrl
+            (repositories.asReversed().firstOrNull { store.isRepositoryEnabled(it) }
+                ?: repositories.lastOrNull())?.manifestUrl
         )
     }
     var pluginsEnabled by remember {
@@ -338,8 +338,8 @@ internal fun PluginsScreen(
             }
         ) {
             selectedRepositoryUrl =
-                repositories.firstOrNull()
-                    ?.manifestUrl
+                (repositories.asReversed().firstOrNull { store.isRepositoryEnabled(it) }
+                    ?: repositories.lastOrNull())?.manifestUrl
         }
     }
 
@@ -350,6 +350,19 @@ internal fun PluginsScreen(
             repositories
         )
         codeRevision++
+    }
+
+    // upsert appends refreshed/new repositories. Keep the selected tab first,
+    // then enabled repositories, with newest entries first within each group.
+    val repositoryTabs = repositories.asReversed().sortedWith(
+        compareByDescending<PluginRepositoryDescriptor> {
+            it.manifestUrl == selectedRepositoryUrl
+        }.thenByDescending { store.isRepositoryEnabled(it) }
+    )
+    val repositoryTabsState = rememberLazyListState()
+    val repositoryTabOrder = repositoryTabs.map { it.manifestUrl }
+    LaunchedEffect(selectedRepositoryUrl, repositoryTabOrder, codeRevision) {
+        if (repositoryTabs.isNotEmpty()) repositoryTabsState.scrollToItem(0)
     }
 
     val selectedRepository =
@@ -552,11 +565,12 @@ internal fun PluginsScreen(
                     )
 
                     LazyRow(
+                        state = repositoryTabsState,
                         contentPadding = PaddingValues(end = 18.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         items(
-                            repositories,
+                            repositoryTabs,
                             key = {
                                 it.manifestUrl
                             },
