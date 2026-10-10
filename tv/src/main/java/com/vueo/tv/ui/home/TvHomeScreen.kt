@@ -488,7 +488,7 @@ private fun buildTvHomeRows(
         }
 
         val becauseSeed = homeRecommendations.becauseYouWatchedSeed
-        if (becauseSeed != null && homeRecommendations.becauseYouWatched.size >= 4) {
+        if (becauseSeed != null && homeRecommendations.becauseYouWatched.isNotEmpty()) {
             add(
                 TvHomeRow(
                     key = "because-you-watched",

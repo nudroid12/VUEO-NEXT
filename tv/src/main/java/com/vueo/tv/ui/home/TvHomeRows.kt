@@ -767,7 +767,7 @@ private fun TvModernHomeRow(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).alignByBaseline(),
             )
             row.providerName?.let { providerName ->
                 Text(
@@ -777,7 +777,7 @@ private fun TvModernHomeRow(
                     lineHeight = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 180.dp),
+                    modifier = Modifier.widthIn(max = 180.dp).alignByBaseline(),
                 )
             }
         }
