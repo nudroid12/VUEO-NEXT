@@ -923,6 +923,7 @@ object CatalogDiscoveryCache {
                 maxHomePopularity =
                     maxHomePopularity,
             )
+        var sparseRemoteCount = 0
         val scored =
             candidates.mapNotNull { candidate ->
                 val candidateFeatures =
@@ -954,11 +955,17 @@ object CatalogDiscoveryCache {
                         )
                     ] ?: 0.0
 
-                if (
-                    !signals.passesRelevanceGate &&
-                    tmdbConfidence <= 0.0
-                ) {
-                    return@mapNotNull null
+                if (!signals.passesRelevanceGate) {
+                    // Missing synopsis is uncertainty; a rich synopsis that
+                    // fails relevance is not a reason to trust API rank alone.
+                    val sparseStory = targetFeatures.story.size < 4 || candidateFeatures.story.size < 4
+                    val incompatibleGenres = targetFeatures.genres.isNotEmpty() &&
+                        candidateFeatures.genres.isNotEmpty() &&
+                        (targetFeatures.genres intersect candidateFeatures.genres).isEmpty()
+                    if (tmdbConfidence <= 0.0 || !sparseStory || incompatibleGenres || sparseRemoteCount >= 3) {
+                        return@mapNotNull null
+                    }
+                    sparseRemoteCount++
                 }
 
                 val vueoRelevance =
@@ -1221,10 +1228,7 @@ object CatalogDiscoveryCache {
                 it !in RELATED_GENERIC_GENRES
             }
         val strongGenre =
-            sharedGenres.size >= 2 ||
-                nonGenericSharedGenres >= 1 &&
-                genreScore >= 0.48 ||
-                genreScore >= 0.58
+            nonGenericSharedGenres >= 1 && genreScore >= 0.48
         val strongTopic =
             topicAvailable &&
                 topicScore >= 0.18
@@ -1258,7 +1262,11 @@ object CatalogDiscoveryCache {
                     strongTopic ||
                     strongStory ||
                     strongRelation ||
-                    mediumSignals >= 2,
+                    mediumSignals >= 2 && (
+                        topicAvailable && topicScore >= 0.10 ||
+                            storyAvailable && storyScore >= 0.11 ||
+                            relation.available && relation.score >= 0.12
+                    ),
         )
     }
 

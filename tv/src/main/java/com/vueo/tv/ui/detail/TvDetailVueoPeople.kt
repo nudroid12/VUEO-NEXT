@@ -394,9 +394,21 @@ private fun VueoRelatedRow(
     downRequester: FocusRequester?,
     onOpen: (MediaItem) -> Unit,
 ) {
-    val visible = remember(items) { items.take(18) }
-    val requesters = remember(visible.map { "${it.type}:${it.id}" }) {
-        visible.indices.associateWith { FocusRequester() }
+    var visible by remember { mutableStateOf(items.take(18)) }
+    var rowFocused by remember { mutableStateOf(false) }
+    val requesterCache = remember { mutableMapOf<String, FocusRequester>() }
+    LaunchedEffect(items, rowFocused) {
+        // Apply incoming results after the user leaves the rail so the
+        // selected card cannot move or disappear during D-pad navigation.
+        if (!rowFocused) visible = items.take(18)
+    }
+    val requesters = remember(visible) {
+        val keys = visible.map { "${it.type}:${it.id}" }.toSet()
+        requesterCache.keys.retainAll(keys)
+        visible.indices.associateWith { index ->
+            val item = visible[index]
+            requesterCache.getOrPut("${item.type}:${item.id}") { FocusRequester() }
+        }
     }
 
     val layoutDirection = LocalLayoutDirection.current
@@ -427,6 +439,7 @@ private fun VueoRelatedRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(sectionRequester)
+                    .onFocusChanged { rowFocused = it.hasFocus }
                     .focusRestorer { requesters[0] ?: FocusRequester.Default }
                     .focusGroup(),
                 contentPadding = PaddingValues(start = paintInset, end = 18.dp, top = 6.dp, bottom = 6.dp),
