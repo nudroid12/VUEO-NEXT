@@ -2409,7 +2409,8 @@ fun TvPlayerScreen(
                     subtitleDelayMs = updated.coerceIn(-60_000, 60_000)
                     settings.setSubtitleDelayMs(mediaKey, subtitleDelayMs)
                 },
-                onStyleChange = { updated ->
+                onStyleChange = { transform ->
+                    val updated = transform(subtitleStyle)
                     subtitleStyle = updated
                     settings.setSubtitleFontSizeSp(updated.fontSizeSp)
                     settings.setSubtitleCommentaryFontSizeSp(updated.commentaryFontSizeSp)

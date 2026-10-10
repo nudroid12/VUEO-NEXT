@@ -84,7 +84,7 @@ internal fun VueoPlayerSubtitleWorkspace(
     onDisable: () -> Unit,
     onSelect: (TvPlayerTrackChoice) -> Unit,
     onSubtitleDelayChange: (Int) -> Unit,
-    onStyleChange: (TvPlayerSubtitleStyleState) -> Unit,
+    onStyleChange: ((TvPlayerSubtitleStyleState) -> TvPlayerSubtitleStyleState) -> Unit,
 ) {
     val preferredFilterCodes = listOfNotNull(
         preferredLanguageCode
@@ -193,17 +193,10 @@ internal fun VueoPlayerSubtitleWorkspace(
             ?: if (visibleTracks.isNotEmpty()) trackRequesters.first() else activeLanguageRequester
     }
     var initialFocusAssigned by remember { mutableStateOf(false) }
-    var latestStyle by remember { mutableStateOf(style) }
-
-    LaunchedEffect(style) {
-        latestStyle = style
-    }
-
+    // The player owns the style. Apply each action to its current value so
+    // rapid remote input cannot race a second, asynchronously mirrored copy.
     fun updateStyle(transform: (TvPlayerSubtitleStyleState) -> TvPlayerSubtitleStyleState) {
-        val updated = transform(latestStyle)
-        if (updated == latestStyle) return
-        latestStyle = updated
-        onStyleChange(updated)
+        onStyleChange(transform)
     }
 
     LaunchedEffect(styleOpen, subtitlesDisabled) {
@@ -531,10 +524,10 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     leftRequester = styleLeftRequester,
                                     onInteraction = onInteraction,
                                     onDecrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs - 250).coerceAtLeast(-60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs - 100).coerceAtLeast(-60_000))
                                     },
                                     onIncrease = {
-                                        onSubtitleDelayChange((subtitleDelayMs + 250).coerceAtMost(60_000))
+                                        onSubtitleDelayChange((subtitleDelayMs + 100).coerceAtMost(60_000))
                                     },
                                 )
                                 VueoSubtitleStepperRow(
@@ -802,8 +795,7 @@ internal fun VueoPlayerSubtitleWorkspace(
                                     onInteraction = onInteraction,
                                 ) {
                                     val reset = TvPlayerSubtitleStyleState()
-                                    latestStyle = reset
-                                    onStyleChange(reset)
+                                    updateStyle { reset }
                                 }
                                 }
                             }
@@ -1338,12 +1330,12 @@ private fun VueoSubtitleColorRow(
     onInteraction: () -> Unit,
     onSelected: (Int) -> Unit,
 ) {
-    val selectedIndex = colours.indexOfFirst {
-        (selectedColour and 0x00FFFFFF) == (it and 0x00FFFFFF)
-    }.coerceAtLeast(0)
-    val requesters = remember(colours, selectedIndex, requester) {
+    // Keep each swatch's focus node stable when selection changes. The
+    // vertical entry node is always the first swatch, rather than moving the
+    // shared requester from one live node to another during a key press.
+    val requesters = remember(colours, requester) {
         List(colours.size) { index ->
-            if (index == selectedIndex) requester else FocusRequester()
+            if (index == 0) requester else FocusRequester()
         }
     }
 

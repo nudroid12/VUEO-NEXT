@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import android.content.Context
 import android.graphics.Paint
 import android.text.Layout
@@ -152,6 +153,13 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             lastBottomPadding = bottomPadding
         }
         val presentationChanged = previous != null && previous != style
+        if (previous != style) {
+            PerformanceDiagnostics.captureRuntimeEvent(
+                "TV_SUBTITLE_STYLE_APPLIED font=${style.fontFamily} bold=${style.bold} " +
+                    "color=${Integer.toHexString(style.textColor)} outline=${style.outlineEnabled} " +
+                    "background=${style.backgroundEnabled}",
+            )
+        }
         lastStyle = style
         updateCommentaryBottomPadding()
         if (showCommentary != style.showCommentary) {
@@ -168,8 +176,13 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         // otherwise may keep the previous glyph/background layout until the next cue.
         managedSubtitleView.setCues(emptyList())
         commentarySubtitleView.setCues(emptyList())
-        managedSubtitleView.setCues(lastDisplayedCues)
-        commentarySubtitleView.setCues(lastDisplayedCommentaryCues)
+        // Rebuild from the current raw group, including when video is paused.
+        // Keep filtering/stacking and the two visible layers in the same pass.
+        val currentCues = lastInputCues ?: boundPlayer?.currentCues?.cues ?: emptyList()
+        lastInputCues = null
+        lastDisplayedCues = emptyList()
+        lastDisplayedCommentaryCues = emptyList()
+        displayCues(currentCues)
         managedSubtitleView.postInvalidateOnAnimation()
         commentarySubtitleView.postInvalidateOnAnimation()
     }
