@@ -73,6 +73,7 @@ import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.LocalTvModalFocusHost
 import com.vueo.tv.ui.TvModalFocusHost
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.tvImmediateCut
 import com.vueo.tv.ui.motion.tvPlayerFadeThrough
 import com.vueo.tv.ui.motion.tvScreenBackTransition
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
@@ -1126,6 +1127,12 @@ fun VueoTvApp(
                             (initialState == TvRoute.SOURCE && targetState == TvRoute.DETAIL)
 
                     when {
+                        // A retained Details layer disappears in this composition.
+                        // Sources must be opaque immediately; fading the parent tab
+                        // underneath would reveal Home/Search/Library between pages.
+                        targetState == TvRoute.SOURCE && sourceReturnRoute == TvRoute.DETAIL &&
+                            (initialState == TvRoute.DETAIL || initialState in retainedDetailParentRoutes) ->
+                            tvImmediateCut()
                         initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER ->
                             tvPlayerFadeThrough()
                         initialIsTab && targetIsTab ->
