@@ -1,5 +1,6 @@
 package com.vueo.tv.detail
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import android.os.SystemClock
@@ -212,18 +213,18 @@ internal fun TvDetailPresentation(
     val backdropScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 190
     val backdropAlpha by animateFloatAsState(
         targetValue = if (backdropScrolled) .55f else 1f,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.HERO, !backdropScrolled, tween(
             durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
             easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
-        ),
+        )),
         label = "detail39BackdropAlpha",
     )
     val scrimAlpha by animateFloatAsState(
         targetValue = 1f,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.HERO, !backdropScrolled, tween(
             durationMillis = if (backdropScrolled) 180 else TvMotion.BACKDROP_MS,
             easing = if (backdropScrolled) TvMotion.EaseInOut else TvMotion.EaseOut,
-        ),
+        )),
         label = "detail39ScrimAlpha",
     )
 

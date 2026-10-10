@@ -1,5 +1,6 @@
 package com.vueo.tv.update
 
+import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -264,11 +265,11 @@ private fun TvUpdateAction(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "updateActionScale",
     )
 

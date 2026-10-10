@@ -67,6 +67,7 @@ internal enum class TvSettingsPage {
     SUBTITLES,
     SOURCES,
     APPEARANCE,
+    MOTION,
     DATA_STORAGE,
     DIAGNOSTICS,
     ABOUT,
@@ -88,6 +89,7 @@ private val TvSettingsRootDestinations = listOf(
     TvSettingsRootDestination(TvSettingsPage.SUBTITLES, "subtitles", "Subtitles", "PLAYBACK"),
     TvSettingsRootDestination(TvSettingsPage.SOURCES, "sources", "Sources", "PLAYBACK"),
     TvSettingsRootDestination(TvSettingsPage.APPEARANCE, "appearance", "Appearance", "APP"),
+    TvSettingsRootDestination(TvSettingsPage.MOTION, "motion", "Motion · Temporary", "APP"),
     TvSettingsRootDestination(TvSettingsPage.DATA_STORAGE, "data-storage", "Data & Storage", "APP"),
     TvSettingsRootDestination(TvSettingsPage.ABOUT, "about", "About VUEO", "APP"),
     TvSettingsRootDestination(TvSettingsPage.DIAGNOSTICS, "diagnostics", "Diagnostics", "DIAGNOSTICS"),
@@ -220,6 +222,7 @@ fun TvSettingsScreen(
             TvSettingsPage.APPEARANCE -> TvAppearanceSettings(
                 runtime, onNavigate, onProfile, onBack
             )
+            TvSettingsPage.MOTION -> TvMotionSettings(onNavigate, onProfile, onBack)
             TvSettingsPage.DATA_STORAGE -> TvDataStorageSettings(
                 runtime, onNavigate, onProfile, onDataChanged, onResetComplete, onBack
             )

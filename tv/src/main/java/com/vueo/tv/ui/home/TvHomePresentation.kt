@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -87,7 +88,7 @@ internal fun TvHomePresentation(
     val menuContentEasing = remember { CubicBezierEasing(0.22f, 0f, 0.18f, 1f) }
     val rowsViewportFraction by animateFloatAsState(
         targetValue = targetRowsViewportFraction,
-        animationSpec = tween(durationMillis = 340, easing = menuContentEasing),
+        animationSpec = tvTunedSpec(TvMotionGroup.TOPBAR, navigationVisible, tween(durationMillis = 340, easing = menuContentEasing)),
         label = "homeRowsViewportFraction",
     )
 
@@ -97,7 +98,8 @@ internal fun TvHomePresentation(
         if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
         PerformanceDiagnostics.captureRuntimeEvent(
             "HOME_VIEWPORT_TARGET topbar=$floatingPillMode navigation=$navigationVisible " +
-                "hideSidebar=$hideClassicSidebar target=$targetRowsViewportFraction duration=340ms"
+                "hideSidebar=$hideClassicSidebar target=$targetRowsViewportFraction motion=" +
+                if (TvMotionTuning.active(TvMotionGroup.TOPBAR)) TvMotionTuning.get(TvMotionGroup.TOPBAR).toString() else "Original 340ms"
         )
         var lastLoggedAt = 0L
         snapshotFlow { rowsViewportFraction }.collect { fraction ->
@@ -205,7 +207,7 @@ internal fun TvHomePresentation(
             .background(TvDesign.Black),
     ) {
         val screenHeight = maxHeight
-        val rowsViewportHeight = screenHeight * rowsViewportFraction
+        val rowsViewportHeight = screenHeight * rowsViewportFraction.coerceIn(.05f, .95f)
         val heroHeight = (screenHeight - rowsViewportHeight + 38.dp).coerceAtMost(screenHeight)
 
         TvModernHomeHero(

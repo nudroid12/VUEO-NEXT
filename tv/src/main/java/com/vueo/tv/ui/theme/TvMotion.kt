@@ -41,7 +41,7 @@ internal object TvMotion {
 }
 
 /** Forward/deeper route transition with no incoming delay. */
-internal fun tvScreenFadeThrough(
+private fun originalScreenFadeThrough(
     enterDurationMillis: Int = TvMotion.SCREEN_IN_MS,
     exitDurationMillis: Int = TvMotion.SCREEN_OUT_MS,
     initialScale: Float = 0.990f,
@@ -70,7 +70,7 @@ internal fun tvScreenFadeThrough(
         )
 
 /** Reverse route transition. The returning screen starts immediately. */
-internal fun tvScreenBackTransition(): ContentTransform =
+private fun originalScreenBackTransition(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
@@ -95,7 +95,7 @@ internal fun tvScreenBackTransition(): ContentTransform =
         )
 
 /** Top-level Home/Search/Library/Settings navigation stays short and subtle. */
-internal fun tvTabCrossTransition(): ContentTransform =
+private fun originalTabCrossTransition(): ContentTransform =
     (
         fadeIn(
             animationSpec = tween(
@@ -123,7 +123,7 @@ internal fun tvImmediateCut(): ContentTransform =
     EnterTransition.None togetherWith ExitTransition.None
 
 /** Player route uses fade only so video never appears to zoom. */
-internal fun tvPlayerFadeThrough(
+private fun originalPlayerFadeThrough(
     enterDurationMillis: Int = 165,
     exitDurationMillis: Int = 105,
 ): ContentTransform =
@@ -141,7 +141,7 @@ internal fun tvPlayerFadeThrough(
             ),
         )
 
-internal fun tvPanelEnter(): EnterTransition =
+private fun originalPanelEnter(): EnterTransition =
     fadeIn(
         animationSpec = tween(
             durationMillis = TvMotion.PANEL_IN_MS,
@@ -158,7 +158,7 @@ internal fun tvPanelEnter(): EnterTransition =
             ),
         )
 
-internal fun tvPanelExit(): ExitTransition =
+private fun originalPanelExit(): ExitTransition =
     fadeOut(
         animationSpec = tween(
             durationMillis = TvMotion.PANEL_OUT_MS,
@@ -173,14 +173,31 @@ internal fun tvPanelExit(): ExitTransition =
             ),
         )
 
-internal fun tvFocusSpec(focused: Boolean = true): FiniteAnimationSpec<Float> =
+private fun originalFocusSpec(focused: Boolean = true): FiniteAnimationSpec<Float> =
     tween(
         durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
         easing = TvMotion.EaseOut,
     )
 
-internal fun tvFocusColorSpec(focused: Boolean = true): FiniteAnimationSpec<Color> =
+private fun originalFocusColorSpec(focused: Boolean = true): FiniteAnimationSpec<Color> =
     tween(
         durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
         easing = TvMotion.EaseOut,
     )
+
+
+internal fun tvScreenFadeThrough(
+    enterDurationMillis: Int = TvMotion.SCREEN_IN_MS,
+    exitDurationMillis: Int = TvMotion.SCREEN_OUT_MS,
+    initialScale: Float = .990f,
+): ContentTransform = tvTunedContent(TvMotionGroup.FORWARD, originalScreenFadeThrough(enterDurationMillis, exitDurationMillis, initialScale))
+internal fun tvScreenBackTransition(): ContentTransform = tvTunedContent(TvMotionGroup.BACK, originalScreenBackTransition())
+internal fun tvTabCrossTransition(): ContentTransform = tvTunedContent(TvMotionGroup.TABS, originalTabCrossTransition())
+internal fun tvPlayerFadeThrough(enterDurationMillis: Int = 165, exitDurationMillis: Int = 105): ContentTransform =
+    tvTunedContent(TvMotionGroup.PLAYER_ROUTE, originalPlayerFadeThrough(enterDurationMillis, exitDurationMillis))
+internal fun tvPanelEnter(): EnterTransition = tvTunedEnter(TvMotionGroup.PANEL, originalPanelEnter())
+internal fun tvPanelExit(): ExitTransition = tvTunedExit(TvMotionGroup.PANEL, originalPanelExit())
+internal fun tvFocusSpec(focused: Boolean = true): FiniteAnimationSpec<Float> =
+    tvTunedSpec(TvMotionGroup.FOCUS, focused, originalFocusSpec(focused))
+internal fun tvFocusColorSpec(focused: Boolean = true): FiniteAnimationSpec<Color> =
+    tvTunedSpec(TvMotionGroup.FOCUS, focused, originalFocusColorSpec(focused))

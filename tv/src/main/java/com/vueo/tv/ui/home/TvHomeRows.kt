@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -880,11 +881,11 @@ private fun TvModernHomeCard(
     // Nuvio's catalog cards keep their geometry on focus. Preserve the
     // existing Continue Watching treatment outside the poster comparison.
     val animatedScale by animateFloatAsState(
-        targetValue = if (focused && kind == TvHomeRowKind.CONTINUE_WATCHING) 1.022f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(if (kind == TvHomeRowKind.CONTINUE_WATCHING) 1.022f else 1f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "modernHomeCardScale",
     )
 

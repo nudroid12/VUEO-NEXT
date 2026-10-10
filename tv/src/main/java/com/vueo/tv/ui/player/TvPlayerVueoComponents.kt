@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -207,11 +208,11 @@ internal fun VueoPlayerTopAction(
     var hasFocus by remember(requester) { mutableStateOf(false) }
     val focused = hasFocus && acceptsInput
     val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) 1.08f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused && enabled) tvTunedFocusScale(1.08f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "playerTopActionScale",
     )
     Box(
@@ -278,11 +279,11 @@ internal fun VueoPlayerPillAction(
     var hasFocus by remember(requester) { mutableStateOf(false) }
     val focused = hasFocus && acceptsInput
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "playerPillActionScale",
     )
     val shape = RoundedCornerShape(18.dp)

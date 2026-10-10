@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -537,14 +538,14 @@ private fun VueoPlayerControls(
             AnimatedVisibility(
                 visible = visible,
                 modifier = Modifier.align(Alignment.TopCenter),
-                enter = slideInVertically(
+                enter = tvTunedEnter(TvMotionGroup.CONTROLS, slideInVertically(
                     animationSpec = tween(240, easing = chromeEnterEasing),
                     initialOffsetY = { -chromeTravelPx },
-                ) + fadeIn(tween(240, easing = chromeEnterEasing)),
-                exit = slideOutVertically(
+                ) + fadeIn(tween(240, easing = chromeEnterEasing)), direction = -1),
+                exit = tvTunedExit(TvMotionGroup.CONTROLS, slideOutVertically(
                     animationSpec = tween(180, easing = chromeExitEasing),
                     targetOffsetY = { -chromeTravelPx },
-                ) + fadeOut(tween(180, easing = chromeExitEasing)),
+                ) + fadeOut(tween(180, easing = chromeExitEasing)), direction = -1),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 30.dp, end = 30.dp, top = 28.dp),
@@ -629,14 +630,14 @@ private fun VueoPlayerControls(
                 // keeps its layout space but is visually suppressed.
                 visible = visible || hiddenSeekProgressVisible,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(
+                enter = tvTunedEnter(TvMotionGroup.CONTROLS, slideInVertically(
                     animationSpec = tween(240, easing = chromeEnterEasing),
                     initialOffsetY = { chromeTravelPx },
-                ) + fadeIn(tween(240, easing = chromeEnterEasing)),
-                exit = slideOutVertically(
+                ) + fadeIn(tween(240, easing = chromeEnterEasing)), direction = 1),
+                exit = tvTunedExit(TvMotionGroup.CONTROLS, slideOutVertically(
                     animationSpec = tween(180, easing = chromeExitEasing),
                     targetOffsetY = { chromeTravelPx },
-                ) + fadeOut(tween(180, easing = chromeExitEasing)),
+                ) + fadeOut(tween(180, easing = chromeExitEasing)), direction = 1),
             ) {
                 Column(
                     Modifier.fillMaxWidth()
@@ -734,20 +735,28 @@ private data class VueoPlayerChromeAction(
 internal const val TV_WORKSPACE_ENTER_MS = 240
 internal const val TV_WORKSPACE_EXIT_MS = 200
 
-internal fun tvPlayerWorkspaceFadeIn(): EnterTransition = fadeIn(
+private fun originalPlayerWorkspaceFadeIn(): EnterTransition = fadeIn(
     tween(TV_WORKSPACE_ENTER_MS, easing = TvMotion.EaseOut),
 )
 
-internal fun tvPlayerWorkspaceFadeOut(): ExitTransition = fadeOut(
+private fun originalPlayerWorkspaceFadeOut(): ExitTransition = fadeOut(
     tween(TV_WORKSPACE_EXIT_MS, easing = TvMotion.EaseInOut),
 )
 
-internal fun tvPlayerSidePanelEnter(): EnterTransition = slideInHorizontally(
+private fun originalPlayerSidePanelEnter(): EnterTransition = slideInHorizontally(
     initialOffsetX = { it / 16 },
     animationSpec = tween(TV_WORKSPACE_ENTER_MS, easing = TvMotion.EaseOut),
 )
 
-internal fun tvPlayerSidePanelExit(): ExitTransition = slideOutHorizontally(
+private fun originalPlayerSidePanelExit(): ExitTransition = slideOutHorizontally(
     targetOffsetX = { it / 16 },
     animationSpec = tween(TV_WORKSPACE_EXIT_MS, easing = TvMotion.EaseInOut),
 )
+
+
+internal fun tvPlayerWorkspaceFadeIn(): EnterTransition = tvTunedEnter(TvMotionGroup.WORKSPACE, originalPlayerWorkspaceFadeIn())
+internal fun tvPlayerWorkspaceFadeOut(): ExitTransition = tvTunedExit(TvMotionGroup.WORKSPACE, originalPlayerWorkspaceFadeOut())
+internal fun tvPlayerSidePanelEnter(): EnterTransition =
+    if (TvMotionTuning.reduceMotion || TvMotionTuning.active(TvMotionGroup.WORKSPACE)) EnterTransition.None else originalPlayerSidePanelEnter()
+internal fun tvPlayerSidePanelExit(): ExitTransition =
+    if (TvMotionTuning.reduceMotion || TvMotionTuning.active(TvMotionGroup.WORKSPACE)) ExitTransition.None else originalPlayerSidePanelExit()

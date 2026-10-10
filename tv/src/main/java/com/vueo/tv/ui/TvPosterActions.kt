@@ -34,7 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import com.vueo.tv.ui.motion.TvMotionDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
@@ -99,6 +99,7 @@ internal fun TvPosterActionDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        val finish = com.vueo.tv.ui.motion.LocalTvMotionFinish.current
         Column(
             modifier = Modifier
                 .width(430.dp)
@@ -128,8 +129,7 @@ internal fun TvPosterActionDialog(
 
             val actions = buildList {
                 add("Open details" to {
-                    onDismiss()
-                    onOpenDetails()
+                    finish { onDismiss(); onOpenDetails() }
                 })
                 add(
                     (if (watchlisted) "Remove from My List" else "Add to My List") to {
@@ -148,7 +148,7 @@ internal fun TvPosterActionDialog(
                     add("Remove from Continue Watching" to {
                         libraryStore.removeFromContinueWatching(continueEntry)
                         onChanged()
-                        onDismiss()
+                        finish { onDismiss() }
                     })
                 }
             }

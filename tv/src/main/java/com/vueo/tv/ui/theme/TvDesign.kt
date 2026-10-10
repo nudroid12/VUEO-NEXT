@@ -1,5 +1,6 @@
 package com.vueo.tv.ui
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -97,11 +98,11 @@ fun Modifier.tvPremiumFocus(
 ): Modifier {
     var focused by remember { mutableStateOf(false) }
     val animatedScale by animateFloatAsState(
-        targetValue = if (focused) scale else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(scale) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "tvPremiumFocusScale",
     )
 

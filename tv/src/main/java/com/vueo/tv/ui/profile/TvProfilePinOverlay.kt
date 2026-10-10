@@ -1,5 +1,6 @@
 package com.vueo.tv.profile
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -161,7 +162,7 @@ private fun PinKey(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "pinKeyScale",
     )

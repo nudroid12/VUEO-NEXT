@@ -1,5 +1,6 @@
 package com.vueo.tv.ui
 
+import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -153,34 +154,34 @@ fun TvSidebar(
 
     val width by animateDpAsState(
         targetValue = if (expanded) metrics.expandedWidth else if (hideClassicSidebar) 0.dp else metrics.collapsedWidth,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.NAVIGATION, expanded, tween(
             durationMillis = if (expanded) 180 else 130,
             easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
-        ),
+        )),
         label = "vueoSidebarWidth",
     )
     val labelAlpha by animateFloatAsState(
         targetValue = if (sidebarStyle == TvSidebarStyle.CLASSIC && expanded) 1f else 0f,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.NAVIGATION, expanded, tween(
             durationMillis = if (expanded) 155 else 90,
             delayMillis = if (expanded) 25 else 0,
             easing = if (expanded) TvMotion.EaseOut else TvMotion.EaseInOut,
-        ),
+        )),
         label = "vueoSidebarLabelAlpha",
     )
     val panelAlpha by animateFloatAsState(
         targetValue = if (expanded) .98f else .86f,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.NAVIGATION, expanded, tween(
             durationMillis = TvMotion.ELEMENT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "vueoSidebarPanelAlpha",
     )
-    val panelBrush = sidebarPanelBrush(sidebarStyle, expanded, panelAlpha)
+    val panelBrush = sidebarPanelBrush(sidebarStyle, expanded, panelAlpha.coerceIn(0f, 1f))
     val containerModifier = when (sidebarStyle) {
         TvSidebarStyle.CLASSIC -> modifier
             .fillMaxHeight()
-            .width(width)
+            .width(width.coerceAtLeast(0.dp))
             .clipToBounds()
             .background(panelBrush)
 
@@ -311,14 +312,14 @@ fun TvSidebar(
             AnimatedVisibility(
                 visible = expanded,
                 modifier = Modifier.align(Alignment.TopCenter),
-                enter = slideInVertically(
+                enter = tvTunedEnter(TvMotionGroup.NAVIGATION, slideInVertically(
                     animationSpec = tween(durationMillis = 180, easing = TvMotion.EaseOut),
                     initialOffsetY = { -it },
-                ) + fadeIn(animationSpec = tween(140)),
-                exit = slideOutVertically(
+                ) + fadeIn(animationSpec = tween(140)), direction = -1),
+                exit = tvTunedExit(TvMotionGroup.NAVIGATION, slideOutVertically(
                     animationSpec = tween(durationMillis = 140, easing = TvMotion.EaseInOut),
                     targetOffsetY = { -it },
-                ) + fadeOut(animationSpec = tween(100)),
+                ) + fadeOut(animationSpec = tween(100)), direction = -1),
             ) {
                 Box(modifier = panelModifier, content = navigationContent)
             }
@@ -373,14 +374,14 @@ private fun SidebarNavigationItem(
     var focused by remember(label) { mutableStateOf(false) }
     val iconScale by animateFloatAsState(
         targetValue = when {
-            focused -> 1.10f
-            selected && !expanded -> 1.07f
+            focused -> tvTunedFocusScale(1.10f)
+            selected && !expanded -> tvTunedFocusScale(1.07f)
             else -> 1f
         },
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "vueoSidebarIconScale:$label",
     )
     val itemBrush = sidebarItemBrush(style, expanded, selected, focused)
@@ -490,7 +491,7 @@ private fun SidebarNavigationItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .padding(start = 4.dp, end = 20.dp)
-                    .graphicsLayer { alpha = labelAlpha },
+                    .graphicsLayer { alpha = labelAlpha.coerceIn(0f, 1f) },
             )
         }
     }

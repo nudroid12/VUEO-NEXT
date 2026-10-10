@@ -28,10 +28,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.ui.window.Dialog
+import com.vueo.tv.ui.motion.TvMotionDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.AlertDialog
+import com.vueo.tv.ui.motion.TvMotionAlertDialog as AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.LinearProgressIndicator
@@ -1583,6 +1583,7 @@ internal fun TvConfirmDialog(
         val removeRequester = remember { FocusRequester() }
         LaunchedEffect(Unit) { cancelRequester.requestFocus() }
         Dialog(onDismissRequest = ::dismissAndRestore, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            val finish = com.vueo.tv.ui.motion.LocalTvMotionFinish.current
             Column(
                 modifier = Modifier.width(440.dp)
                     .background(TvSettingsContrast.Card, RoundedCornerShape(18.dp))
@@ -1595,10 +1596,10 @@ internal fun TvConfirmDialog(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
                     TvInstallDialogButton("Cancel", true,
                         Modifier.focusRequester(cancelRequester).focusProperties { left = FocusRequester.Cancel; right = removeRequester },
-                        ::dismissAndRestore)
+                        { finish { dismissAndRestore() } })
                     TvInstallDialogButton(confirmLabel, true,
                         Modifier.focusRequester(removeRequester).focusProperties { left = cancelRequester; right = FocusRequester.Cancel },
-                        ::confirmAndRestore, destructive = true)
+                        { finish { confirmAndRestore() } }, destructive = true)
                 }
             }
         }
@@ -1610,10 +1611,12 @@ internal fun TvConfirmDialog(
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            TextButton(onClick = ::confirmAndRestore) { Text(confirmLabel) }
+            val finish = com.vueo.tv.ui.motion.LocalTvMotionFinish.current
+            TextButton(onClick = { finish { confirmAndRestore() } }) { Text(confirmLabel) }
         },
         dismissButton = {
-            TextButton(onClick = ::dismissAndRestore) { Text("Cancel") }
+            val finish = com.vueo.tv.ui.motion.LocalTvMotionFinish.current
+            TextButton(onClick = { finish { dismissAndRestore() } }) { Text("Cancel") }
         },
     )
 }

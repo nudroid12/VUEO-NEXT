@@ -1,5 +1,6 @@
 package com.vueo.tv.search
 
+import com.vueo.tv.ui.motion.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -309,11 +310,11 @@ private fun TvEntityPosterTile(
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "entityPosterScale",
     )
 

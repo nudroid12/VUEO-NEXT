@@ -1,5 +1,6 @@
 package com.vueo.tv.ui
 
+import com.vueo.tv.ui.motion.*
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -284,7 +285,7 @@ fun TvNetworkImage(
 
     val imageAlpha by animateFloatAsState(
         targetValue = if (image != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 180),
+        animationSpec = tvTunedSpec(TvMotionGroup.IMAGE, image != null, tween(durationMillis = 180)),
         label = "tvNetworkImageFade",
     )
 

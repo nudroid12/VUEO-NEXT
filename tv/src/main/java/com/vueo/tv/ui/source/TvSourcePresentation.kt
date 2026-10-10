@@ -1,5 +1,6 @@
 package com.vueo.tv.source
 
+import com.vueo.tv.ui.motion.*
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
@@ -233,10 +234,10 @@ private fun SourceBackdrop(
 ) {
     val alpha by animateFloatAsState(
         targetValue = if (loading) .70f else .50f,
-        animationSpec = tween(
+        animationSpec = tvTunedSpec(TvMotionGroup.HERO, !loading, tween(
             durationMillis = TvMotion.BACKDROP_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "sourceBackdropAlpha",
     )
 
@@ -246,7 +247,7 @@ private fun SourceBackdrop(
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { this.alpha = alpha },
+                .graphicsLayer { this.alpha = alpha.coerceIn(0f, 1f) },
             contentScale = ContentScale.Crop,
             fallback = TvDesign.Black,
         )

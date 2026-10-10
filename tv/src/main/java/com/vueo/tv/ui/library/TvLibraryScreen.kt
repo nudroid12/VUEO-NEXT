@@ -1,5 +1,6 @@
 package com.vueo.tv.library
 
+import com.vueo.tv.ui.motion.*
 import android.content.Context
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import android.view.KeyEvent
@@ -439,11 +440,11 @@ private fun LibraryViewModeButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.02f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "libraryViewModeScale",
     )
 
@@ -548,11 +549,11 @@ private fun LibraryPosterCard(
 ) {
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.02f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.02f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "libraryPosterScale",
     )
 
@@ -650,11 +651,11 @@ private fun LibraryListRow(
 ) {
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.01f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.01f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "libraryListScale",
     )
 

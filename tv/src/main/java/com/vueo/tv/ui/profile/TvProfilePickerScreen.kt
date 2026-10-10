@@ -1,5 +1,6 @@
 package com.vueo.tv.profile
 
+import com.vueo.tv.ui.motion.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -775,7 +776,7 @@ private fun PickerProfileCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "pickerProfileScale",
     )
@@ -849,7 +850,7 @@ private fun ManageProfileCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "manageProfileScale",
     )
@@ -897,7 +898,7 @@ private fun ManageProfileCard(
 private fun AddProfileCard(onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "addProfileScale",
     )
@@ -958,7 +959,7 @@ private fun TvAvatarChoice(
 ) {
     var focused by remember(avatar.id) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.055f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.055f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "profileEditorAvatarScale",
     )
@@ -1045,7 +1046,7 @@ private fun TvPickerToggleRow(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) 1.014f else 1f,
+        targetValue = if (focused && enabled) tvTunedFocusScale(1.014f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "pickerToggleScale",
     )
@@ -1079,7 +1080,7 @@ private fun TvEditorToggleRow(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.012f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.012f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "profileEditorToggleScale",
     )
@@ -1120,7 +1121,7 @@ private fun TvProfileAction(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) 1.025f else 1f,
+        targetValue = if (focused && enabled) tvTunedFocusScale(1.025f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "profileActionScale:$label",
     )
@@ -1168,7 +1169,7 @@ private fun TvIconAction(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.05f else 1f,
+        targetValue = if (focused) tvTunedFocusScale(1.05f) else 1f,
         animationSpec = tvFocusSpec(focused),
         label = "profileIconActionScale:$contentDescription",
     )

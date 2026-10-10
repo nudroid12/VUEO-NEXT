@@ -6,6 +6,7 @@ import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
 
+import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
@@ -1191,11 +1192,11 @@ private fun TvSearchPosterTile(
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.035f else 1f,
-        animationSpec = tween(
+        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
             durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
             easing = TvMotion.EaseOut,
-        ),
+        )),
         label = "searchPosterScale",
     )
 

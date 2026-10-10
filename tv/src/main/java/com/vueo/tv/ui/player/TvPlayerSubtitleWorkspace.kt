@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -1192,8 +1193,8 @@ private fun VueoSubtitleStepperRow(
     val valueRequester = requester ?: internalRequester
     var focused by remember(valueRequester) { mutableStateOf(false) }
     val focusScale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(durationMillis = 150, easing = FastOutSlowInEasing)),
         label = "subtitleStyleFocusScale",
     )
     val shape = RoundedCornerShape(9.dp)
@@ -1270,8 +1271,8 @@ private fun VueoSubtitleToggleRow(
 ) {
     var focused by remember(title) { mutableStateOf(false) }
     val focusScale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(durationMillis = 150, easing = FastOutSlowInEasing)),
         label = "subtitleStyleFocusScale",
     )
     val shape = RoundedCornerShape(11.dp)
@@ -1373,8 +1374,8 @@ private fun VueoSubtitleColorRow(
             colours.forEachIndexed { index, colour ->
                 var focused by remember(colour) { mutableStateOf(false) }
                 val focusScale by animateFloatAsState(
-                    targetValue = if (focused) 1.10f else 1f,
-                    animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                    targetValue = if (focused) tvTunedFocusScale(1.10f) else 1f,
+                    animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(durationMillis = 150, easing = FastOutSlowInEasing)),
                     label = "subtitleStyleFocusScale",
                 )
                 val selected = (selectedColour and 0x00FFFFFF) == (colour and 0x00FFFFFF)
@@ -1451,8 +1452,8 @@ private fun VueoSubtitleActionRow(
 ) {
     var focused by remember(title) { mutableStateOf(false) }
     val focusScale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        targetValue = if (focused) tvTunedFocusScale(1.04f) else 1f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(durationMillis = 150, easing = FastOutSlowInEasing)),
         label = "subtitleStyleFocusScale",
     )
     val shape = RoundedCornerShape(11.dp)

@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.animateFloat
@@ -62,18 +63,19 @@ internal fun VueoPlayerPauseBackdrop(
     val pauseEasing = remember { CubicBezierEasing(0.22f, 0f, 0.18f, 1f) }
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(280, easing = pauseEasing)),
-        exit = fadeOut(tween(200, easing = pauseEasing)),
+        enter = tvTunedEnter(TvMotionGroup.PAUSE, fadeIn(tween(280, easing = pauseEasing))),
+        exit = tvTunedExit(TvMotionGroup.PAUSE, fadeOut(tween(200, easing = pauseEasing))),
     ) {
         // This child animation shares the visibility lifetime, so dismissal
         // retains the text until its exit fade completes.
         val textAlpha by transition.animateFloat(
             transitionSpec = {
-                if (targetState == EnterExitState.Visible) tween(220, delayMillis = 60, easing = pauseEasing)
-                else tween(160, easing = pauseEasing)
+                tvTunedSpec(TvMotionGroup.PAUSE, targetState == EnterExitState.Visible,
+                    if (targetState == EnterExitState.Visible) tween(220, delayMillis = 60, easing = pauseEasing)
+                    else tween(160, easing = pauseEasing))
             },
             label = "pauseBackdropText",
-        ) { state -> if (state == EnterExitState.Visible) 1f else 0f }
+        ) { state -> if (state == EnterExitState.Visible) 1f else tvTunedAlpha(TvMotionGroup.PAUSE, 0f) }
         Box(Modifier.fillMaxSize()) {
             // A transparent fallback leaves the paused PlayerView frame visible
             // while the backdrop is unavailable, loading or has failed.
@@ -94,7 +96,7 @@ internal fun VueoPlayerPauseBackdrop(
             } else null
             Column(
                 modifier = Modifier.align(Alignment.TopEnd).padding(top = 36.dp, end = 56.dp)
-                    .graphicsLayer { alpha = textAlpha },
+                    .graphicsLayer { alpha = textAlpha.coerceIn(0f, 1f) },
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -114,7 +116,7 @@ internal fun VueoPlayerPauseBackdrop(
             }
             Column(
                 modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 56.dp, vertical = 56.dp)
-                    .widthIn(max = 680.dp).graphicsLayer { alpha = textAlpha },
+                    .widthIn(max = 680.dp).graphicsLayer { alpha = textAlpha.coerceIn(0f, 1f) },
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text("Paused", color = Color.White.copy(alpha = .70f), fontSize = 14.sp)
@@ -169,7 +171,7 @@ internal fun VueoPlayerPauseBackdrop(
                 color = Color.White.copy(alpha = .65f),
                 fontSize = 14.sp,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 56.dp, bottom = 56.dp)
-                    .graphicsLayer { alpha = textAlpha },
+                    .graphicsLayer { alpha = textAlpha.coerceIn(0f, 1f) },
             )
         }
     }

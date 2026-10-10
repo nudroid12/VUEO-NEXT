@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
@@ -119,10 +120,10 @@ internal fun TvModernHomeHero(
                 }
             }
             sceneTransition.Crossfade(
-                animationSpec = tween(
+                animationSpec = tvTunedSpec(TvMotionGroup.HERO, true, tween(
                     durationMillis = 400,
                     easing = TvMotion.EaseOut,
-                ),
+                )),
                 modifier = Modifier.fillMaxSize().graphicsLayer {
                     clip = true
                     shape = mediaClip
@@ -147,10 +148,10 @@ internal fun TvModernHomeHero(
         }
 
         sceneTransition.Crossfade(
-            animationSpec = tween(
+            animationSpec = tvTunedSpec(TvMotionGroup.HERO, true, tween(
                 durationMillis = 400,
                 easing = TvMotion.EaseOut,
-            ),
+            )),
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(

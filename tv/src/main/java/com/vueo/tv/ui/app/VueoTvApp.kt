@@ -1,5 +1,6 @@
 package com.vueo.tv
 
+import com.vueo.tv.ui.motion.*
 import com.vueo.shared.core.diagnostics.AppCrashReport
 import com.vueo.tv.settings.TvRuntimeDiagnosticsDialog
 import com.vueo.shared.core.diagnostics.CrashReportStore
@@ -68,6 +69,10 @@ import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.search.TvEntityResultsScreen
+import com.vueo.tv.settings.TvMotionSettingsOverlay
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import com.vueo.tv.settings.TvSettingsScreen
 import com.vueo.tv.source.TvSourceScreen
 import com.vueo.tv.ui.LocalTvModalFocusHost
@@ -126,6 +131,7 @@ fun VueoTvApp(
     onWatchNextConsumed: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    remember(context.applicationContext) { TvMotionTuning.load(context.applicationContext); true }
     var pendingCrash by remember { mutableStateOf<AppCrashReport?>(null) }
     var showCrashDiagnostics by remember { mutableStateOf(false) }
     var crashRecoveryLoaded by remember { mutableStateOf(false) }
@@ -147,6 +153,8 @@ fun VueoTvApp(
     val homeSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
+    var motionSettingsOpen by remember { mutableStateOf(false) }
+    var detailMotionClosing by remember { mutableStateOf(false) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var watchNextSyncToken by remember { mutableIntStateOf(0) }
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
@@ -425,7 +433,8 @@ fun VueoTvApp(
         route = TvRoute.SOURCE
     }
 
-    fun closeDetail() {
+    fun finishCloseDetail() {
+        detailMotionClosing = false
         val previous = detailBackStack.lastOrNull()
         if (previous != null) {
             PerformanceDiagnostics.captureRuntimeEvent(
@@ -459,6 +468,15 @@ fun VueoTvApp(
                 detailParentRevealTraceToken += 1
             }
         }
+    }
+
+    fun closeDetail() {
+        if (detailMotionClosing) return
+        val tunedRetainedBack = detailBackStack.isEmpty() &&
+            detailReturnRoute in retainedDetailParentRoutes && !detailReturnedFromSource &&
+            TvMotionTuning.active(TvMotionGroup.BACK) && !TvMotionTuning.reduceMotion &&
+            TvMotionTuning.get(TvMotionGroup.BACK).style != TvMotionStyle.NONE
+        if (tunedRetainedBack) detailMotionClosing = true else finishCloseDetail()
     }
 
     fun sourceSessionKey(media: MediaItem, episode: EpisodeItem?): String =
@@ -1092,7 +1110,14 @@ fun VueoTvApp(
     ) {
         CompositionLocalProvider(LocalTvModalFocusHost provides modalFocusHost) {
         Box(
-            modifier = Modifier.fillMaxSize().background(TvDesign.Black),
+            modifier = Modifier.fillMaxSize().background(TvDesign.Black)
+                .onPreviewKeyEvent { event ->
+                    if (detailMotionClosing) true
+                    else if (event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU && route != TvRoute.STARTUP && modalDepth == 0) {
+                        if (event.type == KeyEventType.KeyUp) motionSettingsOpen = true
+                        true
+                    } else false
+                },
         ) {
             Box(
                 modifier = Modifier
@@ -1132,7 +1157,7 @@ fun VueoTvApp(
                         // underneath would reveal Home/Search/Library between pages.
                         targetState == TvRoute.SOURCE && sourceReturnRoute == TvRoute.DETAIL &&
                             (initialState == TvRoute.DETAIL || initialState in retainedDetailParentRoutes) ->
-                            tvImmediateCut()
+                            tvTunedContent(TvMotionGroup.FORWARD, tvImmediateCut())
                         initialState == TvRoute.PLAYER || targetState == TvRoute.PLAYER ->
                             tvPlayerFadeThrough()
                         initialIsTab && targetIsTab ->
@@ -1498,6 +1523,8 @@ fun VueoTvApp(
                     RetainedDetailLayer(
                         mediaKey = "${media.type}:${media.id}",
                         parentRoute = parent,
+                        closing = detailMotionClosing,
+                        onExitFinished = ::finishCloseDetail,
                     ) {
                         DisposableEffect(media.id, media.type, media.sourceExtensionId, parent) {
                             PerformanceDiagnostics.captureRuntimeEvent(
@@ -1558,6 +1585,13 @@ fun VueoTvApp(
                 }
                 TvRuntimeDiagnosticsDialog(onDismiss = { showCrashDiagnostics = false })
             }
+            if (motionSettingsOpen) {
+                TvMotionSettingsOverlay(
+                    onDismiss = { motionSettingsOpen = false },
+                    onNavigate = ::navigate,
+                    onProfile = { openDna(route) },
+                )
+            }
             updatePromptRelease?.takeIf {
                 route != TvRoute.PLAYER && crashRecoveryLoaded && pendingCrash == null && !showCrashDiagnostics
             }?.let { release ->
@@ -1576,20 +1610,34 @@ fun VueoTvApp(
 private fun RetainedDetailLayer(
     mediaKey: String,
     parentRoute: TvRoute,
+    closing: Boolean,
+    onExitFinished: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val motionGroup = if (closing) TvMotionGroup.BACK else TvMotionGroup.FORWARD
     var entered by remember(mediaKey, parentRoute) { mutableStateOf(false) }
     val alpha by animateFloatAsState(
-        targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(durationMillis = 175),
+        targetValue = if (entered && !closing) 1f else tvTunedAlpha(motionGroup, 0f),
+        animationSpec = tvTunedSpec(motionGroup, !closing, tween(durationMillis = 175)),
         label = "retainedDetailAlpha",
     )
     val scale by animateFloatAsState(
-        targetValue = if (entered) 1f else 0.990f,
-        animationSpec = tween(durationMillis = 190),
+        targetValue = if (entered && !closing) 1f else tvTunedScale(motionGroup, .990f),
+        animationSpec = tvTunedSpec(motionGroup, !closing, tween(durationMillis = 190)),
         label = "retainedDetailScale",
     )
 
+    val travel = remember(mediaKey, parentRoute) { androidx.compose.animation.core.Animatable(1f) }
+    val latestExitFinished by androidx.compose.runtime.rememberUpdatedState(onExitFinished)
+    LaunchedEffect(mediaKey, parentRoute, closing) {
+        if (closing || TvMotionTuning.active(motionGroup)) {
+            travel.animateTo(
+                if (closing) 1f else 0f,
+                tvTunedSpec(motionGroup, !closing, tween(durationMillis = 175)),
+            )
+        } else travel.snapTo(0f)
+        if (closing) latestExitFinished()
+    }
     LaunchedEffect(mediaKey, parentRoute) { entered = true }
 
     LaunchedEffect(mediaKey, parentRoute) {
@@ -1611,9 +1659,14 @@ private fun RetainedDetailLayer(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
-                this.alpha = alpha
+                this.alpha = alpha.coerceIn(0f, 1f)
                 scaleX = scale
                 scaleY = scale
+                if (!TvMotionTuning.reduceMotion && TvMotionTuning.active(motionGroup)) {
+                    val value = TvMotionTuning.get(motionGroup)
+                    if (value.style in setOf(TvMotionStyle.SLIDE_X, TvMotionStyle.FADE_SLIDE_X)) translationX = size.width * value.travelPercent / 100f * travel.value
+                    if (value.style in setOf(TvMotionStyle.SLIDE_Y, TvMotionStyle.FADE_SLIDE_Y)) translationY = size.height * value.travelPercent / 100f * travel.value
+                }
             },
     ) {
         content()
