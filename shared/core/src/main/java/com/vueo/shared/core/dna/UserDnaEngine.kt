@@ -31,10 +31,13 @@ class UserDnaEngine(
         history: List<LibraryPlaybackEntry>,
         myList: List<MediaItem>,
         nowEpochMs: Long = System.currentTimeMillis(),
+        checkActive: () -> Unit = {},
     ): UserDnaSnapshot {
+        checkActive()
         val signals = linkedMapOf<String, MutableMediaSignal>()
 
         history.forEach { entry ->
+            checkActive()
             if (entry.positionMs <= MIN_MEANINGFUL_POSITION_MS) {
                 return@forEach
             }
@@ -57,6 +60,7 @@ class UserDnaEngine(
         }
 
         myList.forEach { media ->
+            checkActive()
             val key = mediaIdentity(media)
             val signal = signals.getOrPut(key) {
                 MutableMediaSignal(media)
@@ -69,6 +73,7 @@ class UserDnaEngine(
         val weightedSignals =
             signals.values
                 .mapNotNull { signal ->
+                    checkActive()
                     val weight =
                         signal.historyWeight + signal.myListWeight
                     if (weight <= 0.0) {
@@ -86,6 +91,7 @@ class UserDnaEngine(
         val decadeScores = linkedMapOf<String, Double>()
 
         weightedSignals.forEach { signal ->
+            checkActive()
             val genres =
                 signal.media.genres
                     .mapNotNull(::canonicalGenre)
@@ -180,6 +186,7 @@ class UserDnaEngine(
                 myListTitles = myListTitles,
             )
 
+        checkActive()
         return UserDnaSnapshot(
             topGenres = topGenres,
             typeBreakdown = typeBreakdown,

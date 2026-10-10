@@ -1,5 +1,6 @@
 package com.vueo.shared.core.home
 
+import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.extensions.MediaExtension
@@ -46,22 +47,26 @@ object HomeRecommendationPolicy {
         dnaEngine: UserDnaEngine,
         personalizationEnabled: Boolean,
         limit: Int = DEFAULT_LIMIT,
+        dnaSnapshot: UserDnaSnapshot? = null,
+        checkActive: () -> Unit = {},
     ): HomeRecommendationSections {
+        checkActive()
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
-        val catalogCandidates = catalogRows.asSequence().flatMap { it.items.asSequence() }.distinctBy(::mediaKey).toList()
+        val catalogCandidates = catalogRows.asSequence().flatMap { it.items.asSequence() }.onEach { checkActive() }.distinctBy(::mediaKey).toList()
         val watchedTitleKeys = watchHistory.asSequence().map { mediaKey(it.media) }.toSet()
-        val dna = dnaEngine.build()
+        val dna = dnaSnapshot ?: dnaEngine.build()
+        checkActive()
         val forYou = if (!dna.hasUsefulData) emptyList() else catalogCandidates.asSequence()
             .filterNot { mediaKey(it) in watchedTitleKeys }
-            .mapNotNull { candidate -> dnaEngine.matchPercent(media = candidate, dna = dna)?.takeIf { it >= FOR_YOU_MIN_MATCH_PERCENT }?.let { score -> candidate to score } }
+            .mapNotNull { candidate -> checkActive(); dnaEngine.matchPercent(media = candidate, dna = dna)?.takeIf { it >= FOR_YOU_MIN_MATCH_PERCENT }?.let { score -> candidate to score } }
             .sortedByDescending { it.second }.take(limit).map { it.first }.toList()
         val seed = watchHistory.asSequence()
             .filter { it.isCompleted || it.positionMs >= 120_000L || it.progressFraction >= .20f }
             .distinctBy { mediaKey(it.media) }.firstOrNull()?.media
         val because = seed?.let { watched ->
             val seedGenres = watched.genres.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
-            val related = CatalogDiscoveryCache.related(watched, limit = 30)
-            val fallback = catalogCandidates.filter { candidate -> candidate.type == watched.type && candidate.genres.any { it.trim().lowercase() in seedGenres } }
+            val related = CatalogDiscoveryCache.related(watched, limit = 30, checkActive = checkActive)
+            val fallback = catalogCandidates.filter { candidate -> checkActive(); candidate.type == watched.type && candidate.genres.any { it.trim().lowercase() in seedGenres } }
             val forYouKeys = forYou.asSequence().map(::mediaKey).toSet()
             val seedKey = mediaKey(watched)
             (related + fallback).asSequence().distinctBy(::mediaKey)

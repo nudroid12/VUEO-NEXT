@@ -472,7 +472,9 @@ object CatalogDiscoveryCache {
     fun related(
         item: MediaItem,
         limit: Int = 16,
+        checkActive: () -> Unit = {},
     ): List<MediaItem> {
+        checkActive()
         if (limit <= 0) {
             return emptyList()
         }
@@ -503,6 +505,7 @@ object CatalogDiscoveryCache {
             cached
                 .asSequence()
                 .filter { candidate ->
+                    checkActive()
                     relatedCanonicalType(
                         candidate.type
                     ) == targetType &&
@@ -538,9 +541,11 @@ object CatalogDiscoveryCache {
         val candidates =
             duplicateGroups.values
                 .mapNotNull {
+                    checkActive()
                     relatedMergeDuplicates(it)
                 }
                 .sortedByDescending { candidate ->
+                    checkActive()
                     val candidateGenres =
                         candidate.genres
                             .map(
@@ -588,6 +593,7 @@ object CatalogDiscoveryCache {
             listOf(item) + candidates
         val tokenSets =
             documents.map {
+                checkActive()
                 relatedDocumentTokens(it)
             }
         val documentFrequency =
@@ -658,6 +664,7 @@ object CatalogDiscoveryCache {
             )
         val scored =
             candidates.mapNotNull { candidate ->
+                checkActive()
                 val candidateFeatures =
                     relatedBuildFeatures(
                         media = candidate,
@@ -712,6 +719,7 @@ object CatalogDiscoveryCache {
             return emptyList()
         }
 
+        checkActive()
         return relatedDiversityRerank(
             scored = scored,
             limit = limit,

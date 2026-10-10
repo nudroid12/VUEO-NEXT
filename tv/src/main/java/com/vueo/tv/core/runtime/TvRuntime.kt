@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -84,6 +87,18 @@ class TvRuntime(context: Context) {
     private val providerSync = ProviderCodeSyncManager(appContext)
     private val pluginRepositoryManager = PluginRepositoryManager(appContext)
     private val pluginHealthStore = PluginHealthStore(appContext)
+    private val detailLibraryMutex = Mutex()
+
+    // Cancelled requests waiting for local JSON never start another read.
+    internal suspend fun <T> readDetailLibrary(block: () -> T): T = withContext(Dispatchers.IO) {
+        detailLibraryMutex.withLock {
+            currentCoroutineContext().ensureActive()
+            val result = block()
+            currentCoroutineContext().ensureActive()
+            result
+        }
+    }
+
     private val addonLoadMutex = Mutex()
 
     @Volatile
@@ -461,10 +476,11 @@ class TvRuntime(context: Context) {
         )
     }
 
-    fun localRelatedTitles(item: MediaItem): List<MediaItem> =
+    fun localRelatedTitles(item: MediaItem, checkActive: () -> Unit = {}): List<MediaItem> =
         RelatedContentOrchestrator.local(
             item = item,
             limit = 18,
+            checkActive = checkActive,
         )
 
     suspend fun relatedTitles(
@@ -499,10 +515,16 @@ class TvRuntime(context: Context) {
     }
 
 
-    fun dnaMatch(item: MediaItem): Int? {
+    suspend fun dnaMatch(item: MediaItem): Int? {
         val profileId = profileStore.activeProfileId()
         if (!dnaPreferences.shouldShowDnaMatch(profileId)) return null
-        return dnaEngine.matchPercent(item)
+        val history = readDetailLibrary { libraryStore.history() }
+        val myList = readDetailLibrary { libraryStore.watchlist() }
+        currentCoroutineContext().ensureActive()
+        val context = currentCoroutineContext()
+        val dna = dnaEngine.analyze(history, myList, checkActive = { context.ensureActive() })
+        currentCoroutineContext().ensureActive()
+        return dnaEngine.matchPercent(item, dna)
     }
 
     fun visibleHomeRows(rows: List<CatalogRow>): List<CatalogRow> {

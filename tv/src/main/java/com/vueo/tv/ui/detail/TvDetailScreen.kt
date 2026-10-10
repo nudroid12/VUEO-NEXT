@@ -28,6 +28,7 @@ import com.vueo.tv.core.prepareDetailForCore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -237,10 +238,10 @@ fun TvDetailScreen(
         launch {
             val snapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_library_flags_2", Tab.DETAILS) {
                 DetailLibrarySnapshot(
-                    watchlisted = runtime.libraryStore.isWatchlisted(shell),
-                    movieWatched = runtime.libraryStore.isMarkedWatched(shell),
-                    history = runtime.libraryStore.history(),
-                    playbackEntries = runtime.libraryStore.continueWatchingPlaybackEntries(),
+                    watchlisted = runtime.readDetailLibrary { runtime.libraryStore.isWatchlisted(shell) },
+                    movieWatched = runtime.readDetailLibrary { runtime.libraryStore.isMarkedWatched(shell) },
+                    history = runtime.readDetailLibrary { runtime.libraryStore.history() },
+                    playbackEntries = runtime.readDetailLibrary { runtime.libraryStore.continueWatchingPlaybackEntries() },
                 )
             }
             if (!sessionCurrent()) return@launch
@@ -282,7 +283,8 @@ fun TvDetailScreen(
         syncEpisodeSelection(core, entries = playbackEntries, preserveCurrent = true)
         launch {
             val flags = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_library_flags_6", Tab.DETAILS) {
-                runtime.libraryStore.isWatchlisted(core) to runtime.libraryStore.isMarkedWatched(core)
+                runtime.readDetailLibrary { runtime.libraryStore.isWatchlisted(core) } to
+                    runtime.readDetailLibrary { runtime.libraryStore.isMarkedWatched(core) }
             }
             if (!sessionCurrent()) return@launch
             watchlisted = watchlistUserOverride ?: flags.first
@@ -297,7 +299,8 @@ fun TvDetailScreen(
         launch {
             val localRelated = try {
                 PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_details_enrich_metadata_7", Tab.DETAILS) {
-                    runtime.localRelatedTitles(core)
+                    val context = currentCoroutineContext()
+                    runtime.localRelatedTitles(core, checkActive = { context.ensureActive() })
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

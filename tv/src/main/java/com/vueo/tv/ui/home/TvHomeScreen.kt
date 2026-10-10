@@ -29,12 +29,26 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvPosterActionDialog
 import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+internal data class HomeRecommendationInput(
+    val profileId: String,
+    val refreshToken: Int,
+    val revision: Int,
+    val rows: List<CatalogRow>,
+    val history: List<LibraryPlaybackEntry>,
+    val enabled: Boolean,
+    val day: Long,
+)
 
 class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     private val startupContinueWatching = runtime.libraryStore.homeStartupContinueWatching()
@@ -57,6 +71,8 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var libraryHydrationProfileId: String? = null
     internal var continueWatching by mutableStateOf(startupContinueWatching)
     internal var watchHistory by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    internal val recommendationMutex = Mutex()
+    internal var recommendationInput: HomeRecommendationInput? = null
     internal var homeRecommendations by mutableStateOf(HomeRecommendationSections())
     internal var presentationCatalogRows: List<CatalogRow>? = null
     internal var presentationRows by mutableStateOf(
@@ -226,6 +242,7 @@ fun TvHomeScreen(
     // library snapshot. They can be recomputed/cancelled as catalog partials
     // stream without holding back Continue Watching.
     LaunchedEffect(
+        active,
         runtime,
         activeProfileId,
         refreshToken,
@@ -238,21 +255,46 @@ fun TvHomeScreen(
             retainedState.libraryHydrationProfileId == activeProfileId &&
                 retainedState.libraryHydrationRefreshToken == refreshToken &&
                 retainedState.libraryHydrationRevision == libraryRevision
-        if (!libraryIsCurrent) return@LaunchedEffect
+        if (!active || !libraryIsCurrent) return@LaunchedEffect
 
         val history = retainedState.watchHistory
-        val rebuilt = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_recommendations_5", Tab.HOME) {
-            val personalizedHomeEnabled =
-                runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-            HomeRecommendationPolicy.build(
-                catalogRows = catalogRows,
-                watchHistory = history,
-                dnaEngine = runtime.dnaEngine,
-                personalizationEnabled = personalizedHomeEnabled,
-                limit = 12,
-            )
+        val result = withContext(Dispatchers.Default) {
+            val context = currentCoroutineContext()
+            retainedState.recommendationMutex.withLock {
+                context.ensureActive()
+                val enabled = runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
+                val input = HomeRecommendationInput(
+                    activeProfileId, refreshToken, libraryRevision, catalogRows, history,
+                    enabled, System.currentTimeMillis() / 86_400_000L,
+                )
+                if (retainedState.recommendationInput == input) {
+                    PerformanceDiagnostics.captureRuntimeEvent("HOME_RECOMMENDATIONS_CACHE_HIT")
+                    return@withLock input to retainedState.homeRecommendations
+                }
+                val rebuilt = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_recommendations_5", Tab.HOME) {
+                    val dna = if (enabled) {
+                        val myList = runtime.readDetailLibrary { runtime.libraryStore.watchlist() }
+                        context.ensureActive()
+                        runtime.dnaEngine.analyze(history, myList, checkActive = { context.ensureActive() })
+                    } else null
+                    context.ensureActive()
+                    HomeRecommendationPolicy.build(
+                        catalogRows = catalogRows,
+                        watchHistory = history,
+                        dnaEngine = runtime.dnaEngine,
+                        personalizationEnabled = enabled,
+                        limit = 12,
+                        dnaSnapshot = dna,
+                        checkActive = { context.ensureActive() },
+                    )
+                }
+                context.ensureActive()
+                input to rebuilt
+            }
         }
-        retainedState.homeRecommendations = rebuilt
+        currentCoroutineContext().ensureActive()
+        retainedState.homeRecommendations = result.second
+        retainedState.recommendationInput = result.first
     }
 
     val rows = retainedState.presentationRows

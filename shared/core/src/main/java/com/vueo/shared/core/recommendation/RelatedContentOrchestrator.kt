@@ -8,8 +8,8 @@ import kotlinx.coroutines.CancellationException
 object RelatedContentOrchestrator {
     private const val MAX_REMOTE_CANDIDATES = 54
 
-    fun local(item: MediaItem, limit: Int = 18): List<MediaItem> =
-        CatalogDiscoveryCache.related(item, limit)
+    fun local(item: MediaItem, limit: Int = 18, checkActive: () -> Unit = {}): List<MediaItem> =
+        CatalogDiscoveryCache.related(item, limit, checkActive)
 
     suspend fun mergeRemote(
         item: MediaItem,
