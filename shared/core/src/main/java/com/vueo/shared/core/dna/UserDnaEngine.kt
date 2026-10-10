@@ -2,6 +2,7 @@ package com.vueo.shared.core.dna
 
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.LibraryViewingPolicy
 import com.vueo.shared.core.storage.LibraryStore
 import kotlin.math.roundToInt
 
@@ -38,7 +39,7 @@ class UserDnaEngine(
 
         history.forEach { entry ->
             checkActive()
-            if (entry.positionMs <= MIN_MEANINGFUL_POSITION_MS) {
+            if (!LibraryViewingPolicy.isMeaningfullyWatched(entry)) {
                 return@forEach
             }
 
@@ -48,9 +49,10 @@ class UserDnaEngine(
             }
 
             signal.media = chooseRicherMedia(signal.media, entry.media)
+            // One title gets one history signal, even across many episodes or rewatches.
+            // The strongest eligible interaction wins; repeated plays do not add weight.
             signal.historyWeight =
-                (signal.historyWeight + watchWeight(entry, nowEpochMs))
-                    .coerceAtMost(MAX_HISTORY_WEIGHT_PER_TITLE)
+                maxOf(signal.historyWeight, watchWeight(entry, nowEpochMs))
             signal.historyEntries += 1
             signal.lastInteractionEpochMs =
                 maxOf(
@@ -119,7 +121,8 @@ class UserDnaEngine(
 
         val meaningfulHistory =
             history.filter {
-                it.positionMs > MIN_MEANINGFUL_POSITION_MS
+                checkActive()
+                LibraryViewingPolicy.isMeaningfullyWatched(it)
             }
 
         val durationKnown =
@@ -132,9 +135,13 @@ class UserDnaEngine(
                 it.isCompleted
             }
 
+        // Abandonment is a behavior statistic, not a positive taste signal.
         val abandonedEntries =
-            durationKnown.count { entry ->
-                !entry.isCompleted &&
+            history.count { entry ->
+                checkActive()
+                entry.positionMs > MIN_BEHAVIOR_POSITION_MS &&
+                    entry.durationMs > 0L &&
+                    !entry.isCompleted &&
                     entry.progressFraction in 0.01f..<ABANDONED_PROGRESS_THRESHOLD &&
                     nowEpochMs - entry.lastWatchedEpochMs >= ABANDONED_AFTER_MS
             }
@@ -177,12 +184,15 @@ class UserDnaEngine(
                 .distinct()
                 .size
 
+        val uniqueCompletedTitles = meaningfulHistory.asSequence()
+            .filter { it.isCompleted }.map { mediaIdentity(it.media) }.distinct().count()
+
         val uniqueSignalTitles = weightedSignals.size
         val confidencePercent =
             confidencePercent(
                 uniqueSignalTitles = uniqueSignalTitles,
                 uniqueWatchedTitles = uniqueWatchedTitles,
-                completedEntries = completedEntries,
+                completedTitles = uniqueCompletedTitles,
                 myListTitles = myListTitles,
             )
 
@@ -365,13 +375,13 @@ class UserDnaEngine(
     private fun confidencePercent(
         uniqueSignalTitles: Int,
         uniqueWatchedTitles: Int,
-        completedEntries: Int,
+        completedTitles: Int,
         myListTitles: Int,
     ): Int {
         val score =
             uniqueSignalTitles * 3 +
                 uniqueWatchedTitles * 2 +
-                completedEntries.coerceAtMost(20) * 2 +
+                completedTitles.coerceAtMost(20) * 2 +
                 myListTitles.coerceAtMost(10)
 
         return score.coerceIn(0, 100)
@@ -593,9 +603,8 @@ class UserDnaEngine(
     )
 
     private companion object {
-        const val MIN_MEANINGFUL_POSITION_MS = 5_000L
+        const val MIN_BEHAVIOR_POSITION_MS = 5_000L
         const val MY_LIST_WEIGHT = 3.0
-        const val MAX_HISTORY_WEIGHT_PER_TITLE = 18.0
         const val DAY_MS = 24L * 60L * 60L * 1_000L
         const val ABANDONED_AFTER_MS = 7L * DAY_MS
         const val ABANDONED_PROGRESS_THRESHOLD = 0.15f

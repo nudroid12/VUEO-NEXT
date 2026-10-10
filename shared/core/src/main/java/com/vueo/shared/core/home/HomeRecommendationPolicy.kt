@@ -8,6 +8,7 @@ import kotlin.random.Random
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.LibraryViewingPolicy
 
 object HomeCatalogPolicy {
     private val sessionSeed = Random.nextLong()
@@ -78,11 +79,8 @@ object HomeRecommendationPolicy {
         return HomeRecommendationSections(forYou, seed, because)
     }
     /** Ignore previews; known-duration titles need both time and progress. */
-    internal fun isMeaningfullyWatched(entry: LibraryPlaybackEntry): Boolean = when {
-        entry.isCompleted -> true
-        entry.durationMs > 0L -> entry.positionMs >= 300_000L && entry.progressFraction >= .20f
-        else -> entry.positionMs >= 600_000L
-    }
+    internal fun isMeaningfullyWatched(entry: LibraryPlaybackEntry): Boolean =
+        LibraryViewingPolicy.isMeaningfullyWatched(entry)
 
     fun latestMeaningfulSeed(history: List<LibraryPlaybackEntry>): MediaItem? =
         history.asSequence().filter(::isMeaningfullyWatched)
