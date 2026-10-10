@@ -856,12 +856,20 @@ private fun TvModernHomeCard(
     onHold: () -> Unit,
 ) {
     var focused by remember(entry.key) { mutableStateOf(false) }
-    // Nuvio's catalog cards keep their geometry on focus. Preserve the
-    // existing Continue Watching treatment outside the poster comparison.
+    // Scale only the drawing layer so focus anchors and row layout stay fixed.
+    // Preserve the existing Continue Watching treatment.
     val animatedScale by animateFloatAsState(
-        targetValue = if (focused && kind == TvHomeRowKind.CONTINUE_WATCHING) 1.022f else 1f,
+        targetValue = when {
+            !focused -> 1f
+            kind == TvHomeRowKind.CONTINUE_WATCHING -> 1.022f
+            else -> 1.05f
+        },
         animationSpec = tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
+            durationMillis = when {
+                !focused -> TvMotion.FOCUS_OUT_MS
+                kind == TvHomeRowKind.CONTINUE_WATCHING -> TvMotion.FOCUS_IN_MS
+                else -> 150
+            },
             easing = TvMotion.EaseOut,
         ),
         label = "modernHomeCardScale",
