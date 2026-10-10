@@ -1298,7 +1298,8 @@ internal fun TvSettingsRow(
                             entry.accented -> TvDesign.Accent
                             else -> TvDesign.White.copy(alpha = .92f)
                         },
-                        modifier = Modifier.size(if (compact) 19.dp else 23.dp),
+                        modifier = Modifier.size(if (compact) 19.dp else 23.dp)
+                            .then(tvContentRefreshMotion(entry)),
                     )
                 }
                 Spacer(Modifier.width(14.dp))
@@ -1703,7 +1704,8 @@ private fun TvAddonControls(
                             Text(entry.title, color = TvDesign.White, fontSize = 12.sp)
                             Text(entry.value, color = TvDesign.Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         } else entry.icon?.let {
-                            Icon(it, contentDescription = entry.title, tint = TvDesign.White, modifier = Modifier.size(23.dp))
+                            Icon(it, contentDescription = entry.title, tint = TvDesign.White,
+                                modifier = Modifier.size(23.dp).then(tvContentRefreshMotion(entry)))
                         }
                     }
                 }

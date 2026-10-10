@@ -176,6 +176,7 @@ private fun TvPluginRepositoryCard(
 @Composable
 private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
     var focused by remember(entry.id) { mutableStateOf(false) }
+    val refreshing = entry.id == "refresh-repository" && entry.value == "Refreshing…"
     IconButton(
         onClick = { entry.onActivate?.invoke() },
         modifier = modifier.height(38.dp).width(if (icon == null) 76.dp else 38.dp).focusRequester(requester)
@@ -184,7 +185,14 @@ private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint:
             .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50)),
     ) {
         if (icon == null) Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-        else Icon(icon, contentDescription = entry.title, tint = tint, modifier = Modifier.size(21.dp))
+        else {
+            Icon(
+                icon,
+                contentDescription = if (refreshing) "Refreshing repository" else entry.title,
+                tint = tint,
+                modifier = Modifier.size(21.dp).then(tvContentRefreshMotion(entry)),
+            )
+        }
     }
 }
 
