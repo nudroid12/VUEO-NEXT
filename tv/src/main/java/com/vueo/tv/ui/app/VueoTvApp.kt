@@ -1217,6 +1217,7 @@ fun VueoTvApp(
                 TvRoute.SETTINGS -> {
                     TvSettingsScreen(
                         runtime = runtime,
+                        active = route == TvRoute.SETTINGS,
                         dataVersion = refreshToken,
                         onManageProfiles = { openProfilePicker(TvRoute.SETTINGS, manage = true) },
                         onNavigate = ::navigate,

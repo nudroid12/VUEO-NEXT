@@ -1,6 +1,7 @@
 package com.vueo.tv.library
 
 import android.content.Context
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
@@ -151,11 +152,14 @@ fun TvLibraryScreen(
     }
 
     fun focusSidebar() {
+        // TvSidebar owns the request after the expanded destination is attached.
         navExpanded = true
-        runCatching { navRequesters.getValue("Library").requestFocus() }
     }
 
-    BackHandler(enabled = active) {
+    BackHandler(enabled = active && actionMedia == null) {
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "TV_TAB_BACK tab=Library action=${if (navExpanded) "home" else "open_navigation"}"
+        )
         if (navExpanded) onBack() else focusSidebar()
     }
 
@@ -206,9 +210,10 @@ fun TvLibraryScreen(
 
     // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
-    LaunchedEffect(active, mediaKeys, gridView) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(active, mediaKeys, gridView, navExpanded) {
+        if (!active || navExpanded) return@LaunchedEffect
         delay(110)
+        if (navExpanded) return@LaunchedEffect
         var restored = false
         if (lastTarget == "item") {
             val key = lastMediaKey
@@ -221,10 +226,12 @@ fun TvLibraryScreen(
                 ) {
                     runCatching { gridState.scrollToItem(mediaIndex + LIBRARY_HEADER_ITEMS) }
                 }
-                restored = runCatching { requester.requestFocus() }.isSuccess
+                if (navExpanded) return@LaunchedEffect
+                restored = runCatching { requester.requestFocus() }.getOrDefault(false)
                 if (!restored) {
                     delay(20)
-                    restored = runCatching { requester.requestFocus() }.isSuccess
+                    if (navExpanded) return@LaunchedEffect
+                    restored = runCatching { requester.requestFocus() }.getOrDefault(false)
                 }
             }
         }
@@ -234,6 +241,7 @@ fun TvLibraryScreen(
         }
         if (!restored) {
             delay(20)
+            if (navExpanded) return@LaunchedEffect
             requestHeaderFocus()
         }
     }
@@ -287,8 +295,7 @@ fun TvLibraryScreen(
                         gridView = gridView,
                         requester = viewModeRequester,
                         onFocused = {
-                            navExpanded = false
-                            rememberTarget("view")
+                            if (!navExpanded) rememberTarget("view")
                         },
                         onToggle = {
                             val nextGridView = !gridView
@@ -329,8 +336,7 @@ fun TvLibraryScreen(
                                 media = media,
                                 requester = mediaRequesters.getValue(key),
                                 onFocused = {
-                                    navExpanded = false
-                                    rememberTarget("item", key)
+                                    if (!navExpanded) rememberTarget("item", key)
                                 },
                                 onClick = {
                                     TvLibraryFocusMemory.firstVisibleItemIndex =
@@ -368,8 +374,7 @@ fun TvLibraryScreen(
                                 media = media,
                                 requester = mediaRequesters.getValue(key),
                                 onFocused = {
-                                    navExpanded = false
-                                    rememberTarget("item", key)
+                                    if (!navExpanded) rememberTarget("item", key)
                                 },
                                 onClick = {
                                     TvLibraryFocusMemory.firstVisibleItemIndex =
@@ -396,7 +401,11 @@ fun TvLibraryScreen(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = { navExpanded = true },
+            onFocused = {
+                if (active && navExpanded) {
+                    PerformanceDiagnostics.captureRuntimeEvent("TV_TAB_NAV_FOCUS tab=Library")
+                }
+            },
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = ::restoreContentFocus,

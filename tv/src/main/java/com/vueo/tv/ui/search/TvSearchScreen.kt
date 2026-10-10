@@ -206,6 +206,7 @@ internal fun TvSearchScreen(
     var animeDiscovering by remember { mutableStateOf(false) }
     var requestId by remember { mutableStateOf(0L) }
     var navExpanded by remember { mutableStateOf(false) }
+    var initialContentFocusHandled by remember { mutableStateOf(false) }
     var lastContentTarget by remember { mutableStateOf("field") }
     var choiceDialog by remember { mutableStateOf<SearchChoice?>(null) }
     var actionMedia by remember { mutableStateOf<MediaItem?>(null) }
@@ -220,11 +221,11 @@ internal fun TvSearchScreen(
     val profileRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(active) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(active, navExpanded) {
+        if (!active || navExpanded || initialContentFocusHandled) return@LaunchedEffect
         delay(120)
         if (!session.restoreResultsFocus) {
-            runCatching { fieldRequester.requestFocus() }
+            initialContentFocusHandled = runCatching { fieldRequester.requestFocus() }.getOrDefault(false)
         }
     }
 
@@ -450,6 +451,14 @@ internal fun TvSearchScreen(
     val resultRequesterCache = remember(resultKeys, session.mode) { mutableMapOf<String, FocusRequester>() }
     val resultFocusJob = remember { arrayOfNulls<Job>(1) }
 
+    fun focusSidebar() {
+        // Cancel any pending poster focus before handing focus to Topbar/Sidebar.
+        resultFocusJob[0]?.cancel()
+        initialContentFocusHandled = true
+        navExpanded = true
+        // TvSidebar waits for its expanded focus node; never target the hidden proxy.
+    }
+
     fun resetGridForFilterChange() {
         resultFocusJob[0]?.cancel()
         session.focusedMediaKey = null
@@ -478,8 +487,8 @@ internal fun TvSearchScreen(
             }
     }
 
-    LaunchedEffect(active, session.restoreResultsFocus, filteredItems) {
-        if (!active || !session.restoreResultsFocus) return@LaunchedEffect
+    LaunchedEffect(active, session.restoreResultsFocus, filteredItems, navExpanded) {
+        if (!active || navExpanded || !session.restoreResultsFocus) return@LaunchedEffect
         val key = session.focusedMediaKey ?: return@LaunchedEffect
         val index = filteredItems.indexOfFirst { mediaKey(it) == key }
         if (index < 0) return@LaunchedEffect
@@ -516,17 +525,18 @@ internal fun TvSearchScreen(
         val restoreFocus = dialogReturnFocus
         choiceDialog = null
         dialogReturnFocus = null
-        scope.launch { delay(40); restoreFocus?.invoke() }
+        scope.launch {
+            delay(40)
+            if (active && !navExpanded) restoreFocus?.invoke()
+        }
     }
 
-    BackHandler(enabled = active && choiceDialog != null) { dismissChoiceDialog() }
-    BackHandler(enabled = active && choiceDialog == null) {
-        if (navExpanded) {
-            onBack()
-        } else {
-            navExpanded = true
-            runCatching { navRequesters.getValue("Search").requestFocus() }
-        }
+    BackHandler(enabled = active && choiceDialog != null && actionMedia == null) { dismissChoiceDialog() }
+    BackHandler(enabled = active && choiceDialog == null && actionMedia == null) {
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "TV_TAB_BACK tab=Search action=${if (navExpanded) "home" else "open_navigation"}"
+        )
+        if (navExpanded) onBack() else focusSidebar()
     }
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
@@ -560,12 +570,10 @@ internal fun TvSearchScreen(
                         requester = fieldRequester,
                         modeRequester = modeRequester,
                         onFocused = {
-                            navExpanded = false
-                            lastContentTarget = "field"
+                            if (!navExpanded) lastContentTarget = "field"
                         },
                         onModeFocused = {
-                            navExpanded = false
-                            lastContentTarget = "mode"
+                            if (!navExpanded) lastContentTarget = "mode"
                         },
                         onModeChange = { next ->
                             if (next != session.mode) {
@@ -584,8 +592,7 @@ internal fun TvSearchScreen(
                             }
                         },
                         onLeftWhenEmpty = {
-                            navExpanded = true
-                            runCatching { navRequesters.getValue("Search").requestFocus() }
+                            focusSidebar()
                         },
                         onRight = { runCatching { modeRequester.requestFocus() } },
                         onUp = {},
@@ -626,8 +633,7 @@ internal fun TvSearchScreen(
                             label = session.typeFilter.label,
                             requester = typeRequester,
                             onFocused = {
-                                navExpanded = false
-                                lastContentTarget = "type"
+                                if (!navExpanded) lastContentTarget = "type"
                             },
                             onClick = {
                                 dialogReturnFocus = { runCatching { typeRequester.requestFocus() } }
@@ -650,8 +656,7 @@ internal fun TvSearchScreen(
                                 )
                             },
                             onLeft = {
-                                navExpanded = true
-                                runCatching { navRequesters.getValue("Search").requestFocus() }
+                                focusSidebar()
                             },
                             onRight = { runCatching { sortRequester.requestFocus() } },
                             onUp = { runCatching { fieldRequester.requestFocus() } },
@@ -661,8 +666,7 @@ internal fun TvSearchScreen(
                             label = session.sortMode.label,
                             requester = sortRequester,
                             onFocused = {
-                                navExpanded = false
-                                lastContentTarget = "sort"
+                                if (!navExpanded) lastContentTarget = "sort"
                             },
                             onClick = {
                                 dialogReturnFocus = { runCatching { sortRequester.requestFocus() } }
@@ -692,8 +696,7 @@ internal fun TvSearchScreen(
                             label = session.genre ?: "All Genres",
                             requester = genreRequester,
                             onFocused = {
-                                navExpanded = false
-                                lastContentTarget = "genre"
+                                if (!navExpanded) lastContentTarget = "genre"
                             },
                             onClick = {
                                 dialogReturnFocus = { runCatching { genreRequester.requestFocus() } }
@@ -797,9 +800,10 @@ internal fun TvSearchScreen(
                                 catalogLabel = searchCatalogLabel(runtime, item),
                                 requester = resultRequesterCache.getOrPut(key) { FocusRequester() },
                                 onFocused = {
-                                    navExpanded = false
-                                    lastContentTarget = "result:$key"
-                                    session.focusedMediaKey = key
+                                    if (!navExpanded) {
+                                        lastContentTarget = "result:$key"
+                                        session.focusedMediaKey = key
+                                    }
                                 },
                                 onClick = {
                                     session.focusedMediaKey = key
@@ -814,8 +818,7 @@ internal fun TvSearchScreen(
                                 } else null,
                                 onLeftFromFirstColumn = if (index % searchColumns == 0) {
                                     {
-                                        navExpanded = true
-                                        runCatching { navRequesters.getValue("Search").requestFocus() }
+                                        focusSidebar()
                                     }
                                 } else null,
                                 blockRight =
@@ -842,7 +845,11 @@ internal fun TvSearchScreen(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = { navExpanded = true },
+            onFocused = {
+                if (active && navExpanded) {
+                    PerformanceDiagnostics.captureRuntimeEvent("TV_TAB_NAV_FOCUS tab=Search")
+                }
+            },
             onNavigate = onNavigate,
             onProfile = onProfile,
             onReturnToContent = {

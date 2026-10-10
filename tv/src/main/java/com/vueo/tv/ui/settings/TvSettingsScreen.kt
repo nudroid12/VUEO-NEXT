@@ -116,6 +116,7 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
 @Composable
 fun TvSettingsScreen(
     runtime: TvRuntime,
+    active: Boolean = true,
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
@@ -150,6 +151,7 @@ fun TvSettingsScreen(
     }
 
     TvSettingsMasterDetailShell(
+        active = active,
         categories = TvSettingsRootDestinations.map { TvSettingsNavItem(it.id, it.title, it.section) },
         selectedCategoryId = selectedRoot.id,
         panelKey = page.name,

@@ -1,6 +1,7 @@
 package com.vueo.tv.settings
 
 import android.view.KeyEvent
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -141,6 +142,7 @@ internal val LocalTvSettingsEmbeddedHost = staticCompositionLocalOf<TvSettingsEm
 @Composable
 internal fun TvSettingsMasterDetailShell(
     categories: List<TvSettingsNavItem>,
+    active: Boolean,
     selectedCategoryId: String,
     panelKey: String,
     panelAutoFocusToken: Int,
@@ -231,8 +233,9 @@ internal fun TvSettingsMasterDetailShell(
         categorySelectJob?.cancel()
         panelRestoreJob?.cancel()
         sidebarFocusIntent = true
+        // Requesting a collapsed Topbar node races its expanded composition.
+        // TvSidebar retries the real expanded destination on following frames.
         navExpanded = true
-        runCatching { navRequesters.getValue("Settings").requestFocus() }
     }
 
     fun focusSelectedCategory(): Boolean {
@@ -267,18 +270,25 @@ internal fun TvSettingsMasterDetailShell(
             // focus back after the user intentionally moved to categories/sidebar.
             for (waitMs in listOf(24L, 48L, 90L, 140L)) {
                 delay(waitMs)
-                if (sidebarFocusIntent || lastPane != "panel") return@launch
+                if (!active || sidebarFocusIntent || lastPane != "panel") return@launch
                 if (focusPanel()) return@launch
             }
             // Empty panels still need a deterministic escape target. Only fall back
             // after the full retry window, never during a normal panel transition.
-            if (!sidebarFocusIntent && lastPane == "panel" && panelFocusableRowIds[panelKey].isNullOrEmpty()) {
+            if (active && !sidebarFocusIntent && lastPane == "panel" && panelFocusableRowIds[panelKey].isNullOrEmpty()) {
                 focusSelectedCategory()
             }
         }
     }
 
-    BackHandler {
+    BackHandler(enabled = active) {
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "TV_TAB_BACK tab=Settings action=" + when {
+                backExitPending || navExpanded -> "home"
+                panelHasBack -> "panel_parent"
+                else -> "open_navigation"
+            }
+        )
         when {
             backExitPending || navExpanded -> {
                 categorySelectJob?.cancel()
@@ -293,13 +303,21 @@ internal fun TvSettingsMasterDetailShell(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(active) {
+        if (!active) {
+            categorySelectJob?.cancel()
+            panelRestoreJob?.cancel()
+            return@LaunchedEffect
+        }
         delay(90)
-        runCatching { categoryRequesters.getValue(selectedCategoryId).requestFocus() }
+        // Back may have already opened navigation during the entry delay.
+        if (!sidebarFocusIntent && !navExpanded) {
+            runCatching { categoryRequesters.getValue(selectedCategoryId).requestFocus() }
+        }
     }
 
-    LaunchedEffect(panelAutoFocusToken) {
-        if (panelAutoFocusToken <= 0) return@LaunchedEffect
+    LaunchedEffect(panelAutoFocusToken, active) {
+        if (!active || sidebarFocusIntent || panelAutoFocusToken <= 0) return@LaunchedEffect
 
         // Opening/backing between Settings panels keeps ownership in the panel.
         // The destination rows publish asynchronously, so use the shared retry path.
@@ -357,7 +375,7 @@ internal fun TvSettingsMasterDetailShell(
                                 grouped = false,
                                 requester = categoryRequesters.getValue(category.id),
                                 onFocused = categoryFocused@{
-                                    if (sidebarFocusIntent) return@categoryFocused
+                                    if (!active || sidebarFocusIntent) return@categoryFocused
                                     navExpanded = false
                                     if (lastPane == "panel") {
                                         // During panel replacement Compose may momentarily
@@ -375,7 +393,7 @@ internal fun TvSettingsMasterDetailShell(
                                             // block the next DPAD event.
                                             delay(90L)
                                             if (
-                                                lastPane == "category" &&
+                                                active && lastPane == "category" &&
                                                 !sidebarFocusIntent
                                             ) {
                                                 onCategorySelected(category.id)
@@ -421,7 +439,7 @@ internal fun TvSettingsMasterDetailShell(
                     onLeftToCategory = { focusSelectedCategory() },
                     onRowFocused = { rowId ->
                         panelLastFocusedIds[panelKey] = rowId
-                        if (!sidebarFocusIntent) {
+                        if (active && !sidebarFocusIntent) {
                             navExpanded = false
                             lastPane = "panel"
                         }
@@ -448,9 +466,11 @@ internal fun TvSettingsMasterDetailShell(
             expanded = navExpanded,
             navRequesters = navRequesters,
             profileRequester = profileRequester,
-            onFocused = {
+            onFocused = navigationFocused@{
+                if (!active) return@navigationFocused
                 if (sidebarFocusIntent) {
                     navExpanded = true
+                    PerformanceDiagnostics.captureRuntimeEvent("TV_TAB_NAV_FOCUS tab=Settings")
                 } else if (lastPane == "panel") {
                     requestDeferredPanelRestore()
                 } else {
