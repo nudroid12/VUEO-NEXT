@@ -755,7 +755,7 @@ private fun TvModernHomeRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = rowHorizontalPadding, end = 32.dp),
+                .padding(start = rowHorizontalPadding, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -773,8 +773,8 @@ private fun TvModernHomeRow(
                 Text(
                     text = providerName,
                     color = TvDesign.White.copy(alpha = .50f),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 180.dp),
