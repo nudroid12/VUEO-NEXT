@@ -53,16 +53,21 @@ object HomeRecommendationPolicy {
         checkActive()
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
         val catalogCandidates = catalogRows.asSequence().flatMap { it.items.asSequence() }.onEach { checkActive() }.distinctBy(::mediaKey).toList()
-        val watchedTitleKeys = watchHistory.asSequence().map { mediaKey(it.media) }.toSet()
+        val meaningfulHistory = watchHistory.filter { checkActive(); isMeaningfullyWatched(it) }
+        val watchedTitleKeys = meaningfulHistory.asSequence().map { mediaKey(it.media) }.toSet()
         val dna = dnaSnapshot ?: dnaEngine.build()
         checkActive()
-        val forYou = if (!dna.hasUsefulData) emptyList() else catalogCandidates.asSequence()
+        val ranked = if (!dna.hasUsefulData) emptyList() else catalogCandidates.asSequence()
             .filterNot { mediaKey(it) in watchedTitleKeys }
-            .mapNotNull { candidate -> checkActive(); dnaEngine.matchPercent(media = candidate, dna = dna)?.takeIf { it >= FOR_YOU_MIN_MATCH_PERCENT }?.let { score -> candidate to score } }
-            .sortedByDescending { it.second }.take(limit).map { it.first }.toList()
-        val seed = watchHistory.asSequence()
-            .filter { it.isCompleted || it.positionMs >= 120_000L || it.progressFraction >= .20f }
-            .distinctBy { mediaKey(it.media) }.firstOrNull()?.media
+            .mapNotNull { candidate ->
+                checkActive()
+                dnaEngine.matchPercent(media = candidate, dna = dna)
+                    ?.takeIf { it >= FOR_YOU_MIN_MATCH_PERCENT }
+                    ?.let { score -> candidate to score }
+            }
+            .sortedByDescending { it.second }.toList()
+        val forYou = diversify(ranked, limit, checkActive)
+        val seed = latestMeaningfulSeed(meaningfulHistory)
         val because = seed?.let { watched ->
             val seedGenres = watched.genres.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
             val related = CatalogDiscoveryCache.related(watched, limit = 30, checkActive = checkActive)
@@ -75,6 +80,65 @@ object HomeRecommendationPolicy {
         }.orEmpty()
         return HomeRecommendationSections(forYou, seed, because)
     }
+    /** Ignore previews; known-duration titles need both time and progress. */
+    internal fun isMeaningfullyWatched(entry: LibraryPlaybackEntry): Boolean = when {
+        entry.isCompleted -> true
+        entry.durationMs > 0L -> entry.positionMs >= 300_000L && entry.progressFraction >= .20f
+        else -> entry.positionMs >= 600_000L
+    }
+
+    internal fun latestMeaningfulSeed(history: List<LibraryPlaybackEntry>): MediaItem? =
+        history.asSequence().filter(::isMeaningfullyWatched)
+            .maxByOrNull { it.lastWatchedEpochMs }?.media
+
+    /** Soft diversity within a bounded relevant pool; never fill with low matches. */
+    internal fun diversify(
+        ranked: List<Pair<MediaItem, Int>>,
+        limit: Int,
+        checkActive: () -> Unit = {},
+    ): List<MediaItem> {
+        if (limit <= 0) return emptyList()
+        val pool = ranked.asSequence().filter { it.second >= FOR_YOU_MIN_MATCH_PERCENT }
+            .distinctBy { mediaKey(it.first) }.sortedByDescending { it.second }
+            .take(limit.coerceAtMost(DEFAULT_LIMIT) * 6).toMutableList()
+        val chosen = mutableListOf<MediaItem>()
+        val chosenGenres = mutableListOf<Set<String>>()
+        val families = mutableMapOf<String, Int>()
+        while (pool.isNotEmpty() && chosen.size < limit) {
+            checkActive()
+            var bestIndex = 0
+            var bestScore = Double.NEGATIVE_INFINITY
+            pool.forEachIndexed { index, (item, score) ->
+                checkActive()
+                val genres = item.genres.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+                val similarity = chosenGenres.maxOfOrNull { other ->
+                    val union = (genres + other).size
+                    if (union == 0) 0.0 else (genres intersect other).size.toDouble() / union
+                } ?: 0.0
+                val family = explicitTitleFamily(item)
+                val repeatFamily = family?.let { families[it] } ?: 0
+                val adjusted = score - similarity * 8.0 - repeatFamily * 8.0
+                if (adjusted > bestScore) {
+                    bestScore = adjusted
+                    bestIndex = index
+                }
+            }
+            val item = pool.removeAt(bestIndex).first
+            chosen += item
+            chosenGenres += item.genres.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+            explicitTitleFamily(item)?.let { families[it] = (families[it] ?: 0) + 1 }
+        }
+        return chosen
+    }
+
+    // Only explicit multi-word "Family: Subtitle" names share a family key.
+    // Do not guess collections from generic words or invent missing metadata.
+    private fun explicitTitleFamily(item: MediaItem): String? {
+        if (':' !in item.name) return null
+        val prefix = item.name.substringBefore(':').trim().lowercase()
+        return prefix.takeIf { it.split(Regex("\\s+")).size >= 2 && it.length >= 6 }
+    }
+
     private fun mediaKey(item: MediaItem) = "${item.type}:${item.id}"
 }
 
