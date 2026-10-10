@@ -278,6 +278,21 @@ fun TvHomeScreen(
                         runtime.dnaEngine.analyze(history, myList, checkActive = { context.ensureActive() })
                     } else null
                     context.ensureActive()
+                    val seed = if (enabled) HomeRecommendationPolicy.latestMeaningfulSeed(history) else null
+                    val becauseRelated = seed?.let { watched ->
+                        val localRelated = runtime.localRelatedTitles(watched, checkActive = { context.ensureActive() })
+                        try {
+                            // Same source, settings and ranking as Detail's More Like This.
+                            withContext(Dispatchers.IO) {
+                                runtime.relatedTitles(item = watched, localItems = localRelated)
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            localRelated
+                        }
+                    }.orEmpty()
+                    context.ensureActive()
                     HomeRecommendationPolicy.build(
                         catalogRows = catalogRows,
                         watchHistory = history,
@@ -286,6 +301,7 @@ fun TvHomeScreen(
                         limit = 12,
                         dnaSnapshot = dna,
                         checkActive = { context.ensureActive() },
+                        becauseRelatedTitles = becauseRelated,
                     )
                 }
                 context.ensureActive()

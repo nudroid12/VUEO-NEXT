@@ -2,7 +2,7 @@ package com.vueo.shared.core.home
 
 import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.dna.UserDnaEngine
-import com.vueo.shared.core.extensions.CatalogDiscoveryCache
+import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.extensions.MediaExtension
 import kotlin.random.Random
 import com.vueo.shared.core.media.CatalogRow
@@ -49,6 +49,7 @@ object HomeRecommendationPolicy {
         limit: Int = DEFAULT_LIMIT,
         dnaSnapshot: UserDnaSnapshot? = null,
         checkActive: () -> Unit = {},
+        becauseRelatedTitles: List<MediaItem>? = null,
     ): HomeRecommendationSections {
         checkActive()
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
@@ -69,14 +70,10 @@ object HomeRecommendationPolicy {
         val forYou = diversify(ranked, limit, checkActive)
         val seed = latestMeaningfulSeed(meaningfulHistory)
         val because = seed?.let { watched ->
-            val seedGenres = watched.genres.map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
-            val related = CatalogDiscoveryCache.related(watched, limit = 30, checkActive = checkActive)
-            val fallback = catalogCandidates.filter { candidate -> checkActive(); candidate.type == watched.type && candidate.genres.any { it.trim().lowercase() in seedGenres } }
-            val forYouKeys = forYou.asSequence().map(::mediaKey).toSet()
-            val seedKey = mediaKey(watched)
-            (related + fallback).asSequence().distinctBy(::mediaKey)
-                .filterNot { candidate -> val key=mediaKey(candidate); key == seedKey || key in watchedTitleKeys || key in forYouKeys }
-                .take(limit).toList()
+            // Use More Like This ranking; never pad with broad genre matches.
+            val related = becauseRelatedTitles
+                ?: RelatedContentOrchestrator.local(watched, limit = 18, checkActive = checkActive)
+            filterBecauseRelated(related, watched, watchedTitleKeys, limit, checkActive)
         }.orEmpty()
         return HomeRecommendationSections(forYou, seed, because)
     }
@@ -87,9 +84,23 @@ object HomeRecommendationPolicy {
         else -> entry.positionMs >= 600_000L
     }
 
-    internal fun latestMeaningfulSeed(history: List<LibraryPlaybackEntry>): MediaItem? =
+    fun latestMeaningfulSeed(history: List<LibraryPlaybackEntry>): MediaItem? =
         history.asSequence().filter(::isMeaningfullyWatched)
             .maxByOrNull { it.lastWatchedEpochMs }?.media
+
+    internal fun filterBecauseRelated(
+        related: List<MediaItem>,
+        seed: MediaItem,
+        watchedTitleKeys: Set<String>,
+        limit: Int,
+        checkActive: () -> Unit = {},
+    ): List<MediaItem> {
+        if (limit <= 0) return emptyList()
+        val seedKey = mediaKey(seed)
+        return related.asSequence().onEach { checkActive() }.distinctBy(::mediaKey)
+            .filterNot { mediaKey(it) == seedKey || mediaKey(it) in watchedTitleKeys }
+            .take(limit).toList()
+    }
 
     /** Soft diversity within a bounded relevant pool; never fill with low matches. */
     internal fun diversify(
