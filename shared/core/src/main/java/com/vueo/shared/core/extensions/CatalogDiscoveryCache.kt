@@ -735,7 +735,7 @@ object CatalogDiscoveryCache {
      *
      * The final selection keeps VUEO relevance as the dominant signal:
      * 70% local semantic relevance + 20% TMDB discovery confidence +
-     * 10% diversity, followed by the existing franchise repetition penalty.
+     * 10% diversity, without a separate franchise repetition penalty.
      */
     fun blendRelated(
         item: MediaItem,
@@ -1185,16 +1185,16 @@ object CatalogDiscoveryCache {
         val weighted =
             buildList {
                 if (genreAvailable) {
-                    add(0.25 to genreScore)
+                    add(0.12 to genreScore)
                 }
                 if (topicAvailable) {
                     add(0.20 to topicScore)
                 }
                 if (storyAvailable) {
-                    add(0.15 to storyScore)
+                    add(0.25 to storyScore)
                 }
                 if (relation.available) {
-                    add(0.12 to relation.score)
+                    add(0.15 to relation.score)
                 }
                 if (regional.available) {
                     add(0.15 to regional.score)
@@ -1634,8 +1634,6 @@ object CatalogDiscoveryCache {
             scored.toMutableList()
         val selected =
             mutableListOf<RelatedCandidate>()
-        val franchiseCounts =
-            mutableMapOf<String, Int>()
 
         while (
             remaining.isNotEmpty() &&
@@ -1661,40 +1659,12 @@ object CatalogDiscoveryCache {
                                     )
                                 }
                         }
-                    val franchise =
-                        candidate.features.franchise
-                    val sameFranchiseCount =
-                        if (franchise.isBlank()) {
-                            0
-                        } else {
-                            franchiseCounts[franchise] ?: 0
-                        }
-                    val franchisePenalty =
-                        when {
-                            sameFranchiseCount < 2 ->
-                                0.0
-                            sameFranchiseCount == 2 ->
-                                0.08
-                            sameFranchiseCount == 3 ->
-                                0.18
-                            else ->
-                                0.30 +
-                                    (sameFranchiseCount - 4) * 0.06
-                        }.coerceAtMost(0.48)
-
                     candidate.score +
-                        0.10 * diversity -
-                        franchisePenalty
+                        0.10 * diversity
                 } ?: break
 
             remaining.remove(next)
             selected += next
-            next.features.franchise
-                .takeIf { it.isNotBlank() }
-                ?.let { stem ->
-                    franchiseCounts[stem] =
-                        (franchiseCounts[stem] ?: 0) + 1
-                }
         }
 
         return selected.map {
@@ -1712,8 +1682,6 @@ object CatalogDiscoveryCache {
             scored.toMutableList()
         val selected =
             mutableListOf<RelatedCandidate>()
-        val franchiseCounts =
-            mutableMapOf<String, Int>()
 
         while (
             remaining.isNotEmpty() &&
@@ -1740,46 +1708,14 @@ object CatalogDiscoveryCache {
                                     )
                                 }
                         }
-                    val franchise =
-                        candidate.features
-                            .franchise
-                    val sameFranchiseCount =
-                        if (franchise.isBlank()) {
-                            0
-                        } else {
-                            franchiseCounts[
-                                franchise
-                            ] ?: 0
-                        }
-                    val franchisePenalty =
-                        when {
-                            sameFranchiseCount < 2 ->
-                                0.0
-                            sameFranchiseCount == 2 ->
-                                0.07
-                            else ->
-                                0.12 +
-                                    (
-                                        sameFranchiseCount - 3
-                                    ) * 0.04
-                        }.coerceAtMost(0.24)
-
                     (
                         0.90 * candidate.score +
-                            0.10 * diversity -
-                            franchisePenalty
+                            0.10 * diversity
                     )
                 } ?: break
 
             remaining.remove(next)
             selected += next
-            next.features.franchise
-                .takeIf {
-                    it.isNotBlank()
-                }?.let { stem ->
-                    franchiseCounts[stem] =
-                        (franchiseCounts[stem] ?: 0) + 1
-                }
         }
 
         return selected.map {
