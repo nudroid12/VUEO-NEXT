@@ -529,62 +529,26 @@ object CatalogDiscoveryCache {
             return emptyList()
         }
 
-        val quickTargetGenres =
-            item.genres
-                .map(::relatedNormalizeGenre)
-                .filter { it.isNotBlank() }
-                .toSet()
-        val targetFranchise =
-            relatedFranchiseStem(
-                item.name
-            )
-        val candidates =
-            duplicateGroups.values
-                .mapNotNull {
-                    checkActive()
-                    relatedMergeDuplicates(it)
-                }
-                .sortedByDescending { candidate ->
-                    checkActive()
-                    val candidateGenres =
-                        candidate.genres
-                            .map(
-                                ::relatedNormalizeGenre
-                            )
-                            .filter {
-                                it.isNotBlank()
-                            }
-                            .toSet()
-                    val shared =
-                        quickTargetGenres intersect
-                            candidateGenres
-                    val specificShared =
-                        shared.count {
-                            it !in
-                                RELATED_GENERIC_GENRES
-                        }
-                    val candidateFranchise =
-                        relatedFranchiseStem(
-                            candidate.name
-                        )
-                    shared.size * 100 +
-                        specificShared * 35 +
-                        if (
-                            targetFranchise.isNotBlank() &&
-                            targetFranchise ==
-                                candidateFranchise
-                        ) {
-                            70
-                        } else {
-                            0
-                        } +
-                        relatedMetadataRichness(
-                            candidate
-                        )
-                }
-                .take(
-                    RELATED_MAX_CANDIDATES
-                )
+        // Shortlist across all relevance signals; genre must not exclude story matches.
+        val mergedCandidates = duplicateGroups.values
+            .mapNotNull { checkActive(); relatedMergeDuplicates(it) }
+        val candidates = if (mergedCandidates.size <= RELATED_MAX_CANDIDATES) {
+            mergedCandidates
+        } else {
+            val quickTarget = relatedBuildFeatures(item, emptyMap(), 1, emptyMap(), 1)
+            mergedCandidates.map { candidate ->
+                checkActive()
+                val features = relatedBuildFeatures(candidate, emptyMap(), 1, emptyMap(), 1)
+                val signal = relatedSignals(quickTarget, features, emptyMap(), 1)
+                Triple(candidate, signal.passesRelevanceGate, signal.weightedScore)
+            }
+            .sortedWith(compareByDescending<Triple<MediaItem, Boolean, Double>> { it.second }
+                .thenByDescending { it.third }
+                .thenByDescending { relatedMetadataRichness(it.first) }
+                .thenBy { it.first.name })
+            .take(RELATED_MAX_CANDIDATES)
+            .map { it.first }
+        }
         if (candidates.isEmpty()) {
             return emptyList()
         }
@@ -1031,19 +995,6 @@ object CatalogDiscoveryCache {
                 .map(::normalizeQuery)
                 .filter { it.isNotBlank() }
                 .toSet()
-        val companies =
-            (
-                media.networks.map {
-                    it.name
-                } +
-                    media.productionCompanies
-                        .map {
-                            it.name
-                        }
-            )
-                .map(::normalizeQuery)
-                .filter { it.isNotBlank() }
-                .toSet()
         val popularityAvailable =
             homePopularity.isNotEmpty() ||
                 media.catalogSources.isNotEmpty()
@@ -1073,7 +1024,7 @@ object CatalogDiscoveryCache {
                 ),
             cast = cast,
             creators = creators,
-            companies = companies,
+            subjects = relatedSubjects(media),
             language = relatedNormalizeLanguage(media.originalLanguage),
             countries =
                 media.countries
@@ -1095,10 +1046,6 @@ object CatalogDiscoveryCache {
                 } else {
                     null
                 },
-            franchise =
-                relatedFranchiseStem(
-                    media.name
-                ),
         )
     }
 
@@ -1110,10 +1057,6 @@ object CatalogDiscoveryCache {
     ): RelatedSignals {
         val targetGenres = target.genres
         val candidateGenres = candidate.genres
-        val sharedGenres =
-            targetGenres intersect
-                candidateGenres
-
         val genreAvailable =
             targetGenres.isNotEmpty() &&
                 candidateGenres.isNotEmpty()
@@ -1157,7 +1100,7 @@ object CatalogDiscoveryCache {
             }
 
         val relation =
-            relatedPeopleAndCompanySimilarity(
+            relatedPeopleSimilarity(
                 target = target,
                 candidate = candidate,
             )
@@ -1182,92 +1125,79 @@ object CatalogDiscoveryCache {
                 0.0
             }
 
-        val weighted =
-            buildList {
-                if (genreAvailable) {
-                    add(0.12 to genreScore)
-                }
-                if (topicAvailable) {
-                    add(0.20 to topicScore)
-                }
-                if (storyAvailable) {
-                    add(0.25 to storyScore)
-                }
-                if (relation.available) {
-                    add(0.15 to relation.score)
-                }
-                if (regional.available) {
-                    add(0.15 to regional.score)
-                }
-                if (yearAvailable) {
-                    add(0.05 to yearScore)
-                }
-                candidate.quality?.let {
-                    add(0.04 to it)
-                }
-                candidate.popularity?.let {
-                    add(0.04 to it)
-                }
+        // Synopsis is lexical TF-IDF cosine, not an embedding/semantic model.
+        // Supporting context has one shared 5% budget, even with sparse metadata.
+        val context = buildList {
+            if (regional.available) add(0.75 to regional.score)
+            if (yearAvailable) add(0.25 to yearScore)
+        }
+        val weighted = buildList {
+            if (storyAvailable) add(0.45 to storyScore)
+            if (topicAvailable) add(0.25 to topicScore)
+            if (relation.available) add(0.15 to relation.score)
+            if (genreAvailable) add(0.10 to genreScore)
+            if (context.isNotEmpty()) {
+                add(0.05 to (context.sumOf { it.first * it.second } / context.sumOf { it.first }))
             }
-        val totalWeight =
-            weighted.sumOf {
-                it.first
-            }
-        val weightedScore =
-            if (totalWeight > 0.0) {
-                weighted.sumOf {
-                    (weight, score) ->
-                    weight * score
-                } / totalWeight
-            } else {
-                0.0
-            }
+        }
+        val totalWeight = weighted.sumOf { it.first }
+        // Discount thin metadata so a single available signal cannot score as
+        // confidently as a match supported by the main story/topic/person signals.
+        val weightedScore = if (totalWeight > 0.0) {
+            (weighted.sumOf { it.first * it.second } / totalWeight) *
+                (0.70 + 0.30 * (totalWeight / 0.85).coerceAtMost(1.0))
+        } else 0.0
 
-        val nonGenericSharedGenres =
-            sharedGenres.count {
-                it !in RELATED_GENERIC_GENRES
-            }
-        val strongGenre =
-            nonGenericSharedGenres >= 1 && genreScore >= 0.48
-        val strongTopic =
-            topicAvailable &&
-                topicScore >= 0.18
-        val strongStory =
-            storyAvailable &&
-                storyScore >= 0.20
-        val strongRelation =
-            relation.available &&
-                relation.score >= 0.28
-        val mediumSignals =
-            listOf(
-                genreAvailable &&
-                    genreScore >= 0.20,
-                topicAvailable &&
-                    topicScore >= 0.10,
-                storyAvailable &&
-                    storyScore >= 0.11,
-                relation.available &&
-                    relation.score >= 0.12,
-                regional.available &&
-                    regional.score >= 0.55,
-            ).count { it }
-
+        val sharedStoryTerms = (target.story.keys intersect candidate.story.keys).size
+        val sharedTopics = target.topic.keys intersect candidate.topic.keys
+        val targetFormat = relatedFormat(target.genres)
+        val candidateFormat = relatedFormat(candidate.genres)
+        val incompatibleFormat = targetFormat != null && candidateFormat != null &&
+            targetFormat != candidateFormat
+        val targetSubjects = target.subjects
+        val candidateSubjects = candidate.subjects
+        val sharedSubjects = targetSubjects intersect candidateSubjects
+        // Known factual formats need a subject match, not merely the same genre/host.
+        val factual = targetFormat == "reality" || targetFormat == "documentary"
+        val incompatibleSubject = factual && targetSubjects.isNotEmpty() &&
+            candidateSubjects.isNotEmpty() && sharedSubjects.isEmpty()
+        val storyEvidence = storyAvailable && sharedStoryTerms >= 2 && storyScore >= 0.12
+        val topicEvidence = topicAvailable && sharedTopics.size >= 2 && topicScore >= 0.14
+        val subjectEvidence = sharedSubjects.isNotEmpty() ||
+            candidateSubjects.isEmpty() && sharedStoryTerms >= 3 && storyScore >= 0.20
+        val peopleEvidence = relation.available && relation.score >= 0.20
+        val genreSupport = genreAvailable && genreScore >= 0.20
+        // Missing synopsis never earns a perfect match; sparse fallback requires people
+        // plus genre, and cannot override an explicit format/subject mismatch.
+        val sparseEvidence = !storyAvailable && peopleEvidence && genreSupport
+        val relevance = if (factual && targetSubjects.isNotEmpty()) {
+            subjectEvidence && (genreSupport || storyEvidence || peopleEvidence)
+        } else {
+            storyEvidence && (genreSupport || topicEvidence || peopleEvidence || storyScore >= 0.24) ||
+                topicEvidence && (genreSupport || peopleEvidence) || sparseEvidence
+        }
         return RelatedSignals(
-            weightedScore =
-                weightedScore,
+            weightedScore = weightedScore,
             genreScore = genreScore,
             topicScore = topicScore,
-            passesRelevanceGate =
-                strongGenre ||
-                    strongTopic ||
-                    strongStory ||
-                    strongRelation ||
-                    mediumSignals >= 2 && (
-                        topicAvailable && topicScore >= 0.10 ||
-                            storyAvailable && storyScore >= 0.11 ||
-                            relation.available && relation.score >= 0.12
-                    ),
+            passesRelevanceGate = !incompatibleFormat && !incompatibleSubject && relevance,
         )
+    }
+
+    private fun relatedFormat(genres: Set<String>): String? = when {
+        genres.any { it == "reality" || it == "reality tv" || it == "game show" || it == "game-show" } -> "reality"
+        "documentary" in genres -> "documentary"
+        genres.any { it == "animation" || it == "anime" } -> "animation"
+        genres.any { it in setOf("drama", "comedy", "crime", "horror", "thriller", "romance", "action", "fantasy", "science fiction") } -> "scripted"
+        else -> null
+    }
+
+    private fun relatedSubjects(media: MediaItem): Set<String> {
+        val tokens = relatedTokenize(media.description.orEmpty()).toSet()
+        // Two distinct anchors per subject avoid place names such as Hell's Kitchen.
+        return RELATED_SUBJECT_LEXICON.mapNotNull { (subject, words) ->
+            subject.takeIf { words.map(::relatedStemToken).distinct().count { it in tokens } >= 2 }
+        }.toSet()
     }
 
     private fun relatedGenreSimilarity(
@@ -1339,73 +1269,11 @@ object CatalogDiscoveryCache {
         documentFrequency: Map<String, Int>,
         documentCount: Int,
     ): Map<String, Double> {
-        val titleTokens =
-            relatedTokenize(
-                media.name
-            ).toSet()
-        val descriptionTokens =
-            relatedTokenize(
-                media.description.orEmpty()
-            )
-        val frequency =
-            descriptionTokens
-                .groupingBy { it }
-                .eachCount()
-        val weighted =
-            mutableMapOf<String, Double>()
-
-        titleTokens.forEach { token ->
-            weighted[token] =
-                relatedIdf(
-                    token = token,
-                    documentFrequency =
-                        documentFrequency,
-                    documentCount =
-                        documentCount,
-                ) * 1.35
+        val tags = relatedThemeTags(media).map { "theme:$it" } +
+            relatedSubjects(media).map { "subject:$it" }
+        return tags.associateWith { token ->
+            relatedIdf(token, documentFrequency, documentCount)
         }
-        frequency.forEach {
-            (token, count) ->
-            val score =
-                relatedIdf(
-                    token = token,
-                    documentFrequency =
-                        documentFrequency,
-                    documentCount =
-                        documentCount,
-                ) *
-                    (1.0 +
-                        (count - 1)
-                            .coerceAtMost(2) *
-                            0.18)
-            weighted[token] =
-                maxOf(
-                    weighted[token] ?: 0.0,
-                    score,
-                )
-        }
-        relatedThemeTags(media)
-            .forEach { theme ->
-                val token =
-                    "theme:$theme"
-                weighted[token] =
-                    relatedIdf(
-                        token = token,
-                        documentFrequency =
-                            documentFrequency,
-                        documentCount =
-                            documentCount,
-                    ) * 1.65
-            }
-
-        return weighted.entries
-            .sortedByDescending {
-                it.value
-            }
-            .take(24)
-            .associate {
-                it.key to it.value
-            }
     }
 
     private fun relatedStoryTermWeights(
@@ -1413,10 +1281,8 @@ object CatalogDiscoveryCache {
         documentFrequency: Map<String, Int>,
         documentCount: Int,
     ): Map<String, Double> {
-        val tokens =
-            relatedTokenize(
-                media.description.orEmpty()
-            )
+        val titleTerms = relatedTokenize(media.name).toSet()
+        val tokens = relatedTokenize(media.description.orEmpty()).filter { it !in titleTerms }
         if (tokens.isEmpty()) {
             return emptyMap()
         }
@@ -1437,7 +1303,7 @@ object CatalogDiscoveryCache {
         }
     }
 
-    private fun relatedPeopleAndCompanySimilarity(
+    private fun relatedPeopleSimilarity(
         target: RelatedFeatures,
         candidate: RelatedFeatures,
     ): RelatedRelationSignal {
@@ -1448,7 +1314,7 @@ object CatalogDiscoveryCache {
                     candidate.cast.isNotEmpty()
                 ) {
                     add(
-                        0.45 to
+                        0.65 to
                             relatedSetSimilarity(
                                 target.cast,
                                 candidate.cast,
@@ -1460,22 +1326,10 @@ object CatalogDiscoveryCache {
                     candidate.creators.isNotEmpty()
                 ) {
                     add(
-                        0.25 to
+                        0.35 to
                             relatedSetSimilarity(
                                 target.creators,
                                 candidate.creators,
-                            )
-                    )
-                }
-                if (
-                    target.companies.isNotEmpty() &&
-                    candidate.companies.isNotEmpty()
-                ) {
-                    add(
-                        0.30 to
-                            relatedSetSimilarity(
-                                target.companies,
-                                candidate.companies,
                             )
                     )
                 }
@@ -1687,32 +1541,17 @@ object CatalogDiscoveryCache {
             remaining.isNotEmpty() &&
             selected.size < limit
         ) {
-            val next =
-                remaining.maxByOrNull { candidate ->
-                    val diversity =
-                        if (selected.isEmpty()) {
-                            1.0
-                        } else {
-                            1.0 -
-                                selected.maxOf {
-                                    chosen ->
-                                    relatedCandidateSimilarity(
-                                        left =
-                                            candidate.features,
-                                        right =
-                                            chosen.features,
-                                        documentCount =
-                                            documentCount,
-                                        genreFrequency =
-                                            genreFrequency,
-                                    )
-                                }
-                        }
-                    (
-                        0.90 * candidate.score +
-                            0.10 * diversity
-                    )
-                } ?: break
+            val bestScore = remaining.maxOf { it.score }
+            val next = remaining.filter { it.score >= bestScore - 0.02 }
+                .maxWithOrNull(compareBy<RelatedCandidate> { candidate ->
+                    val similarity = selected.maxOfOrNull { chosen ->
+                        relatedCandidateSimilarity(candidate.features, chosen.features, documentCount, genreFrequency)
+                    } ?: 0.0
+                    candidate.score + if (selected.isEmpty()) 0.0 else 0.02 * (1.0 - similarity)
+                }.thenBy { it.features.quality ?: 0.0 }
+                    .thenBy { it.features.popularity ?: 0.0 }
+                    .thenBy { relatedMetadataRichness(it.features.item) }
+                    .thenByDescending { it.features.item.name }) ?: break
 
             remaining.remove(next)
             selected += next
@@ -1750,15 +1589,7 @@ object CatalogDiscoveryCache {
                 left.topic,
                 right.topic,
             )
-        val sameFranchise =
-            left.franchise.isNotBlank() &&
-                left.franchise ==
-                right.franchise
-        return (
-            0.58 * genre +
-                0.34 * topic +
-                if (sameFranchise) 0.08 else 0.0
-        ).coerceIn(0.0, 1.0)
+        return (0.35 * genre + 0.65 * topic).coerceIn(0.0, 1.0)
     }
 
     private fun relatedMergeBlendedDuplicates(
@@ -2032,10 +1863,8 @@ object CatalogDiscoveryCache {
                 relatedTokenize(
                     item.description.orEmpty()
                 ) +
-                relatedThemeTags(item)
-                    .map {
-                        "theme:$it"
-                    }
+                relatedThemeTags(item).map { "theme:$it" } +
+                relatedSubjects(item).map { "subject:$it" }
         ).toSet()
 
     private fun relatedThemeTags(
@@ -2048,26 +1877,11 @@ object CatalogDiscoveryCache {
         if (textTokens.isEmpty()) {
             return emptySet()
         }
-        return RELATED_THEME_LEXICON
-            .mapNotNull {
-                (theme, keywords) ->
-                theme.takeIf {
-                    keywords.any { keyword ->
-                        textTokens.any { token ->
-                            token == keyword ||
-                                (
-                                    token.length >= 5 &&
-                                    keyword.length >= 5 &&
-                                    (
-                                        token.startsWith(keyword) ||
-                                            keyword.startsWith(token)
-                                    )
-                                )
-                        }
-                    }
-                }
+        return RELATED_THEME_LEXICON.mapNotNull { (theme, keywords) ->
+            theme.takeIf {
+                keywords.map(::relatedStemToken).distinct().count { it in textTokens } >= 2
             }
-            .toSet()
+        }.toSet()
     }
 
     private fun relatedTokenize(
@@ -2283,38 +2097,6 @@ object CatalogDiscoveryCache {
         }
     }
 
-    private fun relatedFranchiseStem(
-        name: String,
-    ): String {
-        val rawBase =
-            name
-                .substringBefore(':')
-                .substringBefore(" - ")
-                .substringBefore(" – ")
-        var normalized =
-            normalizeQuery(rawBase)
-                .replace(
-                    Regex(
-                        """\s+(chapter|part|volume|vol)\s+[a-z0-9]+$"""
-                    ),
-                    "",
-                )
-                .replace(
-                    Regex(
-                        """\s+(ii|iii|iv|v|vi|vii|viii|ix|x|\d+)$"""
-                    ),
-                    "",
-                )
-                .trim()
-        if (
-            normalized.split(' ')
-                .count { it.isNotBlank() } < 2
-        ) {
-            normalized = ""
-        }
-        return normalized
-    }
-
     private data class RelatedFeatures(
         val item: MediaItem,
         val genres: Set<String>,
@@ -2322,13 +2104,12 @@ object CatalogDiscoveryCache {
         val story: Map<String, Double>,
         val cast: Set<String>,
         val creators: Set<String>,
-        val companies: Set<String>,
+        val subjects: Set<String>,
         val language: String,
         val countries: Set<String>,
         val year: Int?,
         val quality: Double?,
         val popularity: Double?,
-        val franchise: String,
     )
 
     private data class RelatedCandidate(
@@ -2359,6 +2140,22 @@ object CatalogDiscoveryCache {
             "family",
             "romance",
         )
+
+    private val RELATED_SUBJECT_LEXICON = mapOf(
+        "cooking" to setOf("cook", "cooking", "chef", "chefs", "culinary", "food", "dish", "dishes", "recipe", "restaurant", "baking", "baker"),
+        "music" to setOf("music", "singer", "singing", "vocal", "song", "band", "musician"),
+        "dance" to setOf("dance", "dancing", "dancer", "choreography", "choreographer"),
+        "dating" to setOf("dating", "date", "couple", "romance", "romantic", "singles", "partner"),
+        "fashion" to setOf("fashion", "designer", "design", "model", "runway", "couture"),
+        "sport" to setOf("sport", "athlete", "team", "football", "basketball", "soccer", "coach"),
+        "nature" to setOf("wildlife", "animal", "nature", "species", "habitat", "ocean", "forest"),
+        "history" to setOf("history", "historical", "ancient", "civilization", "empire", "archaeology"),
+        "science" to setOf("science", "scientist", "research", "experiment", "technology", "discovery"),
+        "crime" to setOf("crime", "criminal", "murder", "killer", "detective", "police", "mafia", "gang"),
+        "survival" to setOf("survival", "survive", "wilderness", "stranded", "island", "shelter"),
+        "business" to setOf("business", "entrepreneur", "startup", "investor", "investment", "company"),
+        "home" to setOf("renovation", "renovate", "house", "property", "home", "interior"),
+    )
 
     private val RELATED_THEME_LEXICON =
         mapOf(
