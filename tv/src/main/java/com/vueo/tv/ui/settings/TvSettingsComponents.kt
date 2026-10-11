@@ -1450,10 +1450,12 @@ internal fun TvTextEntryDialog(
     busy: Boolean = false,
     message: String? = null,
     restoreOnSave: Boolean = true,
+    allowSecretReveal: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
     var value by remember(title, initialValue) { mutableStateOf(initialValue) }
+    var secretVisible by remember(title, initialValue, secret) { mutableStateOf(false) }
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
 
     fun dismissAndRestore() {
@@ -1520,8 +1522,13 @@ internal fun TvTextEntryDialog(
                     enabled = !busy,
                     singleLine = true,
                     placeholder = { if (placeholder.isNotBlank()) Text(placeholder) },
-                    visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                    visualTransformation = if (secret && !(allowSecretReveal && secretVisible)) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
                 )
+                if (secret && allowSecretReveal) {
+                    TextButton(enabled = !busy, onClick = { secretVisible = !secretVisible }) {
+                        Text(if (secretVisible) "Hide API key" else "Show API key")
+                    }
+                }
                 message?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = TvDesign.Muted, fontSize = 12.sp)
                 }

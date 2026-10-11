@@ -894,6 +894,7 @@ internal fun TvTmdbEnhancementSettings(
             title = "TMDB API Key",
             initialValue = apiKey,
             secret = true,
+            allowSecretReveal = true,
             onDismiss = { editing = false },
             onSave = { value ->
                 apiKey = value
@@ -965,6 +966,7 @@ internal fun TvMdblistEnhancementSettings(
             title = "MDBList API Key",
             initialValue = apiKey,
             secret = true,
+            allowSecretReveal = true,
             onDismiss = { editing = false },
             onSave = { value ->
                 apiKey = value
