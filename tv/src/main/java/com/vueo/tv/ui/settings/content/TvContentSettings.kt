@@ -816,8 +816,6 @@ internal fun TvEnhancementSettings(
     val store = runtime.settingsStore
     var engine by remember { mutableStateOf(store.recommendationEngine()) }
     val traktClientId = store.traktClientId()
-    var showTraktDialog by remember { mutableStateOf(false) }
-    if (showTraktDialog) com.vueo.tv.ui.trakt.TraktAccountDialog { showTraktDialog = false }
     val hasTmdbKey = runtime.pluginStore.tmdbApiKey().isNotBlank()
     fun selectEngine() {
         val next = if (engine == RecommendationEngine.TMDB) RecommendationEngine.TRAKT else RecommendationEngine.TMDB
@@ -837,7 +835,7 @@ internal fun TvEnhancementSettings(
             id = "trakt-account", title = "Trakt",
             subtitle = "Account, library sync, scrobbling and discovery. Data from Trakt.tv.",
             value = if (com.vueo.shared.core.trakt.TraktService.get(LocalContext.current).connected()) "Connected" else "Optional login",
-            onActivate = { showTraktDialog = true }, section = "RECOMMENDATIONS",
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_TRAKT) }, section = "RECOMMENDATIONS",
             icon = Icons.Default.SettingsInputComponent,
         ),
         TvSettingsEntry(

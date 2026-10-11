@@ -292,6 +292,7 @@ private enum class SettingsPage {
     PLUGINS,
     CATALOG_ORDER,
     ENHANCEMENTS,
+    TRAKT,
     TMDB,
     MDBLIST,
     PLAYBACK,
@@ -311,6 +312,7 @@ private fun parentSettingsPage(
         SettingsPage.CATALOG_ORDER ->
             SettingsPage.CONTENT_MANAGER
 
+        SettingsPage.TRAKT,
         SettingsPage.TMDB,
         SettingsPage.MDBLIST ->
             SettingsPage.ENHANCEMENTS
@@ -1129,12 +1131,20 @@ fun VueoApp(
                             onBack = {
                                 settingsPage = SettingsPage.ROOT
                             },
+                            onTrakt = {
+                                settingsPage = SettingsPage.TRAKT
+                            },
                             onTmdb = {
                                 settingsPage = SettingsPage.TMDB
                             },
                             onMdblist = {
                                 settingsPage = SettingsPage.MDBLIST
                             },
+                        )
+
+                    SettingsPage.TRAKT ->
+                        TraktEnhancementSettingsScreen(
+                            onBack = { settingsPage = SettingsPage.ENHANCEMENTS },
                         )
 
                     SettingsPage.TMDB ->

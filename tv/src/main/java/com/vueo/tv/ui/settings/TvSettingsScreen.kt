@@ -61,6 +61,7 @@ internal enum class TvSettingsPage {
     CONTENT_PROVIDER_HEALTH,
     CONTENT_CATALOGS,
     ENHANCEMENTS,
+    ENHANCEMENT_TRAKT,
     ENHANCEMENT_TMDB,
     ENHANCEMENT_MDBLIST,
     PLAYBACK,
@@ -100,6 +101,7 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
+    TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
     else -> this
@@ -110,6 +112,7 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
     TvSettingsPage.CONTENT_CATALOGS,
+    TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST -> true
     else -> false
@@ -145,6 +148,7 @@ fun TvSettingsScreen(
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
+            TvSettingsPage.ENHANCEMENT_TRAKT,
             TvSettingsPage.ENHANCEMENT_TMDB,
             TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
             else -> page
@@ -203,6 +207,9 @@ fun TvSettingsScreen(
             )
             TvSettingsPage.ENHANCEMENTS -> TvEnhancementSettings(
                 runtime, onNavigate, onProfile, ::openPanel, onBack
+            )
+            TvSettingsPage.ENHANCEMENT_TRAKT -> TvTraktEnhancementSettings(
+                onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.ENHANCEMENT_TMDB -> TvTmdbEnhancementSettings(
                 runtime, onNavigate, onProfile, ::backPanel

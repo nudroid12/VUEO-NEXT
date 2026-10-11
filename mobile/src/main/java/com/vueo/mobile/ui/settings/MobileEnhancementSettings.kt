@@ -233,6 +233,7 @@ internal fun PersonalizationSettingsScreen(
 internal fun EnhancementsSettingsScreen(
     settingsStore: SettingsStore,
     onBack: () -> Unit,
+    onTrakt: () -> Unit,
     onTmdb: () -> Unit,
     onMdblist: () -> Unit,
 ) {
@@ -246,8 +247,6 @@ internal fun EnhancementsSettingsScreen(
 
     var engine by remember { mutableStateOf(settingsStore.recommendationEngine()) }
     var showEngineDialog by remember { mutableStateOf(false) }
-    var showTraktDialog by remember { mutableStateOf(false) }
-    if (showTraktDialog) com.vueo.mobile.ui.trakt.TraktAccountDialog { showTraktDialog = false }
     val hasTmdbKey = pluginStore.tmdbApiKey().isNotBlank()
     if (showEngineDialog) {
         AlertDialog(
@@ -298,7 +297,7 @@ internal fun EnhancementsSettingsScreen(
                     subtitle = "Account, library sync, scrobbling and discovery. Data from Trakt.tv.",
                     status = if (com.vueo.shared.core.trakt.TraktService.get(context).connected()) "Connected" else "Optional login",
                     icon = Icons.Default.SettingsInputComponent,
-                    onClick = { showTraktDialog = true },
+                    onClick = onTrakt,
                 )
             }
         }
