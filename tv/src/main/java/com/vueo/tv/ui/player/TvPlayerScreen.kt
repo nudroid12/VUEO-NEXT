@@ -97,6 +97,7 @@ import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.PlayerSubtitleUpdatePolicy
 import com.vueo.shared.core.player.SubtitleReadinessProbe
+import com.vueo.shared.core.player.SubtitleSessionCache
 import com.vueo.shared.core.player.SubtitleSessionDataSource
 import com.vueo.shared.core.player.SubtitleFormat
 import com.vueo.shared.core.player.SubtitleFormatPolicy
@@ -1076,6 +1077,10 @@ fun TvPlayerScreen(
                     playbackError = null
                 }
                 if (playbackState == Player.STATE_ENDED) {
+                    clearPendingSeek()
+                    val finalDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }
+                    durationMs = finalDuration ?: 0L
+                    positionMs = finalDuration ?: player.currentPosition.coerceAtLeast(0L)
                     if (!completionPersistenceQueued) {
                         completionPersistenceQueued = true
                         val completedDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
@@ -1257,10 +1262,18 @@ fun TvPlayerScreen(
             controlFocusHandoffPending = !requestFocusNow(progressRequester)
         }
         while (true) {
-            positionMs = pendingSeekPositionMs ?: player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+            val playbackEnded = player.playbackState == Player.STATE_ENDED
+            val displayPosition = if (playbackEnded) {
+                // With no known duration, retain the final position captured by the listener.
+                if (durationMs > 0L) durationMs else positionMs
+            } else {
+                pendingSeekPositionMs ?: player.currentPosition.coerceAtLeast(0L)
+            }
+            positionMs = if (durationMs > 0L) displayPosition.coerceIn(0L, durationMs)
+                else displayPosition.coerceAtLeast(0L)
             playing = player.isPlaying
-            ended = player.playbackState == Player.STATE_ENDED
+            ended = playbackEnded
 
             if (!audioPreferenceRestored || !subtitlePreferenceRestored) {
                 val currentTextTracks = tvPlayerTrackChoices(
@@ -1325,6 +1338,17 @@ fun TvPlayerScreen(
                         requestedSubtitleSelectionId = null
                     }
 
+                    savedTrack?.externalSubtitle != null && savedTrack.override != null &&
+                        SubtitleSessionCache.get(requireNotNull(savedTrack.externalSubtitle).url) != null -> {
+                        subtitlePreparationJob?.cancel()
+                        subtitlePreparationJob = null
+                        pendingSubtitleSelectionId = null
+                        translatingSubtitleSelectionId = null
+                        requestedSubtitleSelectionId = savedTrack.selectionId
+                        tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, savedTrack)
+                        subtitlesDisabled = false
+                    }
+
                     savedTrack?.externalSubtitle != null -> {
                         tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                         subtitlesDisabled = false
@@ -1340,15 +1364,6 @@ fun TvPlayerScreen(
                                     }
                                 },
                             )
-                            var refreshWaitAttempts = 0
-                            while (
-                                ready &&
-                                subtitleTrackRefreshInProgress &&
-                                refreshWaitAttempts < 200
-                            ) {
-                                delay(50L)
-                                refreshWaitAttempts += 1
-                            }
                             var latestChoice: TvPlayerTrackChoice? = null
                             var trackWaitAttempts = 0
                             while (
@@ -2215,6 +2230,23 @@ fun TvPlayerScreen(
 
             subtitlePreparationJob?.cancel()
             val externalSubtitle = choice.externalSubtitle
+            val cachedChoice = if (externalSubtitle != null && !forceNetworkRetry &&
+                SubtitleSessionCache.get(externalSubtitle.url) != null
+            ) {
+                tvPlayerTrackChoices(
+                    tracks = player.currentTracks,
+                    trackType = C.TRACK_TYPE_TEXT,
+                    externalSubtitles = latestExternalSubtitlesBySelectionId.value,
+                ).firstOrNull { it.selectionId == choice.selectionId && it.override != null }
+            } else null
+            if (cachedChoice != null) {
+                // Apply in this input callback; confirmation must not gate the track change.
+                subtitlePreparationJob = null
+                pendingSubtitleSelectionId = null
+                translatingSubtitleSelectionId = null
+                commitSelection(cachedChoice)
+                return
+            }
             if (externalSubtitle == null) {
                 subtitlePreparationJob = null
                 pendingSubtitleSelectionId = null
@@ -2236,15 +2268,6 @@ fun TvPlayerScreen(
                             }
                         },
                     )
-                    var refreshWaitAttempts = 0
-                    while (
-                        ready &&
-                        subtitleTrackRefreshInProgress &&
-                        refreshWaitAttempts < 200
-                    ) {
-                        delay(50L)
-                        refreshWaitAttempts += 1
-                    }
                     var latestChoice: TvPlayerTrackChoice? = null
                     var trackWaitAttempts = 0
                     while (

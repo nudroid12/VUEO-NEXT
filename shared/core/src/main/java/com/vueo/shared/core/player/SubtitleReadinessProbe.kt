@@ -32,6 +32,8 @@ object SubtitleReadinessProbe {
         val deadlineNs = System.nanoTime() + timeoutNs
         val nowMs = System.currentTimeMillis()
         if (!forceNetwork) {
+            // Session bytes remain usable even after the readiness timestamp expires.
+            if (SubtitleSessionCache.get(normalizedUrl) != null) return@withContext true
             readyAtMs[normalizedUrl]
                 ?.takeIf { nowMs - it <= READY_CACHE_MS }
                 ?.let { return@withContext true }
@@ -49,6 +51,9 @@ object SubtitleReadinessProbe {
         probeLock.withLock {
             // Another caller may have completed the same URL while this caller
             // was waiting for the per-URL single-flight lock.
+            if (!forceNetwork && SubtitleSessionCache.get(normalizedUrl) != null) {
+                return@withContext true
+            }
             val cachedAtMs = readyAtMs[normalizedUrl]
             if (
                 !forceNetwork &&
