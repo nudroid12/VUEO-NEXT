@@ -815,23 +815,9 @@ internal fun TvEnhancementSettings(
 ) {
     val store = runtime.settingsStore
     var engine by remember { mutableStateOf(store.recommendationEngine()) }
-    var traktClientId by remember { mutableStateOf(store.traktClientId()) }
-    var editingTrakt by remember { mutableStateOf(false) }
-    val traktScope = rememberCoroutineScope()
-    var traktTesting by remember { mutableStateOf(false) }
-    var traktStatus by remember { mutableStateOf<String?>(null) }
-    if (editingTrakt) {
-        TvTextEntryDialog(
-            title = "Trakt Client ID", initialValue = traktClientId, secret = true,
-            onDismiss = { editingTrakt = false },
-            onSave = { value ->
-                store.setTraktClientId(value)
-                traktClientId = store.traktClientId()
-                traktStatus = null
-                editingTrakt = false
-            },
-        )
-    }
+    val traktClientId = store.traktClientId()
+    var showTraktDialog by remember { mutableStateOf(false) }
+    if (showTraktDialog) com.vueo.tv.ui.trakt.TraktAccountDialog { showTraktDialog = false }
     val hasTmdbKey = runtime.pluginStore.tmdbApiKey().isNotBlank()
     fun selectEngine() {
         val next = if (engine == RecommendationEngine.TMDB) RecommendationEngine.TRAKT else RecommendationEngine.TMDB
@@ -844,32 +830,15 @@ internal fun TvEnhancementSettings(
     val entries = listOf(
         choiceEntry(
             "recommendation-engine", "Recommendation Engine",
-            "Direct Trakt or TMDB results in their original order. Trakt requires a Client ID; TMDB requires an API key.",
+            "Direct Trakt or TMDB results in their original order. Trakt is ready to use; TMDB requires an API key.",
             engine.label, ::selectEngine, ::selectEngine,
         ).copy(section = "RECOMMENDATIONS"),
         TvSettingsEntry(
-            id = "trakt-client-id", title = "Trakt Client ID",
-            subtitle = "Direct related titles. No Client Secret or user login needed. Data from Trakt.tv.",
-            value = if (traktClientId.isBlank()) "Not configured" else "Client ID saved",
-            onActivate = { editingTrakt = true }, section = "RECOMMENDATIONS",
+            id = "trakt-account", title = "Trakt",
+            subtitle = "Account, library sync, scrobbling and discovery. Data from Trakt.tv.",
+            value = if (com.vueo.shared.core.trakt.TraktService.get(LocalContext.current).connected()) "Connected" else "Optional login",
+            onActivate = { showTraktDialog = true }, section = "RECOMMENDATIONS",
             icon = Icons.Default.SettingsInputComponent,
-        ),
-        TvSettingsEntry(
-            id = "trakt-test", title = "Test Trakt connection",
-            subtitle = traktStatus ?: "Checks access to related titles.",
-            value = if (traktTesting) "Testing…" else "Test",
-            onActivate = {
-                if (!traktTesting && traktClientId.isNotBlank()) {
-                    val testedKey = traktClientId
-                    traktTesting = true
-                    traktScope.launch {
-                        try {
-                            val ok = com.vueo.shared.core.recommendation.TraktRelatedClient.testConnection(testedKey)
-                            if (traktClientId == testedKey) traktStatus = if (ok) "Connected" else "Connection failed. Check Client ID and network."
-                        } finally { traktTesting = false }
-                    }
-                }
-            }, section = "RECOMMENDATIONS", icon = Icons.Default.SettingsInputComponent,
         ),
         TvSettingsEntry(
             id = "tmdb",

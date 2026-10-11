@@ -1,0 +1,4 @@
+<data-extraction-rules>
+    <cloud-backup><exclude domain="sharedpref" path="vueo_trakt.xml" /></cloud-backup>
+    <device-transfer><exclude domain="sharedpref" path="vueo_trakt.xml" /></device-transfer>
+</data-extraction-rules>

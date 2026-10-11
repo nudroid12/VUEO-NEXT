@@ -117,6 +117,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
@@ -341,6 +342,16 @@ internal fun HomeScreen(
 ) {
     val context =
         LocalContext.current
+    val trakt = remember { com.vueo.shared.core.trakt.TraktService.get(context) }
+    val traktProfile = trakt.profileId()
+    val traktRevision by trakt.catalogRevision.collectAsState()
+    val traktLibraryRevision by trakt.libraryRevision.collectAsState()
+    var traktRows by remember(traktProfile) { mutableStateOf(trakt.cachedHomeRows(traktProfile)) }
+    LaunchedEffect(traktProfile, contentVersion) { trakt.scheduleSync(traktProfile) }
+    LaunchedEffect(traktProfile, traktRevision, contentVersion) { traktRows = trakt.homeRows(traktProfile) }
+    LaunchedEffect(traktProfile, traktLibraryRevision) {
+        if (traktLibraryRevision > 0L) onLibraryChanged()
+    }
     val recommendationSettings = remember { SettingsStore(context.applicationContext) }
     val recommendationPlugins = remember { PluginStore(context.applicationContext) }
     val recommendationEngine = recommendationSettings.recommendationEngine()
@@ -898,7 +909,7 @@ internal fun HomeScreen(
     }
 
             items(
-            items = rows,
+            items = rows + traktRows,
             key = {
                 "catalog:${it.id}"
             },

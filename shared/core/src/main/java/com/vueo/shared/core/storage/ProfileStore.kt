@@ -678,6 +678,7 @@ class ProfileStore(
 
         private val DEFAULT_SCOPED_PREFERENCE_FILES =
             setOf(
+                "vueo_trakt",
                 "vueo_library",
                 "vueo_playback",
                 "vueo_settings",

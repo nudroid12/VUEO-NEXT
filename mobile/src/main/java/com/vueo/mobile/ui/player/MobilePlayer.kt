@@ -1835,6 +1835,31 @@ internal fun PlayerScreen(
     }
 
     // Keep sampler/frame attribution on PLAYER while Details hosts this surface.
+    val traktPlaybackContext = context
+    val traktPlayback = remember(player, mediaKey) {
+        com.vueo.shared.core.trakt.TraktPlaybackSession(traktPlaybackContext, media, episode?.season, episode?.episode)
+    }
+    DisposableEffect(player, traktPlayback) {
+        fun publish() {
+            traktPlayback.update(
+                playing = player.playWhenReady && player.playbackState == Player.STATE_READY,
+                buffering = player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_IDLE,
+                ended = player.playbackState == Player.STATE_ENDED,
+                positionMs = player.currentPosition,
+                durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L,
+            )
+        }
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) { publish() }
+        }
+        player.addListener(listener)
+        publish()
+        onDispose {
+            traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
+            player.removeListener(listener)
+        }
+    }
+
     DisposableEffect(player) {
         val screenToken = PerformanceDiagnostics.enterPlayerScreen("Mobile")
         onDispose { PerformanceDiagnostics.exitPlayerScreen(screenToken) }
@@ -2063,12 +2088,14 @@ internal fun PlayerScreen(
             if (episodeHandoff) {
                 // A next-episode switch stays inside Player. Free the old codec now
                 // instead of holding two decoder allocations for another 64 ms.
+                traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
                 runCatching { player.release() }
             } else {
                 // Preserve the one-frame defer for actual Back/source disposal.
                 mobilePlayerCleanupScope.launch {
                     delay(64L)
-                    runCatching { player.release() }
+                    traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
+                runCatching { player.release() }
                 }
             }
         }

@@ -61,6 +61,7 @@ internal fun TvDetailPresentation(
     state: TvDetailPresentationState,
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
+    onRate: () -> Unit,
     onToggleWatched: () -> Unit,
     onSeasonSelected: (Int) -> Unit,
     onEpisodeFocused: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
@@ -287,6 +288,7 @@ internal fun TvDetailPresentation(
                     downRequester = firstBelowHero,
                     onPlay = onPlay,
                     onToggleList = onToggleList,
+                    onRate = onRate,
                     onToggleWatched = onToggleWatched,
                 )
                 }

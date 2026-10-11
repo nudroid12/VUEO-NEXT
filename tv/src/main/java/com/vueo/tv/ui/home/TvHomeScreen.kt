@@ -6,6 +6,8 @@ import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -112,10 +114,25 @@ fun TvHomeScreen(
     onProfile: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val traktContext = LocalContext.current
+    val trakt = remember { com.vueo.shared.core.trakt.TraktService.get(traktContext) }
+    val traktProfile = runtime.profileStore.activeProfileId()
+    val traktRevision by trakt.catalogRevision.collectAsState()
+    val traktLibraryRevision by trakt.libraryRevision.collectAsState()
+    var traktRows by remember(traktProfile) { mutableStateOf(trakt.cachedHomeRows(traktProfile)) }
+    LaunchedEffect(traktProfile, active, refreshToken) {
+        if (active) trakt.scheduleSync(traktProfile)
+    }
+    LaunchedEffect(traktProfile, active, refreshToken, traktRevision) {
+        if (active) traktRows = trakt.homeRows(traktProfile)
+    }
+    LaunchedEffect(traktProfile, traktLibraryRevision) {
+        if (traktLibraryRevision > 0L) retainedState.libraryRevision += 1
+    }
     val catalogRows = retainedState.catalogRows
-    val loading = retainedState.presentationRows.isEmpty() && retainedState.error == null &&
+    val loading = retainedState.presentationRows.isEmpty() && traktRows.isEmpty() && retainedState.error == null &&
         (retainedState.loading || retainedState.presentationCatalogRows !== catalogRows)
-    val error = retainedState.error
+    val error = retainedState.error.takeIf { traktRows.isEmpty() }
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
@@ -326,8 +343,9 @@ fun TvHomeScreen(
         retainedState.recommendationInput = result.first
     }
 
-    val rows = if (recommendationEngineIsCurrent) retainedState.presentationRows
+    val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
         else retainedState.presentationRows.filterNot { it.key == "because-you-watched" }
+    val rows = remember(baseRows, traktRows) { baseRows + buildTvHomeRows(traktRows, emptyList()) }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
 

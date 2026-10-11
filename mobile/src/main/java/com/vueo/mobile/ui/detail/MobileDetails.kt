@@ -375,6 +375,9 @@ internal fun MediaDetailsScreen(
             .showSourceTechnicalDetails()
 
     var item by remember(initialItem) { mutableStateOf(initialItem) }
+    var showTraktRating by remember(initialItem.id) { mutableStateOf(false) }
+    if (showTraktRating) com.vueo.mobile.ui.trakt.TraktRatingDialog(item) { showTraktRating = false }
+
     var loadingMeta by remember { mutableStateOf(true) }
     var loadingStreams by remember {
         mutableStateOf(false)
@@ -2422,6 +2425,8 @@ internal fun MediaDetailsScreen(
                         )
                     }
                 }
+
+                TextButton(onClick = { showTraktRating = true }) { Text("Rate on Trakt") }
 
                 if (canResume) {
                     activePlaybackEntry

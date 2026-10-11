@@ -947,6 +947,31 @@ fun TvPlayerScreen(
     }
 
     // Keep sampler/frame attribution on PLAYER while Details hosts this surface.
+    val traktPlaybackContext = androidx.compose.ui.platform.LocalContext.current
+    val traktPlayback = remember(player, mediaKey) {
+        com.vueo.shared.core.trakt.TraktPlaybackSession(traktPlaybackContext, media, episode?.season, episode?.episode)
+    }
+    DisposableEffect(player, traktPlayback) {
+        fun publish() {
+            traktPlayback.update(
+                playing = player.playWhenReady && player.playbackState == Player.STATE_READY,
+                buffering = player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_IDLE,
+                ended = player.playbackState == Player.STATE_ENDED,
+                positionMs = player.currentPosition,
+                durationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L,
+            )
+        }
+        val listener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) { publish() }
+        }
+        player.addListener(listener)
+        publish()
+        onDispose {
+            traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
+            player.removeListener(listener)
+        }
+    }
+
     DisposableEffect(player) {
         val screenToken = PerformanceDiagnostics.enterPlayerScreen("TV")
         onDispose { PerformanceDiagnostics.exitPlayerScreen(screenToken) }
@@ -1634,13 +1659,15 @@ fun TvPlayerScreen(
                 // Episode-to-episode handoff stays inside the Player. Release the
                 // old MediaCodec immediately so low-resource TV devices never hold
                 // the old and new video decoders for an artificial extra 64 ms.
+                traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
                 runCatching { player.release() }
             } else {
                 // Keep the one-frame defer only for actual navigation/source disposal,
                 // where it lets the return surface present before codec teardown.
                 tvPlayerCleanupScope.launch {
                     delay(64L)
-                    runCatching { player.release() }
+                    traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
+                runCatching { player.release() }
                 }
             }
         }

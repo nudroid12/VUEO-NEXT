@@ -807,7 +807,7 @@ class SettingsStore(
             .apply()
     }
 
-    fun traktClientId(): String = prefs.getString("trakt_client_id", "").orEmpty().trim()
+    fun traktClientId(): String = com.vueo.shared.core.trakt.TraktConfig.CLIENT_ID
 
     fun setTraktClientId(value: String) {
         prefs.edit().putString("trakt_client_id", value.trim()).apply()
@@ -815,7 +815,7 @@ class SettingsStore(
 
     fun recommendationEngine(): RecommendationEngine =
         RecommendationEngine.entries.firstOrNull { it.name == prefs.getString(KEY_RECOMMENDATION_ENGINE, null) }
-            ?: RecommendationEngine.TMDB
+            ?: RecommendationEngine.TRAKT
 
     fun setRecommendationEngine(engine: RecommendationEngine) {
         prefs.edit().putString(KEY_RECOMMENDATION_ENGINE, engine.name).apply()

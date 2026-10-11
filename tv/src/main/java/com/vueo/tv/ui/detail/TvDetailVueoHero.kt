@@ -18,6 +18,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
@@ -63,8 +64,10 @@ internal fun VueoDetailHero(
     downRequester: FocusRequester?,
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
+    onRate: () -> Unit,
     onToggleWatched: () -> Unit,
 ) {
+    val ratingRequester = remember(state.item.id) { FocusRequester() }
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
@@ -132,9 +135,19 @@ internal fun VueoDetailHero(
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = null,
+                rightRequester = ratingRequester,
                 downRequester = downRequester,
                 onClick = onToggleList,
+            )
+            VueoCircleAction(
+                icon = Icons.Default.Star,
+                contentDescription = "Rate on Trakt",
+                selected = false,
+                requester = ratingRequester,
+                leftRequester = listRequester,
+                rightRequester = null,
+                downRequester = downRequester,
+                onClick = onRate,
             )
         }
 

@@ -240,43 +240,8 @@ internal fun EnhancementsSettingsScreen(
 
     var engine by remember { mutableStateOf(settingsStore.recommendationEngine()) }
     var showEngineDialog by remember { mutableStateOf(false) }
-    var traktClientId by remember { mutableStateOf(settingsStore.traktClientId()) }
     var showTraktDialog by remember { mutableStateOf(false) }
-    val traktScope = rememberCoroutineScope()
-    var traktTesting by remember { mutableStateOf(false) }
-    var traktStatus by remember { mutableStateOf<String?>(null) }
-    if (showTraktDialog) {
-        AlertDialog(
-            onDismissRequest = { showTraktDialog = false },
-            title = { Text("Trakt Client ID") },
-            text = {
-                Column {
-                    Text("Use your Trakt application Client ID. No Client Secret or user login is needed for related titles.")
-                    OutlinedTextField(value = traktClientId, onValueChange = { traktClientId = it; traktStatus = null },
-                        label = { Text("Client ID") }, singleLine = true)
-                    TextButton(enabled = !traktTesting && traktClientId.isNotBlank(), onClick = {
-                        val testedKey = traktClientId
-                        traktTesting = true
-                        traktScope.launch {
-                            try {
-                                val ok = com.vueo.shared.core.recommendation.TraktRelatedClient.testConnection(testedKey)
-                                if (traktClientId == testedKey) traktStatus = if (ok) "Connected" else "Connection failed. Check Client ID and network."
-                            } finally { traktTesting = false }
-                        }
-                    }) { Text(if (traktTesting) "Testing…" else "Test connection") }
-                    traktStatus?.let { Text(it) }
-                }
-            },
-            confirmButton = { TextButton(onClick = {
-                settingsStore.setTraktClientId(traktClientId)
-                showTraktDialog = false
-            }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = {
-                traktClientId = settingsStore.traktClientId()
-                showTraktDialog = false
-            }) { Text("Cancel") } },
-        )
-    }
+    if (showTraktDialog) com.vueo.mobile.ui.trakt.TraktAccountDialog { showTraktDialog = false }
     val hasTmdbKey = pluginStore.tmdbApiKey().isNotBlank()
     if (showEngineDialog) {
         AlertDialog(
@@ -324,10 +289,10 @@ internal fun EnhancementsSettingsScreen(
                 VueoSettingsHubDivider()
                 VueoSettingsHubRow(
                     title = "Trakt",
-                    subtitle = "Direct related titles. Client ID required. Data from Trakt.tv.",
-                    status = if (settingsStore.traktClientId().isBlank()) "Not configured" else "Client ID saved",
+                    subtitle = "Account, library sync, scrobbling and discovery. Data from Trakt.tv.",
+                    status = if (com.vueo.shared.core.trakt.TraktService.get(context).connected()) "Connected" else "Optional login",
                     icon = Icons.Default.SettingsInputComponent,
-                    onClick = { traktClientId = settingsStore.traktClientId(); showTraktDialog = true },
+                    onClick = { showTraktDialog = true },
                 )
             }
         }
