@@ -1,0 +1,16 @@
+{
+  "name": "cloudanime",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "cheerio-without-node-native": "1.0.0-rc.2",
+    "crypto-js": "4.2.0"
+  }
+}
