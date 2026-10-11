@@ -540,6 +540,11 @@ suspend fun discoverProgressive(
                 result = result,
             )
 
+            RuntimeDiagnostics.recordDiscoveryTrace(
+                scanId = runtimeDiagnosticScanId,
+                stage = "STREAM_SELECTION",
+                details = "operation=plugin-dedup candidates=${result.diagnostics.sumOf { it.streamCount }} accepted=${result.streams.size} duplicatesRemoved=${(result.diagnostics.sumOf { it.streamCount } - result.streams.size).coerceAtLeast(0)} key=url+infoHash+fileIndex+providerId",
+            )
             RuntimeDiagnostics.finishSourceScan(
                 scanId = runtimeDiagnosticScanId,
                 streams = result.streams.size,
@@ -965,6 +970,11 @@ private fun emptyDiscoveryResult():
                         progress.snapshot(),
                 )
 
+        if (ProviderDiagnostics.isCollecting()) {
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(source.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
+            progress.diagnostic("CODE_IDENTITY sha256=$hash scriptChars=${source.length}")
+        }
         val logs = progress
         progress.stage("Evaluating provider script")
 
@@ -1091,9 +1101,9 @@ private fun emptyDiscoveryResult():
                     ) { requestJson ->
                         executionTasks.run {
                             val requestId = progress.begin("HTTP " + compactTraceUrl(runCatching { JSONObject(requestJson).optString("url") }.getOrDefault("")))
+                            progress.diagnostic("REQUEST_START requestId=http-$requestId")
+                            val startedNs = System.nanoTime()
                             try {
-                                val startedNs =
-                                    System.nanoTime()
                                 val sharedTmdb =
                                     discoveryContextBroker
                                         .interceptTmdbFetch(
@@ -1117,6 +1127,7 @@ private fun emptyDiscoveryResult():
                                         details =
                                             summarizeHttpTrace(
                                                 requestJson = requestJson,
+                                                requestId = requestId,
                                                 responseJson = responseJson,
                                                 elapsedMs =
                                                     (
@@ -1136,6 +1147,17 @@ private fun emptyDiscoveryResult():
                                 if (executionTasks.isFinished) progress.finish(requestId, "cancelled (provider completed)")
                                 throw error
                             } catch (error: Throwable) {
+                                if (httpTraceCount.incrementAndGet() <= MAX_HTTP_TRACE_ENTRIES) {
+                                    RuntimeDiagnostics.recordDiscoveryTrace(
+                                        scanId = runtimeDiagnosticScanId, providerName = provider.name,
+                                        providerId = provider.id, pluginName = repository.name, stage = "HTTP",
+                                        details = summarizeHttpTrace(
+                                            requestJson, requestId,
+                                            JSONObject().put("status", 0).put("error", error::class.java.simpleName).toString(),
+                                            (System.nanoTime() - startedNs) / 1_000_000L, false,
+                                        ),
+                                    )
+                                }
                                 progress.finish(requestId, "failed (${error::class.java.simpleName})")
                                 throw error
                             }
@@ -3470,6 +3492,7 @@ private fun emptyDiscoveryResult():
 
     private fun summarizeHttpTrace(
         requestJson: String,
+        requestId: Long,
         responseJson: String,
         elapsedMs: Long,
         sharedTmdb: Boolean,
@@ -3506,7 +3529,10 @@ private fun emptyDiscoveryResult():
             ) == true
 
         return buildString {
-            append("request=")
+            val path = runCatching { java.net.URI(request?.optString("url").orEmpty()).path }.getOrNull().orEmpty()
+            val pathHash = java.security.MessageDigest.getInstance("SHA-256").digest(path.toByteArray(Charsets.UTF_8))
+                .take(6).joinToString("") { "%02x".format(it.toInt() and 255) }
+            append("requestId=http-$requestId pathHash=$pathHash responseSource=${if (sharedTmdb) "shared-metadata" else "network"} request=")
             append(method)
             append(' ')
             append(url)

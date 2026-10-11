@@ -88,11 +88,14 @@ internal fun parseProviderStreams(
     if (array.length() == 0) onDiagnostic?.invoke("Provider returned an empty result array")
 
 
-    return (0 until array.length())
+    var invalidObject = 0
+    var invalidUrl = 0
+    val streams = (0 until array.length())
         .mapNotNull { index ->
             val item =
                 array.optJSONObject(index)
                     ?: run {
+                        invalidObject++
                         onDiagnostic?.invoke("Entry $index rejected: expected JSON object")
                         return@mapNotNull null
                     }
@@ -108,6 +111,7 @@ internal fun parseProviderStreams(
                         )
                     }
                     ?: run {
+                        invalidUrl++
                         onDiagnostic?.invoke("Entry $index rejected: url missing or not HTTP(S)")
                         return@mapNotNull null
                     }
@@ -222,6 +226,8 @@ internal fun parseProviderStreams(
                     } else null,
             )
         }
+    onDiagnostic?.invoke("Result selection entries=${array.length()} accepted=${streams.size} invalidObject=$invalidObject invalidUrl=$invalidUrl")
+    return streams
 }
 
 private fun JSONObject.metadataLabel(

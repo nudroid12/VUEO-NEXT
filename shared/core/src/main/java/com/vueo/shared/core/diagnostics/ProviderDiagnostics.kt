@@ -26,12 +26,14 @@ object ProviderDiagnostics {
         QUICKJS("QuickJS"), REQUESTS("Requests"), LOGS("Plugin Logs"),
     }
     data class SaveResult(val displayName: String, val location: String)
-    private data class Event(val tab: Tab, val message: String, val line: String)
+    private data class Event(val tab: Tab, val message: String, val line: String, var repeats: Int = 1, var lastStamp: String = "")
     private val installed = AtomicBoolean(false)
     private val enabled = AtomicBoolean(false)
     private val dropped = AtomicLong(0L)
     private val lock = Any()
     private val events = ArrayDeque<Event>()
+    private val repeatedStages = linkedMapOf<String, Event>()
+    private val coalesced = AtomicLong(0L)
     private val scans = HashSet<String>()
     private val providers = HashSet<String>()
     private val executions = HashSet<String>()
@@ -61,7 +63,7 @@ object ProviderDiagnostics {
             }
         }
     }
-    fun clear() = synchronized(lock) { events.clear(); dropped.set(0L) }
+    fun clear() = synchronized(lock) { events.clear(); repeatedStages.clear(); coalesced.set(0L); dropped.set(0L) }
 
     private fun field(message: String, key: String): String =
         message.substringAfter(" $key=", "").substringBefore(' ')
@@ -116,14 +118,34 @@ object ProviderDiagnostics {
             val host = runCatching { java.net.URI(match.value).host }.getOrNull()
             "https://${host ?: "redacted"}/<redacted>"
         }.replace('\n', ' ').replace('\r', ' ').take(MAX_LINE)
+    private val htmlStagePattern = Regex(" STAGE elapsed=\\d+ms (HTML (?:parse|select|attr|text))$")
     private fun appendLocked(tab: Tab, raw: String) {
         val message = sanitize(raw)
         val stamp = timestampFormat.get()!!.format(Date())
-        if (events.size >= MAX_EVENTS) { events.removeFirst(); dropped.incrementAndGet() }
-        events.addLast(Event(tab, message, "$stamp | [${tab.label.uppercase(Locale.US)}] $message"))
+        val htmlStage = htmlStagePattern.find(message)?.groupValues?.get(1)
+        val repeatKey = htmlStage?.let { "${field(message, "scan")}:${field(message, "providerId")}:$it" }
+        if (repeatKey != null) {
+            repeatedStages[repeatKey]?.let { existing ->
+                existing.repeats++
+                existing.lastStamp = stamp
+                coalesced.incrementAndGet()
+                return
+            }
+        }
+        if (events.size >= MAX_EVENTS) {
+            val removed = events.removeFirst()
+            repeatedStages.entries.removeAll { it.value === removed }
+            dropped.incrementAndGet()
+        }
+        val event = Event(tab, message, "$stamp | [${tab.label.uppercase(Locale.US)}] $message")
+        events.addLast(event)
+        if (repeatKey != null) {
+            if (repeatedStages.size >= 128) repeatedStages.remove(repeatedStages.keys.first())
+            repeatedStages[repeatKey] = event
+        }
     }
     private fun snapshot(tab: Tab): List<Event> = synchronized(lock) {
-        events.filter { tab == Tab.FULL || it.tab == tab }
+        events.filter { tab == Tab.FULL || it.tab == tab }.map { it.copy() }
     }
     private fun retentionWarning(): String? {
         val removed = dropped.get()
@@ -145,7 +167,7 @@ object ProviderDiagnostics {
                 appendLine("SCAN $scan")
                 previousScan = scan
             }
-            appendLine(event.line)
+            appendLine(event.line + if (event.repeats > 1) " [occurrences=${event.repeats} last=${event.lastStamp}]" else "")
             appendLine()
         }
     }
@@ -179,16 +201,29 @@ object ProviderDiagnostics {
         else -> status.ifBlank { "RUNNING" }
     }
     private fun failureEvidence(run: List<Event>): String? {
-        val console = run.lastOrNull { "ERROR: " in it.message }
-        if (console != null) return console.message.substringAfter("ERROR: ").take(220)
-        val pluginError = run.lastOrNull { "LOG: " in it.message && "error=" in it.message }
-        if (pluginError != null) return pluginError.message.substringAfter("LOG: ").take(220)
-        val parse = run.lastOrNull { "PARSE: " in it.message &&
-            ("rejected:" in it.message || "Invalid result" in it.message) }
-        if (parse != null) return parse.message.substringAfter("PARSE: ").take(220)
-        val phase = run.lastOrNull { field(it.message, "phase") in setOf("QJS_ABORT", "QJS_TIMEOUT") }
-        if (phase != null) return label(phase.message, "type").ifBlank { field(phase.message, "phase") }
-        return null
+        val evidence = linkedSetOf<String>()
+        run.lastOrNull { field(it.message, "phase") in setOf("QJS_ABORT", "QJS_TIMEOUT", "QJS_CANCELLED") }?.let {
+            evidence += "${field(it.message, "phase")} ${label(it.message, "type")}".trim()
+        }
+        run.filter { it.tab == Tab.REQUESTS && (field(it.message, "status") in setOf("0", "403", "404", "429") || " error=" in it.message) }
+            .takeLast(3).forEach {
+                evidence += label(it.message, "request").take(110) + " • status=${field(it.message, "status")} • ${field(it.message, "elapsed")} " + label(it.message, "error").take(120)
+            }
+        run.lastOrNull { "Unsupported host" in it.message }?.let { evidence += it.message.substringAfter("LOG: ").take(200) }
+        run.lastOrNull { "PARSE: " in it.message && ("rejected:" in it.message || "Invalid result" in it.message) }?.let {
+            evidence += it.message.substringAfter("PARSE: ").take(200)
+        }
+        run.lastOrNull { "ERROR: " in it.message }?.let { evidence += it.message.substringAfter("ERROR: ").take(220) }
+        return evidence.takeIf { it.isNotEmpty() }?.joinToString(" | ")
+    }
+    private fun meaningfulStage(run: List<Event>): String? {
+        val stage = run.lastOrNull {
+            (" STAGE elapsed=" in it.message &&
+                !it.message.substringAfter("ms ").let { text -> text.startsWith("HTML ") || text.startsWith("Provider finished") || text.startsWith("Parsing provider results") || text.endsWith("completed") }) ||
+                (it.message.startsWith("DISCOVERY_TRACE ") && field(it.message, "stage") !in setOf("HTTP", "WEBVIEW"))
+        } ?: return null
+        return if (" STAGE elapsed=" in stage.message) stage.message.substringAfter("ms ").take(180)
+            else field(stage.message, "stage") + " • " + stage.message.substringAfter(" plugin=").substringAfter(' ').take(180)
     }
     private fun summary(tab: Tab, all: List<Event>, maxRuns: Int = Int.MAX_VALUE): String = buildString {
         val selected = all.filter { tab == Tab.FULL || it.tab == tab }
@@ -203,13 +238,14 @@ object ProviderDiagnostics {
         appendLine("Retained events in tab: ${selected.size} • Dropped across all tabs: ${dropped.get()}")
         retentionWarning()?.let { appendLine(it) }
         appendLine("Provider runs: ${grouped.size} • OK: ${finished.count { field(it.message, "status") in setOf("ONLINE", "SLOW") }}")
-        appendLine("Empty: ${finished.count { field(it.message, "status") == "NO_RESULTS" }} • Error/timeout: ${finished.count { field(it.message, "status") in setOf("FAILED", "TIMEOUT") }} • Cancelled: ${finished.count { field(it.message, "status") == "CANCELLED" }}")
+        appendLine("Empty: ${finished.count { field(it.message, "status") == "NO_RESULTS" }} • Error/timeout: ${finished.count { field(it.message, "status") in setOf("FAILED", "TIMEOUT", "THREW") }} • Unavailable: ${finished.count { field(it.message, "status") == "UNAVAILABLE" }} • Cancelled: ${finished.count { field(it.message, "status") == "CANCELLED" }}")
         synchronized(lock) { appendLine("Active scans/providers/QuickJS: ${scans.size}/${providers.size}/${executions.size}") }
         if (grouped.isEmpty()) {
             appendLine()
             appendLine("No provider runs recorded in this tab yet. Use Raw for individual events.")
             return@buildString
         }
+        appendLine("Evidence records observed failures; handled request/console errors do not alone prove the final cause.")
         val visible = grouped.entries.toList().takeLast(maxRuns)
         if (visible.size < grouped.size) appendLine("Preview: latest ${visible.size} provider runs. Copy/export includes all retained runs.")
         var previousScan = ""
@@ -222,7 +258,12 @@ object ProviderDiagnostics {
                 appendLine()
                 val end = all.lastOrNull { it.message.startsWith("SCAN_END ") && field(it.message, "id") == scan }
                 appendLine("SCAN $scan • ${end?.let { field(it.message, "outcome").uppercase(Locale.US) } ?: "IN PROGRESS / END NOT RETAINED"}")
-                if (end != null) appendLine("Duration: ${duration(field(end.message, "elapsed"))} • Streams: ${field(end.message, "streams")}")
+                if (end != null) {
+                    appendLine("Duration: ${duration(field(end.message, "elapsed"))} • Candidates: ${field(end.message, "candidateStreams")} • Final streams: ${field(end.message, "streams")}")
+                    all.lastOrNull { field(it.message, "scan") == scan && field(it.message, "stage") == "STREAM_SELECTION" }?.let {
+                        appendLine("Selection: " + it.message.substringAfter(" plugin=").substringAfter(' '))
+                    }
+                }
                 previousScan = scan
             }
             appendLine()
@@ -232,14 +273,23 @@ object ProviderDiagnostics {
             val status = finish?.let { field(it.message, "status") }.orEmpty()
             val pendingStatus = if (status.isBlank() && start == null) "UNKNOWN (lifecycle not retained)" else statusLabel(status)
             appendLine("Status: $pendingStatus • ${finish?.let { duration(field(it.message, "elapsed")) } ?: "—"} • Streams: ${finish?.let { field(it.message, "streams") } ?: "—"}")
-            if (status in setOf("FAILED", "TIMEOUT", "NO_RESULTS", "CANCELLED")) {
+            run.firstOrNull { " IDENTITY " in it.message }?.let {
+                appendLine("Version: provider ${field(it.message, "providerVersion")} • plugin ${field(it.message, "pluginVersion")}")
+            }
+            run.firstOrNull { " CODE_IDENTITY " in it.message }?.let { appendLine("Code SHA-256: ${field(it.message, "sha256")}") }
+            meaningfulStage(run)?.let { appendLine("Last meaningful stage: $it") }
+            val requests = run.filter { it.tab == Tab.REQUESTS }
+            if (requests.isNotEmpty()) appendLine("Requests: ${requests.size} retained • failures: ${requests.count { field(it.message, "status") == "0" || (field(it.message, "status").toIntOrNull() ?: 0) >= 400 || " error=" in it.message }}")
+            run.lastOrNull { "PARSE: Result selection " in it.message }?.let { appendLine(it.message.substringAfter("PARSE: ")) }
+            run.lastOrNull { "PARSE: Result entries=" in it.message }?.let { appendLine(it.message.substringAfter("PARSE: ")) }
+            if (status in setOf("FAILED", "TIMEOUT", "NO_RESULTS", "CANCELLED", "UNAVAILABLE", "THREW")) {
                 val reason = failureEvidence(run) ?: when (status) {
                     "NO_RESULTS" -> "No links returned; plugin did not report a specific cause."
                     "TIMEOUT" -> "Provider exceeded its runtime timeout."
                     "CANCELLED" -> "Provider run cancelled."
                     else -> "No detailed error retained. Inspect Raw."
                 }
-                appendLine("Reason: $reason")
+                appendLine("Evidence: $reason")
             }
         }
     }
@@ -287,11 +337,15 @@ object ProviderDiagnostics {
         appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLine("Enabled: ${isCollecting()}")
         appendLine("Event limit: $MAX_EVENTS; line limit: $MAX_LINE")
-        appendLine("Per-provider console/stage event cap: none")
+        val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+        appendLine("App version: ${info?.versionName ?: "unknown"}; versionCode: ${if (Build.VERSION.SDK_INT >= 28) info?.longVersionCode else info?.versionCode}")
+        appendLine("Build fingerprint: ${Build.FINGERPRINT}")
+        appendLine("Repeated HTML stages coalesced: ${coalesced.get()}; errors and results are retained individually.")
+        appendLine("heapDelta and Java/native/PSS/RSS snapshots describe the whole app process, not per-provider allocations.")
         appendLine("Oldest events discarded across all tabs: ${dropped.get()}")
         retentionWarning()?.let { appendLine(it) }
         appendLine("No system sampler, frame probes or automatic body/header capture.")
-        appendLine("URLs and credential fields redacted before buffering.")
+        appendLine("URLs and credential fields redacted before buffering. Request IDs and path fingerprints distinguish redacted endpoints.")
     }
     private fun writeZip(output: OutputStream, metadata: String) {
         val all = snapshot(Tab.FULL)
