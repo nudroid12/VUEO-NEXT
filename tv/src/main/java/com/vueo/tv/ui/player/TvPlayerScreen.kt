@@ -338,9 +338,6 @@ fun TvPlayerScreen(
             .setUserAgent("VUEO-TV")
             .setAllowCrossProtocolRedirects(true)
     }
-    val videoDataSourceFactory = remember(bundle.videoId) {
-        TvVideoCache.Factory(context.applicationContext, httpFactory)
-    }
     val player = remember(bundle.videoId) {
         ExoPlayer.Builder(
             context,
@@ -353,7 +350,7 @@ fun TvPlayerScreen(
         )
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
-                    .setDataSourceFactory(SubtitleSessionDataSource.Factory(videoDataSourceFactory))
+                    .setDataSourceFactory(SubtitleSessionDataSource.Factory(httpFactory))
             )
             .build()
             .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }
@@ -785,13 +782,6 @@ fun TvPlayerScreen(
             }?.value ?: "VUEO-TV"
         )
         httpFactory.setDefaultRequestProperties(activeSource.headers)
-        videoDataSourceFactory.setSource(
-            url = url,
-            headers = activeSource.headers,
-            mimeType = com.vueo.shared.core.player.PlaybackMediaPolicy.resolve(
-                activeSource.mimeType, activeSource.url, activeSource.name, activeSource.serverName,
-            ),
-        )
         playbackError = null
         textTracks = emptyList()
         audioTracks = emptyList()
@@ -1014,18 +1004,6 @@ fun TvPlayerScreen(
 
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
         val listener = object : Player.Listener {
-            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                if (!timeline.isEmpty) {
-                    val window = timeline.getWindow(player.currentMediaItemIndex, androidx.media3.common.Timeline.Window())
-                    if (!window.isPlaceholder) {
-                        videoDataSourceFactory.setTimeline(
-                            player.currentMediaItem?.localConfiguration?.uri?.toString(),
-                            window.isLive,
-                        )
-                    }
-                }
-            }
-
             override fun onTracksChanged(tracks: Tracks) {
                 val currentTextTracks = tvPlayerTrackChoices(
                     tracks = tracks,
