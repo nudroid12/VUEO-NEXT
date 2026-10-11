@@ -3,7 +3,6 @@ package com.vueo.tv.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -163,7 +162,7 @@ private fun TvMotionPreview(group: TvMotionGroup, onDismiss: () -> Unit) {
                         else -> tvTunedEnter(group, androidx.compose.animation.fadeIn(tween(group.enterMs))) togetherWith
                             tvTunedExit(group, androidx.compose.animation.fadeOut(tween(group.exitMs)))
                     }
-                    AnimatedVisibility(showing, enter = recipe.targetContentEnter, exit = recipe.initialContentExit) {
+                    androidx.compose.animation.AnimatedVisibility(showing, enter = recipe.targetContentEnter, exit = recipe.initialContentExit) {
                         Box(Modifier.size(260.dp, 110.dp).background(TvDesign.Accent, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
                             Text("VUEO", color = TvDesign.Black, fontSize = 24.sp)
                         }
