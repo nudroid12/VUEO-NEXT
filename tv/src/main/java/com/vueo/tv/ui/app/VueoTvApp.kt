@@ -69,7 +69,8 @@ import com.vueo.tv.profile.TvUserDnaScreen
 import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.search.TvEntityResultsScreen
-import com.vueo.tv.settings.TvMotionSettingsOverlay
+import com.vueo.tv.settings.TvMotionBubble
+import com.vueo.tv.settings.TvMotionFloatingHost
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.type
@@ -153,7 +154,6 @@ fun VueoTvApp(
     val homeSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
     var route by remember { mutableStateOf(TvRoute.STARTUP) }
-    var motionSettingsOpen by remember { mutableStateOf(false) }
     var detailMotionClosing by remember { mutableStateOf(false) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var watchNextSyncToken by remember { mutableIntStateOf(0) }
@@ -1114,7 +1114,7 @@ fun VueoTvApp(
                 .onPreviewKeyEvent { event ->
                     if (detailMotionClosing) true
                     else if (event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU && route != TvRoute.STARTUP && modalDepth == 0) {
-                        if (event.type == KeyEventType.KeyUp) motionSettingsOpen = true
+                        if (event.type == KeyEventType.KeyUp) TvMotionBubble.open()
                         true
                     } else false
                 },
@@ -1585,13 +1585,7 @@ fun VueoTvApp(
                 }
                 TvRuntimeDiagnosticsDialog(onDismiss = { showCrashDiagnostics = false })
             }
-            if (motionSettingsOpen) {
-                TvMotionSettingsOverlay(
-                    onDismiss = { motionSettingsOpen = false },
-                    onNavigate = ::navigate,
-                    onProfile = { openDna(route) },
-                )
-            }
+            TvMotionFloatingHost()
             updatePromptRelease?.takeIf {
                 route != TvRoute.PLAYER && crashRecoveryLoaded && pendingCrash == null && !showCrashDiagnostics
             }?.let { release ->

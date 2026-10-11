@@ -22,37 +22,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.vueo.tv.ui.TvDesign
-import com.vueo.tv.ui.LocalTvModalFocusHost
 import com.vueo.tv.ui.motion.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-/** Quick remote access leaves the current route and its focus memory mounted. */
-@Composable
-internal fun TvMotionSettingsOverlay(onDismiss: () -> Unit, onNavigate: (String) -> Unit, onProfile: () -> Unit) {
-    val host = LocalTvModalFocusHost.current
-    DisposableEffect(host) { host?.open?.invoke(); onDispose { host?.close?.invoke() } }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
-        Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
-            TvMotionSettings(
-                onNavigate = { onDismiss(); onNavigate(it) },
-                onProfile = { onDismiss(); onProfile() },
-                onBack = onDismiss,
-            )
-        }
-    }
-}
-
 @Composable
 internal fun TvMotionSettings(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
+    floating: Boolean = false,
 ) {
     val context = LocalContext.current.applicationContext
-    var group by remember { mutableStateOf(TvMotionGroup.FORWARD) }
+    var group by TvMotionBubble.selectedGroup
     var preview by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Changes apply live. Save keeps them after restarting VUEO.") }
     val restoreAfterExport = rememberTvSettingsDeferredFocusRestore()
@@ -82,6 +66,7 @@ internal fun TvMotionSettings(
 
     if (preview) TvMotionPreview(group) { preview = false }
     val entries = buildList {
+        if (!floating) add(TvSettingsEntry("motion-floating", "Open Floating Tuner", "Tune while viewing the current page. Hide returns to the bubble.", "Open", onActivate = { TvMotionBubble.open() }, section = "LIVE WORKSPACE"))
         add(toggleEntry("motion-enabled", "Live Motion Tuning", "Off restores original motion while retaining your trial values.", TvMotionTuning.enabled) {
             TvMotionTuning.enabled = it; status = "Live tuning ${if (it) "enabled" else "disabled"}. Save to keep."
         }.copy(section = "TEMPORARY TV TOOLS"))
@@ -123,7 +108,8 @@ internal fun TvMotionSettings(
         add(TvSettingsEntry("motion-reset-all", "Reset All Motion", "Restore originals and remove saved trial values.", "Reset", onActivate = { TvMotionTuning.resetAll(context); status = "Original motion restored. Saved trial values removed." }))
         add(TvSettingsEntry("motion-status", "Status", status, enabled = false, section = "STATUS"))
     }
-    TvSettingsListScreen("Motion Settings · Temporary", "Live on real TV pages. D-pad Left / Right adjusts values. Original preserves existing behavior.", entries, onNavigate, onProfile, onBack)
+    if (floating) TvMotionFloatingEntries(entries)
+    else TvSettingsListScreen("Motion Settings · Temporary", "Live on real TV pages. D-pad Left / Right adjusts values. Original preserves existing behavior.", entries, onNavigate, onProfile, onBack)
 }
 
 @Composable
