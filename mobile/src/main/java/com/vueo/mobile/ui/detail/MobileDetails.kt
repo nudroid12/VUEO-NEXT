@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
@@ -808,6 +809,8 @@ internal fun MediaDetailsScreen(
             pluginStore
                 .tmdbApiKey()
 
+        val recommendationEngine = settingsStore.recommendationEngine()
+
         val tmdbRecommendationsEnabled =
             settingsStore
                 .tmdbRecommendationsEnabled()
@@ -821,12 +824,7 @@ internal fun MediaDetailsScreen(
             settingsStore
                 .tmdbArtworkEnrichmentEnabled()
 
-        tmdbMoreLikeThisEnabled =
-            tmdbKey.isNotBlank() &&
-            (
-                tmdbRecommendationsEnabled ||
-                tmdbSimilarEnabled
-            )
+        tmdbMoreLikeThisEnabled = recommendationEngine == RecommendationEngine.TMDB
 
         val preparedItem =
             if (
@@ -897,7 +895,7 @@ internal fun MediaDetailsScreen(
             coreItem
 
         val localRelated =
-            PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_enrich_metadata_6", Tab.DETAILS) {
+            if (recommendationEngine == RecommendationEngine.TMDB) emptyList() else PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_enrich_metadata_6", Tab.DETAILS) {
                 RelatedContentOrchestrator.local(
                     item = resolvedItem,
                     limit = 18,
@@ -994,6 +992,7 @@ internal fun MediaDetailsScreen(
                             similarEnabled =
                                 tmdbSimilarEnabled,
                             limit = 18,
+                            engine = recommendationEngine,
                         )
                     }
                 } catch (cancelled: CancellationException) {

@@ -1,5 +1,6 @@
 package com.vueo.tv.detail
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import com.vueo.shared.core.storage.ContinueWatchingPolicy
@@ -203,11 +204,7 @@ fun TvDetailScreen(
         item = shell
         loading = true
         related = emptyList()
-        tmdbMoreLikeThisEnabled = runtime.pluginStore.tmdbApiKey().isNotBlank() &&
-            (
-                runtime.settingsStore.tmdbRecommendationsEnabled() ||
-                    runtime.settingsStore.tmdbSimilarTitlesEnabled()
-            )
+        tmdbMoreLikeThisEnabled = runtime.settingsStore.recommendationEngine() == RecommendationEngine.TMDB
         dnaMatch = null
         vueoExtras = TvTitleArtwork.cached(initialShell, artworkApiKey) ?: TvDetailVueoExtras()
         titleArtworkLoading = TvTitleArtwork.cached(initialShell, artworkApiKey) == null && artworkApiKey.isNotBlank()

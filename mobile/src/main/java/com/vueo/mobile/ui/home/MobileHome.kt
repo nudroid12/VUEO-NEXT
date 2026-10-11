@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
@@ -287,6 +288,9 @@ internal class MobileHomeRetainedState {
     var continueWatching by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
         internal set
 
+    var recommendationEngine = RecommendationEngine.VUEO
+        internal set
+
     var recommendations by mutableStateOf(HomeRecommendationSections())
         internal set
 
@@ -337,6 +341,12 @@ internal fun HomeScreen(
 ) {
     val context =
         LocalContext.current
+    val recommendationSettings = remember { SettingsStore(context.applicationContext) }
+    val recommendationPlugins = remember { PluginStore(context.applicationContext) }
+    val recommendationEngine = recommendationSettings.recommendationEngine()
+    val recommendationKey = recommendationPlugins.tmdbApiKey()
+    val recommendationTmdbEnabled = recommendationSettings.tmdbRecommendationsEnabled()
+    val recommendationSimilarEnabled = recommendationSettings.tmdbSimilarTitlesEnabled()
     val homeAddonStore =
         remember {
             AddonStore(
@@ -653,13 +663,15 @@ internal fun HomeScreen(
     var homeRecommendations by remember(
         activeProfileId,
         personalizedHomeEnabled,
+        recommendationEngine,
     ) {
         mutableStateOf(
             if (
                 personalizedHomeEnabled &&
                 retainedState.presentationProfileId == activeProfileId
             ) {
-                retainedState.recommendations
+                if (retainedState.recommendationEngine == recommendationEngine) retainedState.recommendations
+                else retainedState.recommendations.copy(becauseYouWatched = emptyList())
             } else {
                 HomeRecommendationSections()
             }
@@ -676,6 +688,7 @@ internal fun HomeScreen(
         libraryVersion,
         activeProfileId,
         personalizedHomeEnabled,
+        recommendationEngine, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled,
     ) {
         val librarySnapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_home_library_snapshot_2", Tab.HOME) {
             libraryStore.detailSnapshot()
@@ -687,6 +700,25 @@ internal fun HomeScreen(
 
         val freshRecommendations =
             if (personalizedHomeEnabled) {
+                val seed = HomeRecommendationPolicy.latestMeaningfulSeed(librarySnapshot.history)
+                val becauseRelated = seed?.let { watched ->
+                    val localRelated = if (recommendationEngine == RecommendationEngine.TMDB) emptyList()
+                    else withContext(Dispatchers.Default) { RelatedContentOrchestrator.local(watched, limit = 18) }
+                    try {
+                        withContext(Dispatchers.IO) {
+                            RelatedContentOrchestrator.mergeRemote(
+                                item = watched, localItems = localRelated, apiKey = recommendationKey,
+                                recommendationsEnabled = recommendationTmdbEnabled,
+                                similarEnabled = recommendationSimilarEnabled,
+                                limit = 18, engine = recommendationEngine,
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        localRelated
+                    }
+                }.orEmpty()
                 PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
                     HomeRecommendationPolicy.build(
                         catalogRows = rows,
@@ -694,6 +726,7 @@ internal fun HomeScreen(
                         dnaEngine = dnaEngine,
                         personalizationEnabled = true,
                         limit = 12,
+                        becauseRelatedTitles = becauseRelated,
                     )
                 }
             } else {
@@ -702,6 +735,7 @@ internal fun HomeScreen(
 
         homeRecommendations = freshRecommendations
         retainedState.recommendations = freshRecommendations
+        retainedState.recommendationEngine = recommendationEngine
     }
 
     val forYouItems = homeRecommendations.forYou

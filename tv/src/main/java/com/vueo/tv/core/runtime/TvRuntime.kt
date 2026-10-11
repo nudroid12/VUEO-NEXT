@@ -1,5 +1,6 @@
 package com.vueo.tv.core
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
@@ -477,7 +478,8 @@ class TvRuntime(context: Context) {
     }
 
     fun localRelatedTitles(item: MediaItem, checkActive: () -> Unit = {}): List<MediaItem> =
-        RelatedContentOrchestrator.local(
+        if (settingsStore.recommendationEngine() == RecommendationEngine.TMDB) emptyList()
+        else RelatedContentOrchestrator.local(
             item = item,
             limit = 18,
             checkActive = checkActive,
@@ -494,6 +496,7 @@ class TvRuntime(context: Context) {
             recommendationsEnabled = settingsStore.tmdbRecommendationsEnabled(),
             similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),
             limit = 18,
+            engine = settingsStore.recommendationEngine(),
         )
 
     suspend fun ratings(item: MediaItem): List<MediaRating> {

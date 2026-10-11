@@ -2,6 +2,11 @@ package com.vueo.shared.core.storage
 
 import android.content.Context
 
+enum class RecommendationEngine(val label: String) {
+    VUEO("VUEO"),
+    TMDB("TMDB"),
+}
+
 enum class PlayerOrientation(
     val label: String,
 ) {
@@ -802,6 +807,14 @@ class SettingsStore(
             .apply()
     }
 
+    fun recommendationEngine(): RecommendationEngine =
+        RecommendationEngine.entries.firstOrNull { it.name == prefs.getString(KEY_RECOMMENDATION_ENGINE, null) }
+            ?: RecommendationEngine.VUEO
+
+    fun setRecommendationEngine(engine: RecommendationEngine) {
+        prefs.edit().putString(KEY_RECOMMENDATION_ENGINE, engine.name).apply()
+    }
+
     fun tmdbRecommendationsEnabled(): Boolean =
         prefs.getBoolean(
             KEY_TMDB_RECOMMENDATIONS,
@@ -1170,6 +1183,8 @@ class SettingsStore(
 
         private const val KEY_TMDB_METADATA =
             "tmdb_metadata_enrichment"
+
+        private const val KEY_RECOMMENDATION_ENGINE = "recommendation_engine"
 
         private const val KEY_TMDB_RECOMMENDATIONS =
             "tmdb_recommendations"

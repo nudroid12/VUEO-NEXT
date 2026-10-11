@@ -1,5 +1,6 @@
 package com.vueo.tv.settings
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
@@ -813,7 +814,22 @@ internal fun TvEnhancementSettings(
     onBack: () -> Unit,
 ) {
     val store = runtime.settingsStore
+    var engine by remember { mutableStateOf(store.recommendationEngine()) }
+    val hasTmdbKey = runtime.pluginStore.tmdbApiKey().isNotBlank()
+    fun selectEngine() {
+        val next = if (engine == RecommendationEngine.TMDB) RecommendationEngine.VUEO else RecommendationEngine.TMDB
+        if (next == RecommendationEngine.VUEO || hasTmdbKey) {
+            engine = next
+            store.setRecommendationEngine(next)
+        }
+    }
     val entries = listOf(
+        choiceEntry(
+            "recommendation-engine", "Recommendation Engine",
+            if (hasTmdbKey) "More Like This & Because You Watched. TMDB uses direct results; VUEO ranks candidates."
+            else "More Like This & Because You Watched. TMDB requires an API key in TMDB settings.",
+            engine.label, ::selectEngine, ::selectEngine,
+        ).copy(section = "RECOMMENDATIONS"),
         TvSettingsEntry(
             id = "tmdb",
             title = "TMDB",

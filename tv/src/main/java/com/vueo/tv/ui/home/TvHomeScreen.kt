@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import androidx.activity.compose.BackHandler
@@ -48,6 +49,10 @@ internal data class HomeRecommendationInput(
     val history: List<LibraryPlaybackEntry>,
     val enabled: Boolean,
     val day: Long,
+    val recommendationEngine: RecommendationEngine,
+    val tmdbKey: String,
+    val tmdbRecommendations: Boolean,
+    val tmdbSimilar: Boolean,
 )
 
 class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
@@ -72,7 +77,7 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var continueWatching by mutableStateOf(startupContinueWatching)
     internal var watchHistory by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
     internal val recommendationMutex = Mutex()
-    internal var recommendationInput: HomeRecommendationInput? = null
+    internal var recommendationInput by mutableStateOf<HomeRecommendationInput?>(null)
     internal var homeRecommendations by mutableStateOf(HomeRecommendationSections())
     internal var presentationCatalogRows: List<CatalogRow>? = null
     internal var presentationRows by mutableStateOf(
@@ -223,7 +228,10 @@ fun TvHomeScreen(
     }
 
     val continueWatching = retainedState.continueWatching
-    val homeRecommendations = retainedState.homeRecommendations
+    val currentRecommendationEngine = runtime.settingsStore.recommendationEngine()
+    val recommendationEngineIsCurrent = retainedState.recommendationInput?.recommendationEngine == currentRecommendationEngine
+    val homeRecommendations = if (recommendationEngineIsCurrent) retainedState.homeRecommendations
+        else retainedState.homeRecommendations.copy(becauseYouWatched = emptyList())
 
     // Presentation is now a cheap pure build. Catalog partials may still arrive
     // rapidly, but they no longer restart disk/library hydration.
@@ -243,6 +251,7 @@ fun TvHomeScreen(
     // stream without holding back Continue Watching.
     LaunchedEffect(
         active,
+        currentRecommendationEngine,
         runtime,
         activeProfileId,
         refreshToken,
@@ -266,6 +275,8 @@ fun TvHomeScreen(
                 val input = HomeRecommendationInput(
                     activeProfileId, refreshToken, libraryRevision, catalogRows, history,
                     enabled, System.currentTimeMillis() / 86_400_000L,
+                    runtime.settingsStore.recommendationEngine(), runtime.pluginStore.tmdbApiKey(),
+                    runtime.settingsStore.tmdbRecommendationsEnabled(), runtime.settingsStore.tmdbSimilarTitlesEnabled(),
                 )
                 if (retainedState.recommendationInput == input) {
                     PerformanceDiagnostics.captureRuntimeEvent("HOME_RECOMMENDATIONS_CACHE_HIT")
@@ -313,7 +324,8 @@ fun TvHomeScreen(
         retainedState.recommendationInput = result.first
     }
 
-    val rows = retainedState.presentationRows
+    val rows = if (recommendationEngineIsCurrent) retainedState.presentationRows
+        else retainedState.presentationRows.filterNot { it.key == "because-you-watched" }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
 

@@ -2,6 +2,7 @@ package com.vueo.mobile.ui
 
 // VUEO DNA OPTIONAL SETTINGS PATCH - 2026-08-29
 
+import com.vueo.shared.core.storage.RecommendationEngine
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -237,11 +238,51 @@ internal fun EnhancementsSettingsScreen(
             )
         }
 
+    var engine by remember { mutableStateOf(settingsStore.recommendationEngine()) }
+    var showEngineDialog by remember { mutableStateOf(false) }
+    val hasTmdbKey = pluginStore.tmdbApiKey().isNotBlank()
+    if (showEngineDialog) {
+        AlertDialog(
+            onDismissRequest = { showEngineDialog = false },
+            title = { Text("Recommendation Engine") },
+            text = {
+                Column {
+                    RecommendationEngine.entries.forEach { option ->
+                        val available = option != RecommendationEngine.TMDB || hasTmdbKey
+                        fun select() {
+                            if (available) {
+                                engine = option
+                                settingsStore.setRecommendationEngine(option)
+                                showEngineDialog = false
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().clickable(enabled = available, onClick = ::select).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = engine == option, onClick = ::select, enabled = available)
+                            Text(if (available) option.label else "TMDB · API key required")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showEngineDialog = false }) { Text("Close") } },
+        )
+    }
+
     VueoSettingsPage(
         title = "Enhancements",
         subtitle = "Optional services for richer metadata and ratings.",
         onBack = onBack,
     ) {
+        item(key = "enhancements-recommendation-engine") {
+            VueoSettingsHubGroup(label = "RECOMMENDATIONS") {
+                VueoSettingsHubRow(
+                    title = "Recommendation Engine",
+                    subtitle = "More Like This & Because You Watched. TMDB uses direct results; VUEO ranks candidates.",
+                    status = engine.label,
+                    icon = Icons.Default.SettingsInputComponent,
+                    onClick = { showEngineDialog = true },
+                )
+            }
+        }
         item(key = "enhancements-metadata") {
             VueoSettingsHubGroup(
                 label = "METADATA & RATINGS"
