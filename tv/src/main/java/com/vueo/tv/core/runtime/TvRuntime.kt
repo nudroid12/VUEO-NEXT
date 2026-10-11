@@ -497,6 +497,7 @@ class TvRuntime(context: Context) {
             similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),
             limit = 18,
             engine = settingsStore.recommendationEngine(),
+            traktClientId = settingsStore.traktClientId(),
         )
 
     suspend fun ratings(item: MediaItem): List<MediaRating> {

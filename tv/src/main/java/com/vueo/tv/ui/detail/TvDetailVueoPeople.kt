@@ -633,7 +633,7 @@ internal fun VueoDetailRelatedSection(
             horizontalArrangement = Arrangement.End,
         ) {
             Text(
-                text = if (usesTmdb) "Powered by TMDB" else "Powered by VUEO",
+                text = if (usesTmdb) "Powered by TMDB" else if (items.any { "Trakt" in it.catalogSources }) "Powered by VUEO · Data from Trakt.tv" else "Powered by VUEO",
                 color = TvDesign.White.copy(alpha = .44f),
                 fontSize = 9.sp,
                 maxLines = 1,

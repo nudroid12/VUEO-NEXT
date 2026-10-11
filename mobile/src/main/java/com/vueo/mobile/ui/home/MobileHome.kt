@@ -344,6 +344,7 @@ internal fun HomeScreen(
     val recommendationSettings = remember { SettingsStore(context.applicationContext) }
     val recommendationPlugins = remember { PluginStore(context.applicationContext) }
     val recommendationEngine = recommendationSettings.recommendationEngine()
+    val recommendationTraktClientId = recommendationSettings.traktClientId()
     val recommendationKey = recommendationPlugins.tmdbApiKey()
     val recommendationTmdbEnabled = recommendationSettings.tmdbRecommendationsEnabled()
     val recommendationSimilarEnabled = recommendationSettings.tmdbSimilarTitlesEnabled()
@@ -688,7 +689,7 @@ internal fun HomeScreen(
         libraryVersion,
         activeProfileId,
         personalizedHomeEnabled,
-        recommendationEngine, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled,
+        recommendationEngine, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled, recommendationTraktClientId,
     ) {
         val librarySnapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_home_library_snapshot_2", Tab.HOME) {
             libraryStore.detailSnapshot()
@@ -711,6 +712,7 @@ internal fun HomeScreen(
                                 recommendationsEnabled = recommendationTmdbEnabled,
                                 similarEnabled = recommendationSimilarEnabled,
                                 limit = 18, engine = recommendationEngine,
+                                traktClientId = recommendationTraktClientId,
                             )
                         }
                     } catch (cancelled: CancellationException) {

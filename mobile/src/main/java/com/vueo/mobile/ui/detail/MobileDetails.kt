@@ -993,6 +993,7 @@ internal fun MediaDetailsScreen(
                                 tmdbSimilarEnabled,
                             limit = 18,
                             engine = recommendationEngine,
+                            traktClientId = settingsStore.traktClientId(),
                         )
                     }
                 } catch (cancelled: CancellationException) {
@@ -2797,6 +2798,7 @@ internal fun MediaDetailsScreen(
                                 moreLikeThisAttribution(
                                     usesTmdb =
                                         tmdbMoreLikeThisEnabled,
+                                    usesTrakt = relatedItems.any { "Trakt" in it.catalogSources },
                                 ),
                             modifier =
                                 Modifier.offset(

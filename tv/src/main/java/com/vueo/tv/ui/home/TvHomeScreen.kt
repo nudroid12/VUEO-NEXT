@@ -51,6 +51,7 @@ internal data class HomeRecommendationInput(
     val day: Long,
     val recommendationEngine: RecommendationEngine,
     val tmdbKey: String,
+    val traktClientId: String,
     val tmdbRecommendations: Boolean,
     val tmdbSimilar: Boolean,
 )
@@ -229,6 +230,7 @@ fun TvHomeScreen(
 
     val continueWatching = retainedState.continueWatching
     val currentRecommendationEngine = runtime.settingsStore.recommendationEngine()
+    val currentTraktClientId = runtime.settingsStore.traktClientId()
     val recommendationEngineIsCurrent = retainedState.recommendationInput?.recommendationEngine == currentRecommendationEngine
     val homeRecommendations = if (recommendationEngineIsCurrent) retainedState.homeRecommendations
         else retainedState.homeRecommendations.copy(becauseYouWatched = emptyList())
@@ -252,6 +254,7 @@ fun TvHomeScreen(
     LaunchedEffect(
         active,
         currentRecommendationEngine,
+        currentTraktClientId,
         runtime,
         activeProfileId,
         refreshToken,
@@ -275,7 +278,7 @@ fun TvHomeScreen(
                 val input = HomeRecommendationInput(
                     activeProfileId, refreshToken, libraryRevision, catalogRows, history,
                     enabled, System.currentTimeMillis() / 86_400_000L,
-                    runtime.settingsStore.recommendationEngine(), runtime.pluginStore.tmdbApiKey(),
+                    runtime.settingsStore.recommendationEngine(), runtime.pluginStore.tmdbApiKey(), currentTraktClientId,
                     runtime.settingsStore.tmdbRecommendationsEnabled(), runtime.settingsStore.tmdbSimilarTitlesEnabled(),
                 )
                 if (retainedState.recommendationInput == input) {

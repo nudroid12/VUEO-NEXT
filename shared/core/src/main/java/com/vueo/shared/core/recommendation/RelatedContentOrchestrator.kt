@@ -5,6 +5,8 @@ import com.vueo.shared.core.enrichment.TmdbEnhancementClient
 import com.vueo.shared.core.extensions.CatalogDiscoveryCache
 import com.vueo.shared.core.media.MediaItem
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object RelatedContentOrchestrator {
     fun local(item: MediaItem, limit: Int = 18, checkActive: () -> Unit = {}): List<MediaItem> =
@@ -18,6 +20,7 @@ object RelatedContentOrchestrator {
         similarEnabled: Boolean,
         limit: Int = 18,
         engine: RecommendationEngine = RecommendationEngine.VUEO,
+        traktClientId: String = "",
     ): List<MediaItem> {
         if (limit <= 0) return emptyList()
         // Direct TMDB mode keeps API order and never uses local fallback or VUEO ranking.
@@ -31,7 +34,20 @@ object RelatedContentOrchestrator {
                 emptyList()
             }
         }
-        // VUEO ranks catalog candidates in local(); TMDB lists never enter this mode.
-        return localItems.take(limit)
+        // VUEO uses Trakt related candidates only; TMDB recommendation lists stay separate.
+        if (traktClientId.isBlank()) return localItems.take(limit)
+        val remote = try {
+            TraktRelatedClient.related(item, traktClientId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (remote.isEmpty()) return localItems.take(limit)
+        return withContext(Dispatchers.Default) {
+            CatalogDiscoveryCache.blendRelated(
+                item, localItems, remote, limit, trustRelatedSource = true,
+            )
+        }
     }
 }

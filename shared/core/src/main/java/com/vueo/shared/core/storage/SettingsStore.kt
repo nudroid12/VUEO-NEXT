@@ -807,6 +807,12 @@ class SettingsStore(
             .apply()
     }
 
+    fun traktClientId(): String = prefs.getString("trakt_client_id", "").orEmpty().trim()
+
+    fun setTraktClientId(value: String) {
+        prefs.edit().putString("trakt_client_id", value.trim()).apply()
+    }
+
     fun recommendationEngine(): RecommendationEngine =
         RecommendationEngine.entries.firstOrNull { it.name == prefs.getString(KEY_RECOMMENDATION_ENGINE, null) }
             ?: RecommendationEngine.VUEO

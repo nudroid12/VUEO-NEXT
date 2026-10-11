@@ -969,9 +969,12 @@ internal fun detailsPlaybackTargetEpisode(
 
 internal fun moreLikeThisAttribution(
     usesTmdb: Boolean,
+    usesTrakt: Boolean = false,
 ): String =
     if (usesTmdb) {
         "Powered by TMDB"
+    } else if (usesTrakt) {
+        "Powered by VUEO · Data from Trakt.tv"
     } else {
         "Powered by VUEO"
     }
