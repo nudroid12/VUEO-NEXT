@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
+import com.vueo.tv.settings.TvMotionBackShortcut
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -29,6 +31,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : ComponentActivity() {
+    private val motionBackShortcut = TvMotionBackShortcut()
     private val exitHandler = Handler(Looper.getMainLooper())
     private var pendingWatchNextMediaKey by mutableStateOf<String?>(null)
     private var lastExitPressMs: Long? = null
@@ -101,7 +104,18 @@ class MainActivity : ComponentActivity() {
         exitHandler.postDelayed(clearExitPrompt, 2_000L)
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (motionBackShortcut.dispatch(event) { super.dispatchKeyEvent(it) }) return true
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        if (!hasFocus) motionBackShortcut.cancel()
+        super.onWindowFocusChanged(hasFocus)
+    }
+
     override fun onPause() {
+        motionBackShortcut.cancel()
         exitHandler.removeCallbacks(clearExitPrompt)
         clearExitPrompt.run()
         TvWatchNextPublisher.schedule(applicationContext)

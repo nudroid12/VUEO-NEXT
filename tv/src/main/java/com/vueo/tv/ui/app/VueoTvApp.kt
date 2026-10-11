@@ -70,6 +70,7 @@ import com.vueo.tv.search.TvSearchScreen
 import com.vueo.tv.search.TvSearchSession
 import com.vueo.tv.search.TvEntityResultsScreen
 import com.vueo.tv.settings.TvMotionBubble
+import com.vueo.tv.settings.TvMotionBackShortcut
 import com.vueo.tv.settings.TvMotionFloatingHost
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -205,6 +206,13 @@ fun VueoTvApp(
                 }
             },
         )
+    }
+    androidx.compose.runtime.SideEffect {
+        TvMotionBackShortcut.allowed = route != TvRoute.STARTUP && modalDepth == 0 &&
+            !detailMotionClosing && !TvMotionBubble.expanded && !TvMotionBubble.focusAccess
+    }
+    DisposableEffect(Unit) {
+        onDispose { TvMotionBackShortcut.allowed = false }
     }
     var sourceDiscoverySnapshot by remember { mutableStateOf<TvSourceDiscoverySnapshot?>(null) }
     var sourceDiscoveryError by remember { mutableStateOf<String?>(null) }

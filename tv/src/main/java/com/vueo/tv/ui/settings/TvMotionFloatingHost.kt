@@ -1,6 +1,7 @@
 package com.vueo.tv.settings
 
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,9 +17,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -40,10 +46,12 @@ import kotlin.math.roundToInt
 internal object TvMotionBubble {
     var visible by mutableStateOf(false)
     var expanded by mutableStateOf(false)
+    var focusAccess by mutableStateOf(false)
     val selectedGroup = mutableStateOf(TvMotionGroup.FORWARD)
-    fun open() { visible = true; expanded = true }
-    fun hide() { expanded = false }
-    fun close() { expanded = false; visible = false }
+    fun open() { visible = true; expanded = true; focusAccess = false }
+    fun focusBubble() { visible = true; expanded = false; focusAccess = true }
+    fun hide() { expanded = false; focusAccess = false }
+    fun close() { expanded = false; visible = false; focusAccess = false }
 }
 
 @Composable
@@ -56,8 +64,22 @@ internal fun TvMotionFloatingHost() {
     var position by remember { mutableStateOf<Offset?>(null) }
     var dragging by remember { mutableStateOf(false) }
     var bubbleFocused by remember { mutableStateOf(false) }
+    val bubbleRequester = remember { FocusRequester() }
+    val host = LocalTvModalFocusHost.current
     fun close() { TvMotionTuning.save(context); TvMotionBubble.close() }
     if (!TvMotionBubble.visible) return
+    val ownsFocus = TvMotionBubble.focusAccess || TvMotionBubble.expanded
+    DisposableEffect(host, ownsFocus) {
+        if (ownsFocus) host?.open?.invoke()
+        onDispose { if (ownsFocus) host?.close?.invoke() }
+    }
+    BackHandler(enabled = TvMotionBubble.focusAccess && !TvMotionBubble.expanded) { TvMotionBubble.hide() }
+    LaunchedEffect(TvMotionBubble.focusAccess, bounds) {
+        if (TvMotionBubble.focusAccess && bounds != IntSize.Zero) {
+            withFrameNanos { }
+            runCatching { bubbleRequester.requestFocus() }
+        }
+    }
     Box(Modifier.fillMaxSize().onSizeChanged { bounds = it }) {
         val maxX = (bounds.width - diameter).coerceAtLeast(0f)
         val maxY = (bounds.height - diameter).coerceAtLeast(0f)
@@ -74,6 +96,21 @@ internal fun TvMotionFloatingHost() {
             ) { Text("×", color = if (overTarget) TvDesign.Black else TvDesign.White, fontSize = 30.sp) }
             Box(
                 Modifier.offset { IntOffset(actual.x.roundToInt(), actual.y.roundToInt()) }.size(56.dp)
+                    .focusRequester(bubbleRequester)
+                    .focusProperties {
+                        canFocus = TvMotionBubble.focusAccess
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                        left = FocusRequester.Cancel
+                        right = FocusRequester.Cancel
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_BACK) false
+                        else {
+                            if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled) TvMotionBubble.hide()
+                            true
+                        }
+                    }
                     .background(TvDesign.Accent, CircleShape)
                     .border(if (bubbleFocused) 3.dp else 0.dp, TvDesign.White, CircleShape)
                     .onFocusChanged { bubbleFocused = it.isFocused }
@@ -103,8 +140,6 @@ internal fun TvMotionFloatingHost() {
 
 @Composable
 private fun TvMotionFloatingWorkspace(onClose: () -> Unit) {
-    val host = LocalTvModalFocusHost.current
-    DisposableEffect(host) { host?.open?.invoke(); onDispose { host?.close?.invoke() } }
     Dialog(
         onDismissRequest = { TvMotionBubble.hide() },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
@@ -129,7 +164,7 @@ private fun TvMotionFloatingWorkspace(onClose: () -> Unit) {
                     TextButton(onClick = { TvMotionBubble.hide() }) { Text("Hide", color = TvDesign.White) }
                     TextButton(onClick = onClose) { Text("Close", color = TvDesign.White) }
                 }
-                Text("Hide to test on this page · Menu to reopen", color = TvDesign.Muted, fontSize = 11.sp)
+                Text("Hide to test · Hold Back for bubble · OK to open", color = TvDesign.Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
                 TvMotionSettings({}, {}, { TvMotionBubble.hide() }, floating = true)
             }
