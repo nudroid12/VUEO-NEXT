@@ -962,8 +962,7 @@ object CatalogDiscoveryCache {
                     val incompatibleGenres = targetFeatures.genres.isNotEmpty() &&
                         candidateFeatures.genres.isNotEmpty() &&
                         (targetFeatures.genres intersect candidateFeatures.genres).isEmpty()
-                    val broadRealityTarget = targetFeatures.genres.any { it in RELATED_REALITY_GENRES }
-                    if (broadRealityTarget || tmdbConfidence <= 0.0 || !sparseStory || incompatibleGenres || sparseRemoteCount >= 3) {
+                    if (tmdbConfidence <= 0.0 || !sparseStory || incompatibleGenres || sparseRemoteCount >= 3) {
                         return@mapNotNull null
                     }
                     sparseRemoteCount++
@@ -1056,7 +1055,6 @@ object CatalogDiscoveryCache {
                     .map(::relatedNormalizeGenre)
                     .filter { it.isNotBlank() }
                     .toSet(),
-            themes = relatedThemeTags(media),
             topic =
                 relatedTopicWeights(
                     media = media,
@@ -1254,34 +1252,21 @@ object CatalogDiscoveryCache {
                     regional.score >= 0.55,
             ).count { it }
 
-        // Reality describes a format, not a subject. A known subject must
-        // overlap; shared network, country or competition wording cannot replace it.
-        val realityTarget = target.genres.any { it in RELATED_REALITY_GENRES }
-        val targetSubjects = target.themes intersect RELATED_REALITY_SUBJECTS
-        val sharedSubject = (targetSubjects intersect candidate.themes).isNotEmpty()
-        val realityEvidence = !realityTarget || if (targetSubjects.isNotEmpty()) {
-            sharedSubject
-        } else {
-            strongTopic || strongStory
-        }
-
         return RelatedSignals(
             weightedScore =
                 weightedScore,
             genreScore = genreScore,
             topicScore = topicScore,
-            passesRelevanceGate = realityEvidence && (
+            passesRelevanceGate =
                 strongGenre ||
                     strongTopic ||
                     strongStory ||
                     strongRelation ||
-                    realityTarget && sharedSubject ||
                     mediumSignals >= 2 && (
                         topicAvailable && topicScore >= 0.10 ||
                             storyAvailable && storyScore >= 0.11 ||
                             relation.available && relation.score >= 0.12
-                    )
-                ),
+                    ),
         )
     }
 
@@ -2397,7 +2382,6 @@ object CatalogDiscoveryCache {
     private data class RelatedFeatures(
         val item: MediaItem,
         val genres: Set<String>,
-        val themes: Set<String>,
         val topic: Map<String, Double>,
         val story: Map<String, Double>,
         val cast: Set<String>,
@@ -2430,12 +2414,6 @@ object CatalogDiscoveryCache {
         val available: Boolean,
     )
 
-    private val RELATED_REALITY_GENRES =
-        setOf("reality", "reality tv", "reality-tv", "talk", "talk show", "game show", "game-show")
-
-    private val RELATED_REALITY_SUBJECTS =
-        setOf("cooking", "music", "sports", "romance")
-
     private val RELATED_GENERIC_GENRES =
         setOf(
             "action",
@@ -2444,15 +2422,10 @@ object CatalogDiscoveryCache {
             "drama",
             "family",
             "romance",
-        ) + RELATED_REALITY_GENRES
+        )
 
     private val RELATED_THEME_LEXICON =
         mapOf(
-            "cooking" to
-                setOf(
-                    "cook", "cooking", "chef", "kitchen", "culinary",
-                    "bake", "baked", "baking", "baker", "restaurant", "recipe",
-                ),
             "military" to
                 setOf(
                     "military", "army", "navy", "marine",
