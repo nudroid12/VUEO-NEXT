@@ -64,7 +64,7 @@ internal fun TvMotionSettings(
     fun number(id: String, title: String, text: String, previous: () -> Unit, next: () -> Unit, description: String = "Left / Right to adjust. OK increases.") =
         choiceEntry(id, title, description, text, previous, next).copy(section = "VALUES")
 
-    if (preview) TvMotionPreview(group) { preview = false }
+    if (preview && !floating) TvMotionPreview(group) { preview = false }
     val entries = buildList {
         if (!floating) add(TvSettingsEntry("motion-floating", "Open Floating Tuner", "Tune while viewing the current page. Hide returns to the bubble.", "Open", onActivate = { TvMotionBubble.open() }, section = "LIVE WORKSPACE"))
         add(toggleEntry("motion-enabled", "Live Motion Tuning", "Off restores original motion while retaining your trial values.", TvMotionTuning.enabled) {
@@ -108,7 +108,7 @@ internal fun TvMotionSettings(
         add(TvSettingsEntry("motion-reset-all", "Reset All Motion", "Restore originals and remove saved trial values.", "Reset", onActivate = { TvMotionTuning.resetAll(context); status = "Original motion restored. Saved trial values removed." }))
         add(TvSettingsEntry("motion-status", "Status", status, enabled = false, section = "STATUS"))
     }
-    if (floating) TvMotionFloatingEntries(entries)
+    if (floating) TvMotionFloatingEntries(entries, group, value) { change -> edit(change) }
     else TvSettingsListScreen("Motion Settings · Temporary", "Live on real TV pages. D-pad Left / Right adjusts values. Original preserves existing behavior.", entries, onNavigate, onProfile, onBack)
 }
 

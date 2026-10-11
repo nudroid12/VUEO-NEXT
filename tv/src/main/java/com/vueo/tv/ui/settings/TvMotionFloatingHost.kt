@@ -7,12 +7,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +44,7 @@ internal object TvMotionBubble {
     var visible by mutableStateOf(false)
     var expanded by mutableStateOf(false)
     var focusAccess by mutableStateOf(false)
+    var dockLeft by mutableStateOf(false)
     val selectedGroup = mutableStateOf(TvMotionGroup.FORWARD)
     fun open() { visible = true; expanded = true; focusAccess = false }
     fun focusBubble() { visible = true; expanded = false; focusAccess = true }
@@ -154,41 +152,21 @@ private fun TvMotionFloatingWorkspace(onClose: () -> Unit) {
                 originalDim?.let { window?.setDimAmount(it) }
             }
         }
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+        Box(Modifier.fillMaxSize(), contentAlignment = if (TvMotionBubble.dockLeft) Alignment.CenterStart else Alignment.CenterEnd) {
             Column(
-                Modifier.padding(16.dp).width(460.dp).fillMaxHeight(.94f)
-                    .background(TvDesign.SurfaceRaised, RoundedCornerShape(18.dp)).padding(16.dp),
+                Modifier.padding(12.dp).width(360.dp).fillMaxHeight(.90f)
+                    .background(TvDesign.SurfaceRaised, RoundedCornerShape(16.dp))
+                    .border(1.dp, TvDesign.Muted.copy(alpha = .35f), RoundedCornerShape(16.dp)).padding(12.dp),
             ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Live Motion", color = TvDesign.White, fontSize = 20.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { TvMotionBubble.hide() }) { Text("Hide", color = TvDesign.White) }
-                    TextButton(onClick = onClose) { Text("Close", color = TvDesign.White) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Motion", color = TvDesign.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                    TvMotionCompactButton(if (TvMotionBubble.dockLeft) "Dock →" else "← Dock") { TvMotionBubble.dockLeft = !TvMotionBubble.dockLeft }
+                    TvMotionCompactButton("Hide") { TvMotionBubble.hide() }
+                    TvMotionCompactButton("Close", onClick = onClose)
                 }
-                Text("Hide to test · Hold Back for bubble · OK to open", color = TvDesign.Muted, fontSize = 11.sp)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
                 TvMotionSettings({}, {}, { TvMotionBubble.hide() }, floating = true)
             }
-        }
-    }
-}
-
-@Composable
-internal fun TvMotionFloatingEntries(entries: List<TvSettingsEntry>) {
-    val requesters = remember { mutableMapOf<String, FocusRequester>() }
-    entries.forEach { requesters.getOrPut(it.id) { FocusRequester() } }
-    val focusableIds = entries.filter { it.enabled }.map { it.id }
-    var focusedId by remember { mutableStateOf(focusableIds.firstOrNull()) }
-    LaunchedEffect(focusableIds) {
-        if (focusedId !in focusableIds) focusedId = focusableIds.firstOrNull()
-        focusedId?.let { runCatching { requesters.getValue(it).requestFocus() } }
-    }
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
-            TvSettingsRow(
-                entry = entry, requester = requesters.getValue(entry.id), first = false,
-                last = index == entries.lastIndex, compact = true,
-                onLeftToSidebar = {}, onFocused = { focusedId = entry.id },
-            )
         }
     }
 }
