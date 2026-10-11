@@ -477,21 +477,9 @@ class TvRuntime(context: Context) {
         )
     }
 
-    fun localRelatedTitles(item: MediaItem, checkActive: () -> Unit = {}): List<MediaItem> =
-        if (settingsStore.recommendationEngine() == RecommendationEngine.TMDB) emptyList()
-        else RelatedContentOrchestrator.local(
+    suspend fun relatedTitles(item: MediaItem): List<MediaItem> =
+        RelatedContentOrchestrator.direct(
             item = item,
-            limit = 18,
-            checkActive = checkActive,
-        )
-
-    suspend fun relatedTitles(
-        item: MediaItem,
-        localItems: List<MediaItem> = localRelatedTitles(item),
-    ): List<MediaItem> =
-        RelatedContentOrchestrator.mergeRemote(
-            item = item,
-            localItems = localItems,
             apiKey = pluginStore.tmdbApiKey(),
             recommendationsEnabled = settingsStore.tmdbRecommendationsEnabled(),
             similarEnabled = settingsStore.tmdbSimilarTitlesEnabled(),

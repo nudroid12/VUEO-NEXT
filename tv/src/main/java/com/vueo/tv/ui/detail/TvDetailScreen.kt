@@ -289,35 +289,21 @@ fun TvDetailScreen(
         }
 
         // Match Mobile's perceived-load flow: core metadata is enough to
-        // release Detail. Local/remote recommendations continue after the
+        // release Detail. Direct recommendations continue after the
         // page is already visible.
         loading = false
 
         launch {
-            val localRelated = try {
-                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_details_enrich_metadata_7", Tab.DETAILS) {
-                    val context = currentCoroutineContext()
-                    runtime.localRelatedTitles(core, checkActive = { context.ensureActive() })
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                emptyList()
-            }
-            if (!sessionCurrent()) return@launch
-            related = localRelated
-
             val remoteRelated = try {
                 PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_details_enrich_metadata_8", Tab.DETAILS) {
                     runtime.relatedTitles(
                         item = core,
-                        localItems = localRelated,
                     )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                localRelated
+                emptyList()
             }
             if (!sessionCurrent()) return@launch
             related = remoteRelated

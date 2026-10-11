@@ -3,7 +3,7 @@ package com.vueo.shared.core.storage
 import android.content.Context
 
 enum class RecommendationEngine(val label: String) {
-    VUEO("VUEO"),
+    TRAKT("Trakt"),
     TMDB("TMDB"),
 }
 
@@ -815,7 +815,7 @@ class SettingsStore(
 
     fun recommendationEngine(): RecommendationEngine =
         RecommendationEngine.entries.firstOrNull { it.name == prefs.getString(KEY_RECOMMENDATION_ENGINE, null) }
-            ?: RecommendationEngine.VUEO
+            ?: RecommendationEngine.TMDB
 
     fun setRecommendationEngine(engine: RecommendationEngine) {
         prefs.edit().putString(KEY_RECOMMENDATION_ENGINE, engine.name).apply()

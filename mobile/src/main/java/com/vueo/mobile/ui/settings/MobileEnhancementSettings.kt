@@ -285,7 +285,10 @@ internal fun EnhancementsSettingsScreen(
             text = {
                 Column {
                     RecommendationEngine.entries.forEach { option ->
-                        val available = option != RecommendationEngine.TMDB || hasTmdbKey
+                        val available = when (option) {
+                            RecommendationEngine.TMDB -> hasTmdbKey
+                            RecommendationEngine.TRAKT -> settingsStore.traktClientId().isNotBlank()
+                        }
                         fun select() {
                             if (available) {
                                 engine = option
@@ -295,7 +298,7 @@ internal fun EnhancementsSettingsScreen(
                         }
                         Row(Modifier.fillMaxWidth().clickable(enabled = available, onClick = ::select).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = engine == option, onClick = ::select, enabled = available)
-                            Text(if (available) option.label else "TMDB · API key required")
+                            Text(if (available) option.label else if (option == RecommendationEngine.TMDB) "TMDB · API key required" else "Trakt · Client ID required")
                         }
                     }
                 }
@@ -313,7 +316,7 @@ internal fun EnhancementsSettingsScreen(
             VueoSettingsHubGroup(label = "RECOMMENDATIONS") {
                 VueoSettingsHubRow(
                     title = "Recommendation Engine",
-                    subtitle = "More Like This & Because You Watched. VUEO ranks Trakt and local candidates; TMDB uses direct results.",
+                    subtitle = "More Like This & Because You Watched. Direct Trakt or TMDB results in their original order.",
                     status = engine.label,
                     icon = Icons.Default.SettingsInputComponent,
                     onClick = { showEngineDialog = true },
@@ -321,7 +324,7 @@ internal fun EnhancementsSettingsScreen(
                 VueoSettingsHubDivider()
                 VueoSettingsHubRow(
                     title = "Trakt",
-                    subtitle = "Related titles for the VUEO engine. Client ID required. Data from Trakt.tv.",
+                    subtitle = "Direct related titles. Client ID required. Data from Trakt.tv.",
                     status = if (settingsStore.traktClientId().isBlank()) "Not configured" else "Client ID saved",
                     icon = Icons.Default.SettingsInputComponent,
                     onClick = { traktClientId = settingsStore.traktClientId(); showTraktDialog = true },

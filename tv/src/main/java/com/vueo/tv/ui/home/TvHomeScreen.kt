@@ -294,16 +294,15 @@ fun TvHomeScreen(
                     context.ensureActive()
                     val seed = if (enabled) HomeRecommendationPolicy.latestMeaningfulSeed(history) else null
                     val becauseRelated = seed?.let { watched ->
-                        val localRelated = runtime.localRelatedTitles(watched, checkActive = { context.ensureActive() })
                         try {
-                            // Same source, settings and ranking as Detail's More Like This.
+                            // Same direct source and order as Detail's More Like This.
                             withContext(Dispatchers.IO) {
-                                runtime.relatedTitles(item = watched, localItems = localRelated)
+                                runtime.relatedTitles(item = watched)
                             }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Exception) {
-                            localRelated
+                            emptyList()
                         }
                     }.orEmpty()
                     context.ensureActive()

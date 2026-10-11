@@ -695,18 +695,17 @@ object CatalogDiscoveryCache {
     }
 
     /**
-     * Re-ranks local matches and bounded remote candidates.
-     * Trakt related mode gives lexical relevance and source order equal 45% budgets,
-     * plus the existing diversity adjustment. Related candidates do not need lexical
-     * overlap, but an explicit format mismatch is still rejected.
-     * The legacy blend path retains its 70/20 relevance/source budgets.
+     * Re-ranks local catalog matches together with TMDB discovery candidates.
+     *
+     * The final selection keeps VUEO relevance as the dominant signal:
+     * 70% local semantic relevance + 20% TMDB discovery confidence +
+     * 10% diversity, without a separate franchise repetition penalty.
      */
     fun blendRelated(
         item: MediaItem,
         localItems: List<MediaItem>,
         remoteItems: List<MediaItem>,
         limit: Int = 18,
-        trustRelatedSource: Boolean = false,
     ): List<MediaItem> {
         if (limit <= 0) {
             return emptyList()
@@ -920,13 +919,7 @@ object CatalogDiscoveryCache {
                         )
                     ] ?: 0.0
 
-                val trustedRemote = trustRelatedSource && tmdbConfidence > 0.0
-                val targetFormat = relatedFormat(targetFeatures.genres)
-                val candidateFormat = relatedFormat(candidateFeatures.genres)
-                if (trustedRemote && targetFormat != null && candidateFormat != null && targetFormat != candidateFormat) {
-                    return@mapNotNull null
-                }
-                if (!signals.passesRelevanceGate && !trustedRemote) {
+                if (!signals.passesRelevanceGate) {
                     // Missing synopsis is uncertainty; a rich synopsis that
                     // fails relevance is not a reason to trust API rank alone.
                     val sparseStory = targetFeatures.story.size < 4 || candidateFeatures.story.size < 4
@@ -953,8 +946,10 @@ object CatalogDiscoveryCache {
                     features =
                         candidateFeatures,
                     score =
-                        if (trustRelatedSource) 0.45 * signals.weightedScore + 0.45 * tmdbConfidence
-                        else 0.70 * vueoRelevance + 0.20 * tmdbConfidence,
+                        0.70 *
+                            vueoRelevance +
+                            0.20 *
+                            tmdbConfidence,
                     genreScore =
                         signals.genreScore,
                     topicScore =

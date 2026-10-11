@@ -894,18 +894,8 @@ internal fun MediaDetailsScreen(
         val resolvedItem =
             coreItem
 
-        val localRelated =
-            if (recommendationEngine == RecommendationEngine.TMDB) emptyList() else PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_details_enrich_metadata_6", Tab.DETAILS) {
-                RelatedContentOrchestrator.local(
-                    item = resolvedItem,
-                    limit = 18,
-                )
-            }
-
         if (!sessionCurrent()) return@LaunchedEffect
-
-        relatedItems =
-            localRelated
+        relatedItems = emptyList()
 
         // Metadata/artwork, episode enrichment and rich credits continue in
         // the background and progressively update the already-visible page.
@@ -983,9 +973,8 @@ internal fun MediaDetailsScreen(
             val remoteRelated =
                 try {
                     PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_details_related_remote_9", Tab.DETAILS) {
-                        RelatedContentOrchestrator.mergeRemote(
+                        RelatedContentOrchestrator.direct(
                             item = resolvedItem,
-                            localItems = localRelated,
                             apiKey = tmdbKey,
                             recommendationsEnabled =
                                 tmdbRecommendationsEnabled,
@@ -999,7 +988,7 @@ internal fun MediaDetailsScreen(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    localRelated
+                    emptyList()
                 }
 
             if (sessionCurrent()) {
@@ -2798,7 +2787,6 @@ internal fun MediaDetailsScreen(
                                 moreLikeThisAttribution(
                                     usesTmdb =
                                         tmdbMoreLikeThisEnabled,
-                                    usesTrakt = relatedItems.any { "Trakt" in it.catalogSources },
                                 ),
                             modifier =
                                 Modifier.offset(

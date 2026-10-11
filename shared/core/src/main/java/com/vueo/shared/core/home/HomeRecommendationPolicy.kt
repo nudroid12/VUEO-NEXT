@@ -2,7 +2,6 @@ package com.vueo.shared.core.home
 
 import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.dna.UserDnaEngine
-import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
 import com.vueo.shared.core.extensions.MediaExtension
 import kotlin.random.Random
 import com.vueo.shared.core.media.CatalogRow
@@ -71,9 +70,8 @@ object HomeRecommendationPolicy {
         val forYou = diversify(ranked, limit, checkActive)
         val seed = latestMeaningfulSeed(meaningfulHistory)
         val because = seed?.let { watched ->
-            // Use More Like This ranking; never pad with broad genre matches.
-            val related = becauseRelatedTitles
-                ?: RelatedContentOrchestrator.local(watched, limit = 18, checkActive = checkActive)
+            // Preserve direct source order; absent API results never use catalog fallback.
+            val related = becauseRelatedTitles.orEmpty()
             filterBecauseRelated(related, watched, watchedTitleKeys, limit, checkActive)
         }.orEmpty()
         return HomeRecommendationSections(forYou, seed, because)

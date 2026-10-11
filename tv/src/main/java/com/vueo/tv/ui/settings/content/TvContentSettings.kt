@@ -834,8 +834,9 @@ internal fun TvEnhancementSettings(
     }
     val hasTmdbKey = runtime.pluginStore.tmdbApiKey().isNotBlank()
     fun selectEngine() {
-        val next = if (engine == RecommendationEngine.TMDB) RecommendationEngine.VUEO else RecommendationEngine.TMDB
-        if (next == RecommendationEngine.VUEO || hasTmdbKey) {
+        val next = if (engine == RecommendationEngine.TMDB) RecommendationEngine.TRAKT else RecommendationEngine.TMDB
+        val available = if (next == RecommendationEngine.TRAKT) traktClientId.isNotBlank() else hasTmdbKey
+        if (available) {
             engine = next
             store.setRecommendationEngine(next)
         }
@@ -843,13 +844,12 @@ internal fun TvEnhancementSettings(
     val entries = listOf(
         choiceEntry(
             "recommendation-engine", "Recommendation Engine",
-            if (hasTmdbKey) "More Like This & Because You Watched. VUEO ranks Trakt and local candidates; TMDB uses direct results."
-            else "More Like This & Because You Watched. TMDB requires an API key in TMDB settings.",
+            "Direct Trakt or TMDB results in their original order. Trakt requires a Client ID; TMDB requires an API key.",
             engine.label, ::selectEngine, ::selectEngine,
         ).copy(section = "RECOMMENDATIONS"),
         TvSettingsEntry(
             id = "trakt-client-id", title = "Trakt Client ID",
-            subtitle = "Related titles for VUEO. No Client Secret or user login needed. Data from Trakt.tv.",
+            subtitle = "Direct related titles. No Client Secret or user login needed. Data from Trakt.tv.",
             value = if (traktClientId.isBlank()) "Not configured" else "Client ID saved",
             onActivate = { editingTrakt = true }, section = "RECOMMENDATIONS",
             icon = Icons.Default.SettingsInputComponent,

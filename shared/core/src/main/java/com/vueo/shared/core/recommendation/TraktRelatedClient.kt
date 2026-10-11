@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 
 /** Public title-related discovery only. No user token, history sync or TMDB recommendations. */
 object TraktRelatedClient {
-    private const val MAX_CANDIDATES = 40
+    private const val MAX_CANDIDATES = 18
     private const val MAX_BODY_BYTES = 1024 * 1024
     private const val TTL_MS = 30 * 60_000L
     private const val FAILURE_TTL_MS = 2 * 60_000L

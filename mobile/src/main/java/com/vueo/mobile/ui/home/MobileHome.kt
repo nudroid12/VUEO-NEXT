@@ -288,7 +288,7 @@ internal class MobileHomeRetainedState {
     var continueWatching by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
         internal set
 
-    var recommendationEngine = RecommendationEngine.VUEO
+    var recommendationEngine = RecommendationEngine.TMDB
         internal set
 
     var recommendations by mutableStateOf(HomeRecommendationSections())
@@ -703,12 +703,10 @@ internal fun HomeScreen(
             if (personalizedHomeEnabled) {
                 val seed = HomeRecommendationPolicy.latestMeaningfulSeed(librarySnapshot.history)
                 val becauseRelated = seed?.let { watched ->
-                    val localRelated = if (recommendationEngine == RecommendationEngine.TMDB) emptyList()
-                    else withContext(Dispatchers.Default) { RelatedContentOrchestrator.local(watched, limit = 18) }
                     try {
                         withContext(Dispatchers.IO) {
-                            RelatedContentOrchestrator.mergeRemote(
-                                item = watched, localItems = localRelated, apiKey = recommendationKey,
+                            RelatedContentOrchestrator.direct(
+                                item = watched, apiKey = recommendationKey,
                                 recommendationsEnabled = recommendationTmdbEnabled,
                                 similarEnabled = recommendationSimilarEnabled,
                                 limit = 18, engine = recommendationEngine,
@@ -718,7 +716,7 @@ internal fun HomeScreen(
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
-                        localRelated
+                        emptyList()
                     }
                 }.orEmpty()
                 PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
