@@ -419,6 +419,8 @@ internal fun VueoPlayerSubtitleWorkspace(
                             visibleTracks.isNotEmpty() -> LazyColumn(
                                 state = trackListState,
                                 modifier = Modifier.fillMaxWidth().weight(1f),
+                                // Keep the focused card's zoom inside the scroll viewport.
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
                                 itemsIndexed(visibleTracks, key = { _, track -> track.key }) { index, track ->
@@ -1171,7 +1173,7 @@ private fun VueoSubtitleTrackRow(
                 Text(
                     detail,
                     color = if (selected) Color.Black.copy(alpha = .65f) else Color.White.copy(alpha = .50f),
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
