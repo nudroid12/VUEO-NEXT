@@ -120,12 +120,13 @@ internal fun TvProviderDiagnosticDialog(
                     }
                     providerHttpStatus(health)?.let { DiagnosticLine("HTTP", it) }
                     providerRelevantTimingLabel(health)?.let { DiagnosticLine("Timing", it) }
-                    ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticLine("Last stage", sanitizeDiagnosticText(it)) }
-                    ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
-                        DiagnosticLine("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
-                    }
-                    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let {
-                        DiagnosticLine("Timeline", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+                    if (health.status == ProviderHealthStatus.TIMEOUT) {
+                        val evidence = ProviderDiagnosticProgress.timeoutEvidence(health.logs)
+                        DiagnosticLine("Last completed", sanitizeDiagnosticText(evidence.lastCompleted))
+                        DiagnosticLine("Stopped at", sanitizeDiagnosticText(evidence.stoppedAt))
+                        DiagnosticLine("Waiting", evidence.waitingMs?.let { "$it ms" } ?: "Unknown")
+                    } else {
+                        ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticLine("Last stage", sanitizeDiagnosticText(it)) }
                     }
                     if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
                         DiagnosticLine(
@@ -1067,7 +1068,7 @@ private fun providerLikelyCause(health: ProviderHealthRecord, providerCodeReady:
         health.status == ProviderHealthStatus.NEEDS_SETUP ->
             "Provider configuration is incomplete. Complete required setup before source discovery."
         health.status == ProviderHealthStatus.TIMEOUT ->
-            "Provider execution exceeded the captured timeout. Check Last stage, Pending requests and Timeline for the last observed progress."
+            "Provider execution exceeded the captured timeout. Check Last completed, Stopped at and Waiting; the raw log contains the captured event sequence."
         health.status == ProviderHealthStatus.UNAVAILABLE ->
             "The captured run could not reach the upstream host. Inspect DNS, connection or host-resolution evidence."
         health.status == ProviderHealthStatus.BLOCKED ->
@@ -1122,12 +1123,15 @@ private fun providerDiagnosticFullLog(
     health.errorType?.takeIf { it.isNotBlank() }?.let { appendLine("Error type: ${sanitizeDiagnosticText(it)}") }
     providerHttpStatus(health)?.let { appendLine("HTTP: $it") }
     providerRelevantTimingLabel(health)?.let { appendLine("Timing: $it") }
-    ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
-    ProviderDiagnosticProgress.pending(health.logs).forEach { appendLine("Pending request: ${sanitizeDiagnosticText(it)}") }
-    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let { timeline ->
-        appendLine("Timeline (recent events)")
-        timeline.forEach { appendLine(sanitizeDiagnosticText(it)) }
+    if (health.status == ProviderHealthStatus.TIMEOUT) {
+        val evidence = ProviderDiagnosticProgress.timeoutEvidence(health.logs)
+        appendLine("Last completed: ${sanitizeDiagnosticText(evidence.lastCompleted)}")
+        appendLine("Stopped at: ${sanitizeDiagnosticText(evidence.stoppedAt)}")
+        appendLine("Waiting: ${evidence.waitingMs?.let { "$it ms" } ?: "Unknown"}")
+    } else {
+        ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
     }
+
     if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
         appendLine("Result: ${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}")
     }
@@ -1140,10 +1144,7 @@ private fun providerDiagnosticFullLog(
 }
 
 private fun providerRawDiagnosticLog(health: ProviderHealthRecord): String {
-    val lines = buildList {
-        health.error?.takeIf { it.isNotBlank() }?.let { add("ERROR: $it") }
-        addAll(health.logs)
-    }
+    val lines = ProviderDiagnosticProgress.rawLog(health.logs, health.error)
     return if (lines.isEmpty()) {
         "No raw provider log was captured for this run."
     } else {
