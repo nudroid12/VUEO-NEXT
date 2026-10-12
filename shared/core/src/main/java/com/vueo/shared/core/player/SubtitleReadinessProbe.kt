@@ -126,6 +126,9 @@ object SubtitleReadinessProbe {
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "text/vtt,text/plain,application/x-subrip,*/*")
             connection.setRequestProperty("User-Agent", "VUEO subtitle preflight")
+            SubtitleSessionCache.headers(url).forEach { (key, value) ->
+                connection.setRequestProperty(key, value)
+            }
 
             when (connection.responseCode) {
                 in 200..201, in 203..299 -> {

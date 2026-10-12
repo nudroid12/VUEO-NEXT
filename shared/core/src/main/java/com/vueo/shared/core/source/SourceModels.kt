@@ -31,6 +31,7 @@ data class SourceCandidate(
     val providerName: String,
     val serverName: String? = null,
     val mimeType: String? = null,
+    val subtitles: List<com.vueo.shared.core.media.SubtitleTrack> = emptyList(),
 ) {
     /**
      * Keep the same security baseline as current VUEO Mobile: only HTTPS

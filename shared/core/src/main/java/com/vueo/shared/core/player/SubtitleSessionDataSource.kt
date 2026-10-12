@@ -17,13 +17,16 @@ object SubtitleSessionCache {
     private const val MAX_TOTAL_BYTES = 8 * 1024 * 1024
     private const val MAX_FILE_BYTES = 2 * 1024 * 1024
     private val entries = LinkedHashMap<String, ByteArray>(MAX_ENTRIES, .75f, true)
-    private val registered = LinkedHashMap<String, Boolean>()
+    private val registered = LinkedHashMap<String, Map<String, String>>()
 
     @Synchronized
-    fun register(url: String) {
-        registered[url] = true
+    fun register(url: String, headers: Map<String, String> = emptyMap()) {
+        registered[url] = headers.toMap()
         while (registered.size > 256) registered.remove(registered.keys.first())
     }
+
+    @Synchronized
+    fun headers(url: String): Map<String, String> = registered[url].orEmpty()
 
     @Synchronized
     fun isRegistered(url: String): Boolean = registered.containsKey(url)
@@ -70,7 +73,15 @@ class SubtitleSessionDataSource private constructor(
             cached == null && SubtitleSessionCache.isRegistered(it) && dataSpec.position == 0L && dataSpec.length == -1L
         }
         capture = captureUrl?.let { ByteArrayOutputStream() }
-        return requireNotNull(active).open(dataSpec)
+        val trackHeaders = SubtitleSessionCache.headers(dataSpec.uri.toString())
+        val request = if (cached == null && trackHeaders.isNotEmpty()) {
+            dataSpec.buildUpon().setHttpRequestHeaders(
+                dataSpec.httpRequestHeaders.filterKeys { key ->
+                    trackHeaders.keys.none { it.equals(key, true) }
+                } + trackHeaders
+            ).build()
+        } else dataSpec
+        return requireNotNull(active).open(request)
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {

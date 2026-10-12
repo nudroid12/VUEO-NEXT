@@ -36,13 +36,13 @@ object SubtitleFlowDiagnostics {
         }
     }
     @Synchronized
-    fun received(repository: String, provider: String, sourceUrl: String, count: Int, malformed: Boolean) {
+    fun received(repository: String, provider: String, sourceUrl: String, count: Int, malformed: Boolean, forwarded: Int = 0) {
         val run = runs[owner(repository, provider)] ?: return
         val sourceKey = key(sourceUrl)
         sources[sourceKey] = run
         while (sources.size > 256) sources.remove(sources.keys.first())
         append(run, "PROVIDER_SUBTITLE_PAYLOAD source=$sourceKey received=$count malformed=$malformed " +
-            "forwardedFromStreamPayload=0 route=stream_model_has_no_subtitle_field")
+            "forwardedFromStreamPayload=$forwarded route=selected_stream")
     }
     @Synchronized
     fun addonReceived(provider: String, tracks: List<SubtitleTrack>, accepted: List<SubtitleTrack>, attempt: Int, outcome: String) {

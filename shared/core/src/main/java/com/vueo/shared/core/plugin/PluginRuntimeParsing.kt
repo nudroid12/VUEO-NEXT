@@ -116,15 +116,16 @@ internal fun parseProviderStreams(
 
             val subtitleField = listOf("subtitles", "subs").firstOrNull { item.has(it) }
             val subtitleArray = subtitleField?.let { item.optJSONArray(it) }
+            val headers = item.optJSONObject("headers").toStringMap()
+            val subtitles = parsePluginSubtitles(subtitleArray, headers,
+                "plugin:${repository.manifestUrl.hashCode()}:${provider.id}",
+                "${repository.name} / ${provider.name}")
             SubtitleFlowDiagnostics.received(
                 repository.manifestUrl, provider.id, url,
                 subtitleArray?.length() ?: 0, subtitleField != null && subtitleArray == null,
+                subtitles.size,
             )
-            onDiagnostic?.invoke("SUBTITLE_PAYLOAD entry=$index received=${subtitleArray?.length() ?: 0} forwarded=0 route=stream_model_has_no_subtitle_field")
-
-            val headers =
-                item.optJSONObject("headers")
-                    .toStringMap()
+            onDiagnostic?.invoke("SUBTITLE_PAYLOAD entry=$index received=${subtitleArray?.length() ?: 0} forwarded=${subtitles.size} route=selected_stream")
 
             val quality =
                 item.optString("quality")
@@ -213,6 +214,7 @@ internal fun parseProviderStreams(
                     },
                 headers =
                     headers,
+                subtitles = subtitles,
                 providerId =
                     "plugin:" +
                     repository.manifestUrl

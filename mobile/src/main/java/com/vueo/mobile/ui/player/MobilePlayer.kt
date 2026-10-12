@@ -457,7 +457,8 @@ internal fun PlayerScreen(
     // Read the discovery state inside the active player composition. This
     // avoids AnimatedContent retaining the subtitle list that existed when
     // quick play first entered the player.
-    val subtitles by subtitlesState
+    val discoveredSubtitles by subtitlesState
+    val subtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(source, discoveredSubtitles)
     val context = LocalContext.current
     val activity = context as? Activity
     val entryConfigurationOrientation = remember {

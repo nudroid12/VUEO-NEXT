@@ -242,7 +242,8 @@ fun TvPlayerScreen(
     }
     val latestPlayableSources = androidx.compose.runtime.rememberUpdatedState(playableSources)
     val latestBundle by bundleState
-    var liveSubtitles by remember(bundle.videoId) {
+    var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
+    var addonSubtitles by remember(bundle.videoId) {
         mutableStateOf(bundle.subtitles)
     }
     val latestDiscoveredSubtitles = latestBundle
@@ -250,20 +251,20 @@ fun TvPlayerScreen(
         ?.subtitles
         .orEmpty()
     LaunchedEffect(latestDiscoveredSubtitles) {
-        val merged = (liveSubtitles + latestDiscoveredSubtitles).distinctBy { it.url }
-        if (merged != liveSubtitles) {
-            liveSubtitles = merged
+        val merged = (addonSubtitles + latestDiscoveredSubtitles).distinctBy { it.url }
+        if (merged != addonSubtitles) {
+            addonSubtitles = merged
             com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLES_MERGED",
                 "episode=${episode?.episode ?: 0} received=${latestDiscoveredSubtitles.size} total=${merged.size}")
         }
     }
+    val liveSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(activeSource, addonSubtitles)
     val externalSubtitlesBySelectionId = remember(liveSubtitles) {
         liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)
     }
     val latestExternalSubtitlesBySelectionId =
         androidx.compose.runtime.rememberUpdatedState(externalSubtitlesBySelectionId)
     val latestLiveSubtitles = androidx.compose.runtime.rememberUpdatedState(liveSubtitles)
-    var activeSource by remember(bundle.videoId, source.url) { mutableStateOf(source) }
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
     var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }

@@ -1930,6 +1930,7 @@ object SourceCleaner {
         duplicate: StreamSource,
     ): StreamSource =
         primary.copy(
+            subtitles = (primary.subtitles + duplicate.subtitles).distinctBy { it.url },
             infoHash = primary.infoHash?.takeIf { it.isNotBlank() }
                 ?: duplicate.infoHash,
             fileIndex = primary.fileIndex ?: duplicate.fileIndex,

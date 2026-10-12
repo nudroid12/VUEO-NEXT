@@ -29,6 +29,7 @@ fun StreamSource.toSourceCandidate(): SourceCandidate =
         providerName = providerName,
         serverName = serverName,
         mimeType = mimeType,
+        subtitles = subtitles,
     )
 
 fun SourceCandidate.toStreamSource(): StreamSource =
@@ -49,4 +50,5 @@ fun SourceCandidate.toStreamSource(): StreamSource =
         providerName = providerName,
         serverName = serverName,
         mimeType = mimeType,
+        subtitles = subtitles,
     )
