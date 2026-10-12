@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.player.SubtitleFlowDiagnostics
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -455,6 +456,8 @@ internal fun buildPlayerMediaItem(
 
                 builder.build()
             }
+
+    SubtitleFlowDiagnostics.handoff("Mobile", sourceUrl, subtitles, subtitleConfigurations.map { it.uri.toString() })
 
     return Media3MediaItem
         .Builder()

@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.player.SubtitleFlowDiagnostics
+import com.vueo.shared.core.plugin.ProviderDiagnosticSummary
 import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
 
 import android.app.Activity
@@ -1523,8 +1525,6 @@ internal fun ProviderDiagnosticPanel(
     onCopyFullLog: () -> Unit,
 ) {
     val request = providerRequestLabelOrNull(health)
-    val failureStage = providerFailureStage(health, providerCodeReady)
-    val failureCategory = providerFailureCategory(health)
     val httpStatus = providerHttpStatus(health)
     val errorType = health.errorType?.takeIf { it.isNotBlank() }?.let(::sanitizeDiagnosticText)
     val errorMessage = health.error?.takeIf { it.isNotBlank() }?.let(::sanitizeDiagnosticText)
@@ -1563,7 +1563,7 @@ internal fun ProviderDiagnosticPanel(
                     )
                 }
                 Text(
-                    text = if (currentlyEnabled) health.status.label else "Disabled • ${health.status.label}",
+                    text = if (currentlyEnabled) ProviderDiagnosticSummary.statusLabel(health) else "Disabled • ${ProviderDiagnosticSummary.statusLabel(health)}",
                     color = providerStatusColor(currentlyEnabled, health),
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -1571,25 +1571,23 @@ internal fun ProviderDiagnosticPanel(
             }
 
             request?.let { DiagnosticFact("Request", it) }
-            DiagnosticFact("Failure", "$failureStage • $failureCategory")
+            ProviderDiagnosticSummary.facts(health).forEach { (label, value) ->
+                DiagnosticFact(label, sanitizeDiagnosticText(value))
+            }
+            if (ProviderDiagnosticSummary.hasFailure(health, providerCodeReady)) {
+                DiagnosticFact("Failure", "${providerFailureStage(health, providerCodeReady)} • ${providerFailureCategory(health)}")
+            }
             errorType?.let { DiagnosticFact("Error type", it) }
             httpStatus?.let { DiagnosticFact("HTTP", it) }
             timing?.let { DiagnosticFact("Timing", it) }
-            if (health.status == ProviderHealthStatus.TIMEOUT) {
-                val evidence = ProviderDiagnosticProgress.timeoutEvidence(health.logs)
-                DiagnosticFact("Last completed", sanitizeDiagnosticText(evidence.lastCompleted))
-                DiagnosticFact("Stopped at", sanitizeDiagnosticText(evidence.stoppedAt))
-                DiagnosticFact("Waiting", evidence.waitingMs?.let { "$it ms" } ?: "Unknown")
-            } else {
-                ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticFact("Last stage", sanitizeDiagnosticText(it)) }
+            ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticFact("Last stage", sanitizeDiagnosticText(it)) }
+            ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
+                DiagnosticFact("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
+            }
+            ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let {
+                DiagnosticFact("Timeline", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
             }
 
-            if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
-                DiagnosticFact(
-                    "Result",
-                    "${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}",
-                )
-            }
 
             if (!providerCodeReady) {
                 DiagnosticFact("Provider code", "Missing or not ready")
@@ -1623,7 +1621,7 @@ internal fun ProviderDiagnosticPanel(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "Likely cause",
+                        text = ProviderDiagnosticSummary.noteTitle(health, providerCodeReady),
                         color = Color.White,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -1735,16 +1733,12 @@ internal fun providerRequestLabelOrNull(health: ProviderHealthRecord): String? {
 }
 
 internal fun providerRelevantTimingLabel(health: ProviderHealthRecord): String? {
-    val elapsed = health.responseMs?.let { "${it} ms" }
-    val timeout = health.timeoutMs?.let { "timeout ${it} ms" }
+    val elapsed = health.responseMs?.let { "$it ms" }
+    val timeout = health.timeoutMs?.let { "timeout $it ms" }
     return when {
         health.status == ProviderHealthStatus.TIMEOUT && elapsed != null && timeout != null -> "$elapsed • $timeout"
         health.status == ProviderHealthStatus.TIMEOUT && timeout != null -> timeout
-        health.status == ProviderHealthStatus.SLOW && elapsed != null -> elapsed
-        health.status == ProviderHealthStatus.FAILED && elapsed != null -> elapsed
-        health.status == ProviderHealthStatus.UNAVAILABLE && elapsed != null -> elapsed
-        health.status == ProviderHealthStatus.BLOCKED && elapsed != null -> elapsed
-        else -> null
+        else -> elapsed
     }
 }
 
@@ -1766,9 +1760,9 @@ internal fun providerFailureStage(
 internal fun providerFailureCategory(health: ProviderHealthRecord): String {
     val error = health.error.orEmpty().lowercase()
     return when {
-        health.status == ProviderHealthStatus.ONLINE -> "Healthy"
+        health.status == ProviderHealthStatus.ONLINE -> "Links found"
         health.status == ProviderHealthStatus.SLOW -> "Slow response"
-        health.status == ProviderHealthStatus.NO_RESULTS -> "No playable sources"
+        health.status == ProviderHealthStatus.NO_RESULTS -> "No source links"
         health.status == ProviderHealthStatus.NEEDS_SETUP -> "Configuration required"
         health.status == ProviderHealthStatus.TIMEOUT -> "Execution timeout"
         health.status == ProviderHealthStatus.UNAVAILABLE -> "Host unavailable / DNS"
@@ -1786,6 +1780,7 @@ internal fun providerLikelyCause(
     health: ProviderHealthRecord,
     providerCodeReady: Boolean,
 ): String {
+    ProviderDiagnosticSummary.executionSummary(health, providerCodeReady)?.let { return it }
     val error = health.error.orEmpty().lowercase()
     val http = providerHttpStatus(health)
     return when {
@@ -1794,7 +1789,7 @@ internal fun providerLikelyCause(
         health.status == ProviderHealthStatus.NEEDS_SETUP ->
             "Provider configuration is incomplete. Required setup must be completed before source discovery can succeed."
         health.status == ProviderHealthStatus.TIMEOUT ->
-            "Provider execution exceeded the captured runtime timeout. Check Last completed, Stopped at and Waiting; the raw log contains the captured event sequence."
+            "Provider execution exceeded the captured runtime timeout. Check Last stage, Pending requests and Timeline for the last observed progress."
         health.status == ProviderHealthStatus.UNAVAILABLE ->
             "The captured run could not reach the upstream host. Inspect the raw log for DNS, connection, or host-resolution evidence."
         health.status == ProviderHealthStatus.BLOCKED ->
@@ -1808,7 +1803,7 @@ internal fun providerLikelyCause(
         "not found" in error && health.requestSeason != null ->
             "The provider could not resolve the requested episode/source. Check season/episode mapping, URL construction, and extraction selectors."
         health.status == ProviderHealthStatus.NO_RESULTS ->
-            "Provider execution completed but returned zero playable sources for the captured request. Check title mapping and extraction selectors against the current upstream response."
+            "Provider execution completed but returned zero source links for the captured request. Check title mapping and extraction selectors against the current upstream response."
         health.status == ProviderHealthStatus.FAILED && health.error?.isNotBlank() == true ->
             "Provider execution failed with the captured error shown above. Use that error and the raw log to identify the failing request or parser step."
         health.status == ProviderHealthStatus.SLOW ->
@@ -1843,27 +1838,26 @@ internal fun providerDiagnosticSummary(
 ): String = buildString {
     appendLine("VUEO Provider Debug Log")
     appendLine("Provider: ${provider.name} v${provider.version}")
-    appendLine("Status: ${if (currentlyEnabled) health.status.label else "Disabled (last ${health.status.label})"}")
+    appendLine("Status: ${if (currentlyEnabled) ProviderDiagnosticSummary.statusLabel(health) else "Disabled (last ${ProviderDiagnosticSummary.statusLabel(health)})"}")
     providerRequestLabelOrNull(health)?.let { appendLine("Request: $it") }
-    appendLine("Failure: ${providerFailureStage(health, providerCodeReady)} • ${providerFailureCategory(health)}")
+    ProviderDiagnosticSummary.facts(health).forEach { (label, value) ->
+        appendLine("$label: ${sanitizeDiagnosticText(value)}")
+    }
+    if (ProviderDiagnosticSummary.hasFailure(health, providerCodeReady)) {
+        appendLine("Failure: ${providerFailureStage(health, providerCodeReady)} • ${providerFailureCategory(health)}")
+    }
     health.errorType?.takeIf { it.isNotBlank() }?.let { appendLine("Error type: ${sanitizeDiagnosticText(it)}") }
     providerHttpStatus(health)?.let { appendLine("HTTP: $it") }
     providerRelevantTimingLabel(health)?.let { appendLine("Timing: $it") }
-    if (health.status == ProviderHealthStatus.TIMEOUT) {
-        val evidence = ProviderDiagnosticProgress.timeoutEvidence(health.logs)
-        appendLine("Last completed: ${sanitizeDiagnosticText(evidence.lastCompleted)}")
-        appendLine("Stopped at: ${sanitizeDiagnosticText(evidence.stoppedAt)}")
-        appendLine("Waiting: ${evidence.waitingMs?.let { "$it ms" } ?: "Unknown"}")
-    } else {
-        ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
-    }
-
-    if (health.status == ProviderHealthStatus.NO_RESULTS || health.streamCount == 0) {
-        appendLine("Result: ${health.streamCount} playable source${if (health.streamCount == 1) "" else "s"}")
+    ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.pending(health.logs).forEach { appendLine("Pending request: ${sanitizeDiagnosticText(it)}") }
+    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let { timeline ->
+        appendLine("Timeline (recent events)")
+        timeline.forEach { appendLine(sanitizeDiagnosticText(it)) }
     }
     if (!providerCodeReady) appendLine("Provider code: Missing or not ready")
     health.error?.takeIf { it.isNotBlank() }?.let { appendLine("Error: ${sanitizeDiagnosticText(it)}") }
-    appendLine("Likely cause: ${providerLikelyCause(health, providerCodeReady)}")
+    appendLine("${ProviderDiagnosticSummary.noteTitle(health, providerCodeReady)}: ${providerLikelyCause(health, providerCodeReady)}")
 }
 
 internal fun providerDiagnosticFullLog(
@@ -1880,7 +1874,14 @@ internal fun providerDiagnosticFullLog(
 }
 
 internal fun providerRawDiagnosticLog(health: ProviderHealthRecord): String {
-    val lines = ProviderDiagnosticProgress.rawLog(health.logs, health.error)
+    val lines = buildList {
+        health.error?.takeIf { it.isNotBlank() }?.let { add("ERROR: $it") }
+        addAll(health.logs)
+        SubtitleFlowDiagnostics.evidence(health).takeIf { it.isNotEmpty() }?.let {
+            add("SUBTITLE FLOW — current app session")
+            addAll(it)
+        }
+    }
     return if (lines.isEmpty()) {
         "No raw provider log was captured for this run."
     } else {

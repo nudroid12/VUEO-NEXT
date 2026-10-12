@@ -22,6 +22,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     val managedSubtitleView = SubtitleView(context)
     private val commentarySubtitleView = SubtitleView(context)
     private var boundPlayer: Player? = null
+    private var flowObserver: TvSubtitleFlowObserver? = null
     private var listenerRegistered = false
     private var lastStyle: TvPlayerSubtitleStyleState? = null
     private var lastBottomPadding = Float.NaN
@@ -111,12 +112,15 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         if (listenerRegistered) return
         current.addListener(captionListener)
         listenerRegistered = true
+        flowObserver = (current as? androidx.media3.exoplayer.ExoPlayer)?.let { TvSubtitleFlowObserver(it) }
         // Also normalize the cached group when attaching or switching sources mid-cue.
         displayCues(current.currentCues.cues)
     }
 
     private fun unregisterListener() {
         if (listenerRegistered) boundPlayer?.removeListener(captionListener)
+        flowObserver?.close()
+        flowObserver = null
         listenerRegistered = false
     }
 

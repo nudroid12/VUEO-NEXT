@@ -26,6 +26,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private val managedSubtitleView = SubtitleView(context)
     private val commentarySubtitleView = SubtitleView(context)
     private var boundPlayer: Player? = null
+    private var flowObserver: MobileSubtitleFlowObserver? = null
     private var listenerRegistered = false
     private var lastStyle: PlayerSubtitleStyleState? = null
     private var lastBottomPadding = Float.NaN
@@ -114,11 +115,14 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         if (listenerRegistered) return
         current.addListener(captionListener)
         listenerRegistered = true
+        flowObserver = (current as? androidx.media3.exoplayer.ExoPlayer)?.let { MobileSubtitleFlowObserver(it) }
         displayCues(current.currentCues.cues)
     }
 
     private fun unregisterListener() {
         if (listenerRegistered) boundPlayer?.removeListener(captionListener)
+        flowObserver?.close()
+        flowObserver = null
         listenerRegistered = false
     }
 

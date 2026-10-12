@@ -1,4 +1,5 @@
 package com.vueo.shared.core.extensions
+import com.vueo.shared.core.player.SubtitleFlowDiagnostics
 import com.vueo.shared.core.search.SearchPolicy
 
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
@@ -1553,6 +1554,14 @@ class UnifiedMediaEngine {
                     )
                 }
                 .orEmpty()
+            SubtitleFlowDiagnostics.addonReceived(
+                providerName, result.orEmpty(), accepted, attempt,
+                when {
+                    result == null -> "timeout"
+                    errorType != null -> "failed"
+                    else -> "completed"
+                },
+            )
             onActivity(
                 AddonRequestActivity(
                     providerName = providerName,

@@ -1,5 +1,6 @@
 package com.vueo.shared.core.plugin
 
+import com.vueo.shared.core.player.SubtitleFlowDiagnostics
 import android.app.ActivityManager
 import android.content.Context
 import android.util.Base64
@@ -84,18 +85,16 @@ internal fun parseProviderStreams(
                 onDiagnostic?.invoke("Invalid result format: expected JSON array; resultChars=${resultJson.length}")
                 return emptyList()
             }
+    SubtitleFlowDiagnostics.beginProvider(repository.manifestUrl, provider.id)
     onDiagnostic?.invoke("Result entries=${array.length()}")
     if (array.length() == 0) onDiagnostic?.invoke("Provider returned an empty result array")
 
 
-    var invalidObject = 0
-    var invalidUrl = 0
-    val streams = (0 until array.length())
+    return (0 until array.length())
         .mapNotNull { index ->
             val item =
                 array.optJSONObject(index)
                     ?: run {
-                        invalidObject++
                         onDiagnostic?.invoke("Entry $index rejected: expected JSON object")
                         return@mapNotNull null
                     }
@@ -111,10 +110,17 @@ internal fun parseProviderStreams(
                         )
                     }
                     ?: run {
-                        invalidUrl++
                         onDiagnostic?.invoke("Entry $index rejected: url missing or not HTTP(S)")
                         return@mapNotNull null
                     }
+
+            val subtitleField = listOf("subtitles", "subs").firstOrNull { item.has(it) }
+            val subtitleArray = subtitleField?.let { item.optJSONArray(it) }
+            SubtitleFlowDiagnostics.received(
+                repository.manifestUrl, provider.id, url,
+                subtitleArray?.length() ?: 0, subtitleField != null && subtitleArray == null,
+            )
+            onDiagnostic?.invoke("SUBTITLE_PAYLOAD entry=$index received=${subtitleArray?.length() ?: 0} forwarded=0 route=stream_model_has_no_subtitle_field")
 
             val headers =
                 item.optJSONObject("headers")
@@ -226,8 +232,6 @@ internal fun parseProviderStreams(
                     } else null,
             )
         }
-    onDiagnostic?.invoke("Result selection entries=${array.length()} accepted=${streams.size} invalidObject=$invalidObject invalidUrl=$invalidUrl")
-    return streams
 }
 
 private fun JSONObject.metadataLabel(
