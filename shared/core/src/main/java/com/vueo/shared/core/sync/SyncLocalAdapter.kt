@@ -27,23 +27,49 @@ internal class SyncLocalAdapter(private val context: Context) {
         is Long -> JSONObject().put("t","l").put("v",value)
         else -> JSONObject().put("t","s").put("v",value.toString())
     }
-    fun snapshot(): Map<String,JSONObject> {
+    fun preferenceCategories(file: String, rawKey: String?): Set<String> {
+        if(rawKey==null) return VueoSyncConfig.categories.keys.toSet()
+        val (_,base)=split(rawKey)
+        val kind=when(file) {
+            "vueo_profiles" -> if(base=="profiles") "profiles" else null
+            "vueo_library" -> when(base) {
+                "watchlist" -> "favorites"
+                "continue_watching","dismissed_continue_watching" -> "progress"
+                "history","marked_watched" -> "history"
+                else -> null
+            }
+            "vueo_plugins" -> when(base) {
+                "repositories_json" -> "addons"
+                "tmdb_api_key" -> "integrations"
+                else -> null
+            }
+            "vueo_content_manager" -> if(base=="stremio_manifest_urls") "addons" else null
+            "vueo_settings" -> if(base in INTEGRATION_KEYS) "integrations" else null
+            "vueo_trakt" -> if(base in TRAKT_KEYS) "trakt" else null
+            else -> null
+        }
+        return kind?.let { setOf(it) }.orEmpty()
+    }
+
+    fun snapshot(kinds: Set<String> = VueoSyncConfig.categories.keys): Map<String,JSONObject> {
         val result = linkedMapOf<String,JSONObject>()
         fun add(kind: String, k: String, value: JSONObject) { result[k] = record(kind,k,value) }
+        if("profiles" in kinds) {
         val profiles = JSONArray(prefs("vueo_profiles").getString("profiles","[]"))
         for (i in 0 until profiles.length()) {
             val profile = profiles.getJSONObject(i)
             add("profiles",key("vueo_profiles",profile.getString("id"),"profiles"),
                 JSONObject().put("entry",profile).put("order",i))
         }
+        }
         fun entries(file: String, rawKey: String, kind: String, array: JSONArray, identity: (JSONObject)->String) {
             val (profile,base) = split(rawKey)
             for (i in 0 until array.length()) {
                 val entry = array.optJSONObject(i) ?: continue
-                add(kind,key(file,profile,base,identity(entry)),JSONObject().put("entry",entry).apply { if(file!="vueo_plugins") put("order",i) })
+                add(kind,key(file,profile,base,identity(entry)),JSONObject().put("entry",entry).apply { if(file=="vueo_profiles") put("order",i) })
             }
         }
-        prefs("vueo_library").all.forEach { (raw,value) ->
+        if(kinds.any { it in setOf("favorites","history","progress") }) prefs("vueo_library").all.forEach { (raw,value) ->
             val (_,base) = split(raw)
             val kind = when (base) {
                 "watchlist" -> "favorites"
@@ -51,6 +77,7 @@ internal class SyncLocalAdapter(private val context: Context) {
                 "history", "marked_watched" -> "history"
                 else -> null
             } ?: return@forEach
+            if(kind !in kinds) return@forEach
             if (value is String) entries("vueo_library",raw,kind,JSONArray(value)) { e ->
                 val m = e.getJSONObject("media")
                 m.getString("type")+":"+m.getString("id")+if (base=="history") ":"+e.getString("videoId") else ""
@@ -61,22 +88,22 @@ internal class SyncLocalAdapter(private val context: Context) {
                 }
             }
         }
-        prefs("vueo_plugins").all.forEach { (base,value) ->
-            if (base == "repositories_json" && value is String) {
+        if("addons" in kinds || "integrations" in kinds) prefs("vueo_plugins").all.forEach { (base,value) ->
+            if ("addons" in kinds && base == "repositories_json" && value is String) {
                 entries("vueo_plugins",base,"addons",JSONArray(value)) { it.getString("manifestUrl") }
-            } else if (base == "tmdb_api_key") {
+            } else if ("integrations" in kinds && base == "tmdb_api_key") {
                 add("integrations",key("vueo_plugins","default",base),typed(value))
             }
         }
-        prefs("vueo_content_manager").getStringSet("stremio_manifest_urls",emptySet())
+        if("addons" in kinds) prefs("vueo_content_manager").getStringSet("stremio_manifest_urls",emptySet())
             .orEmpty().sorted().forEach { item ->
                 add("addons",key("vueo_content_manager","default","stremio_manifest_urls",item),JSONObject().put("member",item))
             }
-        prefs("vueo_settings").all.forEach { (raw,value) ->
+        if("integrations" in kinds) prefs("vueo_settings").all.forEach { (raw,value) ->
             val (profile,base) = split(raw)
             if (base in INTEGRATION_KEYS) add("integrations",key("vueo_settings",profile,base),typed(value))
         }
-        prefs("vueo_trakt").all.forEach { (raw,value) ->
+        if("trakt" in kinds) prefs("vueo_trakt").all.forEach { (raw,value) ->
             val (profile,base) = split(raw)
             if (base in TRAKT_KEYS) add("trakt",key("vueo_trakt",profile,base),typed(value))
         }
@@ -104,15 +131,18 @@ internal class SyncLocalAdapter(private val context: Context) {
     }.getOrDefault(false)
 
     /** Merge only changed entities; never replaces the entire local library with a remote snapshot. */
-    fun apply(remote: List<JSONObject>, before: Map<String,JSONObject>): Boolean {
-        if (remote.isEmpty()) return false
-        val current = snapshot().toMutableMap()
+    fun apply(remote: List<JSONObject>, before: Map<String,JSONObject>): Set<String> {
+        if (remote.isEmpty()) return emptySet()
+        val current = snapshot(remote.map { it.getString("kind") }.toSet()).toMutableMap()
+        val appliedKinds=linkedSetOf<String>()
         val touched = linkedSetOf<Triple<String,String,String>>()
         remote.forEach { row ->
             if(!accepts(row)) return@forEach
             val k = row.getString("key")
             // A UI/player write that arrived during the request stays local and enters the next outbox batch.
             if (current[k]?.optJSONObject("value")?.toString() != before[k]?.optJSONObject("value")?.toString()) return@forEach
+            if(row.optBoolean("deleted") && current[k]==null) return@forEach
+            if(!row.optBoolean("deleted") && current[k]?.optJSONObject("value")?.toString()==row.optJSONObject("value")?.toString()) return@forEach
             val parts = JSONArray(k)
             require(parts.length()==4)
             val file = parts.getString(0); val profile = parts.getString(1); val base = parts.getString(2)
@@ -125,6 +155,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             }
             if (row.optBoolean("deleted")) current.remove(k) else current[k] = row
             touched += Triple(file,profile,base)
+            appliedKinds+=row.getString("kind")
         }
         touched.forEach { (file,profile,base) ->
             val target = prefs(file)
@@ -176,8 +207,8 @@ internal class SyncLocalAdapter(private val context: Context) {
                 check(editor.commit())
             }
         }
-        if (touched.any { it.first in setOf("vueo_plugins","vueo_content_manager") }) PluginRuntimeCache.clear()
-        return touched.isNotEmpty()
+        if ("addons" in appliedKinds) PluginRuntimeCache.clear()
+        return appliedKinds
     }
     companion object {
         private val INTEGRATION_KEYS=setOf("tmdb_metadata_enrichment","tmdb_recommendations","tmdb_similar_titles",

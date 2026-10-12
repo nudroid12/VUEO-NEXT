@@ -477,7 +477,21 @@ fun VueoApp(
     DisposableEffect(vueoSync) { vueoSync.setForeground(true); onDispose { vueoSync.setForeground(false) } }
     LaunchedEffect(vueoSync) {
         vueoSync.dataRevision.collect { revision ->
-            if (revision > 0) { libraryVersion++; profileVersion++ }
+            if (revision > 0) libraryVersion++
+        }
+    }
+    LaunchedEffect(vueoSync) {
+        vueoSync.profileRevision.collect { revision -> if (revision > 0) profileVersion++ }
+    }
+    LaunchedEffect(vueoSync) {
+        vueoSync.integrationRevision.collect { revision ->
+            if (revision > 0) {
+                withContext(Dispatchers.IO) {
+                    CatalogDiscoveryCache.clearAll(context.applicationContext)
+                    SourceDiscoveryCache.clearAll()
+                }
+                contentVersion++
+            }
         }
     }
     LaunchedEffect(vueoSync) {

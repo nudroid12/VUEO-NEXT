@@ -17,3 +17,13 @@ Validation: static source/delimiter checks, SQL access-control review, patch pat
 ## Email confirmation redirect
 
 In Supabase → Authentication → URL Configuration → Redirect URLs, add exactly `vueo://account/confirmed` and save. Keep email confirmation enabled. The updated signup request sends this explicit redirect URL. Confirming a new email link on a phone with the updated mobile app installed opens Account; sign in normally there. Callback tokens are not imported or logged. Existing confirmation emails keep their old redirect, so this applies to new emails. TV signups can also be confirmed on a phone with the mobile app; return to the TV and sign in normally. No new SQL migration is required for these app changes.
+
+## Account sync scheduling
+
+Preference listeners classify only allowlisted sync keys. Changes are coalesced for 750 ms and captured on IO for enabled categories only. Local edits schedule an outbox push without a cloud pull. Accepted acknowledgements and empty cloud deltas do not reread local collections or refresh content. The encrypted journal is written only when its serialized state changes, and its loading is deferred while every sync option is OFF.
+
+On foreground entry, cloud pulls wait 2.5 seconds and use a two-minute freshness window. Foreground periodic pulls run every 15 minutes; manual sync and playback exit can pull sooner. A receiving device can therefore take up to the periodic interval to see another device's changes while both remain open. Open the app again after the freshness window or use manual sync for a sooner refresh. Background entry stops periodic pulls and prevents scheduled automatic requests from starting; an already-running request may finish.
+
+Remote imports publish separate library, profile, addon and integration notifications once per sync operation, and only for data actually applied. Library updates do not reload provider code, and integration updates clear metadata caches without reinstalling providers. Playback deferral, CAS conflicts, outbox retry persistence and device-local settings remain in place. This patch requires no new SQL.
+
+Scheduling patterns were adapted from Nuvio's category repositories and foreground sync coordinator, while retaining VUEO's backend protocol and selected data scope. Reference: `NuvioApp/Nuvio` branch `cmp-rewrite`, commit `ee3d915067362651e85dd6c959a92f147a77d110`, `composeApp/src/commonMain/kotlin/com/nuvio/app/core/sync/SyncManager.kt`; NuvioTV's startup and watch-progress sync services. Static review does not establish measured device performance; compare scrolling, playback and cross-device updates with sync OFF and ON on real devices.

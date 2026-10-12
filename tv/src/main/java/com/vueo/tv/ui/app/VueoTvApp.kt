@@ -299,6 +299,20 @@ fun VueoTvApp(
         }
     }
     LaunchedEffect(vueoSync) {
+        vueoSync.profileRevision.collect { revision -> if (revision > 0) refreshToken++ }
+    }
+    LaunchedEffect(vueoSync) {
+        vueoSync.integrationRevision.collect { revision ->
+            if (revision > 0) {
+                withContext(Dispatchers.IO) {
+                    com.vueo.shared.core.extensions.CatalogDiscoveryCache.clearAll(context.applicationContext)
+                    com.vueo.shared.core.source.SourceDiscoveryCache.clearAll()
+                }
+                refreshToken++
+            }
+        }
+    }
+    LaunchedEffect(vueoSync) {
         vueoSync.configurationRevision.collect { revision ->
             if (revision > 0) {
                 withContext(Dispatchers.IO) { runtime.reloadPersistentConfiguration() }
