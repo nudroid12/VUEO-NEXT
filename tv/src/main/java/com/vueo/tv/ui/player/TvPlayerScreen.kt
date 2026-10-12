@@ -317,9 +317,11 @@ fun TvPlayerScreen(
         val savedLanguage = settings.lastSubtitleSelection()
             ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
             ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX) ?: return null
-        return liveSubtitles.firstOrNull {
-            tvCanonicalLanguage(it.language) == tvCanonicalLanguage(savedLanguage)
-        }?.let(::tvExternalSubtitleSelectionId)
+        return PlayerTrackPolicy.preferredSubtitle(
+            tracks = liveSubtitles, language = savedLanguage,
+            providerId = settings.lastSubtitleProviderId(),
+            languageOf = { it.language }, providerOf = { it.providerId },
+        )?.let(::tvExternalSubtitleSelectionId)
     }
     var pendingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf(rememberedExternalSubtitle())
@@ -1349,9 +1351,11 @@ fun TvPlayerScreen(
                     ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
                     ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
                 val savedTrack = savedLanguage?.let { language ->
-                    currentTextTracks.firstOrNull {
-                        tvCanonicalLanguage(it.language) == tvCanonicalLanguage(language)
-                    }
+                    PlayerTrackPolicy.preferredSubtitle(
+                        tracks = currentTextTracks, language = language,
+                        providerId = settings.lastSubtitleProviderId(),
+                        languageOf = { it.language }, providerOf = { it.externalSubtitle?.providerId },
+                    )
                 }
 
                 when {
@@ -2250,8 +2254,9 @@ fun TvPlayerScreen(
             fun commitSelection(selected: TvPlayerTrackChoice) {
                 tvApplyTrackChoice(player, C.TRACK_TYPE_TEXT, selected)
                 subtitlesDisabled = false
-                settings.setLastSubtitleSelection(
-                    PlayerTrackPolicy.subtitleLanguageSelectionId(selected.language)
+                settings.rememberSubtitlePreference(
+                    language = selected.language,
+                    providerId = selected.externalSubtitle?.providerId,
                 )
             }
 
@@ -2342,8 +2347,9 @@ fun TvPlayerScreen(
                         selectionConfirmed = confirmed
                         if (confirmed) {
                             subtitlesDisabled = false
-                            settings.setLastSubtitleSelection(
-                                PlayerTrackPolicy.subtitleLanguageSelectionId(preparedChoice.language)
+                            settings.rememberSubtitlePreference(
+                                language = preparedChoice.language,
+                                providerId = preparedChoice.externalSubtitle?.providerId,
                             )
                             pendingSubtitleSelectionId = null
                             translatingSubtitleSelectionId = null

@@ -71,6 +71,21 @@ object PlayerTrackPolicy {
     fun subtitleLanguageSelectionId(language: String?): String =
         SUBTITLE_LANGUAGE_PREFIX + LanguagePolicy.canonicalOrUnknown(language)
 
+    /** Provider preference is independent of per-title track IDs and expiring URLs. */
+    fun <T> preferredSubtitle(
+        tracks: List<T>,
+        language: String?,
+        providerId: String?,
+        languageOf: (T) -> String?,
+        providerOf: (T) -> String?,
+    ): T? {
+        val preferredLanguage = language?.let(LanguagePolicy::canonicalCode) ?: return null
+        val matches = tracks.filter { LanguagePolicy.canonicalCode(languageOf(it)) == preferredLanguage }
+        val preferredProvider = providerId?.trim()?.takeIf { it.isNotBlank() }
+        return preferredProvider?.let { provider -> matches.firstOrNull { providerOf(it)?.trim() == provider } }
+            ?: matches.firstOrNull()
+    }
+
     fun resolvedSubtitleSelection(
         globalSelection: String?,
         contentSelection: String?,

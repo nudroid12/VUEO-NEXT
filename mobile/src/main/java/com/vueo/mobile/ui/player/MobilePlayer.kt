@@ -725,10 +725,11 @@ internal fun PlayerScreen(
                     globalSelection != PLAYER_SUBTITLE_OFF &&
                     savedLanguage != null
                 ) {
-                    subtitles.firstOrNull { subtitle ->
-                        canonicalSubtitleLanguage(subtitle.language) ==
-                            canonicalSubtitleLanguage(savedLanguage)
-                    }?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                    PlayerTrackPolicy.preferredSubtitle(
+                        tracks = subtitles, language = savedLanguage,
+                        providerId = settingsStore.lastSubtitleProviderId(),
+                        languageOf = { it.language }, providerOf = { it.providerId },
+                    )?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
                 } else {
                     null
                 }
@@ -1198,10 +1199,11 @@ internal fun PlayerScreen(
                         globalSelection != PLAYER_SUBTITLE_OFF &&
                         savedLanguage != null
                     ) {
-                        subtitles.firstOrNull { subtitle ->
-                            canonicalSubtitleLanguage(subtitle.language) ==
-                                canonicalSubtitleLanguage(savedLanguage)
-                        }?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                        PlayerTrackPolicy.preferredSubtitle(
+                            tracks = subtitles, language = savedLanguage,
+                            providerId = settingsStore.lastSubtitleProviderId(),
+                            languageOf = { it.language }, providerOf = { it.providerId },
+                        )?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
                     } else {
                         null
                     }
@@ -1573,10 +1575,11 @@ internal fun PlayerScreen(
                         }
                     }
                     ?: savedLanguage?.let { language ->
-                        textTracks.firstOrNull {
-                            canonicalSubtitleLanguage(it.language) ==
-                                canonicalSubtitleLanguage(language)
-                        }
+                        PlayerTrackPolicy.preferredSubtitle(
+                            tracks = textTracks, language = language,
+                            providerId = settingsStore.lastSubtitleProviderId(),
+                            languageOf = { it.language }, providerOf = { it.externalSubtitle?.providerId },
+                        )
                     }
                     ?: textTracks.firstOrNull {
                         it.selectionId == savedSelection
@@ -2558,10 +2561,9 @@ internal fun PlayerScreen(
                 contentId = mediaKey,
                 selectionId = selected.selectionId,
             )
-            settingsStore.setLastSubtitleSelection(
-                PlayerTrackPolicy.subtitleLanguageSelectionId(
-                    selected.language
-                )
+            settingsStore.rememberSubtitlePreference(
+                language = selected.language,
+                providerId = selected.externalSubtitle?.providerId,
             )
         }
 
@@ -2658,10 +2660,9 @@ internal fun PlayerScreen(
                             contentId = mediaKey,
                             selectionId = preparedChoice.selectionId,
                         )
-                        settingsStore.setLastSubtitleSelection(
-                            PlayerTrackPolicy.subtitleLanguageSelectionId(
-                                preparedChoice.language
-                            )
+                        settingsStore.rememberSubtitlePreference(
+                            language = preparedChoice.language,
+                            providerId = preparedChoice.externalSubtitle?.providerId,
                         )
                         pendingSubtitleSelectionId = null
                         translatingSubtitleSelectionId = null

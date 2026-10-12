@@ -773,6 +773,22 @@ class SettingsStore(
             .apply()
     }
 
+    fun lastSubtitleProviderId(): String? = prefs.getString(
+        profileKey("last_subtitle_provider_id"), null,
+    )?.trim()?.takeIf { it.isNotBlank() }
+
+    /** Called only after a manual track choice is confirmed. Automatic fallback must not replace it. */
+    fun rememberSubtitlePreference(language: String?, providerId: String?) {
+        val editor = prefs.edit().putString(
+            profileKey(KEY_LAST_SUBTITLE_SELECTION),
+            com.vueo.shared.core.player.PlayerTrackPolicy.subtitleLanguageSelectionId(language),
+        )
+        val provider = providerId?.trim()?.takeIf { it.isNotBlank() }
+        if (provider == null) editor.remove(profileKey("last_subtitle_provider_id"))
+        else editor.putString(profileKey("last_subtitle_provider_id"), provider)
+        editor.apply()
+    }
+
     fun lastAudioSelection(): String? =
         prefs.getString(
             profileKey(KEY_LAST_AUDIO_SELECTION),
