@@ -6,7 +6,6 @@ import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
 import com.dokar.quickjs.evaluate
-import com.dokar.quickjs.quickJs
 import com.vueo.shared.core.diagnostics.ProviderDiagnostics
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.source.SourceCandidate
@@ -995,7 +994,7 @@ private fun emptyDiscoveryResult():
         )
         return try {
             val resultJson =
-                quickJs {
+                ProviderQuickJs.use {
                     RuntimeDiagnostics.recordQuickJsPhase(
                         token = quickJsToken,
                         phase = "QJS_CREATE_END",

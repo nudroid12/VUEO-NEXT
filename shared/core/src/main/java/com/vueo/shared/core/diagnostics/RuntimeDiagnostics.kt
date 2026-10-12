@@ -523,6 +523,13 @@ object RuntimeDiagnostics {
                 .orEmpty()
         val tombstone = CrashReportStore.nativeTombstoneFile(context)
         val crash = CrashReportStore.exportCrashReport(context)
+        val nativeEvidence = NativeCrashEvidence.read(tombstone)
+        fun eventTimestamp(line: String): Long? = runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).parse(line.substringBefore(" | "))?.time
+        }.getOrNull()
+        val crashWindow = crash?.let { report -> eventLines.filter { line ->
+            eventTimestamp(line)?.let { it >= report.timestampMs - 15_000L && it <= report.timestampMs } == true
+        } }.orEmpty()
         val crashSignals = maxOf(
             eventLines.count { " | CRASH " in it },
             if (crash != null) 1 else 0,
@@ -588,8 +595,19 @@ object RuntimeDiagnostics {
                 }
                 if (tombstone != null) {
                     appendLine("• Native tombstone available (${tombstone.length()} bytes)")
+                    nativeEvidence?.let { appendLine(it.text()) }
                 }
-                recentProblems.forEach { appendLine("• ${compactProblem(it)}") }
+                if (crash != null) {
+                    appendLine()
+                    appendLine("CONTEXT WITHIN 15 SECONDS BEFORE CRASH")
+                    val nearby = crashWindow.filter { " | QJS_PHASE " in it || " | PROVIDER_START " in it || " | PROVIDER_END " in it || " | SCREEN " in it }.takeLast(12)
+                    if (nearby.isEmpty()) appendLine("No events retained in this window.")
+                    else nearby.forEach { appendLine("• ${it.take(500)}") }
+                    appendLine("These breadcrumbs do not establish which provider caused the crash.")
+                    appendLine()
+                    appendLine("OTHER RECORDED ISSUES (may be unrelated to this crash)")
+                }
+                recentProblems.filter { crash == null || it !in crashWindow }.forEach { appendLine("• ${compactProblem(it)}") }
             }
         }
     }

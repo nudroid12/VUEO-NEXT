@@ -174,7 +174,7 @@ object CrashReportStore {
                 it.timestamp < currentStartedMs && it.timestamp > dismissed }
             .maxByOrNull { it.timestamp } ?: return null
         val foreground = exit.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
-        val summary = when (exit.reason) {
+        var summary = when (exit.reason) {
             ApplicationExitInfo.REASON_CRASH -> "App closed because of an unhandled error."
             ApplicationExitInfo.REASON_CRASH_NATIVE -> "A native component crashed."
             ApplicationExitInfo.REASON_ANR -> "App stopped responding (ANR)."
@@ -186,6 +186,8 @@ object CrashReportStore {
         val nativeTombstoneStatus = if (exit.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
             captureNativeTombstone(context, exit)
         } else null
+        val nativeEvidence = if (exit.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) NativeCrashEvidence.read(nativeTombstoneFile(context)) else null
+        if (nativeEvidence != null) summary = nativeEvidence.headline
         val details = buildString {
             appendLine("VUEO Crash Report (Android process exit record)")
             appendLine("Package: ${context.packageName}")
@@ -200,6 +202,7 @@ object CrashReportStore {
                 appendLine("Last observed activity: ${String(it, Charsets.UTF_8)}")
             }
             nativeTombstoneStatus?.let { appendLine("Native tombstone: $it") }
+            nativeEvidence?.let { appendLine(it.text()) }
             appendLine("Previous-session evidence (observations, not proven causes):")
             appendLine(runCatching {
                 val file = File(context.noBackupFilesDir, "anr_evidence_previous.json")
