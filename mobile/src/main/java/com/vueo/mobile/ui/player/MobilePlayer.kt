@@ -1864,8 +1864,10 @@ internal fun PlayerScreen(
     }
 
     DisposableEffect(player) {
+        val cloudSync = com.vueo.shared.core.sync.VueoSyncService.get(context)
+        cloudSync.setPlayerActive(true)
         val screenToken = PerformanceDiagnostics.enterPlayerScreen("Mobile")
-        onDispose { PerformanceDiagnostics.exitPlayerScreen(screenToken) }
+        onDispose { cloudSync.setPlayerActive(false); PerformanceDiagnostics.exitPlayerScreen(screenToken) }
     }
 
     DisposableEffect(player, mediaKey, source.url) {

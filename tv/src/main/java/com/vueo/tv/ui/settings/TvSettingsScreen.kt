@@ -54,6 +54,7 @@ import java.util.Locale
 
 internal enum class TvSettingsPage {
     PROFILE,
+    VUEO_SYNC,
     PERSONALIZATION,
     CONTENT_MANAGER,
     CONTENT_ADDONS,
@@ -82,6 +83,7 @@ private data class TvSettingsRootDestination(
 )
 
 private val TvSettingsRootDestinations = listOf(
+    TvSettingsRootDestination(TvSettingsPage.VUEO_SYNC, "vueo-sync", "VUEO Sync", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager", "VUEO"),
@@ -174,6 +176,7 @@ fun TvSettingsScreen(
         onBack = onBack,
     ) {
         when (page) {
+            TvSettingsPage.VUEO_SYNC -> TvVueoSyncSettings(onNavigate, onProfile, onBack)
             TvSettingsPage.PROFILE -> TvProfileSettings(
                 runtime = runtime,
                 onOpenDna = onProfile,

@@ -320,6 +320,25 @@ class PlaybackStore(
         )
     }
 
+    fun applyCloudTitleClear(profileId: String, titleKey: String) {
+        val prefix = ProfileStore.scopedPreferenceKey(profileId, "")
+        prefs.all.keys.filter { it.startsWith("updated_at:" + prefix + titleKey + ":") }.forEach { raw ->
+            applyCloudPosition(profileId, raw.removePrefix("updated_at:" + prefix), 0L, 0L)
+        }
+    }
+
+    /** Remote cursor gets a local monotonic stamp; stale queued player saves cannot undo it. */
+    fun applyCloudPosition(profileId: String, mediaKey: String, positionMs: Long, durationMs: Long) {
+        synchronized(PERSISTENCE_LOCK) {
+            val scoped = scopedMediaKey(profileId, mediaKey)
+            PlaybackUpdateClock.observe(prefs.getLong(updatedAtKey(scoped), 0L))
+            val snapshot = PlaybackPositionSnapshot(profileId, mediaKey, positionMs, durationMs,
+                normalizeResumePosition(mediaKey, positionMs, durationMs), PlaybackUpdateClock.next())
+            PlaybackSessionCursorMemory.snapshots[sessionKey(profileId, mediaKey)] = snapshot
+            persistSnapshot(snapshot)
+        }
+    }
+
     private fun positionKey(
         mediaKey: String,
     ): String =

@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import kotlinx.coroutines.flow.collect
+
 import com.vueo.shared.core.diagnostics.AppCrashReport
 import com.vueo.shared.core.diagnostics.CrashReportStore
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
@@ -287,6 +289,7 @@ internal enum class DetailSurface {
 
 private enum class SettingsPage {
     ROOT,
+    VUEO_SYNC,
     CONTENT_MANAGER,
     ADDONS,
     PLUGINS,
@@ -465,6 +468,34 @@ fun VueoApp(
         mutableStateOf<
             LibraryPlaybackEntry?
         >(null)
+    }
+
+    val vueoSync = remember { com.vueo.shared.core.sync.VueoSyncService.get(context) }
+    DisposableEffect(vueoSync) { vueoSync.setForeground(true); onDispose { vueoSync.setForeground(false) } }
+    LaunchedEffect(vueoSync) {
+        vueoSync.dataRevision.collect { revision ->
+            if (revision > 0) { libraryVersion++; profileVersion++ }
+        }
+    }
+    LaunchedEffect(vueoSync) {
+        vueoSync.configurationRevision.collect { revision ->
+            if (revision > 0) {
+                withContext(Dispatchers.IO) {
+                    engine.stremioAddons().forEach { engine.uninstall(it.descriptor.id) }
+                    store.manifestUrls().forEach { url ->
+                        try {
+                            val extension = ExtensionInstaller.installStremioAddon(url)
+                            engine.install(extension)
+                            engine.setExtensionEnabled(extension.descriptor.id, store.isAddonEnabled(url))
+                        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
+                    }
+                    providerCodeSync.syncMissing(pluginStore.repositories())
+                    CatalogDiscoveryCache.clearAll(context.applicationContext)
+                    SourceDiscoveryCache.clearAll()
+                }
+                contentVersion++
+            }
+        }
     }
 
     LaunchedEffect(
@@ -1045,6 +1076,7 @@ fun VueoApp(
                                 showProfilePicker = true
                                 profilePickerOpenedFromApp = true
                             },
+                            onSync = { settingsPage = SettingsPage.VUEO_SYNC },
                             onContentManager = {
                                 settingsPage = SettingsPage.CONTENT_MANAGER
                             },
@@ -1070,6 +1102,8 @@ fun VueoApp(
                                 settingsPage = SettingsPage.ABOUT
                             },
                         )
+
+                    SettingsPage.VUEO_SYNC -> VueoSyncSettingsScreen(onBack = { settingsPage = SettingsPage.ROOT })
 
                     SettingsPage.CONTENT_MANAGER ->
                         ContentManagerScreen(

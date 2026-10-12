@@ -152,7 +152,33 @@ class TraktService private constructor(private val context: Context) {
             try { TraktHttp.request("/oauth/revoke", body = JSONObject().put("token", token).put("client_id", TraktConfig.CLIENT_ID)) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* Local disconnect is already complete, including when offline. */ }
         }
     }
+    fun onVueoSessionImported(profile: String) {
+        generations[profile] = (generations[profile] ?: 0L) + 1L
+        store.prefs.edit().putBoolean(store.key(profile, "verified_session"), false).apply()
+        invalidateCatalog(profile)
+        changed()
+        if (connected(profile)) scope.launch {
+            try { verifyIdentity(profile) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Remains unverified until the next successful Trakt sync. */ }
+        }
+    }
+    fun onVueoSyncApplied() {
+        profiles.profiles().forEach { invalidateCatalog(it.id) }
+        changed()
+    }
     private suspend fun accessToken(profile: String, rejected: String? = null): String = tokenGate.withLock {
+        val local = store.read(profile)
+        val localAccess = local?.optString("access_token").orEmpty()
+        val localExpires = if (local == null) 0L else (local.optLong("created_at") + local.optLong("expires_in", 604_800L)) * 1_000L
+        if (localAccess.isNotBlank() && ((rejected == null && localExpires > System.currentTimeMillis() + 60_000L) ||
+            (rejected != null && localAccess != rejected))) return@withLock localAccess
+        val shared = com.vueo.shared.core.sync.VueoSyncService.get(context).cloudTraktToken(profile, rejected) { latest ->
+            JSONObject(TraktHttp.request("/oauth/token", body = JSONObject()
+                .put("client_id", TraktConfig.CLIENT_ID).put("redirect_uri", TraktConfig.REDIRECT_URI)
+                .put("grant_type", "refresh_token").put("refresh_token", latest.getString("refresh_token"))).body)
+        }
+        if (shared != null) return@withLock shared
         val session = store.read(profile) ?: throw IOException("Connect your Trakt account first.")
         val access = session.getString("access_token")
         val expires = (session.optLong("created_at") + session.optLong("expires_in", 604_800L)) * 1_000L

@@ -12,7 +12,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** A token pair is encrypted and committed in one preference value, including rotated refresh tokens. */
-internal class TraktAccountStore(context: Context) {
+internal class TraktAccountStore(private val context: Context) {
     val prefs = context.applicationContext.getSharedPreferences("vueo_trakt", Context.MODE_PRIVATE)
     fun key(profile: String, name: String) = "profile:$profile:$name"
     fun connected(profile: String) = prefs.contains(key(profile, "session"))
@@ -36,20 +36,22 @@ internal class TraktAccountStore(context: Context) {
             null
         }
     }
-    fun save(profile: String, tokens: JSONObject) {
+    fun save(profile: String, tokens: JSONObject, publishCloud: Boolean = true) {
         check(tokens.optString("access_token").isNotBlank() && tokens.optString("refresh_token").isNotBlank())
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, secret())
         val value = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + "." +
             Base64.encodeToString(cipher.doFinal(tokens.toString().toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
         check(prefs.edit().putString(key(profile, "session"), value).commit()) { "Unable to save Trakt session" }
+        if (publishCloud) com.vueo.shared.core.sync.VueoSyncService.get(context).queueTraktSession(profile, tokens)
     }
-    fun clear(profile: String) {
+    fun clear(profile: String, publishCloud: Boolean = true) {
         val identity = prefs.getString(key(profile, "account_id"), null)
         val editor = prefs.edit()
         prefs.all.keys.filter { it.startsWith("profile:$profile:") }.forEach { editor.remove(it) }
         if (identity != null) editor.putString(key(profile, "account_id"), identity)
         editor.commit()
+        if (publishCloud) com.vueo.shared.core.sync.VueoSyncService.get(context).queueTraktSession(profile, null)
     }
     fun enabled(profile: String, name: String, default: Boolean = true) = prefs.getBoolean(key(profile, name), default)
 }

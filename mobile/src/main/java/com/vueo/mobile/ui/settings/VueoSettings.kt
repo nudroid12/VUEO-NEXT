@@ -189,6 +189,7 @@ internal fun VueoSettingsHub(
     libraryVersion: Int,
     contentVersion: Int,
     onProfiles: () -> Unit,
+    onSync: () -> Unit,
     onContentManager: () -> Unit,
     onEnhancements: () -> Unit,
     onPlayback: () -> Unit,
@@ -553,6 +554,8 @@ internal fun VueoSettingsHub(
 
                     item(key = "settings-vueo-group") {
                         VueoSettingsHubGroup("VUEO") {
+                            VueoSettingsHubRow("VUEO Sync", "Account & mobile / TV sync.", "", Icons.Default.Settings, onSync)
+                            VueoSettingsHubDivider()
                             VueoSettingsHubRow("Personalization", "User DNA, DNA Match & recommendations.", "", Icons.Default.Settings) { showPersonalization = true }
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow(

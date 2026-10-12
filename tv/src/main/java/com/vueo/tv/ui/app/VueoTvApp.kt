@@ -291,6 +291,23 @@ fun VueoTvApp(
         }
     }
 
+    val vueoSync = remember { com.vueo.shared.core.sync.VueoSyncService.get(context) }
+    DisposableEffect(vueoSync) { vueoSync.setForeground(true); onDispose { vueoSync.setForeground(false) } }
+    LaunchedEffect(vueoSync) {
+        vueoSync.dataRevision.collect { revision ->
+            if (revision > 0) { refreshToken++; watchNextSyncToken++ }
+        }
+    }
+    LaunchedEffect(vueoSync) {
+        vueoSync.configurationRevision.collect { revision ->
+            if (revision > 0) {
+                withContext(Dispatchers.IO) { runtime.reloadPersistentConfiguration() }
+                refreshToken++
+            }
+        }
+    }
+    LaunchedEffect(route) { vueoSync.setPlayerActive(route == TvRoute.PLAYER) }
+
     LaunchedEffect(route) {
         RuntimeDiagnostics.recordScreen("TV ${route.name}")
     }
