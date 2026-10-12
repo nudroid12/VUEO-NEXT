@@ -12,8 +12,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,7 +116,7 @@ fun TvUserDnaScreen(
             Text(
                 text = "Your local taste profile, shaped by what you watch and save.",
                 color = TvDesign.Muted,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
             )
         }
 
@@ -127,11 +128,11 @@ fun TvUserDnaScreen(
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             DnaAffinityCard(
-                modifier = Modifier.weight(1.05f).fillMaxHeight(),
+                modifier = Modifier.weight(1.05f),
                 title = "Top Genres",
                 subtitle = "What your recent watching and My List say about your taste.",
                 affinities = snapshot.topGenres.take(5),
@@ -142,25 +143,18 @@ fun TvUserDnaScreen(
                 },
             )
 
-            Column(
+            DnaTasteCard(
                 modifier = Modifier.weight(.95f),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                DnaTasteCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    snapshot = snapshot,
-                )
-                DnaViewingCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    snapshot = snapshot,
-                )
-            }
+                snapshot = snapshot,
+            )
         }
+
+        DnaViewingCard(modifier = Modifier.fillMaxWidth(), snapshot = snapshot)
 
         Text(
             text = "Your DNA is calculated locally from this profile's History and My List. Nothing is sent to a server or AI API.",
-            color = TvDesign.Dim,
-            fontSize = 10.sp,
+            color = TvDesign.Muted,
+            fontSize = 12.sp,
         )
     }
 }
@@ -324,10 +318,10 @@ private fun DnaAffinityCard(
             .clip(RoundedCornerShape(18.dp))
             .background(TvDesign.Surface.copy(alpha = .86f))
             .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(title, color = TvDesign.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text(subtitle, color = TvDesign.Muted, fontSize = 11.sp)
+        Text(title, color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(subtitle, color = TvDesign.Muted, fontSize = 13.sp)
         Spacer(Modifier.height(2.dp))
 
         if (affinities.isEmpty()) {
@@ -337,31 +331,33 @@ private fun DnaAffinityCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = affinity.name,
-                        modifier = Modifier.width(120.dp),
+                        modifier = Modifier.width(130.dp),
                         color = TvDesign.White,
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(5.dp)
+                            .height(7.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(TvDesign.White.copy(alpha = .10f)),
+                            .background(TvDesign.Black.copy(alpha = .45f)),
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth((affinity.percent / 100f).coerceIn(0f, 1f))
-                                .height(5.dp)
-                                .background(TvDesign.White.copy(alpha = .72f)),
+                                .height(7.dp)
+                                .background(TvDesign.Accent),
                         )
                     }
                     Text(
                         text = "${affinity.percent}%",
-                        modifier = Modifier.width(42.dp),
-                        color = TvDesign.Muted,
-                        fontSize = 11.sp,
+                        modifier = Modifier.width(48.dp),
+                        textAlign = TextAlign.End,
+                        color = TvDesign.Accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -369,6 +365,7 @@ private fun DnaAffinityCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DnaTasteCard(
     modifier: Modifier,
@@ -381,33 +378,53 @@ private fun DnaTasteCard(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Your Taste", color = TvDesign.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Your Taste", color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
-        val tags = snapshot.tasteTags.take(4)
-        Text(
-            text = if (tags.isNotEmpty()) tags.joinToString("  •  ") else "Taste tags will appear as your DNA develops.",
-            color = if (tags.isNotEmpty()) TvDesign.White.copy(alpha = .88f) else TvDesign.Muted,
-            fontSize = 12.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        val tags = snapshot.tasteTags.take(3)
+        if (tags.isEmpty()) {
+            Text("Taste tags will appear as your DNA develops.", color = TvDesign.Muted, fontSize = 13.sp)
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tags.forEach { tag ->
+                    Text(
+                        tag, color = TvDesign.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(TvDesign.Accent.copy(alpha = .12f))
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                    )
+                }
+            }
+        }
 
         DnaCompactAffinity("Movies vs Series", snapshot.typeBreakdown.take(2))
         DnaCompactAffinity("Your Era", snapshot.decadeBreakdown.take(3))
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DnaCompactAffinity(label: String, values: List<UserDnaAffinity>) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, color = TvDesign.Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            text = values.joinToString("  •  ") { "${it.name} ${it.percent}%" }.ifBlank { "Not enough data yet" },
-            color = TvDesign.White,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, color = TvDesign.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        if (values.isEmpty()) {
+            Text("Not enough data yet", color = TvDesign.Muted, fontSize = 13.sp)
+        } else {
+            Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(TvDesign.Black.copy(alpha = .45f))) {
+                values.forEachIndexed { index, value ->
+                    if (value.percent > 0) Box(Modifier.weight(value.percent.toFloat()).height(8.dp)
+                        .background(TvDesign.Accent.copy(alpha = when (index) { 0 -> 1f; 1 -> .65f; 2 -> .35f; else -> .25f })))
+                }
+                val remainder = (100 - values.sumOf { it.percent }).coerceAtLeast(0)
+                if (remainder > 0) Spacer(Modifier.weight(remainder.toFloat()))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                values.forEachIndexed { index, value ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(TvDesign.Accent.copy(alpha = when (index) { 0 -> 1f; 1 -> .65f; 2 -> .35f; else -> .25f })))
+                        Text("${value.name} ${value.percent}%", color = TvDesign.White, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -424,17 +441,18 @@ private fun DnaViewingCard(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Viewing Signals", color = TvDesign.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Viewing Signals", color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            DnaStat(Modifier.weight(1f), "Watched", behavior.watchedTitles.toString())
+            DnaStat(Modifier.weight(1f), "Watched titles", behavior.watchedTitles.toString())
             DnaStat(Modifier.weight(1f), "My List", behavior.myListTitles.toString())
-            DnaStat(Modifier.weight(1f), "Complete", "${behavior.completionRatePercent}%")
+            DnaStat(Modifier.weight(1f), "Completion", "${behavior.completionRatePercent}%")
+            DnaStat(Modifier.weight(1f), "Taste titles", behavior.uniqueTitles.toString())
+            DnaStat(Modifier.weight(1f), "History entries", behavior.historyEntries.toString())
+            DnaStat(Modifier.weight(1f), "Avg. progress", "${behavior.averageProgressPercent}%")
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            DnaStat(Modifier.weight(1f), "Titles", behavior.uniqueTitles.toString())
-            DnaStat(Modifier.weight(1f), "History", behavior.historyEntries.toString())
-            DnaStat(Modifier.weight(1f), "Avg progress", "${behavior.averageProgressPercent}%")
-        }
+        Text("Taste titles are distinct titles used by DNA. History entries are watched movie and episode records.",
+            color = TvDesign.Muted, fontSize = 12.sp)
+
     }
 }
 
@@ -444,10 +462,10 @@ private fun DnaStat(modifier: Modifier, label: String, value: String) {
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(TvDesign.White.copy(alpha = .06f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
     ) {
-        Text(value, color = TvDesign.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = TvDesign.Muted, fontSize = 9.sp)
+        Text(value, color = TvDesign.Accent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = TvDesign.Muted, fontSize = 12.sp, maxLines = 2)
     }
 }
 

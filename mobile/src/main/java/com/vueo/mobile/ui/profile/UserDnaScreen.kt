@@ -3,6 +3,8 @@ package com.vueo.mobile.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -166,7 +168,7 @@ internal fun UserDnaScreen(
                 item(
                     key = "dna-format"
                 ) {
-                    UserDnaAffinityCard(
+                    UserDnaBreakdownCard(
                         title =
                             "Movies vs Series",
                         subtitle =
@@ -185,7 +187,7 @@ internal fun UserDnaScreen(
                 item(
                     key = "dna-era"
                 ) {
-                    UserDnaAffinityCard(
+                    UserDnaBreakdownCard(
                         title =
                             "Your Era",
                         subtitle =
@@ -657,7 +659,7 @@ private fun UserDnaAffinityCard(
                     text = subtitle,
                     color =
                         VueoPalette.Muted,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                 )
             }
 
@@ -709,7 +711,7 @@ private fun UserDnaAffinityRow(
                     "${affinity.percent}%",
                 color =
                     VueoPalette.Accent,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight =
                     FontWeight.Black,
             )
@@ -772,65 +774,44 @@ private fun UserDnaProgressBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun UserDnaTasteTags(
-    tags: List<String>,
-) {
-    Column(
-        verticalArrangement =
-            Arrangement.spacedBy(
-                9.dp
-            ),
-    ) {
-        Text(
-            text =
-                "Your vibe",
-            color =
-                Color.White,
-            fontSize = 14.sp,
-            fontWeight =
-                FontWeight.Black,
-        )
+private fun UserDnaTasteTags(tags: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text("Your Taste", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            tags.take(3).forEach { tag ->
+                Surface(shape = RoundedCornerShape(50), color = VueoPalette.Accent.copy(alpha = .12f)) {
+                    Text(tag, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = VueoPalette.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
 
-        LazyRow(
-            horizontalArrangement =
-                Arrangement.spacedBy(
-                    8.dp
-                ),
-        ) {
-            items(
-                items = tags,
-                key = {
-                    it
-                },
-            ) {
-                tag ->
-                Surface(
-                    shape =
-                        RoundedCornerShape(
-                            50
-                        ),
-                    color =
-                        VueoPalette.Accent
-                            .copy(
-                                alpha = .10f
-                            ),
-                ) {
-                    Text(
-                        text = tag,
-                        modifier =
-                            Modifier.padding(
-                                horizontal =
-                                    11.dp,
-                                vertical =
-                                    7.dp,
-                            ),
-                        color =
-                            VueoPalette.Accent,
-                        fontSize = 11.sp,
-                        fontWeight =
-                            FontWeight.Bold,
-                    )
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun UserDnaBreakdownCard(title: String, subtitle: String, affinities: List<UserDnaAffinity>) {
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = VueoPalette.Surface),
+        shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = VueoPalette.Muted, fontSize = 12.sp)
+            Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(VueoPalette.SurfaceStrong)) {
+                affinities.forEachIndexed { index, value ->
+                    if (value.percent > 0) Box(Modifier.weight(value.percent.toFloat()).height(8.dp)
+                        .background(VueoPalette.Accent.copy(alpha = when (index) { 0 -> 1f; 1 -> .65f; 2 -> .35f; 3 -> .25f; else -> .2f })))
+                }
+                val remainder = (100 - affinities.sumOf { it.percent }).coerceAtLeast(0)
+                if (remainder > 0) Spacer(Modifier.weight(remainder.toFloat()))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                affinities.forEachIndexed { index, value ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(VueoPalette.Accent.copy(alpha = when (index) { 0 -> 1f; 1 -> .65f; 2 -> .35f; 3 -> .25f; else -> .2f })))
+                        Text("${value.name} ${value.percent}%", color = Color.White, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -877,7 +858,7 @@ private fun UserDnaBehaviorCard(
             ) {
                 UserDnaStat(
                     label =
-                        "Watched",
+                        "Watched titles",
                     value =
                         behavior
                             .watchedTitles
@@ -977,7 +958,7 @@ private fun UserDnaStat(
                 text = label,
                 color =
                     VueoPalette.Muted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight =
                     FontWeight.Bold,
             )
