@@ -494,7 +494,7 @@ private fun buildTvHomeRows(
                     kind = TvHomeRowKind.CONTINUE_WATCHING,
                     entries = continueWatching.map { playback ->
                         TvHomeEntry.Resume(
-                            key = "continue:${playback.mediaKey}",
+                            key = "continue:${playback.media.type}:${playback.media.id}",
                             media = playback.media,
                             playback = playback,
                         )

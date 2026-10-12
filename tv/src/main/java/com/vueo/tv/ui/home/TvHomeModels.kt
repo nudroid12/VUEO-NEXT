@@ -64,6 +64,7 @@ internal data class HomeRouteFocusAnchor(
     val horizontal: TvHomeHorizontalPosition,
     val verticalIndex: Int,
     val verticalOffset: Int,
+    val horizontalFirstCardKey: String? = null,
 )
 
 internal object TvHomeFocusMemory {

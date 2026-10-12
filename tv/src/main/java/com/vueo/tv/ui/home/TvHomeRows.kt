@@ -109,6 +109,8 @@ private data class HomeVerticalFocusTarget(
     val initialReset: Boolean = false,
     val routeReturn: Boolean = false,
     val restorePosition: TvHomeHorizontalPosition? = null,
+    val cardKey: String? = null,
+    val restoreFirstCardKey: String? = null,
 )
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
@@ -193,6 +195,8 @@ internal fun TvModernHomeRows(
         verticalFocusTarget = HomeVerticalFocusTarget(
             rowKey = row.key, cardIndex = cardIndex, token = verticalFocusToken,
             routeReturn = true, restorePosition = anchor.horizontal,
+            cardKey = anchor.cardKey.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
         )
         traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=true" }
     }
@@ -587,6 +591,8 @@ internal fun TvModernHomeRows(
                             row.key, entry.key, cardIndex,
                             TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                             verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
+                            horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key
+                                .takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
                         ))
                         onOpen(entry)
                     },
@@ -627,6 +633,9 @@ private fun TvModernHomeRow(
         }
     }
     val itemFocusRequesters = remember(row.key) { mutableMapOf<Int, FocusRequester>() }
+    val cwFocusRequesters = remember(row.key) { mutableMapOf<String, FocusRequester>() }
+    var focusedCwKey by remember(row.key) { mutableStateOf<String?>(null) }
+    val currentRow by rememberUpdatedState(row)
     val currentContentFocusEnabled by rememberUpdatedState(contentFocusEnabled)
     val currentActive by rememberUpdatedState(active)
     val currentRouteReturnPending by rememberUpdatedState(routeReturnPending)
@@ -701,10 +710,18 @@ private fun TvModernHomeRow(
         }
     }
 
-    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active) {
+    // Only a CW route return follows live entity identity; ordinary DPAD restores retain their policy.
+    val cwReturnKeys = if(row.kind == TvHomeRowKind.CONTINUE_WATCHING && verticalFocusTarget?.routeReturn == true)
+        row.entries.map { it.key } else null
+    LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active, cwReturnKeys) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
         if (!active || !contentFocusEnabled || target.rowKey != row.key || row.entries.isEmpty()) return@LaunchedEffect
-        val targetIndex = target.cardIndex.coerceIn(0, row.entries.lastIndex)
+        fun resolveTargetIndex(): Int? {
+            val entries = if(target.cardKey != null) currentRow.entries else row.entries
+            if(entries.isEmpty()) return null
+            return target.cardKey?.let { key -> entries.indexOfFirst { it.key == key }.takeIf { it >= 0 } }
+                ?: target.cardIndex.coerceIn(0, entries.lastIndex)
+        }
 
         // Nuvio uses pendingRowFocus -> scrollToItem(index) before focus.
         // Snap only when necessary: if the row is already at Card 3, an
@@ -715,8 +732,12 @@ private fun TvModernHomeRow(
             withFrameNanos { }
         }
         if (!currentContentFocusEnabled) return@LaunchedEffect
-        val restoreIndex = target.restorePosition?.firstVisibleItemIndex
-            ?.coerceIn(0, row.entries.lastIndex) ?: targetIndex
+        val targetIndex = resolveTargetIndex() ?: return@LaunchedEffect
+        val entries = if(target.cardKey != null) currentRow.entries else row.entries
+        val restoreIndex = target.restoreFirstCardKey?.let { key ->
+            entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
+        } ?: target.restorePosition?.firstVisibleItemIndex
+            ?.coerceIn(0, entries.lastIndex) ?: targetIndex
         val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
         val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
             rowState.firstVisibleItemScrollOffset == restoreOffset
@@ -731,16 +752,29 @@ private fun TvModernHomeRow(
 
         repeat(if (target.routeReturn) 12 else 6) {
             if (!currentActive || !currentContentFocusEnabled) return@LaunchedEffect
-            val requester = itemFocusRequesters[targetIndex]
+            val liveIndex = resolveTargetIndex() ?: return@LaunchedEffect
+            val liveKey = if(target.cardKey != null) currentRow.entries.getOrNull(liveIndex)?.key else null
+            if(liveKey != null && rowState.layoutInfo.visibleItemsInfo.none { it.key == liveKey }) {
+                // A reorder can separate the focused title from the captured first visible title.
+                // Keep the return target visible instead of focusing another item at its old index.
+                rowState.scrollToItem(liveIndex)
+                withFrameNanos { }
+                return@repeat
+            }
+            val requester = if(liveKey != null) cwFocusRequesters[liveKey] else itemFocusRequesters[liveIndex]
             val focused = requester?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
             if (focused) {
                 traceHome {
-                    "HOME_FOCUS_RESULT row=${row.key} card=$targetIndex " +
+                    "HOME_FOCUS_RESULT row=${row.key} card=$liveIndex key=$liveKey " +
                         "horizontal=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
                 }
                 if (target.routeReturn) {
                     // Let focus-triggered bring-into-view settle while still suppressed.
                     repeat(2) { withFrameNanos { } }
+                }
+                if(liveKey != null && (currentRow.entries.getOrNull(resolveTargetIndex() ?: -1)?.key != liveKey || focusedCwKey != liveKey)) {
+                    withFrameNanos { }
+                    return@repeat
                 }
                 onFocusTargetConsumed(target.token, true)
                 return@LaunchedEffect
@@ -817,7 +851,12 @@ private fun TvModernHomeRow(
                         items = row.entries,
                         key = { _, entry -> entry.key },
                     ) { index, entry ->
-                        val itemRequester = itemFocusRequesters.getOrPut(index) { FocusRequester() }
+                        val itemRequester = if(row.kind == TvHomeRowKind.CONTINUE_WATCHING) {
+                            cwFocusRequesters.getOrPut(entry.key) { FocusRequester() }.also { requester ->
+                                itemFocusRequesters.entries.removeAll { it.value === requester && it.key != index }
+                                itemFocusRequesters[index] = requester
+                            }
+                        } else itemFocusRequesters.getOrPut(index) { FocusRequester() }
                         val openPosterActions = { onPosterLongClick(entry) }
                         val cardVisible by remember(rowState, index) {
                             derivedStateOf {
@@ -837,8 +876,9 @@ private fun TvModernHomeRow(
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
+                                if(row.kind == TvHomeRowKind.CONTINUE_WATCHING) focusedCwKey = entry.key
                                 val returningToThisCard = verticalFocusTarget?.let {
-                                    it.routeReturn && it.cardIndex == index
+                                    it.routeReturn && (if(it.cardKey != null) it.cardKey == entry.key else it.cardIndex == index)
                                 } == true
                                 if (currentActive && currentContentFocusEnabled &&
                                     (!currentRouteReturnPending || returningToThisCard)
