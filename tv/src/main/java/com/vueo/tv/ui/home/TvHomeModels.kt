@@ -65,6 +65,8 @@ internal data class HomeRouteFocusAnchor(
     val verticalIndex: Int,
     val verticalOffset: Int,
     val horizontalFirstCardKey: String? = null,
+    val rowCardKeys: List<String> = emptyList(),
+    val restoreReady: Boolean = true,
 )
 
 internal object TvHomeFocusMemory {

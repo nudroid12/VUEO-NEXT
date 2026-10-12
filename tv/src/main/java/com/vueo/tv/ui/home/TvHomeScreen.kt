@@ -133,6 +133,7 @@ fun TvHomeScreen(
     val loading = retainedState.presentationRows.isEmpty() && traktRows.isEmpty() && retainedState.error == null &&
         (retainedState.loading || retainedState.presentationCatalogRows !== catalogRows)
     val error = retainedState.error.takeIf { traktRows.isEmpty() }
+    var returnSnapshotReady by remember { mutableStateOf(retainedState.routeFocusAnchor == null) }
     var actionEntry by remember { mutableStateOf<TvHomeEntry?>(null) }
     var retryAttempt by remember(runtime) { mutableIntStateOf(0) }
     var handledRetryAttempt by remember(runtime) { mutableIntStateOf(0) }
@@ -209,12 +210,13 @@ fun TvHomeScreen(
     // startup cache, so cached catalogs + CW can participate in the same first Home
     // presentation. Reconcile against full history in the background without gating
     // first paint or catalog streaming.
-    LaunchedEffect(runtime, activeProfileId, refreshToken, libraryRevision) {
+    LaunchedEffect(runtime, activeProfileId, refreshToken, libraryRevision, active, actionEntry, retainedState.routeFocusAnchor) {
+        if (!active || actionEntry != null) return@LaunchedEffect
         val hydrationIsCurrent =
             retainedState.libraryHydrationProfileId == activeProfileId &&
                 retainedState.libraryHydrationRefreshToken == refreshToken &&
                 retainedState.libraryHydrationRevision == libraryRevision
-        if (hydrationIsCurrent) return@LaunchedEffect
+        if (hydrationIsCurrent && returnSnapshotReady) return@LaunchedEffect
 
         if (retainedState.libraryHydrationProfileId != activeProfileId) {
             retainedState.continueWatching = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "tv_home_hydrate_2", Tab.HOME) {
@@ -239,6 +241,7 @@ fun TvHomeScreen(
         retainedState.libraryHydrationRefreshToken = refreshToken
         retainedState.libraryHydrationRevision = libraryRevision
         retainedState.libraryHydrationProfileId = activeProfileId
+        returnSnapshotReady = true
         PerformanceDiagnostics.captureRuntimeEvent(
             "HOME_CW_FULL_PUBLISHED count=${librarySnapshot.continueWatching.size} " +
                 "history=${librarySnapshot.history.size}"
@@ -420,8 +423,13 @@ fun TvHomeScreen(
             },
             active = active,
             routeReturnPending = routeReturnPending,
-            routeFocusAnchor = retainedState.routeFocusAnchor,
-            onCaptureRouteFocusAnchor = { retainedState.routeFocusAnchor = it },
+            routeFocusAnchor = retainedState.routeFocusAnchor?.copy(
+                restoreReady = returnSnapshotReady && actionEntry == null,
+            ),
+            onCaptureRouteFocusAnchor = {
+                returnSnapshotReady = false
+                retainedState.routeFocusAnchor = it
+            },
             onRouteFocusRestored = { retainedState.routeFocusAnchor = null },
             navigationVisible = navExpanded,
             navigationOwnsFocus = navigationOwnsFocus,
@@ -445,7 +453,7 @@ fun TvHomeScreen(
             navRequesters = navRequesters,
             profileRequester = profileRequester,
             onFocused = {
-                if (active && !routeReturnPending) {
+                if (active && !routeReturnPending && actionEntry == null) {
                     navigationOwnsFocus = true
                     navExpanded = true
                 }
@@ -473,7 +481,10 @@ fun TvHomeScreen(
             libraryStore = runtime.libraryStore,
             continueEntry = (entry as? TvHomeEntry.Resume)?.playback,
             onOpenDetails = { onOpenMedia(entry.media) },
-            onChanged = { retainedState.libraryRevision += 1 },
+            onChanged = {
+                returnSnapshotReady = false
+                retainedState.libraryRevision += 1
+            },
             onDismiss = { actionEntry = null },
         )
     }

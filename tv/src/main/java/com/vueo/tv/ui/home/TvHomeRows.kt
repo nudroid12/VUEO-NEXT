@@ -173,32 +173,39 @@ internal fun TvModernHomeRows(
     var previewReturnRowKey by remember { mutableStateOf<String?>(null) }
     var previewReturnCardIndex by remember { mutableIntStateOf(0) }
     LaunchedEffect(active, routeReturnPending, routeFocusAnchor) {
-        if (!active || !routeReturnPending) return@LaunchedEffect
+        if (!active || !routeReturnPending || routeFocusAnchor?.restoreReady != true) return@LaunchedEffect
         val anchor = routeFocusAnchor ?: return@LaunchedEffect
         val row = currentRows.firstOrNull { it.key == anchor.rowKey && it.entries.isNotEmpty() }
+            ?: currentRows.firstOrNull { it.kind == TvHomeRowKind.POSTERS && it.entries.isNotEmpty() }
             ?: run {
                 onRouteFocusRestored()
                 return@LaunchedEffect
             }
         val cardIndex = row.entries.indexOfFirst { it.key == anchor.cardKey }
-            .takeIf { it >= 0 } ?: anchor.cardIndex.coerceIn(0, row.entries.lastIndex)
+            .takeIf { it >= 0 } ?: (if (row.key == anchor.rowKey) anchor.cardIndex else 0)
+                .coerceIn(0, row.entries.lastIndex)
+        val sameRow = row.key == anchor.rowKey
+        val sameOrder = sameRow && (row.kind != TvHomeRowKind.CONTINUE_WATCHING ||
+            anchor.rowCardKeys == row.entries.map { it.key })
+        val verticalIndex = if (sameRow) anchor.verticalIndex else currentRows.indexOf(row)
+        val verticalOffset = if (sameRow) anchor.verticalOffset else 0
         // This also owns initial focus when Home was recreated after Sources.
         // Do not let the later menu effect replay an initial reset over this return.
         appliedFocusResetToken = focusResetToken
         verticalFocusJob[0]?.cancel()
-        if (verticalState.firstVisibleItemIndex != anchor.verticalIndex ||
-            verticalState.firstVisibleItemScrollOffset != anchor.verticalOffset
+        if (verticalState.firstVisibleItemIndex != verticalIndex ||
+            verticalState.firstVisibleItemScrollOffset != verticalOffset
         ) {
-            verticalState.scrollToItem(anchor.verticalIndex, anchor.verticalOffset)
+            verticalState.scrollToItem(verticalIndex, verticalOffset)
         }
         verticalFocusToken += 1
         verticalFocusTarget = HomeVerticalFocusTarget(
             rowKey = row.key, cardIndex = cardIndex, token = verticalFocusToken,
-            routeReturn = true, restorePosition = anchor.horizontal,
-            cardKey = anchor.cardKey.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
-            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+            routeReturn = true, restorePosition = anchor.horizontal.takeIf { sameOrder },
+            cardKey = row.entries[cardIndex].key.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { sameOrder && row.kind == TvHomeRowKind.CONTINUE_WATCHING },
         )
-        traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=true" }
+        traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$sameOrder" }
     }
 
     val density = LocalDensity.current
@@ -593,10 +600,22 @@ internal fun TvModernHomeRows(
                             verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
                             horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key
                                 .takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+                            rowCardKeys = row.entries.map { it.key },
                         ))
                         onOpen(entry)
                     },
-                    onPosterLongClick = onPosterLongClick,
+                    onPosterLongClick = { entry ->
+                        if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) {
+                            onCaptureRouteFocusAnchor(HomeRouteFocusAnchor(
+                                row.key, entry.key, row.entries.indexOfFirst { it.key == entry.key }.coerceAtLeast(0),
+                                TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
+                                verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
+                                horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key,
+                                rowCardKeys = row.entries.map { it.key },
+                            ))
+                        }
+                        onPosterLongClick(entry)
+                    },
                 )
             }
         }
