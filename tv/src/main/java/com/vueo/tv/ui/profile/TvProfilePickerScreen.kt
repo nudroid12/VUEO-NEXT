@@ -233,7 +233,7 @@ fun TvProfilePickerScreen(
     if (deleting != null) {
         TvProfileConfirmOverlay(
             title = "Delete ${deleting.name}?",
-            message = "This removes this profile's local My List, history, playback progress and personal preferences.",
+            message = "This removes this profile's local Favorites, history, playback progress and personal preferences.",
             confirmLabel = "Delete Profile",
             danger = true,
             onConfirm = {

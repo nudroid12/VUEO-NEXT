@@ -64,10 +64,8 @@ internal fun VueoDetailHero(
     downRequester: FocusRequester?,
     onPlay: () -> Unit,
     onToggleList: () -> Unit,
-    onRate: () -> Unit,
     onToggleWatched: () -> Unit,
 ) {
-    val ratingRequester = remember(state.item.id) { FocusRequester() }
     val item = state.item
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
@@ -131,24 +129,15 @@ internal fun VueoDetailHero(
             )
             VueoCircleAction(
                 icon = if (state.watchlisted) Icons.Default.Check else Icons.Default.Add,
-                contentDescription = if (state.watchlisted) "Remove from My List" else "Add to My List",
+                contentDescription = if (state.watchlisted) "Remove from Favorites" else "Add to Favorites",
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = ratingRequester,
+                rightRequester = null,
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
-            VueoCircleAction(
-                icon = Icons.Default.Star,
-                contentDescription = "Rate on Trakt",
-                selected = false,
-                requester = ratingRequester,
-                leftRequester = listRequester,
-                rightRequester = null,
-                downRequester = downRequester,
-                onClick = onRate,
-            )
+
         }
 
         Spacer(Modifier.height(12.dp))

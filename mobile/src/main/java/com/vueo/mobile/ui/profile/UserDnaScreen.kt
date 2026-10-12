@@ -139,7 +139,7 @@ internal fun UserDnaScreen(
                     UserDnaAffinityCard(
                         title = "Top Genres",
                         subtitle =
-                            "What your recent watching and My List say about your taste.",
+                            "What your recent watching and Favorites say about your taste.",
                         affinities =
                             snapshot.topGenres
                                 .take(5),
@@ -572,7 +572,7 @@ private fun UserDnaStartingCard() {
 
             Text(
                 text =
-                    "Watch a few titles and add things you like to My List. VUEO will build this profile automatically as your taste becomes clearer.",
+                    "Watch a few titles and add things you like to Favorites. VUEO will build this profile automatically as your taste becomes clearer.",
                 color =
                     VueoPalette.Muted,
                 fontSize = 12.sp,
@@ -871,7 +871,7 @@ private fun UserDnaBehaviorCard(
 
                 UserDnaStat(
                     label =
-                        "My List",
+                        "Favorites",
                     value =
                         behavior
                             .myListTitles
@@ -1003,7 +1003,7 @@ private fun UserDnaPrivacyCard() {
 
             Text(
                 text =
-                    "Your DNA is calculated locally from this profile's History and My List. No account, server or AI API is required.",
+                    "Your DNA is calculated locally from this profile's History and Favorites. No account, server or AI API is required.",
                 color =
                     VueoPalette.Muted,
                 fontSize = 10.sp,

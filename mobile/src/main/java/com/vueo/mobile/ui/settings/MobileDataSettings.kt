@@ -313,7 +313,7 @@ internal fun DataStorageSettingsScreen(
             },
             text = {
                 Text(
-                    "This clears profiles, addons, plugin repositories, API keys, preferences, My List, Continue Watching, history, playback progress and temporary data. Development defaults will be seeded again."
+                    "This clears profiles, addons, plugin repositories, API keys, preferences, Favorites, Continue Watching, history, playback progress and temporary data. Development defaults will be seeded again."
                 )
             },
             confirmButton = {
@@ -394,7 +394,7 @@ internal fun DataStorageSettingsScreen(
         item {
             VueoInfoCard(
                 title = "What gets backed up",
-                text = "Profiles, Content Manager configuration, provider preferences, Settings, My List, Continue Watching, Watch History and playback progress. Cache, provider scripts and health diagnostics are rebuilt instead of copied.",
+                text = "Profiles, Content Manager configuration, provider preferences, Settings, Favorites, Continue Watching, Watch History and playback progress. Cache, provider scripts and health diagnostics are rebuilt instead of copied.",
             )
         }
 
@@ -494,7 +494,7 @@ internal fun DataStorageSettingsScreen(
         item {
             VueoSettingsActionCard(
                 title = "Watch History",
-                subtitle = "Clear playback history for the active profile without changing My List.",
+                subtitle = "Clear playback history for the active profile without changing Favorites.",
                 action = "Clear",
                 onClick = {
                     if (!busy) {

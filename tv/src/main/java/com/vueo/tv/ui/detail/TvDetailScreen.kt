@@ -410,8 +410,6 @@ fun TvDetailScreen(
             }
         }
     }
-    var showTraktRating by remember(item.id) { mutableStateOf(false) }
-    if (showTraktRating) com.vueo.tv.ui.trakt.TraktRatingDialog(item) { showTraktRating = false }
     val primaryActionLabel = remember(item, selectedEpisode?.id, playbackEntry) {
         detailPrimaryActionLabel(item, selectedEpisode, playbackEntry)
     }
@@ -444,7 +442,6 @@ fun TvDetailScreen(
                 onWatch(item, selectedEpisode, startPositionMs)
             }
         },
-        onRate = { showTraktRating = true },
         onToggleList = {
             // Preserve the user's immediate visual choice even if startup
             // hydration is still carrying a pre-click watchlist snapshot.

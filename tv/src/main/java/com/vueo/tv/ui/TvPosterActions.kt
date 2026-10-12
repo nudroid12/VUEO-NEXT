@@ -132,7 +132,7 @@ internal fun TvPosterActionDialog(
                     finish { onDismiss(); onOpenDetails() }
                 })
                 add(
-                    (if (watchlisted) "Remove from My List" else "Add to My List") to {
+                    (if (watchlisted) "Remove from Favorites" else "Add to Favorites") to {
                         watchlisted = libraryStore.toggleWatchlist(media)
                         onChanged()
                     }

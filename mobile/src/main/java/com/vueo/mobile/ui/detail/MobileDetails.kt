@@ -335,7 +335,7 @@ internal fun MediaDetailsScreen(
             )
 
     // Keep the first Details composition storage-free. The DNA engine reads
-    // history + My List JSON, so hydrate it with the rest of the local library
+    // history + Favorites JSON, so hydrate it with the rest of the local library
     // state after the shell has already been published.
     var detailsDnaSnapshot by remember(
         detailsProfileId,
@@ -375,8 +375,6 @@ internal fun MediaDetailsScreen(
             .showSourceTechnicalDetails()
 
     var item by remember(initialItem) { mutableStateOf(initialItem) }
-    var showTraktRating by remember(initialItem.id) { mutableStateOf(false) }
-    if (showTraktRating) com.vueo.mobile.ui.trakt.TraktRatingDialog(item) { showTraktRating = false }
 
     var loadingMeta by remember { mutableStateOf(true) }
     var loadingStreams by remember {
@@ -2418,15 +2416,14 @@ internal fun MediaDetailsScreen(
 
                         Text(
                             if (inWatchlist) {
-                                "In My List"
+                                "In Favorites"
                             } else {
-                                "My List"
+                                "Favorites"
                             }
                         )
                     }
                 }
 
-                TextButton(onClick = { showTraktRating = true }) { Text("Rate on Trakt") }
 
                 if (canResume) {
                     activePlaybackEntry

@@ -31,7 +31,10 @@ private class TraktSettingsState(
     var username by mutableStateOf(service.username(profile))
     var status by mutableStateOf(service.status(profile))
     var discovery by mutableStateOf(service.enabled("discovery", profile))
-    var sync by mutableStateOf(service.enabled("sync", profile))
+    var favorites by mutableStateOf(service.enabled("sync_favorites", profile))
+    var history by mutableStateOf(service.enabled("sync_history", profile))
+    var playback by mutableStateOf(service.enabled("sync_playback", profile))
+    val sync: Boolean get() = favorites || history || playback
     var scrobble by mutableStateOf(service.enabled("scrobble", profile))
     var login by mutableStateOf<TraktService.DeviceLogin?>(null)
         private set
@@ -49,7 +52,9 @@ private class TraktSettingsState(
         username = service.username(profile)
         status = service.status(profile)
         discovery = service.enabled("discovery", profile)
-        sync = service.enabled("sync", profile)
+        favorites = service.enabled("sync_favorites", profile)
+        history = service.enabled("sync_history", profile)
+        playback = service.enabled("sync_playback", profile)
         scrobble = service.enabled("scrobble", profile)
     }
 
@@ -92,7 +97,7 @@ private class TraktSettingsState(
 
     fun setFeature(name: String, enabled: Boolean) {
         service.setEnabled(name, enabled, profile)
-        if (name == "sync" && enabled) service.scheduleSync(profile, force = true)
+        if (name in setOf("sync_favorites", "sync_history", "sync_playback") && enabled) service.scheduleSync(profile, force = true)
         refresh()
     }
 
@@ -172,7 +177,7 @@ internal fun TvTraktEnhancementSettings(
     val entries = buildList {
         add(TvSettingsEntry(
             id = "account-status", title = "Account",
-            subtitle = if (state.connected) state.username.ifBlank { "Trakt account" } else "Connect to sync My List, watched history and ratings for this profile.",
+            subtitle = if (state.connected) state.username.ifBlank { "Trakt account" } else "Connect your account, then choose what to sync. All account options start off.",
             value = if (state.connected) "Connected" else if (state.connecting) "Connecting" else "Not connected",
             section = "ACCOUNT", icon = Icons.Default.AccountCircle,
         ))
@@ -203,13 +208,20 @@ internal fun TvTraktEnhancementSettings(
             "discovery", "Discovery Rows", "Show Trakt trending and popular titles on Home. Works without login.", state.discovery,
         ) { state.setFeature("discovery", it) }.copy(section = "DISCOVERY", switchChecked = state.discovery))
         add(toggleEntry(
-            "library-sync", "Library Sync",
-            if (state.connected) "Sync My List, watched history and ratings with Trakt." else "Connect your account to enable library sync.",
-            state.sync, enabled = state.connected && !state.busy,
-        ) { state.setFeature("sync", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.sync))
+            "favorites-sync", "Sync Favorites", "Sync Favorites with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
+            state.favorites, enabled = state.connected && !state.busy,
+        ) { state.setFeature("sync_favorites", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.favorites))
+        add(toggleEntry(
+            "history-sync", "Sync Watched History", "Sync completed movies, episodes and watched marks with Trakt.",
+            state.history, enabled = state.connected && !state.busy,
+        ) { state.setFeature("sync_history", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.history))
+        add(toggleEntry(
+            "playback-sync", "Sync Continue Watching", "Import resume progress from Trakt. Sending your playback progress uses Scrobble Playback.",
+            state.playback, enabled = state.connected && !state.busy,
+        ) { state.setFeature("sync_playback", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.playback))
         add(toggleEntry(
             "scrobble", "Scrobble Playback",
-            if (state.connected) "Share playback activity with Trakt while you watch." else "Connect your account to enable scrobbling.",
+            if (state.connected) "Send playback activity and progress to Trakt. Completed playback can also be marked watched on Trakt." else "Connect your account to enable scrobbling.",
             state.scrobble, enabled = state.connected && !state.busy,
         ) { state.setFeature("scrobble", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.scrobble))
         add(TvSettingsEntry(

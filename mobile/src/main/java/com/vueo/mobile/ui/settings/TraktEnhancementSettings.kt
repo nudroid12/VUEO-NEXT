@@ -44,7 +44,10 @@ private class TraktSettingsState(
     var username by mutableStateOf(service.username(profile))
     var status by mutableStateOf(service.status(profile))
     var discovery by mutableStateOf(service.enabled("discovery", profile))
-    var sync by mutableStateOf(service.enabled("sync", profile))
+    var favorites by mutableStateOf(service.enabled("sync_favorites", profile))
+    var history by mutableStateOf(service.enabled("sync_history", profile))
+    var playback by mutableStateOf(service.enabled("sync_playback", profile))
+    val sync: Boolean get() = favorites || history || playback
     var scrobble by mutableStateOf(service.enabled("scrobble", profile))
     var login by mutableStateOf<TraktService.DeviceLogin?>(null)
         private set
@@ -62,7 +65,9 @@ private class TraktSettingsState(
         username = service.username(profile)
         status = service.status(profile)
         discovery = service.enabled("discovery", profile)
-        sync = service.enabled("sync", profile)
+        favorites = service.enabled("sync_favorites", profile)
+        history = service.enabled("sync_history", profile)
+        playback = service.enabled("sync_playback", profile)
         scrobble = service.enabled("scrobble", profile)
     }
 
@@ -105,7 +110,7 @@ private class TraktSettingsState(
 
     fun setFeature(name: String, enabled: Boolean) {
         service.setEnabled(name, enabled, profile)
-        if (name == "sync" && enabled) service.scheduleSync(profile, force = true)
+        if (name in setOf("sync_favorites", "sync_history", "sync_playback") && enabled) service.scheduleSync(profile, force = true)
         refresh()
     }
 
@@ -187,7 +192,7 @@ internal fun TraktEnhancementSettingsScreen(onBack: () -> Unit) {
             VueoStatusCard(
                 title = "Account",
                 value = if (state.connected) "Connected" else if (state.connecting) "Connecting" else "Not connected",
-                text = if (state.connected) state.username.ifBlank { "Trakt account" } else "Connect to sync My List, watched history and ratings for this profile.",
+                text = if (state.connected) state.username.ifBlank { "Trakt account" } else "Connect your account, then choose what to sync. All account options start off.",
             )
         }
         item(key = "trakt-account-label") { VueoSectionLabel("ACCOUNT") }
@@ -246,19 +251,31 @@ internal fun TraktEnhancementSettingsScreen(onBack: () -> Unit) {
             )
         }
         item(key = "trakt-sync-label") { VueoSectionLabel("SYNC & PLAYBACK") }
-        item(key = "trakt-sync") {
+        item(key = "trakt-favorites") {
             VueoSettingsToggleCard(
-                title = "Library Sync",
-                subtitle = if (state.connected) "Sync My List, watched history and ratings with Trakt." else "Connect your account to enable library sync.",
-                checked = state.sync,
-                enabled = state.connected && !state.busy,
-                onCheckedChange = { state.setFeature("sync", it) },
+                title = "Sync Favorites", subtitle = "Sync Favorites with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
+                checked = state.favorites, enabled = state.connected && !state.busy,
+                onCheckedChange = { state.setFeature("sync_favorites", it) },
+            )
+        }
+        item(key = "trakt-history") {
+            VueoSettingsToggleCard(
+                title = "Sync Watched History", subtitle = "Sync completed movies, episodes and watched marks with Trakt.",
+                checked = state.history, enabled = state.connected && !state.busy,
+                onCheckedChange = { state.setFeature("sync_history", it) },
+            )
+        }
+        item(key = "trakt-playback") {
+            VueoSettingsToggleCard(
+                title = "Sync Continue Watching", subtitle = "Import resume progress from Trakt. Sending your playback progress uses Scrobble Playback.",
+                checked = state.playback, enabled = state.connected && !state.busy,
+                onCheckedChange = { state.setFeature("sync_playback", it) },
             )
         }
         item(key = "trakt-scrobble") {
             VueoSettingsToggleCard(
                 title = "Scrobble Playback",
-                subtitle = if (state.connected) "Share playback activity with Trakt while you watch." else "Connect your account to enable scrobbling.",
+                subtitle = if (state.connected) "Send playback activity and progress to Trakt. Completed playback can also be marked watched on Trakt." else "Connect your account to enable scrobbling.",
                 checked = state.scrobble,
                 enabled = state.connected && !state.busy,
                 onCheckedChange = { state.setFeature("scrobble", it) },

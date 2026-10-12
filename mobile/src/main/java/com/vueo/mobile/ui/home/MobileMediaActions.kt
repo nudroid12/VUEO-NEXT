@@ -412,9 +412,9 @@ internal fun CatalogActionsDialog(
                 MediaMenuAction(
                     label =
                         if (isWatchlisted) {
-                            "Remove from My List"
+                            "Remove from Favorites"
                         } else {
-                            "Add to My List"
+                            "Add to Favorites"
                         },
                     icon =
                         if (isWatchlisted) {

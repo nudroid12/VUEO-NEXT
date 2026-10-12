@@ -51,9 +51,31 @@ class TraktService private constructor(private val context: Context) {
     fun connected(profile: String = profileId()) = store.connected(profile)
     fun username(profile: String = profileId()) = store.prefs.getString(store.key(profile, "username"), "").orEmpty()
     fun status(profile: String = profileId()) = store.prefs.getString(store.key(profile, "status"), "").orEmpty()
-    fun enabled(name: String, profile: String = profileId()) = store.enabled(profile, name)
+    private fun optionKey(name: String) = if (name == "scrobble") "activity_scrobble" else name
+    fun enabled(name: String, profile: String = profileId()) = store.enabled(profile, optionKey(name), name == "discovery")
+    private fun syncEnabled(profile: String) = listOf("sync_favorites", "sync_history", "sync_playback").any { enabled(it, profile) }
+    private fun entryEnabled(entry: JSONObject, profile: String): Boolean = when {
+        entry.optString("key").startsWith("watchlist:") -> enabled("sync_favorites", profile)
+        entry.optString("key").startsWith("watched:") -> enabled("sync_history", profile)
+        else -> false
+    }
     fun setEnabled(name: String, enabled: Boolean, profile: String = profileId()) {
-        store.prefs.edit().putBoolean(store.key(profile, name), enabled).apply()
+        if (name != "discovery" && !connected(profile)) return
+        val editor = store.prefs.edit().putBoolean(store.key(profile, optionKey(name)), enabled)
+        if (enabled && name == "sync_favorites") editor.putBoolean(store.key(profile, "seeded_watchlist"), false)
+        if (enabled && name == "sync_history") editor.putBoolean(store.key(profile, "seeded_history"), false).putBoolean(store.key(profile, "seeded_marks_complete"), false)
+        editor.apply()
+        if (!enabled && name in setOf("sync_favorites", "sync_history")) synchronized(queueLock) {
+            val current = queue(profile)
+            val retained = JSONArray()
+            for (i in 0 until current.length()) {
+                val item = current.getJSONObject(i)
+                val category = if (item.optString("key").startsWith("watchlist:")) "sync_favorites" else if (item.optString("key").startsWith("watched:")) "sync_history" else ""
+                if (category != name) retained.put(item)
+            }
+            store.prefs.edit().putString(store.key(profile, "outbox"), retained.toString()).apply()
+        }
+        if (name != "discovery" && !syncEnabled(profile)) status(profile, "Library sync is off")
         invalidateCatalog(profile)
         changed()
     }
@@ -101,14 +123,18 @@ class TraktService private constructor(private val context: Context) {
                 store.prefs.edit().putBoolean(store.key(login.profile, "verified_session"), false)
                     .putString(store.key(login.profile, "username"), "").apply()
                 store.save(login.profile, tokens)
+                store.prefs.edit().putBoolean(store.key(login.profile, "sync_favorites"), false)
+                    .putBoolean(store.key(login.profile, "sync_history"), false)
+                    .putBoolean(store.key(login.profile, "sync_playback"), false)
+                    .putBoolean(store.key(login.profile, "activity_scrobble"), false).apply()
             }
-            status(login.profile, "Connected. Syncing…")
+            status(login.profile, "Connected. Choose your sync options in Settings.")
             try {
                 verifyIdentity(login.profile)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* Connection remains usable; a later sync reloads account details. */ }
             invalidateCatalog(login.profile)
             changed()
-            scheduleSync(login.profile, force = true)
+            // Login connects the account only; users opt into sync in Settings.
             return@withContext
         }
         throw IOException("Login code expired. Request a new code.")
@@ -148,22 +174,37 @@ class TraktService private constructor(private val context: Context) {
         }
     }
     internal suspend fun authenticated(path: String, profile: String, body: JSONObject? = null): TraktReply {
+        val option = when {
+            path.startsWith("/sync/watchlist") -> "sync_favorites"
+            path.startsWith("/sync/history") || path.startsWith("/sync/watched/") -> "sync_history"
+            path.startsWith("/sync/playback") -> "sync_playback"
+            path.startsWith("/scrobble/") -> "scrobble"
+            else -> null
+        }
+        fun checkOption() {
+            if (option != null && !enabled(option, profile)) throw CancellationException("Trakt option is off")
+        }
+        checkOption()
         val generation = generations[profile] ?: 0L
         val token = accessToken(profile)
+        checkOption()
         val reply = try { TraktHttp.request(path, token, body) } catch (error: TraktHttpError) {
             if (error.status != 401) throw error
-            TraktHttp.request(path, accessToken(profile, token), body)
+            val refreshed = accessToken(profile, token)
+            checkOption()
+            TraktHttp.request(path, refreshed, body)
         }
+        checkOption()
         if (!connected(profile) || (generations[profile] ?: 0L) != generation) throw IOException("Trakt account changed.")
         return reply
     }
     fun watchlistChanged(media: MediaItem, added: Boolean, profile: String) {
-        if (!connected(profile) || !store.enabled(profile, "sync")) return
+        if (!connected(profile) || !enabled("sync_favorites", profile)) return
         val payload = TraktMedia.payload(media) ?: return
         enqueue(profile, "watchlist:${media.type}:${media.id}", if (added) "/sync/watchlist" else "/sync/watchlist/remove", payload)
     }
     fun watchedChanged(media: MediaItem, watched: Boolean, profile: String) {
-        if (!connected(profile) || !store.enabled(profile, "sync")) return
+        if (!connected(profile) || !enabled("sync_history", profile)) return
         val payload = TraktMedia.payload(media) ?: return
         enqueue(profile, "watched:${media.type}:${media.id}", if (watched) "/sync/history" else "/sync/history/remove", payload)
     }
@@ -200,8 +241,11 @@ class TraktService private constructor(private val context: Context) {
         scheduleSync(profile, force = true)
     }
     private suspend fun flush(profile: String) {
-        while (connected(profile) && store.enabled(profile, "sync")) {
-            val entry = synchronized(queueLock) { queue(profile).optJSONObject(0) } ?: return
+        while (connected(profile) && syncEnabled(profile)) {
+            val entry = synchronized(queueLock) {
+                val pending = queue(profile)
+                (0 until pending.length()).map { pending.getJSONObject(it) }.firstOrNull { entryEnabled(it, profile) }
+            } ?: return
             val reply = authenticated(entry.getString("path"), profile, entry.getJSONObject("body"))
             if (reply.body.isNotBlank()) {
                 val missing = JSONObject(reply.body).optJSONObject("not_found")
@@ -243,7 +287,7 @@ class TraktService private constructor(private val context: Context) {
     }
     private val scheduled = ConcurrentHashMap<String, Boolean>()
     fun scheduleSync(profile: String = profileId(), force: Boolean = false) {
-        if (!connected(profile) || !store.enabled(profile, "sync") || scheduled.putIfAbsent(profile, true) != null) return
+        if (!connected(profile) || !syncEnabled(profile) || scheduled.putIfAbsent(profile, true) != null) return
         scope.launch {
             var retry = 0
             try {
@@ -253,143 +297,134 @@ class TraktService private constructor(private val context: Context) {
                         sync(profile, force || retry > 0)
                     } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
                         if (connected(profile)) status(profile, message(error))
-                        if (!connected(profile) || !store.enabled(profile, "sync")) break
+                        if (!connected(profile) || !syncEnabled(profile)) break
                         val pause = if (error is TraktHttpError && error.status == 429) error.retryMs else 30_000L * (retry + 1)
                         if (retry++ >= 2) break
                         delay(pause.coerceAtMost(300_000L))
                         continue
                     }
-                    val pending = synchronized(queueLock) { queue(profile).length() > 0 }
+                    val pending = synchronized(queueLock) { queue(profile).let { pending ->
+                        (0 until pending.length()).any { entryEnabled(pending.getJSONObject(it), profile) }
+                    } }
                     if (!pending) break
                     delay(1_500L)
                     retry++
-                } while (connected(profile) && store.enabled(profile, "sync"))
+                } while (connected(profile) && syncEnabled(profile))
             } finally { scheduled.remove(profile) }
         }
     }
     suspend fun sync(profile: String = profileId(), force: Boolean = true) = withContext(Dispatchers.IO) {
         syncGate.withLock {
-            if (!connected(profile) || !store.enabled(profile, "sync")) return@withLock
+            if (!connected(profile) || !syncEnabled(profile)) return@withLock
             val last = store.prefs.getLong(store.key(profile, "last_sync"), 0L)
             if (!force && System.currentTimeMillis() - last < 10 * 60_000L) return@withLock
             status(profile, "Syncing…")
             verifyIdentity(profile)
             val local = library(profile)
             val known = (local.watchlist() + local.history().map { it.media }).associateBy { "${it.type}:${it.id}" }
-            // Upload existing local watchlist once; subsequent edits use the durable outbox.
-            if (!store.prefs.getBoolean(store.key(profile, "seeded_watchlist"), false)) {
-                val items = local.watchlist().mapNotNull { TraktMedia.payload(it) }
-                val payload = JSONObject().put("movies", JSONArray()).put("shows", JSONArray())
-                items.forEach { item -> listOf("movies", "shows").forEach { field ->
-                    item.optJSONArray(field)?.let { array -> for (i in 0 until array.length()) payload.getJSONArray(field).put(array.getJSONObject(i)) }
-                } }
-                if (items.isNotEmpty()) authenticated("/sync/watchlist", profile, payload)
-                store.prefs.edit().putBoolean(store.key(profile, "seeded_watchlist"), true).apply()
-            }
             flush(profile)
-            val watchlist = fetchPages("/sync/watchlist?extended=full", profile).mapNotNull { TraktMedia.unwrap(it, known) }
-            val pendingWatchlist = synchronized(queueLock) { queue(profile).let { array ->
-                (0 until array.length()).map { array.getJSONObject(it).optString("key") }.filter { it.startsWith("watchlist:") }.map { it.removePrefix("watchlist:") }.toSet()
-            } }
-            local.mergeTraktWatchlist(watchlist, pendingWatchlist)
-            val imports = mutableListOf<LibraryPlaybackEntry>()
-            for (type in listOf("movies", "shows")) {
-                val watched = JSONArray(authenticated("/sync/watched/$type?extended=full", profile).body)
-                for (i in 0 until watched.length()) {
-                    val row = watched.getJSONObject(i)
-                    val media = TraktMedia.unwrap(row, known) ?: continue
-                    if (type == "movies") {
-                        val duration = (media.runtimeMinutes ?: 120) * 60_000L
-                        imports += LibraryPlaybackEntry(media, media.id, positionMs = duration, durationMs = duration,
-                            lastWatchedEpochMs = epoch(row.optString("last_watched_at")))
-                    } else {
-                        val seasons = row.optJSONArray("seasons") ?: continue
-                        for (s in 0 until seasons.length()) {
-                            val season = seasons.getJSONObject(s)
-                            val episodes = season.optJSONArray("episodes") ?: continue
-                            for (e in 0 until episodes.length()) {
-                                val episode = episodes.getJSONObject(e)
-                                val duration = (media.runtimeMinutes ?: 45) * 60_000L
-                                val sn = season.getInt("number"); val en = episode.getInt("number")
-                                imports += LibraryPlaybackEntry(media, "${media.id}:$sn:$en", season = sn, episode = en,
-                                    positionMs = duration, durationMs = duration, lastWatchedEpochMs = epoch(episode.optString("last_watched_at")))
+            if (enabled("sync_favorites", profile)) {
+                // Upload existing local watchlist once; subsequent edits use the durable outbox.
+                if (!store.prefs.getBoolean(store.key(profile, "seeded_watchlist"), false)) {
+                    val items = local.watchlist().mapNotNull { TraktMedia.payload(it) }
+                    val payload = JSONObject().put("movies", JSONArray()).put("shows", JSONArray())
+                    items.forEach { item -> listOf("movies", "shows").forEach { field ->
+                        item.optJSONArray(field)?.let { array -> for (i in 0 until array.length()) payload.getJSONArray(field).put(array.getJSONObject(i)) }
+                    } }
+                    if (items.isNotEmpty()) authenticated("/sync/watchlist", profile, payload)
+                    store.prefs.edit().putBoolean(store.key(profile, "seeded_watchlist"), true).apply()
+                }
+                val watchlist = fetchPages("/sync/watchlist?extended=full", profile).mapNotNull { TraktMedia.unwrap(it, known) }
+                val pendingWatchlist = synchronized(queueLock) { queue(profile).let { array ->
+                    (0 until array.length()).map { array.getJSONObject(it).optString("key") }.filter { it.startsWith("watchlist:") }.map { it.removePrefix("watchlist:") }.toSet()
+                } }
+                if (enabled("sync_favorites", profile)) local.mergeTraktWatchlist(watchlist, pendingWatchlist)
+            }
+            if (enabled("sync_history", profile)) {
+                val imports = mutableListOf<LibraryPlaybackEntry>()
+                for (type in listOf("movies", "shows")) {
+                    val watched = JSONArray(authenticated("/sync/watched/$type?extended=full", profile).body)
+                    for (i in 0 until watched.length()) {
+                        val row = watched.getJSONObject(i)
+                        val media = TraktMedia.unwrap(row, known) ?: continue
+                        if (type == "movies") {
+                            val duration = (media.runtimeMinutes ?: 120) * 60_000L
+                            imports += LibraryPlaybackEntry(media, media.id, positionMs = duration, durationMs = duration,
+                                lastWatchedEpochMs = epoch(row.optString("last_watched_at")))
+                        } else {
+                            val seasons = row.optJSONArray("seasons") ?: continue
+                            for (s in 0 until seasons.length()) {
+                                val season = seasons.getJSONObject(s)
+                                val episodes = season.optJSONArray("episodes") ?: continue
+                                for (e in 0 until episodes.length()) {
+                                    val episode = episodes.getJSONObject(e)
+                                    val duration = (media.runtimeMinutes ?: 45) * 60_000L
+                                    val sn = season.getInt("number"); val en = episode.getInt("number")
+                                    imports += LibraryPlaybackEntry(media, "${media.id}:$sn:$en", season = sn, episode = en,
+                                        positionMs = duration, durationMs = duration, lastWatchedEpochMs = epoch(episode.optString("last_watched_at")))
+                                }
                             }
                         }
                     }
                 }
-            }
-            // Upload completed local watches once, after comparing remote truth to avoid duplicate plays.
-            if (!store.prefs.getBoolean(store.key(profile, "seeded_history"), false)) {
-                val localHistory = local.history().filter { it.isCompleted && !store.prefs.getBoolean(store.key(profile, "seeded_history:${it.mediaKey}"), false) && imports.none { remote -> remote.mediaKey == it.mediaKey } }
-                for (entry in localHistory) {
-                    if (TraktMedia.isShow(entry.media) && (entry.season == null || entry.episode == null)) continue
-                    val payload = TraktMedia.payload(entry.media, entry.season, entry.episode) ?: continue
-                    val field = if (TraktMedia.isMovie(entry.media)) "movies" else "shows"
-                    val item = payload.getJSONArray(field).getJSONObject(0)
-                    val watchedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-                        timeZone = TimeZone.getTimeZone("UTC")
-                    }.format(Date(entry.lastWatchedEpochMs))
-                    if (field == "movies") item.put("watched_at", watchedAt)
-                    else item.optJSONArray("seasons")?.optJSONObject(0)?.optJSONArray("episodes")?.optJSONObject(0)?.put("watched_at", watchedAt)
+                // Upload completed local watches once, after comparing remote truth to avoid duplicate plays.
+                if (!store.prefs.getBoolean(store.key(profile, "seeded_history"), false)) {
+                    val localHistory = local.history().filter { it.isCompleted && !store.prefs.getBoolean(store.key(profile, "seeded_history:${it.mediaKey}"), false) && imports.none { remote -> remote.mediaKey == it.mediaKey } }
+                    for (entry in localHistory) {
+                        if (TraktMedia.isShow(entry.media) && (entry.season == null || entry.episode == null)) continue
+                        val payload = TraktMedia.payload(entry.media, entry.season, entry.episode) ?: continue
+                        val field = if (TraktMedia.isMovie(entry.media)) "movies" else "shows"
+                        val item = payload.getJSONArray(field).getJSONObject(0)
+                        val watchedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }.format(Date(entry.lastWatchedEpochMs))
+                        if (field == "movies") item.put("watched_at", watchedAt)
+                        else item.optJSONArray("seasons")?.optJSONObject(0)?.optJSONArray("episodes")?.optJSONObject(0)?.put("watched_at", watchedAt)
+                        authenticated("/sync/history", profile, payload)
+                        // Checkpoint each successful item; interrupted initial sync will not re-send it.
+                        store.prefs.edit().putBoolean(store.key(profile, "seeded_history:${entry.mediaKey}"), true).apply()
+                    }
+                    store.prefs.edit().putBoolean(store.key(profile, "seeded_history"), true).apply()
+                }
+                if (!store.prefs.getBoolean(store.key(profile, "seeded_marks_complete"), false)) {
+                for (media in local.traktMarkedWatchedMedia()) {
+                    val marker = store.key(profile, "seeded_mark:${media.type}:${media.id}")
+                    if (store.prefs.getBoolean(marker, false)) continue
+                    if (TraktMedia.isMovie(media) && imports.any { it.media.id == media.id && TraktMedia.isMovie(it.media) }) {
+                        store.prefs.edit().putBoolean(marker, true).apply()
+                        continue
+                    }
+                    val payload = TraktMedia.payload(media) ?: continue
                     authenticated("/sync/history", profile, payload)
-                    // Checkpoint each successful item; interrupted initial sync will not re-send it.
-                    store.prefs.edit().putBoolean(store.key(profile, "seeded_history:${entry.mediaKey}"), true).apply()
-                }
-                store.prefs.edit().putBoolean(store.key(profile, "seeded_history"), true).apply()
-            }
-            if (!store.prefs.getBoolean(store.key(profile, "seeded_marks_complete"), false)) {
-            for (media in local.traktMarkedWatchedMedia()) {
-                val marker = store.key(profile, "seeded_mark:${media.type}:${media.id}")
-                if (store.prefs.getBoolean(marker, false)) continue
-                if (TraktMedia.isMovie(media) && imports.any { it.media.id == media.id && TraktMedia.isMovie(it.media) }) {
                     store.prefs.edit().putBoolean(marker, true).apply()
-                    continue
                 }
-                val payload = TraktMedia.payload(media) ?: continue
-                authenticated("/sync/history", profile, payload)
-                store.prefs.edit().putBoolean(marker, true).apply()
-            }
-            store.prefs.edit().putBoolean(store.key(profile, "seeded_marks_complete"), true).apply()
-            }
-            val pendingWatched = synchronized(queueLock) { queue(profile).let { array ->
-                (0 until array.length()).map { array.getJSONObject(it).optString("key") }
-                    .filter { it.startsWith("watched:") }.map { it.removePrefix("watched:") }.toSet()
-            } }
-            local.mergeTraktHistory(imports, pendingWatched)
-            val seededMarks = store.prefs.edit()
-            imports.filter { TraktMedia.isMovie(it.media) }.forEach {
-                seededMarks.putBoolean(store.key(profile, "seeded_mark:${it.media.type}:${it.media.id}"), true)
-            }
-            seededMarks.apply()
-            val playback = fetchPages("/sync/playback?extended=full", profile).mapNotNull { row ->
-                val media = TraktMedia.unwrap(row, known) ?: return@mapNotNull null
-                val episode = row.optJSONObject("episode")
-                val season = episode?.optInt("season")
-                val number = episode?.optInt("number")
-                val duration = (media.runtimeMinutes ?: if (TraktMedia.isMovie(media)) 120 else 45) * 60_000L
-                val progress = row.optDouble("progress", 0.0).takeIf { it.isFinite() }?.coerceIn(0.0, 100.0) ?: 0.0
-                LibraryPlaybackEntry(media, if (episode == null) media.id else "${media.id}:$season:$number",
-                    episodeTitle = episode?.optString("title"), season = season, episode = number,
-                    positionMs = (duration * progress / 100.0).toLong(), durationMs = duration,
-                    lastWatchedEpochMs = epoch(row.optString("paused_at")))
-            }
-            local.mergeTraktPlayback(playback)
-            for (type in listOf("movies", "shows")) {
-                val ratings = fetchPages("/sync/ratings/$type?extended=full", profile)
-                val editor = store.prefs.edit()
-                val pendingRatings = synchronized(queueLock) { queue(profile).let { array ->
-                    (0 until array.length()).map { array.getJSONObject(it).optString("key") }.toSet()
-                } }
-                val prefix = store.key(profile, "rating:")
-                val currentType = if (type == "movies") "movie" else "series"
-                store.prefs.all.keys.filter { it.startsWith("$prefix$currentType:") }.forEach { key ->
-                    if (key.removePrefix("profile:$profile:") !in pendingRatings) editor.remove(key)
+                store.prefs.edit().putBoolean(store.key(profile, "seeded_marks_complete"), true).apply()
                 }
-                ratings.forEach { row -> TraktMedia.unwrap(row, known)?.let { media ->
-                    if ("rating:${media.type}:${media.id}" !in pendingRatings)
-                        editor.putInt(store.key(profile, "rating:${media.type}:${media.id}"), row.optInt("rating"))
+                val pendingWatched = synchronized(queueLock) { queue(profile).let { array ->
+                    (0 until array.length()).map { array.getJSONObject(it).optString("key") }
+                        .filter { it.startsWith("watched:") }.map { it.removePrefix("watched:") }.toSet()
                 } }
-                editor.apply()
+                if (enabled("sync_history", profile)) local.mergeTraktHistory(imports, pendingWatched)
+                val seededMarks = store.prefs.edit()
+                imports.filter { TraktMedia.isMovie(it.media) }.forEach {
+                    seededMarks.putBoolean(store.key(profile, "seeded_mark:${it.media.type}:${it.media.id}"), true)
+                }
+                seededMarks.apply()
+            }
+            if (enabled("sync_playback", profile)) {
+                val playback = fetchPages("/sync/playback?extended=full", profile).mapNotNull { row ->
+                    val media = TraktMedia.unwrap(row, known) ?: return@mapNotNull null
+                    val episode = row.optJSONObject("episode")
+                    val season = episode?.optInt("season")
+                    val number = episode?.optInt("number")
+                    val duration = (media.runtimeMinutes ?: if (TraktMedia.isMovie(media)) 120 else 45) * 60_000L
+                    val progress = row.optDouble("progress", 0.0).takeIf { it.isFinite() }?.coerceIn(0.0, 100.0) ?: 0.0
+                    LibraryPlaybackEntry(media, if (episode == null) media.id else "${media.id}:$season:$number",
+                        episodeTitle = episode?.optString("title"), season = season, episode = number,
+                        positionMs = (duration * progress / 100.0).toLong(), durationMs = duration,
+                        lastWatchedEpochMs = epoch(row.optString("paused_at")))
+                }
+                if (enabled("sync_playback", profile)) local.mergeTraktPlayback(playback)
             }
             if (username(profile).isBlank()) {
                 val user = JSONObject(authenticated("/users/settings", profile).body).optJSONObject("user")
@@ -472,7 +507,7 @@ class TraktService private constructor(private val context: Context) {
         }
     }
     internal fun sendScrobble(profile: String, media: MediaItem, season: Int?, episode: Int?, action: String, progress: Double) {
-        if (!connected(profile) || !store.enabled(profile, "scrobble") || !store.enabled(profile, "verified_session", false)) return
+        if (!connected(profile) || !enabled("scrobble", profile) || !store.enabled(profile, "verified_session", false)) return
         if (scrobbleEvents.trySend(ScrobbleEvent(generations[profile] ?: 0L, profile, media, season, episode, action, progress)).isFailure)
             status(profile, "Trakt is busy. Scrobble event could not be queued.")
     }
@@ -480,7 +515,7 @@ class TraktService private constructor(private val context: Context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?): Boolean = size > 100
     }
     private suspend fun performScrobble(profile: String, media: MediaItem, season: Int?, episode: Int?, action: String, progress: Double) {
-        if (!connected(profile) || !store.enabled(profile, "scrobble") || !store.enabled(profile, "verified_session", false)) return
+        if (!connected(profile) || !enabled("scrobble", profile) || !store.enabled(profile, "verified_session", false)) return
         run {
             try {
                 val item = if (TraktMedia.isMovie(media)) JSONObject().put("movie", JSONObject().put("ids", TraktMedia.ids(media) ?: return@run))

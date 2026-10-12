@@ -69,7 +69,7 @@ internal fun TvPersonalizationSettings(
     var showMatch by remember(profile.id) { mutableStateOf(dna.showDnaMatchEnabled(profile.id)) }
     var recommendations by remember(profile.id) { mutableStateOf(dna.personalizedRecommendationsEnabled(profile.id)) }
     val entries = listOf(
-        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and My List.", dnaEnabled) {
+        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and Favorites.", dnaEnabled) {
             dnaEnabled = it
             dna.setUserDnaEnabled(profile.id, it)
         }.copy(section = "USER DNA"),

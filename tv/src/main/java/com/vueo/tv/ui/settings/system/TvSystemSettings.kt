@@ -154,7 +154,7 @@ internal fun TvDataStorageSettings(
         }, section = "BACKUP & RESTORE"))
         add(TvSettingsEntry("clear-cache", "Catalog & Source Cache", "Clear catalog and source-discovery caches; configuration is preserved.", "Clear", onActivate = { confirmAction = "cache" }, section = "LOCAL DATA", icon = Icons.Default.SettingsInputComponent))
         add(TvSettingsEntry("clear-continue", "Continue Watching", "Remove unfinished playback entries for the active profile only.", "Clear", onActivate = { confirmAction = "continue" }, section = "LOCAL DATA"))
-        add(TvSettingsEntry("clear-history", "Watch History", "Clear playback history for the active profile without changing My List.", "Clear", onActivate = { confirmAction = "history" }, section = "LOCAL DATA"))
+        add(TvSettingsEntry("clear-history", "Watch History", "Clear playback history for the active profile without changing Favorites.", "Clear", onActivate = { confirmAction = "history" }, section = "LOCAL DATA"))
         add(TvSettingsEntry("reset", "Reset VUEO Data", "Return local configuration and Library data to a fresh state without uninstalling the APK.", "Reset", onActivate = { confirmAction = "reset" }, section = "RESET"))
         status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }

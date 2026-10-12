@@ -77,7 +77,7 @@ private const val LIBRARY_GRID_GAP_DP = 16f
 /**
  * TV-only ephemeral focus/scroll memory.
  *
- * This deliberately stores no library data. My List continues to come from the
+ * This deliberately stores no library data. Favorites continues to come from the
  * shared LibraryStore used by Mobile. The memory only lets the manual TV route
  * switch return to the same Library item after Detail without creating another
  * source of truth.
@@ -101,7 +101,7 @@ fun TvLibraryScreen(
     onResume: (LibraryPlaybackEntry) -> Unit,
     onBack: () -> Unit,
 ) {
-    // Mobile parity: Library's visible content is My List. Continue Watching
+    // Mobile parity: Library's visible content is Favorites. Continue Watching
     // and History remain shared LibraryStore data, but they are not Library UI
     // sections here.
     var libraryRevision by remember { mutableStateOf(0) }
@@ -324,7 +324,7 @@ fun TvLibraryScreen(
                     ) {
                         LibraryEmptyState(
                             title = "Your library is empty",
-                            body = "Titles added to My List will appear here.",
+                            body = "Titles added to Favorites will appear here.",
                         )
                     }
                 }
@@ -425,7 +425,7 @@ fun TvLibraryScreen(
     }
 
     // `onResume` stays in the existing route contract for compatibility.
-    // Library now exposes the local My List directly; the unused Cloud selector
+    // Library now exposes the local Favorites directly; the unused Cloud selector
     // has been removed from both TV and Mobile.
 }
 

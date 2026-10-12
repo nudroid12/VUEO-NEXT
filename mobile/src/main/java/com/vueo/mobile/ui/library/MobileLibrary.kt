@@ -374,7 +374,7 @@ internal fun LibraryScreen(
                         title =
                             "Your library is empty",
                         body =
-                            "Titles added to My List will appear here.",
+                            "Titles added to Favorites will appear here.",
                     )
                 }
             }
@@ -728,7 +728,7 @@ private fun LibraryPosterCard(
             Icon(
                 Icons.Default.Delete,
                 contentDescription =
-                    "Remove from My List",
+                    "Remove from Favorites",
                 modifier =
                     Modifier.size(16.dp),
             )

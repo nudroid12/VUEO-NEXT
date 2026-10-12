@@ -134,7 +134,7 @@ fun TvUserDnaScreen(
             DnaAffinityCard(
                 modifier = Modifier.weight(1.05f),
                 title = "Top Genres",
-                subtitle = "What your recent watching and My List say about your taste.",
+                subtitle = "What your recent watching and Favorites say about your taste.",
                 affinities = snapshot.topGenres.take(5),
                 emptyText = if (snapshot.readiness == UserDnaReadiness.STARTING) {
                     "Your DNA is just getting started. Keep watching to build your taste profile."
@@ -152,7 +152,7 @@ fun TvUserDnaScreen(
         DnaViewingCard(modifier = Modifier.fillMaxWidth(), snapshot = snapshot)
 
         Text(
-            text = "Your DNA is calculated locally from this profile's History and My List. Nothing is sent to a server or AI API.",
+            text = "Your DNA is calculated locally from this profile's History and Favorites. Nothing is sent to a server or AI API.",
             color = TvDesign.Muted,
             fontSize = 12.sp,
         )
@@ -444,7 +444,7 @@ private fun DnaViewingCard(
         Text("Viewing Signals", color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DnaStat(Modifier.weight(1f), "Watched titles", behavior.watchedTitles.toString())
-            DnaStat(Modifier.weight(1f), "My List", behavior.myListTitles.toString())
+            DnaStat(Modifier.weight(1f), "Favorites", behavior.myListTitles.toString())
             DnaStat(Modifier.weight(1f), "Completion", "${behavior.completionRatePercent}%")
             DnaStat(Modifier.weight(1f), "Taste titles", behavior.uniqueTitles.toString())
             DnaStat(Modifier.weight(1f), "History entries", behavior.historyEntries.toString())
