@@ -18,7 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun VueoSyncSettingsScreen(onBack: () -> Unit) {
+internal fun VueoSyncSettingsScreen(onBack: () -> Unit, returnHint: String? = null) {
     val context=LocalContext.current
     val service=remember { VueoSyncService.get(context) }
     val status by service.state.collectAsState()
@@ -29,6 +29,7 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit) {
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    LaunchedEffect(returnHint) { if (returnHint != null) message = returnHint }
     var confirmSignOut by remember { mutableStateOf(false) }
     fun action(block: suspend ()->String) {
         if(busy) return
@@ -40,14 +41,14 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit) {
             finally { password=""; busy=false }
         }
     }
-    VueoSettingsPage("VUEO Sync","Use the same VUEO account on mobile and TV.",onBack) {
+    VueoSettingsPage("Account","Use the same VUEO account on mobile and TV.",onBack) {
         item("account") { VueoStatusCard("Account",if(connected) "Connected" else "Not connected",
             if(connected) service.email() else "Sign in, then choose what to sync.") }
-        item("status") { Text(message.ifBlank { status },color=VueoPalette.Muted,modifier=Modifier.padding(8.dp)) }
+        item("status") { Text(if(message.isBlank() || message==status) status else "$message\n$status",color=VueoPalette.Muted,modifier=Modifier.padding(8.dp)) }
         if(!connected) item("login") {
             Column(Modifier.fillMaxWidth().padding(8.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,enabled=!busy,modifier=Modifier.fillMaxWidth())
-                OutlinedTextField(password,{password=it},label={Text("Password")},singleLine=true,enabled=!busy,
+                OutlinedTextField(email,{email=it; message=""},label={Text("Email")},singleLine=true,enabled=!busy,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(password,{password=it; message=""},label={Text("Password")},singleLine=true,enabled=!busy,
                     visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
                 Button({action { service.signIn(email,password) }},enabled=!busy && email.isNotBlank() && password.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("Sign in") }
                 OutlinedButton({action { service.signIn(email,password,register=true) }},enabled=!busy && email.isNotBlank() && password.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("Create account") }
@@ -58,6 +59,7 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit) {
                 VueoSettingsToggleCard(title=label,subtitle=when(kind) {
                     "profiles" -> "Profile names, avatars and order. Required by other sync options."
                     "trakt" -> "Share this profile's Trakt account and its chosen options across devices."
+                    "addons" -> "Sync installed addons and providers. ON/OFF and catalog settings stay on this device."
                     "integrations" -> "Share API keys and metadata/rating settings."
                     else -> "Keep $label in sync between your devices."
                 },checked=remember(revision){service.enabled(kind)},onCheckedChange={service.setEnabled(kind,it)})
@@ -70,6 +72,6 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        item("local") { VueoCompactInfo("Stays on this device","Subtitle, audio, player preferences, layout, cache, downloads and diagnostics. Sync options start off.") }
+        item("local") { VueoCompactInfo("Stays on this device","Addon/provider ON/OFF, catalogs, subtitle, audio, player preferences, layout, cache, downloads and diagnostics. Sync options start off.") }
     }
 }

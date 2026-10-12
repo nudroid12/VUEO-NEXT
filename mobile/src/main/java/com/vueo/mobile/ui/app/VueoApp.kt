@@ -353,6 +353,8 @@ internal enum class SearchMode(
 
 @Composable
 fun VueoApp(
+    pendingAccountReturn: String? = null,
+    onPendingAccountReturnConsumed: () -> Unit = {},
     pendingAddonManifestUrl: String? = null,
     onPendingAddonManifestConsumed: () -> Unit = {},
 ) {
@@ -408,6 +410,7 @@ fun VueoApp(
 
     var selectedTab by remember { mutableStateOf(AppTab.HOME) }
     var settingsPage by remember { mutableStateOf(SettingsPage.ROOT) }
+    var accountReturnHint by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember {
         mutableStateOf("")
     }
@@ -495,6 +498,20 @@ fun VueoApp(
                 }
                 contentVersion++
             }
+        }
+    }
+
+    LaunchedEffect(pendingAccountReturn, booting, startupDestinationResolved, showProfilePicker) {
+        if (pendingAccountReturn != null && !booting && startupDestinationResolved && !showProfilePicker) {
+            selectedMedia = null
+            selectedEntityTarget = null
+            selectedCatalogRow = null
+            selectedLibraryEntry = null
+            mediaBackStack = emptyList()
+            selectedTab = AppTab.SETTINGS
+            settingsPage = SettingsPage.VUEO_SYNC
+            accountReturnHint = pendingAccountReturn
+            onPendingAccountReturnConsumed()
         }
     }
 
@@ -1103,7 +1120,7 @@ fun VueoApp(
                             },
                         )
 
-                    SettingsPage.VUEO_SYNC -> VueoSyncSettingsScreen(onBack = { settingsPage = SettingsPage.ROOT })
+                    SettingsPage.VUEO_SYNC -> VueoSyncSettingsScreen(onBack = { settingsPage = SettingsPage.ROOT }, returnHint = accountReturnHint)
 
                     SettingsPage.CONTENT_MANAGER ->
                         ContentManagerScreen(

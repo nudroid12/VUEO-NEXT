@@ -33,7 +33,7 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
     val entries=buildList {
         add(TvSettingsEntry("status","Account",if(connected) service.email() else "Sign in to the same account used on mobile.",
             if(connected) "Connected" else "Not connected",section="ACCOUNT"))
-        add(TvSettingsEntry("message","Sync Status",message.ifBlank { status }))
+        add(TvSettingsEntry("message","Sync Status",if(message.isBlank() || message==status) status else "$message\n$status"))
         if(!connected) {
             add(TvSettingsEntry("email","Email","Your VUEO account email.",email,enabled=!busy,onActivate={edit="email"}))
             add(TvSettingsEntry("password","Password","Your VUEO account password.",if(password.isBlank()) "Not set" else "••••••••",enabled=!busy,onActivate={edit="password"}))
@@ -47,6 +47,7 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
                 add(TvSettingsEntry("sync-$kind",label,when(kind) {
                     "profiles" -> "Names, avatars and order. Required by other sync options."
                     "trakt" -> "Share Trakt connection and selected account options."
+                    "addons" -> "Sync installed addons and providers. ON/OFF and catalog settings stay on this device."
                     "integrations" -> "Share API keys and metadata/rating settings."
                     else -> "Keep $label in sync between devices."
                 },value=if(on) "On" else "Off",switchChecked=on,enabled=!busy,
@@ -59,8 +60,8 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
             if(confirmSignOut) add(TvSettingsEntry("cancel-sign-out","Cancel","Stay connected.",onActivate={confirmSignOut=false}))
         }
     }
-    TvSettingsListScreen("VUEO Sync","One account for mobile and TV.",entries,onNavigate,onProfile,onBack,
-        footer="Subtitle, audio, player preferences, layout, cache, downloads and diagnostics stay local. Sync options start off.")
+    TvSettingsListScreen("Account","One account for mobile and TV.",entries,onNavigate,onProfile,onBack,
+        footer="Addon/provider ON/OFF, catalogs, subtitle, audio, player preferences, layout, cache, downloads and diagnostics stay local. Sync options start off.")
     edit?.let { field -> TvTextEntryDialog(title=if(field=="email") "Email" else "Password",initialValue=if(field=="email") email else password,
         secret=field=="password",onDismiss={edit=null},onSave={if(field=="email") email=it else password=it; edit=null}) }
 }

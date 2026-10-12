@@ -88,7 +88,7 @@ class VueoSyncService private constructor(private val context: Context) {
     fun connected()=session!=null
     fun email()=session?.optJSONObject("user")?.optString("email").orEmpty()
     private fun uid()=session?.optJSONObject("user")?.optString("id").orEmpty()
-    fun enabled(kind: String)=options.getBoolean("enabled:$kind",false)
+    fun enabled(kind: String)=kind in categories && options.getBoolean("enabled:$kind",false)
     fun setPlayerActive(active: Boolean) {
         playerActive=active
         if(!active) { pauseUntil=android.os.SystemClock.elapsedRealtime()+3_000; requestSync(3_000) }
@@ -150,7 +150,7 @@ class VueoSyncService private constructor(private val context: Context) {
             check(ready) { "Sync is starting. Try again." }
             check(!connected()) { "Sign out before changing accounts." }
             require(email.trim().contains('@') && password.isNotBlank()) { "Enter your email and password." }
-            val result=SyncHttp.post(if(register) "/auth/v1/signup" else "/auth/v1/token?grant_type=password",
+            val result=SyncHttp.post(if(register) "/auth/v1/signup?redirect_to="+android.net.Uri.encode(VueoSyncConfig.EMAIL_REDIRECT) else "/auth/v1/token?grant_type=password",
                 JSONObject().put("email",email.trim()).put("password",password))
             if (result.optString("access_token").isBlank()) return@withLock "Check your email to confirm the account, then sign in."
             syncGate.withLock {
@@ -209,6 +209,8 @@ class VueoSyncService private constructor(private val context: Context) {
     }
     private fun capture() = synchronized(lock) {
         if (!connected()) return@synchronized
+        baseline.entries.removeAll { !adapter.accepts(it.value) }
+        pending.entries.removeAll { !adapter.accepts(it.value) }
         val current=adapter.snapshot()
         (current.keys+baseline.keys).forEach { k ->
             val now=current[k]; val old=baseline[k]
@@ -254,7 +256,7 @@ class VueoSyncService private constructor(private val context: Context) {
                     val apply=mutableListOf<JSONObject>()
                     for(i in 0 until rows.length()) {
                         val row=rows.getJSONObject(i); val k=row.getString("key")
-                        if(!enabled(row.getString("kind"))) continue
+                        if(!enabled(row.getString("kind")) || !adapter.accepts(row)) continue
                         if(k !in pending && row.getLong("revision")>(revisions[k] ?: 0)) apply+=row
                         // A dirty record keeps its expected revision until CAS resolves it.
                         if(k !in pending) revisions[k]=row.getLong("revision")
@@ -269,7 +271,7 @@ class VueoSyncService private constructor(private val context: Context) {
             repeat(20) {
                 val batch=synchronized(lock) { run {
                     var bytes=0
-                    pending.values.filter { enabled(it.getString("kind")) }.take(50).takeWhile {
+                    pending.values.filter { enabled(it.getString("kind")) && adapter.accepts(it) }.take(50).takeWhile {
                         bytes+=it.toString().toByteArray(Charsets.UTF_8).size; bytes<=1_500_000
                     }.map { JSONObject(it.toString()) }
                 } }

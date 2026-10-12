@@ -40,7 +40,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             val (profile,base) = split(rawKey)
             for (i in 0 until array.length()) {
                 val entry = array.optJSONObject(i) ?: continue
-                add(kind,key(file,profile,base,identity(entry)),JSONObject().put("entry",entry).put("order",i))
+                add(kind,key(file,profile,base,identity(entry)),JSONObject().put("entry",entry).apply { if(file!="vueo_plugins") put("order",i) })
             }
         }
         prefs("vueo_library").all.forEach { (raw,value) ->
@@ -66,20 +66,12 @@ internal class SyncLocalAdapter(private val context: Context) {
                 entries("vueo_plugins",base,"addons",JSONArray(value)) { it.getString("manifestUrl") }
             } else if (base == "tmdb_api_key") {
                 add("integrations",key("vueo_plugins","default",base),typed(value))
-            } else if (base == "plugins_enabled" || base.startsWith("repository_enabled:") || base.startsWith("provider:")) {
-                add("addons",key("vueo_plugins","default",base),typed(value))
             }
         }
-        prefs("vueo_content_manager").all.forEach { (base,value) ->
-            val kind = if (base in setOf("catalog_order","random_catalog_order","disabled_catalog_keys")) "catalogs" else "addons"
-            if (base in setOf("stremio_manifest_urls","disabled_catalog_keys") && value is Set<*>) {
-                value.filterIsInstance<String>().sorted().forEach { item ->
-                    add(kind,key("vueo_content_manager","default",base,item),JSONObject().put("member",item))
-                }
-            } else if (base in setOf("catalog_order","random_catalog_order") || base.startsWith("addon_enabled:")) {
-                add(kind,key("vueo_content_manager","default",base),typed(value))
+        prefs("vueo_content_manager").getStringSet("stremio_manifest_urls",emptySet())
+            .orEmpty().sorted().forEach { item ->
+                add("addons",key("vueo_content_manager","default","stremio_manifest_urls",item),JSONObject().put("member",item))
             }
-        }
         prefs("vueo_settings").all.forEach { (raw,value) ->
             val (profile,base) = split(raw)
             if (base in INTEGRATION_KEYS) add("integrations",key("vueo_settings",profile,base),typed(value))
@@ -90,12 +82,34 @@ internal class SyncLocalAdapter(private val context: Context) {
         }
         return result
     }
+    /** Ignore legacy cloud switches/catalog records, including old pending outbox entries. */
+    fun accepts(row: JSONObject): Boolean = runCatching {
+        val a=JSONArray(row.getString("key"))
+        if(a.length()!=4) return@runCatching false
+        val file=a.getString(0); val base=a.getString(2); val kind=row.getString("kind")
+        when(file) {
+            "vueo_profiles" -> kind=="profiles" && base=="profiles"
+            "vueo_library" -> when(base) {
+                "watchlist" -> kind=="favorites"
+                "continue_watching","dismissed_continue_watching" -> kind=="progress"
+                "history","marked_watched" -> kind=="history"
+                else -> false
+            }
+            "vueo_plugins" -> (base=="repositories_json" && kind=="addons") || (base=="tmdb_api_key" && kind=="integrations")
+            "vueo_content_manager" -> base=="stremio_manifest_urls" && kind=="addons"
+            "vueo_settings" -> kind=="integrations" && base in INTEGRATION_KEYS
+            "vueo_trakt" -> kind=="trakt" && base in TRAKT_KEYS
+            else -> false
+        }
+    }.getOrDefault(false)
+
     /** Merge only changed entities; never replaces the entire local library with a remote snapshot. */
     fun apply(remote: List<JSONObject>, before: Map<String,JSONObject>): Boolean {
         if (remote.isEmpty()) return false
         val current = snapshot().toMutableMap()
         val touched = linkedSetOf<Triple<String,String,String>>()
         remote.forEach { row ->
+            if(!accepts(row)) return@forEach
             val k = row.getString("key")
             // A UI/player write that arrived during the request stays local and enters the next outbox batch.
             if (current[k]?.optJSONObject("value")?.toString() != before[k]?.optJSONObject("value")?.toString()) return@forEach
@@ -122,7 +136,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             when (base) {
                 "profiles" -> Unit // All profiles are reconstructed together below.
                 "watchlist","history","continue_watching","repositories_json" -> {
-                    val sorted = members.sortedBy { it.optInt("order") }
+                    val sorted = if(base=="repositories_json") members else members.sortedBy { it.optInt("order") }
                     editor.putString(raw,JSONArray(sorted.map { it.getJSONObject("entry") }).toString())
                     if (file=="vueo_library") editor.remove(scoped(profile,"home_continue_watching_cache_v1"))
                 }

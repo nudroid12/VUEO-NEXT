@@ -83,7 +83,7 @@ private data class TvSettingsRootDestination(
 )
 
 private val TvSettingsRootDestinations = listOf(
-    TvSettingsRootDestination(TvSettingsPage.VUEO_SYNC, "vueo-sync", "VUEO Sync", "VUEO"),
+    TvSettingsRootDestination(TvSettingsPage.VUEO_SYNC, "vueo-sync", "Account", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager", "VUEO"),
