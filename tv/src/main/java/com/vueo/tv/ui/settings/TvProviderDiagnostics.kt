@@ -128,9 +128,6 @@ internal fun TvProviderDiagnosticDialog(
                     ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
                         DiagnosticLine("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
                     }
-                    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let {
-                        DiagnosticLine("Timeline", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
-                    }
                     if (!providerCodeReady) {
                         DiagnosticLine("Provider code", "Missing or not ready")
                     }
@@ -1060,7 +1057,7 @@ private fun providerLikelyCause(health: ProviderHealthRecord, providerCodeReady:
         health.status == ProviderHealthStatus.NEEDS_SETUP ->
             "Provider configuration is incomplete. Complete required setup before source discovery."
         health.status == ProviderHealthStatus.TIMEOUT ->
-            "Provider execution exceeded the captured timeout. Check Last stage, Pending requests and Timeline for the last observed progress."
+            "Provider execution exceeded the captured timeout. Check Last stage, Pending requests and Raw technical log for the last observed progress."
         health.status == ProviderHealthStatus.UNAVAILABLE ->
             "The captured run could not reach the upstream host. Inspect DNS, connection or host-resolution evidence."
         health.status == ProviderHealthStatus.BLOCKED ->
@@ -1122,10 +1119,6 @@ private fun providerDiagnosticFullLog(
     providerRelevantTimingLabel(health)?.let { appendLine("Timing: $it") }
     ProviderDiagnosticProgress.lastStage(health.logs)?.let { appendLine("Last stage: ${sanitizeDiagnosticText(it)}") }
     ProviderDiagnosticProgress.pending(health.logs).forEach { appendLine("Pending request: ${sanitizeDiagnosticText(it)}") }
-    ProviderDiagnosticProgress.timeline(health.logs).takeIf { it.isNotEmpty() }?.let { timeline ->
-        appendLine("Timeline (recent events)")
-        timeline.forEach { appendLine(sanitizeDiagnosticText(it)) }
-    }
     if (!providerCodeReady) appendLine("Provider code: Missing or not ready")
     health.error?.takeIf { it.isNotBlank() }?.let { appendLine("Error: ${sanitizeDiagnosticText(it)}") }
     appendLine("${ProviderDiagnosticSummary.noteTitle(health, providerCodeReady)}: ${providerLikelyCause(health, providerCodeReady)}")
