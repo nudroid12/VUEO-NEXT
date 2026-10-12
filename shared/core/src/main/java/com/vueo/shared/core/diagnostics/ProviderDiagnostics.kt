@@ -216,10 +216,45 @@ object ProviderDiagnostics {
         run.lastOrNull { "ERROR: " in it.message }?.let { evidence += it.message.substringAfter("ERROR: ").take(220) }
         return evidence.takeIf { it.isNotEmpty() }?.joinToString(" | ")
     }
+    private val serverIssuePattern = Regex(
+        "(?i)(timeout|timed out|failed|error|deleted|expired|unsupported|not found|no (?:playable |validated )?(?:links|streams|sources)|expected IV|invalid|decrypt|NXDOMAIN|HTTP [45][0-9]{2})"
+    )
+    private val pluginTagPattern = Regex("^\\[[^]]+]\\s*")
+    private fun pluginMessage(event: Event): String {
+        val text = when {
+            "LOG: " in event.message -> event.message.substringAfter("LOG: ")
+            "ERROR: " in event.message -> event.message.substringAfter("ERROR: ")
+            "WARN: " in event.message -> event.message.substringAfter("WARN: ")
+            else -> ""
+        }
+        return text.replace(pluginTagPattern, "")
+    }
+
+    private fun serverIssues(run: List<Event>): List<String> = run.mapNotNull { event ->
+        val text = pluginMessage(event)
+        if (text.startsWith("SERVER: ") && serverIssuePattern.containsMatchIn(text)) {
+            text.removePrefix("SERVER: ").take(220)
+        } else null
+    }.distinct()
+
+    private fun issueCategory(issue: String): String = when {
+        Regex("(?i)(timeout|timed out|NXDOMAIN|DNS|HTTP [45][0-9]{2})").containsMatchIn(issue) -> "Network / HTTP"
+        Regex("(?i)(deleted|expired|not found)").containsMatchIn(issue) -> "Upstream availability"
+        Regex("(?i)(IV|decrypt|unsupported|invalid)").containsMatchIn(issue) -> "Extractor / decoding"
+        else -> "Server extraction"
+    }
+
     private fun meaningfulStage(run: List<Event>): String? {
+        run.lastOrNull { pluginMessage(it).startsWith("RESULT: ") }?.let {
+            return "Extraction result: " + pluginMessage(it).removePrefix("RESULT: ").take(180)
+        }
         val stage = run.lastOrNull {
             (" STAGE elapsed=" in it.message &&
-                !it.message.substringAfter("ms ").let { text -> text.startsWith("HTML ") || text.startsWith("Provider finished") || text.startsWith("Parsing provider results") || text.endsWith("completed") }) ||
+                !it.message.substringAfter("ms ").let { text ->
+                    text.startsWith("HTML ") || text.startsWith("Provider finished") ||
+                        text.startsWith("Parsing provider results") || text.endsWith("completed") ||
+                        "cancelled" in text.lowercase(Locale.US)
+                }) ||
                 (it.message.startsWith("DISCOVERY_TRACE ") && field(it.message, "stage") !in setOf("HTTP", "WEBVIEW"))
         } ?: return null
         return if (" STAGE elapsed=" in stage.message) stage.message.substringAfter("ms ").take(180)
@@ -277,13 +312,34 @@ object ProviderDiagnostics {
                 appendLine("Version: provider ${field(it.message, "providerVersion")} • plugin ${field(it.message, "pluginVersion")}")
             }
             run.firstOrNull { " CODE_IDENTITY " in it.message }?.let { appendLine("Code SHA-256: ${field(it.message, "sha256")}") }
+            val issues = serverIssues(run)
+            if (status in setOf("ONLINE", "SLOW") && issues.isNotEmpty()) {
+                appendLine("Outcome: PARTIAL SUCCESS • streams returned with observed server issues")
+            }
             meaningfulStage(run)?.let { appendLine("Last meaningful stage: $it") }
+            run.lastOrNull { pluginMessage(it).startsWith("SERVERS: ") }?.let {
+                appendLine("Server discovery: " + pluginMessage(it).removePrefix("SERVERS: ").take(180))
+            }
+            if (issues.isNotEmpty()) {
+                appendLine("Server issues: ${issues.size} distinct observations (not a count of failed requests or successful servers)")
+                issues.take(8).forEach { appendLine("  • ${issueCategory(it)} • $it") }
+                if (issues.size > 8) appendLine("  • ${issues.size - 8} additional issues; inspect Raw.")
+            }
             val requests = run.filter { it.tab == Tab.REQUESTS }
-            if (requests.isNotEmpty()) appendLine("Requests: ${requests.size} retained • failures: ${requests.count { field(it.message, "status") == "0" || (field(it.message, "status").toIntOrNull() ?: 0) >= 400 || " error=" in it.message }}")
+            val requestStarts = run.filter { " REQUEST_START " in it.message }
+                .map { field(it.message, "requestId") }.filter { it.isNotBlank() }.toSet()
+            val responseIds = requests.map { field(it.message, "requestId") }.filter { it.isNotBlank() }.toSet()
+            val httpFailures = requests.count {
+                field(it.message, "status") == "0" || (field(it.message, "status").toIntOrNull() ?: 0) >= 400 || " error=" in it.message
+            }
+            if (requests.isNotEmpty() || requestStarts.isNotEmpty()) {
+                appendLine("HTTP/WebView response records: ${requests.size} • observed response failures: $httpFailures")
+                if (requestStarts.isNotEmpty()) appendLine("HTTP requests started: ${requestStarts.size} • no retained response: ${(requestStarts - responseIds).size} (may include cancellation or trace limits)")
+            }
             run.lastOrNull { "PARSE: Result selection " in it.message }?.let { appendLine(it.message.substringAfter("PARSE: ")) }
             run.lastOrNull { "PARSE: Result entries=" in it.message }?.let { appendLine(it.message.substringAfter("PARSE: ")) }
             if (status in setOf("FAILED", "TIMEOUT", "NO_RESULTS", "CANCELLED", "UNAVAILABLE", "THREW")) {
-                val reason = failureEvidence(run) ?: when (status) {
+                val reason = failureEvidence(run) ?: issues.takeIf { it.isNotEmpty() }?.joinToString(" | ") ?: when (status) {
                     "NO_RESULTS" -> "No links returned; plugin did not report a specific cause."
                     "TIMEOUT" -> "Provider exceeded its runtime timeout."
                     "CANCELLED" -> "Provider run cancelled."
