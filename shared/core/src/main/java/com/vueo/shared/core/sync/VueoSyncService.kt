@@ -18,8 +18,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.vueo.shared.core.storage.CompactLibraryCodec
 import java.io.IOException
-import java.security.MessageDigest
 import java.util.UUID
 
 /** Local-first account sync. CAS conflicts choose cloud; a new user edit can supersede that revision. */
@@ -45,19 +45,13 @@ class VueoSyncService private constructor(private val context: Context) {
     @Volatile private var lastPullAt=0L
     private var initialCapture=true
     private val dirtyKinds=linkedSetOf<String>()
+    private val dirtyKeys=linkedSetOf<Pair<String,String?>>()
     private val appliedKinds=linkedSetOf<String>()
-    private var lastJournalJson: String?=null
-    private var journalLoaded=false
     private var timer: Job?=null
     private var scheduled: Job?=null
     private var captureJob: Job?=null
-    private var journalFile: SyncSecureFile?=null
-    private var baseline=linkedMapOf<String,JSONObject>()
-    private var revisions=linkedMapOf<String,Long>()
-    private var pending=linkedMapOf<String,JSONObject>()
+    private var repository: SyncEntityRepository?=null
     private var tokenPending=linkedMapOf<String,JSONObject>()
-    private var sequence=0L
-    private var pullCursor="0"
     private val _state=MutableStateFlow("Not connected")
     val state: StateFlow<String> = _state
     private val _revision=MutableStateFlow(0L)
@@ -76,7 +70,7 @@ class VueoSyncService private constructor(private val context: Context) {
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if(ready && connected()) {
                 val relevant=adapter.preferenceCategories(file,key).filter(::enabled).toSet()
-                if(relevant.isNotEmpty()) scheduleCapture(relevant)
+                if(relevant.isNotEmpty()) scheduleCapture(relevant,setOf(file to key))
             }
         }
     }
@@ -94,7 +88,7 @@ class VueoSyncService private constructor(private val context: Context) {
         scope.launch {
             try {
                 val saved=authFile.read()
-                if (saved!=null) { session=saved; loadJournal(saved.getJSONObject("user").getString("id")) }
+                if (saved!=null) { session=saved; loadRepositories(saved.getJSONObject("user").getString("id")) }
                 listeners.forEach { (file,listener) -> context.getSharedPreferences(file,Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(listener) }
                 ready=true
                 _state.value=if (connected()) "Ready to sync" else "Not connected"
@@ -115,21 +109,25 @@ class VueoSyncService private constructor(private val context: Context) {
     fun setEnabled(kind: String,value: Boolean) {
         require(kind in categories)
         if(!ready || !connected()) return
+        val owner=uid()
         val edit=options.edit().putBoolean("enabled:$kind",value)
         if(value && kind!="profiles") edit.putBoolean("enabled:profiles",true)
         if(!value && kind=="profiles") categories.keys.forEach { edit.putBoolean("enabled:$it",false) }
         edit.apply()
         scope.launch {
             syncGate.withLock {
+                if(uid()!=owner || !connected()) return@withLock
                 synchronized(lock) {
-                    if(value && !journalLoaded) loadJournal(uid(),force=true)
-                    pullCursor="0"
-                    pending.entries.removeAll { !enabled(it.value.optString("kind")) || it.value.optString("kind")==kind }
-                    if (!enabled("trakt")) tokenPending.clear()
-                    if (value && connected()) {
-                        adapter.snapshot(setOf(kind,"profiles")).forEach { (k,row) -> enqueue(k,row,false) }
+                    if(value && repository==null) loadRepositories(uid(),force=true)
+                    repository?.transaction {
+                        val enabledKinds=categories.keys.filter(::enabled).toSet()
+                        repository!!.resetCursor(kind)
+                        repository!!.clearPendingExcept(enabledKinds,kind)
+                        if (!enabled("trakt")) { tokenPending.clear(); repository!!.clearTokens() }
+                        if (value && enabled(kind) && connected()) {
+                            adapter.snapshot(setOf(kind,"profiles")).forEach { (_,row) -> repository!!.enqueue(row,false) }
+                        }
                     }
-                    persistJournal()
                 }
             }
             changed(); lastPullAt=0L; restartForegroundSync(); requestSync(pull=true)
@@ -152,25 +150,26 @@ class VueoSyncService private constructor(private val context: Context) {
         }
     }
     private fun changed() { synchronized(_revision) { _revision.value+=1 } }
-    private fun scheduleCapture(kinds: Set<String>) {
+    private fun scheduleCapture(kinds: Set<String>,keys: Set<Pair<String,String?>> = emptySet()) {
         synchronized(scheduleLock) {
             dirtyKinds+=kinds
+            dirtyKeys+=keys
             if(captureJob?.isActive==true) return
             captureJob=scope.launch {
+                var failed=false
                 try {
                     delay(750)
-                    val selected=synchronized(scheduleLock) { dirtyKinds.toSet().also { dirtyKinds.clear() } }
                     val owner=uid()
                     val mutated=syncGate.withLock {
-                        if(owner.isBlank() || uid()!=owner || !hasActiveSync()) false else capture(selected)
+                        if(owner.isBlank() || uid()!=owner || !hasActiveSync()) false else captureDirty()
                     }
                     if(mutated) requestSync(500,pull=false)
                 } catch(cancelled: CancellationException) { throw cancelled }
-                catch(error: Exception) { _state.value=message(error); changed() }
+                catch(error: Exception) { failed=true; _state.value=message(error); changed() }
                 finally {
                     synchronized(scheduleLock) {
                         captureJob=null
-                        if(dirtyKinds.isNotEmpty() && hasActiveSync()) scheduleCapture(emptySet())
+                        if(!failed && dirtyKinds.isNotEmpty() && hasActiveSync()) scheduleCapture(emptySet())
                     }
                 }
             }
@@ -206,7 +205,7 @@ class VueoSyncService private constructor(private val context: Context) {
             if (result.optString("access_token").isBlank()) return@withLock "Check your email to confirm the account, then sign in."
             syncGate.withLock {
                 val user=result.getJSONObject("user").getString("id")
-                loadJournal(user)
+                loadRepositories(user)
                 if(options.getString("owner",null)!=user) {
                     val edit=options.edit().putString("owner",user)
                     categories.keys.forEach { edit.putBoolean("enabled:$it",false) }; edit.commit()
@@ -225,71 +224,56 @@ class VueoSyncService private constructor(private val context: Context) {
             syncGate.withLock {
                 tokenGate.withLock {
                     session=null; authFile.delete(); timer?.cancel(); timer=null
-                    synchronized(scheduleLock) { dirtyKinds.clear(); requestedPull=false }
-                    synchronized(lock) { pending.clear(); tokenPending.clear(); baseline.clear(); revisions.clear(); journalFile=null }
+                    synchronized(scheduleLock) { dirtyKinds.clear(); dirtyKeys.clear(); requestedPull=false }
+                    synchronized(lock) { tokenPending.clear(); repository?.close(); repository=null }
                 }
             }
             _state.value="Signed out. Local data stays on this device."; changed()
         }
     }
-    private fun loadJournal(user: String,force: Boolean=false) {
-        val hash=MessageDigest.getInstance("SHA-256").digest(user.toByteArray()).joinToString("") { "%02x".format(it) }
-        journalFile=SyncSecureFile(context,hash)
-        journalLoaded=false
-        if(!force && categories.keys.none(::enabled)) {
-            baseline.clear(); revisions.clear(); pending.clear(); tokenPending.clear()
-            lastJournalJson=null; initialCapture=true; lastPullAt=0L
-            return
+    private fun loadRepositories(user: String,force: Boolean=false) {
+        repository?.close(); repository=null; tokenPending.clear()
+        initialCapture=true; lastPullAt=0L
+        if(!force && categories.keys.none(::enabled)) return
+        val opened=SyncEntityRepository(context,user)
+        try {
+            opened.migrateLegacy(context,adapter::accepts)
+            tokenPending=opened.tokens()
+            repository=opened
+        } catch(error: Exception) { opened.close(); throw error }
+    }
+    private fun captureDirty(all: Set<String>?=null): Boolean {
+        val work=synchronized(scheduleLock) {
+            (dirtyKinds.toSet() to dirtyKeys.toSet()).also { dirtyKinds.clear(); dirtyKeys.clear() }
         }
-        val saved=journalFile!!.read()
-        journalLoaded=true
-        lastJournalJson=saved?.toString(); initialCapture=true; lastPullAt=0L
-        baseline=linkedMapOf(); revisions=linkedMapOf(); pending=linkedMapOf(); tokenPending=linkedMapOf(); pullCursor="0"; sequence=0
-        if(saved!=null) {
-            fun readMap(name: String): LinkedHashMap<String,JSONObject> {
-                val obj=saved.optJSONObject(name) ?: JSONObject()
-                return obj.keys().asSequence().associateWith { obj.getJSONObject(it) }.toMap(linkedMapOf())
-            }
-            baseline=readMap("baseline"); pending=readMap("pending"); tokenPending=readMap("tokens")
-            val rev=saved.optJSONObject("revisions") ?: JSONObject()
-            rev.keys().forEach { revisions[it]=rev.getLong(it) }
-            sequence=saved.optLong("sequence"); pullCursor=saved.optString("cursor","0")
+        try { return if(all!=null) capture(all) else capture(work.first,work.second.takeIf { it.isNotEmpty() }) }
+        catch(error: Exception) {
+            synchronized(scheduleLock) { dirtyKinds+=work.first; dirtyKeys+=work.second }
+            throw error
         }
     }
-    private fun persistJournal() {
-        if(session==null || !journalLoaded) return
-        val value=JSONObject().put("baseline",JSONObject(baseline as Map<*,*>))
-            .put("pending",JSONObject(pending as Map<*,*>)).put("tokens",JSONObject(tokenPending as Map<*,*>))
-            .put("revisions",JSONObject(revisions as Map<*,*>)).put("sequence",sequence).put("cursor",pullCursor)
-        val json=value.toString()
-        if(json==lastJournalJson) return
-        journalFile?.write(value)
-        lastJournalJson=json
-    }
-    private fun enqueue(key: String,row: JSONObject,deleted: Boolean) {
-        sequence+=1
-        pending[key]=JSONObject(row.toString()).put("deleted",deleted)
-            .put("revision",revisions[key] ?: 0L).put("generation",sequence)
-    }
-    private fun capture(kinds: Set<String> = categories.keys.filter(::enabled).toSet()): Boolean = synchronized(lock) {
+    private fun capture(kinds: Set<String> = categories.keys.filter(::enabled).toSet(),scopes: Set<Pair<String,String?>>?=null): Boolean = synchronized(lock) {
         if(!connected()) return@synchronized false
         val selected=kinds.filter(::enabled).toSet()
         if(selected.isEmpty()) return@synchronized false
-        val trimmed=baseline.entries.removeAll { !adapter.accepts(it.value) }
-        val dropped=pending.entries.removeAll { !adapter.accepts(it.value) || !enabled(it.value.optString("kind")) }
-        val current=adapter.snapshot(selected)
-        val oldKeys=baseline.filterValues { it.optString("kind") in selected }.keys
-        var mutated=false
-        (current.keys+oldKeys).forEach { k ->
-            val now=current[k]; val old=baseline[k]
-            if(now?.optJSONObject("value")?.toString()!=old?.optJSONObject("value")?.toString()) {
-                enqueue(k,now ?: old!!,now==null)
-                if(now==null) baseline.remove(k) else baseline[k]=now
-                mutated=true
+        if(repository==null) loadRepositories(uid(),force=true)
+        val store=repository!!
+        val current=adapter.snapshot(selected,scopes)
+        store.transaction {
+            store.clearPendingExcept(categories.keys.filter(::enabled).toSet())
+            val known=store.states(selected).filterKeys { scopes==null || adapter.matchesScope(it,scopes) }
+            var mutated=false
+            (current.keys+known.filterValues { it.fingerprint!=null }.keys).forEach { key ->
+                val now=current[key]; val old=known[key]
+                val hash=syncFingerprint(now?.optJSONObject("value"))
+                if(hash!=old?.fingerprint) {
+                    val row=now ?: JSONObject().put("kind",old!!.kind).put("key",key).put("value",JSONObject())
+                    store.enqueue(row,now==null)
+                    mutated=true
+                }
             }
+            mutated
         }
-        if(mutated || trimmed || dropped) persistJournal()
-        mutated
     }
     private suspend fun bearer(): String = tokenGate.withLock {
         val current=session ?: throw IOException("Sign in to VUEO first.")
@@ -305,7 +289,7 @@ class VueoSyncService private constructor(private val context: Context) {
         check(user.isNotBlank() && uid()==user) { "VUEO account changed." }
         val token=bearer()
         check(uid()==user) { "VUEO account changed." }
-        val result=SyncHttp.post("/rest/v1/rpc/$name",body,token)
+        val result=SyncHttp.post("/rest/v1/rpc/$name",body,token,compact=name=="vueo_sync_exchange")
         check(uid()==user) { "VUEO account changed." }
         return result
     }
@@ -314,74 +298,77 @@ class VueoSyncService private constructor(private val context: Context) {
         syncGate.withLock {
             appliedKinds.clear()
             try {
-            if(!ready || !connected()) return@withLock
-            val user=uid(); val kinds=categories.keys.filter(::enabled)
-            if(kinds.isEmpty()) { _state.value="Connected. All sync options are off."; changed(); return@withLock }
-            if(!journalLoaded) loadJournal(user,force=true)
-            val selected=synchronized(scheduleLock) { dirtyKinds.toSet().also { dirtyKinds.clear() } }
-            capture(if(captureAll || initialCapture) kinds.toSet() else selected)
-            initialCapture=false
-            val hasPending=synchronized(lock) { pending.values.any { enabled(it.getString("kind")) } || (enabled("trakt") && tokenPending.isNotEmpty()) }
-            if(!pull && !hasPending) { _state.value="Synced"; changed(); return@withLock }
-            _state.value="Syncing…"; changed()
-            if(playerActive || android.os.SystemClock.elapsedRealtime()<pauseUntil) { _state.value="Playback active. Changes saved locally; sync resumes on exit."; changed(); return@withLock }
-            if(pull) {
-            var cursor=pullCursor
-            do {
-                val before=synchronized(lock) { baseline.filterValues { it.optString("kind") in kinds }.toMap() }
-                val reply=rpc("vueo_sync_exchange",JSONObject().put("p_kinds",JSONArray(kinds)).put("p_after",cursor).put("p_limit",100),user)
-                val rows=reply.getJSONArray("rows")
-                synchronized(lock) {
-                    val apply=mutableListOf<JSONObject>()
-                    for(i in 0 until rows.length()) {
-                        val row=rows.getJSONObject(i); val k=row.getString("key")
-                        if(!enabled(row.getString("kind")) || !adapter.accepts(row)) continue
-                        if(k !in pending && row.getLong("revision")>(revisions[k] ?: 0)) apply+=row
-                        // A dirty record keeps its expected revision until CAS resolves it.
-                        if(k !in pending) revisions[k]=row.getLong("revision")
+                if(!ready || !connected()) return@withLock
+                val user=uid(); val kinds=categories.keys.filter(::enabled).toSet()
+                if(kinds.isEmpty()) { _state.value="Connected. All sync options are off."; changed(); return@withLock }
+                if(repository==null) loadRepositories(user,force=true)
+                val store=repository!!
+                captureDirty(if(captureAll || initialCapture) kinds else null)
+                initialCapture=false
+                if(!pull && !store.hasPending(kinds) && (!enabled("trakt") || tokenPending.isEmpty())) return@withLock
+                if(playerActive || android.os.SystemClock.elapsedRealtime()<pauseUntil) {
+                    _state.value="Playback active. Changes saved locally; sync resumes on exit."; changed(); return@withLock
+                }
+                _state.value="Syncing…"; changed()
+                // Each category owns its delta cursor and outbox, as in Nuvio's category repositories.
+                if(pull) {
+                    for(kind in kinds) {
+                        var cursor=store.cursor(kind)
+                        do {
+                            if(!enabled(kind)) break
+                            val before=linkedMapOf<String,String?>()
+                            val reply=rpc("vueo_sync_exchange",JSONObject().put("p_kinds",JSONArray(listOf(kind)))
+                                .put("p_after",cursor).put("p_limit",25),user)
+                            val rows=reply.getJSONArray("rows")
+                            if(rows.length()>0) store.transaction {
+                                val apply=mutableListOf<JSONObject>()
+                                for(i in 0 until rows.length()) {
+                                    val row=CompactLibraryCodec.compactRecord(rows.getJSONObject(i))
+                                    if(!enabled(kind) || row.optString("kind")!=kind || !adapter.accepts(row)) continue
+                                    val key=row.getString("key"); val state=store.state(key)
+                                    before[key]=state?.fingerprint
+                                    if(state?.queued==true) continue
+                                    if(row.getLong("revision")>(state?.revision ?: 0L)) {
+                                        apply+=row
+                                        store.observe(key,kind,state?.fingerprint,row.getLong("revision"))
+                                    }
+                                }
+                                applyRemote(apply,before,setOf(kind))
+                                store.setCursor(kind,reply.optString("cursor",store.cursor(kind)))
+                            }
+                            cursor=reply.optString("next")
+                        } while(cursor.isNotBlank())
                     }
-                    if(rows.length()>0) {
-                        applyRemote(apply,before,apply.map { it.getString("kind") }.toSet())
-                        pullCursor=reply.optString("cursor",pullCursor)
-                        persistJournal()
+                    lastPullAt=android.os.SystemClock.elapsedRealtime()
+                }
+                var batches=0
+                for(kind in kinds) {
+                    while(enabled(kind) && batches<20) {
+                        val batch=store.pendingBatch(kind)
+                        if(batch.isEmpty()) break
+                        val before=batch.associate { it.getString("key") to store.state(it.getString("key"))?.fingerprint }
+                        val reply=rpc("vueo_sync_exchange",JSONObject().put("p_changes",JSONArray(batch)),user)
+                        store.transaction {
+                            val apply=mutableListOf<JSONObject>(); val acks=reply.getJSONArray("acks")
+                            for(i in 0 until acks.length()) {
+                                val ack=CompactLibraryCodec.compactRecord(acks.getJSONObject(i))
+                                val sent=batch.firstOrNull { it.getString("key")==ack.getString("key") } ?: continue
+                                if(store.acknowledge(ack,sent) && !ack.optBoolean("accepted")) apply+=ack
+                            }
+                            if(enabled(kind)) applyRemote(apply,before,setOf(kind))
+                        }
+                        batches+=1
                     }
                 }
-                cursor=reply.optString("next")
-            } while(cursor.isNotBlank())
-            lastPullAt=android.os.SystemClock.elapsedRealtime()
-            }
-            // A bounded batch count prevents a constantly-playing device monopolizing IO.
-            repeat(20) {
-                val batch=synchronized(lock) { run {
-                    var bytes=0
-                    pending.values.filter { enabled(it.getString("kind")) && adapter.accepts(it) }.take(50).takeWhile {
-                        bytes+=it.toString().toByteArray(Charsets.UTF_8).size; bytes<=1_500_000
-                    }.map { JSONObject(it.toString()) }
-                } }
-                if(batch.isEmpty()) return@repeat
-                val batchKinds=batch.map { it.getString("kind") }.toSet()
-                val before=synchronized(lock) { baseline.filterValues { it.optString("kind") in batchKinds }.toMap() }
-                val reply=rpc("vueo_sync_exchange",JSONObject().put("p_changes",JSONArray(batch)),user)
-                synchronized(lock) {
-                    val apply=mutableListOf<JSONObject>(); val acks=reply.getJSONArray("acks")
-                    for(i in 0 until acks.length()) {
-                        val ack=acks.getJSONObject(i); val k=ack.getString("key")
-                        revisions[k]=ack.getLong("revision")
-                        val sent=batch.first { it.getString("key")==k }; val queued=pending[k]
-                        if(queued?.optLong("generation")==sent.optLong("generation")) {
-                            pending.remove(k)
-                            if(!ack.optBoolean("accepted")) apply+=ack
-                        } else queued?.put("revision",ack.getLong("revision"))
+                if(enabled("trakt")) {
+                    for(profile in ProfileStore(context).profiles().map { it.id }) {
+                        if(pull || synchronized(lock) { profile in tokenPending }) reconcileTrakt(profile,user)
                     }
-                    applyRemote(apply,before,batchKinds); persistJournal()
                 }
-            }
-            if(enabled("trakt")) {
-                val profileIds=ProfileStore(context).profiles().map { it.id }
-                for(profile in profileIds) if(pull || synchronized(lock) { profile in tokenPending }) reconcileTrakt(profile,user)
-            }
-            _state.value=if(synchronized(lock){pending.isEmpty() && tokenPending.isEmpty()}) "Synced" else "Changes saved locally. More sync pending."
-            changed()
+                val more=store.hasPending(kinds) || (enabled("trakt") && tokenPending.isNotEmpty())
+                _state.value=if(more) "Changes saved locally. More sync pending." else "Synced"
+                changed()
+                if(more) requestSync(1_000,pull=false)
             } finally {
                 if(appliedKinds.any { it in setOf("favorites","history","progress") }) _dataRevision.value+=1
                 if("profiles" in appliedKinds) _profileRevision.value+=1
@@ -392,24 +379,22 @@ class VueoSyncService private constructor(private val context: Context) {
             }
         }
     }
-    private fun applyRemote(rows: List<JSONObject>,before: Map<String,JSONObject>,selected: Set<String>) {
-        // Accepted outbox acknowledgements need no local reread. Preference listeners capture new edits.
+    private fun applyRemote(rows: List<JSONObject>,before: Map<String,String?>,selected: Set<String>) {
         if(rows.isEmpty()) return
+        val store=repository!!
         appliedKinds+=adapter.apply(rows,before)
-        // Preserve concurrent local edits rather than marking them as remote-applied.
-        if(selected.isEmpty()) return
         val after=adapter.snapshot(selected)
-        val oldKeys=baseline.filterValues { it.optString("kind") in selected }.keys
-        (after.keys+oldKeys).forEach { k ->
-            val now=after[k]; val old=baseline[k]
-            val remote=rows.firstOrNull { it.optString("key")==k }
+        val known=store.states(selected)
+        (after.keys+known.filterValues { it.fingerprint!=null }.keys).forEach { key ->
+            val now=after[key]; val old=known[key]
+            val hash=syncFingerprint(now?.optJSONObject("value"))
+            val remote=rows.firstOrNull { it.optString("key")==key }
             val matches=if(remote?.optBoolean("deleted")==true) now==null else
-                remote!=null && now?.optJSONObject("value")?.toString()==remote.optJSONObject("value")?.toString()
-            if(matches) { if(now==null) baseline.remove(k) else baseline[k]=now }
-            else if(now?.optJSONObject("value")?.toString()!=old?.optJSONObject("value")?.toString()) {
-                val row=now ?: old ?: return@forEach
-                if(enabled(row.getString("kind"))) enqueue(k,row,now==null)
-                if(now==null) baseline.remove(k) else baseline[k]=now
+                remote!=null && hash==syncFingerprint(remote.optJSONObject("value"))
+            if(matches) store.observe(key,remote!!.getString("kind"),hash)
+            else if(hash!=old?.fingerprint) {
+                val row=now ?: JSONObject().put("key",key).put("kind",old!!.kind).put("value",JSONObject())
+                if(enabled(row.getString("kind"))) store.enqueue(row,now==null)
             }
         }
     }
@@ -420,8 +405,9 @@ class VueoSyncService private constructor(private val context: Context) {
             syncGate.withLock {
                 if(uid()!=owner || !enabled("trakt")) return@withLock
                 synchronized(lock) {
+                    if(repository==null) loadRepositories(owner,force=true)
                     tokenPending[profile]=JSONObject().put("delete",tokens==null).put("value",tokens ?: JSONObject.NULL)
-                    persistJournal()
+                    repository!!.saveToken(profile,tokenPending[profile])
                 }
             }
             requestSync(pull=false)
@@ -455,7 +441,7 @@ class VueoSyncService private constructor(private val context: Context) {
                 val remote=result.getJSONObject("value")
                 if(trakt.read(profile)?.toString()!=remote.toString()) { trakt.save(profile,remote,publishCloud=false); changed(); com.vueo.shared.core.trakt.TraktService.get(context).onVueoSessionImported(profile) }
             }
-            synchronized(lock) { if(intent!=null && tokenPending[profile]===intent) { tokenPending.remove(profile); persistJournal() } }
+            synchronized(lock) { if(intent!=null && tokenPending[profile]===intent) { tokenPending.remove(profile); repository!!.saveToken(profile,null) } }
         } catch(error: Exception) {
             try { release(profile,user,lease) } catch (_: Exception) { /* Lease expires on the server. */ }
             throw error

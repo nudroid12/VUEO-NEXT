@@ -3,6 +3,7 @@ package com.vueo.shared.core.sync
 import android.content.Context
 import com.vueo.shared.core.plugin.PluginRuntimeCache
 import com.vueo.shared.core.storage.PlaybackStore
+import com.vueo.shared.core.storage.CompactLibraryCodec
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -51,10 +52,23 @@ internal class SyncLocalAdapter(private val context: Context) {
         return kind?.let { setOf(it) }.orEmpty()
     }
 
-    fun snapshot(kinds: Set<String> = VueoSyncConfig.categories.keys): Map<String,JSONObject> {
+    fun matchesScope(entityKey: String,scopes: Set<Pair<String,String?>>): Boolean {
+        val parts=JSONArray(entityKey)
+        return scopes.any { (file,raw) ->
+            if(parts.getString(0)!=file) false
+            else if(raw==null) true
+            else {
+                val (profile,base)=split(raw)
+                parts.getString(2)==base && (file=="vueo_profiles" || parts.getString(1)==profile)
+            }
+        }
+    }
+
+    fun snapshot(kinds: Set<String> = VueoSyncConfig.categories.keys, scopes: Set<Pair<String,String?>>?=null): Map<String,JSONObject> {
         val result = linkedMapOf<String,JSONObject>()
+        fun wants(file: String,raw: String)=scopes==null || scopes.any { it.first==file && (it.second==null || it.second==raw) }
         fun add(kind: String, k: String, value: JSONObject) { result[k] = record(kind,k,value) }
-        if("profiles" in kinds) {
+        if("profiles" in kinds && wants("vueo_profiles","profiles")) {
         val profiles = JSONArray(prefs("vueo_profiles").getString("profiles","[]"))
         for (i in 0 until profiles.length()) {
             val profile = profiles.getJSONObject(i)
@@ -70,6 +84,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             }
         }
         if(kinds.any { it in setOf("favorites","history","progress") }) prefs("vueo_library").all.forEach { (raw,value) ->
+            if(!wants("vueo_library",raw)) return@forEach
             val (_,base) = split(raw)
             val kind = when (base) {
                 "watchlist" -> "favorites"
@@ -78,7 +93,7 @@ internal class SyncLocalAdapter(private val context: Context) {
                 else -> null
             } ?: return@forEach
             if(kind !in kinds) return@forEach
-            if (value is String) entries("vueo_library",raw,kind,JSONArray(value)) { e ->
+            if (value is String) entries("vueo_library",raw,kind,JSONArray(CompactLibraryCodec.readArray(value))) { e ->
                 val m = e.getJSONObject("media")
                 m.getString("type")+":"+m.getString("id")+if (base=="history") ":"+e.getString("videoId") else ""
             } else if (value is Set<*>) {
@@ -89,21 +104,24 @@ internal class SyncLocalAdapter(private val context: Context) {
             }
         }
         if("addons" in kinds || "integrations" in kinds) prefs("vueo_plugins").all.forEach { (base,value) ->
+            if(!wants("vueo_plugins",base)) return@forEach
             if ("addons" in kinds && base == "repositories_json" && value is String) {
                 entries("vueo_plugins",base,"addons",JSONArray(value)) { it.getString("manifestUrl") }
             } else if ("integrations" in kinds && base == "tmdb_api_key") {
                 add("integrations",key("vueo_plugins","default",base),typed(value))
             }
         }
-        if("addons" in kinds) prefs("vueo_content_manager").getStringSet("stremio_manifest_urls",emptySet())
+        if("addons" in kinds && wants("vueo_content_manager","stremio_manifest_urls")) prefs("vueo_content_manager").getStringSet("stremio_manifest_urls",emptySet())
             .orEmpty().sorted().forEach { item ->
                 add("addons",key("vueo_content_manager","default","stremio_manifest_urls",item),JSONObject().put("member",item))
             }
         if("integrations" in kinds) prefs("vueo_settings").all.forEach { (raw,value) ->
+            if(!wants("vueo_settings",raw)) return@forEach
             val (profile,base) = split(raw)
             if (base in INTEGRATION_KEYS) add("integrations",key("vueo_settings",profile,base),typed(value))
         }
         if("trakt" in kinds) prefs("vueo_trakt").all.forEach { (raw,value) ->
+            if(!wants("vueo_trakt",raw)) return@forEach
             val (profile,base) = split(raw)
             if (base in TRAKT_KEYS) add("trakt",key("vueo_trakt",profile,base),typed(value))
         }
@@ -131,8 +149,8 @@ internal class SyncLocalAdapter(private val context: Context) {
     }.getOrDefault(false)
 
     /** Merge only changed entities; never replaces the entire local library with a remote snapshot. */
-    fun apply(remote: List<JSONObject>, before: Map<String,JSONObject>): Set<String> {
-        if (remote.isEmpty()) return emptySet()
+    fun apply(remote: List<JSONObject>, before: Map<String,String?>): Set<String> = synchronized(com.vueo.shared.core.storage.LibraryStore.SYNC_STORAGE_LOCK) {
+        if (remote.isEmpty()) return@synchronized emptySet()
         val current = snapshot(remote.map { it.getString("kind") }.toSet()).toMutableMap()
         val appliedKinds=linkedSetOf<String>()
         val touched = linkedSetOf<Triple<String,String,String>>()
@@ -140,7 +158,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             if(!accepts(row)) return@forEach
             val k = row.getString("key")
             // A UI/player write that arrived during the request stays local and enters the next outbox batch.
-            if (current[k]?.optJSONObject("value")?.toString() != before[k]?.optJSONObject("value")?.toString()) return@forEach
+            if (syncFingerprint(current[k]?.optJSONObject("value")) != before[k]) return@forEach
             if(row.optBoolean("deleted") && current[k]==null) return@forEach
             if(!row.optBoolean("deleted") && current[k]?.optJSONObject("value")?.toString()==row.optJSONObject("value")?.toString()) return@forEach
             val parts = JSONArray(k)
@@ -208,7 +226,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             }
         }
         if ("addons" in appliedKinds) PluginRuntimeCache.clear()
-        return appliedKinds
+        appliedKinds
     }
     companion object {
         private val INTEGRATION_KEYS=setOf("tmdb_metadata_enrichment","tmdb_recommendations","tmdb_similar_titles",

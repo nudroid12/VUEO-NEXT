@@ -83,6 +83,8 @@ class LibraryStore(
             Context.MODE_PRIVATE,
         )
 
+    private val episodeCache = LibraryEpisodeCache(appContext)
+
     private val profileStore =
         profileStore ?: ProfileStore(appContext)
 
@@ -133,67 +135,13 @@ class LibraryStore(
     fun toggleWatchlist(
         media: MediaItem,
     ): Boolean {
-        val entries =
-            readWatchlist()
-                .toMutableList()
+        synchronized(SYNC_STORAGE_LOCK) {
+            val entries =
+                readWatchlist()
+                    .toMutableList()
 
-        val index =
-            entries.indexOfFirst {
-                val stored =
-                    it.optJSONObject(
-                        "media"
-                    )
-
-                stored?.optString(
-                    "id"
-                ) == media.id &&
-                    stored.optString(
-                        "type"
-                    ) == media.type
-            }
-
-        val added =
-            if (index >= 0) {
-                entries.removeAt(
-                    index
-                )
-                false
-            } else {
-                entries +=
-                    JSONObject()
-                        .put(
-                            "media",
-                            mediaToJson(
-                                media
-                            ),
-                        )
-                        .put(
-                            "addedAt",
-                            System
-                                .currentTimeMillis(),
-                        )
-                true
-            }
-
-        writeArray(
-            scopedKey(
-                watchlistStorageKey
-            ),
-            entries,
-        )
-
-        if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
-            .watchlistChanged(media, added, profileIdOverride ?: profileStore.activeProfileId())
-        return added
-    }
-
-    @Synchronized
-    fun removeWatchlist(
-        media: MediaItem,
-    ) {
-        val entries =
-            readWatchlist()
-                .filterNot {
+            val index =
+                entries.indexOfFirst {
                     val stored =
                         it.optJSONObject(
                             "media"
@@ -207,14 +155,72 @@ class LibraryStore(
                         ) == media.type
                 }
 
-        writeArray(
-            scopedKey(
-                watchlistStorageKey
-            ),
-            entries,
-        )
-        if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
-            .watchlistChanged(media, false, profileIdOverride ?: profileStore.activeProfileId())
+            val added =
+                if (index >= 0) {
+                    entries.removeAt(
+                        index
+                    )
+                    false
+                } else {
+                    entries +=
+                        JSONObject()
+                            .put(
+                                "media",
+                                mediaToJson(
+                                    media
+                                ),
+                            )
+                            .put(
+                                "addedAt",
+                                System
+                                    .currentTimeMillis(),
+                            )
+                    true
+                }
+
+            writeArray(
+                scopedKey(
+                    watchlistStorageKey
+                ),
+                entries,
+            )
+
+            if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
+                .watchlistChanged(media, added, profileIdOverride ?: profileStore.activeProfileId())
+            return added
+        }
+    }
+
+    @Synchronized
+    fun removeWatchlist(
+        media: MediaItem,
+    ) {
+        synchronized(SYNC_STORAGE_LOCK) {
+            val entries =
+                readWatchlist()
+                    .filterNot {
+                        val stored =
+                            it.optJSONObject(
+                                "media"
+                            )
+
+                        stored?.optString(
+                            "id"
+                        ) == media.id &&
+                            stored.optString(
+                                "type"
+                            ) == media.type
+                    }
+
+            writeArray(
+                scopedKey(
+                    watchlistStorageKey
+                ),
+                entries,
+            )
+            if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
+                .watchlistChanged(media, false, profileIdOverride ?: profileStore.activeProfileId())
+        }
     }
 
     @Synchronized
@@ -260,14 +266,16 @@ class LibraryStore(
      */
     @Synchronized
     fun homeStartupContinueWatching(): List<LibraryPlaybackEntry> {
-        val key = scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
-        if (prefs.contains(key)) return readHomeContinueWatchingCache()
+        synchronized(SYNC_STORAGE_LOCK) {
+            val key = scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
+            if (prefs.contains(key)) return readHomeContinueWatchingCache()
 
-        // One-time migration for installs upgraded from pre-v133 builds. From the
-        // next write onward this path reads only the lightweight cache.
-        val seeded = fastContinueWatching()
-        writeHomeContinueWatchingCache(seeded)
-        return seeded
+            // One-time migration for installs upgraded from pre-v133 builds. From the
+            // next write onward this path reads only the lightweight cache.
+            val seeded = fastContinueWatching()
+            writeHomeContinueWatchingCache(seeded)
+            return seeded
+        }
     }
 
     /**
@@ -276,21 +284,23 @@ class LibraryStore(
      */
     @Synchronized
     fun homeSnapshot(): LibraryHomeSnapshot {
-        val history =
-            readHistory()
-                .sortedByDescending { it.lastWatchedEpochMs }
-        val (_, continueWatching) =
-            resolveContinueWatching(
-                cursors = readContinueWatching(),
+        synchronized(SYNC_STORAGE_LOCK) {
+            val history =
+                readHistory()
+                    .sortedByDescending { it.lastWatchedEpochMs }
+            val (_, continueWatching) =
+                resolveContinueWatching(
+                    cursors = readContinueWatching(),
+                    history = history,
+                )
+
+            writeHomeContinueWatchingCache(continueWatching)
+
+            return LibraryHomeSnapshot(
                 history = history,
+                continueWatching = continueWatching,
             )
-
-        writeHomeContinueWatchingCache(continueWatching)
-
-        return LibraryHomeSnapshot(
-            history = history,
-            continueWatching = continueWatching,
-        )
+        }
     }
 
     /**
@@ -303,32 +313,34 @@ class LibraryStore(
      */
     @Synchronized
     fun detailSnapshot(): LibraryDetailSnapshot {
-        val watchlist =
-            readWatchlist()
-                .sortedByDescending(::watchlistTimestamp)
-                .map { entry ->
-                    mediaFromJson(
-                        entry.getJSONObject("media")
-                    )
-                }
+        synchronized(SYNC_STORAGE_LOCK) {
+            val watchlist =
+                readWatchlist()
+                    .sortedByDescending(::watchlistTimestamp)
+                    .map { entry ->
+                        mediaFromJson(
+                            entry.getJSONObject("media")
+                        )
+                    }
 
-        val history =
-            readHistory()
-                .sortedByDescending {
-                    it.lastWatchedEpochMs
-                }
-        val (playbackEntries, continueWatching) =
-            resolveContinueWatching(
-                cursors = readContinueWatching(),
+            val history =
+                readHistory()
+                    .sortedByDescending {
+                        it.lastWatchedEpochMs
+                    }
+            val (playbackEntries, continueWatching) =
+                resolveContinueWatching(
+                    cursors = readContinueWatching(),
+                    history = history,
+                )
+
+            return LibraryDetailSnapshot(
+                watchlist = watchlist,
                 history = history,
+                continueWatching = continueWatching,
+                playbackEntries = playbackEntries,
             )
-
-        return LibraryDetailSnapshot(
-            watchlist = watchlist,
-            history = history,
-            continueWatching = continueWatching,
-            playbackEntries = playbackEntries,
-        )
+        }
     }
 
     private fun resolveContinueWatching(
@@ -389,28 +401,16 @@ class LibraryStore(
 
     @Synchronized
     fun updateContinueWatchingMetadata(media: MediaItem, profileId: String): Boolean {
-        if (profileStore.activeProfileId() != profileId || media.episodes.isEmpty()) return false
-        val key = continueWatchingTitleKey(media)
-        if (key in dismissedContinueWatchingKeys() || key in markedWatchedKeys()) return false
-        var changed = false
-        fun update(entry: LibraryPlaybackEntry): LibraryPlaybackEntry {
-            if (continueWatchingTitleKey(entry.media) != key) return entry
-            // Merge rather than erase episodes when a provider returns partial metadata.
-            val episodes = (media.episodes + entry.media.episodes).distinctBy { it.season to it.episode }
-                .sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
-            val enriched = entry.media.copy(episodes = episodes)
-            if (enriched == entry.media) return entry
-            changed = true
-            return entry.copy(media = enriched) // never bump lastWatched or restore dismissed titles
+        synchronized(SYNC_STORAGE_LOCK) {
+            if (profileStore.activeProfileId() != profileId || media.episodes.isEmpty()) return false
+            val key = continueWatchingTitleKey(media)
+            if (key in dismissedContinueWatchingKeys() || key in markedWatchedKeys()) return false
+            val before=episodeCache.read(media.type,media.id)
+            episodeCache.save(media.type,media.id,media.episodes)
+            val changed=before!=episodeCache.read(media.type,media.id)
+            if(changed) refreshHomeContinueWatchingCache(exact=true)
+            return changed
         }
-        val history = readHistory().map(::update)
-        val cursors = readContinueWatching().map(::update)
-        if (changed) {
-            writeHistory(history)
-            writeArray(scopedKey(continueWatchingStorageKey), cursors.map(::playbackToJson))
-            refreshHomeContinueWatchingCache(exact = true)
-        }
-        return changed
     }
 
     @Synchronized
@@ -424,80 +424,82 @@ class LibraryStore(
         durationMs: Long,
         lastWatchedEpochMs: Long = PlaybackUpdateClock.next(),
     ) {
-        // LibraryStore is instantiated by more than one screen. A class-wide
-        // lock is required because @Synchronized only protects one instance.
-        synchronized(PLAYBACK_PERSISTENCE_LOCK) {
-            val key =
-                "${media.type}:${media.id}:$videoId"
-            val updateEpochMs =
-                lastWatchedEpochMs
-                    .takeIf { it > 0L }
-                    ?: PlaybackUpdateClock.next()
-            PlaybackUpdateClock.observe(updateEpochMs)
+        synchronized(SYNC_STORAGE_LOCK) {
+            // LibraryStore is instantiated by more than one screen. A class-wide
+            // lock is required because @Synchronized only protects one instance.
+            synchronized(PLAYBACK_PERSISTENCE_LOCK) {
+                val key =
+                    "${media.type}:${media.id}:$videoId"
+                val updateEpochMs =
+                    lastWatchedEpochMs
+                        .takeIf { it > 0L }
+                        ?: PlaybackUpdateClock.next()
+                PlaybackUpdateClock.observe(updateEpochMs)
 
-            val entries =
-                readHistory()
-                    .toMutableList()
+                val entries =
+                    readHistory()
+                        .toMutableList()
 
-            // Async persistence must never let an older snapshot overwrite a newer
-            // cursor for the same episode. Position itself cannot be compared because
-            // a deliberate rewind is a perfectly valid newer playback event.
-            val existingForMediaKey =
-                entries.firstOrNull {
+                // Async persistence must never let an older snapshot overwrite a newer
+                // cursor for the same episode. Position itself cannot be compared because
+                // a deliberate rewind is a perfectly valid newer playback event.
+                val existingForMediaKey =
+                    entries.firstOrNull {
+                        it.mediaKey == key
+                    }
+                if (
+                    existingForMediaKey != null &&
+                    existingForMediaKey.lastWatchedEpochMs > updateEpochMs
+                ) {
+                    return@synchronized
+                }
+
+                restoreContinueWatching(
+                    media
+                )
+
+                entries.removeAll {
                     it.mediaKey == key
                 }
-            if (
-                existingForMediaKey != null &&
-                existingForMediaKey.lastWatchedEpochMs > updateEpochMs
-            ) {
-                return@synchronized
-            }
 
-            restoreContinueWatching(
-                media
-            )
-
-            entries.removeAll {
-                it.mediaKey == key
-            }
-
-            val updated =
-                LibraryPlaybackEntry(
-                    media = media,
-                    videoId = videoId,
-                    episodeTitle =
-                        episodeTitle,
-                    season = season,
-                    episode = episode,
-                    positionMs =
-                        positionMs
-                            .coerceAtLeast(
-                                0L
-                            ),
-                    durationMs =
-                        durationMs
-                            .coerceAtLeast(
-                                0L
-                            ),
-                    lastWatchedEpochMs = updateEpochMs,
-                )
-            entries.add(updated)
-
-            writeContinueWatching(updated)
-
-            writeHistory(
-                entries
-                    .sortedByDescending {
-                        it.lastWatchedEpochMs
-                    }
-                    .take(
-                        MAX_HISTORY
+                val updated =
+                    LibraryPlaybackEntry(
+                        media = media,
+                        videoId = videoId,
+                        episodeTitle =
+                            episodeTitle,
+                        season = season,
+                        episode = episode,
+                        positionMs =
+                            positionMs
+                                .coerceAtLeast(
+                                    0L
+                                ),
+                        durationMs =
+                            durationMs
+                                .coerceAtLeast(
+                                    0L
+                                ),
+                        lastWatchedEpochMs = updateEpochMs,
                     )
-            )
-            if (updated.isCompleted) {
-                refreshHomeContinueWatchingCache(exact = true)
-            } else {
-                updateHomeContinueWatchingCacheForPlayback(updated)
+                entries.add(updated)
+
+                writeContinueWatching(updated)
+
+                writeHistory(
+                    entries
+                        .sortedByDescending {
+                            it.lastWatchedEpochMs
+                        }
+                        .take(
+                            MAX_HISTORY
+                        )
+                )
+                if (updated.isCompleted) {
+                    refreshHomeContinueWatchingCache(exact = true)
+                } else {
+                    updateHomeContinueWatchingCacheForPlayback(updated)
+                }
             }
         }
     }
@@ -506,35 +508,39 @@ class LibraryStore(
     fun removeHistory(
         mediaKey: String,
     ) {
-        writeArray(scopedKey(continueWatchingStorageKey),
-            readContinueWatching().filterNot { it.mediaKey == mediaKey }.map(::playbackToJson))
-        writeHistory(
-            readHistory()
-                .filterNot {
-                    it.mediaKey ==
-                        mediaKey
-                }
-        )
-        refreshHomeContinueWatchingCache(exact = true)
+        synchronized(SYNC_STORAGE_LOCK) {
+            writeArray(scopedKey(continueWatchingStorageKey),
+                readContinueWatching().filterNot { it.mediaKey == mediaKey }.map(::playbackToJson))
+            writeHistory(
+                readHistory()
+                    .filterNot {
+                        it.mediaKey ==
+                            mediaKey
+                    }
+            )
+            refreshHomeContinueWatchingCache(exact = true)
+        }
     }
 
     @Synchronized
     fun removeFromContinueWatching(
         entry: LibraryPlaybackEntry,
     ) {
-        val dismissed =
-            dismissedContinueWatchingKeys()
-                .toMutableSet()
+        synchronized(SYNC_STORAGE_LOCK) {
+            val dismissed =
+                dismissedContinueWatchingKeys()
+                    .toMutableSet()
 
-        dismissed +=
-            continueWatchingTitleKey(
-                entry.media
+            dismissed +=
+                continueWatchingTitleKey(
+                    entry.media
+                )
+
+            writeDismissedContinueWatchingKeys(
+                dismissed
             )
-
-        writeDismissedContinueWatchingKeys(
-            dismissed
-        )
-        refreshHomeContinueWatchingCache(exact = false)
+            refreshHomeContinueWatchingCache(exact = false)
+        }
     }
 
     @Synchronized
@@ -550,26 +556,28 @@ class LibraryStore(
         media: MediaItem,
         watched: Boolean,
     ) {
-        val key =
-            continueWatchingTitleKey(
-                media
+        synchronized(SYNC_STORAGE_LOCK) {
+            val key =
+                continueWatchingTitleKey(
+                    media
+                )
+            val marked =
+                markedWatchedKeys()
+                    .toMutableSet()
+
+            if (watched) {
+                marked += key
+            } else {
+                marked -= key
+            }
+
+            writeMarkedWatchedKeys(
+                marked
             )
-        val marked =
-            markedWatchedKeys()
-                .toMutableSet()
-
-        if (watched) {
-            marked += key
-        } else {
-            marked -= key
+            refreshHomeContinueWatchingCache(exact = false)
+            if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
+                .watchedChanged(media, watched, profileIdOverride ?: profileStore.activeProfileId())
         }
-
-        writeMarkedWatchedKeys(
-            marked
-        )
-        refreshHomeContinueWatchingCache(exact = false)
-        if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
-            .watchedChanged(media, watched, profileIdOverride ?: profileStore.activeProfileId())
     }
 
     @Synchronized
@@ -581,100 +589,110 @@ class LibraryStore(
     /** Cloud imports bypass mutation hooks and preserve changes still queued for upload. */
     @Synchronized
     fun mergeTraktWatchlist(remote: List<MediaItem>, pending: Set<String>) {
-        val previous = prefs.getStringSet(scopedKey("trakt_watchlist_ids"), emptySet()).orEmpty()
-        fun id(media: MediaItem) = "${media.type}:${media.id}"
-        val local = readWatchlist().filter { row ->
-            val media = mediaFromJson(row.getJSONObject("media"))
-            id(media) !in previous || id(media) in pending
+        synchronized(SYNC_STORAGE_LOCK) {
+            val previous = prefs.getStringSet(scopedKey("trakt_watchlist_ids"), emptySet()).orEmpty()
+            fun id(media: MediaItem) = "${media.type}:${media.id}"
+            val local = readWatchlist().filter { row ->
+                val media = mediaFromJson(row.getJSONObject("media"))
+                id(media) !in previous || id(media) in pending
+            }
+            val localPending = local.map { mediaFromJson(it.getJSONObject("media")) }.map(::id).toSet()
+            val incoming = remote.filter { id(it) !in pending && id(it) !in localPending }.map { media ->
+                JSONObject().put("media", mediaToJson(media)).put("addedAt", System.currentTimeMillis())
+            }
+            writeArray(scopedKey(watchlistStorageKey), local + incoming)
+            prefs.edit().putStringSet(scopedKey("trakt_watchlist_ids"), remote.map(::id).toSet()).apply()
         }
-        val localPending = local.map { mediaFromJson(it.getJSONObject("media")) }.map(::id).toSet()
-        val incoming = remote.filter { id(it) !in pending && id(it) !in localPending }.map { media ->
-            JSONObject().put("media", mediaToJson(media)).put("addedAt", System.currentTimeMillis())
-        }
-        writeArray(scopedKey(watchlistStorageKey), local + incoming)
-        prefs.edit().putStringSet(scopedKey("trakt_watchlist_ids"), remote.map(::id).toSet()).apply()
     }
 
     @Synchronized
     fun mergeTraktHistory(remote: List<LibraryPlaybackEntry>, protectedTitles: Set<String> = emptySet()) {
-        synchronized(PLAYBACK_PERSISTENCE_LOCK) {
-            val previous = runCatching { JSONObject(prefs.getString(scopedKey("trakt_history_stamps"), "{}")) }.getOrDefault(JSONObject())
-            val remoteKeys = remote.map { it.mediaKey }.toSet()
-            val local = readHistory().filterNot { entry -> entry.mediaKey !in remoteKeys &&
-                previous.has(entry.mediaKey) && entry.lastWatchedEpochMs == previous.optLong(entry.mediaKey) }
-            val imported = remote.filter { entry -> "${entry.media.type}:${entry.media.id}" !in protectedTitles && local.none { it.mediaKey == entry.mediaKey && it.lastWatchedEpochMs >= entry.lastWatchedEpochMs } }
-            val merged = (local + imported).groupBy { it.mediaKey }.values.map { group -> group.maxBy { it.lastWatchedEpochMs } }
-                .sortedByDescending { it.lastWatchedEpochMs }.take(MAX_HISTORY)
-            writeHistory(merged)
-            // Watched truth is separate from the bounded recent history, so old movie watches remain known.
-            val remoteMovies = remote.filter { !ContinueWatchingPolicy.isSeries(it.media) && "${it.media.type}:${it.media.id}" !in protectedTitles }.map { continueWatchingTitleKey(it.media) }.toSet()
-            val previousMovies = prefs.getStringSet(scopedKey("trakt_watched_movie_ids"), emptySet()).orEmpty()
-            writeMarkedWatchedKeys((markedWatchedKeys() - (previousMovies - protectedTitles)) + remoteMovies)
-            val stamps = JSONObject()
-            remote.forEach { stamps.put(it.mediaKey, it.lastWatchedEpochMs) }
-            prefs.edit().putStringSet(scopedKey("trakt_watched_movie_ids"), remoteMovies)
-                .putString(scopedKey("trakt_history_stamps"), stamps.toString()).apply()
-            refreshHomeContinueWatchingCache(exact = true)
+        synchronized(SYNC_STORAGE_LOCK) {
+            synchronized(PLAYBACK_PERSISTENCE_LOCK) {
+                val previous = runCatching { JSONObject(prefs.getString(scopedKey("trakt_history_stamps"), "{}")) }.getOrDefault(JSONObject())
+                val remoteKeys = remote.map { it.mediaKey }.toSet()
+                val local = readHistory().filterNot { entry -> entry.mediaKey !in remoteKeys &&
+                    previous.has(entry.mediaKey) && entry.lastWatchedEpochMs == previous.optLong(entry.mediaKey) }
+                val imported = remote.filter { entry -> "${entry.media.type}:${entry.media.id}" !in protectedTitles && local.none { it.mediaKey == entry.mediaKey && it.lastWatchedEpochMs >= entry.lastWatchedEpochMs } }
+                val merged = (local + imported).groupBy { it.mediaKey }.values.map { group -> group.maxBy { it.lastWatchedEpochMs } }
+                    .sortedByDescending { it.lastWatchedEpochMs }.take(MAX_HISTORY)
+                writeHistory(merged)
+                // Watched truth is separate from the bounded recent history, so old movie watches remain known.
+                val remoteMovies = remote.filter { !ContinueWatchingPolicy.isSeries(it.media) && "${it.media.type}:${it.media.id}" !in protectedTitles }.map { continueWatchingTitleKey(it.media) }.toSet()
+                val previousMovies = prefs.getStringSet(scopedKey("trakt_watched_movie_ids"), emptySet()).orEmpty()
+                writeMarkedWatchedKeys((markedWatchedKeys() - (previousMovies - protectedTitles)) + remoteMovies)
+                val stamps = JSONObject()
+                remote.forEach { stamps.put(it.mediaKey, it.lastWatchedEpochMs) }
+                prefs.edit().putStringSet(scopedKey("trakt_watched_movie_ids"), remoteMovies)
+                    .putString(scopedKey("trakt_history_stamps"), stamps.toString()).apply()
+                refreshHomeContinueWatchingCache(exact = true)
+            }
         }
     }
 
     @Synchronized
     fun mergeTraktPlayback(remote: List<LibraryPlaybackEntry>) {
-        remote.forEach { entry ->
-            val existing = readHistory().firstOrNull { it.mediaKey == entry.mediaKey }
-            if (entry.lastWatchedEpochMs > 0L && (existing == null || existing.lastWatchedEpochMs < entry.lastWatchedEpochMs)) {
-                recordPlayback(entry.media, entry.videoId, entry.episodeTitle, entry.season, entry.episode,
-                    entry.positionMs, entry.durationMs, entry.lastWatchedEpochMs)
+        synchronized(SYNC_STORAGE_LOCK) {
+            remote.forEach { entry ->
+                val existing = readHistory().firstOrNull { it.mediaKey == entry.mediaKey }
+                if (entry.lastWatchedEpochMs > 0L && (existing == null || existing.lastWatchedEpochMs < entry.lastWatchedEpochMs)) {
+                    recordPlayback(entry.media, entry.videoId, entry.episodeTitle, entry.season, entry.episode,
+                        entry.positionMs, entry.durationMs, entry.lastWatchedEpochMs)
+                }
             }
         }
     }
 
     @Synchronized
     fun clearHistory() {
-        prefs.edit()
-            .remove(
-                scopedKey(
-                    historyStorageKey
+        synchronized(SYNC_STORAGE_LOCK) {
+            prefs.edit()
+                .remove(
+                    scopedKey(
+                        historyStorageKey
+                    )
                 )
-            )
-            .remove(
-                scopedKey(
-                    continueWatchingStorageKey
+                .remove(
+                    scopedKey(
+                        continueWatchingStorageKey
+                    )
                 )
-            )
-            .remove(
-                scopedKey(
-                    dismissedContinueWatchingStorageKey
+                .remove(
+                    scopedKey(
+                        dismissedContinueWatchingStorageKey
+                    )
                 )
-            )
-            .remove(
-                scopedKey(
-                    markedWatchedStorageKey
+                .remove(
+                    scopedKey(
+                        markedWatchedStorageKey
+                    )
                 )
-            )
-            .remove(
-                scopedKey(
-                    KEY_HOME_CONTINUE_WATCHING_CACHE
+                .remove(
+                    scopedKey(
+                        KEY_HOME_CONTINUE_WATCHING_CACHE
+                    )
                 )
-            )
-            .apply()
+                .apply()
+        }
     }
 
     @Synchronized
     fun clearContinueWatching() {
-        writeDismissedContinueWatchingKeys(
-            dismissedContinueWatchingKeys() +
-                continueWatchingPlaybackEntries()
-                    .asSequence()
-                    .filter { ContinueWatchingPolicy.isSeries(it.media) || (it.positionMs > 5_000L && !it.isCompleted) }
-                    .map {
-                        continueWatchingTitleKey(
-                            it.media
-                        )
-                    }
-                    .toSet()
-        )
-        refreshHomeContinueWatchingCache(exact = false)
+        synchronized(SYNC_STORAGE_LOCK) {
+            writeDismissedContinueWatchingKeys(
+                dismissedContinueWatchingKeys() +
+                    continueWatchingPlaybackEntries()
+                        .asSequence()
+                        .filter { ContinueWatchingPolicy.isSeries(it.media) || (it.positionMs > 5_000L && !it.isCompleted) }
+                        .map {
+                            continueWatchingTitleKey(
+                                it.media
+                            )
+                        }
+                        .toSet()
+            )
+            refreshHomeContinueWatchingCache(exact = false)
+        }
     }
 
     private fun updateHomeContinueWatchingCacheForPlayback(
@@ -866,7 +884,7 @@ class LibraryStore(
             )
         ).mapNotNull {
             runCatching {
-                playbackFromJson(it)
+                playbackFromJson(it).let { entry -> entry.copy(media=entry.media.copy(episodes=episodeCache.read(entry.media.type,entry.media.id))) }
             }.getOrNull()
         }
 
@@ -930,53 +948,29 @@ class LibraryStore(
         )
     }
 
-    private fun readObjectArray(
-        key: String,
-    ): List<JSONObject> {
-        val raw =
-            prefs.getString(
-                key,
-                null,
-            )
-                ?: return emptyList()
-
-        return runCatching {
-            val array =
-                JSONArray(raw)
-
-            buildList {
-                for (
-                    index in
-                    0 until
-                        array.length()
-                ) {
-                    array.optJSONObject(
-                        index
-                    )?.let(::add)
+    private fun readObjectArray(key: String): List<JSONObject> = synchronized(SYNC_STORAGE_LOCK) {
+        val raw=prefs.getString(key,null) ?: return@synchronized emptyList()
+        runCatching {
+            val entries=CompactLibraryCodec.readArray(raw,keepEpisodeIndex=true) { entry ->
+                entry.optJSONObject("media")?.let { media ->
+                    media.optJSONArray("episodes")?.let { episodes ->
+                        episodeCache.save(media.optString("type"),media.optString("id"),episodes)
+                        media.remove("episodes")
+                    }
                 }
             }
-        }.getOrDefault(
-            emptyList()
-        )
+            // Migrate once under the same lock as local/remote array writers; retain playback fields.
+            if(!prefs.getBoolean("compact_library_v2:$key",false)) {
+                prefs.edit().putString(key,JSONArray(entries).toString())
+                    .putBoolean("compact_library_v2:$key",true).apply()
+            }
+            entries
+        }.getOrDefault(emptyList())
     }
 
-    private fun writeArray(
-        key: String,
-        entries: List<JSONObject>,
-    ) {
-        val array =
-            JSONArray()
-
-        entries.forEach {
-            array.put(it)
-        }
-
-        prefs.edit()
-            .putString(
-                key,
-                array.toString(),
-            )
-            .apply()
+    private fun writeArray(key: String,entries: List<JSONObject>) = synchronized(SYNC_STORAGE_LOCK) {
+        val array=JSONArray(entries.map(CompactLibraryCodec::compactEntry))
+        prefs.edit().putString(key,array.toString()).putBoolean("compact_library_v2:$key",true).apply()
     }
 
     private fun playbackToJson(
@@ -1063,55 +1057,21 @@ class LibraryStore(
                 ),
         )
 
-    private fun mediaToJson(
-        media: MediaItem,
-    ): JSONObject =
-        JSONObject()
-            .put("id", media.id)
-            .put("type", media.type)
-            .put("name", media.name)
-            .put("poster", media.poster)
-            .put("background", media.background)
-            .put("description", media.description)
-            .put("releaseInfo", media.releaseInfo)
-            .put("originalTitle", media.originalTitle)
-            .put("aliases", JSONArray(media.aliases))
-            .put("originalLanguage", media.originalLanguage)
-            .put("countries", JSONArray(media.countries))
-            .put("genres", JSONArray(media.genres))
-            .put(
-                "episodes",
-                JSONArray().apply {
-                    media.episodes.forEach { put(episodeToJson(it)) }
-                },
-            )
-            .put("sourceExtensionId", media.sourceExtensionId)
-            .put("catalogSources", JSONArray(media.catalogSources))
-            .put("imdbRating", media.imdbRating)
-            .put("tmdbRating", media.tmdbRating)
-            .put("runtimeMinutes", media.runtimeMinutes)
-            .put("certification", media.certification)
-            .put("directors", JSONArray(media.directors))
-            .put("creators", JSONArray(media.creators))
-            .put("writers", JSONArray(media.writers))
-            .put(
-                "cast",
-                JSONArray().apply {
-                    media.cast.forEach { put(personToJson(it)) }
-                },
-            )
-            .put(
-                "productionCompanies",
-                JSONArray().apply {
-                    media.productionCompanies.forEach { put(companyToJson(it)) }
-                },
-            )
-            .put(
-                "networks",
-                JSONArray().apply {
-                    media.networks.forEach { put(companyToJson(it)) }
-                },
-            )
+    private fun mediaToJson(media: MediaItem): JSONObject {
+        episodeCache.save(media.type,media.id,media.episodes)
+        return JSONObject()
+            .put("id",media.id).put("type",media.type).put("name",media.name)
+            .put("poster",media.poster).put("background",media.background)
+            .put("description",media.description).put("releaseInfo",media.releaseInfo)
+            .put("originalTitle",media.originalTitle).put("aliases",JSONArray(media.aliases))
+            .put("originalLanguage",media.originalLanguage).put("countries",JSONArray(media.countries))
+            .put("genres",JSONArray(media.genres)).put("sourceExtensionId",media.sourceExtensionId)
+            .put("catalogSources",JSONArray(media.catalogSources))
+            .put("imdbRating",media.imdbRating).put("tmdbRating",media.tmdbRating)
+            .put("runtimeMinutes",media.runtimeMinutes).put("certification",media.certification)
+            .put("directors",JSONArray(media.directors)).put("creators",JSONArray(media.creators))
+            .put("writers",JSONArray(media.writers))
+    }
 
     private fun mediaFromJson(
         json: JSONObject,
@@ -1295,6 +1255,7 @@ class LibraryStore(
         private const val MAX_HISTORY =
             150
 
-        private val PLAYBACK_PERSISTENCE_LOCK = Any()
+        internal val SYNC_STORAGE_LOCK = Any()
+        private val PLAYBACK_PERSISTENCE_LOCK = SYNC_STORAGE_LOCK
     }
 }
