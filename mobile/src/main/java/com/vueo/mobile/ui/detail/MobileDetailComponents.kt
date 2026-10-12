@@ -37,6 +37,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -399,52 +402,112 @@ internal fun StableDetailsMetadata(
     media: MediaItem,
 ) {
     val density = LocalDensity.current
-    val rowHeight = with(density) { 22.sp.toDp() }.coerceAtLeast(24.dp)
     val creditHeight = with(density) { 20.sp.toDp() }.coerceAtLeast(20.dp)
     val credits = remember(media) { DetailPeoplePolicy.creditLines(media) }
+    val visibleCredits = listOfNotNull(
+        credits.firstOrNull { it.label != "Writer" },
+        credits.firstOrNull { it.label == "Writer" },
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().height(rowHeight), contentAlignment = Alignment.CenterStart) {
-            DetailsFactsRow(facts = facts, imdbRating = null)
-        }
-        Box(Modifier.fillMaxWidth().height(rowHeight), contentAlignment = Alignment.CenterStart) {
-            // IMDb stays here from first publication through all enrichments.
-            MediaRatingsStrip(ratings = ratings, vueoMatchPercent = vueoMatchPercent)
-        }
-        // Two permanent slots: Director/Creator and Writer. Missing upstream
-        // data leaves the slot empty instead of moving Overview during loading.
-        Column(
-            modifier = Modifier.padding(horizontal = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            repeat(2) { index ->
-                val credit = credits.firstOrNull {
-                    if (index == 0) it.label != "Writer" else it.label == "Writer"
-                }
-                val alpha by animateFloatAsState(
-                    targetValue = if (credit != null) 1f else 0f,
-                    animationSpec = tween(160, easing = VueoMotion.EaseOut),
-                    label = "Details credit fade",
-                )
-                Box(
-                    Modifier.fillMaxWidth().height(creditHeight)
-                        .graphicsLayer { this.alpha = alpha },
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (credit != null) {
-                        Text(
-                            text = "${credit.label}: ${credit.names.take(3).joinToString(", ")}",
-                            color = Color.White.copy(alpha = .78f),
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        AdaptiveDetailsFactsAndRatings(facts, ratings, vueoMatchPercent)
+        if (visibleCredits.isNotEmpty()) {
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                visibleCredits.forEach { credit ->
+                    DetailsMetadataArrival {
+                        Box(
+                            Modifier.fillMaxWidth().height(creditHeight),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(
+                                text = "${credit.label}: ${credit.names.take(3).joinToString(", ")}",
+                                color = Color.White.copy(alpha = .78f),
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** Measure the existing badges at their real font scale; merge only when everything fits. */
+@Composable
+private fun AdaptiveDetailsFactsAndRatings(
+    facts: List<String>,
+    ratings: List<MediaRating>,
+    vueoMatchPercent: Int?,
+) {
+    val priority = remember { mapOf("imdb" to 0, "tomatoes" to 1, "metacritic" to 2, "tmdb" to 3, "trakt" to 4) }
+    val ordered = remember(ratings) {
+        ratings.distinctBy { it.source }.sortedBy { priority[it.source] ?: Int.MAX_VALUE }
+    }
+    val hasFacts = facts.isNotEmpty()
+    val hasRatings = ordered.isNotEmpty() || vueoMatchPercent != null
+    if (!hasFacts && !hasRatings) return
+
+    SubcomposeLayout(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) { constraints ->
+        val natural = Constraints()
+        val minimumRowHeight = 24.dp.roundToPx()
+        val inlineGap = 12.dp.roundToPx()
+        val stackedGap = 6.dp.roundToPx()
+        val factsProbe = if (hasFacts) subcompose("facts_probe") {
+            DetailsFactsText(facts)
+        }.single().measure(natural) else null
+        val ratingsProbe = if (hasRatings) subcompose("ratings_probe") {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                ordered.forEach { rating -> DetailsMetadataArrival { MediaRatingMark(rating) } }
+                vueoMatchPercent?.let { percent -> DetailsMetadataArrival { DnaMatchMark(percent) } }
+            }
+        }.single().measure(natural) else null
+        val requiredWidth = (factsProbe?.width ?: 0) + (ratingsProbe?.width ?: 0) +
+            if (hasFacts && hasRatings) inlineGap else 0
+
+        if (requiredWidth <= constraints.maxWidth) {
+            val height = maxOf(minimumRowHeight, factsProbe?.height ?: 0, ratingsProbe?.height ?: 0)
+            layout(constraints.maxWidth, height) {
+                factsProbe?.placeRelative(0, (height - factsProbe.height) / 2)
+                ratingsProbe?.placeRelative(
+                    if (hasFacts) factsProbe!!.width + inlineGap else 0,
+                    (height - ratingsProbe.height) / 2,
+                )
+            }
+        } else {
+            val bounded = Constraints(maxWidth = constraints.maxWidth)
+            val factsRow = if (hasFacts) subcompose("facts_stacked") {
+                DetailsFactsText(facts)
+            }.single().measure(bounded) else null
+            val ratingsRow = if (hasRatings) subcompose("ratings_stacked") {
+                MediaRatingsStrip(ratings, vueoMatchPercent, horizontalPadding = 0.dp)
+            }.single().measure(bounded) else null
+            val factsHeight = factsRow?.let { maxOf(minimumRowHeight, it.height) } ?: 0
+            val ratingsHeight = ratingsRow?.let { maxOf(minimumRowHeight, it.height) } ?: 0
+            val gap = if (hasFacts && hasRatings) stackedGap else 0
+            layout(constraints.maxWidth, factsHeight + gap + ratingsHeight) {
+                factsRow?.placeRelative(0, (factsHeight - factsRow.height) / 2)
+                ratingsRow?.placeRelative(0, factsHeight + gap + (ratingsHeight - ratingsRow.height) / 2)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsFactsText(facts: List<String>) {
+    Text(
+        text = facts.joinToString(" • "),
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -463,6 +526,7 @@ private fun DetailsMetadataArrival(content: @Composable () -> Unit) {
 internal fun MediaRatingsStrip(
     ratings: List<MediaRating>,
     vueoMatchPercent: Int?,
+    horizontalPadding: Dp = 18.dp,
 ) {
     val ratingPriority =
         remember {
@@ -491,7 +555,7 @@ internal fun MediaRatingsStrip(
     LazyRow(
         contentPadding =
             PaddingValues(
-                horizontal = 18.dp
+                horizontal = horizontalPadding
             ),
         horizontalArrangement =
             Arrangement.spacedBy(

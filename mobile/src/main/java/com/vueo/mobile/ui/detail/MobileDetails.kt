@@ -2098,7 +2098,7 @@ internal fun MediaDetailsScreen(
             ),
         verticalArrangement =
             Arrangement.spacedBy(
-                20.dp
+                18.dp
             ),
     ) {
         item {
@@ -2515,7 +2515,7 @@ internal fun MediaDetailsScreen(
                             ),
                         verticalArrangement =
                             Arrangement.spacedBy(
-                                7.dp
+                                10.dp
                             ),
                     ) {
                         Text(
