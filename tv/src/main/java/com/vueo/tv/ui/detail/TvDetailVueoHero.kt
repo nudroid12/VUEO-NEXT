@@ -19,8 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -128,7 +128,7 @@ internal fun VueoDetailHero(
                 onClick = onPlay,
             )
             VueoCircleAction(
-                icon = if (state.watchlisted) Icons.Default.Check else Icons.Default.Add,
+                icon = if (state.watchlisted) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                 contentDescription = if (state.watchlisted) "Remove from Favorites" else "Add to Favorites",
                 selected = state.watchlisted,
                 requester = listRequester,

@@ -1153,7 +1153,7 @@ private fun VueoSubtitleTrackRow(
                 Text(
                     provider.ifBlank { "Subtitle" },
                     color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
-                    fontSize = 10.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1162,6 +1162,7 @@ private fun VueoSubtitleTrackRow(
             Spacer(Modifier.height(5.dp))
             Text(
                 title,
+                modifier = Modifier.padding(start = 8.dp),
                 color = if (selected) Color.Black else Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -1172,6 +1173,7 @@ private fun VueoSubtitleTrackRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     detail,
+                    modifier = Modifier.padding(start = 8.dp),
                     color = if (selected) Color.Black.copy(alpha = .65f) else Color.White.copy(alpha = .50f),
                     fontSize = 12.sp,
                     maxLines = 1,
