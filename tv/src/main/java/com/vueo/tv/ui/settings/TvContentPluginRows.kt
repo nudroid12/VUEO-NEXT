@@ -31,8 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val PluginSurface = Color(0xFF252525)
-private val PluginFocus = Color(0xFF444444)
+private val PluginSurface = Color(0xFF303030)
+private val PluginFocus = Color(0xFF555555)
 private val PluginMuted = Color.White.copy(alpha = .6f)
 private val PluginFailure = Color(0xFFFFB4AB)
 
@@ -70,7 +70,7 @@ internal fun TvContentSettingsRow(
         !contentLayout -> TvSettingsRow(entry, requester, first, last, onLeftToSidebar = onLeftToSidebar, onFocused = onFocused)
         entry.id.startsWith("repo-") -> TvPluginRepositoryCard(entry, entries, requesterFor, onLeftToSidebar, onEntryFocused)
         entry.providerStatus != null -> TvPluginProviderRow(entry, requester, last, onLeftToSidebar, onFocused)
-        else -> TvSettingsRow(entry, requester, first, last, onLeftToSidebar = onLeftToSidebar, onFocused = onFocused)
+        else -> TvSettingsRow(entry, requester, first, last, restoreContentStyle = true, onLeftToSidebar = onLeftToSidebar, onFocused = onFocused)
     }
 }
 
@@ -88,7 +88,6 @@ private fun TvPluginRepositoryCard(
     val refresh = entries.firstOrNull { it.id == "refresh-repository" }
     val remove = entries.firstOrNull { it.id == "remove-repository" }
     val nextProvider = entries.firstOrNull { it.providerStatus != null }
-    val operationStatus = entries.firstOrNull { it.id == "status" }?.subtitle
     // Keep the repository entry ID on the toggle for the host's focus restoration.
     var toggleFocused by remember(entry.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(15.dp)
@@ -105,11 +104,11 @@ private fun TvPluginRepositoryCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 refresh?.let { action ->
                     TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
@@ -124,9 +123,10 @@ private fun TvPluginRepositoryCard(
                         } else false
                     }, { onEntryFocused(action.id) })
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
+                    modifier = Modifier.width(76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Box(
                         modifier = Modifier.width(76.dp).height(38.dp)
@@ -134,8 +134,9 @@ private fun TvPluginRepositoryCard(
                             .focusProperties {
                                 up = FocusRequester.Default
                                 left = refresh?.let { requesterFor(it.id) } ?: FocusRequester.Default
-                                right = remove?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
-                                down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                                right = FocusRequester.Cancel
+                                down = remove?.let { requesterFor(it.id) }
+                                    ?: if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
                             }
                             .onFocusChanged {
                                 toggleFocused = it.isFocused
@@ -160,17 +161,14 @@ private fun TvPluginRepositoryCard(
                     }
                     remove?.let { action ->
                         TvRepositoryAction(action, null, if (entry.accented) TvDesign.Accent else Color.White.copy(alpha = .86f), requesterFor(action.id), Modifier.focusProperties {
-                            up = FocusRequester.Default
-                            left = requesterFor(entry.id)
+                            up = requesterFor(entry.id)
+                            left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
                             right = FocusRequester.Cancel
                             down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
                         }, { onEntryFocused(action.id) })
                     }
                 }
             }
-        }
-        operationStatus?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = PluginMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
         }
     }
 }
@@ -181,19 +179,19 @@ private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint:
     val refreshing = entry.id == "refresh-repository" && entry.value == "Refreshing…"
     IconButton(
         onClick = { entry.onActivate?.invoke() },
-        enabled = entry.enabled,
-        modifier = modifier.height(42.dp).width(if (icon == null) 76.dp else 104.dp).focusRequester(requester)
+        modifier = modifier.height(38.dp).width(if (icon == null) 76.dp else 38.dp).focusRequester(requester)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
             .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
             .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50)),
     ) {
-        if (icon == null) Text("Remove", color = tint, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        if (icon == null) Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
         else {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(icon, contentDescription = null, tint = tint,
-                    modifier = Modifier.size(18.dp).then(tvContentRefreshMotion(entry)))
-                Text(if (refreshing) "Updating…" else "Refresh", color = tint, fontSize = 12.sp)
-            }
+            Icon(
+                icon,
+                contentDescription = if (refreshing) "Refreshing repository" else entry.title,
+                tint = tint,
+                modifier = Modifier.size(21.dp).then(tvContentRefreshMotion(entry)),
+            )
         }
     }
 }
@@ -211,7 +209,7 @@ private fun TvPluginProviderRow(entry: TvSettingsEntry, requester: FocusRequeste
         if (entry.providerPanelStart) Text("PROVIDERS", color = PluginMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
         Column(Modifier.fillMaxWidth().background(PluginSurface, shape)) {
             Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
                     .focusRequester(requester)
                     .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
                     .onPreviewKeyEvent { event ->
@@ -231,10 +229,11 @@ private fun TvPluginProviderRow(entry: TvSettingsEntry, requester: FocusRequeste
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(entry.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(entry.subtitle, color = PluginMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(entry.subtitle, color = PluginMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(entry.providerStatus.orEmpty(), color = if (entry.providerFailed) PluginFailure else if (entry.switchChecked == false) PluginMuted else Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(entry.providerStatus.orEmpty(), color = if (entry.providerFailed) PluginFailure else if (entry.switchChecked == false) PluginMuted else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    entry.providerResponse?.let { Text(it, color = PluginMuted, fontSize = 10.sp) }
                 }
                 Text("›", color = PluginMuted, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 12.dp))
                 TvContentToggle(entry.switchChecked == true)

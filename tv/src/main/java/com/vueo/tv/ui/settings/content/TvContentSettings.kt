@@ -486,7 +486,7 @@ internal fun TvProviderSettings(
             TvSettingsEntry(
                 id = "add-repo",
                 title = "Add Repository",
-                subtitle = "Add a provider repository URL.",
+                subtitle = "Install an HTTPS provider repository manifest.",
                 onActivate = {
                     addMessage = null
                     showAdd = true
@@ -529,7 +529,7 @@ internal fun TvProviderSettings(
                 section = "SELECTED REPOSITORY",
                 icon = Icons.Default.SettingsInputComponent,
                 accented = true,
-                detail = "v${repository.version} • ${repository.providers.size} providers",
+                detail = "v${repository.version} • ${repository.providers.size} providers • ${providerCodeStore.readyCount(repository)} ready",
                 switchChecked = repoEnabled,
             ))
             add(
@@ -547,7 +547,7 @@ internal fun TvProviderSettings(
                                     .onSuccess { refreshed ->
                                         selectedRepositoryUrl = refreshed.manifestUrl
                                         revision++
-                                        status = "${refreshed.name} updated."
+                                        status = "Refreshed ${refreshed.name} • ${providerCodeStore.readyCount(refreshed)} provider code ready."
                                         onDataChanged()
                                     }
                                     .onFailure { status = it.message ?: "Unable to refresh repository." }
@@ -572,7 +572,7 @@ internal fun TvProviderSettings(
                 )
             )
 
-            val rankedProviders = remember(repository, revision, diagnosticTarget) { repository.providers
+            val rankedProviders = repository.providers
                 .map { provider -> provider to healthStore.record(repository.manifestUrl, provider.id) }
                 .sortedWith(
                     compareBy<Pair<PluginProviderDescriptor, com.vueo.shared.core.plugin.ProviderHealthRecord?>> { (_, health) ->
@@ -585,7 +585,6 @@ internal fun TvProviderSettings(
                         providerHealthSortKey(health).responseMs
                     }.thenBy { (provider, _) -> provider.name.lowercase() }
                 )
-            }
 
             rankedProviders.forEachIndexed { index, (provider, health) ->
                 val providerEnabled = runtime.pluginStore.isProviderEnabled(repository, provider)
@@ -593,9 +592,11 @@ internal fun TvProviderSettings(
                     TvSettingsEntry(
                         id = "provider-${repository.manifestUrl.hashCode()}-${provider.id}",
                         title = provider.name,
-                        subtitle = provider.supportedTypes.sorted().joinToString(" • ") {
-                            when (it.lowercase()) { "movie" -> "Movies"; "tv", "series" -> "Series"; else -> it }
-                        },
+                        subtitle = buildList {
+                            if (provider.supportedTypes.isNotEmpty()) add(provider.supportedTypes.sorted().joinToString("/"))
+                            if (provider.formats.isNotEmpty()) add(provider.formats.take(3).joinToString(", "))
+                            if (provider.limited) add("limited")
+                        }.joinToString(" • "),
                         value = if (providerEnabled) "On" else "Off",
                         switchChecked = providerEnabled,
                         providerStatus = if (!providerEnabled) "Disabled" else health?.status?.label ?: "Unknown",
@@ -645,10 +646,11 @@ internal fun TvProviderSettings(
 
     val providerCount = repositories.sumOf { it.providers.size }
     val enabledProviderCount = if (pluginsEnabled) runtime.pluginStore.enabledProviderCount() else 0
+    val readyProviderCount = repositories.sumOf { providerCodeStore.readyCount(it) }
 
     TvSettingsListScreen(
         title = "Plugins & Providers",
-        subtitle = "Manage your installed sources.",
+        subtitle = "Repositories and runtime providers.",
         entries = entries,
         onNavigate = onNavigate,
         onProfile = onProfile,
@@ -658,9 +660,10 @@ internal fun TvProviderSettings(
         metrics = listOf(
             TvSettingsMetric(repositories.size.toString(), "Repos"),
             TvSettingsMetric(providerCount.toString(), "Providers"),
-            TvSettingsMetric(enabledProviderCount.toString(), "Enabled"),
+            TvSettingsMetric(enabledProviderCount.toString(), "Active"),
+            TvSettingsMetric(readyProviderCount.toString(), "Ready"),
         ),
-        footer = "OK toggles a provider. Right opens Diagnostics.",
+        footer = "Select a repository tab. OK changes a saved preference. Press right on a provider for diagnostics.",
         preferredFocusId = repositories.firstOrNull()?.let { "repository-tab-${it.manifestUrl.hashCode()}" } ?: "add-repo",
     )
 }
