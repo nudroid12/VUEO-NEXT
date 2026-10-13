@@ -282,6 +282,7 @@ object VueoBackupManager {
                 }
             }
 
+            com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(appContext).clear()
             ProviderCodeStore.clearStoredCode(appContext)
 
             runCatching {

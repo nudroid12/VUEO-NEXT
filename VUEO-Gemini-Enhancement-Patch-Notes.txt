@@ -1,0 +1,25 @@
+VUEO Gemini Enhancement Settings — TV + Mobile
+
+Apply to VUEO-NEXT repository root using your existing ZIP patch workflow.
+Based on the supplied latest repo (48), retaining the earlier local patches.
+
+Settings → Enhancements → Gemini:
+- Personal Gemini API key, hidden by default with show/hide.
+- HTTPS VUEO SmartSubs backend URL.
+- Save credentials and Test Connection via POST /v1/session.
+- Key and session encrypted using existing Android Keystore-backed storage.
+- Key/URL changes invalidate the previous local session and turn the preference off.
+- Gemini credentials/session excluded from manual backup and account sync.
+- Reset User Data clears SmartSubs credentials too.
+- Optional SmartSubs preference can be enabled after a valid session.
+
+Deploy VUEO-SmartSubs first; enter its Worker base URL in this screen.
+Test Connection validates the key/model on that backend and uses a small amount of Gemini quota.
+No Gemini key is embedded or shared. Translation does not run on the device.
+
+Scope: credentials, settings and backend session connection only.
+This patch does not yet add translated subtitle tracks to the player.
+
+Validation: source delimiters, navigation routes, secret UI controls, backend API
+contract fields, HTTPS/no-redirect handling, reset cleanup and ZIP root paths checked.
+No Gradle/APK build and no live backend/Gemini test were performed.

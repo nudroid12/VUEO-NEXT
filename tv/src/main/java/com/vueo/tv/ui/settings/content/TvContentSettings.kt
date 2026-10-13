@@ -825,6 +825,7 @@ internal fun TvEnhancementSettings(
             store.setRecommendationEngine(next)
         }
     }
+    val smartSubs = com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(LocalContext.current.applicationContext).configuration()
     val entries = listOf(
         choiceEntry(
             "recommendation-engine", "Recommendation Engine",
@@ -855,6 +856,13 @@ internal fun TvEnhancementSettings(
             onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_MDBLIST) },
             section = "METADATA & RATINGS",
             icon = Icons.Default.SettingsInputComponent,
+        ),
+        TvSettingsEntry(
+            id = "gemini", title = "Gemini",
+            subtitle = "Your own API key for VUEO SmartSubs.",
+            value = if (smartSubs.connected) "Connected" else configuredLabel(smartSubs.apiKey),
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_GEMINI) },
+            section = "SUBTITLES", icon = Icons.Default.SettingsInputComponent,
         ),
     )
 

@@ -298,6 +298,7 @@ private enum class SettingsPage {
     TRAKT,
     TMDB,
     MDBLIST,
+    GEMINI,
     PLAYBACK,
     SUBTITLES,
     SOURCES,
@@ -317,7 +318,8 @@ private fun parentSettingsPage(
 
         SettingsPage.TRAKT,
         SettingsPage.TMDB,
-        SettingsPage.MDBLIST ->
+        SettingsPage.MDBLIST,
+        SettingsPage.GEMINI ->
             SettingsPage.ENHANCEMENTS
 
         SettingsPage.ROOT ->
@@ -1205,6 +1207,9 @@ fun VueoApp(
                             onMdblist = {
                                 settingsPage = SettingsPage.MDBLIST
                             },
+                            onGemini = {
+                                settingsPage = SettingsPage.GEMINI
+                            },
                         )
 
                     SettingsPage.TRAKT ->
@@ -1228,6 +1233,11 @@ fun VueoApp(
                             },
                         )
 
+
+                    SettingsPage.GEMINI ->
+                        GeminiEnhancementSettingsScreen(
+                            onBack = { settingsPage = SettingsPage.ENHANCEMENTS },
+                        )
 
                     SettingsPage.PLAYBACK ->
                         PlaybackSettingsScreen(

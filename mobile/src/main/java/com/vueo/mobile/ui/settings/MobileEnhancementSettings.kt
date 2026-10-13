@@ -236,6 +236,7 @@ internal fun EnhancementsSettingsScreen(
     onTrakt: () -> Unit,
     onTmdb: () -> Unit,
     onMdblist: () -> Unit,
+    onGemini: () -> Unit,
 ) {
     val context = LocalContext.current
     val pluginStore =
@@ -323,6 +324,19 @@ internal fun EnhancementsSettingsScreen(
             }
         }
 
+
+        item(key = "enhancements-gemini") {
+            val smartSubs = com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context.applicationContext).configuration()
+            VueoSettingsHubGroup(label = "SUBTITLES") {
+                VueoSettingsHubRow(
+                    title = "Gemini",
+                    subtitle = "Your own API key for VUEO SmartSubs.",
+                    status = if (smartSubs.connected) "Connected" else if (smartSubs.apiKey.isNotBlank()) "Configured" else "Not configured",
+                    icon = Icons.Default.SettingsInputComponent,
+                    onClick = onGemini,
+                )
+            }
+        }
 
         item(key = "enhancements-note") {
             VueoCompactInfo(

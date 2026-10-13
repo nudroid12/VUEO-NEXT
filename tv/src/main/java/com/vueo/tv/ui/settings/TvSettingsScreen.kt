@@ -65,6 +65,7 @@ internal enum class TvSettingsPage {
     ENHANCEMENT_TRAKT,
     ENHANCEMENT_TMDB,
     ENHANCEMENT_MDBLIST,
+    ENHANCEMENT_GEMINI,
     PLAYBACK,
     SUBTITLES,
     SOURCES,
@@ -105,7 +106,8 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
-    TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
+    TvSettingsPage.ENHANCEMENT_MDBLIST,
+    TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
     else -> this
 }
 
@@ -116,7 +118,8 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.CONTENT_CATALOGS,
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
-    TvSettingsPage.ENHANCEMENT_MDBLIST -> true
+    TvSettingsPage.ENHANCEMENT_MDBLIST,
+    TvSettingsPage.ENHANCEMENT_GEMINI -> true
     else -> false
 }
 
@@ -152,7 +155,8 @@ fun TvSettingsScreen(
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
             TvSettingsPage.ENHANCEMENT_TRAKT,
             TvSettingsPage.ENHANCEMENT_TMDB,
-            TvSettingsPage.ENHANCEMENT_MDBLIST -> TvSettingsPage.ENHANCEMENTS
+            TvSettingsPage.ENHANCEMENT_MDBLIST,
+            TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
             else -> page
         }
         panelAutoFocusToken += 1
@@ -219,6 +223,9 @@ fun TvSettingsScreen(
             )
             TvSettingsPage.ENHANCEMENT_MDBLIST -> TvMdblistEnhancementSettings(
                 runtime, onNavigate, onProfile, ::backPanel
+            )
+            TvSettingsPage.ENHANCEMENT_GEMINI -> TvGeminiEnhancementSettings(
+                onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.PLAYBACK -> TvPlaybackSettings(
                 runtime, onNavigate, onProfile, onBack
