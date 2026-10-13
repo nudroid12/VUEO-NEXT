@@ -24,6 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -65,20 +68,37 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         onBack = onBack,
     ) {
         item {
-            VueoStatusCard(
-                title = "VUEO SmartSubs",
-                value = status ?: when {
-                    edited -> "Unsaved changes"
-                    config.connected -> "Connected"
-                    config.apiKey.isBlank() -> "Enter API key"
-                    else -> "Test connection to activate session"
-                },
-                text = "Uses your Gemini quota. Subtitle translation runs on VUEO SmartSubs.",
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = VueoPalette.Surface),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("VUEO SmartSubs", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        text = status ?: when {
+                            edited -> "Unsaved changes"
+                            config.connected -> "Connected"
+                            config.apiKey.isBlank() -> "Enter API key"
+                            else -> "Test connection to activate session"
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = VueoPalette.Accent,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        "Uses your Gemini quota. Subtitle translation runs on VUEO SmartSubs.",
+                        color = VueoPalette.Muted,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = VueoPalette.Surface)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = key,
                         onValueChange = { key = it; status = null },

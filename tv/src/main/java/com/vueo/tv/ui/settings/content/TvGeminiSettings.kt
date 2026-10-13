@@ -52,8 +52,14 @@ internal fun TvGeminiEnhancementSettings(
         ))
         add(TvSettingsEntry(
             id = "smartsubs-connect", title = "Test Connection",
-            subtitle = "Check Gemini key/model through VUEO SmartSubs. Uses a small amount of Gemini quota.",
-            value = if (testing) "Connecting…" else status ?: if (config.connected) "Connected" else "Test",
+            subtitle = status?.takeIf { it != "Connecting…" && it != "Connected" }
+                ?: "Check Gemini key/model through VUEO SmartSubs. Uses a small amount of Gemini quota.",
+            value = when {
+                testing -> "Connecting…"
+                status != null && status != "Connected" -> "Failed"
+                config.connected -> "Connected"
+                else -> "Test"
+            },
             enabled = !testing,
             onActivate = {
                 if (!testing) {

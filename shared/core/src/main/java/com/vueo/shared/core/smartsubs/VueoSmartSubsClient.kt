@@ -29,32 +29,52 @@ object VueoSmartSubsClient {
             connection.outputStream.use { it.write(bytes) }
             val status = connection.responseCode
             if (status != 201) {
-                val message = when (status) {
-                    429 -> "Quota or rate limit reached. Try again later."
-                    422 -> "Gemini key/model validation failed. Check access and quota."
-                    503 -> "SmartSubs service is not ready. Try again later."
-                    404 -> "SmartSubs service is unavailable. Try again later."
-                    else -> "Backend connection failed (HTTP $status)."
+                val payload = runCatching {
+                    connection.errorStream?.use { input -> JSONObject(readResponse(input)) }
+                }.getOrNull()
+                val model = payload?.optString("model")?.takeIf {
+                    it.length in 1..80 && it.all { c -> c.isLetterOrDigit() || c == '-' || c == '.' || c == '_' }
+                }
+                val modelHint = model?.let { " Model: $it." } ?: ""
+                val message = when (payload?.optString("errorCode")) {
+                    "GEMINI_KEY_INVALID" -> "Gemini rejected this API key. Check or replace the key."
+                    "GEMINI_ACCESS_DENIED" -> "Gemini denied access. Check key restrictions and project permissions."
+                    "GEMINI_MODEL_UNAVAILABLE" -> "Gemini model unavailable for this key or API version.$modelHint"
+                    "GEMINI_QUOTA_EXCEEDED" -> "Gemini quota or rate limit reached. Check quota or try again later."
+                    "GEMINI_TIMEOUT" -> "Gemini validation timed out. Try again."
+                    "GEMINI_NETWORK_ERROR" -> "SmartSubs could not reach Gemini. Try again later."
+                    "GEMINI_SERVICE_UNAVAILABLE" -> "Gemini is temporarily unavailable. Try again later."
+                    "GEMINI_REQUEST_REJECTED" -> "Gemini rejected the validation request.$modelHint"
+                    "INVALID_INPUT" -> "Enter a valid Gemini API key."
+                    "SMARTSUBS_SESSION_ERROR" -> "SmartSubs could not create a session. Try again later."
+                    else -> when (status) {
+                        429 -> "SmartSubs request limit reached. Try again later."
+                        422 -> "Gemini validation failed. Update the SmartSubs backend for detailed errors."
+                        503 -> "SmartSubs service is not ready. Try again later."
+                        404 -> "SmartSubs service is unavailable. Try again later."
+                        else -> "Backend connection failed (HTTP $status)."
+                    }
                 }
                 throw IllegalStateException(message)
             }
-            val response = connection.inputStream.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    check(output.size() + count <= 16_384) { "Invalid backend response" }
-                    output.write(buffer, 0, count)
-                }
-                output.toByteArray()
-            }
-            val json = JSONObject(String(response, Charsets.UTF_8))
+            val json = connection.inputStream.use { input -> JSONObject(readResponse(input)) }
             val token = json.optString("token")
             val expires = json.optLong("expiresAt")
             check(token.length in 20..4096 && expires > System.currentTimeMillis()) { "Invalid backend session" }
             Session(token, expires, json.optString("model"))
         } finally { connection.disconnect() }
+    }
+
+    private fun readResponse(input: java.io.InputStream): String {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            check(output.size() + count <= 16_384) { "Invalid backend response" }
+            output.write(buffer, 0, count)
+        }
+        return output.toString(Charsets.UTF_8.name())
     }
 
     fun failureMessage(error: Exception): String = when (error) {
