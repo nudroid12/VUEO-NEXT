@@ -1,0 +1,20 @@
+VUEO SmartSubs player integration - TV and Mobile
+
+Apply this ZIP at the root of the VUEO-NEXT app repository using its app ZIP workflow.
+It contains repository-relative files, no YML, no test folder, and no Cloudflare configuration.
+Keep the existing app workflows. Do not use the backend ZIP workflow in the app repository.
+Requires the corrected V2-style SmartSubs backend; deploy the previously supplied validation-error backend patch for detailed connection errors.
+
+1. Build/install the updated app.
+2. Gemini settings: save your key, Test Connection, then enable Use Gemini for SmartSubs.
+3. Play a video with a provider/addon English VTT or SRT subtitle.
+4. Open subtitles and select Malay AI, labeled with its English source provider.
+5. Existing player preparation waits for Queue/translation delivery, then uses session-cached VTT for playback and seek.
+
+The app POSTs up to five eligible English sources and their supported headers to /c/TOKEN/subtitles.
+This listing request does not download/translate subtitles on the backend. Original tracks remain available.
+No embedded text extraction, ASS/SSA/TTML translation conversion, or automatic Gemini prefetch is added.
+When an English VTT/SRT up to 128 KiB has already loaded into the player session cache, Refresh Subtitles can submit its text instead of its URL. This assists providers with device-bound URLs. There is no automatic download fallback for an unplayed inaccessible URL.
+Refreshing subtitles retries listing. Episode/source changes cancel stale results. Expired sessions require Test Connection again.
+
+Validation: five backend contract tests passed (listing/no Gemini, Queue/VTT delivery, session validation, header isolation, input/resource constraints). App source wiring and root ZIP paths checked. Full Android compilation and live playback were not available in this environment.

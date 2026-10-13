@@ -258,7 +258,44 @@ fun TvPlayerScreen(
                 "episode=${episode?.episode ?: 0} received=${latestDiscoveredSubtitles.size} total=${merged.size}")
         }
     }
-    val liveSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(activeSource, addonSubtitles)
+    val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(activeSource, addonSubtitles)
+    val smartSubsStore = remember(context) { com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context.applicationContext) }
+    var smartSubsTracks by remember(mediaKey, activeSource.url) { mutableStateOf(emptyList<SubtitleTrack>()) }
+    var smartSubsMessage by remember(mediaKey, activeSource.url) { mutableStateOf<String?>(null) }
+    var smartSubsRefreshing by remember(mediaKey) { mutableStateOf(false) }
+    var smartSubsRefreshGeneration by remember(mediaKey) { mutableIntStateOf(0) }
+    LaunchedEffect(mediaKey, activeSource.url, providerSubtitles, smartSubsRefreshGeneration) {
+        val config = smartSubsStore.configuration()
+        smartSubsMessage = null
+        if (!config.enabled) { smartSubsTracks = emptyList(); smartSubsRefreshing = false; return@LaunchedEffect }
+        if (!config.connected) {
+            smartSubsTracks = emptyList(); smartSubsRefreshing = false
+            smartSubsMessage = "SmartSubs session needs renewal. Test Connection in Gemini settings."
+            return@LaunchedEffect
+        }
+        val candidates = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.eligibleSources(providerSubtitles)
+        if (candidates.isEmpty()) {
+            smartSubsTracks = emptyList(); smartSubsRefreshing = false
+            if (providerSubtitles.any { com.vueo.shared.core.language.LanguagePolicy.canonicalCode(it.language) == "en" }) {
+                smartSubsMessage = "SmartSubs needs a supported English VTT/SRT subtitle source."
+            }
+            return@LaunchedEffect
+        }
+        smartSubsRefreshing = true
+        try {
+            // Batch late provider/addon updates. This POST only lists tracks, never translates.
+            delay(350L)
+            smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
+                config = config, mediaType = media.type, videoId = bundle.videoId, tracks = candidates,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            smartSubsMessage = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.failureMessage(error)
+        } finally { smartSubsRefreshing = false }
+    }
+    val liveSubtitles = (providerSubtitles + smartSubsTracks).distinctBy { it.url }
+
     val externalSubtitlesBySelectionId = remember(liveSubtitles) {
         liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)
     }
@@ -2193,6 +2230,7 @@ fun TvPlayerScreen(
             focusScope.launch {
                 try {
                     val added = onRefreshSubtitles()
+                    smartSubsRefreshGeneration += 1
                     subtitleRefreshMessage =
                         if (added > 0) {
                             "Subtitles refreshed • +$added new"
@@ -2348,7 +2386,7 @@ fun TvPlayerScreen(
         ) {
             VueoPlayerSubtitleWorkspace(
                 refreshing = subtitleDiscoveryRefreshing,
-                refreshMessage = subtitleRefreshMessage,
+                refreshMessage = smartSubsMessage ?: if (smartSubsRefreshing) "Preparing SmartSubs choices…" else subtitleRefreshMessage,
                 onRefresh = ::requestSubtitleRefresh,
                 panelModifier = Modifier.animateEnterExit(
                     enter = tvPlayerSidePanelEnter(),

@@ -85,7 +85,7 @@ internal fun TvGeminiEnhancementSettings(
         ))
         add(toggleEntry(
             id = "smartsubs-enabled", title = "Use Gemini for SmartSubs",
-            subtitle = "Malay subtitle playback is not available yet.",
+            subtitle = "Select a Malay AI track in the player to translate provider English subtitles.",
             checked = config.enabled && config.connected,
             enabled = config.connected && !testing,
         ) {
@@ -97,6 +97,6 @@ internal fun TvGeminiEnhancementSettings(
         title = "Gemini", subtitle = "Your own API key for VUEO SmartSubs.",
         entries = entries, onNavigate = onNavigate, onProfile = onProfile, onBack = onBack,
         topLabel = "Enhancements",
-        footer = "Key and session are encrypted on this TV and excluded from backup and sync. Malay subtitle playback is not available yet.",
+        footer = "Key and session are encrypted on this TV and excluded from backup and sync. Select a Malay AI track in the player to translate provider English subtitles.",
     )
 }

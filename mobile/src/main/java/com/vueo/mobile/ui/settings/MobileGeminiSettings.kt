@@ -143,7 +143,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         item {
             VueoSettingsToggleCard(
                 title = "Use Gemini for SmartSubs",
-                subtitle = "Save and connect first. Malay subtitle playback is not available yet.",
+                subtitle = "Add Malay AI choices from provider English subtitles. Translation starts when an AI track is selected.",
                 checked = config.enabled && config.connected && !edited,
                 enabled = config.connected && !edited && !testing,
                 onCheckedChange = {
@@ -158,7 +158,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         item {
             VueoInfoCard(
                 title = "On this device",
-                text = "Key and session are encrypted locally and excluded from backup and account sync. Clear the API key and save to remove it. Malay subtitle playback is not available yet.",
+                text = "Key and session are encrypted locally and excluded from backup and account sync. Clear the API key and save to remove it. Select a Malay AI track in the player to translate provider English subtitles.",
             )
         }
     }
