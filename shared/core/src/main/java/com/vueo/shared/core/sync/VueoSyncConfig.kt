@@ -9,6 +9,6 @@ internal object VueoSyncConfig {
         "profiles" to "Profiles", "favorites" to "Favorites",
         "progress" to "Continue Watching", "history" to "Watched History",
         "addons" to "Installed Addons & Providers",
-        "integrations" to "TMDB & MDBList", "trakt" to "Trakt Connection & Options",
+        "integrations" to "API Keys", "trakt" to "Trakt Account",
     )
 }

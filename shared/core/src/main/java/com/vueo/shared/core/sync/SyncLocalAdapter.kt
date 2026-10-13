@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 /** Explicit allowlist: no UI, decoder, subtitle/audio, cache, logs or provider code. */
 internal class SyncLocalAdapter(private val context: Context) {
-    val files = listOf("vueo_profiles","vueo_library","vueo_plugins","vueo_content_manager","vueo_settings","vueo_trakt")
+    val files = listOf("vueo_profiles","vueo_library","vueo_plugins","vueo_content_manager","vueo_settings","vueo_trakt","vueo_smartsubs_sync_signal")
     private fun prefs(file: String) = context.getSharedPreferences(file,Context.MODE_PRIVATE)
     private fun key(file: String, profile: String, base: String, item: String = "") =
         JSONArray(listOf(file,profile,base,item)).toString()
@@ -47,6 +47,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             "vueo_content_manager" -> if(base=="stremio_manifest_urls") "addons" else null
             "vueo_settings" -> if(base in INTEGRATION_KEYS) "integrations" else null
             "vueo_trakt" -> if(base in TRAKT_KEYS) "trakt" else null
+            "vueo_smartsubs_sync_signal" -> "integrations"
             else -> null
         }
         return kind?.let { setOf(it) }.orEmpty()
@@ -120,6 +121,10 @@ internal class SyncLocalAdapter(private val context: Context) {
             val (profile,base) = split(raw)
             if (base in INTEGRATION_KEYS) add("integrations",key("vueo_settings",profile,base),typed(value))
         }
+        if ("integrations" in kinds && (scopes == null || scopes.any { it.first == "vueo_smartsubs_sync_signal" })) {
+            val apiKey = com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context).apiKeyForSync()
+            if (apiKey.isNotBlank()) add("integrations", key("vueo_smartsubs", "default", "gemini_api_key"), typed(apiKey))
+        }
         if("trakt" in kinds) prefs("vueo_trakt").all.forEach { (raw,value) ->
             if(!wants("vueo_trakt",raw)) return@forEach
             val (profile,base) = split(raw)
@@ -144,6 +149,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             "vueo_content_manager" -> base=="stremio_manifest_urls" && kind=="addons"
             "vueo_settings" -> kind=="integrations" && base in INTEGRATION_KEYS
             "vueo_trakt" -> kind=="trakt" && base in TRAKT_KEYS
+            "vueo_smartsubs" -> kind=="integrations" && base=="gemini_api_key" && a.getString(1)=="default" && a.getString(3).isEmpty() && (row.optBoolean("deleted") || row.optJSONObject("value")?.optString("t")=="s")
             else -> false
         }
     }.getOrDefault(false)
@@ -164,7 +170,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             val parts = JSONArray(k)
             require(parts.length()==4)
             val file = parts.getString(0); val profile = parts.getString(1); val base = parts.getString(2)
-            if (file !in files) return@forEach
+            if (file !in files && file!="vueo_smartsubs") return@forEach
             if (file=="vueo_profiles" && row.optBoolean("deleted")) {
                 com.vueo.shared.core.storage.ProfileStore(context).deleteProfile(profile)
             }
@@ -176,6 +182,11 @@ internal class SyncLocalAdapter(private val context: Context) {
             appliedKinds+=row.getString("kind")
         }
         touched.forEach { (file,profile,base) ->
+            if (file == "vueo_smartsubs") {
+                val value = current[key(file, profile, base)]?.optJSONObject("value")?.optString("v").orEmpty()
+                com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context).importApiKey(value)
+                return@forEach
+            }
             val target = prefs(file)
             val raw = if (file == "vueo_trakt") "profile:$profile:$base" else scoped(profile,base)
             val members = current.values.filter { row ->
@@ -229,10 +240,7 @@ internal class SyncLocalAdapter(private val context: Context) {
         appliedKinds
     }
     companion object {
-        private val INTEGRATION_KEYS=setOf("tmdb_metadata_enrichment","tmdb_recommendations","tmdb_similar_titles",
-            "tmdb_artwork_enrichment","mdblist_api_key","mdblist_ratings","mdblist_imdb","mdblist_rotten_tomatoes",
-            "mdblist_metacritic","mdblist_tmdb","mdblist_trakt")
-        private val TRAKT_KEYS=setOf("discovery","sync_favorites","sync_history","sync_playback","activity_scrobble",
-            "username")
+        private val INTEGRATION_KEYS=setOf("mdblist_api_key")
+        private val TRAKT_KEYS=setOf("username")
     }
 }

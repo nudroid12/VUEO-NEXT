@@ -17,6 +17,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,17 +38,32 @@ import com.vueo.shared.core.smartsubs.SmartSubsSettingsStore
 import com.vueo.shared.core.smartsubs.VueoSmartSubsClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.vueo.shared.core.sync.VueoSyncService
 
 @Composable
 internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SmartSubsSettingsStore(context.applicationContext) }
+    val accountSync = remember { VueoSyncService.get(context) }
+    val accountRevision by accountSync.integrationRevision.collectAsState()
     var config by remember { mutableStateOf(store.configuration()) }
     var key by remember { mutableStateOf(config.apiKey) }
     var visible by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(accountRevision, testing) {
+        if (!testing) {
+            val saved = withContext(Dispatchers.IO) { store.configuration() }
+            val editing = key.trim() != config.apiKey
+            if (saved.apiKey != config.apiKey) status = null
+            config = saved
+            if (!editing) key = saved.apiKey
+        }
+    }
+
     val edited = key.trim() != config.apiKey
 
     fun save(): Boolean {
@@ -54,7 +71,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
             store.saveCredentials(key)
             config = store.configuration()
             key = config.apiKey
-            status = "Saved on this device"
+            status = "API key saved"
             true
         } catch (_: Exception) {
             status = "Unable to save securely on this device"
@@ -158,7 +175,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         item {
             VueoInfoCard(
                 title = "On this device",
-                text = "Key and session are encrypted locally and excluded from backup and account sync. Clear the API key and save to remove it. Select a Malay AI track in the player to translate provider English subtitles.",
+                text = "Account sync shares your API key. The session and SmartSubs ON/OFF stay on this device. Clear the API key and save to remove it. Select a Malay AI track in the player to translate provider English subtitles.",
             )
         }
     }

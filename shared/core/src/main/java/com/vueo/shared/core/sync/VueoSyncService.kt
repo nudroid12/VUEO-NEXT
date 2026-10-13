@@ -87,11 +87,12 @@ class VueoSyncService private constructor(private val context: Context) {
         })
         scope.launch {
             try {
+                migrateSyncControl()
                 val saved=authFile.read()
                 if (saved!=null) { session=saved; loadRepositories(saved.getJSONObject("user").getString("id")) }
                 listeners.forEach { (file,listener) -> context.getSharedPreferences(file,Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(listener) }
                 ready=true
-                _state.value=if (connected()) "Ready to sync" else "Not connected"
+                _state.value=if (!connected()) "Not connected" else if(syncEnabled()) "Ready to sync" else "Sync off. Changes stay on this device."
                 changed()
                 if (foreground) restartForegroundSync()
             } catch (_: Exception) { _state.value="Unable to read encrypted sync state. Sign in again."; ready=true; changed() }
@@ -100,37 +101,44 @@ class VueoSyncService private constructor(private val context: Context) {
     fun connected()=session!=null
     fun email()=session?.optJSONObject("user")?.optString("email").orEmpty()
     private fun uid()=session?.optJSONObject("user")?.optString("id").orEmpty()
-    fun enabled(kind: String)=kind in categories && options.getBoolean("enabled:$kind",false)
+    fun syncEnabled() = options.getBoolean("sync_all", false)
+    fun enabled(kind: String)=kind in categories && syncEnabled()
+    private fun migrateSyncControl() {
+        if (options.contains("sync_all")) return
+        val edit=options.edit().putBoolean("sync_all",categories.keys.any { options.getBoolean("enabled:$it",false) })
+        categories.keys.forEach { edit.remove("enabled:$it") }
+        check(edit.commit()) { "Unable to update account sync preferences" }
+    }
     fun setPlayerActive(active: Boolean) {
         val wasActive=playerActive
         playerActive=active
         if(wasActive && !active) { pauseUntil=android.os.SystemClock.elapsedRealtime()+3_000; requestSync(3_000,pull=true) }
     }
+    /** Compatibility entry point: sync is now account-wide, never category-specific. */
     fun setEnabled(kind: String,value: Boolean) {
         require(kind in categories)
+        setSyncEnabled(value)
+    }
+    suspend fun setSyncEnabledAndWait(value: Boolean) = withContext(Dispatchers.IO) {
+        syncGate.withLock {
+            check(ready && connected()) { "Sign in to VUEO first." }
+            check(options.edit().putBoolean("sync_all",value).commit()) { "Unable to save sync preference" }
+            if (value && repository==null) loadRepositories(uid(),force=true)
+            initialCapture=true
+            lastPullAt=0L
+            _state.value=if(value) "Sync on" else "Sync off. Changes stay on this device."
+            changed()
+        }
+        restartForegroundSync()
+        if(value) requestSync(pull=true)
+    }
+    fun setSyncEnabled(value: Boolean) {
         if(!ready || !connected()) return
         val owner=uid()
-        val edit=options.edit().putBoolean("enabled:$kind",value)
-        if(value && kind!="profiles") edit.putBoolean("enabled:profiles",true)
-        if(!value && kind=="profiles") categories.keys.forEach { edit.putBoolean("enabled:$it",false) }
-        edit.apply()
         scope.launch {
-            syncGate.withLock {
-                if(uid()!=owner || !connected()) return@withLock
-                synchronized(lock) {
-                    if(value && repository==null) loadRepositories(uid(),force=true)
-                    repository?.transaction {
-                        val enabledKinds=categories.keys.filter(::enabled).toSet()
-                        repository!!.resetCursor(kind)
-                        repository!!.clearPendingExcept(enabledKinds,kind)
-                        if (!enabled("trakt")) { tokenPending.clear(); repository!!.clearTokens() }
-                        if (value && enabled(kind) && connected()) {
-                            adapter.snapshot(setOf(kind,"profiles")).forEach { (_,row) -> repository!!.enqueue(row,false) }
-                        }
-                    }
-                }
-            }
-            changed(); lastPullAt=0L; restartForegroundSync(); requestSync(pull=true)
+            try { if(uid()==owner) setSyncEnabledAndWait(value) }
+            catch(cancelled: CancellationException) { throw cancelled }
+            catch(error: Exception) { _state.value=message(error); changed() }
         }
     }
     fun setForeground(active: Boolean) {
@@ -208,15 +216,15 @@ class VueoSyncService private constructor(private val context: Context) {
                 loadRepositories(user)
                 if(options.getString("owner",null)!=user) {
                     val edit=options.edit().putString("owner",user)
-                    categories.keys.forEach { edit.putBoolean("enabled:$it",false) }; edit.commit()
+                    edit.putBoolean("sync_all",true); check(edit.commit())
                 }
                 if(!result.has("expires_at")) result.put("expires_at",System.currentTimeMillis()/1000+result.optLong("expires_in",3600))
                 authFile.write(result)
                 session=result
                 capture()
             }
-            _state.value="Connected. Choose what to sync."; changed(); restartForegroundSync()
-            "Connected. Choose what to sync."
+            _state.value="Connected. All account data syncs together."; changed(); restartForegroundSync()
+            "Connected. All account data syncs together."
         }
     }
     suspend fun signOut()=withContext(Dispatchers.IO) {
@@ -238,6 +246,7 @@ class VueoSyncService private constructor(private val context: Context) {
         val opened=SyncEntityRepository(context,user)
         try {
             opened.migrateLegacy(context,adapter::accepts)
+            opened.transaction { opened.restrictEntities(adapter::accepts) }
             tokenPending=opened.tokens()
             repository=opened
         } catch(error: Exception) { opened.close(); throw error }
@@ -261,7 +270,8 @@ class VueoSyncService private constructor(private val context: Context) {
         val current=adapter.snapshot(selected,scopes)
         store.transaction {
             store.clearPendingExcept(categories.keys.filter(::enabled).toSet())
-            val known=store.states(selected).filterKeys { scopes==null || adapter.matchesScope(it,scopes) }
+            val known=store.states(selected).filterKeys { scopes==null || adapter.matchesScope(it,scopes) ||
+                (scopes.any { it.first=="vueo_smartsubs_sync_signal" } && JSONArray(it).getString(0)=="vueo_smartsubs") }
             var mutated=false
             (current.keys+known.filterValues { it.fingerprint!=null }.keys).forEach { key ->
                 val now=current[key]; val old=known[key]
@@ -300,7 +310,7 @@ class VueoSyncService private constructor(private val context: Context) {
             try {
                 if(!ready || !connected()) return@withLock
                 val user=uid(); val kinds=categories.keys.filter(::enabled).toSet()
-                if(kinds.isEmpty()) { _state.value="Connected. All sync options are off."; changed(); return@withLock }
+                if(kinds.isEmpty()) { _state.value="Sync off. Changes stay on this device."; changed(); return@withLock }
                 if(repository==null) loadRepositories(user,force=true)
                 val store=repository!!
                 captureDirty(if(captureAll || initialCapture) kinds else null)
@@ -362,7 +372,7 @@ class VueoSyncService private constructor(private val context: Context) {
                 }
                 if(enabled("trakt")) {
                     for(profile in ProfileStore(context).profiles().map { it.id }) {
-                        if(pull || synchronized(lock) { profile in tokenPending }) reconcileTrakt(profile,user)
+                        if(enabled("trakt") && (pull || synchronized(lock) { profile in tokenPending })) reconcileTrakt(profile,user)
                     }
                 }
                 val more=store.hasPending(kinds) || (enabled("trakt") && tokenPending.isNotEmpty())
@@ -399,11 +409,11 @@ class VueoSyncService private constructor(private val context: Context) {
         }
     }
     internal fun queueTraktSession(profile: String,tokens: JSONObject?) {
-        if(!ready || !connected() || !enabled("trakt")) return
+        if(!ready || !connected()) return
         val owner=uid()
         scope.launch {
             syncGate.withLock {
-                if(uid()!=owner || !enabled("trakt")) return@withLock
+                if(uid()!=owner || !connected()) return@withLock
                 synchronized(lock) {
                     if(repository==null) loadRepositories(owner,force=true)
                     tokenPending[profile]=JSONObject().put("delete",tokens==null).put("value",tokens ?: JSONObject.NULL)
@@ -452,6 +462,7 @@ class VueoSyncService private constructor(private val context: Context) {
     internal suspend fun cloudTraktToken(profile: String,rejected: String?,refresh: suspend (JSONObject)->JSONObject): String? {
         if(!sharesTrakt()) return null
         return syncGate.withLock {
+            if(!sharesTrakt()) return@withLock null
             val user=uid()
             if(synchronized(lock) { profile in tokenPending }) reconcileTrakt(profile,user)
             traktGate.withLock {

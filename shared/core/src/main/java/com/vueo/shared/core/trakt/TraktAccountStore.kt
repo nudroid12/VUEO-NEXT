@@ -48,7 +48,10 @@ internal class TraktAccountStore(private val context: Context) {
     fun clear(profile: String, publishCloud: Boolean = true) {
         val identity = prefs.getString(key(profile, "account_id"), null)
         val editor = prefs.edit()
-        prefs.all.keys.filter { it.startsWith("profile:$profile:") }.forEach { editor.remove(it) }
+        val localOptions = setOf("discovery", "sync_favorites", "sync_history", "sync_playback", "activity_scrobble")
+        prefs.all.keys.filter { raw -> raw.startsWith("profile:$profile:") &&
+            (publishCloud || raw.removePrefix("profile:$profile:") !in localOptions)
+        }.forEach { editor.remove(it) }
         if (identity != null) editor.putString(key(profile, "account_id"), identity)
         editor.commit()
         if (publishCloud) com.vueo.shared.core.sync.VueoSyncService.get(context).queueTraktSession(profile, null)

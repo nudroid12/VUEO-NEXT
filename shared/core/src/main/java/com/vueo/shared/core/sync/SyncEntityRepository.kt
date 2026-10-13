@@ -94,6 +94,14 @@ internal class SyncEntityRepository(context: Context,user: String) {
             db.update("entities",ContentValues().apply { putNull("payload") },"entity_key=?",arrayOf(it.key))
         }
     }
+    fun restrictEntities(accepts: (JSONObject) -> Boolean) {
+        if (meta("credentials_only_v1") == "true") return
+        val rejected = states(VueoSyncConfig.categories.keys).values.filter { state ->
+            !accepts(JSONObject().put("key", state.key).put("kind", state.kind).put("deleted", true))
+        }
+        rejected.forEach { db.delete("entities", "entity_key=?", arrayOf(it.key)) }
+        putMeta("credentials_only_v1", "true")
+    }
     /** Bounded decrypt/load: at most 25 changed records and 750 KB per exchange. */
     fun pendingBatch(kind: String): List<JSONObject> = db.rawQuery(
         "SELECT payload FROM entities WHERE kind=? AND payload IS NOT NULL ORDER BY generation LIMIT 25",arrayOf(kind)).use { rows ->

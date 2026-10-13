@@ -13,6 +13,7 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
     val status by service.state.collectAsState()
     val revision by service.revision.collectAsState()
     val connected=remember(revision) { service.connected() }
+    val syncOn=remember(revision) { service.syncEnabled() }
     val scope=rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -33,7 +34,7 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
     val entries=buildList {
         add(TvSettingsEntry("status","Account",if(connected) service.email() else "Sign in to the same account used on mobile.",
             if(connected) "Connected" else "Not connected",enabled=false,section="ACCOUNT"))
-        add(TvSettingsEntry("message","Sync Status",if(message.isBlank() || message==status) status else "$message\n$status",enabled=false))
+        add(TvSettingsEntry("message","Account Sync",if(message.isBlank() || message==status) status else "$message\n$status",enabled=false))
         if(!connected) {
             add(TvSettingsEntry("email","Email","Your VUEO account email.",email,enabled=!busy,onActivate={edit="email"}))
             add(TvSettingsEntry("password","Password","Your VUEO account password.",if(password.isBlank()) "Not set" else "••••••••",enabled=!busy,onActivate={edit="password"}))
@@ -42,26 +43,24 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
             add(TvSettingsEntry("register","Create Account","Create a VUEO account with the email and password entered above.",
                 enabled=!busy && email.isNotBlank() && password.isNotBlank(),onActivate={action { service.signIn(email,password,true) }}))
         } else {
-            add(TvSettingsEntry("sync-now","Sync Now","Sync this TV with your account.",enabled=!busy,
-                onActivate={action { service.syncNow(); "Sync finished" }},section="ACTIONS"))
+            add(TvSettingsEntry("sync-now","Sync Now","Sync your library and connections now.",enabled=!busy && syncOn,
+                onActivate={action { service.syncNow(); service.state.value }},section="ACTIONS"))
             add(TvSettingsEntry("sign-out",if(confirmSignOut) "Confirm Sign Out" else "Sign Out","Local data stays on this TV.",enabled=!busy,
                 onActivate={if(confirmSignOut) action {service.signOut(); confirmSignOut=false; "Signed out"} else confirmSignOut=true}))
             if(confirmSignOut) add(TvSettingsEntry("cancel-sign-out","Cancel","Stay connected.",onActivate={confirmSignOut=false}))
-            service.categories.forEach { (kind,label) ->
-                val on=remember(revision) { service.enabled(kind) }
-                add(TvSettingsEntry("sync-$kind",label,when(kind) {
-                    "profiles" -> "Names and avatars across devices."
-                    "trakt" -> "Trakt connection and account preferences."
-                    "addons" -> "Sync installed addons and providers. ON/OFF and catalog settings stay on this device."
-                    "integrations" -> "API keys and metadata preferences."
-                    else -> "Keep $label in sync between devices."
-                },value=if(on) "On" else "Off",switchChecked=on,enabled=!busy,
-                    onActivate={service.setEnabled(kind,!on)},section="SYNC OPTIONS"))
-            }
+            add(TvSettingsEntry("sync-all", if(syncOn) "Turn Sync Off" else "Turn Sync On",
+                "One control for all account data.", value=if(syncOn) "On" else "Off", enabled=!busy,
+                onActivate={action {service.setSyncEnabledAndWait(!syncOn); service.state.value}}, section="ACCOUNT SYNC"))
+            add(TvSettingsEntry("shared-data", "Synced Together",
+                "Profiles, Favorites, Continue Watching, watched history and installed addons/providers.", enabled=false))
+            add(TvSettingsEntry("shared-connections", "Enhancement Connections",
+                "TMDB, MDBList and Gemini API keys, plus your Trakt account. Feature switches stay local.", enabled=false))
+            add(TvSettingsEntry("local-settings", "Stays on This TV",
+                "Enhancement and Trakt options, addon/provider ON/OFF, catalogs and player preferences.", enabled=false))
         }
     }
-    TvSettingsListScreen("Account","Your library across mobile and TV.",entries,onNavigate,onProfile,onBack,
-        footer="Playback, subtitle and device preferences stay on this TV.")
+    TvSettingsListScreen("Account","Your library and connections across mobile and TV.",entries,onNavigate,onProfile,onBack,
+        footer="All account data syncs together. Device preferences stay local.")
     edit?.let { field -> TvTextEntryDialog(title=if(field=="email") "Email" else "Password",initialValue=if(field=="email") email else password,
         secret=field=="password",onDismiss={edit=null},onSave={if(field=="email") email=it else password=it; edit=null}) }
 }

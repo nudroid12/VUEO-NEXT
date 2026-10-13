@@ -3,6 +3,8 @@ package com.vueo.tv.settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsInputComponent
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +16,9 @@ import com.vueo.shared.core.smartsubs.SmartSubsSettingsStore
 import com.vueo.shared.core.smartsubs.VueoSmartSubsClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.vueo.shared.core.sync.VueoSyncService
 
 @Composable
 internal fun TvGeminiEnhancementSettings(
@@ -23,11 +28,22 @@ internal fun TvGeminiEnhancementSettings(
 ) {
     val context = LocalContext.current
     val store = remember { SmartSubsSettingsStore(context.applicationContext) }
+    val accountSync = remember { VueoSyncService.get(context) }
+    val accountRevision by accountSync.integrationRevision.collectAsState()
     var config by remember { mutableStateOf(store.configuration()) }
     var editingKey by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(accountRevision, testing, editingKey) {
+        if (!testing && !editingKey) {
+            val saved = withContext(Dispatchers.IO) { store.configuration() }
+            if (saved.apiKey != config.apiKey) status = null
+            config = saved
+        }
+    }
+
 
     if (editingKey) TvTextEntryDialog(
         title = "Gemini API Key",
@@ -97,6 +113,6 @@ internal fun TvGeminiEnhancementSettings(
         title = "Gemini", subtitle = "Your own API key for VUEO SmartSubs.",
         entries = entries, onNavigate = onNavigate, onProfile = onProfile, onBack = onBack,
         topLabel = "Enhancements",
-        footer = "Key and session are encrypted on this TV and excluded from backup and sync. Select a Malay AI track in the player to translate provider English subtitles.",
+        footer = "Account sync shares your API key. The session and SmartSubs ON/OFF stay on this TV. Select a Malay AI track in the player to translate provider English subtitles.",
     )
 }

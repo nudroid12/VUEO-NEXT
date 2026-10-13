@@ -4,8 +4,9 @@ import android.content.Context
 import com.vueo.shared.core.sync.SyncSecureFile
 import org.json.JSONObject
 
-/** Device-only credentials; excluded from backup and account sync. */
+/** Encrypted credentials. Account sync shares only the API key; sessions and switches are local. */
 class SmartSubsSettingsStore(context: Context) {
+    private val syncSignal = context.applicationContext.getSharedPreferences("vueo_smartsubs_sync_signal", Context.MODE_PRIVATE)
     private val file = SyncSecureFile(context.applicationContext, "smartsubs")
 
     data class Configuration(
@@ -30,16 +31,37 @@ class SmartSubsSettingsStore(context: Context) {
             model = if (sameBackend) value.optString("model") else "")
     }.getOrDefault(Configuration()) }
 
-    fun saveCredentials(apiKey: String) = synchronized(LOCK) {
-        val value = file.read() ?: JSONObject()
-        val key = apiKey.trim()
-        val url = VueoSmartSubsClient.BACKEND_URL
-        if (key != value.optString("apiKey") || url != value.optString("backendUrl")) {
-            value.remove("token"); value.remove("expiresAt"); value.remove("model")
-            value.put("enabled", false)
+    internal fun apiKeyForSync(): String = synchronized(LOCK) { file.read()?.optString("apiKey").orEmpty() }
+
+    fun saveCredentials(apiKey: String) {
+        updateApiKey(apiKey, publishChange = true, preserveEnabled = false)
+    }
+
+    /** A remote key never changes this device's ON/OFF preference or imports another session. */
+    fun importApiKey(apiKey: String) {
+        updateApiKey(apiKey, publishChange = false, preserveEnabled = true)
+    }
+
+    private fun updateApiKey(apiKey: String, publishChange: Boolean, preserveEnabled: Boolean) {
+        val changed = synchronized(LOCK) {
+            val value = file.read() ?: JSONObject()
+            val key = apiKey.trim()
+            val url = VueoSmartSubsClient.BACKEND_URL
+            val keyChanged = key != value.optString("apiKey")
+            if (keyChanged || url != value.optString("backendUrl")) {
+                value.remove("token"); value.remove("expiresAt"); value.remove("model")
+                if (!preserveEnabled) value.put("enabled", false)
+            }
+            value.put("apiKey", key).put("backendUrl", url)
+            file.write(value)
+            keyChanged
         }
-        value.put("apiKey", key).put("backendUrl", url)
-        file.write(value)
+        if (changed && publishChange) signalKeyChange()
+    }
+
+    private fun signalKeyChange() {
+        // This preference contains no credential; it wakes the existing debounced sync capture.
+        syncSignal.edit().putString("revision", java.util.UUID.randomUUID().toString()).apply()
     }
 
     fun saveSession(apiKey: String, session: VueoSmartSubsClient.Session): Boolean = synchronized(LOCK) {
@@ -57,6 +79,13 @@ class SmartSubsSettingsStore(context: Context) {
         file.write(value)
     }
 
-    fun clear() = synchronized(LOCK) { file.delete() }
+    fun clear() {
+        val hadKey = synchronized(LOCK) {
+            val present = file.read()?.optString("apiKey").orEmpty().isNotBlank()
+            file.delete()
+            present
+        }
+        if (hadKey) signalKeyChange()
+    }
     companion object { private val LOCK = Any() }
 }
