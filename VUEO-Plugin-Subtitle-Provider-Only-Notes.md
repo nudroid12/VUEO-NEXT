@@ -1,0 +1,1 @@
+Plugin subtitle labels now use provider.name only, for TV and mobile. Subtitle IDs, provider IDs, URLs, headers and selection identity remain unchanged. Addon labels are unchanged. Apply ZIP at repository root with the existing workflow. Kotlin syntax parsing passed; APK/device test not performed. New labels are produced when streams/subtitles are discovered again.

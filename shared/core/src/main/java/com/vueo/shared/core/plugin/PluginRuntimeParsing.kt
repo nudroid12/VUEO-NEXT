@@ -119,7 +119,7 @@ internal fun parseProviderStreams(
             val headers = item.optJSONObject("headers").toStringMap()
             val subtitles = parsePluginSubtitles(subtitleArray, headers,
                 "plugin:${repository.manifestUrl.hashCode()}:${provider.id}",
-                "${repository.name} / ${provider.name}")
+                provider.name)
             SubtitleFlowDiagnostics.received(
                 repository.manifestUrl, provider.id, url,
                 subtitleArray?.length() ?: 0, subtitleField != null && subtitleArray == null,
