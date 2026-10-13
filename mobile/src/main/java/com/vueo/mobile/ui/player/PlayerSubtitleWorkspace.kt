@@ -508,6 +508,7 @@ private fun SubtitleTrackRow(
         Spacer(Modifier.height(5.dp))
         Text(
             track.label,
+            modifier = Modifier.padding(start = 8.dp),
             color = foreground,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
@@ -524,6 +525,7 @@ private fun SubtitleTrackRow(
         detail?.let {
             Text(
                 it,
+                modifier = Modifier.padding(start = 8.dp),
                 color = if (pending) SubtitleAccent.copy(alpha = .82f)
                 else foreground.copy(alpha = .58f),
                 fontSize = 9.sp,

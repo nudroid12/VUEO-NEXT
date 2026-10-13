@@ -1,7 +1,5 @@
 package com.vueo.mobile.ui
 
-import androidx.compose.ui.text.PlatformTextStyle
-import androidx.compose.ui.text.TextStyle
 import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
@@ -72,8 +70,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -2100,7 +2098,7 @@ internal fun MediaDetailsScreen(
             ),
         verticalArrangement =
             Arrangement.spacedBy(
-                18.dp
+                20.dp
             ),
     ) {
         item {
@@ -2404,9 +2402,9 @@ internal fun MediaDetailsScreen(
                     ) {
                         Icon(
                             if (inWatchlist) {
-                                Icons.Default.Check
+                                Icons.Default.Favorite
                             } else {
-                                Icons.Default.Add
+                                Icons.Outlined.FavoriteBorder
                             },
                             contentDescription =
                                 null,
@@ -2517,7 +2515,7 @@ internal fun MediaDetailsScreen(
                             ),
                         verticalArrangement =
                             Arrangement.spacedBy(
-                                10.dp
+                                7.dp
                             ),
                     ) {
                         Text(
@@ -2715,7 +2713,7 @@ internal fun MediaDetailsScreen(
                 Column(
                     verticalArrangement =
                         Arrangement.spacedBy(
-                            6.dp
+                            10.dp
                         ),
                 ) {
                     Column(
@@ -2744,8 +2742,6 @@ internal fun MediaDetailsScreen(
                             color =
                                 VueoPalette.Muted,
                             fontSize = 10.sp,
-                            lineHeight = 12.sp,
-                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                         )
                     }
 
