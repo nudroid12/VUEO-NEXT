@@ -519,7 +519,7 @@ internal fun mergeDiscoveredSubtitleChoices(
                 selected = false,
                 language = subtitle.language,
                 sourceLabel =
-                    subtitle.providerName
+                    PlayerTrackPolicy.subtitleProviderLabel(subtitle)
                         .takeIf { it.isNotBlank() }
                         ?: "External",
                 metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
@@ -684,7 +684,7 @@ internal fun playerTrackChoices(
                             ),
                     language = trackLanguage,
                     sourceLabel =
-                        externalSubtitle?.providerName
+                        externalSubtitle?.let(PlayerTrackPolicy::subtitleProviderLabel)
                             ?: "Built-in",
                     metadata = if (trackType == C.TRACK_TYPE_AUDIO) {
                         buildAudioTrackMetadata(

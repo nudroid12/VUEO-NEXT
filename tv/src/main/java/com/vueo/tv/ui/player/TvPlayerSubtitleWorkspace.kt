@@ -1153,7 +1153,7 @@ private fun VueoSubtitleTrackRow(
                 Text(
                     provider.ifBlank { "Subtitle" },
                     color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
-                    fontSize = 8.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

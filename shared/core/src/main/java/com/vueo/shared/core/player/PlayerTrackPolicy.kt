@@ -24,6 +24,14 @@ object PlayerTrackPolicy {
         return "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
     }
 
+    /** Display only; plugin subtitle IDs and source identity remain untouched. */
+    fun subtitleProviderLabel(track: SubtitleTrack): String {
+        val label = track.providerName.trim()
+        return if (track.providerId.startsWith("plugin:")) {
+            label.replaceFirst(" / ", " • ")
+        } else label
+    }
+
     fun subtitleDisplayId(track: SubtitleTrack): String? {
         val displayId = subtitleDisplayId(track.id) ?: return null
         val idLanguage = LanguagePolicy.knownCode(displayId)

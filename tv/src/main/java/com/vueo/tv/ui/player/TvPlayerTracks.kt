@@ -84,7 +84,7 @@ internal fun tvMergeDiscoveredSubtitleChoices(
             override = null,
             selected = false,
             language = subtitle.language,
-            sourceLabel = subtitle.providerName.takeIf { it.isNotBlank() } ?: "External",
+            sourceLabel = PlayerTrackPolicy.subtitleProviderLabel(subtitle).takeIf { it.isNotBlank() } ?: "External",
             metadata = PlayerTrackPolicy.subtitleDisplayId(subtitle),
             selectionId = selectionId,
             externalSubtitle = subtitle,
@@ -145,7 +145,7 @@ internal fun tvPlayerTrackChoices(
                 override = TrackSelectionOverride(group.mediaTrackGroup, trackIndex),
                 selected = group.isTrackSelected(trackIndex),
                 language = trackLanguage,
-                sourceLabel = externalSubtitle?.providerName ?: if (trackType == C.TRACK_TYPE_TEXT) "Built-in" else "Stream",
+                sourceLabel = externalSubtitle?.let(PlayerTrackPolicy::subtitleProviderLabel) ?: if (trackType == C.TRACK_TYPE_TEXT) "Built-in" else "Stream",
                 metadata = if (trackType == C.TRACK_TYPE_AUDIO) {
                     tvBuildAudioTrackMetadata(format.label, format.channelCount, format.sampleMimeType)
                 } else {
