@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
@@ -2713,7 +2715,7 @@ internal fun MediaDetailsScreen(
                 Column(
                     verticalArrangement =
                         Arrangement.spacedBy(
-                            10.dp
+                            6.dp
                         ),
                 ) {
                     Column(
@@ -2742,6 +2744,8 @@ internal fun MediaDetailsScreen(
                             color =
                                 VueoPalette.Muted,
                             fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                         )
                     }
 

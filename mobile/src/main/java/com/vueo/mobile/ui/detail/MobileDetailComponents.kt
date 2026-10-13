@@ -37,6 +37,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -943,32 +945,32 @@ internal fun MediaCastSection(
                         )
                     }
 
-                    Text(
-                        text = person.name,
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight =
-                            FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow =
-                            TextOverflow.Ellipsis,
-                    )
-
-                    person.character
-                        ?.takeIf {
-                            it.isNotBlank()
-                        }
-                        ?.let { role ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = person.name,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        person.character?.takeIf { it.isNotBlank() }?.let { role ->
                             Text(
                                 text = role,
-                                color =
-                                    VueoPalette.Muted,
+                                color = VueoPalette.Muted,
                                 fontSize = 9.sp,
+                                lineHeight = 11.sp,
+                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
                                 maxLines = 1,
-                                overflow =
-                                    TextOverflow.Ellipsis,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
+                    }
                 }
             }
         }
