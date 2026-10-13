@@ -36,6 +36,19 @@ object VueoSmartSubsClient {
                     it.length in 1..80 && it.all { c -> c.isLetterOrDigit() || c == '-' || c == '.' || c == '_' }
                 }
                 val modelHint = model?.let { " Model: $it." } ?: ""
+                val upstreamStatus = payload?.optInt("upstreamStatus")?.takeIf { it in 100..599 }
+                val apiStatus = payload?.optString("upstreamApiStatus")?.takeIf { Regex("[A-Z_]{1,64}").matches(it) }
+                val detail = payload?.optString("errorDetail").orEmpty()
+                    .replace(key, "[redacted]")
+                    .replace(Regex("AIza[A-Za-z0-9_-]+"), "[redacted]")
+                    .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), "[URL redacted]")
+                    .replace(Regex("[\\p{Cntrl}]"), " ").trim().take(300)
+                val diagnostic = buildString {
+                    if (upstreamStatus != null) append(" HTTP $upstreamStatus")
+                    if (apiStatus != null) append(" $apiStatus")
+                    if (upstreamStatus != null || apiStatus != null) append('.')
+                    if (detail.isNotBlank()) append(" $detail")
+                }
                 val message = when (payload?.optString("errorCode")) {
                     "GEMINI_KEY_INVALID" -> "Gemini rejected this API key. Check or replace the key."
                     "GEMINI_ACCESS_DENIED" -> "Gemini denied access. Check key restrictions and project permissions."
@@ -44,7 +57,10 @@ object VueoSmartSubsClient {
                     "GEMINI_TIMEOUT" -> "Gemini validation timed out. Try again."
                     "GEMINI_NETWORK_ERROR" -> "SmartSubs could not reach Gemini. Try again later."
                     "GEMINI_SERVICE_UNAVAILABLE" -> "Gemini is temporarily unavailable. Try again later."
-                    "GEMINI_REQUEST_REJECTED" -> "Gemini rejected the validation request.$modelHint"
+                    "GEMINI_BILLING_REQUIRED" -> "Gemini billing or credit issue.$diagnostic"
+                    "GEMINI_PRECONDITION_FAILED" -> "Gemini account/service prerequisite failed.$diagnostic"
+                    "GEMINI_INVALID_ARGUMENT" -> "Gemini validation parameter rejected.$diagnostic"
+                    "GEMINI_REQUEST_REJECTED" -> "Gemini rejected the validation request.$modelHint$diagnostic"
                     "INVALID_INPUT" -> "Enter a valid Gemini API key."
                     "SMARTSUBS_SESSION_ERROR" -> "SmartSubs could not create a session. Try again later."
                     else -> when (status) {
