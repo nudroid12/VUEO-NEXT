@@ -167,6 +167,11 @@ internal fun VueoDetailHero(
             Spacer(Modifier.height(12.dp))
         }
 
+        state.dnaMatch?.let { matchPercent ->
+            VueoDnaMatchBadge(matchPercent)
+            Spacer(Modifier.height(12.dp))
+        }
+
         item.description?.trim()?.takeIf(String::isNotBlank)?.let { synopsis ->
             Text(
                 text = synopsis,
@@ -358,6 +363,23 @@ private fun VueoCircleAction(
             modifier = Modifier.size(24.dp),
         )
     }
+}
+
+@Composable
+private fun VueoDnaMatchBadge(matchPercent: Int) {
+    val shape = RoundedCornerShape(8.dp)
+    Text(
+        text = "DNA Match ${matchPercent.coerceIn(0, 100)}%",
+        color = TvDesign.Accent,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        modifier = Modifier
+            .background(TvDesign.Accent.copy(alpha = .10f), shape)
+            .border(1.dp, TvDesign.Accent.copy(alpha = .25f), shape)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
