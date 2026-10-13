@@ -1,0 +1,20 @@
+VUEO Gemini — Fixed SmartSubs Backend, TV + Mobile
+
+Backend URL embedded in the shared client:
+https://vueo-smartsubs.nusmart.workers.dev
+
+Settings → Enhancements → Gemini asks only for the user's personal API key.
+Removed Backend URL field/dialog on both TV and mobile. Test Connection uses the
+fixed service URL. Personal key show/hide, encrypted storage and session checks remain.
+
+Existing saved keys are retained. A session for a different backend is ignored;
+Save/Test Connection reconnects with the fixed backend. Matching existing sessions
+remain valid. TV Test Connection handles this migration automatically.
+
+Cumulative patch includes the prior Gemini settings/navigation files, so it works
+with the supplied repo (48) or the earlier Gemini settings patch.
+Extract/apply paths at repository root using the existing ZIP workflow. No YML included.
+
+Source delimiters, method signatures/call sites, secret controls, fixed service routing,
+old-URL session invalidation and ZIP root paths checked. No APK compilation or live
+Gemini request performed. Player subtitle integration is still pending.

@@ -10,7 +10,7 @@ class SmartSubsSettingsStore(context: Context) {
 
     data class Configuration(
         val apiKey: String = "",
-        val backendUrl: String = "",
+        val backendUrl: String = VueoSmartSubsClient.BACKEND_URL,
         val enabled: Boolean = false,
         val token: String = "",
         val expiresAt: Long = 0,
@@ -22,15 +22,18 @@ class SmartSubsSettingsStore(context: Context) {
 
     fun configuration(): Configuration = synchronized(LOCK) { runCatching {
         val value = file.read() ?: JSONObject()
-        Configuration(value.optString("apiKey"), value.optString("backendUrl"),
-            value.optBoolean("enabled"), value.optString("token"),
-            value.optLong("expiresAt"), value.optString("model"))
+        val sameBackend = value.optString("backendUrl").trimEnd('/') == VueoSmartSubsClient.BACKEND_URL
+        Configuration(apiKey = value.optString("apiKey"),
+            enabled = sameBackend && value.optBoolean("enabled"),
+            token = if (sameBackend) value.optString("token") else "",
+            expiresAt = if (sameBackend) value.optLong("expiresAt") else 0,
+            model = if (sameBackend) value.optString("model") else "")
     }.getOrDefault(Configuration()) }
 
-    fun saveCredentials(apiKey: String, backendUrl: String) = synchronized(LOCK) {
+    fun saveCredentials(apiKey: String) = synchronized(LOCK) {
         val value = file.read() ?: JSONObject()
         val key = apiKey.trim()
-        val url = backendUrl.trim().trimEnd('/')
+        val url = VueoSmartSubsClient.BACKEND_URL
         if (key != value.optString("apiKey") || url != value.optString("backendUrl")) {
             value.remove("token"); value.remove("expiresAt"); value.remove("model")
             value.put("enabled", false)
@@ -39,9 +42,9 @@ class SmartSubsSettingsStore(context: Context) {
         file.write(value)
     }
 
-    fun saveSession(apiKey: String, backendUrl: String, session: VueoSmartSubsClient.Session): Boolean = synchronized(LOCK) {
+    fun saveSession(apiKey: String, session: VueoSmartSubsClient.Session): Boolean = synchronized(LOCK) {
         val value = file.read() ?: return@synchronized false
-        if (value.optString("apiKey") != apiKey.trim() || value.optString("backendUrl") != backendUrl.trim().trimEnd('/')) return@synchronized false
+        if (value.optString("apiKey") != apiKey.trim() || value.optString("backendUrl") != VueoSmartSubsClient.BACKEND_URL) return@synchronized false
         value.put("token", session.token).put("expiresAt", session.expiresAt).put("model", session.model)
         file.write(value)
         true
@@ -49,7 +52,7 @@ class SmartSubsSettingsStore(context: Context) {
 
     fun setEnabled(enabled: Boolean) = synchronized(LOCK) {
         val value = file.read() ?: JSONObject()
-        val valid = value.optString("token").isNotBlank() && value.optLong("expiresAt") > System.currentTimeMillis()
+        val valid = value.optString("backendUrl") == VueoSmartSubsClient.BACKEND_URL && value.optString("token").isNotBlank() && value.optLong("expiresAt") > System.currentTimeMillis()
         value.put("enabled", enabled && valid)
         file.write(value)
     }

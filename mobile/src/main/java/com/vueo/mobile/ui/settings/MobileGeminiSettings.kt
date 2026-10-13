@@ -40,22 +40,17 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
     val store = remember { SmartSubsSettingsStore(context.applicationContext) }
     var config by remember { mutableStateOf(store.configuration()) }
     var key by remember { mutableStateOf(config.apiKey) }
-    var backend by remember { mutableStateOf(config.backendUrl) }
     var visible by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val edited = key.trim() != config.apiKey || backend.trim().trimEnd('/') != config.backendUrl
+    val edited = key.trim() != config.apiKey
 
     fun save(): Boolean {
-        if (backend.isNotBlank() && !VueoSmartSubsClient.validBackendUrl(backend)) {
-            status = "Enter a valid HTTPS backend URL"
-            return false
-        }
         return try {
-            store.saveCredentials(key, backend)
+            store.saveCredentials(key)
             config = store.configuration()
-            key = config.apiKey; backend = config.backendUrl
+            key = config.apiKey
             status = "Saved on this device"
             true
         } catch (_: Exception) {
@@ -76,10 +71,9 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
                     edited -> "Unsaved changes"
                     config.connected -> "Connected"
                     config.apiKey.isBlank() -> "Enter API key"
-                    config.backendUrl.isBlank() -> "Enter backend URL"
                     else -> "Test connection to activate session"
                 },
-                text = "Uses your Gemini quota. Subtitle translation runs on your VUEO SmartSubs backend.",
+                text = "Uses your Gemini quota. Subtitle translation runs on VUEO SmartSubs.",
             )
         }
         item {
@@ -101,27 +95,17 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
                             }
                         },
                     )
-                    OutlinedTextField(
-                        value = backend,
-                        onValueChange = { backend = it; status = null },
-                        label = { Text("VUEO SmartSubs Backend URL") },
-                        placeholder = { Text("https://your-worker.workers.dev") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !testing,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(enabled = !testing, onClick = { save() }) { Text("Save") }
                         OutlinedButton(enabled = !testing, onClick = {
-                            if (key.isBlank() || backend.isBlank()) status = "Enter API key and backend URL"
+                            if (key.isBlank()) status = "Enter Gemini API key"
                             else if (save()) {
                                 testing = true; status = "Connecting…"
-                                val currentKey = key; val currentBackend = backend
+                                val currentKey = key
                                 scope.launch {
                                     try {
-                                        val session = VueoSmartSubsClient.connect(currentBackend, currentKey)
-                                        status = if (store.saveSession(currentKey, currentBackend, session)) "Connected" else "Settings changed. Test again."
+                                        val session = VueoSmartSubsClient.connect(currentKey)
+                                        status = if (store.saveSession(currentKey, session)) "Connected" else "Settings changed. Test again."
                                         config = store.configuration()
                                     } catch (error: CancellationException) {
                                         throw error
@@ -132,7 +116,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
                             }
                         }) { Text(if (testing) "Connecting…" else "Test Connection") }
                     }
-                    Text("Test Connection saves these settings and checks your key/model through the backend. Uses a small amount of Gemini quota.")
+                    Text("Test Connection saves these settings and checks your key/model through VUEO SmartSubs. Uses a small amount of Gemini quota.")
                 }
             }
         }

@@ -25,7 +25,6 @@ internal fun TvGeminiEnhancementSettings(
     val store = remember { SmartSubsSettingsStore(context.applicationContext) }
     var config by remember { mutableStateOf(store.configuration()) }
     var editingKey by remember { mutableStateOf(false) }
-    var editingBackend by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -38,27 +37,12 @@ internal fun TvGeminiEnhancementSettings(
         onDismiss = { editingKey = false },
         onSave = { value ->
             try {
-                store.saveCredentials(value, config.backendUrl)
+                store.saveCredentials(value)
                 config = store.configuration(); status = null
                 editingKey = false
             } catch (_: Exception) { status = "Unable to save securely on this TV"; editingKey = false }
         },
     )
-    if (editingBackend) TvTextEntryDialog(
-        title = "VUEO SmartSubs Backend URL",
-        initialValue = config.backendUrl,
-        onDismiss = { editingBackend = false },
-        onSave = { value ->
-            if (value.isNotBlank() && !VueoSmartSubsClient.validBackendUrl(value)) {
-                status = "Enter a valid HTTPS backend URL"
-            } else try {
-                store.saveCredentials(config.apiKey, value)
-                config = store.configuration(); status = null
-            } catch (_: Exception) { status = "Unable to save securely on this TV" }
-            editingBackend = false
-        },
-    )
-
     val entries = buildList {
         add(TvSettingsEntry(
             id = "gemini-api-key", title = "Gemini API Key",
@@ -67,26 +51,21 @@ internal fun TvGeminiEnhancementSettings(
             onActivate = { editingKey = true }, section = "CONNECTION", icon = Icons.Default.SettingsInputComponent,
         ))
         add(TvSettingsEntry(
-            id = "smartsubs-backend", title = "VUEO SmartSubs Backend URL",
-            subtitle = "HTTPS URL of your deployed VUEO SmartSubs Worker.",
-            value = config.backendUrl.ifBlank { "Not configured" }, enabled = !testing,
-            onActivate = { editingBackend = true }, section = "CONNECTION", icon = Icons.Default.SettingsInputComponent,
-        ))
-        add(TvSettingsEntry(
             id = "smartsubs-connect", title = "Test Connection",
-            subtitle = "Check Gemini key/model through your backend. Uses a small amount of Gemini quota.",
+            subtitle = "Check Gemini key/model through VUEO SmartSubs. Uses a small amount of Gemini quota.",
             value = if (testing) "Connecting…" else status ?: if (config.connected) "Connected" else "Test",
             enabled = !testing,
             onActivate = {
                 if (!testing) {
-                    if (config.apiKey.isBlank() || config.backendUrl.isBlank()) status = "Enter API key and backend URL"
+                    if (config.apiKey.isBlank()) status = "Enter Gemini API key"
                     else {
                         testing = true; status = "Connecting…"
                         val current = config
                         scope.launch {
                             try {
-                                val session = VueoSmartSubsClient.connect(current.backendUrl, current.apiKey)
-                                status = if (store.saveSession(current.apiKey, current.backendUrl, session)) "Connected" else "Settings changed. Test again."
+                                store.saveCredentials(current.apiKey)
+                                val session = VueoSmartSubsClient.connect(current.apiKey)
+                                status = if (store.saveSession(current.apiKey, session)) "Connected" else "Settings changed. Test again."
                                 config = store.configuration()
                             } catch (error: CancellationException) {
                                 throw error

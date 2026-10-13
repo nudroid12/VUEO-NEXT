@@ -10,17 +10,12 @@ import java.net.URI
 object VueoSmartSubsClient {
     data class Session(val token: String, val expiresAt: Long, val model: String)
 
-    fun validBackendUrl(value: String): Boolean = runCatching {
-        val uri = URI(value.trim().trimEnd('/'))
-        uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null &&
-            uri.rawQuery == null && uri.rawFragment == null && (uri.port == -1 || uri.port == 443)
-    }.getOrDefault(false)
+    const val BACKEND_URL = "https://vueo-smartsubs.nusmart.workers.dev"
 
-    suspend fun connect(backendUrl: String, apiKey: String): Session = withContext(Dispatchers.IO) {
-        require(validBackendUrl(backendUrl)) { "Enter a valid HTTPS backend URL" }
+    suspend fun connect(apiKey: String): Session = withContext(Dispatchers.IO) {
         val key = apiKey.trim()
         require(key.length in 20..256 && key.none { it == '\r' || it == '\n' || it == '\u0000' }) { "Enter a valid Gemini API key" }
-        val connection = URI(backendUrl.trim().trimEnd('/') + "/v1/session").toURL().openConnection() as HttpURLConnection
+        val connection = URI(BACKEND_URL + "/v1/session").toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
             connection.instanceFollowRedirects = false
@@ -37,8 +32,8 @@ object VueoSmartSubsClient {
                 val message = when (status) {
                     429 -> "Quota or rate limit reached. Try again later."
                     422 -> "Gemini key/model validation failed. Check access and quota."
-                    503 -> "Backend is not configured. Check its deployment secrets."
-                    404 -> "VUEO SmartSubs endpoint not found. Check backend URL."
+                    503 -> "SmartSubs service is not ready. Try again later."
+                    404 -> "SmartSubs service is unavailable. Try again later."
                     else -> "Backend connection failed (HTTP $status)."
                 }
                 throw IllegalStateException(message)
@@ -64,8 +59,8 @@ object VueoSmartSubsClient {
 
     fun failureMessage(error: Exception): String = when (error) {
         is java.net.SocketTimeoutException -> "Connection timed out. Try again."
-        is java.io.IOException -> "Unable to reach backend. Check connection and URL."
+        is java.io.IOException -> "Unable to reach SmartSubs. Check your internet connection."
         is IllegalArgumentException, is IllegalStateException -> error.message ?: "Connection failed"
-        else -> "Connection failed. Check backend and Gemini access."
+        else -> "Connection failed. Check your Gemini key and access."
     }
 }
