@@ -104,6 +104,47 @@ object TraktRelatedClient {
         } ?: emptyList()
     }
 
+    /** Cold-start pool: movies and shows from Trakt, with popular as an empty-result fallback. */
+    suspend fun discovery(clientId: String): List<MediaItem> {
+        val key = clientId.trim()
+        if (key.isBlank()) return emptyList()
+        return withTimeoutOrNull(8_000L) {
+            gate.withLock {
+                val now = System.currentTimeMillis()
+                val cacheKey = "$key:discovery"
+                cache[cacheKey]?.takeIf { it.expiresAt > now }?.let { return@withLock it.items }
+                if (blockedClientId == key && blockedUntil > now) return@withLock emptyList()
+                val pools = mutableListOf<List<MediaItem>>()
+                for ((namespace, type, field) in listOf(Triple("movies", "movie", "movie"), Triple("shows", "series", "show"))) {
+                    try {
+                        fun decode(raw: JSONArray, wrapped: Boolean): List<MediaItem> =
+                            (0 until minOf(raw.length(), MAX_CANDIDATES)).mapNotNull { index ->
+                                val entry = raw.optJSONObject(index) ?: return@mapNotNull null
+                                parse(if (wrapped) entry.optJSONObject(field) ?: return@mapNotNull null else entry, type)
+                            }
+                        val trending = decode(JSONArray(get("/$namespace/trending?extended=full&limit=$MAX_CANDIDATES&page=1", key)), true)
+                        pools += if (trending.isNotEmpty()) trending else
+                            decode(JSONArray(get("/$namespace/popular?extended=full&limit=$MAX_CANDIDATES&page=1", key)), false)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: HttpFailure) {
+                        if (failure.status in listOf(401, 403, 429)) {
+                            blockedClientId = key
+                            blockedUntil = System.currentTimeMillis() + failure.pauseMs
+                            break
+                        }
+                    } catch (_: Exception) {
+                        // Preserve the other media type if one endpoint fails.
+                    }
+                }
+                val result = (0 until MAX_CANDIDATES).flatMap { index -> pools.mapNotNull { it.getOrNull(index) } }
+                    .distinctBy { "${it.type}:${it.id}" }
+                cache[cacheKey] = Entry(result, System.currentTimeMillis() + if (result.isEmpty()) FAILURE_TTL_MS else TTL_MS)
+                result
+            }
+        } ?: emptyList()
+    }
+
     private suspend fun resolveTarget(item: MediaItem, type: String, key: String): String? {
         // Never guess by title: ambiguous/remade titles must not get unrelated recommendations.
         val tmdb = item.id.removePrefix("tmdb:").takeIf {

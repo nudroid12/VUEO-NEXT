@@ -321,11 +321,14 @@ fun TvHomeScreen(
                     }
                     val forYouSources = if (enabled) com.vueo.shared.core.home.ForYouCandidateLoader.load(
                         profileId = activeProfileId, history = history, favorites = favorites,
-                        engine = input.recommendationEngine, apiKey = input.tmdbKey,
                         traktClientId = input.traktClientId,
-                        recommendationsEnabled = input.tmdbRecommendations, similarEnabled = input.tmdbSimilar,
                     ) else null
-                    val becauseRelated = forYouSources?.relatedTo(seed).orEmpty()
+                    val becauseRelated = seed?.let {
+                        if (input.recommendationEngine == RecommendationEngine.TRAKT) forYouSources?.relatedTo(it).orEmpty()
+                        else com.vueo.shared.core.recommendation.RelatedContentOrchestrator.direct(
+                            it, input.tmdbKey, input.tmdbRecommendations, input.tmdbSimilar,
+                            18, input.recommendationEngine, input.traktClientId)
+                    }.orEmpty()
                     context.ensureActive()
                     HomeRecommendationPolicy.build(
                         catalogRows = catalogRows,

@@ -55,12 +55,11 @@ object HomeRecommendationPolicy {
     ): HomeRecommendationSections {
         checkActive()
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
-        val catalogCandidates = catalogRows.asSequence().flatMap { it.items.asSequence() }.onEach { checkActive() }.distinctBy(::mediaKey).toList()
         val meaningfulHistory = watchHistory.filter { checkActive(); isMeaningfullyWatched(it) }
         val watchedTitleKeys = meaningfulHistory.asSequence().map { mediaKey(it.media) }.toSet()
         val tasteSeeds = forYouSources?.seeds ?: ForYouPolicy.seeds(watchHistory, favorites)
         val forYou = ForYouPolicy.rank(
-            seeds = tasteSeeds, batches = forYouSources?.batches.orEmpty(), catalog = catalogCandidates,
+            seeds = tasteSeeds, batches = forYouSources?.batches.orEmpty(), catalog = forYouSources?.discovery.orEmpty(),
             history = watchHistory, favorites = favorites, limit = limit, checkActive = checkActive,
         )
         val seed = latestMeaningfulSeed(meaningfulHistory)

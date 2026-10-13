@@ -724,11 +724,14 @@ internal fun HomeScreen(
                         retainedState.recommendationEngine == recommendationEngine) homeRecommendations.becauseYouWatched else emptyList())
                 val forYouSources = com.vueo.shared.core.home.ForYouCandidateLoader.load(
                     profileId = activeProfileId, history = librarySnapshot.history, favorites = favorites,
-                    engine = recommendationEngine, apiKey = recommendationKey,
                     traktClientId = recommendationTraktClientId,
-                    recommendationsEnabled = recommendationTmdbEnabled, similarEnabled = recommendationSimilarEnabled,
                 )
-                val becauseRelated = forYouSources.relatedTo(seed)
+                val becauseRelated = seed?.let {
+                    if (recommendationEngine == RecommendationEngine.TRAKT) forYouSources.relatedTo(it)
+                    else com.vueo.shared.core.recommendation.RelatedContentOrchestrator.direct(
+                        it, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled,
+                        18, recommendationEngine, recommendationTraktClientId)
+                }.orEmpty()
                 PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
                     HomeRecommendationPolicy.build(
                         catalogRows = rows,
