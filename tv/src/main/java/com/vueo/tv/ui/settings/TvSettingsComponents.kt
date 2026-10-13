@@ -804,6 +804,14 @@ private fun TvSettingsMetricsRow(
     metrics: List<TvSettingsMetric>,
     compact: Boolean = false,
 ) {
+    if (compact) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            metrics.forEach { metric ->
+                Text("${metric.value} ${metric.label}", color = TvDesign.Muted, fontSize = 12.sp)
+            }
+        }
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1048,6 +1056,8 @@ private fun TvSettingsEmbeddedPanel(
     metrics: List<TvSettingsMetric>,
     addonLayout: Boolean = false,
 ) {
+    val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
+    val accountHeaderIds = setOf("status", "message", "sync-now", "sign-out", "cancel-sign-out")
     val focusableIds = entries.filter { it.enabled }.map { it.id }
     val firstFocusable = entries.firstOrNull { it.enabled }
     val lastFocusable = entries.lastOrNull { it.enabled }
@@ -1089,21 +1099,25 @@ private fun TvSettingsEmbeddedPanel(
         )
 
         if (metrics.isNotEmpty()) {
-            TvSettingsMetricsRow(metrics = metrics)
-            Spacer(Modifier.height(12.dp))
+            TvSettingsMetricsRow(metrics = metrics, compact = true)
+            Spacer(Modifier.height(6.dp))
         }
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
+            contentPadding = PaddingValues(start = 3.dp, end = 3.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
         ) {
+            if (accountHeader) item(key = "account-header") {
+                TvAccountSummaryPanel(entries, host)
+            }
             if (addonLayout) item(key = "workspace-controls") {
                 TvAddonControls(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
             }
             var previousSection: String? = null
-            entries.filterNot { addonLayout && (it.isAddonControl() || it.isRepositoryAction()) }.forEachIndexed { index, entry ->
+            entries.filterNot { (accountHeader && it.id in accountHeaderIds) || (addonLayout && (it.isAddonControl() || it.isRepositoryAction() || (it.id == "status" && entries.any { row -> row.id.startsWith("repo-") }))) }.forEachIndexed { index, entry ->
                 val section = entry.section?.takeIf { it.isNotBlank() }
                 if (section != null && section != previousSection) {
                     item(key = "embedded-section-$index-$section") {
@@ -1183,7 +1197,7 @@ internal fun TvSettingsRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = if (compact) 56.dp else 70.dp)
+            .heightIn(min = if (compact) 52.dp else 60.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1241,7 +1255,7 @@ internal fun TvSettingsRow(
                 shape = shape,
             )
             .border(
-                width = if (focused) 1.5.dp else if (grouped) 0.dp else 1.dp,
+                width = if (focused) 1.5.dp else 0.dp,
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
                     focused && entry.accented -> TvDesign.Accent.copy(alpha = .90f)
@@ -1321,7 +1335,7 @@ internal fun TvSettingsRow(
             Text(
                 text = entry.subtitle,
                 color = if (entry.enabled) TvDesign.Muted else TvDesign.Dim.copy(alpha = .65f),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 lineHeight = 15.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1339,7 +1353,7 @@ internal fun TvSettingsRow(
                         Text(
                             text = choice,
                             color = if (selected) TvDesign.White else TvDesign.Muted,
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -1685,16 +1699,17 @@ private fun TvAddonControls(
                 if (entry.id == "add" || entry.id == "add-repo") {
                     TvSettingsRow(
                         entry = entry, requester = requesterFor(entry.id), first = false, last = false,
+                        compact = true,
                         modifier = Modifier.weight(1f).then(actionModifier),
                         onLeftToSidebar = onLeftToSidebar, onFocused = { onFocused(entry.id) },
                     )
                 } else {
                     var focused by remember(entry.id) { mutableStateOf(false) }
-                    val shape = RoundedCornerShape(15.dp)
+                    val shape = RoundedCornerShape(10.dp)
                     val isMaster = entry.id == "plugins-master"
                     Row(
                         modifier = Modifier
-                            .width(if (isMaster) 110.dp else 70.dp).height(70.dp)
+                            .width(if (isMaster) 110.dp else 70.dp).height(52.dp)
                             .then(actionModifier)
                             .focusRequester(requesterFor(entry.id))
                             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused(entry.id) }
