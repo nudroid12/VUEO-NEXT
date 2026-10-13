@@ -35,4 +35,34 @@ class StreamSubtitlePolicyTest {
         val addon = owned.copy(headers = emptyMap(), providerName = "Addon")
         assertEquals(listOf(owned), StreamSubtitlePolicy.forPlayback(source(listOf(owned)), listOf(addon)))
     }
+    @Test fun onsenSidecarIsAvailableWhilePlayingDunyaWithItsOwnMimeAndHeaders() {
+        val onsen = track("onsen").copy(providerId = "plugin:onsen", providerName = "AnimeOnsen",
+            mimeType = "text/x-ssa", headers = mapOf("Authorization" to "Bearer test-token"))
+        val dunya = source(listOf(track("dunya")))
+        val onsenSource = source(listOf(onsen)).copy(providerId = "plugin:onsen")
+        val episodeTracks = StreamSubtitlePolicy.forEpisode(listOf(dunya, onsenSource), emptyList())
+        val playback = StreamSubtitlePolicy.forPlayback(dunya, episodeTracks)
+        assertEquals(listOf(dunya.subtitles.single(), onsen), playback)
+        assertEquals("text/x-ssa", playback.last().mimeType)
+        assertEquals("Bearer test-token", playback.last().headers["Authorization"])
+    }
+
+    @Test fun laterAddonPassRetainsProviderSubsAndNewEpisodeDoesNotReusePreviousTracks() {
+        val provider = track("episode-one")
+        val addon = track("addon")
+        val sources = listOf(source(listOf(provider)))
+        assertEquals(listOf(provider), StreamSubtitlePolicy.forEpisode(sources, emptyList()))
+        assertEquals(listOf(provider, addon), StreamSubtitlePolicy.forEpisode(sources, listOf(addon)))
+        assertTrue(StreamSubtitlePolicy.forEpisode(emptyList(), emptyList()).isEmpty())
+        val next = track("episode-two")
+        assertEquals(listOf(next), StreamSubtitlePolicy.forEpisode(listOf(source(listOf(next))), emptyList()))
+    }
+
+    @Test fun freshCredentialsWinOverCachedDuplicateAndAddonDuplicate() {
+        val cached = track("same-url").copy(headers = mapOf("Authorization" to "old"))
+        val fresh = cached.copy(headers = mapOf("Authorization" to "new"))
+        assertEquals(listOf(fresh), StreamSubtitlePolicy.forEpisode(
+            listOf(source(listOf(fresh)), source(listOf(cached))), listOf(cached.copy(headers = emptyMap()))))
+    }
+
 }

@@ -1,0 +1,13 @@
+VUEO: subtitles across discovered providers, TV + Mobile
+
+Based on uploaded VUEO-NEXT-main (49).zip.
+
+Shared discovery now puts sidecar subtitles from the current episode sources into its subtitle bundle, alongside subtitle addon results. The selected source retains priority for duplicate subtitle URLs. Source metadata keeps MIME, provider ID/name and per-track headers intact. Cached, progressive and final discovery publications all include the merged tracks; completing an addon subtitle pass no longer drops provider tracks. Fresh discovery metadata takes priority over cached duplicates during aggregation. No global subtitle pool is introduced.
+
+Example: after AnimeOnsen returns an English ASS subtitle for the current episode, that subtitle can appear while playing AnimeDunya. No additional provider scan or subtitle download is triggered by this aggregation. Providers that were not scanned or returned no subtitle metadata cannot contribute tracks. Subtitle timing still depends on the video release.
+
+Both existing players already consume the shared bundle, so platform UI, provider-only naming, remembered subtitle provider, SmartSubs integration, account sync and unrelated functionality are preserved. This feature does not repair a remote subtitle URL that fails authentication or rendering. Keep the AnimeOnsen MIME fix installed.
+
+Validation: 6 actual Kotlin/JUnit policy tests cover Onsen-to-Dunya sharing, ASS MIME and Authorization preservation, late addon results, episode isolation, fresh/cache duplicates and source/cache adapter round-trip. Full Android compilation was attempted but dependency resolution failed for Android Gradle plugin 9.1.1 before source compilation. GitHub Actions must confirm both APK builds; on-device playback has not been tested here.
+
+Apply this ZIP at the VUEO repository root. Contains 3 changed files plus unchanged root build.gradle.kts as extraction marker and this note. No workflows/YML are included.

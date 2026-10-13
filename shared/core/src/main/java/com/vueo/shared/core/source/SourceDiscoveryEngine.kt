@@ -8,6 +8,7 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.media.StreamSource
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.StreamSubtitlePolicy
 import com.vueo.shared.core.plugin.PluginDiscoveryResult
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
@@ -285,7 +286,9 @@ class SourceDiscoveryEngine(
                     bundle = SourceDiscoveryBundle(
                         videoId = videoId,
                         sources = display,
-                        subtitles = subtitles,
+                        // Share sidecars from this episode, preferring fresh
+                        // credentials to cached duplicates. Both players consume this bundle.
+                        subtitles = StreamSubtitlePolicy.forEpisode(fresh + display, subtitles),
                     ),
                     rawCount = rawCount,
                     notice = notice,
@@ -591,7 +594,7 @@ class SourceDiscoveryEngine(
         var finalBundle = SourceDiscoveryBundle(
             videoId = videoId,
             sources = finalStreams,
-            subtitles = subtitles,
+            subtitles = StreamSubtitlePolicy.forEpisode(freshFinal + finalStreams, subtitles),
         )
 
         if (finalStreams.isNotEmpty() && request.sourceProviderName == null) {
@@ -627,7 +630,9 @@ class SourceDiscoveryEngine(
         // playable result now; slow subtitle retries may continue and merge into
         // the active player without holding source selection or next-episode play.
         subtitlesUpdateDeferred.await()
-        finalBundle = finalBundle.copy(subtitles = subtitles)
+        finalBundle = finalBundle.copy(
+            subtitles = StreamSubtitlePolicy.forEpisode(freshFinal + finalStreams, subtitles),
+        )
         onUpdate(
             SourceDiscoverySnapshot(
                 bundle = finalBundle,
