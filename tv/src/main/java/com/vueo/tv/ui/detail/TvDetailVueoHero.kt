@@ -162,13 +162,8 @@ internal fun VueoDetailHero(
             Spacer(Modifier.height(11.dp))
         }
 
-        if (state.ratings.isNotEmpty()) {
-            VueoRatingsRow(state.ratings)
-            Spacer(Modifier.height(12.dp))
-        }
-
-        state.dnaMatch?.let { matchPercent ->
-            VueoDnaMatchBadge(matchPercent)
+        if (state.ratings.isNotEmpty() || state.dnaMatch != null) {
+            VueoRatingsRow(state.ratings, state.dnaMatch)
             Spacer(Modifier.height(12.dp))
         }
 
@@ -366,24 +361,36 @@ private fun VueoCircleAction(
 }
 
 @Composable
-private fun VueoDnaMatchBadge(matchPercent: Int) {
-    val shape = RoundedCornerShape(8.dp)
-    Text(
-        text = "DNA Match ${matchPercent.coerceIn(0, 100)}%",
-        color = TvDesign.Accent,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        modifier = Modifier
-            .background(TvDesign.Accent.copy(alpha = .10f), shape)
-            .border(1.dp, TvDesign.Accent.copy(alpha = .25f), shape)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
+private fun VueoDnaMatchMark(percent: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_dna_match),
+            contentDescription = "DNA Match",
+            modifier = Modifier.size(18.dp),
+            contentScale = ContentScale.Fit,
+        )
+        Text(
+            text = "DNA",
+            color = TvDesign.Muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+        Text(
+            text = "${percent.coerceIn(0, 100)}%",
+            color = TvDesign.Accent,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
-private fun VueoRatingsRow(ratings: List<MediaRating>) {
+private fun VueoRatingsRow(ratings: List<MediaRating>, dnaMatch: Int?) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -416,6 +423,9 @@ private fun VueoRatingsRow(ratings: List<MediaRating>) {
                     )
                 }
             }
+        dnaMatch?.let { percent ->
+            VueoDnaMatchMark(percent)
+        }
     }
 }
 
