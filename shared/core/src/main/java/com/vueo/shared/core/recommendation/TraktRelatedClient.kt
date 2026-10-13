@@ -145,6 +145,8 @@ object TraktRelatedClient {
             },
             runtimeMinutes = json.optInt("runtime", 0).takeIf { it > 0 },
             catalogSources = listOf("Trakt"),
+            recommendationRating = json.optDouble("rating", 0.0).takeIf { it > 0.0 },
+            recommendationVoteCount = json.optInt("votes", 0).takeIf { it > 0 },
         )
     }
 

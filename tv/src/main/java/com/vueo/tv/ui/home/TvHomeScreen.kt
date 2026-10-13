@@ -306,25 +306,26 @@ fun TvHomeScreen(
                     return@withLock input to retainedState.homeRecommendations
                 }
                 val rebuilt = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_recommendations_5", Tab.HOME) {
-                    val dna = if (enabled) {
-                        val myList = runtime.readDetailLibrary { runtime.libraryStore.watchlist() }
-                        context.ensureActive()
-                        runtime.dnaEngine.analyze(history, myList, checkActive = { context.ensureActive() })
-                    } else null
+                    val favorites = if (enabled) runtime.readDetailLibrary { runtime.libraryStore.watchlist() } else emptyList()
                     context.ensureActive()
                     val seed = if (enabled) HomeRecommendationPolicy.latestMeaningfulSeed(history) else null
-                    val becauseRelated = seed?.let { watched ->
-                        try {
-                            // Same direct source and order as Detail's More Like This.
-                            withContext(Dispatchers.IO) {
-                                runtime.relatedTitles(item = watched)
-                            }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            emptyList()
+                    if (enabled) {
+                        val localPass = HomeRecommendationPolicy.build(catalogRows, history, runtime.dnaEngine, true,
+                            favorites = favorites, checkActive = { context.ensureActive() })
+                        withContext(Dispatchers.Main.immediate) {
+                            retainedState.homeRecommendations = localPass.copy(
+                                becauseYouWatched = if (localPass.becauseYouWatchedSeed?.id == retainedState.homeRecommendations.becauseYouWatchedSeed?.id &&
+                                    retainedState.recommendationInput?.recommendationEngine == input.recommendationEngine)
+                                    retainedState.homeRecommendations.becauseYouWatched else emptyList())
                         }
-                    }.orEmpty()
+                    }
+                    val forYouSources = if (enabled) com.vueo.shared.core.home.ForYouCandidateLoader.load(
+                        profileId = activeProfileId, history = history, favorites = favorites,
+                        engine = input.recommendationEngine, apiKey = input.tmdbKey,
+                        traktClientId = input.traktClientId,
+                        recommendationsEnabled = input.tmdbRecommendations, similarEnabled = input.tmdbSimilar,
+                    ) else null
+                    val becauseRelated = forYouSources?.relatedTo(seed).orEmpty()
                     context.ensureActive()
                     HomeRecommendationPolicy.build(
                         catalogRows = catalogRows,
@@ -332,9 +333,10 @@ fun TvHomeScreen(
                         dnaEngine = runtime.dnaEngine,
                         personalizationEnabled = enabled,
                         limit = 12,
-                        dnaSnapshot = dna,
                         checkActive = { context.ensureActive() },
                         becauseRelatedTitles = becauseRelated,
+                        favorites = favorites,
+                        forYouSources = forYouSources,
                     )
                 }
                 context.ensureActive()

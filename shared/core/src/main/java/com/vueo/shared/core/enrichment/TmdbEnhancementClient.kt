@@ -1646,6 +1646,8 @@ private fun JSONArray?
                             },
                     sourceExtensionId =
                         sourceExtensionId,
+                    recommendationRating = json.optDouble("vote_average", 0.0).takeIf { it > 0.0 },
+                    recommendationVoteCount = json.optInt("vote_count", 0).takeIf { it > 0 },
                     tmdbRating =
                         json.optDouble(
                             "vote_average",

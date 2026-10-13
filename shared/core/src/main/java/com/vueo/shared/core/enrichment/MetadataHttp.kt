@@ -3,6 +3,13 @@ package com.vueo.shared.core.enrichment
 import com.vueo.shared.core.plugin.PluginHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
@@ -35,17 +42,28 @@ object MetadataHttp {
                     .header("User-Agent", "VUEO/0.9.6")
                     .build()
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    error("HTTP ${response.code} from ${response.request.url.host}")
-                }
-
-                val length = response.body.contentLength()
-                if (length > MAX_DECLARED_BODY_BYTES) {
-                    error("Metadata response too large ($length bytes)")
-                }
-
-                response.body.string()
+            suspendCancellableCoroutine { continuation ->
+                val call = client.newCall(request)
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    }
+                    override fun onResponse(call: Call, response: Response) {
+                        val result = runCatching {
+                            response.use {
+                                if (!it.isSuccessful) error("HTTP ${it.code} from ${it.request.url.host}")
+                                val length = it.body.contentLength()
+                                if (length > MAX_DECLARED_BODY_BYTES) error("Metadata response too large ($length bytes)")
+                                it.body.string()
+                            }
+                        }
+                        if (continuation.isActive) result.fold(
+                            onSuccess = { continuation.resume(it) },
+                            onFailure = { continuation.resumeWithException(it) },
+                        )
+                    }
+                })
             }
         }
 }

@@ -712,24 +712,23 @@ internal fun HomeScreen(
 
         val freshRecommendations =
             if (personalizedHomeEnabled) {
+                val favorites = withContext(Dispatchers.IO) { libraryStore.watchlist() }
                 val seed = HomeRecommendationPolicy.latestMeaningfulSeed(librarySnapshot.history)
-                val becauseRelated = seed?.let { watched ->
-                    try {
-                        withContext(Dispatchers.IO) {
-                            RelatedContentOrchestrator.direct(
-                                item = watched, apiKey = recommendationKey,
-                                recommendationsEnabled = recommendationTmdbEnabled,
-                                similarEnabled = recommendationSimilarEnabled,
-                                limit = 18, engine = recommendationEngine,
-                                traktClientId = recommendationTraktClientId,
-                            )
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
-                }.orEmpty()
+                // Publish a local pass while bounded engine discovery runs in the background.
+                val localPass = withContext(Dispatchers.Default) {
+                    HomeRecommendationPolicy.build(rows, librarySnapshot.history, dnaEngine, true,
+                        favorites = favorites)
+                }
+                homeRecommendations = localPass.copy(becauseYouWatched =
+                    if (localPass.becauseYouWatchedSeed?.id == homeRecommendations.becauseYouWatchedSeed?.id &&
+                        retainedState.recommendationEngine == recommendationEngine) homeRecommendations.becauseYouWatched else emptyList())
+                val forYouSources = com.vueo.shared.core.home.ForYouCandidateLoader.load(
+                    profileId = activeProfileId, history = librarySnapshot.history, favorites = favorites,
+                    engine = recommendationEngine, apiKey = recommendationKey,
+                    traktClientId = recommendationTraktClientId,
+                    recommendationsEnabled = recommendationTmdbEnabled, similarEnabled = recommendationSimilarEnabled,
+                )
+                val becauseRelated = forYouSources.relatedTo(seed)
                 PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
                     HomeRecommendationPolicy.build(
                         catalogRows = rows,
@@ -738,6 +737,8 @@ internal fun HomeScreen(
                         personalizationEnabled = true,
                         limit = 12,
                         becauseRelatedTitles = becauseRelated,
+                        favorites = favorites,
+                        forYouSources = forYouSources,
                     )
                 }
             } else {

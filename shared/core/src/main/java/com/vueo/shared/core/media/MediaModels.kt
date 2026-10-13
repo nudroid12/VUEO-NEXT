@@ -51,6 +51,9 @@ data class MediaItem(
     val networks: List<MediaCompany> = emptyList(),
     /** Transient discovery ranking metadata. Not required by persisted library entries. */
     val popularity: Double? = null,
+    /** Transient ranking metadata; does not change displayed rating sources. */
+    val recommendationRating: Double? = null,
+    val recommendationVoteCount: Int? = null,
 ) {
     val displayType: String
         get() =

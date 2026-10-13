@@ -50,24 +50,19 @@ object HomeRecommendationPolicy {
         dnaSnapshot: UserDnaSnapshot? = null,
         checkActive: () -> Unit = {},
         becauseRelatedTitles: List<MediaItem>? = null,
+        favorites: List<MediaItem> = emptyList(),
+        forYouSources: ForYouCandidateLoader.Result? = null,
     ): HomeRecommendationSections {
         checkActive()
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
         val catalogCandidates = catalogRows.asSequence().flatMap { it.items.asSequence() }.onEach { checkActive() }.distinctBy(::mediaKey).toList()
         val meaningfulHistory = watchHistory.filter { checkActive(); isMeaningfullyWatched(it) }
         val watchedTitleKeys = meaningfulHistory.asSequence().map { mediaKey(it.media) }.toSet()
-        val dna = dnaSnapshot ?: dnaEngine.build()
-        checkActive()
-        val ranked = if (!dna.hasUsefulData) emptyList() else catalogCandidates.asSequence()
-            .filterNot { mediaKey(it) in watchedTitleKeys }
-            .mapNotNull { candidate ->
-                checkActive()
-                dnaEngine.matchPercent(media = candidate, dna = dna)
-                    ?.takeIf { it >= FOR_YOU_MIN_MATCH_PERCENT }
-                    ?.let { score -> candidate to score }
-            }
-            .sortedByDescending { it.second }.toList()
-        val forYou = diversify(ranked, limit, checkActive)
+        val tasteSeeds = forYouSources?.seeds ?: ForYouPolicy.seeds(watchHistory, favorites)
+        val forYou = ForYouPolicy.rank(
+            seeds = tasteSeeds, batches = forYouSources?.batches.orEmpty(), catalog = catalogCandidates,
+            history = watchHistory, favorites = favorites, limit = limit, checkActive = checkActive,
+        )
         val seed = latestMeaningfulSeed(meaningfulHistory)
         val because = seed?.let { watched ->
             // Preserve direct source order; absent API results never use catalog fallback.
