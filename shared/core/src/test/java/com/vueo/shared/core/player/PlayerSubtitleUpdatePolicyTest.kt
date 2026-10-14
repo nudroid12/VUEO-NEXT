@@ -50,6 +50,23 @@ class PlayerSubtitleUpdatePolicyTest {
         )
     }
 
+    @Test
+    fun `late generated tracks require different source keys but addon changes do not`() {
+        val addon = subtitle("ms", "https://addon.example/a.vtt")
+        val ai = subtitle("ms", "https://vueo.example/translated/a.vtt")
+            .copy(providerId = "vueo-smartsubs-ai")
+        assertEquals(emptyList<String>(), PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(addon)))
+        assertEquals(1, PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(addon, ai)).size)
+        assertEquals(
+            PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(ai)),
+            PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(addon, ai)),
+        )
+        assertEquals(false,
+            PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(ai)) ==
+                PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(listOf(ai.copy(url = ai.url + "?new=1"))),
+        )
+    }
+
     private fun subtitle(language: String, url: String) =
         SubtitleTrack(
             id = url,

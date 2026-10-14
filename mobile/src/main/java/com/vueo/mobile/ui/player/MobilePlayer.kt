@@ -1164,6 +1164,9 @@ internal fun PlayerScreen(
             PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
         )
     }
+    var appliedSmartSubsSourceKeys by remember(player) {
+        mutableStateOf(PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(subtitles))
+    }
     var subtitleTrackRefreshInProgress by remember(player) {
         mutableStateOf(false)
     }
@@ -1284,8 +1287,27 @@ internal fun PlayerScreen(
                             pendingSubtitleSelectionId != null,
                     )
                     .build()
-            player.replaceMediaItem(currentIndex, updatedMediaItem)
-            player.seekTo(currentIndex, positionMs)
+            val smartSubsKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(subtitles)
+            if (smartSubsKeys != appliedSmartSubsSourceKeys) {
+                // replaceMediaItem can update only the primary source and retain
+                // the old subtitle children. Rebuild for generated-track changes.
+                val resumePlaying = player.playWhenReady
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .build()
+                player.setMediaItem(updatedMediaItem, positionMs)
+                player.prepare()
+                player.playWhenReady = resumePlaying
+                com.vueo.shared.core.player.SubtitleFlowDiagnostics.event(
+                    "Mobile", source.url, "SMARTSUBS_SOURCES_REBUILT",
+                    "tracks=${smartSubsKeys.size} positionMs=$positionMs",
+                )
+            } else {
+                player.replaceMediaItem(currentIndex, updatedMediaItem)
+                player.seekTo(currentIndex, positionMs)
+            }
+            appliedSmartSubsSourceKeys = smartSubsKeys
             appliedSubtitleUrls = latestSubtitleUrls
 
             // ExoPlayer can publish an empty/intermediate track snapshot when

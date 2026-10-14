@@ -1,0 +1,14 @@
+VUEO SmartSubs player track registration — TV + Mobile
+Base: supplied VUEO-NEXT-main (51), with prior session patches retained in edited files.
+Apply to VUEO app repository root. No YML included.
+
+When VUEO SmartSubs generated subtitle configurations change, rebuild the playing
+MediaItem and prepare fresh child sources instead of relying on replaceMediaItem.
+Preserve position and play/pause, clear stale track overrides, and use existing
+subtitle/audio preference restoration and real TrackGroup selection confirmation.
+The existing addon-only update path is unchanged.
+Diagnostic marker: SMARTSUBS_SOURCES_REBUILT.
+
+Validation: 5 PlayerSubtitleUpdatePolicy JVM tests pass. Android build and actual
+Mobile/TV playback are not verified here. A brief buffer can occur when AI tracks
+are first attached because the media source is rebuilt.

@@ -434,6 +434,9 @@ fun TvPlayerScreen(
     var audioAutomaticSelected by remember(mediaKey) { mutableStateOf(true) }
     var subtitlePreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
     var audioPreferenceRestored by remember(bundle.videoId, activeSource.url) { mutableStateOf(false) }
+    var appliedSmartSubsSourceKeys by remember(bundle.videoId, activeSource.url) {
+        mutableStateOf(PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(liveSubtitles))
+    }
     var appliedSubtitleUrls by remember(bundle.videoId, activeSource.url) {
         mutableStateOf(PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles))
     }
@@ -861,6 +864,7 @@ fun TvPlayerScreen(
         player.prepare()
         player.playWhenReady = true
         appliedSubtitleUrls = PlayerSubtitleUpdatePolicy.sourceKeys(liveSubtitles)
+        appliedSmartSubsSourceKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(liveSubtitles)
     }
 
     // Keep newly discovered external subtitles visible in the workspace immediately,
@@ -934,8 +938,21 @@ fun TvPlayerScreen(
         player.trackSelectionParameters = params.build()
         // Apply the text-track lock before replacing the playing item so
         // Media3 cannot race the readiness probe to the external URL.
-        player.replaceMediaItem(currentIndex, updatedMediaItem)
-        player.seekTo(currentIndex, currentPosition)
+        val smartSubsKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(liveSubtitles)
+        if (smartSubsKeys != appliedSmartSubsSourceKeys) {
+            val resumePlaying = player.playWhenReady
+            player.setMediaItem(updatedMediaItem, currentPosition)
+            player.prepare()
+            player.playWhenReady = resumePlaying
+            com.vueo.shared.core.player.SubtitleFlowDiagnostics.event(
+                "TV", activeSource.url, "SMARTSUBS_SOURCES_REBUILT",
+                "tracks=${smartSubsKeys.size} positionMs=$currentPosition",
+            )
+        } else {
+            player.replaceMediaItem(currentIndex, updatedMediaItem)
+            player.seekTo(currentIndex, currentPosition)
+        }
+        appliedSmartSubsSourceKeys = smartSubsKeys
         appliedSubtitleUrls = latestSubtitleUrls
         com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent("TV", "SUBTITLES_REGISTERED",
             "episode=${episode?.episode ?: 0} tracks=${liveSubtitles.size} positionMs=$currentPosition")

@@ -20,6 +20,12 @@ object PlayerSubtitleUpdatePolicy {
             .sorted()
             .toList()
 
+    /** Generated tracks arrive after provider discovery. Force fresh child sources
+     * when their configuration changes; Media3 may reuse the same video URI.
+     */
+    fun smartSubsSourceKeys(subtitles: List<SubtitleTrack>): List<String> =
+        sourceKeys(subtitles.filter { it.providerId == "vueo-smartsubs-ai" })
+
     fun stableResumePositionMs(
         currentPositionMs: Long,
         lastKnownPositionMs: Long,
