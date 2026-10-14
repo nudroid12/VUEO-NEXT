@@ -1,6 +1,8 @@
 package com.vueo.shared.core.home
 
+import com.vueo.shared.core.media.AnimeMediaPolicy
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.storage.LibraryViewingPolicy
 import kotlin.math.exp
@@ -30,15 +32,32 @@ object ForYouPolicy {
             values[key] = Seed(richer(old?.media, entry.media), maxOf(old?.weight ?: 0.0, weight),
                 maxOf(old?.lastWatched ?: 0L, entry.lastWatchedEpochMs))
         }
+        // Favorites may enrich a watched title, but never introduce an unwatched seed.
         favorites.forEach { media ->
             val key = identity(media)
-            val old = values[key]
-            values[key] = Seed(richer(old?.media, media), ((old?.weight ?: 0.0) + 3.0).coerceAtMost(8.0), old?.lastWatched ?: 0L)
+            values[key]?.let { old -> values[key] = old.copy(media = richer(old.media, media)) }
         }
-        val ranked = values.values.sortedWith(compareByDescending<Seed> { it.weight }.thenByDescending { it.lastWatched }.thenBy { identity(it.media) })
-        // Always retain the latest watched seed, so Because You Watch reuses its result.
-        val latest = values.values.filter { it.lastWatched > 0L }.maxByOrNull { it.lastWatched }
-        return (listOfNotNull(latest) + ranked).distinctBy { identity(it.media) }.take(12)
+        val recent = values.values.sortedWith(
+            compareByDescending<Seed> { it.lastWatched }.thenBy { identity(it.media) }
+        )
+        val selected = linkedMapOf<String, Seed>()
+        fun take(candidates: List<Seed>, count: Int) {
+            candidates.filterNot { identity(it.media) in selected }.take(count).forEach {
+                selected[identity(it.media)] = it
+            }
+        }
+        listOf("movie", "series").forEach { mediaType ->
+            val candidates = recent.filter { type(it.media) == mediaType }
+            take(candidates.filterNot { AnimeMediaPolicy.isAnime(it.media) }, 2)
+            take(candidates.filter { AnimeMediaPolicy.isAnime(it.media) }, 1)
+            val remaining = 3 - selected.values.count { type(it.media) == mediaType }
+            take(candidates, remaining)
+        }
+        // If one media type is sparse, use the latest remaining watched titles.
+        take(recent, 6 - selected.size)
+        return selected.values.sortedWith(
+            compareByDescending<Seed> { it.lastWatched }.thenBy { identity(it.media) }
+        )
     }
 
     fun rank(
@@ -138,7 +157,7 @@ object ForYouPolicy {
         else -> it
     } }.filter { it.isNotBlank() }.toSet()
     private fun people(item: MediaItem) = (item.cast.take(8).map { it.name } + item.directors + item.creators + item.writers).map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
-    private fun type(item: MediaItem) = if (item.type.lowercase() in setOf("series", "tv", "show")) "series" else "movie"
+    private fun type(item: MediaItem) = if (MediaTypePolicy.isSeries(item.type) || item.type.equals("anime", ignoreCase = true)) "series" else "movie"
     internal fun aliases(item: MediaItem): Set<String> = buildSet {
         add(identity(item))
         // Exact title + known release year + media type can reconcile TMDB/IMDb IDs.
@@ -155,6 +174,8 @@ object ForYouPolicy {
             genres = (a.genres + b.genres).distinct(), cast = (a.cast + b.cast).distinctBy { it.name },
             directors = (a.directors + b.directors).distinct(), creators = (a.creators + b.creators).distinct(), writers = (a.writers + b.writers).distinct(),
             poster = a.poster ?: b.poster, background = a.background ?: b.background,
+            originalLanguage = a.originalLanguage ?: b.originalLanguage,
+            countries = (a.countries + b.countries).distinct(),
             recommendationRating = a.recommendationRating ?: b.recommendationRating,
             recommendationVoteCount = a.recommendationVoteCount ?: b.recommendationVoteCount,
             tmdbRating = a.tmdbRating ?: b.tmdbRating, imdbRating = a.imdbRating ?: b.imdbRating,

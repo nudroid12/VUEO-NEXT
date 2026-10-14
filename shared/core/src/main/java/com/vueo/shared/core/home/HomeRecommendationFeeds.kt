@@ -85,7 +85,7 @@ object HomeRecommendationFeeds {
         val excluded = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.distinct().sorted()
         val favorites = request.favorites.flatMap(ForYouPolicy::aliases).distinct().sorted()
-        val forYou = if (!request.forYouEnabled) "" else hash(listOf(now / 86_400_000L, seeds.map {
+        val forYou = if (!request.forYouEnabled) "" else hash(listOf("seeds-2-plus-1-v1", now / 86_400_000L, seeds.map {
             listOf(it.media.copy(episodes = emptyList()), (it.weight * 10).toInt())
         }, excluded, favorites).toString())
         val seed = if (request.becauseEnabled) HomeRecommendationPolicy.latestMeaningfulSeed(request.history) else null

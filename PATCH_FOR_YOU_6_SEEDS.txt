@@ -1,0 +1,15 @@
+VUEO For You: 2 regular + 1 anime per media type (TV + Mobile)
+
+Apply at repository root after the previous Home cache and personalization patches. No YML.
+
+For You selects up to 6 unique meaningfully watched titles: the latest 2 non-anime movies, 1 anime movie, 2 non-anime series and 1 anime series. Duplicate episodes of a series use one slot. Existing meaningful-watch threshold is preserved. Unwatched Favorites no longer become seeds.
+
+Missing category slots first use other recent titles of the same media type. If that type has fewer than 3 titles, latest remaining watched titles fill the total up to 6. Sparse histories use only available titles.
+
+Anime classification reuses the existing search rules through a shared AnimeMediaPolicy. Japanese Animation, Anime genre/type and existing anime source markers are recognized. Western Animation alone is not anime. Classification needs existing metadata; no new enrichment HTTP calls are added.
+
+The shared policy serves both TV and Mobile. Only For You cache signatures change to invalidate the old seed policy. Because You Watched logic and separate toggles remain unchanged. Existing ranking and bounded/cached loading remain.
+
+Validation: 23 JUnit tests passed; feed cache, disk restore, independent row loading and toggle regression harnesses passed. Six-seed loader check passed: 6 related HTTP requests, peak concurrency 3, warm cache no extra HTTP. Kotlin PSI syntax passed. Android/Compose APK build and real-device verification were not available. JVM tests use local Android/network fixtures.
+
+Root build.gradle.kts is unchanged and included as repository-root marker.

@@ -1,5 +1,6 @@
 package com.vueo.shared.core.search
 
+import com.vueo.shared.core.media.AnimeMediaPolicy
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 
@@ -18,26 +19,8 @@ object SearchResultOrderPolicy {
     fun matchesGenre(item: MediaItem, genre: String?): Boolean =
         genre == null || item.genres.any { it.equals(genre, ignoreCase = true) }
 
-    fun isAnime(item: MediaItem, animeCatalogKeys: Set<String>): Boolean {
-        if (item.type.equals("anime", ignoreCase = true) || item.genres.any { it.equals("anime", ignoreCase = true) }) return true
-        if ("${item.type}:${item.id}" in animeCatalogKeys) return true
-        if (listOfNotNull(item.sourceExtensionId, item.id).any { it.contains("anime", ignoreCase = true) }) return true
-
-        val isAnimation = item.genres.any { it.equals("animation", ignoreCase = true) }
-        if (!isAnimation) return false
-
-        val language = item.originalLanguage
-            ?.trim()
-            ?.lowercase()
-            ?.substringBefore('-')
-            ?.substringBefore('_')
-        val isJapaneseLanguage = language in setOf("ja", "jp", "jpn", "japanese")
-        val isJapaneseCountry = item.countries.any { country ->
-            country.trim().lowercase() in setOf("japan", "jp", "jpn")
-        }
-
-        return isJapaneseLanguage || isJapaneseCountry
-    }
+    fun isAnime(item: MediaItem, animeCatalogKeys: Set<String>): Boolean =
+        AnimeMediaPolicy.isAnime(item, animeCatalogKeys)
 
     fun sortActorItems(items: List<MediaItem>, mode: DiscoverSortMode): List<MediaItem> = when (mode) {
         DiscoverSortMode.POPULAR, DiscoverSortMode.TRENDING -> items
