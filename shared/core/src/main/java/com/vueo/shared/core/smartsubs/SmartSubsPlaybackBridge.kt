@@ -22,7 +22,9 @@ object SmartSubsPlaybackBridge {
 
     fun eligibleSources(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks
         .filter { track ->
-            track.providerId != PROVIDER_ID && LanguagePolicy.canonicalCode(track.language) == "en" &&
+            // Only provider-plugin originals may feed VUEO SmartSubs. Addon
+            // English tracks (including SmartSubsV2) stay playable independently.
+            track.providerId.startsWith("plugin:") && LanguagePolicy.canonicalCode(track.language) == "en" &&
                 SubtitleFormatPolicy.detect(track.url, track.mimeType) in setOf(SubtitleFormat.SUBRIP, SubtitleFormat.WEBVTT) &&
                 isPublicSource(track.url)
         }

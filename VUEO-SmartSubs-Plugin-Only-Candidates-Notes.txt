@@ -1,0 +1,10 @@
+Apply to VUEO app repo root, TV and Mobile. No worker changes or YML.
+Restrict eligible English input to providerId starting with plugin:, which is
+assigned by PluginRuntimeParsing to provider-plugin subtitle tracks.
+Exclude all addon inputs, including English tracks returned by SmartSubsV2.
+Addon playback and addon settings are unchanged. Existing public HTTPS,
+English-language, SRT/VTT, dedupe and maximum-five filters remain.
+AI candidates are listed only; translation still starts only after selection.
+Contains only the shared bridge and this note, retaining prior player/cache patches.
+Validation: inspected plugin-origin assignment and both shared bridge call sites;
+ZIP integrity verified. No full Android build or device playback test performed.
