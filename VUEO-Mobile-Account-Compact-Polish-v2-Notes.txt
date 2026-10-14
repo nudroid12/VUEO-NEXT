@@ -1,0 +1,11 @@
+VUEO Mobile Account — compact polish v2, based on repository (51) + previous Account patch.
+
+Smaller heading and Connected label; grouped email and sync status; subtle divider;
+smaller switch on the left of Sync now; smaller rounded Sync now button;
+Sign out becomes a small text button at bottom right. Existing login, sync actions,
+busy guards, error messages and sign-out confirmation are retained.
+
+Apply at repository root. Replaces the same mobile/ file as the previous Account patch.
+No YML/YAML and no enclosing project folder. No TV or sync backend changes.
+Validation: reviewed code and confirmed screen logic unchanged. ZIP integrity checked.
+Android build and on-device visual verification remain unverified in this environment.

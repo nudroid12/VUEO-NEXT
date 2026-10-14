@@ -3,13 +3,17 @@ package com.vueo.mobile.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
@@ -19,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
@@ -114,39 +119,51 @@ private fun VueoConnectedAccountCard(
         colors = CardDefaults.cardColors(containerColor = VueoPalette.Surface),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("VUEO Account", modifier = Modifier.weight(1f), color = Color.White,
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Surface(shape = RoundedCornerShape(50), color = VueoPalette.Accent.copy(alpha = .10f)) {
-                    Text("Connected", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("VUEO Account", color = Color.White,
+                        fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(email, color = VueoPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(status, color = VueoPalette.Muted.copy(alpha = .8f),
+                        fontSize = 10.sp, lineHeight = 14.sp)
                 }
+                Text("Connected", modifier = Modifier.padding(top = 2.dp),
+                    color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
             }
-            Text(email, color = VueoPalette.Muted, fontSize = 12.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(1.dp)
+                .background(VueoPalette.Muted.copy(alpha = .12f)))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     Switch(checked = syncOn, onCheckedChange = onSyncChanged, enabled = !busy,
-                        modifier = Modifier.semantics { contentDescription = "Account sync" })
-                    Text("Sync", color = VueoPalette.Muted, fontSize = 12.sp)
+                        modifier = Modifier.scale(.8f).semantics { contentDescription = "Account sync" },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = VueoPalette.Surface,
+                            checkedTrackColor = Color.White,
+                            checkedBorderColor = Color.White,
+                        ))
+                    Text("Sync", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
                 Button(onClick = onSyncNow, enabled = !busy && syncOn,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(if (busy) "Working…" else "Sync now", fontSize = 12.sp)
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                    Text(if (busy) "Working…" else "Sync now", fontSize = 11.sp)
                 }
             }
-            Text(status, color = VueoPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp)
             if (message.isNotBlank() && message != status) {
                 Text(message, color = VueoPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp)
             }
-            OutlinedButton(onClick = onSignOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text(if (confirmSignOut) "Cancel sign out" else "Sign out", fontSize = 12.sp)
+            TextButton(onClick = onSignOut, enabled = !busy,
+                modifier = Modifier.align(Alignment.End),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text(if (confirmSignOut) "Cancel sign out" else "Sign out",
+                    color = VueoPalette.Muted.copy(alpha = if (busy) .5f else 1f), fontSize = 11.sp)
             }
             if (confirmSignOut) {
                 Text("Sign out of this device? Your local data will be kept.",
