@@ -1392,7 +1392,10 @@ fun TvPlayerScreen(
                         tvClearTrackOverride(player, C.TRACK_TYPE_TEXT, disable = true)
                         subtitlesDisabled = false
                         pendingSubtitleSelectionId = savedTrack.selectionId
-                        translatingSubtitleSelectionId = null
+                        translatingSubtitleSelectionId = if (savedTrack.externalSubtitle?.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) savedTrack.selectionId else null
+                        if (savedTrack.externalSubtitle?.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                            smartSubsMessage = "Preparing Malay AI… waiting for SmartSubs."
+                        }
                         subtitlePreparationJob?.cancel()
                         subtitlePreparationJob = focusScope.launch {
                             val ready = SubtitleReadinessProbe.awaitReady(
@@ -1440,11 +1443,18 @@ fun TvPlayerScreen(
                                     },
                                 )
                                 if (confirmed) {
+                                    if (savedTrack.externalSubtitle?.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                                        smartSubsMessage = "Malay AI loaded and selected."
+                                    }
                                     pendingSubtitleSelectionId = null
                                     translatingSubtitleSelectionId = null
                                     requestedSubtitleSelectionId = null
                                     subtitlesDisabled = false
                                 }
+                            }
+                            if (pendingSubtitleSelectionId == savedTrack.selectionId &&
+                                savedTrack.externalSubtitle?.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                                smartSubsMessage = "Malay AI not ready or could not be selected. Retry the track or open Diagnose in Gemini settings."
                             }
                             if (translatingSubtitleSelectionId == savedTrack.selectionId) {
                                 translatingSubtitleSelectionId = null
@@ -2270,6 +2280,7 @@ fun TvPlayerScreen(
 
             subtitlePreparationJob?.cancel()
             val externalSubtitle = choice.externalSubtitle
+            smartSubsMessage = null
             val cachedChoice = if (externalSubtitle != null && !forceNetworkRetry &&
                 SubtitleSessionCache.get(externalSubtitle.url) != null
             ) {
@@ -2284,6 +2295,9 @@ fun TvPlayerScreen(
                 subtitlePreparationJob = null
                 pendingSubtitleSelectionId = null
                 translatingSubtitleSelectionId = null
+                if (externalSubtitle?.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                    smartSubsMessage = "Malay AI loaded from session cache."
+                }
                 commitSelection(cachedChoice)
                 return
             }
@@ -2294,7 +2308,10 @@ fun TvPlayerScreen(
                 commitSelection(choice)
             } else {
                 pendingSubtitleSelectionId = choice.selectionId
-                translatingSubtitleSelectionId = null
+                translatingSubtitleSelectionId = if (externalSubtitle.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) choice.selectionId else null
+                if (externalSubtitle.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                    smartSubsMessage = "Preparing Malay AI… waiting for SmartSubs."
+                } else smartSubsMessage = null
                 // Keep the current subtitle visible while the requested
                 // external track is prepared, then replace it only after the
                 // player confirms the new selection.
@@ -2354,6 +2371,9 @@ fun TvPlayerScreen(
                         )
                         selectionConfirmed = confirmed
                         if (confirmed) {
+                            if (externalSubtitle.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                                smartSubsMessage = "Malay AI loaded and selected."
+                            }
                             subtitlesDisabled = false
                             settings.setLastSubtitleSelection(
                                 PlayerTrackPolicy.subtitleLanguageSelectionId(preparedChoice.language)
@@ -2367,6 +2387,9 @@ fun TvPlayerScreen(
                         pendingSubtitleSelectionId == choice.selectionId &&
                         !selectionConfirmed
                     ) {
+                        if (externalSubtitle.providerId == com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.PROVIDER_ID) {
+                            smartSubsMessage = "Malay AI not ready or could not be selected. Retry the track or open Diagnose in Gemini settings."
+                        }
                         // Preserve the user's requested selection after a slow/late
                         // delivery. Reselecting the same row explicitly retries it.
                         pendingSubtitleSelectionId = null
@@ -2419,6 +2442,7 @@ fun TvPlayerScreen(
                     hideControls()
                 },
                 onDisable = {
+                    smartSubsMessage = null
                     subtitlePreparationJob?.cancel()
                     subtitlePreparationJob = null
                     pendingSubtitleSelectionId = null

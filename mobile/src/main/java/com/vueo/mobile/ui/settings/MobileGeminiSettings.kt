@@ -173,6 +173,17 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
             )
         }
         item {
+            OutlinedButton(
+                onClick = {
+                    if (!com.vueo.shared.core.smartsubs.SmartSubsDiagnostics.open(context, config)) {
+                        status = "Unable to open Diagnose. A browser and a connected session are required."
+                    }
+                },
+                enabled = config.connected && !edited && !testing,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Open Diagnose") }
+        }
+        item {
             VueoInfoCard(
                 title = "On this device",
                 text = "Account sync shares your API key. The session and SmartSubs ON/OFF stay on this device. Clear the API key and save to remove it. Select a Malay AI track in the player to translate provider English subtitles.",

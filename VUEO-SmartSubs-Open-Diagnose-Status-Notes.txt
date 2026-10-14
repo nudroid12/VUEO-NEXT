@@ -1,0 +1,23 @@
+VUEO app — SmartSubs Open Diagnose and subtitle preparation status (TV + mobile)
+Base: VUEO-NEXT-main (51), continuing this conversation's working copy.
+This archive targets the VUEO app repository, NOT any SmartSubs worker repository.
+
+- Adds Open Diagnose to Gemini settings, opening this device's existing configured VUEO-SmartSubs session.
+- The button requires a connected session; mobile also requires no unsaved key edits.
+- Uses the fixed VUEO SmartSubs backend and URL-encoded session token. No key/token is logged or copied.
+- A browser must be installed; launch failures display a message. No TV QR/phone handoff is added.
+- Diagnose can require enabling Diagnostics using its existing admin controls. Repeat the subtitle selection after enabling logging, then save the sanitized log.
+- Manual and restored Malay AI selections start showing the existing preparation indicator immediately, before the first long-poll finishes.
+- Subtitle workspace messages distinguish preparing, player-confirmed loaded/selected, and not-ready/unconfirmed selection.
+- Loaded means subtitle bytes/readiness plus player selection confirmation, not proof that a cue is visible at the current timestamp.
+- No fabricated percentage, chunk progress or proof of active server translation is shown.
+- Network calls, readiness timeout/retries, session creation, source selection, translation, Queue and workers remain unchanged.
+- Cancelling/disabling or selecting another track clears the status where the user changes selection.
+
+Validation:
+- Six targeted JVM checks passed, with Android/settings stubs: correct backend/path, token encoding, malformed-token rejection, connected/disconnected gating, and missing-browser handling.
+- Reviewed mobile/TV diffs: only status updates and existing waiting-indicator timing change; readiness request count/calls unchanged.
+- Full Android build, installed-app UI and live translation remain unverified here.
+
+Extract at VUEO repository root. No enclosing project folder and no YML.
+Earlier For You, Account and TV Content Manager changes are not overwritten by these paths.

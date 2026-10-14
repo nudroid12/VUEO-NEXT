@@ -34,6 +34,7 @@ internal fun TvGeminiEnhancementSettings(
     var editingKey by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var diagnoseMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(accountRevision, testing, editingKey) {
@@ -108,6 +109,16 @@ internal fun TvGeminiEnhancementSettings(
             try { store.setEnabled(it); config = store.configuration() }
             catch (_: Exception) { status = "Unable to save securely on this TV" }
         }.copy(section = "SMARTSUBS"))
+        add(TvSettingsEntry(
+            id = "smartsubs-diagnose", title = "Open Diagnose",
+            subtitle = diagnoseMessage ?: "Open this TV session's subtitle and translation diagnostics in a browser.",
+            enabled = config.connected && !testing,
+            onActivate = {
+                if (!com.vueo.shared.core.smartsubs.SmartSubsDiagnostics.open(context, config)) {
+                    diagnoseMessage = "Unable to open Diagnose. This TV needs a browser and a connected session."
+                }
+            }, section = "SMARTSUBS", icon = Icons.Default.SettingsInputComponent,
+        ))
     }
     TvSettingsListScreen(
         title = "Gemini", subtitle = "Your own API key for VUEO SmartSubs.",
