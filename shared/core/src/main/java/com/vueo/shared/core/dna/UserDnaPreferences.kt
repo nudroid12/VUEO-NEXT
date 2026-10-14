@@ -48,6 +48,7 @@ class UserDnaPreferences(
                 enabled,
             )
             .apply()
+        if (!enabled) com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(profileId)
     }
 
     fun showDnaMatchEnabled(
@@ -102,6 +103,25 @@ class UserDnaPreferences(
             .apply()
     }
 
+    fun forYouEnabled(profileId: String): Boolean =
+        prefs.getBoolean(key(profileId, KEY_FOR_YOU), personalizedRecommendationsEnabled(profileId))
+
+    fun setForYouEnabled(profileId: String, enabled: Boolean) {
+        prefs.edit().putBoolean(key(profileId, KEY_FOR_YOU), enabled).apply()
+        if (!enabled) com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(profileId, forYou = true, because = false)
+    }
+
+    fun becauseYouWatchedEnabled(profileId: String): Boolean =
+        prefs.getBoolean(key(profileId, KEY_BECAUSE_YOU_WATCHED), personalizedRecommendationsEnabled(profileId))
+
+    fun setBecauseYouWatchedEnabled(profileId: String, enabled: Boolean) {
+        prefs.edit().putBoolean(key(profileId, KEY_BECAUSE_YOU_WATCHED), enabled).apply()
+        if (!enabled) com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(profileId, forYou = false, because = true)
+    }
+
+    fun shouldShowForYou(profileId: String): Boolean = userDnaEnabled(profileId) && forYouEnabled(profileId)
+    fun shouldShowBecauseYouWatched(profileId: String): Boolean = userDnaEnabled(profileId) && becauseYouWatchedEnabled(profileId)
+
     /**
      * Convenience gate for Details.
      * Both the master switch and the DNA Match switch must be enabled.
@@ -118,17 +138,10 @@ class UserDnaPreferences(
 
     /**
      * Convenience gate for discovery/recommendation ranking.
-     * Both the master switch and the recommendation switch must be enabled.
+     * The DNA master gate and at least one Home row switch must be enabled.
      */
-    fun shouldPersonalizeRecommendations(
-        profileId: String,
-    ): Boolean =
-        userDnaEnabled(
-            profileId
-        ) &&
-            personalizedRecommendationsEnabled(
-                profileId
-            )
+    fun shouldPersonalizeRecommendations(profileId: String): Boolean =
+        shouldShowForYou(profileId) || shouldShowBecauseYouWatched(profileId)
 
     private fun key(
         profileId: String,
@@ -148,6 +161,9 @@ class UserDnaPreferences(
 
         private const val KEY_SHOW_DNA_MATCH =
             "user_dna_show_match"
+
+        private const val KEY_FOR_YOU = "user_dna_for_you"
+        private const val KEY_BECAUSE_YOU_WATCHED = "user_dna_because_you_watched"
 
         private const val KEY_PERSONALIZED_RECOMMENDATIONS =
             "user_dna_personalized_recommendations"

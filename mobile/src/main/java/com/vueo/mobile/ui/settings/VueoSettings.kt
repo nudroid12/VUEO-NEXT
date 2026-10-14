@@ -342,12 +342,6 @@ internal fun VueoSettingsHub(
             }
         }
 
-    var showPersonalization by remember(
-        activeProfile.id
-    ) {
-        mutableStateOf(false)
-    }
-
     var showUserDna by remember(
         activeProfile.id
     ) {
@@ -365,17 +359,10 @@ internal fun VueoSettingsHub(
     val settingsSurface =
         when {
             showUserDna && dnaEnabled -> 2
-            showPersonalization -> 1
             else -> 0
         }
 
-    BackHandler(enabled = settingsSurface != 0) {
-        if (settingsSurface == 2) {
-            showUserDna = false
-        } else {
-            showPersonalization = false
-        }
-    }
+    BackHandler(enabled = settingsSurface != 0) { showUserDna = false }
 
     val avatarDrawable =
         remember(
@@ -423,17 +410,6 @@ internal fun VueoSettingsHub(
                     },
                 )
 
-            1 ->
-                PersonalizationSettingsScreen(
-                    profileStore = profileStore,
-                    onBack = {
-                        showPersonalization = false
-                    },
-                    onViewDna = {
-                        showUserDna = true
-                    },
-                )
-
             else ->
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().background(VueoPalette.Background),
@@ -465,7 +441,7 @@ internal fun VueoSettingsHub(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            if (dnaEnabled) showUserDna = true else showPersonalization = true
+                                            if (dnaEnabled) showUserDna = true else onEnhancements()
                                         }
                                         .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -525,7 +501,7 @@ internal fun VueoSettingsHub(
 
                                 Text(
                                     text = dnaTastePreview.takeIf { it.isNotBlank() }
-                                        ?: if (dnaEnabled) "Keep watching to shape your DNA class." else "Enable User DNA in Personalization.",
+                                        ?: if (dnaEnabled) "Keep watching to shape your DNA class." else "Enable User DNA in Enhancements → Personalization.",
                                     modifier = Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 1.dp, bottom = 6.dp),
                                     color = Color.White.copy(alpha = .60f),
                                     fontSize = 10.sp,
@@ -556,8 +532,6 @@ internal fun VueoSettingsHub(
                         VueoSettingsHubGroup("VUEO") {
                             VueoSettingsHubRow("Account", "Account & mobile / TV sync.", "", Icons.Default.Settings, onSync)
                             VueoSettingsHubDivider()
-                            VueoSettingsHubRow("Personalization", "User DNA, DNA Match & recommendations.", "", Icons.Default.Settings) { showPersonalization = true }
-                            VueoSettingsHubDivider()
                             VueoSettingsHubRow(
                                 "Content Manager", "Addons, providers & catalogs.",
                                 hubSnapshot?.let { summary ->
@@ -567,7 +541,7 @@ internal fun VueoSettingsHub(
                             )
                             VueoSettingsHubDivider()
                             VueoSettingsHubRow(
-                                "Enhancements", "Metadata, ratings & external services.",
+                                "Enhancements", "Personalization, metadata, ratings & services.",
                                 buildString {
                                     val summary = hubSnapshot
                                     if (summary == null) {

@@ -67,7 +67,8 @@ internal fun TvPersonalizationSettings(
     val dna = remember { UserDnaPreferences(context.applicationContext) }
     var dnaEnabled by remember(profile.id) { mutableStateOf(dna.userDnaEnabled(profile.id)) }
     var showMatch by remember(profile.id) { mutableStateOf(dna.showDnaMatchEnabled(profile.id)) }
-    var recommendations by remember(profile.id) { mutableStateOf(dna.personalizedRecommendationsEnabled(profile.id)) }
+    var forYou by remember(profile.id) { mutableStateOf(dna.forYouEnabled(profile.id)) }
+    var because by remember(profile.id) { mutableStateOf(dna.becauseYouWatchedEnabled(profile.id)) }
     val entries = listOf(
         toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and Favorites.", dnaEnabled) {
             dnaEnabled = it
@@ -77,10 +78,14 @@ internal fun TvPersonalizationSettings(
             showMatch = it
             dna.setShowDnaMatchEnabled(profile.id, it)
         }.copy(section = "USER DNA"),
-        toggleEntry("dna-recs", "Personalized Recommendations", "Use User DNA for For You and Because You Watched recommendations.", recommendations, enabled = dnaEnabled) {
-            recommendations = it
-            dna.setPersonalizedRecommendationsEnabled(profile.id, it)
-        }.copy(section = "USER DNA"),
+        toggleEntry("for-you", "For You", "Show personalized recommendations on Home.", forYou, enabled = dnaEnabled) {
+            forYou = it
+            dna.setForYouEnabled(profile.id, it)
+        }.copy(section = "HOME RECOMMENDATIONS"),
+        toggleEntry("because-you-watched", "Because You Watched", "Show related titles from your recent viewing on Home.", because, enabled = dnaEnabled) {
+            because = it
+            dna.setBecauseYouWatchedEnabled(profile.id, it)
+        }.copy(section = "HOME RECOMMENDATIONS"),
     )
 
     TvSettingsListScreen(
@@ -826,6 +831,8 @@ internal fun TvEnhancementSettings(
         }
     }
     val entries = listOf(
+        TvSettingsEntry("personalization", "Personalization", "User DNA, DNA Match, For You & Because You Watched.",
+            onActivate = { onOpen(TvSettingsPage.PERSONALIZATION) }, section = "PERSONALIZATION", icon = Icons.Default.Settings),
         choiceEntry(
             "recommendation-engine", "Recommendation Engine",
             "Direct Trakt or TMDB results in their original order. Trakt is ready to use; TMDB requires an API key.",
@@ -860,7 +867,7 @@ internal fun TvEnhancementSettings(
 
     TvSettingsListScreen(
         title = "Enhancements",
-        subtitle = "Optional services for richer metadata and ratings.",
+        subtitle = "Personalization, metadata, ratings and optional services.",
         entries = entries,
         onNavigate = onNavigate,
         onProfile = onProfile,

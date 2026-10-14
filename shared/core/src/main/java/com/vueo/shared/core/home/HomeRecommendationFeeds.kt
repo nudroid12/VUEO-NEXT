@@ -18,14 +18,15 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicLong
 
 /** App-owned work survives a Home tab switch. Catalog partials never enter the request key. */
 object HomeRecommendationFeeds {
@@ -44,6 +45,8 @@ object HomeRecommendationFeeds {
         val traktClientId: String,
         val recommendationsEnabled: Boolean,
         val similarEnabled: Boolean,
+        val forYouEnabled: Boolean = true,
+        val becauseEnabled: Boolean = true,
     )
 
     private data class Record(
@@ -52,14 +55,20 @@ object HomeRecommendationFeeds {
         val becauseSignature: String = "", val becauseAt: Long = 0L, val becauseRetry: Boolean = false,
         val forYouSavedAt: Long = 0L, val becauseSavedAt: Long = 0L,
     )
+    private class Stage {
+        val generation = AtomicLong()
+        var requestedSignature = ""
+        @Volatile var job: Job? = null
+    }
     private class Entry(val file: AtomicFile, val profile: String) {
         val mutex = Mutex()
+        val publicationLock = Any()
         val state = MutableStateFlow(HomeRecommendationSections())
         var initialized = false
         var record = Record()
-        var requestSignature = ""
-        var generation = 0L
-        var job: Job? = null
+        val forYou = Stage()
+        val because = Stage()
+        @Volatile var visibility: Request? = null
     }
 
     internal fun fresh(at: Long, retry: Boolean, now: Long): Boolean =
@@ -72,15 +81,15 @@ object HomeRecommendationFeeds {
         request.tmdbKey, request.traktClientId, request.recommendationsEnabled, request.similarEnabled).joinToString("\u0000"))
 
     internal fun requestSignatures(request: Request, now: Long): Pair<String, String> {
-        val seeds = ForYouPolicy.seeds(request.history, request.favorites, now)
+        val seeds = if (request.forYouEnabled) ForYouPolicy.seeds(request.history, request.favorites, now) else emptyList()
         val excluded = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.distinct().sorted()
         val favorites = request.favorites.flatMap(ForYouPolicy::aliases).distinct().sorted()
-        val forYou = hash(listOf(now / 86_400_000L, seeds.map {
+        val forYou = if (!request.forYouEnabled) "" else hash(listOf(now / 86_400_000L, seeds.map {
             listOf(it.media.copy(episodes = emptyList()), (it.weight * 10).toInt())
         }, excluded, favorites).toString())
-        val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
-        val because = hash(listOf(seed?.copy(episodes = emptyList()), excluded).toString())
+        val seed = if (request.becauseEnabled) HomeRecommendationPolicy.latestMeaningfulSeed(request.history) else null
+        val because = if (!request.becauseEnabled) "" else hash(listOf(seed?.copy(episodes = emptyList()), excluded).toString())
         return forYou to because
     }
 
@@ -94,9 +103,9 @@ object HomeRecommendationFeeds {
             ForYouPolicy.identity(it) == ForYouPolicy.identity(seed)
         } == true
         return HomeRecommendationSections(
-            forYou = cached.forYou.filter { ForYouPolicy.aliases(it).none(excluded::contains) },
-            becauseYouWatchedSeed = seed,
-            becauseYouWatched = if (sameSeed) cached.becauseYouWatched.filter {
+            forYou = if (request.forYouEnabled) cached.forYou.filter { ForYouPolicy.aliases(it).none(excluded::contains) } else emptyList(),
+            becauseYouWatchedSeed = if (request.becauseEnabled) seed else null,
+            becauseYouWatched = if (request.becauseEnabled && sameSeed) cached.becauseYouWatched.filter {
                 ForYouPolicy.aliases(it).none(watched::contains) &&
                     ForYouPolicy.identity(it) != ForYouPolicy.identity(seed)
             } else emptyList(),
@@ -111,7 +120,7 @@ object HomeRecommendationFeeds {
                 Entry(AtomicFile(File(directory, "$key.json")), request.profile)
             }.also {
                 while (entries.size > 16) {
-                    val oldest = entries.entries.firstOrNull { it.key != key && it.value.job?.isActive != true } ?: break
+                    val oldest = entries.entries.firstOrNull { it.key != key && it.value.forYou.job?.isActive != true && it.value.because.job?.isActive != true } ?: break
                     entries.remove(oldest.key)
                 }
             }
@@ -120,83 +129,111 @@ object HomeRecommendationFeeds {
             if (!entry.initialized) { entry.record = read(entry.file); entry.initialized = true }
             val now = System.currentTimeMillis()
             val (forYouSignature, becauseSignature) = requestSignatures(request, now)
-            val combined = "$forYouSignature:$becauseSignature"
             entry.record = entry.record.copy(sections = entry.record.sections.copy(
                 forYou = entry.record.sections.forYou.takeIf { usable(entry.record.forYouSavedAt, now) }.orEmpty(),
                 becauseYouWatched = entry.record.sections.becauseYouWatched.takeIf { usable(entry.record.becauseSavedAt, now) }.orEmpty()))
             val record = entry.record
             val forYouFresh = record.forYouSignature == forYouSignature && fresh(record.forYouAt, record.forYouRetry, now)
             val becauseFresh = record.becauseSignature == becauseSignature && fresh(record.becauseAt, record.becauseRetry, now)
-            entry.state.value = visible(record.sections, request)
-            if ((forYouFresh && becauseFresh) || (entry.requestSignature == combined && entry.job?.isActive == true))
-                return@withLock entry.state
-            entry.job?.cancel()
-            val generation = ++entry.generation
-            entry.requestSignature = combined
-            // Separate publications: neither section waits for the other section's network work.
-            entry.job = scope.launch {
-                supervisorScope {
-                    if (!forYouFresh) launch {
-                        try {
-                            val sources = ForYouCandidateLoader.load(request.profile, request.history, request.favorites, request.traktClientId)
-                            val result = withContext(Dispatchers.Default) {
-                                val context = currentCoroutineContext()
-                                ForYouPolicy.rank(sources.seeds, sources.batches, sources.discovery,
-                                    request.history, request.favorites, limit = 12,
-                                    checkActive = { context.ensureActive() })
-                            }
-                            publish(entry, generation, request) { old ->
-                                old.copy(sections = old.sections.copy(forYou = result.ifEmpty { visible(old.sections, request).forYou }),
-                                    forYouSignature = forYouSignature, forYouAt = System.currentTimeMillis(), forYouRetry = result.isEmpty(),
-                                    forYouSavedAt = if (result.isNotEmpty()) System.currentTimeMillis() else old.forYouSavedAt)
-                            }
-                        } catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) { markRetry(entry, generation, forYouSignature, true) }
-                    }
-                    if (!becauseFresh) launch {
-                        try {
-                            val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
-                            val related = seed?.let { RelatedContentOrchestrator.direct(it, request.tmdbKey,
-                                request.recommendationsEnabled, request.similarEnabled, 18, request.engine, request.traktClientId) }.orEmpty()
-                            val watched = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
-                                .map { "${it.media.type}:${it.media.id}" }.toSet()
-                            val result = seed?.let { HomeRecommendationPolicy.filterBecauseRelated(related, it, watched, 12) }.orEmpty()
-                            publish(entry, generation, request) { old ->
-                                old.copy(sections = old.sections.copy(becauseYouWatchedSeed = seed,
-                                    becauseYouWatched = result.ifEmpty { visible(old.sections, request).becauseYouWatched }),
-                                    becauseSignature = becauseSignature, becauseAt = System.currentTimeMillis(), becauseRetry = seed != null && result.isEmpty(),
-                                    becauseSavedAt = if (result.isNotEmpty()) System.currentTimeMillis() else old.becauseSavedAt)
-                            }
-                        } catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) { markRetry(entry, generation, becauseSignature, false) }
-                    }
-                }
+            synchronized(entry.publicationLock) {
+                entry.visibility = request
+                entry.state.value = visible(record.sections, request)
+            }
+            if (!request.forYouEnabled) stop(entry.forYou)
+            else if (!forYouFresh && !(entry.forYou.requestedSignature == forYouSignature && entry.forYou.job?.isActive == true)) {
+                stop(entry.forYou)
+                val generation = entry.forYou.generation.incrementAndGet()
+                entry.forYou.requestedSignature = forYouSignature
+                entry.forYou.job = scope.launch { refreshForYou(entry, generation, request, forYouSignature) }
+            }
+            if (!request.becauseEnabled) stop(entry.because)
+            else if (!becauseFresh && !(entry.because.requestedSignature == becauseSignature && entry.because.job?.isActive == true)) {
+                stop(entry.because)
+                val generation = entry.because.generation.incrementAndGet()
+                entry.because.requestedSignature = becauseSignature
+                entry.because.job = scope.launch { refreshBecause(entry, generation, request, becauseSignature) }
             }
             entry.state
         }
     }
 
-    private suspend fun publish(entry: Entry, generation: Long, request: Request, transform: (Record) -> Record) {
+    private fun stop(stage: Stage) {
+        stage.generation.incrementAndGet()
+        stage.job?.cancel()
+    }
+
+    private suspend fun refreshForYou(entry: Entry, generation: Long, request: Request, signature: String) {
+        try {
+            val sources = ForYouCandidateLoader.load(request.profile, request.history, request.favorites, request.traktClientId)
+            val result = withContext(Dispatchers.Default) {
+                val context = currentCoroutineContext()
+                ForYouPolicy.rank(sources.seeds, sources.batches, sources.discovery, request.history,
+                    request.favorites, limit = 12, checkActive = { context.ensureActive() })
+            }
+            publish(entry, generation, request, forYou = true) { old ->
+                old.copy(sections = old.sections.copy(forYou = result.ifEmpty {
+                    visible(old.sections, request.copy(forYouEnabled = true, becauseEnabled = true)).forYou }),
+                    forYouSignature = signature, forYouAt = System.currentTimeMillis(), forYouRetry = result.isEmpty(),
+                    forYouSavedAt = if (result.isNotEmpty()) System.currentTimeMillis() else old.forYouSavedAt)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { markRetry(entry, generation, signature, true) }
+    }
+
+    private suspend fun refreshBecause(entry: Entry, generation: Long, request: Request, signature: String) {
+        try {
+            val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
+            val related = seed?.let { RelatedContentOrchestrator.direct(it, request.tmdbKey,
+                request.recommendationsEnabled, request.similarEnabled, 18, request.engine, request.traktClientId) }.orEmpty()
+            val watched = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
+                .map { "${it.media.type}:${it.media.id}" }.toSet()
+            val result = seed?.let { HomeRecommendationPolicy.filterBecauseRelated(related, it, watched, 12) }.orEmpty()
+            publish(entry, generation, request, forYou = false) { old ->
+                old.copy(sections = old.sections.copy(becauseYouWatchedSeed = seed,
+                    becauseYouWatched = result.ifEmpty {
+                        visible(old.sections, request.copy(forYouEnabled = true, becauseEnabled = true)).becauseYouWatched }),
+                    becauseSignature = signature, becauseAt = System.currentTimeMillis(), becauseRetry = seed != null && result.isEmpty(),
+                    becauseSavedAt = if (result.isNotEmpty()) System.currentTimeMillis() else old.becauseSavedAt)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { markRetry(entry, generation, signature, false) }
+    }
+
+    private suspend fun publish(entry: Entry, generation: Long, request: Request, forYou: Boolean, transform: (Record) -> Record) {
         entry.mutex.withLock {
             currentCoroutineContext().ensureActive()
-            if (entry.generation != generation) return@withLock
+            if ((if (forYou) entry.forYou else entry.because).generation.get() != generation) return@withLock
             entry.record = transform(entry.record)
-            entry.state.value = visible(entry.record.sections, request)
+            synchronized(entry.publicationLock) { entry.state.value = visible(entry.record.sections, entry.visibility ?: request) }
             write(entry.file, entry.record)
         }
     }
     private suspend fun markRetry(entry: Entry, generation: Long, signature: String, forYou: Boolean) {
         entry.mutex.withLock {
             currentCoroutineContext().ensureActive()
-            if (entry.generation != generation) return@withLock
+            if ((if (forYou) entry.forYou else entry.because).generation.get() != generation) return@withLock
             entry.record = if (forYou) entry.record.copy(forYouSignature = signature, forYouAt = System.currentTimeMillis(), forYouRetry = true)
                 else entry.record.copy(becauseSignature = signature, becauseAt = System.currentTimeMillis(), becauseRetry = true)
             write(entry.file, entry.record)
         }
     }
 
-    fun cancelProfile(profile: String) {
-        synchronized(entries) { entries.values.filter { it.profile == profile }.forEach { it.job?.cancel() } }
+    fun cancelProfile(profile: String, forYou: Boolean = true, because: Boolean = true) {
+        synchronized(entries) {
+            entries.values.filter { it.profile == profile }.forEach { entry ->
+                if (forYou) stop(entry.forYou)
+                if (because) stop(entry.because)
+                synchronized(entry.publicationLock) {
+                entry.visibility = entry.visibility?.let { request -> request.copy(
+                    forYouEnabled = request.forYouEnabled && !forYou,
+                    becauseEnabled = request.becauseEnabled && !because) }
+                entry.state.update { sections -> sections.copy(
+                    forYou = if (forYou) emptyList() else sections.forYou,
+                    becauseYouWatchedSeed = if (because) null else sections.becauseYouWatchedSeed,
+                    becauseYouWatched = if (because) emptyList() else sections.becauseYouWatched) }
+                }
+            }
+        }
     }
 
     private fun usable(at: Long, now: Long) = at > 0 && now >= at && now - at < STALE_MS

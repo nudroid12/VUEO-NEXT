@@ -86,7 +86,6 @@ private data class TvSettingsRootDestination(
 private val TvSettingsRootDestinations = listOf(
     TvSettingsRootDestination(TvSettingsPage.VUEO_SYNC, "vueo-sync", "Account", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PROFILE, "profile", "Profile", "VUEO"),
-    TvSettingsRootDestination(TvSettingsPage.PERSONALIZATION, "personalization", "Personalization", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.CONTENT_MANAGER, "content-manager", "Content Manager", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.ENHANCEMENTS, "enhancements", "Enhancements", "VUEO"),
     TvSettingsRootDestination(TvSettingsPage.PLAYBACK, "playback", "Playback", "PLAYBACK"),
@@ -107,7 +106,8 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST,
-    TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
+    TvSettingsPage.ENHANCEMENT_GEMINI,
+    TvSettingsPage.PERSONALIZATION -> TvSettingsPage.ENHANCEMENTS
     else -> this
 }
 
@@ -119,7 +119,8 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
     TvSettingsPage.ENHANCEMENT_MDBLIST,
-    TvSettingsPage.ENHANCEMENT_GEMINI -> true
+    TvSettingsPage.ENHANCEMENT_GEMINI,
+    TvSettingsPage.PERSONALIZATION -> true
     else -> false
 }
 
@@ -156,7 +157,8 @@ fun TvSettingsScreen(
             TvSettingsPage.ENHANCEMENT_TRAKT,
             TvSettingsPage.ENHANCEMENT_TMDB,
             TvSettingsPage.ENHANCEMENT_MDBLIST,
-            TvSettingsPage.ENHANCEMENT_GEMINI -> TvSettingsPage.ENHANCEMENTS
+            TvSettingsPage.ENHANCEMENT_GEMINI,
+            TvSettingsPage.PERSONALIZATION -> TvSettingsPage.ENHANCEMENTS
             else -> page
         }
         panelAutoFocusToken += 1
@@ -188,7 +190,7 @@ fun TvSettingsScreen(
                 dataVersion = dataVersion,
             )
             TvSettingsPage.PERSONALIZATION -> TvPersonalizationSettings(
-                runtime, onNavigate, onProfile, onBack
+                runtime, onNavigate, onProfile, ::backPanel
             )
             TvSettingsPage.CONTENT_MANAGER -> TvContentManagerHub(
                 runtime, onNavigate, onProfile, ::openPanel, onBack

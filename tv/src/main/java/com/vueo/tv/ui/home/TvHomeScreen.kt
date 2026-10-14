@@ -234,8 +234,13 @@ fun TvHomeScreen(
     val currentRecommendationEngine = runtime.settingsStore.recommendationEngine()
     val currentTraktClientId = runtime.settingsStore.traktClientId()
     val recommendationEngineIsCurrent = retainedState.recommendationEngine == currentRecommendationEngine
-    val homeRecommendations = if (recommendationEngineIsCurrent) retainedState.homeRecommendations
-        else HomeRecommendationSections()
+    val forYouEnabled = runtime.dnaPreferences.shouldShowForYou(activeProfileId)
+    val becauseEnabled = runtime.dnaPreferences.shouldShowBecauseYouWatched(activeProfileId)
+    val homeRecommendations = (if (recommendationEngineIsCurrent) retainedState.homeRecommendations
+        else HomeRecommendationSections()).let { sections -> sections.copy(
+            forYou = if (forYouEnabled) sections.forYou else emptyList(),
+            becauseYouWatchedSeed = if (becauseEnabled) sections.becauseYouWatchedSeed else null,
+            becauseYouWatched = if (becauseEnabled) sections.becauseYouWatched else emptyList()) }
 
     // Presentation is now a cheap pure build. Catalog partials may still arrive
     // rapidly, but they no longer restart disk/library hydration.
@@ -258,7 +263,7 @@ fun TvHomeScreen(
     LaunchedEffect(active, runtime, activeProfileId, refreshToken, libraryRevision,
         retainedState.libraryHydrationRefreshToken, retainedState.libraryHydrationRevision,
         currentRecommendationEngine, currentTraktClientId, currentTmdbKey,
-        currentTmdbRecommendations, currentTmdbSimilar, personalized) {
+        currentTmdbRecommendations, currentTmdbSimilar, personalized, forYouEnabled, becauseEnabled) {
         val libraryIsCurrent = retainedState.libraryHydrationProfileId == activeProfileId &&
             retainedState.libraryHydrationRefreshToken == refreshToken &&
             retainedState.libraryHydrationRevision == libraryRevision
@@ -272,7 +277,7 @@ fun TvHomeScreen(
         val favorites = runtime.readDetailLibrary { runtime.libraryStore.watchlist() }
         val request = com.vueo.shared.core.home.HomeRecommendationFeeds.Request(activeProfileId,
             retainedState.watchHistory, favorites, currentRecommendationEngine,
-            currentTmdbKey, currentTraktClientId, currentTmdbRecommendations, currentTmdbSimilar)
+            currentTmdbKey, currentTraktClientId, currentTmdbRecommendations, currentTmdbSimilar, forYouEnabled, becauseEnabled)
         val feed = com.vueo.shared.core.home.HomeRecommendationFeeds.observe(traktContext, request)
         retainedState.recommendationEngine = currentRecommendationEngine
         feed.collect { sections -> retainedState.homeRecommendations = sections }

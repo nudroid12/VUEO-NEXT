@@ -44,4 +44,20 @@ class HomeRecommendationFeedsTest {
         assertNotEquals(HomeRecommendationFeeds.requestSignatures(original, now), HomeRecommendationFeeds.requestSignatures(changed, now))
         assertEquals(HomeRecommendationFeeds.requestSignatures(original, now), HomeRecommendationFeeds.requestSignatures(original, now))
     }
+
+    @Test fun rowFlagsHideOnlyTheirOwnCachedSection() {
+        val seed = media("tt001")
+        val candidate = media("tt002")
+        val cached = HomeRecommendationSections(listOf(candidate), seed, listOf(candidate))
+        val input = request(listOf(watched(seed)))
+        val becauseOnly = HomeRecommendationFeeds.visible(cached, input.copy(forYouEnabled = false))
+        assertTrue(becauseOnly.forYou.isEmpty())
+        assertEquals(listOf(candidate), becauseOnly.becauseYouWatched)
+        val forYouOnly = HomeRecommendationFeeds.visible(cached, input.copy(becauseEnabled = false))
+        assertEquals(listOf(candidate), forYouOnly.forYou)
+        assertTrue(forYouOnly.becauseYouWatched.isEmpty())
+        assertNull(forYouOnly.becauseYouWatchedSeed)
+        val off = HomeRecommendationFeeds.visible(cached, input.copy(forYouEnabled = false, becauseEnabled = false))
+        assertTrue(off.forYou.isEmpty() && off.becauseYouWatched.isEmpty())
+    }
 }

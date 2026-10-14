@@ -148,16 +148,8 @@ internal fun PersonalizationSettingsScreen(
         )
     }
 
-    var personalizedRecommendations by remember(
-        activeProfile.id
-    ) {
-        mutableStateOf(
-            userDnaPreferences
-                .personalizedRecommendationsEnabled(
-                    activeProfile.id
-                )
-        )
-    }
+    var forYou by remember(activeProfile.id) { mutableStateOf(userDnaPreferences.forYouEnabled(activeProfile.id)) }
+    var becauseYouWatched by remember(activeProfile.id) { mutableStateOf(userDnaPreferences.becauseYouWatchedEnabled(activeProfile.id)) }
 
     VueoSettingsPage(
         title = "Personalization",
@@ -203,18 +195,27 @@ internal fun PersonalizationSettingsScreen(
                         )
                     },
                 )
+            }
+        }
+        item(key = "personalization-recommendations") {
+            VueoSettingsHubGroup(label = "HOME RECOMMENDATIONS") {
+                VueoSettingsToggleRow(
+                    title = "For You",
+                    subtitle = "Show personalized recommendations on Home.",
+                    checked = forYou, enabled = userDnaEnabled,
+                    onCheckedChange = { enabled ->
+                        forYou = enabled
+                        userDnaPreferences.setForYouEnabled(activeProfile.id, enabled)
+                    },
+                )
                 VueoSettingsHubDivider()
                 VueoSettingsToggleRow(
-                    title = "Personalized Recommendations",
-                    subtitle = "Use User DNA for For You and Because You Watched recommendations.",
-                    checked = personalizedRecommendations,
-                    enabled = userDnaEnabled,
+                    title = "Because You Watched",
+                    subtitle = "Show related titles from your recent viewing on Home.",
+                    checked = becauseYouWatched, enabled = userDnaEnabled,
                     onCheckedChange = { enabled ->
-                        personalizedRecommendations = enabled
-                        userDnaPreferences.setPersonalizedRecommendationsEnabled(
-                            profileId = activeProfile.id,
-                            enabled = enabled,
-                        )
+                        becauseYouWatched = enabled
+                        userDnaPreferences.setBecauseYouWatchedEnabled(activeProfile.id, enabled)
                     },
                 )
             }
@@ -245,6 +246,14 @@ internal fun EnhancementsSettingsScreen(
                 context.applicationContext
             )
         }
+
+    val profileStore = remember { ProfileStore(context.applicationContext) }
+    var showPersonalization by remember { mutableStateOf(false) }
+    BackHandler(enabled = showPersonalization) { showPersonalization = false }
+    if (showPersonalization) {
+        PersonalizationSettingsScreen(profileStore, onBack = { showPersonalization = false }, onViewDna = {})
+        return
+    }
 
     var engine by remember { mutableStateOf(settingsStore.recommendationEngine()) }
     var showEngineDialog by remember { mutableStateOf(false) }
@@ -280,9 +289,15 @@ internal fun EnhancementsSettingsScreen(
 
     VueoSettingsPage(
         title = "Enhancements",
-        subtitle = "Optional services for richer metadata and ratings.",
+        subtitle = "Personalization, metadata, ratings and optional services.",
         onBack = onBack,
     ) {
+        item(key = "enhancements-personalization") {
+            VueoSettingsHubGroup(label = "PERSONALIZATION") {
+                VueoSettingsHubRow("Personalization", "User DNA, DNA Match, For You & Because You Watched.", "", Icons.Default.Settings,
+                    onClick = { showPersonalization = true })
+            }
+        }
         item(key = "enhancements-recommendation-engine") {
             VueoSettingsHubGroup(label = "RECOMMENDATIONS") {
                 VueoSettingsHubRow(

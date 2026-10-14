@@ -430,6 +430,9 @@ internal fun HomeScreen(
                 .activeProfileId()
         }
 
+    val forYouEnabled = dnaPreferences.shouldShowForYou(activeProfileId)
+    val becauseEnabled = dnaPreferences.shouldShowBecauseYouWatched(activeProfileId)
+
     val personalizedHomeEnabled =
         dnaPreferences
             .shouldPersonalizeRecommendations(
@@ -705,7 +708,7 @@ internal fun HomeScreen(
     }
     LaunchedEffect(recommendationSnapshot, activeProfileId, personalizedHomeEnabled,
         recommendationEngine, recommendationKey, recommendationTmdbEnabled,
-        recommendationSimilarEnabled, recommendationTraktClientId) {
+        recommendationSimilarEnabled, recommendationTraktClientId, forYouEnabled, becauseEnabled) {
         val snapshot = recommendationSnapshot ?: return@LaunchedEffect
         if (!personalizedHomeEnabled) {
             com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(activeProfileId)
@@ -715,7 +718,7 @@ internal fun HomeScreen(
         }
         val request = com.vueo.shared.core.home.HomeRecommendationFeeds.Request(activeProfileId,
             snapshot.history, snapshot.watchlist, recommendationEngine, recommendationKey,
-            recommendationTraktClientId, recommendationTmdbEnabled, recommendationSimilarEnabled)
+            recommendationTraktClientId, recommendationTmdbEnabled, recommendationSimilarEnabled, forYouEnabled, becauseEnabled)
         val feed = com.vueo.shared.core.home.HomeRecommendationFeeds.observe(context, request)
         feed.collect { sections ->
             homeRecommendations = sections
@@ -724,9 +727,9 @@ internal fun HomeScreen(
         }
     }
 
-    val forYouItems = homeRecommendations.forYou
-    val becauseYouWatchedSeed = homeRecommendations.becauseYouWatchedSeed
-    val becauseYouWatchedItems = homeRecommendations.becauseYouWatched
+    val forYouItems = if (forYouEnabled) homeRecommendations.forYou else emptyList()
+    val becauseYouWatchedSeed = if (becauseEnabled) homeRecommendations.becauseYouWatchedSeed else null
+    val becauseYouWatchedItems = if (becauseEnabled) homeRecommendations.becauseYouWatched else emptyList()
 
         LazyColumn(
         state = listState,
