@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -165,6 +166,7 @@ internal fun TvContentManagerHub(
         onProfile = onProfile,
         onBack = onBack,
         topLabel = null,
+        contentManager = true,
         metrics = listOf(
             TvSettingsMetric(installedAddons.toString(), "Installed"),
             TvSettingsMetric(onlineCount.toString(), "Online"),
@@ -188,7 +190,9 @@ internal fun TvAddonSettings(
     var revision by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var removeUrl by remember { mutableStateOf<String?>(null) }
-    var status by remember { mutableStateOf<String?>(null) }
+    var managementMessage by remember { mutableStateOf<String?>(null) }
+    var refreshMessage by remember { mutableStateOf<String?>(null) }
+    val addonMessages = remember { mutableStateMapOf<String, String>() }
     var refreshingAddons by remember { mutableStateOf(false) }
     val manifests = remember(revision) { runtime.content.manifestUrls() }
     val installedAddons = remember(revision) { runtime.engine.stremioAddons() }
@@ -210,10 +214,10 @@ internal fun TvAddonSettings(
                     runCatching { runtime.addAddon(url) }
                         .onSuccess {
                             revision++
-                            status = "Addon installed."
+                            addonMessages[url.trim()] = "Addon installed."
                             onDataChanged()
                         }
-                        .onFailure { status = it.message ?: "Unable to install addon." }
+                        .onFailure { managementMessage = it.message ?: "Unable to install addon." }
                 }
             },
         )
@@ -230,6 +234,8 @@ internal fun TvAddonSettings(
                 removeUrl = null
                 scope.launch {
                     runtime.removeAddon(url)
+                    addonMessages.remove(url.trim())
+                    managementMessage = "Addon removed."
                     revision++
                     onDataChanged()
                 }
@@ -246,7 +252,8 @@ internal fun TvAddonSettings(
                 id = "add",
                 title = "Add Addon",
                 subtitle = "Install an HTTPS addon manifest URL.",
-                onActivate = { showAdd = true },
+                onActivate = { managementMessage = null; showAdd = true },
+                operationStatus = managementMessage,
                 section = "ADDONS",
                 icon = Icons.Default.Extension,
                 accented = true,
@@ -255,25 +262,26 @@ internal fun TvAddonSettings(
         add(
             TvSettingsEntry(
                 id = "refresh-addons",
+                operationStatus = if (refreshingAddons) "Refreshing addons…" else refreshMessage,
                 title = "Refresh Addons",
                 subtitle = "Reload installed manifests while keeping your enable and disable choices.",
                 value = if (refreshingAddons) "Refreshing…" else "Refresh",
                 onActivate = {
                     if (!refreshingAddons) {
                         refreshingAddons = true
-                        status = null
+                        refreshMessage = null
                         scope.launch {
                             runCatching { runtime.refreshAddons() }
                                 .onSuccess { summary ->
                                     revision++
-                                    status = when {
+                                    refreshMessage = when {
                                         summary.failed == 0 -> "${summary.refreshed} addon manifests refreshed."
                                         summary.refreshed == 0 -> "Refresh failed for ${summary.failed} addons. Existing runtime copies were kept."
                                         else -> "${summary.refreshed} refreshed • ${summary.failed} failed; existing copies were kept."
                                     }
                                     onDataChanged()
                                 }
-                                .onFailure { error -> status = error.message ?: "Unable to refresh addons." }
+                                .onFailure { error -> refreshMessage = error.message ?: "Unable to refresh addons." }
                             refreshingAddons = false
                         }
                     }
@@ -297,7 +305,9 @@ internal fun TvAddonSettings(
         val orderedManifests = manifests
             .map { url -> url to addonByManifest[url.trim()] }
             .sortedWith(
-                compareBy<Pair<String, com.vueo.shared.core.extensions.MediaExtension?>> { (_, addon) ->
+                compareBy<Pair<String, com.vueo.shared.core.extensions.MediaExtension?>> { (url, _) ->
+                    !runtime.content.isAddonEnabled(url)
+                }.thenBy { (_, addon) ->
                     categories.indexOf(addonCategory(addon?.descriptor))
                 }.thenBy { (url, addon) ->
                     addon?.descriptor?.name?.lowercase() ?: url.lowercase()
@@ -335,10 +345,10 @@ internal fun TvAddonSettings(
                     onRightAction = { removeUrl = url },
                     accented = true,
                     rightActionLabel = "Remove",
+                    operationStatus = addonMessages[url.trim()],
                 )
             )
         }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
     val enabledCount = manifests.count { runtime.content.isAddonEnabled(it) }
@@ -353,6 +363,7 @@ internal fun TvAddonSettings(
         onProfile = onProfile,
         onBack = onBack,
         topLabel = "Content Manager",
+        contentManager = true,
         addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(manifests.size.toString(), "Installed"),
@@ -382,11 +393,14 @@ internal fun TvProviderSettings(
     var addBusy by remember { mutableStateOf(false) }
     var addMessage by remember { mutableStateOf<String?>(null) }
     var selectedRepositoryUrl by remember {
-        mutableStateOf(runtime.pluginStore.repositories().firstOrNull()?.manifestUrl)
+        mutableStateOf(runtime.pluginStore.repositories().sortedBy { !runtime.pluginStore.isRepositoryEnabled(it) }.firstOrNull()?.manifestUrl)
     }
     var removeRepo by remember { mutableStateOf<PluginRepositoryDescriptor?>(null) }
-    var status by remember { mutableStateOf<String?>(null) }
-    val repositories = remember(revision) { runtime.pluginStore.repositories() }
+    var managementMessage by remember { mutableStateOf<String?>(null) }
+    val repositoryMessages = remember { mutableStateMapOf<String, String>() }
+    val repositories = remember(revision) {
+        runtime.pluginStore.repositories().sortedBy { !runtime.pluginStore.isRepositoryEnabled(it) }
+    }
     val selectedRepository = repositories.firstOrNull { it.manifestUrl == selectedRepositoryUrl }
     val context = LocalContext.current
     val healthStore = remember(context) { PluginHealthStore(context.applicationContext) }
@@ -424,7 +438,7 @@ internal fun TvProviderSettings(
                         .onSuccess { repository ->
                             revision++
                             selectedRepositoryUrl = repository.manifestUrl
-                            status = "Installed ${repository.name}."
+                            repositoryMessages[repository.manifestUrl] = "Installed ${repository.name}."
                             showAdd = false
                             addMessage = null
                             onDataChanged()
@@ -457,8 +471,9 @@ internal fun TvProviderSettings(
                 scope.launch {
                     runtime.removePluginRepository(repository)
                     revision++
-                    selectedRepositoryUrl = runtime.pluginStore.repositories().firstOrNull()?.manifestUrl
-                    status = "Removed ${repository.name}."
+                    selectedRepositoryUrl = runtime.pluginStore.repositories().sortedBy { !runtime.pluginStore.isRepositoryEnabled(it) }.firstOrNull()?.manifestUrl
+                    repositoryMessages.remove(repository.manifestUrl)
+                    managementMessage = "Removed ${repository.name}."
                     onDataChanged()
                 }
             },
@@ -490,10 +505,12 @@ internal fun TvProviderSettings(
         add(
             TvSettingsEntry(
                 id = "add-repo",
+                operationStatus = managementMessage,
                 title = "Add Repository",
                 subtitle = "Install an HTTPS provider repository manifest.",
                 onActivate = {
                     addMessage = null
+                    managementMessage = null
                     showAdd = true
                 },
                 section = "PROVIDER SYSTEM",
@@ -536,6 +553,7 @@ internal fun TvProviderSettings(
                 accented = true,
                 detail = "v${repository.version} • ${repository.providers.size} providers • ${providerCodeStore.readyCount(repository)} ready",
                 switchChecked = repoEnabled,
+                operationStatus = if (refreshing) "Refreshing repository…" else repositoryMessages[repository.manifestUrl],
             ))
             add(
                 TvSettingsEntry(
@@ -544,18 +562,20 @@ internal fun TvProviderSettings(
                     subtitle = "Reload this manifest and refresh its provider code without changing preferences.",
                     value = if (refreshing) "Refreshing…" else "Refresh",
                     onActivate = {
-                        if (!refreshing) {
+                        if (refreshingRepositoryUrl == null) {
                             refreshingRepositoryUrl = repository.manifestUrl
-                            status = null
+                            repositoryMessages.remove(repository.manifestUrl)
                             scope.launch {
                                 runCatching { runtime.refreshPluginRepository(repository) }
                                     .onSuccess { refreshed ->
-                                        selectedRepositoryUrl = refreshed.manifestUrl
+                                        if (selectedRepositoryUrl == repository.manifestUrl) {
+                                            selectedRepositoryUrl = refreshed.manifestUrl
+                                        }
                                         revision++
-                                        status = "Refreshed ${refreshed.name} • ${providerCodeStore.readyCount(refreshed)} provider code ready."
+                                        repositoryMessages[refreshed.manifestUrl] = "Refreshed ${refreshed.name} • ${providerCodeStore.readyCount(refreshed)} provider code ready."
                                         onDataChanged()
                                     }
-                                    .onFailure { status = it.message ?: "Unable to refresh repository." }
+                                    .onFailure { repositoryMessages[repository.manifestUrl] = it.message ?: "Unable to refresh repository." }
                                 refreshingRepositoryUrl = null
                             }
                         }
@@ -628,7 +648,6 @@ internal fun TvProviderSettings(
                 )
             }
         }
-        status?.let { add(TvSettingsEntry("status", "Status", it, enabled = false, section = "STATUS")) }
     }
 
     val entries = buildList {
@@ -661,6 +680,7 @@ internal fun TvProviderSettings(
         onProfile = onProfile,
         onBack = onBack,
         topLabel = "Content Manager",
+        contentManager = true,
         addonLayout = true,
         metrics = listOf(
             TvSettingsMetric(repositories.size.toString(), "Repos"),
@@ -794,6 +814,7 @@ internal fun TvCatalogSettings(
         onProfile = onProfile,
         onBack = onBack,
         topLabel = "Content Manager",
+        contentManager = true,
         metrics = listOf(
             TvSettingsMetric(order.size.toString(), "Catalogs"),
             TvSettingsMetric(shownCount.toString(), "Shown"),

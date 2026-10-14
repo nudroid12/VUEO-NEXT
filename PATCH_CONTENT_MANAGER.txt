@@ -1,0 +1,14 @@
+VUEO TV Content Manager polish
+
+Apply at the repository root after the previous personalization patch.
+
+- Hub, Addons, Plugins & Providers and Catalog Order show inline metrics in slim cards.
+- Operation messages appear in the relevant addon/repository/action card; no separate Status card.
+- Enabled addons and repositories appear first. Repository order stays stable within each group.
+- Repository refresh messages are keyed by manifest URL. Switching tabs does not move a result to another repository or force selection back on completion.
+- Catalog order and visibility, provider health ranking, existing D-pad actions and personalization settings are preserved.
+- Previous Home/DNA patches remain prerequisites and are not included here.
+
+Validation: Kotlin PSI syntax passed for all 3 changed Kotlin files. Catalog ordering implementation and personalization implementation preserved exactly. Full Android/Compose build and real TV visual testing were not available.
+
+No YML files included. Root build.gradle.kts is unchanged and provided as the required repository-root marker.

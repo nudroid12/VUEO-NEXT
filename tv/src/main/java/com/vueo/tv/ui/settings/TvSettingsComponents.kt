@@ -113,6 +113,7 @@ internal data class TvSettingsEntry(
     val providerPanelStart: Boolean = false,
     val providerPanelEnd: Boolean = false,
     val supportingContent: (@Composable () -> Unit)? = null,
+    val operationStatus: String? = null,
 )
 
 internal data class TvSettingsNavItem(
@@ -803,8 +804,9 @@ private fun TvProfileStat(
 private fun TvSettingsMetricsRow(
     metrics: List<TvSettingsMetric>,
     compact: Boolean = false,
+    inlineLabels: Boolean = false,
 ) {
-    if (compact) {
+    if (compact && !inlineLabels) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             metrics.forEach { metric ->
                 Text("${metric.value} ${metric.label}", color = TvDesign.Muted, fontSize = 12.sp)
@@ -817,11 +819,22 @@ private fun TvSettingsMetricsRow(
             .fillMaxWidth()
             .background(TvSettingsContrast.Card, RoundedCornerShape(16.dp))
             .border(1.dp, TvDesign.White.copy(alpha = .08f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = if (compact) 6.dp else 11.dp),
+            .padding(horizontal = 12.dp, vertical = if (inlineLabels) 8.dp else 11.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         metrics.forEach { metric ->
-            Column(
+            if (inlineLabels) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(metric.value, color = TvDesign.Accent, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Text(metric.label, color = TvDesign.Muted, fontSize = 12.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            } else Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -859,6 +872,7 @@ internal fun TvSettingsListScreen(
     metrics: List<TvSettingsMetric> = emptyList(),
     preferredFocusId: String? = null,
     addonLayout: Boolean = false,
+    contentManager: Boolean = false,
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -871,6 +885,7 @@ internal fun TvSettingsListScreen(
             footer = footer,
             metrics = metrics,
             addonLayout = addonLayout,
+            contentManager = contentManager,
         )
         return
     }
@@ -961,7 +976,7 @@ internal fun TvSettingsListScreen(
             )
 
             if (metrics.isNotEmpty()) {
-                TvSettingsMetricsRow(metrics = metrics)
+                TvSettingsMetricsRow(metrics = metrics, inlineLabels = contentManager)
                 Spacer(Modifier.height(12.dp))
             }
 
@@ -1055,6 +1070,7 @@ private fun TvSettingsEmbeddedPanel(
     footer: String?,
     metrics: List<TvSettingsMetric>,
     addonLayout: Boolean = false,
+    contentManager: Boolean = false,
 ) {
     val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
     val accountHeaderIds = setOf("status", "message", "sync-now", "sign-out", "cancel-sign-out")
@@ -1099,7 +1115,7 @@ private fun TvSettingsEmbeddedPanel(
         )
 
         if (metrics.isNotEmpty()) {
-            TvSettingsMetricsRow(metrics = metrics, compact = !addonLayout)
+            TvSettingsMetricsRow(metrics = metrics, compact = !addonLayout, inlineLabels = contentManager)
             Spacer(Modifier.height(if (addonLayout) 12.dp else 6.dp))
         }
 
@@ -1384,6 +1400,10 @@ internal fun TvSettingsRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            entry.operationStatus?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(message, color = TvDesign.Accent, fontSize = 11.sp, lineHeight = 15.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
 
@@ -1710,7 +1730,7 @@ private fun TvAddonControls(
                     val isMaster = entry.id == "plugins-master"
                     Row(
                         modifier = Modifier
-                            .width(if (isMaster) 110.dp else 70.dp).height(70.dp)
+                            .width(if (isMaster) 110.dp else if (!entry.operationStatus.isNullOrBlank()) 220.dp else 70.dp).height(70.dp)
                             .then(actionModifier)
                             .focusRequester(requesterFor(entry.id))
                             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused(entry.id) }
@@ -1729,9 +1749,19 @@ private fun TvAddonControls(
                         if (isMaster) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(entry.title, color = TvDesign.White, fontSize = 12.sp)
                             Text(entry.value, color = TvDesign.Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        } else entry.icon?.let {
-                            Icon(it, contentDescription = entry.title, tint = TvDesign.White,
-                                modifier = Modifier.size(23.dp).then(tvContentRefreshMotion(entry)))
+                        } else Column(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            entry.icon?.let {
+                                Icon(it, contentDescription = entry.title, tint = TvDesign.White,
+                                    modifier = Modifier.size(23.dp).then(tvContentRefreshMotion(entry)))
+                            }
+                            entry.operationStatus?.let {
+                                Text(it, color = TvDesign.Muted, fontSize = 10.sp,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }

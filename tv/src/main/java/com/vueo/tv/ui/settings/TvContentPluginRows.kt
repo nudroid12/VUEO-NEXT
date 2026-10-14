@@ -91,10 +91,10 @@ private fun TvPluginRepositoryCard(
     // Keep the repository entry ID on the toggle for the host's focus restoration.
     var toggleFocused by remember(entry.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(15.dp)
-    Column(modifier = Modifier.padding(bottom = if (nextProvider != null) 12.dp else 0.dp)) {
+    Column(modifier = Modifier.padding(bottom = if (nextProvider != null) 12.dp else 0.dp)
+        .fillMaxWidth().background(PluginSurface, shape)) {
         Row(
             modifier = Modifier.fillMaxWidth()
-                .background(PluginSurface, shape)
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -169,6 +169,11 @@ private fun TvPluginRepositoryCard(
                     }
                 }
             }
+        }
+        entry.operationStatus?.takeIf { it.isNotBlank() }?.let { message ->
+            Text(message, color = TvDesign.Accent, fontSize = 11.sp, maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp))
         }
     }
 }
