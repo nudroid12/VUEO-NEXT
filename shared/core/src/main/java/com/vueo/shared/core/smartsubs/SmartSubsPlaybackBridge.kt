@@ -73,6 +73,7 @@ object SmartSubsPlaybackBridge {
                         ?.toString(Charsets.UTF_8)
                         ?.takeIf { "-->" in it }
                     val item = JSONObject().put("id", track.id.take(256)).put("lang", "eng")
+                        .put("providerName", track.providerName.take(160))
                     // An already loaded English subtitle can be uploaded as text for
                     // providers that bind downloads to this device's IP/session.
                     if (cachedText != null) item.put("text", cachedText)

@@ -1,0 +1,6 @@
+VUEO app root patch, TV and Mobile. No YML.
+Adds providerName to each upstream subtitle sent to VUEO SmartSubs.
+Original subtitle ID was already sent as id. Retains plugin-only filter and prior
+VUEO x SmartSubs / Malay AI / original provider subtitle display-ID changes.
+Apply with the matching worker patch for provider metadata in diagnostics.
+Android full build/device test not performed.
