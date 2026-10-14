@@ -1,0 +1,15 @@
+VUEO Mobile Account compact card — based on VUEO-NEXT-main (51)
+
+- One account card with Connected status and email.
+- Sync switch sits left of Sync now.
+- Sync status and operation/error messages stay inside the card.
+- Sign out and its confirmation are inside the same card.
+- Removed the separate Account Sync card, old sync on/off button, and long synced/local descriptions.
+- Shortened the page subtitle.
+- Existing login, create-account, sync service calls, busy guards and sign-out confirmation are retained.
+
+Extract at repository root to overwrite the matching mobile/ file.
+No enclosing project folder and no YML/YAML. This patch changes mobile only.
+
+Validation: reviewed diff; checked login/action preservation and archive paths/integrity.
+Android build/on-device rendering not verified: Gradle bootstrap download was unavailable in this environment.
