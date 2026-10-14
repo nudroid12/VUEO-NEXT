@@ -1,18 +1,17 @@
-V2 source display repair, apply each ZIP to its own repository root.
-App ZIP: VUEO app. Worker ZIP: VUEO-SmartSubs ONLY. No YML or binding changes.
+APP PATCH — VUEO-NEXT repository root ONLY. TV only; no worker or YML files.
+Fix shared entity-results poster navigation used by cast/person, production company
+and network result pages. Changes are confined to TvEntityResultsScreen.kt.
 
-Hero Source now shows original provider subtitle ID and provider name.
-App sends display metadata on the listing POST and selected translation GET.
-Worker accepts bounded encoded display headers to supplement older source records.
-Those fields are display-only and never participate in cache/source identity.
-Cached translations, Queue and translation engine remain unchanged.
-Prior plugin-only input filter, player-facing labels and source display ID are retained.
+Stable FocusRequesters keyed by media identity survive partial discovery/sorting.
+Focus restoration is entry/data handoff only, no longer triggered after each poster
+focus change. Confirm requestFocus return value rather than exception-free invocation.
+Sort-tab Down scrolls/composes the first poster before transferring actual focus.
+Poster D-pad navigation attaches offscreen targets before requesting focus; Up from
+first row returns to selected sort tab. Short final rows select nearest remaining
+poster. Lazy cell clickable is the single focus target (remove redundant focusable).
+Inactive screens stop focus jobs; loading/empty pages retain a usable sort focus.
 
-After both updates, reopen episode and select Malay AI for a fresh diagnostics event.
-Old event rows are not rewritten; no translation-cache clearing is required.
-Existing source metadata is still a fallback for clients without display headers.
-
-Validation: npm run check, 21 Node tests pass, including complete POST -> cached GET
--> persistent diagnostic event -> overview/hero display and legacy-source missing-name
-recovery. Actual Android build/device and live Cloudflare deployment not tested here.
-The exact cause in the user's live installation is not yet proven by its JSON export.
+Validation: Kotlin compiler PSI parsed the edited file without syntax errors.
+No full Android build, Compose type checking, or device/remote navigation test was
+available. Reproduce on TV: person/company/network -> Down into posters; move across
+rows/offscreen and partial last row; Up to sort; change sort; open poster and Back.

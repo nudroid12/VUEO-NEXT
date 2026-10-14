@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +30,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import android.view.KeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -54,7 +60,8 @@ import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.motion.TvMotion
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 private const val ENTITY_COLUMNS = 6
 
@@ -74,7 +81,6 @@ internal fun TvEntityResultsScreen(
     val orderedResults = remember(results, resultOrder) {
         SearchOrchestrator.orderEntityResults(results, resultOrder)
     }
-    val firstRequester = remember(target) { FocusRequester() }
     val newestRequester = remember(target) { FocusRequester() }
     val popularRequester = remember(target) { FocusRequester() }
     val selectedOrderRequester =
@@ -84,10 +90,49 @@ internal fun TvEntityResultsScreen(
     val resultKeys = remember(orderedResults) {
         orderedResults.map { "${it.type}:${it.id}" }
     }
-    val requesters = remember(resultKeys, firstRequester) {
-        resultKeys.mapIndexed { index, key ->
-            key to if (index == 0) firstRequester else FocusRequester()
-        }.toMap()
+    // Keep one requester per title while partial discovery and sorting update
+    // the result list. Requesters must not move between lazy grid cells.
+    val requesters = remember(target) { mutableMapOf<String, FocusRequester>() }
+    resultKeys.forEach { key -> requesters.getOrPut(key) { FocusRequester() } }
+    val latestActive = rememberUpdatedState(active)
+    val focusScope = rememberCoroutineScope()
+    var focusMoveJob by remember(target) { mutableStateOf<Job?>(null) }
+    var restoreFocusPending by remember(target) { mutableStateOf(true) }
+
+    suspend fun focusPosterAt(index: Int): Boolean {
+        if (!latestActive.value || index !in resultKeys.indices) return false
+        val key = resultKeys[index]
+        if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+            gridState.scrollToItem(index)
+        }
+        // A visible index can still be waiting for composition after scroll/data
+        // changes. Confirm actual focus success, not merely absence of exception.
+        repeat(5) {
+            withFrameNanos { }
+            if (!latestActive.value) return false
+            if (runCatching { requesters[key]?.requestFocus() == true }.getOrDefault(false)) return true
+        }
+        return false
+    }
+
+    fun moveToPoster(index: Int) {
+        if (!active || index !in resultKeys.indices || focusMoveJob?.isActive == true) return
+        restoreFocusPending = false
+        focusMoveJob = focusScope.launch { focusPosterAt(index) }
+    }
+
+    fun moveFromPoster(index: Int, direction: Int) {
+        when (direction) {
+            KeyEvent.KEYCODE_DPAD_UP -> if (index < ENTITY_COLUMNS) {
+                restoreFocusPending = false
+                runCatching { selectedOrderRequester.requestFocus() }
+            } else moveToPoster(index - ENTITY_COLUMNS)
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (index / ENTITY_COLUMNS < resultKeys.lastIndex / ENTITY_COLUMNS) {
+                moveToPoster((index + ENTITY_COLUMNS).coerceAtMost(resultKeys.lastIndex))
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT -> if (index % ENTITY_COLUMNS > 0) moveToPoster(index - 1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> if (index % ENTITY_COLUMNS < ENTITY_COLUMNS - 1) moveToPoster(index + 1)
+        }
     }
 
     LaunchedEffect(target) {
@@ -104,18 +149,22 @@ internal fun TvEntityResultsScreen(
         loading = false
     }
 
-    LaunchedEffect(active, orderedResults, loading, focusedMediaKey) {
-        if (!active || loading || orderedResults.isEmpty()) return@LaunchedEffect
-        delay(90)
-        val focusedKey = focusedMediaKey
-        val restored = focusedKey?.let { key ->
-            requesters[key]?.let { requester ->
-                runCatching { requester.requestFocus() }.isSuccess
-            }
-        } == true
-        if (!restored) {
-            runCatching { firstRequester.requestFocus() }
+    LaunchedEffect(active, resultKeys.isEmpty()) {
+        if (active && resultKeys.isEmpty()) {
+            withFrameNanos { }
+            if (latestActive.value) runCatching { selectedOrderRequester.requestFocus() }
         }
+    }
+
+    LaunchedEffect(active, resultKeys, restoreFocusPending) {
+        if (!active) {
+            focusMoveJob?.cancel()
+            restoreFocusPending = true
+            return@LaunchedEffect
+        }
+        if (!restoreFocusPending || resultKeys.isEmpty()) return@LaunchedEffect
+        val index = resultKeys.indexOf(focusedMediaKey).takeIf { it >= 0 } ?: 0
+        if (focusPosterAt(index)) restoreFocusPending = false
     }
 
     Column(
@@ -159,8 +208,12 @@ internal fun TvEntityResultsScreen(
                         requester = newestRequester,
                         leftRequester = FocusRequester.Cancel,
                         rightRequester = popularRequester,
-                        downRequester = firstRequester,
-                        onClick = { resultOrder = EntityResultOrder.NEWEST },
+                        onDown = { moveToPoster(0) },
+                        onClick = {
+                            focusedMediaKey = null
+                            restoreFocusPending = true
+                            resultOrder = EntityResultOrder.NEWEST
+                        },
                     )
                     TvEntitySortTab(
                         label = "Popular",
@@ -168,8 +221,12 @@ internal fun TvEntityResultsScreen(
                         requester = popularRequester,
                         leftRequester = newestRequester,
                         rightRequester = FocusRequester.Cancel,
-                        downRequester = firstRequester,
-                        onClick = { resultOrder = EntityResultOrder.POPULAR },
+                        onDown = { moveToPoster(0) },
+                        onClick = {
+                            focusedMediaKey = null
+                            restoreFocusPending = true
+                            resultOrder = EntityResultOrder.POPULAR
+                        },
                     )
                 }
             }
@@ -208,6 +265,7 @@ internal fun TvEntityResultsScreen(
                             } else {
                                 null
                             },
+                            onDirection = { direction -> moveFromPoster(index, direction) },
                             onFocused = { focusedMediaKey = mediaKey },
                             onClick = {
                                 focusedMediaKey = mediaKey
@@ -254,7 +312,7 @@ private fun TvEntitySortTab(
     requester: FocusRequester,
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
-    downRequester: FocusRequester,
+    onDown: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
@@ -266,9 +324,14 @@ private fun TvEntitySortTab(
             .focusProperties {
                 left = leftRequester
                 right = rightRequester
-                down = downRequester
             }
             .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    if (event.type == KeyEventType.KeyDown) onDown()
+                    true
+                } else false
+            }
             .background(
                 when {
                     focused -> TvDesign.SurfaceRaised
@@ -287,7 +350,6 @@ private fun TvEntitySortTab(
                 shape = shape,
             )
             .clickable(onClick = onClick)
-            .focusable()
             .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -305,6 +367,7 @@ private fun TvEntityPosterTile(
     item: MediaItem,
     requester: FocusRequester,
     upRequester: FocusRequester? = null,
+    onDirection: (Int) -> Unit,
     onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -335,8 +398,17 @@ private fun TvEntityPosterTile(
                 focused = state.isFocused
                 if (state.isFocused) onFocused()
             }
-            .clickable(onClick = onClick)
-            .focusable(),
+            .onPreviewKeyEvent { event ->
+                val direction = event.nativeKeyEvent.keyCode
+                if (direction in listOf(
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                )) {
+                    if (event.type == KeyEventType.KeyDown) onDirection(direction)
+                    true
+                } else false
+            }
+            .clickable(onClick = onClick),
     ) {
         TvNetworkImage(
             url = item.poster,
