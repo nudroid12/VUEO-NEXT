@@ -10,6 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +66,13 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -401,6 +412,16 @@ private fun TvProfileEditorScreen(
     val profile = state.profile
     val hadPin = remember(profile?.id) { profile?.let { profileStore.hasProfilePin(it.id) } ?: false }
     val firstRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var editingName by remember(profile?.id) { mutableStateOf(false) }
+    LaunchedEffect(editingName) {
+        if (editingName) {
+            delay(100)
+            keyboardController?.show()
+        } else {
+            keyboardController?.hide()
+        }
+    }
     var name by remember(profile?.id) { mutableStateOf(profile?.name.orEmpty()) }
     var avatar by remember(profile?.id) { mutableStateOf(profile?.avatar ?: ProfileAvatarCatalog.DEFAULT_ID) }
     var isKids by remember(profile?.id) { mutableStateOf(profile?.isKids ?: false) }
@@ -411,7 +432,12 @@ private fun TvProfileEditorScreen(
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
 
-    BackHandler(onBack = onBack)
+    BackHandler {
+        if (editingName) {
+            editingName = false
+            keyboardController?.hide()
+        } else onBack()
+    }
 
     LaunchedEffect(profile?.id) {
         delay(110)
@@ -443,8 +469,8 @@ private fun TvProfileEditorScreen(
                 .padding(start = 52.dp, end = 52.dp, top = 28.dp, bottom = 28.dp),
             horizontalArrangement = Arrangement.spacedBy(34.dp),
         ) {
-            // Left pane: header and primary actions are pinned. Only the form body
-            // scrolls, so Create / Save / Delete are always visible inside TV safe area.
+            // Pin the header, profile preview and actions. Only editable rows scroll;
+            // focusing a text field must never scroll the preview under the header.
             Column(
                 modifier = Modifier.width(410.dp).fillMaxHeight(),
             ) {
@@ -465,65 +491,81 @@ private fun TvProfileEditorScreen(
 
                 Spacer(Modifier.height(14.dp))
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(start = 6.dp, top = 8.dp, end = 6.dp, bottom = 18.dp),
+                // Preview stays visible while focus moves through the form.
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    color = PickerPanel,
+                    border = BorderStroke(1.dp, PickerStroke),
                 ) {
-                    item(key = "preview") {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(22.dp),
-                            color = PickerPanel,
-                            border = BorderStroke(1.dp, PickerStroke),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                ProfileAvatarImage(
-                                    profile = VueoProfile(
-                                        id = profile?.id ?: "preview",
-                                        name = name.ifBlank { "New profile" },
-                                        avatar = avatar,
-                                        isKids = isKids,
-                                        createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
-                                    ),
-                                    size = 78,
-                                )
-                                Spacer(Modifier.width(15.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = name.ifBlank { "New profile" },
-                                        color = Color.White,
-                                        fontSize = 19.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = buildString {
-                                            append(if (isKids) "Kids profile" else "Standard profile")
-                                            if (pinEnabled) append(" • PIN")
-                                        },
-                                        color = PickerMuted,
-                                        fontSize = 12.sp,
-                                    )
-                                }
-                            }
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ProfileAvatarImage(
+                            profile = VueoProfile(
+                                id = profile?.id ?: "preview",
+                                name = name.ifBlank { "New profile" },
+                                avatar = avatar,
+                                isKids = isKids,
+                                createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
+                            ),
+                            size = 60,
+                        )
+                        Spacer(Modifier.width(15.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = name.ifBlank { "New profile" },
+                                color = Color.White,
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = buildString {
+                                    append(if (isKids) "Kids profile" else "Standard profile")
+                                    if (pinEnabled) append(" • PIN")
+                                },
+                                color = PickerMuted,
+                                fontSize = 12.sp,
+                            )
                         }
                     }
+                }
 
-                    item(key = "name") {
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+
+                    Box {
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it.take(24) },
                             singleLine = true,
+                            readOnly = !editingName,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = {
+                                editingName = false
+                                keyboardController?.hide()
+                            }),
                             label = { Text("Profile name") },
-                            modifier = Modifier.fillMaxWidth().focusRequester(firstRequester),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                                .focusRequester(firstRequester)
+                                .onFocusChanged { if (!it.isFocused) editingName = false }
+                                .onPreviewKeyEvent { event ->
+                                    if (!editingName && (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)) {
+                                        if (event.type == KeyEventType.KeyUp) editingName = true
+                                        true
+                                    } else false
+                                },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
@@ -536,7 +578,7 @@ private fun TvProfileEditorScreen(
                         )
                     }
 
-                    item(key = "kids") {
+                    Box {
                         TvEditorToggleRow(
                             title = "Kids Profile",
                             subtitle = "Marks this profile for age-aware controls.",
@@ -545,7 +587,7 @@ private fun TvProfileEditorScreen(
                         )
                     }
 
-                    item(key = "pin") {
+                    Box {
                         TvEditorToggleRow(
                             title = "Profile PIN",
                             subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
@@ -575,7 +617,7 @@ private fun TvProfileEditorScreen(
                     }
 
                     if (pinEnabled && hadPin && !removeExistingPin) {
-                        item(key = "change-pin") {
+                        Box {
                             TvProfileAction(
                                 label = "Change PIN",
                                 onClick = {
@@ -1079,20 +1121,14 @@ private fun TvEditorToggleRow(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) tvTunedFocusScale(1.012f) else 1f,
-        animationSpec = tvFocusSpec(focused),
-        label = "profileEditorToggleScale",
-    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
             .onFocusChanged { focused = it.isFocused }
             .background(if (focused) PickerPanelRaised else PickerPanel, RoundedCornerShape(17.dp))
             .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else PickerStroke, RoundedCornerShape(17.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leadingIcon != null) {

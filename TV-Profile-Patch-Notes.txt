@@ -1,0 +1,17 @@
+APP PATCH — apply to VUEO-NEXT repository root ONLY. No worker files or YML.
+Base: supplied VUEO-NEXT-main (51), retaining session working-copy changes.
+
+Switch Profiles from Settings and DNA opens Who's Watching in selection mode.
+Manage Profiles inside that screen still opens management/edit mode.
+Editor header, profile preview and save/delete actions remain pinned.
+Only editable rows scroll; preview is no longer a LazyColumn item that can be
+scrolled/clipped above the form when the name field receives focus.
+Preview avatar 78 -> 60dp; preview padding 16 -> 12dp; row spacing 14 -> 10dp;
+toggle vertical padding 13 -> 6dp. Toggle focus uses stable border/color without scaling.
+Name field focuses read-only. Press remote OK/Enter to edit and open keyboard once.
+Keyboard Done or leaving name focus ends editing; Back first leaves name editing.
+Mobile profile UI and profile data/PIN rules are unchanged.
+
+Validation: both edited Kotlin files parsed successfully with Kotlin compiler PSI.
+This validates syntax only, not Compose type checking or TV runtime behavior.
+Full Android build and actual TV keyboard/focus verification were unavailable here.

@@ -1290,7 +1290,7 @@ fun VueoTvApp(
                         runtime = runtime,
                         active = route == TvRoute.SETTINGS,
                         dataVersion = refreshToken,
-                        onManageProfiles = { openProfilePicker(TvRoute.SETTINGS, manage = true) },
+                        onManageProfiles = { openProfilePicker(TvRoute.SETTINGS) },
                         onNavigate = ::navigate,
                         onProfile = { openDna(TvRoute.SETTINGS) },
                         onBack = { route = TvRoute.HOME },
@@ -1303,7 +1303,7 @@ fun VueoTvApp(
                     TvUserDnaScreen(
                         runtime = runtime,
                         dataVersion = refreshToken,
-                        onSwitchProfiles = { openProfilePicker(TvRoute.DNA, manage = true) },
+                        onSwitchProfiles = { openProfilePicker(TvRoute.DNA) },
                         onBack = { route = dnaReturnRoute },
                     )
                 }
