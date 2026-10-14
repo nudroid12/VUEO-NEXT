@@ -129,6 +129,12 @@ object SmartSubsPlaybackBridge {
                         name = "Malay AI",
                         mimeType = "text/vtt",
                         displayId = source.id.takeIf { it.isNotBlank() },
+                        // Carry display metadata with the selected GET as well as
+                        // listing POST, including when older source records are reused.
+                        headers = mapOf(
+                            "X-Vueo-Provider-Name" to URLEncoder.encode(source.providerName.take(160), "UTF-8"),
+                            "X-Vueo-Subtitle-Id" to URLEncoder.encode(source.id.take(256), "UTF-8"),
+                        ),
                     ))
                 }
             }
