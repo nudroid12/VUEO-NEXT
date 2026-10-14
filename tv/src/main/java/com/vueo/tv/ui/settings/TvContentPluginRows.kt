@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -107,77 +107,79 @@ private fun TvPluginRepositoryCard(
                 Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                Text(entry.title, color = Color.White, fontSize = 17.sp, lineHeight = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 entry.operationStatus?.takeIf { it.isNotBlank() }?.let { message ->
                     Text(message, color = TvDesign.Accent, fontSize = 11.sp, maxLines = 2,
                         overflow = TextOverflow.Ellipsis)
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    refresh?.let { action ->
-                        TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                // Reserve the icon slot so focus visibility never shifts the card.
+                remove?.let { action ->
+                    TvRepositoryAction(action, Icons.Default.Delete, TvDesign.Accent,
+                        requesterFor(action.id), Modifier.graphicsLayer {
+                            alpha = if (cardFocused) 1f else 0f
+                        }.focusProperties {
                             up = FocusRequester.Default
                             left = FocusRequester.Cancel
-                            right = requesterFor(entry.id)
-                            down = remove?.let { requesterFor(it.id) }
-                                ?: if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                            right = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
+                            down = nextProvider?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
                         }.onPreviewKeyEvent { event ->
                             if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
                                 if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
                                 true
                             } else false
                         }, { onEntryFocused(action.id) })
-                    }
-                    Box(
-                        modifier = Modifier.width(64.dp).height(38.dp)
-                            .focusRequester(requesterFor(entry.id))
-                            .focusProperties {
-                                up = FocusRequester.Default
-                                left = refresh?.let { requesterFor(it.id) } ?: FocusRequester.Default
-                                right = FocusRequester.Cancel
-                                down = remove?.let { requesterFor(it.id) }
-                                    ?: if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                            }
-                            .onFocusChanged {
-                                toggleFocused = it.isFocused
-                                if (it.isFocused) onEntryFocused(entry.id)
-                            }
-                            .onPreviewKeyEvent { event ->
-                                when {
-                                    event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && refresh == null && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
-                                    activation(event.nativeKeyEvent.keyCode) -> {
-                                        if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
-                                        true
-                                    }
-                                    else -> false
-                                }
-                            }
-                            .background(if (toggleFocused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
-                            .border(1.dp, if (toggleFocused) Color.White else Color.Transparent, RoundedCornerShape(50))
-                            .focusable(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        TvContentToggle(entry.switchChecked ?: (entry.value == "On"), compact = true)
-                    }
                 }
-                // Reserve one small action line so the card never shifts as focus enters/leaves.
-                Box(Modifier.width(64.dp).height(26.dp), contentAlignment = Alignment.Center) {
-                    remove?.let { action ->
-                        TvRepositoryAction(action, null, TvDesign.Accent, requesterFor(action.id), Modifier.graphicsLayer {
-                            alpha = if (cardFocused) 1f else 0f
-                        }.focusProperties {
-                            up = requesterFor(entry.id)
-                            left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
-                            right = FocusRequester.Cancel
-                            down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                refresh?.let { action ->
+                    TvRepositoryAction(action, Icons.Default.Refresh, Color.White,
+                        requesterFor(action.id), Modifier.focusProperties {
+                            up = FocusRequester.Default
+                            left = remove?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                            right = requesterFor(entry.id)
+                            down = nextProvider?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                        }.onPreviewKeyEvent { event ->
+                            if (remove == null && event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
+                                true
+                            } else false
                         }, { onEntryFocused(action.id) })
-                    }
+                }
+                Box(
+                    modifier = Modifier.width(64.dp).height(34.dp)
+                        .focusRequester(requesterFor(entry.id))
+                        .focusProperties {
+                            up = FocusRequester.Default
+                            left = refresh?.let { requesterFor(it.id) }
+                                ?: remove?.let { requesterFor(it.id) } ?: FocusRequester.Default
+                            right = FocusRequester.Cancel
+                            down = nextProvider?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                        }
+                        .onFocusChanged {
+                            toggleFocused = it.isFocused
+                            if (it.isFocused) onEntryFocused(entry.id)
+                        }
+                        .onPreviewKeyEvent { event ->
+                            when {
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && refresh == null && remove == null && event.type == KeyEventType.KeyDown -> { onLeftToSidebar(); true }
+                                activation(event.nativeKeyEvent.keyCode) -> {
+                                    if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        .background(if (toggleFocused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
+                        .border(1.dp, if (toggleFocused) Color.White else Color.Transparent, RoundedCornerShape(50))
+                        .focusable(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TvContentToggle(entry.switchChecked ?: (entry.value == "On"), compact = true)
                 }
             }
         }
@@ -185,33 +187,25 @@ private fun TvPluginRepositoryCard(
 }
 
 @Composable
-private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
+private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
     var focused by remember(entry.id) { mutableStateOf(false) }
     val refreshing = entry.id == "refresh-repository" && entry.value == "Refreshing…"
-    val actionModifier = modifier
-        .height(if (icon == null) 26.dp else 38.dp)
-        .width(if (icon == null) 64.dp else 38.dp)
-        .focusRequester(requester)
-        .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
-        .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
-        .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50))
-    if (icon == null) {
-        Box(
-            modifier = actionModifier.onPreviewKeyEvent { event ->
+    Box(
+        modifier = modifier.size(34.dp)
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
+            .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
+            .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50))
+            .onPreviewKeyEvent { event ->
                 if (entry.enabled && activation(event.nativeKeyEvent.keyCode)) {
                     if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
                     true
                 } else false
             }.focusable(enabled = entry.enabled),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-        }
-    } else {
-        IconButton(onClick = { entry.onActivate?.invoke() }, modifier = actionModifier, enabled = entry.enabled) {
-            Icon(icon, contentDescription = if (refreshing) "Refreshing repository" else entry.title,
-                tint = tint, modifier = Modifier.size(21.dp).then(tvContentRefreshMotion(entry)))
-        }
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = if (refreshing) "Refreshing repository" else entry.title,
+            tint = tint, modifier = Modifier.size(20.dp).then(tvContentRefreshMotion(entry)))
     }
 }
 
@@ -246,16 +240,18 @@ private fun TvPluginProviderRow(entry: TvSettingsEntry, requester: FocusRequeste
                     .focusable().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(entry.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(entry.subtitle, color = PluginMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    Text(entry.title, color = Color.White, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(entry.subtitle, color = PluginMuted, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(entry.providerStatus.orEmpty(), color = if (entry.providerFailed) PluginFailure else if (entry.switchChecked == false) PluginMuted else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     entry.providerResponse?.let { Text(it, color = PluginMuted, fontSize = 10.sp) }
                 }
                 Text("›", color = PluginMuted, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 12.dp))
-                TvContentToggle(entry.switchChecked == true)
+                Box(Modifier.width(64.dp).height(34.dp), contentAlignment = Alignment.Center) {
+                    TvContentToggle(entry.switchChecked == true, compact = true)
+                }
             }
             if (!entry.providerPanelEnd) Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = .08f)))
         }

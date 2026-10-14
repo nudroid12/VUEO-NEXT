@@ -1,0 +1,16 @@
+VUEO TV Content Manager — patch based on VUEO-NEXT-main (51)
+
+Changes:
+- Remove is a trash icon to the left of Refresh, visible when the repository card has focus.
+- Refresh and trash use 34dp focus areas and 20dp icons beside the compact toggle.
+- Repository name, version/details and operation status are closer together.
+- Provider and repository switches use the same compact scale and 64 x 34dp container.
+- Provider name and supporting details are closer together.
+- Left/right follows trash -> refresh -> toggle. Down goes directly to the first provider.
+- Existing remove confirmation and refresh/toggle callbacks remain in use.
+
+Apply by extracting into the repository root and overwriting the matching tv/ file.
+The archive contains no enclosing VUEO-NEXT-main folder and no YML/YAML.
+
+Validation: reviewed changes and checked scope, action order, focus links and ZIP paths.
+Android compilation and on-device layout/focus validation have not been completed here.
