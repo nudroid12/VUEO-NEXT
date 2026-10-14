@@ -9,7 +9,7 @@ import org.junit.Test
 
 class ForYouPolicyTest {
     private val now = 1_800_000_000_000L
-    private val cooking = MediaItem("seed", "series", "Kitchen", description =
+    private val cooking = MediaItem("tt100", "series", "Kitchen", description =
         "Chefs compete cooking recipes restaurant kitchens culinary food competitions", genres = listOf("Reality"))
     private val chef = cooking.copy(id = "chef", name = "Recipe Competition", description =
         "Restaurant chefs compete cooking culinary recipes food kitchens competitions")

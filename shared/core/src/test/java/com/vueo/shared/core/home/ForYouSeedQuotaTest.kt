@@ -1,6 +1,6 @@
 package com.vueo.shared.core.home
 
-import com.vueo.shared.core.media.AnimeMediaPolicy
+import com.vueo.shared.core.dna.UserDnaEngine
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import org.junit.Assert.*
@@ -8,53 +8,59 @@ import org.junit.Test
 
 class ForYouSeedQuotaTest {
     private val now = 1_800_000_000_000L
-    private fun item(id: String, type: String = "movie", anime: Boolean = false) =
-        MediaItem(id, type, id, genres = if (anime) listOf("Animation") else listOf("Drama"),
-            originalLanguage = if (anime) "ja" else "en")
-    private fun watched(item: MediaItem, age: Long = 0) = LibraryPlaybackEntry(item, item.id,
-        positionMs = 3_600_000, durationMs = 3_600_000, lastWatchedEpochMs = now - age)
-    private fun ids(history: List<LibraryPlaybackEntry>, favorites: List<MediaItem> = emptyList()) =
-        ForYouPolicy.seeds(history, favorites, now).map { it.media.id }
-
-    @Test fun reservesTwoRegularAndOneAnimeForEachTypeByRecency() {
-        val history = listOf(
-            watched(item("m-old"), 30), watched(item("m1"), 1), watched(item("m2"), 2),
-            watched(item("am-old", anime = true), 40), watched(item("am", anime = true), 20),
-            watched(item("s1", "series"), 3), watched(item("s2", "tv"), 4),
-            watched(item("s-old", "series"), 31), watched(item("as", "series", true), 21),
-        )
-        assertEquals(listOf("m1", "m2", "s1", "s2", "am", "as"), ids(history))
-        assertEquals(ids(history), ids(history.reversed()))
+    private fun item(n: Int, genre: String = "Drama", type: String = "movie") =
+        MediaItem("tt$n", type, "Title $n", genres = listOf(genre), releaseInfo = "2020")
+    private fun watched(item: MediaItem, days: Long = 0) = LibraryPlaybackEntry(item, item.id,
+        positionMs = 3_600_000, durationMs = 3_600_000, lastWatchedEpochMs = now - days * 86_400_000L)
+    @Test fun favoritesCanSeedWithoutAnyWatchHistory() {
+        val favorite = item(1)
+        assertEquals(listOf(favorite), ForYouPolicy.seeds(emptyList(), listOf(favorite), now).map { it.media })
     }
     @Test fun repeatedEpisodesAndPreviewsDoNotUseExtraSlots() {
-        val series = item("series", "series")
-        val history = (1..20).map { watched(series, it.toLong()).copy(videoId = "episode-$it") } +
-            watched(item("preview")).copy(positionMs = 10_000) + watched(item("movie"), 30)
-        assertEquals(listOf("series", "movie"), ids(history))
+        val series = item(1, type = "series")
+        val history = (1..20).map { watched(series).copy(videoId = "episode-$it") } +
+            watched(item(2)).copy(positionMs = 10_000)
+        assertEquals(listOf(series), ForYouPolicy.seeds(history, emptyList(), now).map { it.media })
     }
-    @Test fun favoritesNeverIntroduceUnwatchedSeeds() {
-        assertTrue(ids(emptyList(), listOf(item("favorite"))).isEmpty())
-        assertEquals(listOf("watched"), ids(listOf(watched(item("watched"))), listOf(item("favorite"))))
+    @Test fun seedSelectionIsDeterministicAndNotTheLatestSix() {
+        val history = (1..10).map { watched(item(it), it.toLong()) } + watched(item(20, "Comedy"), 60)
+        val first = ForYouPolicy.seeds(history, emptyList(), now)
+        assertEquals(first, ForYouPolicy.seeds(history.reversed(), emptyList(), now))
+        assertEquals(6, first.size)
+        assertTrue(first.any { it.media.id == "tt20" })
     }
-    @Test fun missingAnimeUsesRecentRegularTitlesAndMissingTypeFillsToSix() {
-        val movies = (1..8).map { watched(item("m$it"), it.toLong()) }
-        assertEquals((1..6).map { "m$it" }, ids(movies))
-        val series = (1..4).map { watched(item("s$it", "series"), (it + 10).toLong()) }
-        assertEquals(setOf("m1", "m2", "m3", "s1", "s2", "s3"), ids(movies + series).toSet())
-        assertEquals(listOf("m1"), ids(movies.take(1)))
+    @Test fun noForcedMovieAndSeriesQuota() {
+        val movies = (1..8).map { watched(item(it), it.toLong()) }
+        assertEquals(6, ForYouPolicy.seeds(movies, emptyList(), now).size)
+        assertEquals(1, ForYouPolicy.seeds(movies.take(1), emptyList(), now).size)
     }
-    @Test fun westernAnimationIsNotAnAnimeSeed() {
-        assertFalse(AnimeMediaPolicy.isAnime(item("cartoon").copy(genres = listOf("Animation"))))
-        assertTrue(AnimeMediaPolicy.isAnime(item("anime", anime = true)))
-        assertTrue(AnimeMediaPolicy.isAnime(item("tagged").copy(genres = listOf("Anime"))))
-        assertTrue(AnimeMediaPolicy.isAnime(item("country").copy(genres = listOf("Animation"), countries = listOf("Japan"))))
+    @Test fun unsupportedIdsDoNotWasteRequestSlotsAndAliasesCollapse() {
+        val media = item(1)
+        val seeds = ForYouPolicy.seeds(listOf(watched(media)), listOf(
+            media.copy(id = "tmdb:1"), item(2).copy(id = "addon-only")), now)
+        assertEquals(1, seeds.size)
     }
-    @Test fun richerWatchedMetadataCanIdentifyAnimeWithoutAnExtraRequest() {
-        val sparse = item("am").copy(originalLanguage = null)
-        val rich = sparse.copy(genres = listOf("Animation"), originalLanguage = "ja")
-        val history = listOf(watched(sparse), watched(rich, 1)) +
-            (1..3).map { watched(item("m$it"), it.toLong()) }
-        assertEquals(setOf("am", "m1", "m2", "m3"), ids(history).toSet())
-        assertTrue(AnimeMediaPolicy.isAnime(ForYouPolicy.seeds(history, emptyList(), now).first().media))
+    @Test fun sharedSnapshotContainsUnwatchedFavorites() {
+        val dna = UserDnaEngine.analyzeSnapshot(emptyList(), listOf(item(1, "Comedy")), now)
+        assertEquals("Comedy", dna.topGenres.single().name)
+        assertEquals(1, dna.behavior.myListTitles)
+        assertEquals(dna, ForYouPolicy.profile(emptyList(), listOf(item(1, "Comedy")), now))
+    }
+    @Test fun multiSeedSupportWinsEquivalentSingleSeedCandidates() {
+        val history = listOf(watched(item(1)), watched(item(2)))
+        val seeds = ForYouPolicy.seeds(history, emptyList(), now)
+        val shared = item(3); val single = item(4)
+        val batches = listOf(ForYouPolicy.RelatedBatch(seeds[0], listOf(single, shared)),
+            ForYouPolicy.RelatedBatch(seeds[1], listOf(shared)))
+        assertEquals(shared, ForYouPolicy.rank(seeds, batches, emptyList(), history, emptyList()).first())
+    }
+    @Test fun oneSeedCannotFillTheRowWhenOtherInterestsHaveCandidates() {
+        val history = listOf(watched(item(1)), watched(item(2, "Comedy")), watched(item(3, "Mystery")))
+        val seeds = ForYouPolicy.seeds(history, emptyList(), now)
+        val batches = seeds.mapIndexed { index, seed -> ForYouPolicy.RelatedBatch(seed,
+            (1..18).map { item(100 + index * 20 + it, seed.media.genres.first()) }) }
+        val result = ForYouPolicy.rank(seeds, batches, emptyList(), history, emptyList(), limit = 12)
+        assertEquals(12, result.size)
+        batches.forEach { batch -> assertTrue(result.count { it in batch.items } <= 4) }
     }
 }

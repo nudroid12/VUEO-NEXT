@@ -1,0 +1,34 @@
+VUEO For You — shared DNA, representative seeds and lightweight ranking
+Base: VUEO-NEXT-main (51). TV and mobile share the changed core implementation.
+
+Scope:
+- For You uses the existing DNA formula and a single snapshot per refreshed source pool.
+- The existing DNA engine exposes pure snapshot analysis; current DNA screens and match scores keep the same behavior.
+- Candidate seeds come from meaningful history and Favorites, including unwatched Favorites.
+- Duplicate episodes/titles are collapsed and unsupported source IDs do not consume seed slots.
+- Select at most six seeds using DNA affinity, interaction strength, Favorite signal, small recency bonus and diminishing priority for already-represented interests.
+- No fixed movie/series quotas and no dedicated latest-watch slot.
+- Candidates use DNA affinity (45%), normalized multi-seed source support (25%), Bayesian rating (15%), bounded keyword overlap (10%), popularity (5%).
+- Seed ownership limits and diversity reduce domination by one title. Sparse profiles may have fewer results.
+- For You keeps a bounded reserve pool and prioritizes candidates absent from the already-available Because row; unavoidable overlap can remain when alternatives are sparse.
+- Because refresh, source ordering and filtering are unchanged. More Like This is untouched.
+
+Performance:
+- No TF-IDF vectors or all-candidate synopsis comparisons.
+- Canonical metadata is prepared once; seed selection is six linear passes.
+- DNA/selection/ranking run on Dispatchers.Default; requests and feed cache work stay off Main.
+- Existing maximum six seed requests, semaphore of three, 12-second request window, 15-minute cache and sparse discovery behavior retained.
+- No added API call to enrich seed metadata or remove overlap.
+- Cache keys retain a digest rather than copies of the full history.
+- New For You cache version discards obsolete ranking once; Because cache remains usable.
+- Source remains Trakt for For You as in the supplied base.
+
+Validation:
+- Targeted JVM compilation of changed shared logic succeeded, using scratch stubs for Android/store/network/JSON dependencies.
+- 22 local checks passed: seed diversity, deterministic selection, Favorites, previews/episodes, source ID eligibility, alias handling, multi-seed support, ownership caps, rating reliability, filtering, cache signatures, row switches, overlap and exact old/new DNA equivalence.
+- Synthetic 1000-title/108-candidate local calculation median about 46 ms after warmup, API time excluded. This is not an Android-device latency measurement.
+- Full Gradle Android build, live-source output and on-device performance remain unverified here.
+
+Apply:
+Extract into repository root and overwrite matching shared/ paths. No enclosing project folder, no YML/YAML.
+This patch does not include or overwrite the earlier mobile Account or TV Content Manager UI patches.

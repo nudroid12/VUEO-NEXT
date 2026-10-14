@@ -1,163 +1,191 @@
 package com.vueo.shared.core.home
 
+import com.vueo.shared.core.dna.UserDnaEngine
+import com.vueo.shared.core.dna.UserDnaSnapshot
 import com.vueo.shared.core.media.AnimeMediaPolicy
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.shared.core.storage.LibraryViewingPolicy
-import kotlin.math.exp
+import kotlin.math.ceil
 import kotlin.math.ln
-import kotlin.math.sqrt
 
-/** A ranking score, not a claimed probability of liking a title. */
+/** Shares the existing DNA model; no per-candidate profile rebuild or text vectors. */
 object ForYouPolicy {
     data class Seed(val media: MediaItem, val weight: Double, val lastWatched: Long)
     data class RelatedBatch(val seed: Seed, val items: List<MediaItem>)
-    private const val DAY_MS = 86_400_000.0
-
     fun identity(item: MediaItem): String = "${type(item)}:${item.id}"
 
-    fun seeds(history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>, now: Long = System.currentTimeMillis()): List<Seed> {
+    fun profile(history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>,
+        now: Long = System.currentTimeMillis(), checkActive: () -> Unit = {}): UserDnaSnapshot =
+        UserDnaEngine.analyzeSnapshot(history, favorites, now, checkActive)
+
+    fun seeds(history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>,
+        now: Long = System.currentTimeMillis(), dna: UserDnaSnapshot = profile(history, favorites, now),
+        checkActive: () -> Unit = {}): List<Seed> {
         val values = linkedMapOf<String, Seed>()
-        history.filter(LibraryViewingPolicy::isMeaningfullyWatched).forEach { entry ->
+        val favoriteKeys = favorites.flatMap(::aliases).toSet()
+        history.forEach { entry ->
+            checkActive()
+            if (!LibraryViewingPolicy.isMeaningfullyWatched(entry)) return@forEach
             val key = identity(entry.media)
-            val progress = when {
-                entry.isCompleted -> 6.0
-                entry.durationMs <= 0 -> 2.0
-                else -> 2.0 + 4.0 * entry.progressFraction.coerceIn(0f, 1f)
+            val strength = when {
+                entry.isCompleted -> 1.0
+                entry.durationMs <= 0 -> .35
+                else -> .35 + .65 * entry.progressFraction.coerceIn(0f, 1f)
             }
-            val decay = exp(-ln(2.0) * (now - entry.lastWatchedEpochMs).coerceAtLeast(0L) / (90.0 * DAY_MS))
-            val weight = progress * decay.coerceAtLeast(0.15)
             val old = values[key]
-            values[key] = Seed(richer(old?.media, entry.media), maxOf(old?.weight ?: 0.0, weight),
+            values[key] = Seed(richer(old?.media, entry.media), maxOf(old?.weight ?: 0.0, strength),
                 maxOf(old?.lastWatched ?: 0L, entry.lastWatchedEpochMs))
         }
-        // Favorites may enrich a watched title, but never introduce an unwatched seed.
         favorites.forEach { media ->
+            checkActive()
             val key = identity(media)
-            values[key]?.let { old -> values[key] = old.copy(media = richer(old.media, media)) }
+            val old = values[key]
+            values[key] = Seed(richer(old?.media, media), old?.weight ?: .65, old?.lastWatched ?: 0L)
         }
-        val recent = values.values.sortedWith(
-            compareByDescending<Seed> { it.lastWatched }.thenBy { identity(it.media) }
-        )
-        val selected = linkedMapOf<String, Seed>()
-        fun take(candidates: List<Seed>, count: Int) {
-            candidates.filterNot { identity(it.media) in selected }.take(count).forEach {
-                selected[identity(it.media)] = it
-            }
+        // Resolve title/year aliases before selection; unsupported IDs never consume a request slot.
+        val unique = linkedMapOf<String, Seed>()
+        val seen = mutableMapOf<String, String>()
+        values.values.sortedBy { identity(it.media) }.forEach { seed ->
+            checkActive()
+            if (!resolvable(seed.media)) return@forEach
+            val keys = aliases(seed.media)
+            val key = keys.firstNotNullOfOrNull { seen[it] } ?: identity(seed.media)
+            val old = unique[key]
+            unique[key] = Seed(richer(old?.media, seed.media), maxOf(old?.weight ?: 0.0, seed.weight),
+                maxOf(old?.lastWatched ?: 0L, seed.lastWatched))
+            keys.forEach { seen[it] = key }
         }
-        listOf("movie", "series").forEach { mediaType ->
-            val candidates = recent.filter { type(it.media) == mediaType }
-            take(candidates.filterNot { AnimeMediaPolicy.isAnime(it.media) }, 2)
-            take(candidates.filter { AnimeMediaPolicy.isAnime(it.media) }, 1)
-            val remaining = 3 - selected.values.count { type(it.media) == mediaType }
-            take(candidates, remaining)
+        val taste = Taste(dna)
+        val candidates = unique.values.map { seed ->
+            val favorite = aliases(seed.media).any(favoriteKeys::contains)
+            // Recent viewing is at most five percent, never a dedicated slot.
+            val ageDays = (now - seed.lastWatched).coerceAtLeast(0L) / 86_400_000.0
+            seed.copy(weight = .55 * taste.affinity(seed.media) + .30 * seed.weight +
+                (if (favorite) .10 else 0.0) + (if (seed.lastWatched > 0) .05 / (1 + ageDays / 30) else 0.0))
+        }.toMutableList()
+        val diversity = Diversity(candidates.map { it.media })
+        val selected = mutableListOf<Seed>()
+        while (candidates.isNotEmpty() && selected.size < 6) {
+            checkActive()
+            val next = candidates.map { seed -> seed to
+                (seed.weight - .18 * selected.sumOf { diversity.similarity(seed.media, it.media) })
+            }.maxWithOrNull(compareBy<Pair<Seed, Double>> { it.second }
+                .thenByDescending { identity(it.first.media) })!!.first
+            selected += next
+            candidates.remove(next)
         }
-        // If one media type is sparse, use the latest remaining watched titles.
-        take(recent, 6 - selected.size)
-        return selected.values.sortedWith(
-            compareByDescending<Seed> { it.lastWatched }.thenBy { identity(it.media) }
-        )
+        return selected
     }
 
-    fun rank(
-        seeds: List<Seed>, batches: List<RelatedBatch>, catalog: List<MediaItem>,
+    fun rank(seeds: List<Seed>, batches: List<RelatedBatch>, catalog: List<MediaItem>,
         history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>, limit: Int = 12,
-        checkActive: () -> Unit = {},
+        checkActive: () -> Unit = {}, dna: UserDnaSnapshot = profile(history, favorites, checkActive = checkActive),
     ): List<MediaItem> {
         if (limit <= 0) return emptyList()
         val excluded = history.filter(LibraryViewingPolicy::isMeaningfullyWatched).flatMap { aliases(it.media) }.toSet() + favorites.flatMap(::aliases)
         val candidates = linkedMapOf<String, MediaItem>()
         val candidateAliases = mutableMapOf<String, String>()
-        (batches.flatMap { it.items }.take(216) + catalog.take(360)).forEach {
+        (batches.flatMap { it.items }.take(108) + catalog.take(72)).forEach { item ->
             checkActive()
-            val keys = aliases(it)
-            if (keys.none { key -> key in excluded }) {
-                val key = keys.firstNotNullOfOrNull { alias -> candidateAliases[alias] } ?: identity(it)
-                candidates[key] = richer(candidates[key], it)
-                keys.forEach { alias -> candidateAliases[alias] = key }
+            val keys = aliases(item)
+            if (keys.none(excluded::contains)) {
+                val key = keys.firstNotNullOfOrNull { candidateAliases[it] } ?: identity(item)
+                candidates[key] = richer(candidates[key], item)
+                keys.forEach { candidateAliases[it] = key }
             }
         }
-        val items = candidates.values.toList()
-        val vectors = TextVectors((seeds.map { it.media } + items).distinctBy(::identity))
-        val totalWeight = seeds.sumOf { it.weight }.coerceAtLeast(1.0)
-        val strongestWeight = seeds.maxOfOrNull { it.weight }?.coerceAtLeast(1.0) ?: 1.0
-        val genreProfile = mutableMapOf<String, Double>()
-        val typeProfile = mutableMapOf<String, Double>()
-        seeds.forEach { seed ->
-            genres(seed.media).forEach { genreProfile[it] = (genreProfile[it] ?: 0.0) + seed.weight }
-            typeProfile[type(seed.media)] = (typeProfile[type(seed.media)] ?: 0.0) + seed.weight
-        }
-        val genrePeak = genreProfile.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
-        val mix = (seeds.size / 8.0).coerceIn(0.0, 1.0)
-        data class Scored(val media: MediaItem, val score: Double)
-        val ranked = items.mapIndexedNotNull { index, candidate ->
+        // Index source support once. Candidate loops never rescan remote result lists.
+        val support = mutableMapOf<String, MutableMap<String, Double>>()
+        batches.forEach { batch -> batch.items.take(18).forEachIndexed { index, media ->
             checkActive()
-            val matches = seeds.mapNotNull { seed ->
-                val content = similarity(candidate, seed.media, vectors)
-                val sourceRank = batches.firstOrNull { identity(it.seed.media) == identity(seed.media) }
-                    ?.items?.indexOfFirst { identity(it) == identity(candidate) }?.takeIf { it >= 0 }
-                val related = sourceRank?.let { 1.0 / (1.0 + it / 6.0) }
-                if (content == null && related == null) return@mapNotNull null
-                val pair = combine(listOf(content to 0.75, related to 0.25))
-                pair * (seed.weight / strongestWeight)
-            }.sortedDescending()
-            val personal = matches.firstOrNull()?.let { best -> best * 0.7 + matches.take(3).average() * 0.3 }
-            val genreAffinity = genres(candidate).map { (genreProfile[it] ?: 0.0) / genrePeak }.sortedDescending().take(2)
-            val taste = if (seeds.isEmpty()) null else combine(listOf(
-                genreAffinity.takeIf { it.isNotEmpty() }?.average() to 0.8,
-                ((typeProfile[type(candidate)] ?: 0.0) / totalWeight) to 0.2,
-            ))
-            // Discovery stays near a known interest; strong profiles do not fill with unrelated popular titles.
-            if (seeds.size >= 3 && (personal ?: 0.0) <= 0.05 && genreAffinity.none { it > 0.0 }) return@mapIndexedNotNull null
-            val rating = candidate.recommendationRating ?: candidate.tmdbRating ?: candidate.imdbRating
-            val votes = candidate.recommendationVoteCount
-            val quality = if (rating != null && rating.isFinite() && votes != null && votes > 0) {
-                ((rating.coerceIn(0.0, 10.0) * votes + 6.8 * 100.0) / (votes + 100.0)) / 10.0
-            } else null
-            val exploration = if (seeds.isEmpty()) null else 1.0 - (genreAffinity.firstOrNull() ?: 0.0)
-            val general = candidate.popularity?.takeIf { it.isFinite() && it > 0 }?.let { ln(1.0 + it) / 8.0 }?.coerceIn(0.0, 1.0)
-                ?: 1.0 / (1.0 + index / 24.0)
-            val score = combine(listOf(personal to (0.55 * mix), taste to (0.20 * mix),
-                quality to 0.15, exploration to 0.10, general to (0.75 * (1.0 - mix))))
-            Scored(candidate, score)
-        }.sortedWith(compareByDescending<Scored> { it.score }.thenBy { identity(it.media) }).toMutableList()
+            val key = aliases(media).firstNotNullOfOrNull { candidateAliases[it] } ?: return@forEachIndexed
+            val seedKey = identity(batch.seed.media)
+            val ranks = support.getOrPut(key) { mutableMapOf() }
+            ranks[seedKey] = maxOf(ranks[seedKey] ?: 0.0, 1.0 / (1 + index / 6.0))
+        } }
+        val taste = Taste(dna)
+        val seedById = seeds.associateBy { identity(it.media) }
+        val tokens = (seeds.map { it.media } + candidates.values).associate { identity(it) to words(it) }
+        val activeSeedCount = batches.count { it.items.isNotEmpty() }.coerceAtLeast(1)
+        data class Scored(val media: MediaItem, val score: Double, val owner: String?)
+        val ranked = candidates.map { (key, media) ->
+            checkActive()
+            val ranks = support[key].orEmpty()
+            val source = ranks.entries.sumOf { (seed, rank) -> rank * (seedById[seed]?.weight ?: .5) } /
+                seeds.sumOf { it.weight }.coerceAtLeast(1.0)
+            val topical = ranks.keys.maxOfOrNull { seed ->
+                jaccard(tokens[identity(media)].orEmpty(), tokens[seed].orEmpty())
+            } ?: seeds.maxOfOrNull { jaccard(tokens[identity(media)].orEmpty(), tokens[identity(it.media)].orEmpty()) } ?: 0.0
+            val rating = media.recommendationRating ?: media.tmdbRating ?: media.imdbRating
+            val votes = media.recommendationVoteCount
+            val quality = if (rating != null && rating.isFinite() && votes != null && votes > 0)
+                (rating.coerceIn(0.0, 10.0) * votes + 6.8 * 100) / (votes.toDouble() + 100) / 10 else .68
+            val popularity = media.popularity?.takeIf { it.isFinite() && it > 0 }?.let { ln(1 + it) / 8 }?.coerceIn(0.0, 1.0) ?: 0.0
+            val score = if (seeds.isEmpty()) .85 * quality + .15 * popularity else
+                .45 * taste.affinity(media) + .25 * source + .15 * quality + .10 * topical + .05 * popularity
+            val owner = ranks.keys.sortedWith(compareByDescending<String> { ranks.getValue(it) * (seedById[it]?.weight ?: .5) }.thenBy { it }).firstOrNull()
+            Scored(media, score, owner)
+        }.toMutableList()
+        val diversity = Diversity(candidates.values.toList())
         val selected = mutableListOf<MediaItem>()
+        val ownerCounts = mutableMapOf<String, Int>()
+        val cap = if (activeSeedCount <= 1) limit else maxOf(3, ceil(minOf(limit, 12).toDouble() / activeSeedCount).toInt())
         while (ranked.isNotEmpty() && selected.size < limit) {
             checkActive()
-            val best = ranked.indices.maxByOrNull { i ->
-                ranked[i].score - 0.08 * (selected.maxOfOrNull { similarity(ranked[i].media, it, vectors) ?: 0.0 } ?: 0.0)
-            } ?: break
-            selected += ranked.removeAt(best).media
+            val next = ranked.filter { it.owner == null || (ownerCounts[it.owner] ?: 0) < cap }
+                .map { candidate -> candidate to (candidate.score -
+                    .06 * (selected.maxOfOrNull { diversity.similarity(candidate.media, it) } ?: 0.0) -
+                    .06 * (candidate.owner?.let { ownerCounts[it] } ?: 0)) }
+                .maxWithOrNull(compareBy<Pair<Scored, Double>> { it.second }
+                    .thenByDescending { identity(it.first.media) })?.first ?: break
+            selected += next.media
+            next.owner?.let { ownerCounts[it] = (ownerCounts[it] ?: 0) + 1 }
+            ranked.remove(next)
         }
         return selected
     }
 
-    private fun combine(parts: List<Pair<Double?, Double>>): Double {
-        val available = parts.filter { it.first != null && it.second > 0.0 }
-        val weight = available.sumOf { it.second }
-        return if (weight == 0.0) 0.0 else available.sumOf { it.first!! * it.second } / weight
+    private class Taste(dna: UserDnaSnapshot) {
+        private val genre = dna.topGenres.associate { canonical(it.name) to it.rawScore }
+        private val genrePeak = genre.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+        private val types = dna.typeBreakdown.associate { it.name to it.rawScore }
+        private val typePeak = types.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+        private val decades = dna.decadeBreakdown.associate { it.name to it.rawScore }
+        private val decadePeak = decades.values.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+        fun affinity(media: MediaItem): Double {
+            val genres = genres(media).map { (genre[it] ?: 0.0) / genrePeak }.sortedDescending().take(2)
+            val type = if (media.type.equals("anime", true)) "Anime" else if (type(media) == "series") "Series" else "Movies"
+            val year = Regex("(?:19|20)\\d{2}").find(media.releaseInfo.orEmpty())?.value?.toIntOrNull()
+            val decade = year?.let { "${it / 10 * 10}s" }
+            return .75 * (genres.takeIf { it.isNotEmpty() }?.average() ?: 0.0) +
+                .20 * ((types[type] ?: 0.0) / typePeak) + .05 * ((decades[decade] ?: 0.0) / decadePeak)
+        }
     }
-    private fun similarity(a: MediaItem, b: MediaItem, vectors: TextVectors): Double? {
-        val ag = genres(a); val bg = genres(b)
-        val ap = people(a); val bp = people(b)
-        val text = vectors.cosine(a, b)
-        val genre = if (ag.isNotEmpty() && bg.isNotEmpty()) overlap(ag, bg) else null
-        val person = if (ap.isNotEmpty() && bp.isNotEmpty()) overlap(ap, bp) else null
-        if (text == null && genre == null && person == null) return null
-        return combine(listOf(text to 0.55, genre to 0.30, person to 0.15))
-    }
-    private fun overlap(a: Set<String>, b: Set<String>): Double = (a intersect b).size.toDouble() / (a + b).size.coerceAtLeast(1)
-    private fun genres(item: MediaItem) = item.genres.flatMap { raw ->
-        raw.lowercase().split('&').map { it.replace('-', ' ').replace(Regex("\\s+"), " ").trim() }
-    }.map { when (it) {
+    private fun canonical(raw: String) = when (val value = raw.trim().lowercase().replace('_', ' ').replace('-', ' ').replace(Regex("\\s+"), " ")) {
         "sci fi", "scifi" -> "science fiction"
-        "reality tv" -> "reality"
-        "kids", "children" -> "family"
-        else -> it
-    } }.filter { it.isNotBlank() }.toSet()
-    private fun people(item: MediaItem) = (item.cast.take(8).map { it.name } + item.directors + item.creators + item.writers).map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
-    private fun type(item: MediaItem) = if (MediaTypePolicy.isSeries(item.type) || item.type.equals("anime", ignoreCase = true)) "series" else "movie"
+        "action & adventure", "action and adventure" -> "action"
+        "war & politics", "war and politics" -> "war"
+        else -> value
+    }
+    private fun genres(media: MediaItem) = media.genres.map(::canonical).filter { it.isNotBlank() }.toSet()
+    private class Diversity(items: List<MediaItem>) {
+        private data class Features(val genres: Set<String>, val type: String, val anime: Boolean)
+        private val features = items.associate { identity(it) to Features(genres(it), type(it), AnimeMediaPolicy.isAnime(it)) }
+        fun similarity(a: MediaItem, b: MediaItem): Double {
+            val x = features.getValue(identity(a)); val y = features.getValue(identity(b))
+            return .7 * jaccard(x.genres, y.genres) + (if (x.type == y.type) .15 else 0.0) +
+                (if (x.anime == y.anime) .15 else 0.0)
+        }
+    }
+    private fun jaccard(a: Set<String>, b: Set<String>): Double = if (a.isEmpty() || b.isEmpty()) 0.0 else (a intersect b).size.toDouble() / (a + b).size
+    private fun resolvable(media: MediaItem): Boolean =
+        (MediaTypePolicy.isSeries(media.type) || media.type.lowercase() in setOf("movie", "movies", "film", "anime")) &&
+            (Regex("tt[0-9]+").matches(media.id) || Regex("tmdb:[0-9]+").matches(media.id))
+    private fun words(media: MediaItem): Set<String> = Regex("[\\p{L}]{3,}")
+        .findAll(media.description.orEmpty().take(2500).lowercase()).map { it.value }.filterNot { it in STOP_WORDS }.take(100).toSet()
+    private fun type(item: MediaItem) = if (MediaTypePolicy.isSeries(item.type) || item.type.equals("anime", true)) "series" else "movie"
     internal fun aliases(item: MediaItem): Set<String> = buildSet {
         add(identity(item))
         // Exact title + known release year + media type can reconcile TMDB/IMDb IDs.
@@ -181,26 +209,5 @@ object ForYouPolicy {
             tmdbRating = a.tmdbRating ?: b.tmdbRating, imdbRating = a.imdbRating ?: b.imdbRating,
             popularity = a.popularity ?: b.popularity)
     }
-    private class TextVectors(items: List<MediaItem>) {
-        private val vectors: Map<String, Map<String, Double>>
-        init {
-            val docs = items.associate { identity(it) to tokens(it.description.orEmpty()) }
-            val frequencies = mutableMapOf<String, Int>()
-            docs.values.forEach { words -> words.toSet().forEach { frequencies[it] = (frequencies[it] ?: 0) + 1 } }
-            vectors = docs.mapValues { (_, words) ->
-                words.groupingBy { it }.eachCount().mapValues { (word, count) ->
-                    (1.0 + ln(count.toDouble())) * (1.0 + ln((docs.size + 1.0) / ((frequencies[word] ?: 0) + 1.0)))
-                }
-            }
-        }
-        fun cosine(a: MediaItem, b: MediaItem): Double? {
-            val av = vectors[identity(a)].orEmpty(); val bv = vectors[identity(b)].orEmpty()
-            if (av.isEmpty() || bv.isEmpty()) return null
-            val denominator = sqrt(av.values.sumOf { it * it }) * sqrt(bv.values.sumOf { it * it })
-            return if (denominator == 0.0) null else av.entries.sumOf { (key, value) -> value * (bv[key] ?: 0.0) } / denominator
-        }
-        private fun tokens(text: String): List<String> = Regex("[\\p{L}]{3,}").findAll(text.take(6000).lowercase())
-            .map { it.value }.filterNot { it in STOP_WORDS }.take(250).toList()
-    }
-    private val STOP_WORDS = "the and with that this from their they them who when where into after before through about while during whose which some more most have has had are was were will would can could his her its out but not one two new life world story series movie show follows follow must finds find becomes become also between together seorang sebuah yang dan dengan dalam untuk dari pada ketika mereka kisah cerita ini itu".split(' ').toSet()
+    private val STOP_WORDS = "the and with that this from their they them who when where into after before about while during which some more most have has had are was were will would can could his her its but not one two new life world story series movie show follows follow must finds find becomes become also yang dan dengan dalam untuk dari pada ketika mereka kisah cerita ini itu".split(' ').toSet()
 }

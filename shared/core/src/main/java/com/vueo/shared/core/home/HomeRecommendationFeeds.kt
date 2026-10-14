@@ -81,13 +81,13 @@ object HomeRecommendationFeeds {
         request.tmdbKey, request.traktClientId, request.recommendationsEnabled, request.similarEnabled).joinToString("\u0000"))
 
     internal fun requestSignatures(request: Request, now: Long): Pair<String, String> {
-        val seeds = if (request.forYouEnabled) ForYouPolicy.seeds(request.history, request.favorites, now) else emptyList()
         val excluded = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.distinct().sorted()
         val favorites = request.favorites.flatMap(ForYouPolicy::aliases).distinct().sorted()
-        val forYou = if (!request.forYouEnabled) "" else hash(listOf("seeds-2-plus-1-v1", now / 86_400_000L, seeds.map {
-            listOf(it.media.copy(episodes = emptyList()), (it.weight * 10).toInt())
-        }, excluded, favorites).toString())
+        val forYou = if (!request.forYouEnabled) "" else "dna-v2:" + hash(listOf(now / 86_400_000L,
+            request.history.map { listOf(it.media.copy(episodes = emptyList()), it.isCompleted,
+                (it.progressFraction * 20).toInt(), it.positionMs / 300_000L, it.lastWatchedEpochMs / 86_400_000L) },
+            request.favorites.map { it.copy(episodes = emptyList()) }, excluded, favorites).toString())
         val seed = if (request.becauseEnabled) HomeRecommendationPolicy.latestMeaningfulSeed(request.history) else null
         val because = if (!request.becauseEnabled) "" else hash(listOf(seed?.copy(episodes = emptyList()), excluded).toString())
         return forYou to because
@@ -102,8 +102,14 @@ object HomeRecommendationFeeds {
         val sameSeed = seed != null && cached.becauseYouWatchedSeed?.let {
             ForYouPolicy.identity(it) == ForYouPolicy.identity(seed)
         } == true
+        val becauseAliases = if (request.becauseEnabled && sameSeed)
+            cached.becauseYouWatched.flatMap(ForYouPolicy::aliases).toSet() else emptySet()
+        val forYouPool = if (request.forYouEnabled) cached.forYou.filter {
+            ForYouPolicy.aliases(it).none(excluded::contains)
+        } else emptyList()
+        val (overlap, distinct) = forYouPool.partition { ForYouPolicy.aliases(it).any(becauseAliases::contains) }
         return HomeRecommendationSections(
-            forYou = if (request.forYouEnabled) cached.forYou.filter { ForYouPolicy.aliases(it).none(excluded::contains) } else emptyList(),
+            forYou = (distinct + overlap).take(12),
             becauseYouWatchedSeed = if (request.becauseEnabled) seed else null,
             becauseYouWatched = if (request.becauseEnabled && sameSeed) cached.becauseYouWatched.filter {
                 ForYouPolicy.aliases(it).none(watched::contains) &&
@@ -130,7 +136,7 @@ object HomeRecommendationFeeds {
             val now = System.currentTimeMillis()
             val (forYouSignature, becauseSignature) = requestSignatures(request, now)
             entry.record = entry.record.copy(sections = entry.record.sections.copy(
-                forYou = entry.record.sections.forYou.takeIf { usable(entry.record.forYouSavedAt, now) }.orEmpty(),
+                forYou = entry.record.sections.forYou.takeIf { entry.record.forYouSignature.startsWith("dna-v2:") && usable(entry.record.forYouSavedAt, now) }.orEmpty(),
                 becauseYouWatched = entry.record.sections.becauseYouWatched.takeIf { usable(entry.record.becauseSavedAt, now) }.orEmpty()))
             val record = entry.record
             val forYouFresh = record.forYouSignature == forYouSignature && fresh(record.forYouAt, record.forYouRetry, now)
@@ -168,7 +174,8 @@ object HomeRecommendationFeeds {
             val result = withContext(Dispatchers.Default) {
                 val context = currentCoroutineContext()
                 ForYouPolicy.rank(sources.seeds, sources.batches, sources.discovery, request.history,
-                    request.favorites, limit = 12, checkActive = { context.ensureActive() })
+                    request.favorites, limit = 24, checkActive = { context.ensureActive() },
+                    dna = sources.dna ?: ForYouPolicy.profile(request.history, request.favorites) { context.ensureActive() })
             }
             publish(entry, generation, request, forYou = true) { old ->
                 old.copy(sections = old.sections.copy(forYou = result.ifEmpty {
@@ -245,7 +252,7 @@ object HomeRecommendationFeeds {
         val fyAt = json.optLong("fyAt"); val becauseAt = json.optLong("becauseAt")
         val fySaved = json.optLong("fySaved"); val becauseSaved = json.optLong("becauseSaved")
         Record(HomeRecommendationSections(
-            if (usable(fySaved, now)) json.optJSONArray("forYou").toMediaItems().take(12) else emptyList(),
+            if (usable(fySaved, now)) json.optJSONArray("forYou").toMediaItems().take(24) else emptyList(),
             json.optJSONArray("seed").toMediaItems().firstOrNull(),
             if (usable(becauseSaved, now)) json.optJSONArray("because").toMediaItems().take(12) else emptyList()),
             json.optString("fySignature"), fyAt, json.optBoolean("fyRetry"),

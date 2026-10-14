@@ -57,10 +57,11 @@ object HomeRecommendationPolicy {
         if (!personalizationEnabled || limit <= 0) return HomeRecommendationSections()
         val meaningfulHistory = watchHistory.filter { checkActive(); isMeaningfullyWatched(it) }
         val watchedTitleKeys = meaningfulHistory.asSequence().map { mediaKey(it.media) }.toSet()
-        val tasteSeeds = forYouSources?.seeds ?: ForYouPolicy.seeds(watchHistory, favorites)
+        val taste = forYouSources?.dna ?: dnaSnapshot ?: dnaEngine.analyze(watchHistory, favorites, checkActive = checkActive)
+        val tasteSeeds = forYouSources?.seeds ?: ForYouPolicy.seeds(watchHistory, favorites, dna = taste, checkActive = checkActive)
         val forYou = ForYouPolicy.rank(
             seeds = tasteSeeds, batches = forYouSources?.batches.orEmpty(), catalog = forYouSources?.discovery.orEmpty(),
-            history = watchHistory, favorites = favorites, limit = limit, checkActive = checkActive,
+            history = watchHistory, favorites = favorites, limit = limit, checkActive = checkActive, dna = taste,
         )
         val seed = latestMeaningfulSeed(meaningfulHistory)
         val because = seed?.let { watched ->

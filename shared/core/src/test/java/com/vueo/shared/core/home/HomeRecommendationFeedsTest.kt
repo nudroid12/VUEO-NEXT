@@ -60,4 +60,14 @@ class HomeRecommendationFeedsTest {
         val off = HomeRecommendationFeeds.visible(cached, input.copy(forYouEnabled = false, becauseEnabled = false))
         assertTrue(off.forYou.isEmpty() && off.becauseYouWatched.isEmpty())
     }
+    @Test fun overlapMovesOutOfForYouWithoutChangingBecauseOrder() {
+        val seed = media("tt100")
+        val overlap = (1..12).map { media("tt${200 + it}") }
+        val distinct = (1..12).map { media("tt${300 + it}") }
+        val cached = HomeRecommendationSections(overlap + distinct, seed, overlap)
+        val visible = HomeRecommendationFeeds.visible(cached, request(listOf(watched(seed))))
+        assertEquals(distinct, visible.forYou)
+        assertEquals(overlap, visible.becauseYouWatched)
+    }
+
 }
