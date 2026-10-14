@@ -1,0 +1,21 @@
+VUEO TV Account and repository card polish
+
+Apply at repository root after the previous patches. TV only; no YML.
+
+Content Manager:
+- Inline statistics get 4dp additional top and bottom padding.
+- Repository status sits directly below version/provider counts, aligned with the repository name. Refresh success is shortened to Refreshed / ready count.
+- Refresh and compact toggle share one aligned row; toggle displays at 82% scale.
+- Remove remains below the toggle and is visible only while any repository control owns focus. Its requester stays mounted for focus restoration; its small reserved line prevents layout jumps.
+- Repository padding and controls are more compact. Active-first order from the previous patch remains.
+
+Account:
+- One summary card contains Sync On/Off, Sync Now, Sign Out, in that order.
+- Confirmation and Cancel remain within that same card.
+- Separate ACCOUNT SYNC row, informational lower cards and footer are removed.
+- Embedded and standalone TV Account presentations use the same summary card.
+- Existing sync service, sign-in/sign-out and busy guards remain unchanged.
+
+Validation: Kotlin PSI syntax passed for 5 Kotlin files. Source preservation checks passed for sync action handlers and Content Manager logic outside the requested status copy. APK/Compose compilation and physical TV focus/visual checks were not available.
+
+Includes unchanged root build.gradle.kts as repository-root marker. Previous personalization, Home and DNA changes remain prerequisites.

@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import com.vueo.tv.ui.TvDesign
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
@@ -40,10 +42,11 @@ internal fun TvSettingsEntry.isRepositoryAction(): Boolean =
     id == "refresh-repository" || id == "remove-repository"
 
 @Composable
-internal fun TvContentToggle(checked: Boolean) {
+internal fun TvContentToggle(checked: Boolean, compact: Boolean = false) {
     // The enclosing row handles D-pad activation; this switch displays that same saved state.
     Switch(
         checked = checked, onCheckedChange = null,
+        modifier = if (compact) Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f } else Modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Color(0xFF202020), checkedTrackColor = Color.White,
             checkedBorderColor = Color.White,
@@ -90,12 +93,14 @@ private fun TvPluginRepositoryCard(
     val nextProvider = entries.firstOrNull { it.providerStatus != null }
     // Keep the repository entry ID on the toggle for the host's focus restoration.
     var toggleFocused by remember(entry.id) { mutableStateOf(false) }
+    var cardFocused by remember(entry.id) { mutableStateOf(false) }
     val shape = RoundedCornerShape(15.dp)
     Column(modifier = Modifier.padding(bottom = if (nextProvider != null) 12.dp else 0.dp)
-        .fillMaxWidth().background(PluginSurface, shape)) {
+        .fillMaxWidth().background(PluginSurface, shape)
+        .onFocusChanged { cardFocused = it.hasFocus }.focusGroup()) {
         Row(
             modifier = Modifier.fillMaxWidth()
-                .padding(14.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
@@ -105,31 +110,32 @@ private fun TvPluginRepositoryCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(entry.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(entry.detail.orEmpty(), color = PluginMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                refresh?.let { action ->
-                    TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
-                        up = FocusRequester.Default
-                        left = FocusRequester.Cancel
-                        right = requesterFor(entry.id)
-                        down = if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
-                    }.onPreviewKeyEvent { event ->
-                        if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                            if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
-                            true
-                        } else false
-                    }, { onEntryFocused(action.id) })
+                entry.operationStatus?.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(message, color = TvDesign.Accent, fontSize = 11.sp, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis)
                 }
-                Column(
-                    modifier = Modifier.width(76.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    refresh?.let { action ->
+                        TvRepositoryAction(action, Icons.Default.Refresh, Color.White, requesterFor(action.id), Modifier.focusProperties {
+                            up = FocusRequester.Default
+                            left = FocusRequester.Cancel
+                            right = requesterFor(entry.id)
+                            down = remove?.let { requesterFor(it.id) }
+                                ?: if (nextProvider != null) FocusRequester.Default else FocusRequester.Cancel
+                        }.onPreviewKeyEvent { event ->
+                            if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                if (event.type == KeyEventType.KeyDown) onLeftToSidebar()
+                                true
+                            } else false
+                        }, { onEntryFocused(action.id) })
+                    }
                     Box(
-                        modifier = Modifier.width(76.dp).height(38.dp)
+                        modifier = Modifier.width(64.dp).height(38.dp)
                             .focusRequester(requesterFor(entry.id))
                             .focusProperties {
                                 up = FocusRequester.Default
@@ -157,10 +163,15 @@ private fun TvPluginRepositoryCard(
                             .focusable(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        TvContentToggle(entry.switchChecked ?: (entry.value == "On"))
+                        TvContentToggle(entry.switchChecked ?: (entry.value == "On"), compact = true)
                     }
+                }
+                // Reserve one small action line so the card never shifts as focus enters/leaves.
+                Box(Modifier.width(64.dp).height(26.dp), contentAlignment = Alignment.Center) {
                     remove?.let { action ->
-                        TvRepositoryAction(action, null, if (entry.accented) TvDesign.Accent else Color.White.copy(alpha = .86f), requesterFor(action.id), Modifier.focusProperties {
+                        TvRepositoryAction(action, null, TvDesign.Accent, requesterFor(action.id), Modifier.graphicsLayer {
+                            alpha = if (cardFocused) 1f else 0f
+                        }.focusProperties {
                             up = requesterFor(entry.id)
                             left = refresh?.let { requesterFor(it.id) } ?: requesterFor(entry.id)
                             right = FocusRequester.Cancel
@@ -170,11 +181,6 @@ private fun TvPluginRepositoryCard(
                 }
             }
         }
-        entry.operationStatus?.takeIf { it.isNotBlank() }?.let { message ->
-            Text(message, color = TvDesign.Accent, fontSize = 11.sp, maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp))
-        }
     }
 }
 
@@ -182,21 +188,29 @@ private fun TvPluginRepositoryCard(
 private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector?, tint: Color, requester: FocusRequester, modifier: Modifier, onFocused: () -> Unit) {
     var focused by remember(entry.id) { mutableStateOf(false) }
     val refreshing = entry.id == "refresh-repository" && entry.value == "Refreshing…"
-    IconButton(
-        onClick = { entry.onActivate?.invoke() },
-        modifier = modifier.height(38.dp).width(if (icon == null) 76.dp else 38.dp).focusRequester(requester)
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
-            .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
-            .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50)),
-    ) {
-        if (icon == null) Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-        else {
-            Icon(
-                icon,
-                contentDescription = if (refreshing) "Refreshing repository" else entry.title,
-                tint = tint,
-                modifier = Modifier.size(21.dp).then(tvContentRefreshMotion(entry)),
-            )
+    val actionModifier = modifier
+        .height(if (icon == null) 26.dp else 38.dp)
+        .width(if (icon == null) 64.dp else 38.dp)
+        .focusRequester(requester)
+        .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
+        .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
+        .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50))
+    if (icon == null) {
+        Box(
+            modifier = actionModifier.onPreviewKeyEvent { event ->
+                if (entry.enabled && activation(event.nativeKeyEvent.keyCode)) {
+                    if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
+                    true
+                } else false
+            }.focusable(enabled = entry.enabled),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Remove ›", color = tint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+        }
+    } else {
+        IconButton(onClick = { entry.onActivate?.invoke() }, modifier = actionModifier, enabled = entry.enabled) {
+            Icon(icon, contentDescription = if (refreshing) "Refreshing repository" else entry.title,
+                tint = tint, modifier = Modifier.size(21.dp).then(tvContentRefreshMotion(entry)))
         }
     }
 }

@@ -819,7 +819,7 @@ private fun TvSettingsMetricsRow(
             .fillMaxWidth()
             .background(TvSettingsContrast.Card, RoundedCornerShape(16.dp))
             .border(1.dp, TvDesign.White.copy(alpha = .08f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = if (inlineLabels) 8.dp else 11.dp),
+            .padding(horizontal = 12.dp, vertical = if (inlineLabels) 12.dp else 11.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         metrics.forEach { metric ->
@@ -891,6 +891,8 @@ internal fun TvSettingsListScreen(
     }
 
     BackHandler(onBack = onBack)
+    val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
+    val accountHeaderIds = setOf("status", "message", "sync-all", "sync-now", "sign-out", "cancel-sign-out")
 
     val contentStartPadding = tvSidebarContentStartPadding(112.dp)
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
@@ -991,12 +993,16 @@ internal fun TvSettingsListScreen(
                     .focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
             ) {
+                if (accountHeader) item(key = "account-header") {
+                    TvAccountSummaryPanel(entries, { rowRequesters.getValue(it) },
+                        { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
+                }
                 if (addonLayout) item(key = "workspace-controls") {
                     TvAddonControls(entries, { rowRequesters.getValue(it) },
                         { lastFocusedId = it; navExpanded = false }, ::focusSettingsNav)
                 }
                 var previousSection: String? = null
-                entries.filterNot { addonLayout && (it.isAddonControl() || it.isRepositoryAction()) }.forEachIndexed { index, entry ->
+                entries.filterNot { (accountHeader && it.id in accountHeaderIds) || (addonLayout && (it.isAddonControl() || it.isRepositoryAction())) }.forEachIndexed { index, entry ->
                     val section = entry.section?.takeIf { it.isNotBlank() }
                     if (section != null && section != previousSection) {
                         item(key = "section-$index-$section") {
@@ -1073,7 +1079,7 @@ private fun TvSettingsEmbeddedPanel(
     contentManager: Boolean = false,
 ) {
     val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
-    val accountHeaderIds = setOf("status", "message", "sync-now", "sign-out", "cancel-sign-out")
+    val accountHeaderIds = setOf("status", "message", "sync-all", "sync-now", "sign-out", "cancel-sign-out")
     val focusableIds = entries.filter { it.enabled }.map { it.id }
     val firstFocusable = entries.firstOrNull { it.enabled }
     val lastFocusable = entries.lastOrNull { it.enabled }

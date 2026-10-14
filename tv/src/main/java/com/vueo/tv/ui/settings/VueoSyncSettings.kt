@@ -43,24 +43,18 @@ internal fun TvVueoSyncSettings(onNavigate: (String)->Unit,onProfile: ()->Unit,o
             add(TvSettingsEntry("register","Create Account","Create a VUEO account with the email and password entered above.",
                 enabled=!busy && email.isNotBlank() && password.isNotBlank(),onActivate={action { service.signIn(email,password,true) }}))
         } else {
+            add(TvSettingsEntry("sync-all", if(syncOn) "Sync On" else "Sync Off",
+                "One control for all account data.", value=if(syncOn) "On" else "Off", enabled=!busy,
+                onActivate={action {service.setSyncEnabledAndWait(!syncOn); service.state.value}}, section=null))
             add(TvSettingsEntry("sync-now","Sync Now","Sync your library and connections now.",enabled=!busy && syncOn,
                 onActivate={action { service.syncNow(); service.state.value }},section="ACTIONS"))
             add(TvSettingsEntry("sign-out",if(confirmSignOut) "Confirm Sign Out" else "Sign Out","Local data stays on this TV.",enabled=!busy,
                 onActivate={if(confirmSignOut) action {service.signOut(); confirmSignOut=false; "Signed out"} else confirmSignOut=true}))
             if(confirmSignOut) add(TvSettingsEntry("cancel-sign-out","Cancel","Stay connected.",onActivate={confirmSignOut=false}))
-            add(TvSettingsEntry("sync-all", if(syncOn) "Turn Sync Off" else "Turn Sync On",
-                "One control for all account data.", value=if(syncOn) "On" else "Off", enabled=!busy,
-                onActivate={action {service.setSyncEnabledAndWait(!syncOn); service.state.value}}, section="ACCOUNT SYNC"))
-            add(TvSettingsEntry("shared-data", "Synced Together",
-                "Profiles, Favorites, Continue Watching, watched history and installed addons/providers.", enabled=false))
-            add(TvSettingsEntry("shared-connections", "Enhancement Connections",
-                "TMDB, MDBList and Gemini API keys, plus your Trakt account. Feature switches stay local.", enabled=false))
-            add(TvSettingsEntry("local-settings", "Stays on This TV",
-                "Enhancement and Trakt options, addon/provider ON/OFF, catalogs and player preferences.", enabled=false))
+
         }
     }
-    TvSettingsListScreen("Account","Your library and connections across mobile and TV.",entries,onNavigate,onProfile,onBack,
-        footer="All account data syncs together. Device preferences stay local.")
+    TvSettingsListScreen("Account","Your library and connections across mobile and TV.",entries,onNavigate,onProfile,onBack)
     edit?.let { field -> TvTextEntryDialog(title=if(field=="email") "Email" else "Password",initialValue=if(field=="email") email else password,
         secret=field=="password",onDismiss={edit=null},onSave={if(field=="email") email=it else password=it; edit=null}) }
 }

@@ -26,11 +26,22 @@ import com.vueo.tv.ui.TvDesign
 /** Account identity, live status and related actions stay together. */
 @Composable
 internal fun TvAccountSummaryPanel(entries: List<TvSettingsEntry>, host: TvSettingsEmbeddedHost) {
+    TvAccountSummaryPanel(entries, host.requesterFor, host.onRowFocused, host.onLeftToCategory)
+}
+
+@Composable
+internal fun TvAccountSummaryPanel(
+    entries: List<TvSettingsEntry>,
+    requesterFor: (String) -> FocusRequester,
+    onRowFocused: (String) -> Unit,
+    onLeftToCategory: () -> Unit,
+) {
     val account = entries.firstOrNull { it.id == "status" }
     val status = entries.firstOrNull { it.id == "message" }
-    val actions = entries.filter { it.id in setOf("sync-now", "sign-out", "cancel-sign-out") }
+    val actionIds = listOf("sync-all", "sync-now", "sign-out", "cancel-sign-out")
+    val actions = actionIds.mapNotNull { id -> entries.firstOrNull { it.id == id } }
     val enabledActions = actions.filter { it.enabled }
-    val nextOption = entries.firstOrNull { it.enabled && it.id.startsWith("sync-") && it.id != "sync-now" }
+    val nextOption = entries.firstOrNull { it.enabled && it.id !in actionIds }
     Column(
         Modifier.fillMaxWidth().background(TvDesign.Surface, RoundedCornerShape(12.dp)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -53,23 +64,23 @@ internal fun TvAccountSummaryPanel(entries: List<TvSettingsEntry>, host: TvSetti
                 Box(
                     modifier = Modifier
                         .heightIn(min = 42.dp)
-                        .focusRequester(host.requesterFor(action.id))
+                        .focusRequester(requesterFor(action.id))
                         .focusProperties {
                             up = FocusRequester.Cancel
-                            down = nextOption?.let { host.requesterFor(it.id) } ?: FocusRequester.Cancel
-                            if (index > 0) left = host.requesterFor(enabledActions[index - 1].id)
-                            if (index >= 0 && index < enabledActions.lastIndex) right = host.requesterFor(enabledActions[index + 1].id)
+                            down = nextOption?.let { requesterFor(it.id) } ?: FocusRequester.Cancel
+                            if (index > 0) left = requesterFor(enabledActions[index - 1].id)
+                            if (index >= 0 && index < enabledActions.lastIndex) right = requesterFor(enabledActions[index + 1].id)
                             else right = FocusRequester.Cancel
                         }
                         .onFocusChanged {
                             focused = it.isFocused
-                            if (it.isFocused) host.onRowFocused(action.id)
+                            if (it.isFocused) onRowFocused(action.id)
                         }
                         .onPreviewKeyEvent { event ->
                             if (!action.enabled) return@onPreviewKeyEvent false
                             when (event.nativeKeyEvent.keyCode) {
                                 KeyEvent.KEYCODE_DPAD_LEFT -> if (index == 0) {
-                                    if (event.type == KeyEventType.KeyDown) host.onLeftToCategory()
+                                    if (event.type == KeyEventType.KeyDown) onLeftToCategory()
                                     true
                                 } else false
                                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {

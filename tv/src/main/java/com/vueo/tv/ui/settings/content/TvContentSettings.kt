@@ -572,7 +572,7 @@ internal fun TvProviderSettings(
                                             selectedRepositoryUrl = refreshed.manifestUrl
                                         }
                                         revision++
-                                        repositoryMessages[refreshed.manifestUrl] = "Refreshed ${refreshed.name} • ${providerCodeStore.readyCount(refreshed)} provider code ready."
+                                        repositoryMessages[refreshed.manifestUrl] = "Refreshed • ${providerCodeStore.readyCount(refreshed)} ready"
                                         onDataChanged()
                                     }
                                     .onFailure { repositoryMessages[repository.manifestUrl] = it.message ?: "Unable to refresh repository." }
