@@ -4,6 +4,8 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.plugin.PluginHttp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -22,29 +24,40 @@ object TraktRelatedClient {
     private const val MAX_BODY_BYTES = 1024 * 1024
     private const val TTL_MS = 30 * 60_000L
     private const val FAILURE_TTL_MS = 2 * 60_000L
-    private val gate = Mutex()
+    private val gates = Array(64) { Mutex() }
+    private val networkSlots = Semaphore(3)
+    private val cacheLock = Any()
+    private fun gateFor(key: String) = gates[(key.hashCode() and Int.MAX_VALUE) % gates.size]
     private val client by lazy {
         PluginHttp.client.newBuilder().callTimeout(7, TimeUnit.SECONDS)
             .connectTimeout(4, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS)
             .followRedirects(false).followSslRedirects(false).build()
     }
     private data class Entry(val items: List<MediaItem>, val expiresAt: Long)
-    // Accessed only under gate. Includes the app identity to isolate changed credentials.
+    // Cache operations are short; network IO never holds the shared cache lock. Includes the app identity to isolate changed credentials.
     private val cache = object : LinkedHashMap<String, Entry>(48, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?): Boolean = size > 40
     }
-    private var blockedClientId = ""
-    private var blockedUntil = 0L
+    private val blocked = mutableMapOf<String, Long>()
+    private fun cached(key: String, now: Long): Entry? = synchronized(cacheLock) { cache[key]?.takeIf { it.expiresAt > now } }
+    private fun putCache(key: String, value: Entry) { synchronized(cacheLock) { cache[key] = value } }
+    private fun isBlocked(key: String, now: Long) = synchronized(cacheLock) { (blocked[key] ?: 0L) > now }
+    private fun block(key: String, until: Long) { synchronized(cacheLock) {
+        if (blocked.size >= 40) blocked.keys.firstOrNull()?.let { blocked.remove(it) }
+        blocked[key] = until
+    } }
 
     suspend fun testConnection(clientId: String): Boolean {
         val key = clientId.trim()
         if (key.isBlank()) return false
         return withTimeoutOrNull(8_000L) {
-            gate.withLock {
+            gateFor("$key:test").withLock {
                 try {
                     JSONArray(get("/movies/tt0137523/related?limit=1&extended=full", key))
-                    if (blockedClientId == key) blockedUntil = 0L
-                    cache.keys.filter { it.startsWith("$key:") }.forEach { cache.remove(it) }
+                    synchronized(cacheLock) {
+                        blocked.remove(key)
+                        cache.keys.filter { it.startsWith("$key:") }.forEach { cache.remove(it) }
+                    }
                     true
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -63,20 +76,20 @@ object TraktRelatedClient {
             "series", "tv", "show", "shows" -> "show"
             else -> return emptyList()
         }
-        // The timeout includes waiting for another request, so no unbounded request queue.
+        val cacheKey = "$key:$type:${item.id}"
+        // The timeout includes waiting for a duplicate title, so no unbounded request queue.
         return withTimeoutOrNull(8_000L) {
-            gate.withLock {
+            gateFor(cacheKey).withLock {
                 val now = System.currentTimeMillis()
-                val cacheKey = "$key:$type:${item.id}"
-                cache[cacheKey]?.takeIf { it.expiresAt > now }?.let {
+                cached(cacheKey, now)?.let {
                     return@withLock it.items.map { media -> media.copy(sourceExtensionId = item.sourceExtensionId) }
                 }
-                if (blockedClientId == key && blockedUntil > now) return@withLock emptyList()
+                if (isBlocked(key, now)) return@withLock emptyList()
                 try {
                     val imdb = Regex("^tt[0-9]+$").takeIf { it.matches(item.id) }?.let { item.id }
                     val target = imdb ?: resolveTarget(item, type, key)
                     if (target == null) {
-                        cache[cacheKey] = Entry(emptyList(), now + FAILURE_TTL_MS)
+                        putCache(cacheKey, Entry(emptyList(), now + FAILURE_TTL_MS))
                         return@withLock emptyList()
                     }
                     val namespace = if (type == "show") "shows" else "movies"
@@ -85,19 +98,18 @@ object TraktRelatedClient {
                     val result = (0 until minOf(raw.length(), MAX_CANDIDATES)).mapNotNull { index ->
                         raw.optJSONObject(index)?.let { parse(it, mediaType) }
                     }.filterNot { it.id == item.id }.distinctBy { it.id }
-                    cache[cacheKey] = Entry(result, System.currentTimeMillis() + TTL_MS)
+                    putCache(cacheKey, Entry(result, System.currentTimeMillis() + TTL_MS))
                     result.map { it.copy(sourceExtensionId = item.sourceExtensionId) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: HttpFailure) {
                     if (failure.status in listOf(401, 403, 429)) {
-                        blockedClientId = key
-                        blockedUntil = System.currentTimeMillis() + failure.pauseMs
+                        block(key, System.currentTimeMillis() + failure.pauseMs)
                     }
-                    cache[cacheKey] = Entry(emptyList(), System.currentTimeMillis() + FAILURE_TTL_MS)
+                    putCache(cacheKey, Entry(emptyList(), System.currentTimeMillis() + FAILURE_TTL_MS))
                     emptyList()
                 } catch (_: Exception) {
-                    cache[cacheKey] = Entry(emptyList(), System.currentTimeMillis() + FAILURE_TTL_MS)
+                    putCache(cacheKey, Entry(emptyList(), System.currentTimeMillis() + FAILURE_TTL_MS))
                     emptyList()
                 }
             }
@@ -108,12 +120,12 @@ object TraktRelatedClient {
     suspend fun discovery(clientId: String): List<MediaItem> {
         val key = clientId.trim()
         if (key.isBlank()) return emptyList()
+        val cacheKey = "$key:discovery"
         return withTimeoutOrNull(8_000L) {
-            gate.withLock {
+            gateFor(cacheKey).withLock {
                 val now = System.currentTimeMillis()
-                val cacheKey = "$key:discovery"
-                cache[cacheKey]?.takeIf { it.expiresAt > now }?.let { return@withLock it.items }
-                if (blockedClientId == key && blockedUntil > now) return@withLock emptyList()
+                cached(cacheKey, now)?.let { return@withLock it.items }
+                if (isBlocked(key, now)) return@withLock emptyList()
                 val pools = mutableListOf<List<MediaItem>>()
                 for ((namespace, type, field) in listOf(Triple("movies", "movie", "movie"), Triple("shows", "series", "show"))) {
                     try {
@@ -129,8 +141,7 @@ object TraktRelatedClient {
                         throw cancelled
                     } catch (failure: HttpFailure) {
                         if (failure.status in listOf(401, 403, 429)) {
-                            blockedClientId = key
-                            blockedUntil = System.currentTimeMillis() + failure.pauseMs
+                            block(key, System.currentTimeMillis() + failure.pauseMs)
                             break
                         }
                     } catch (_: Exception) {
@@ -139,7 +150,7 @@ object TraktRelatedClient {
                 }
                 val result = (0 until MAX_CANDIDATES).flatMap { index -> pools.mapNotNull { it.getOrNull(index) } }
                     .distinctBy { "${it.type}:${it.id}" }
-                cache[cacheKey] = Entry(result, System.currentTimeMillis() + if (result.isEmpty()) FAILURE_TTL_MS else TTL_MS)
+                putCache(cacheKey, Entry(result, System.currentTimeMillis() + if (result.isEmpty()) FAILURE_TTL_MS else TTL_MS))
                 result
             }
         } ?: emptyList()
@@ -193,7 +204,8 @@ object TraktRelatedClient {
 
     private class HttpFailure(val status: Int, val pauseMs: Long) : IOException("Trakt HTTP $status")
 
-    private suspend fun get(path: String, key: String): String = suspendCancellableCoroutine { continuation ->
+    private suspend fun get(path: String, key: String): String = networkSlots.withPermit {
+        suspendCancellableCoroutine { continuation ->
         val request = Request.Builder().url("https://api.trakt.tv$path")
             .header("Accept", "application/json").header("Content-Type", "application/json")
             .header("User-Agent", "VUEO/0.9.6").header("trakt-api-version", "2")
@@ -230,5 +242,6 @@ object TraktRelatedClient {
                 if (continuation.isActive) continuation.resumeWith(result)
             }
         })
+        }
     }
 }

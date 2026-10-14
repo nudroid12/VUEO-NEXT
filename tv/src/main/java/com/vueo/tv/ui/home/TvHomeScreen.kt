@@ -20,7 +20,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
@@ -34,29 +33,13 @@ import com.vueo.tv.ui.TvSidebar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-internal data class HomeRecommendationInput(
-    val profileId: String,
-    val refreshToken: Int,
-    val revision: Int,
-    val rows: List<CatalogRow>,
-    val history: List<LibraryPlaybackEntry>,
-    val enabled: Boolean,
-    val day: Long,
-    val recommendationEngine: RecommendationEngine,
-    val tmdbKey: String,
-    val traktClientId: String,
-    val tmdbRecommendations: Boolean,
-    val tmdbSimilar: Boolean,
-)
 
 class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     private val startupContinueWatching = runtime.libraryStore.homeStartupContinueWatching()
@@ -79,8 +62,7 @@ class TvHomeRetainedState internal constructor(runtime: TvRuntime) {
     internal var libraryHydrationProfileId: String? = null
     internal var continueWatching by mutableStateOf(startupContinueWatching)
     internal var watchHistory by mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
-    internal val recommendationMutex = Mutex()
-    internal var recommendationInput by mutableStateOf<HomeRecommendationInput?>(null)
+    internal var recommendationEngine by mutableStateOf<RecommendationEngine?>(null)
     internal var homeRecommendations by mutableStateOf(HomeRecommendationSections())
     internal var presentationCatalogRows: List<CatalogRow>? = null
     internal var presentationRows by mutableStateOf(
@@ -251,9 +233,9 @@ fun TvHomeScreen(
     val continueWatching = retainedState.continueWatching
     val currentRecommendationEngine = runtime.settingsStore.recommendationEngine()
     val currentTraktClientId = runtime.settingsStore.traktClientId()
-    val recommendationEngineIsCurrent = retainedState.recommendationInput?.recommendationEngine == currentRecommendationEngine
+    val recommendationEngineIsCurrent = retainedState.recommendationEngine == currentRecommendationEngine
     val homeRecommendations = if (recommendationEngineIsCurrent) retainedState.homeRecommendations
-        else retainedState.homeRecommendations.copy(becauseYouWatched = emptyList())
+        else HomeRecommendationSections()
 
     // Presentation is now a cheap pure build. Catalog partials may still arrive
     // rapidly, but they no longer restart disk/library hydration.
@@ -268,91 +250,36 @@ fun TvHomeScreen(
         retainedState.presentationCatalogRows = catalogRows
     }
 
-    // Personalized rows depend on full history, so keep them behind the exact
-    // library snapshot. They can be recomputed/cancelled as catalog partials
-    // stream without holding back Continue Watching.
-    LaunchedEffect(
-        active,
-        currentRecommendationEngine,
-        currentTraktClientId,
-        runtime,
-        activeProfileId,
-        refreshToken,
-        libraryRevision,
-        catalogRows,
-        retainedState.libraryHydrationRefreshToken,
-        retainedState.libraryHydrationRevision,
-    ) {
-        val libraryIsCurrent =
-            retainedState.libraryHydrationProfileId == activeProfileId &&
-                retainedState.libraryHydrationRefreshToken == refreshToken &&
-                retainedState.libraryHydrationRevision == libraryRevision
+    // Observe the app-owned feed after library hydration. Catalog updates only rebuild presentation.
+    val currentTmdbKey = runtime.pluginStore.tmdbApiKey()
+    val currentTmdbRecommendations = runtime.settingsStore.tmdbRecommendationsEnabled()
+    val currentTmdbSimilar = runtime.settingsStore.tmdbSimilarTitlesEnabled()
+    val personalized = runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
+    LaunchedEffect(active, runtime, activeProfileId, refreshToken, libraryRevision,
+        retainedState.libraryHydrationRefreshToken, retainedState.libraryHydrationRevision,
+        currentRecommendationEngine, currentTraktClientId, currentTmdbKey,
+        currentTmdbRecommendations, currentTmdbSimilar, personalized) {
+        val libraryIsCurrent = retainedState.libraryHydrationProfileId == activeProfileId &&
+            retainedState.libraryHydrationRefreshToken == refreshToken &&
+            retainedState.libraryHydrationRevision == libraryRevision
         if (!active || !libraryIsCurrent) return@LaunchedEffect
-
-        val history = retainedState.watchHistory
-        val result = withContext(Dispatchers.Default) {
-            val context = currentCoroutineContext()
-            retainedState.recommendationMutex.withLock {
-                context.ensureActive()
-                val enabled = runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-                val input = HomeRecommendationInput(
-                    activeProfileId, refreshToken, libraryRevision, catalogRows, history,
-                    enabled, System.currentTimeMillis() / 86_400_000L,
-                    runtime.settingsStore.recommendationEngine(), runtime.pluginStore.tmdbApiKey(), currentTraktClientId,
-                    runtime.settingsStore.tmdbRecommendationsEnabled(), runtime.settingsStore.tmdbSimilarTitlesEnabled(),
-                )
-                if (retainedState.recommendationInput == input) {
-                    PerformanceDiagnostics.captureRuntimeEvent("HOME_RECOMMENDATIONS_CACHE_HIT")
-                    return@withLock input to retainedState.homeRecommendations
-                }
-                val rebuilt = PerformanceDiagnostics.measuredContext(Dispatchers.Default, "tv_home_recommendations_5", Tab.HOME) {
-                    val favorites = if (enabled) runtime.readDetailLibrary { runtime.libraryStore.watchlist() } else emptyList()
-                    context.ensureActive()
-                    val seed = if (enabled) HomeRecommendationPolicy.latestMeaningfulSeed(history) else null
-                    if (enabled) {
-                        val localPass = HomeRecommendationPolicy.build(catalogRows, history, runtime.dnaEngine, true,
-                            favorites = favorites, checkActive = { context.ensureActive() })
-                        withContext(Dispatchers.Main.immediate) {
-                            retainedState.homeRecommendations = localPass.copy(
-                                becauseYouWatched = if (localPass.becauseYouWatchedSeed?.id == retainedState.homeRecommendations.becauseYouWatchedSeed?.id &&
-                                    retainedState.recommendationInput?.recommendationEngine == input.recommendationEngine)
-                                    retainedState.homeRecommendations.becauseYouWatched else emptyList())
-                        }
-                    }
-                    val forYouSources = if (enabled) com.vueo.shared.core.home.ForYouCandidateLoader.load(
-                        profileId = activeProfileId, history = history, favorites = favorites,
-                        traktClientId = input.traktClientId,
-                    ) else null
-                    val becauseRelated = seed?.let {
-                        if (input.recommendationEngine == RecommendationEngine.TRAKT) forYouSources?.relatedTo(it).orEmpty()
-                        else com.vueo.shared.core.recommendation.RelatedContentOrchestrator.direct(
-                            it, input.tmdbKey, input.tmdbRecommendations, input.tmdbSimilar,
-                            18, input.recommendationEngine, input.traktClientId)
-                    }.orEmpty()
-                    context.ensureActive()
-                    HomeRecommendationPolicy.build(
-                        catalogRows = catalogRows,
-                        watchHistory = history,
-                        dnaEngine = runtime.dnaEngine,
-                        personalizationEnabled = enabled,
-                        limit = 12,
-                        checkActive = { context.ensureActive() },
-                        becauseRelatedTitles = becauseRelated,
-                        favorites = favorites,
-                        forYouSources = forYouSources,
-                    )
-                }
-                context.ensureActive()
-                input to rebuilt
-            }
+        if (!personalized) {
+            com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(activeProfileId)
+            retainedState.homeRecommendations = HomeRecommendationSections()
+            retainedState.recommendationEngine = currentRecommendationEngine
+            return@LaunchedEffect
         }
-        currentCoroutineContext().ensureActive()
-        retainedState.homeRecommendations = result.second
-        retainedState.recommendationInput = result.first
+        val favorites = runtime.readDetailLibrary { runtime.libraryStore.watchlist() }
+        val request = com.vueo.shared.core.home.HomeRecommendationFeeds.Request(activeProfileId,
+            retainedState.watchHistory, favorites, currentRecommendationEngine,
+            currentTmdbKey, currentTraktClientId, currentTmdbRecommendations, currentTmdbSimilar)
+        val feed = com.vueo.shared.core.home.HomeRecommendationFeeds.observe(traktContext, request)
+        retainedState.recommendationEngine = currentRecommendationEngine
+        feed.collect { sections -> retainedState.homeRecommendations = sections }
     }
 
     val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
-        else retainedState.presentationRows.filterNot { it.key == "because-you-watched" }
+        else retainedState.presentationRows.filterNot { it.key == "because-you-watched" || it.key == "for-you" }
     val rows = remember(baseRows, traktRows) { baseRows + buildTvHomeRows(traktRows, emptyList()) }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0

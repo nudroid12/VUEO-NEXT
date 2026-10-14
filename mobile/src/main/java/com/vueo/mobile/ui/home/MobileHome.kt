@@ -196,7 +196,6 @@ import com.vueo.shared.core.enrichment.ContentWarningRepository
 import com.vueo.shared.core.detail.DetailPeoplePolicy
 import com.vueo.shared.core.detail.DetailUpstreamPolicy
 import com.vueo.shared.core.home.HomeCatalogPolicy
-import com.vueo.shared.core.home.HomeRecommendationPolicy
 import com.vueo.shared.core.home.HomeRecommendationSections
 import com.vueo.shared.core.search.DiscoverCatalogPolicy
 import com.vueo.shared.core.search.DiscoverSortMode
@@ -261,6 +260,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -683,74 +683,45 @@ internal fun HomeScreen(
                 retainedState.presentationProfileId == activeProfileId
             ) {
                 if (retainedState.recommendationEngine == recommendationEngine) retainedState.recommendations
-                else retainedState.recommendations.copy(becauseYouWatched = emptyList())
+                else HomeRecommendationSections()
             } else {
                 HomeRecommendationSections()
             }
         )
     }
 
-    // Home used to synchronously parse Continue Watching + History and score
-    // recommendations during first composition. That made Home feel heavier
-    // than Search/Library even when catalog rows were already cached. Publish
-    // the retained presentation immediately, then hydrate storage/CPU work in
-    // the background.
-    LaunchedEffect(
-        rows,
-        libraryVersion,
-        activeProfileId,
-        personalizedHomeEnabled,
-        recommendationEngine, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled, recommendationTraktClientId,
-    ) {
-        val librarySnapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_home_library_snapshot_2", Tab.HOME) {
+    // Library hydration is independent of streaming catalog rows.
+    var recommendationSnapshot by remember(activeProfileId) {
+        mutableStateOf<com.vueo.shared.core.storage.LibraryDetailSnapshot?>(null)
+    }
+    LaunchedEffect(libraryVersion, activeProfileId) {
+        val snapshot = PerformanceDiagnostics.measuredContext(Dispatchers.IO, "mobile_home_library_snapshot_2", Tab.HOME) {
             libraryStore.detailSnapshot()
         }
-
-        continueWatching = librarySnapshot.continueWatching
-        retainedState.continueWatching = librarySnapshot.continueWatching
+        continueWatching = snapshot.continueWatching
+        retainedState.continueWatching = snapshot.continueWatching
         retainedState.presentationProfileId = activeProfileId
-
-        val freshRecommendations =
-            if (personalizedHomeEnabled) {
-                val favorites = withContext(Dispatchers.IO) { libraryStore.watchlist() }
-                val seed = HomeRecommendationPolicy.latestMeaningfulSeed(librarySnapshot.history)
-                // Publish a local pass while bounded engine discovery runs in the background.
-                val localPass = withContext(Dispatchers.Default) {
-                    HomeRecommendationPolicy.build(rows, librarySnapshot.history, dnaEngine, true,
-                        favorites = favorites)
-                }
-                homeRecommendations = localPass.copy(becauseYouWatched =
-                    if (localPass.becauseYouWatchedSeed?.id == homeRecommendations.becauseYouWatchedSeed?.id &&
-                        retainedState.recommendationEngine == recommendationEngine) homeRecommendations.becauseYouWatched else emptyList())
-                val forYouSources = com.vueo.shared.core.home.ForYouCandidateLoader.load(
-                    profileId = activeProfileId, history = librarySnapshot.history, favorites = favorites,
-                    traktClientId = recommendationTraktClientId,
-                )
-                val becauseRelated = seed?.let {
-                    if (recommendationEngine == RecommendationEngine.TRAKT) forYouSources.relatedTo(it)
-                    else com.vueo.shared.core.recommendation.RelatedContentOrchestrator.direct(
-                        it, recommendationKey, recommendationTmdbEnabled, recommendationSimilarEnabled,
-                        18, recommendationEngine, recommendationTraktClientId)
-                }.orEmpty()
-                PerformanceDiagnostics.measuredContext(Dispatchers.Default, "mobile_home_recommendations_3", Tab.HOME) {
-                    HomeRecommendationPolicy.build(
-                        catalogRows = rows,
-                        watchHistory = librarySnapshot.history,
-                        dnaEngine = dnaEngine,
-                        personalizationEnabled = true,
-                        limit = 12,
-                        becauseRelatedTitles = becauseRelated,
-                        favorites = favorites,
-                        forYouSources = forYouSources,
-                    )
-                }
-            } else {
-                HomeRecommendationSections()
-            }
-
-        homeRecommendations = freshRecommendations
-        retainedState.recommendations = freshRecommendations
-        retainedState.recommendationEngine = recommendationEngine
+        recommendationSnapshot = snapshot
+    }
+    LaunchedEffect(recommendationSnapshot, activeProfileId, personalizedHomeEnabled,
+        recommendationEngine, recommendationKey, recommendationTmdbEnabled,
+        recommendationSimilarEnabled, recommendationTraktClientId) {
+        val snapshot = recommendationSnapshot ?: return@LaunchedEffect
+        if (!personalizedHomeEnabled) {
+            com.vueo.shared.core.home.HomeRecommendationFeeds.cancelProfile(activeProfileId)
+            homeRecommendations = HomeRecommendationSections()
+            retainedState.recommendations = homeRecommendations
+            return@LaunchedEffect
+        }
+        val request = com.vueo.shared.core.home.HomeRecommendationFeeds.Request(activeProfileId,
+            snapshot.history, snapshot.watchlist, recommendationEngine, recommendationKey,
+            recommendationTraktClientId, recommendationTmdbEnabled, recommendationSimilarEnabled)
+        val feed = com.vueo.shared.core.home.HomeRecommendationFeeds.observe(context, request)
+        feed.collect { sections ->
+            homeRecommendations = sections
+            retainedState.recommendations = sections
+            retainedState.recommendationEngine = recommendationEngine
+        }
     }
 
     val forYouItems = homeRecommendations.forYou

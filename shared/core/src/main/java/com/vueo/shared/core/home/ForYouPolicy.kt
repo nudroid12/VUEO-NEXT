@@ -139,7 +139,7 @@ object ForYouPolicy {
     } }.filter { it.isNotBlank() }.toSet()
     private fun people(item: MediaItem) = (item.cast.take(8).map { it.name } + item.directors + item.creators + item.writers).map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
     private fun type(item: MediaItem) = if (item.type.lowercase() in setOf("series", "tv", "show")) "series" else "movie"
-    private fun aliases(item: MediaItem): Set<String> = buildSet {
+    internal fun aliases(item: MediaItem): Set<String> = buildSet {
         add(identity(item))
         // Exact title + known release year + media type can reconcile TMDB/IMDb IDs.
         // Missing years never use title-only matching; remakes retain separate identities.
