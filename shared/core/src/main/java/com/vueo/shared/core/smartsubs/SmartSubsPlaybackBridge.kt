@@ -124,9 +124,10 @@ object SmartSubsPlaybackBridge {
                     val source = sources.getOrNull(size) ?: break
                     add(SubtitleTrack(
                         id = track.getString("id"), language = "ms", url = url,
-                        providerId = PROVIDER_ID, providerName = "VUEO SmartSubs",
-                        name = "Malay AI • ${source.providerName} • ${source.name?.takeIf { it.isNotBlank() } ?: "English ${size + 1}"}",
+                        providerId = PROVIDER_ID, providerName = "VUEO x SmartSubs",
+                        name = "Malay AI",
                         mimeType = "text/vtt",
+                        displayId = source.id.takeIf { it.isNotBlank() },
                     ))
                 }
             }

@@ -33,6 +33,7 @@ object PlayerTrackPolicy {
     }
 
     fun subtitleDisplayId(track: SubtitleTrack): String? {
+        track.displayId?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         val displayId = subtitleDisplayId(track.id) ?: return null
         val idLanguage = LanguagePolicy.knownCode(displayId)
         val trackLanguage = LanguagePolicy.canonicalCode(track.language)

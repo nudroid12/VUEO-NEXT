@@ -103,6 +103,8 @@ data class SubtitleTrack(
     val name: String? = null,
     val mimeType: String? = null,
     val headers: Map<String, String> = emptyMap(),
+    /** Display metadata only; never used as track identity or cache key. */
+    val displayId: String? = null,
 )
 
 data class CatalogPage(

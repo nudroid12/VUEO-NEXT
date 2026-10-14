@@ -1,0 +1,14 @@
+Apply to VUEO app repository root, TV + Mobile. No YML or worker changes.
+Pill: VUEO x SmartSubs
+Track name: Malay AI
+ID row: the selected English source subtitle's original provider ID.
+This is source.id, not provider name, provider.id, generated gemini-ai hash, or
+content-cache identity. Fallback IDs created by the plugin parser remain as supplied.
+
+A separate optional displayId field carries display metadata only. Actual ID,
+selection identity, providerId and translation URLs are unchanged. Existing shared
+Mobile/TV display helpers render the new labels for provisional and attached tracks.
+The preceding plugin-only input filter is retained in the bridge.
+
+Validation: 4 existing PlayerTrackPolicy JVM tests pass, with a stub for the
+unrelated Android session-cache registration method. Android build/device UI not tested.
