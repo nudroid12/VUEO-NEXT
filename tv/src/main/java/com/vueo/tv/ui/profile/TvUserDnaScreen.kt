@@ -73,6 +73,11 @@ fun TvUserDnaScreen(
     onBack: () -> Unit,
 ) {
     val profile = remember(dataVersion) { runtime.profileStore.activeProfile() }
+    val dnaEnabled = runtime.dnaPreferences.userDnaEnabled(profile.id)
+    if (!dnaEnabled) {
+        DnaDisabledScreen(profile, onSwitchProfiles, onBack)
+        return
+    }
     val snapshot = remember(profile.id, dataVersion) { runtime.dnaEngine.build() }
     val switchRequester = remember { FocusRequester() }
     val scrollState = rememberScrollState()
@@ -156,6 +161,53 @@ fun TvUserDnaScreen(
             color = TvDesign.Muted,
             fontSize = 12.sp,
         )
+    }
+}
+
+@Composable
+private fun DnaDisabledScreen(
+    profile: VueoProfile,
+    onSwitchProfiles: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val switchRequester = remember(profile.id) { FocusRequester() }
+    var focused by remember(profile.id) { mutableStateOf(false) }
+    BackHandler(onBack = onBack)
+    LaunchedEffect(profile.id) {
+        withFrameNanos { }
+        runCatching { switchRequester.requestFocus() }
+    }
+    Column(
+        Modifier.fillMaxSize().background(TvDesign.Black).padding(horizontal = 56.dp, vertical = 34.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("Your DNA", color = TvDesign.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(TvDesign.SurfaceRaised).padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            DnaAvatar(profile)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(profile.name, color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("User DNA is off", color = TvDesign.Muted, fontSize = 14.sp)
+                Text("Enable it in Enhancements → Personalization.", color = TvDesign.Muted, fontSize = 13.sp)
+            }
+            Box(
+                modifier = Modifier.focusRequester(switchRequester)
+                    .onFocusChanged { focused = it.isFocused }
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(if (focused) 2.dp else 0.dp, if (focused) TvDesign.Focus else Color.Transparent, RoundedCornerShape(12.dp))
+                    .background(if (focused) TvDesign.White else TvDesign.White.copy(alpha = .10f))
+                    .clickable(onClick = onSwitchProfiles)
+                    .padding(horizontal = 18.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Switch Profiles", color = if (focused) TvDesign.Black else TvDesign.White,
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Text("History, Favorites and playback progress are retained.", color = TvDesign.Muted, fontSize = 13.sp)
     }
 }
 
