@@ -1,0 +1,11 @@
+VUEO TV — Restore Gemini entry in Enhancements
+Based on VUEO-NEXT-main (51).
+
+Adds Settings > Enhancements > Gemini under SUBTITLES.
+Opens the existing Gemini page (API key, Test Connection and SmartSubs switch).
+No changes to Gemini behavior, worker backend, mobile, recommendation logic or other settings.
+
+Apply at repository root, overwriting the matching tv/ file.
+No enclosing folder and no YML/YAML.
+Validation: verified unique menu entry, existing destination and route, and change scope.
+Android build/on-device navigation not verified here.

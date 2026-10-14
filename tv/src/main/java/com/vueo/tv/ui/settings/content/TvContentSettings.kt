@@ -884,6 +884,14 @@ internal fun TvEnhancementSettings(
             section = "METADATA & RATINGS",
             icon = Icons.Default.SettingsInputComponent,
         ),
+        TvSettingsEntry(
+            id = "gemini",
+            title = "Gemini",
+            subtitle = "Translate provider subtitles with your own Gemini API key.",
+            onActivate = { onOpen(TvSettingsPage.ENHANCEMENT_GEMINI) },
+            section = "SUBTITLES",
+            icon = Icons.Default.SettingsInputComponent,
+        ),
     )
 
     TvSettingsListScreen(
