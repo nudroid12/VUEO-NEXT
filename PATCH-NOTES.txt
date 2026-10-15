@@ -1,17 +1,14 @@
-APP VUEO-NEXT — Selected avatar removal (TV + Mobile)
+APP VUEO-NEXT — TV Edit Profile layout polish
 
-Upload this ZIP to the VUEO-NEXT app repository root using the existing Apply ZIP Patch workflow. No manual file deletion is required. The existing workflow handles .vueo-delete-files.txt; no YML changes included.
+Apply to the VUEO-NEXT app repository root after the selected-avatar removal patch. No Worker changes, no new artwork, no workflow/YML files.
 
-Removed from the numbered review sheet: 03, 04, 21–24, 33–36.
-26 selectable avatars remain. The TV grid uses six columns and five rows.
-Mobile now uses the shared avatar catalogue so both apps offer the same choices.
-The deletion manifest removes exactly 20 retired shared/mobile WebP files.
+- Increase Profile name field height from 56dp to 68dp for text/label clearance.
+- Tighten preview and toggle title/description spacing, with explicit toggle text line heights.
+- Reduce editor switch visual scale and reserved footprint, retaining the full clickable row.
+- Use square avatar bounds with CircleShape crop, retaining existing artwork without stretching.
+- Calculate avatar diameter from both available width and height. Six columns / five rows for the current26 avatars; distribute row gaps so the final row bottom meets the pinned action row bottom.
+- Pin Save/Create to the shared bottom edge. When Delete is available, Delete and Save share one row, equal width and52dp height. Default profile/Create keeps a full-width action.
+- Keep avatar and editor action bounds stable on focus, using existing focus border/colors.
+- Preserve remote Back, name editing, PIN flows and delete confirmation.
 
-Stored/synced retired IDs resolve to replacements:
-man_3, man_4, character_5, character_7, vueo_1–4 -> man_1
-character_6 -> woman_3
-character_8 -> woman_2
-Custom/local photos and retained avatar IDs remain unchanged.
-
-Includes the cumulative TV profile editor file, preserving prior Back-icon removal, full-width Save and layout fixes.
-Validation: 3 catalogue/replacement JVM tests passed, using a generated resource-ID stub. All four changed production Kotlin files passed PSI syntax checks. All retained drawable references and deletion paths verified. No full Android build or device verification.
+Validation: Kotlin PSI syntax check passed. Layout arithmetic checked at three viewport sizes for square bounds, row fit and bottom alignment. No full Android build or TV device verification was available.
