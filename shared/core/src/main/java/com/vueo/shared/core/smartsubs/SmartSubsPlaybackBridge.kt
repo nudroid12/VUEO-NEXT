@@ -1,6 +1,7 @@
 package com.vueo.shared.core.smartsubs
 
 import com.vueo.shared.core.media.SubtitleTrack
+import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.SubtitleSessionCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -108,7 +109,12 @@ object SmartSubsPlaybackBridge {
                         providerId = PROVIDER_ID, providerName = "VUEO x SmartSubs",
                         name = "Malay AI",
                         mimeType = "text/vtt",
-                        displayId = source.id.takeIf { it.isNotBlank() },
+                        // Match the ID shown on the original English card on both players.
+                        // The raw source ID remains intact for requests and selection.
+                        displayId = PlayerTrackPolicy.subtitleDisplayId(source)?.let { sourceDisplayId ->
+                            val provider = PlayerTrackPolicy.subtitleProviderLabel(source)
+                            if (provider.isBlank()) sourceDisplayId else "$provider - $sourceDisplayId"
+                        },
                         // Carry display metadata with the selected GET as well as
                         // listing POST, including when older source records are reused.
                         headers = mapOf(
