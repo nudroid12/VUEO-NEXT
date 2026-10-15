@@ -1,5 +1,8 @@
 package com.vueo.shared.core.diagnostics
 
+import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 import android.content.ContentValues
 import android.content.Context
 import android.os.Build
@@ -37,7 +40,7 @@ import java.util.zip.ZipOutputStream
  *
  * The persisted master switch has only two user-facing states:
  * OFF = no frame probe, sampler or new event buffering.
- * ON  = collection starts immediately and remains active until switched off.
+ * ON  = recording remains enabled; frame/system probes run while an Activity is started.
  * Existing in-memory events are retained when collection is stopped; only clear()
  * removes them. RuntimeDiagnostics forwards its existing breadcrumbs here so page,
  * player activity and overall scan timings can be correlated without provider debug details.
@@ -102,6 +105,61 @@ object PerformanceDiagnostics {
     private val installed = AtomicBoolean(false)
     private val enabled = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)
+    // Lifecycle callbacks and frame state are main-thread owned. Atomic visibility
+    // lets the sampler skip a stop already delivered on the UI thread.
+    private val foreground = AtomicBoolean(false)
+    private val startedActivities = java.util.Collections.newSetFromMap(
+        java.util.IdentityHashMap<Activity, Boolean>(),
+    )
+    private var foregroundSinceMs = 0L
+    private var completedForegroundMs = 0L
+    private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityStarted(activity: Activity) {
+            if (startedActivities.add(activity) && startedActivities.size == 1) setForeground(true)
+        }
+        override fun onActivityStopped(activity: Activity) {
+            if (startedActivities.remove(activity) && startedActivities.isEmpty()) setForeground(false)
+        }
+        override fun onActivityDestroyed(activity: Activity) {
+            if (startedActivities.remove(activity) && startedActivities.isEmpty()) setForeground(false)
+        }
+        override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+        override fun onActivityResumed(activity: Activity) = Unit
+        override fun onActivityPaused(activity: Activity) = Unit
+        override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+    }
+
+    private fun setForeground(value: Boolean) {
+        if (foreground.getAndSet(value) == value) return
+        if (!recording.get()) return
+        val now = SystemClock.elapsedRealtime()
+        if (value) foregroundSinceMs = now
+        else {
+            completedForegroundMs += (now - foregroundSinceMs).coerceAtLeast(0L)
+            foregroundSinceMs = 0L
+        }
+        appendEvent(Tab.SYSTEM, "APP_VISIBILITY state=${if (value) "foreground" else "background"} " +
+            "activeElapsed=${activeForegroundMs(now)}ms")
+        updateForegroundProbes()
+    }
+
+    private fun activeForegroundMs(now: Long = SystemClock.elapsedRealtime()): Long =
+        completedForegroundMs + if (foregroundSinceMs > 0L) (now - foregroundSinceMs).coerceAtLeast(0L) else 0L
+
+    private fun updateForegroundProbes() {
+        // Always reset at lifecycle boundaries, without discarding long gaps
+        // that really happened during one uninterrupted foreground interval.
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        lastFrameNs = 0L
+        resetFrameWindow()
+        sampler?.shutdownNow()
+        sampler = null
+        if (recording.get() && foreground.get()) {
+            startSampler()
+            Choreographer.getInstance().postFrameCallback(frameCallback)
+        }
+    }
+
     private val sessionSequence = AtomicLong(0L)
     private val workSequence = AtomicLong(0L)
     private val playbackIssueEvents = setOf("ERROR", "FAILED", "TIMEOUT")
@@ -181,7 +239,7 @@ object PerformanceDiagnostics {
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
-            if (!recording.get()) {
+            if (!recording.get() || !foreground.get()) {
                 lastFrameNs = 0L
                 return
             }
@@ -221,6 +279,7 @@ object PerformanceDiagnostics {
     fun install(context: Context) {
         appContext = context.applicationContext
         if (!installed.compareAndSet(false, true)) return
+        (context.applicationContext as? Application)?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
         val storedEnabled = context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_ENABLED, false)
@@ -258,13 +317,12 @@ object PerformanceDiagnostics {
         sampledPssMb = -1L
         val session = sessionSequence.incrementAndGet()
         appendEvent(Tab.SYSTEM, "RECORDING_START session=$session")
-        startSampler()
         mainHandler.post {
             if (recording.get()) {
-                lastFrameNs = 0L
-                resetFrameWindow()
-                Choreographer.getInstance().removeFrameCallback(frameCallback)
-                Choreographer.getInstance().postFrameCallback(frameCallback)
+                completedForegroundMs = 0L
+                foregroundSinceMs = if (foreground.get()) SystemClock.elapsedRealtime() else 0L
+                appendEvent(Tab.SYSTEM, "APP_VISIBILITY state=${if (foreground.get()) "foreground" else "background"} activeElapsed=0ms")
+                updateForegroundProbes()
             }
         }
     }
@@ -699,7 +757,7 @@ object PerformanceDiagnostics {
         var lastPssAt = 0L
         var cachedPssMb = 0L
         executor.scheduleWithFixedDelay({
-            if (!recording.get()) return@scheduleWithFixedDelay
+            if (!recording.get() || !foreground.get()) return@scheduleWithFixedDelay
             runCatching {
                 val nowWall = SystemClock.elapsedRealtime()
                 val nowCpu = Process.getElapsedCpuTime()
@@ -719,11 +777,13 @@ object PerformanceDiagnostics {
                 sampledPssMb = cachedPssMb
                 val pssMb = cachedPssMb
                 val rssMb = readRssKb() / 1024L
+                // An older executor may finish a blocking PSS probe after stop.
+                if (!recording.get() || !foreground.get() || sampler !== executor) return@scheduleWithFixedDelay
                 appendEvent(
                     Tab.SYSTEM,
                     "SYSTEM_SAMPLE cpu=${String.format(Locale.US, "%.1f", cpuPercent)}% " +
                         "java=$javaMb/$javaMaxMb MB native=${nativeMb}MB pss=${pssMb}MB rss=${rssMb}MB " +
-                        "threads~${Thread.activeCount()} activeScans=${activeScans.get()} " +
+                        "threads~${Thread.activeCount()} activeScans=${activeScans.get()} foreground=${foreground.get()} " +
                         "screen=${safe(currentScreen.get(), 100)}"
                 )
             }
@@ -832,6 +892,7 @@ object PerformanceDiagnostics {
             appendLine("Dropped: ${droppedEvents.get()}")
             appendLine("Active timed scans: ${activeScans.get()}")
             appendLine("Current screen: ${currentScreen.get()}")
+            appendLine("Frame/system probes: started Activity only; baseline resets across background transitions")
             appendLine("System sample interval: ${SYSTEM_SAMPLE_MS}ms")
             appendLine("PSS probe interval: ${PSS_SAMPLE_MS}ms")
             appendLine("Jank threshold: ${JANK_THRESHOLD_MS}ms")
