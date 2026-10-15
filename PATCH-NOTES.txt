@@ -1,18 +1,14 @@
-VUEO SmartSubs thin client - TV and mobile
+VUEO TV - Profile focus, delete cancel and avatar crop
 
-Apply the WORKER patch and deploy it first, then upload this APP patch to the VUEO-NEXT repository root.
-Replaces the earlier client-generated Provider - English ID patch.
+Upload this ZIP to the root of the VUEO-NEXT app repository.
+Based on the latest Kids Age Controls / Avatar Scroll Fix profile editor patch.
 
-VUEO forwards original source metadata and the addon-source setting.
-VUEO reads worker-provided language, name, provider name, MIME and displayId.
-No array-position source mapping and no client-generated AI label remain.
-The addon parser also passes displayId through unchanged, so addon-origin AI tracks use worker metadata too.
-The app retains player readiness/selection, temporary subtitle session bytes and network/response checks.
-Transport is bounded to 50 original records and 2 MiB; optional cached inline text is bounded to 512 KiB total.
-Only generated output is excluded locally to prevent feeding AI back into itself.
+- DOWN from Profile PIN goes directly to Save Changes. LEFT from Save reaches Delete Profile.
+- When Change PIN is visible it remains reachable by UP from Save, then UP returns to the PIN row.
+- Delete confirmation now opens over the existing Edit Profile screen. Cancel/Back dismisses only the dialog; unsaved name/avatar/Kids/age/PIN draft state stays composed. Focus returns to Delete Profile. Confirmed deletion closes the editor and refreshes profiles.
+- Avatar artwork is recentered and cropped to the measured usable circle of each built-in source image. Uses the same helper for the avatar grid, edit preview, profile picker and manage cards. Legacy artwork keeps its original framing. Source files and saved avatar IDs are unchanged.
+- Existing Kids settings, four-column scrolling and 1.18 focus scale are retained.
 
-Requires the existing VUEO 5 source-choice settings and displayId media model/player policy already present in prior patches.
-No player screen/profile/kids files are replaced. No YAML included.
-
-Validation: source contract reviewed against both player display paths; updated source-policy tests included.
-Android compilation and device playback could not be run here.
+Validation: reviewed focus requesters and dialog state lifetime; verified crop geometry fits inside all 32 bundled portrait circles and raster bounds; ZIP paths/CRC checked.
+Android compilation and TV remote/device visual checks were not run in this environment.
+No YAML or image assets included.

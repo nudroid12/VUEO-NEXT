@@ -63,15 +63,18 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -179,10 +182,10 @@ fun TvProfilePickerScreen(
             TvProfileEditorScreen(
                 state = editorState,
                 profileStore = profileStore,
+                deleteConfirmationOpen = deleteCandidate != null,
                 onBack = { editor = null },
                 onSaved = { refreshProfiles(); editor = null },
                 onRequestDelete = { profile ->
-                    editor = null
                     deleteCandidate = profile
                 },
             )
@@ -276,6 +279,7 @@ fun TvProfilePickerScreen(
             onConfirm = {
                 parentApprove {
                     profileStore.deleteProfile(deleting.id)
+                    editor = null
                     deleteCandidate = null
                     refreshProfiles()
                 }
@@ -436,6 +440,7 @@ private fun TvManageProfiles(
 private fun TvProfileEditorScreen(
     state: TvProfileEditorState,
     profileStore: ProfileStore,
+    deleteConfirmationOpen: Boolean,
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onRequestDelete: (VueoProfile) -> Unit,
@@ -443,6 +448,26 @@ private fun TvProfileEditorScreen(
     val profile = state.profile
     val hadPin = remember(profile?.id) { profile?.let { profileStore.hasProfilePin(it.id) } ?: false }
     val firstRequester = remember { FocusRequester() }
+    val pinRequester = remember { FocusRequester() }
+    val changePinRequester = remember { FocusRequester() }
+    val saveRequester = remember { FocusRequester() }
+    val deleteRequester = remember { FocusRequester() }
+    var restoreDeleteFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(deleteConfirmationOpen) {
+        if (deleteConfirmationOpen) {
+            restoreDeleteFocus = true
+        } else if (restoreDeleteFocus) {
+            // The editor stays composed under the dialog, including all draft fields.
+            repeat(4) {
+                withFrameNanos { }
+                if (runCatching { deleteRequester.requestFocus() }.getOrDefault(false)) {
+                    restoreDeleteFocus = false
+                    return@LaunchedEffect
+                }
+            }
+            restoreDeleteFocus = false
+        }
+    }
     val keyboardController = LocalSoftwareKeyboardController.current
     var editingName by remember(profile?.id) { mutableStateOf(false) }
     LaunchedEffect(editingName) {
@@ -641,6 +666,9 @@ private fun TvProfileEditorScreen(
                         Box {
                             TvEditorToggleRow(
                                 title = "Profile PIN",
+                                modifier = Modifier.focusRequester(pinRequester).focusProperties {
+                                    down = saveRequester
+                                },
                                 subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
                                 checked = pinEnabled,
                                 leadingIcon = Icons.Default.Lock,
@@ -671,6 +699,8 @@ private fun TvProfileEditorScreen(
                             Box {
                                 TvProfileAction(
                                     label = "Change PIN",
+                                    requester = changePinRequester,
+                                    modifier = Modifier.focusProperties { up = pinRequester; down = saveRequester },
                                     onClick = {
                                         pinError = null
                                         pinFlow = TvEditorPinFlow.VerifyChange
@@ -692,6 +722,8 @@ private fun TvProfileEditorScreen(
                             Box(modifier = Modifier.weight(1f)) {
                                 TvProfileAction(
                                     label = "Delete Profile",
+                                    requester = deleteRequester,
+                                    modifier = Modifier.focusProperties { right = saveRequester; up = pinRequester },
                                     onClick = { onRequestDelete(profile) },
                                     width = 0,
                                     fillWidth = true,
@@ -704,6 +736,11 @@ private fun TvProfileEditorScreen(
                         Box(modifier = Modifier.weight(1f)) {
                             TvProfileAction(
                                 label = if (profile == null) "Create Profile" else "Save Changes",
+                                requester = saveRequester,
+                                modifier = Modifier.focusProperties {
+                                    up = if (pinEnabled && hadPin && !removeExistingPin) changePinRequester else pinRequester
+                                    left = if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) deleteRequester else FocusRequester.Default
+                                },
                                 onClick = ::save,
                                 enabled = canSave,
                                 width = 0,
@@ -1070,6 +1107,63 @@ private fun AddProfileCard(onClick: () -> Unit) {
     }
 }
 
+// Source circles in the bundled 512px portraits are offset inside their tiles.
+// Recenter their usable inner disk so a circular UI mask cannot expose a black crescent.
+private data class AvatarArtworkCrop(val x: Float, val y: Float, val radius: Float)
+private val AvatarArtworkCrops = mapOf(
+    "avatar_boy_1" to AvatarArtworkCrop(0.600436f, 0.560951f, 0.395658f),
+    "avatar_boy_2" to AvatarArtworkCrop(0.606057f, 0.562047f, 0.390037f),
+    "avatar_boy_3" to AvatarArtworkCrop(0.495726f, 0.567697f, 0.428397f),
+    "avatar_character_1" to AvatarArtworkCrop(0.608173f, 0.590849f, 0.387920f),
+    "avatar_character_2" to AvatarArtworkCrop(0.618617f, 0.589822f, 0.377476f),
+    "avatar_character_3" to AvatarArtworkCrop(0.493224f, 0.582040f, 0.414054f),
+    "avatar_character_4" to AvatarArtworkCrop(0.521430f, 0.583089f, 0.413004f),
+    "avatar_character_5" to AvatarArtworkCrop(0.550958f, 0.545447f, 0.445136f),
+    "avatar_character_6" to AvatarArtworkCrop(0.530377f, 0.556352f, 0.439742f),
+    "avatar_character_7" to AvatarArtworkCrop(0.564759f, 0.544646f, 0.431335f),
+    "avatar_character_8" to AvatarArtworkCrop(0.570375f, 0.556027f, 0.425719f),
+    "avatar_girl_1" to AvatarArtworkCrop(0.524432f, 0.580517f, 0.415577f),
+    "avatar_girl_2" to AvatarArtworkCrop(0.547346f, 0.582259f, 0.413835f),
+    "avatar_girl_3" to AvatarArtworkCrop(0.567883f, 0.585580f, 0.410513f),
+    "avatar_malaysia_1" to AvatarArtworkCrop(0.513895f, 0.514648f, 0.481445f),
+    "avatar_malaysia_2" to AvatarArtworkCrop(0.505490f, 0.514039f, 0.482055f),
+    "avatar_malaysia_3" to AvatarArtworkCrop(0.494169f, 0.509433f, 0.486660f),
+    "avatar_malaysia_4" to AvatarArtworkCrop(0.505075f, 0.510483f, 0.485611f),
+    "avatar_malaysia_5" to AvatarArtworkCrop(0.519060f, 0.486994f, 0.477034f),
+    "avatar_malaysia_6" to AvatarArtworkCrop(0.505464f, 0.495365f, 0.490630f),
+    "avatar_malaysia_7" to AvatarArtworkCrop(0.486839f, 0.494500f, 0.482933f),
+    "avatar_malaysia_8" to AvatarArtworkCrop(0.500054f, 0.492379f, 0.488472f),
+    "avatar_man_1" to AvatarArtworkCrop(0.512729f, 0.543886f, 0.452208f),
+    "avatar_man_2" to AvatarArtworkCrop(0.535629f, 0.548497f, 0.447597f),
+    "avatar_man_3" to AvatarArtworkCrop(0.550973f, 0.545426f, 0.445121f),
+    "avatar_man_4" to AvatarArtworkCrop(0.564618f, 0.544813f, 0.431476f),
+    "avatar_man_5" to AvatarArtworkCrop(0.592563f, 0.547843f, 0.403531f),
+    "avatar_woman_1" to AvatarArtworkCrop(0.600757f, 0.549197f, 0.395336f),
+    "avatar_woman_2" to AvatarArtworkCrop(0.503470f, 0.552506f, 0.443588f),
+    "avatar_woman_3" to AvatarArtworkCrop(0.530452f, 0.556174f, 0.439920f),
+    "avatar_woman_4" to AvatarArtworkCrop(0.557371f, 0.559622f, 0.436471f),
+    "avatar_woman_5" to AvatarArtworkCrop(0.570219f, 0.556442f, 0.425875f),
+)
+
+@Composable
+private fun ProfileAvatarArtwork(avatarId: String, drawableRes: Int, description: String) {
+    val crop = AvatarArtworkCrops[avatarId]
+    Image(
+        painter = painterResource(drawableRes),
+        contentDescription = description,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+            if (crop != null) {
+                val zoom = .5f / crop.radius
+                scaleX = zoom
+                scaleY = zoom
+                translationX = (.5f - crop.x) * size.width * zoom
+                translationY = (.5f - crop.y) * size.height * zoom
+            }
+        },
+    )
+}
+
 @Composable
 private fun ProfileAvatarImage(profile: VueoProfile, size: Int) {
     val avatarDrawable = ProfileAvatarCatalog.drawableRes(profile.avatar)
@@ -1078,12 +1172,7 @@ private fun ProfileAvatarImage(profile: VueoProfile, size: Int) {
         contentAlignment = Alignment.Center,
     ) {
         if (avatarDrawable != null) {
-            Image(
-                painter = painterResource(avatarDrawable),
-                contentDescription = profile.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            ProfileAvatarArtwork(profile.avatar, avatarDrawable, profile.name)
         } else {
             Text(
                 text = profile.name.trim().firstOrNull()?.uppercase() ?: "V",
@@ -1127,12 +1216,7 @@ private fun TvAvatarChoice(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            painter = painterResource(avatar.drawableRes),
-            contentDescription = "Profile avatar",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
+        ProfileAvatarArtwork(avatar.id, avatar.drawableRes, "Profile avatar")
         if (selected) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).size(22.dp),
@@ -1221,11 +1305,12 @@ private fun TvEditorToggleRow(
     subtitle: String,
     checked: Boolean,
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(68.dp)
             .onFocusChanged { focused = it.isFocused }
@@ -1269,6 +1354,7 @@ private fun TvProfileAction(
     requester: FocusRequester? = null,
     fillWidth: Boolean = false,
     scaleOnFocus: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -1292,7 +1378,7 @@ private fun TvProfileAction(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(width.dp))
             .height(52.dp)
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
