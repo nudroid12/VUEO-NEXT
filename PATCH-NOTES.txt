@@ -1,13 +1,18 @@
-VUEO SmartSubs - Provider - English Display ID
+VUEO SmartSubs thin client - TV and mobile
 
-Apply this patch to the VUEO-NEXT app repository root after the latest VUEO 5 patches.
+Apply the WORKER patch and deploy it first, then upload this APP patch to the VUEO-NEXT repository root.
+Replaces the earlier client-generated Provider - English ID patch.
 
-TV and mobile AI subtitle ID display now uses:
-Provider Name - ID displayed on the original English subtitle card
+VUEO forwards original source metadata and the addon-source setting.
+VUEO reads worker-provided language, name, provider name, MIME and displayId.
+No array-position source mapping and no client-generated AI label remain.
+The addon parser also passes displayId through unchanged, so addon-origin AI tracks use worker metadata too.
+The app retains player readiness/selection, temporary subtitle session bytes and network/response checks.
+Transport is bounded to 50 original records and 2 MiB; optional cached inline text is bounded to 512 KiB total.
+Only generated output is excluded locally to prevent feeding AI back into itself.
 
-Uses the same PlayerTrackPolicy subtitleDisplayId and subtitleProviderLabel helpers as both players.
-Only the shared SmartSubs bridge is replaced. Existing source-choice settings and source request headers are preserved.
-Internal subtitle IDs, URLs, cache keys and worker code are unchanged. No YAML included.
+Requires the existing VUEO 5 source-choice settings and displayId media model/player policy already present in prior patches.
+No player screen/profile/kids files are replaced. No YAML included.
 
-Validation: reviewed both player display paths and patch diff; checked ZIP paths and CRC.
-Android compilation and on-device playback were not run in this environment.
+Validation: source contract reviewed against both player display paths; updated source-policy tests included.
+Android compilation and device playback could not be run here.

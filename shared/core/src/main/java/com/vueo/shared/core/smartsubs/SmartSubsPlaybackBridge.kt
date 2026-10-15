@@ -1,7 +1,6 @@
 package com.vueo.shared.core.smartsubs
 
 import com.vueo.shared.core.media.SubtitleTrack
-import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.shared.core.player.SubtitleSessionCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -40,7 +39,9 @@ object SmartSubsPlaybackBridge {
         val base = VueoSmartSubsClient.BACKEND_URL
         val configuredPath = "/c/$token/"
         val body = JSONObject().put("media", JSONObject().put("type", type).put("id", videoId))
+            .put("includeAddonSources", config.includeAddonSources)
             .put("subtitles", JSONArray().apply {
+                var inlineBytes = 0
                 sources.forEach { track ->
                     val headers = JSONObject()
                     track.headers.forEach { (name, value) ->
@@ -52,12 +53,18 @@ object SmartSubsPlaybackBridge {
                     val cachedText = SubtitleSessionCache.get(track.url)
                         ?.takeIf { it.size <= 128 * 1024 }
                         ?.toString(Charsets.UTF_8)
-                        ?.takeIf { "-->" in it }
-                    val item = JSONObject().put("id", track.id.take(256)).put("lang", "eng")
+                        ?.takeIf { "-->" in it && inlineBytes + it.toByteArray(Charsets.UTF_8).size <= 512 * 1024 }
+                    val item = JSONObject().put("id", track.id.take(256)).put("lang", track.language)
+                        .put("providerId", track.providerId)
                         .put("providerName", track.providerName.take(160))
+                        .putOpt("displayId", track.displayId)
+                        .putOpt("mimeType", track.mimeType)
                     // An already loaded English subtitle can be uploaded as text for
                     // providers that bind downloads to this device's IP/session.
-                    if (cachedText != null) item.put("text", cachedText)
+                    if (cachedText != null) {
+                        inlineBytes += cachedText.toByteArray(Charsets.UTF_8).size
+                        item.put("text", cachedText)
+                    }
                     else item.put("url", track.url).put("headers", headers)
                     put(item)
                 }
@@ -103,29 +110,21 @@ object SmartSubsPlaybackBridge {
                     if (uri.scheme != "https" || uri.host != URI(base).host || uri.port !in setOf(-1, 443) ||
                         uri.userInfo != null || uri.query != null || uri.fragment != null ||
                         !uri.rawPath.startsWith(configuredPath + "translated/") || !uri.rawPath.endsWith(".vtt")) continue
-                    val source = sources.getOrNull(size) ?: break
+                    // SmartSubs owns source mapping and presentation; never infer by order.
+                    val displayId = track.optString("displayId").takeIf { it.isNotBlank() } ?: continue
+                    val language = track.optString("lang").takeIf { it.isNotBlank() } ?: continue
+                    val name = track.optString("name").takeIf { it.isNotBlank() } ?: continue
+                    val providerName = track.optString("providerName").takeIf { it.isNotBlank() } ?: continue
                     add(SubtitleTrack(
-                        id = track.getString("id"), language = "ms", url = url,
-                        providerId = PROVIDER_ID, providerName = "VUEO x SmartSubs",
-                        name = "Malay AI",
-                        mimeType = "text/vtt",
-                        // Match the ID shown on the original English card on both players.
-                        // The raw source ID remains intact for requests and selection.
-                        displayId = PlayerTrackPolicy.subtitleDisplayId(source)?.let { sourceDisplayId ->
-                            val provider = PlayerTrackPolicy.subtitleProviderLabel(source)
-                            if (provider.isBlank()) sourceDisplayId else "$provider - $sourceDisplayId"
-                        },
-                        // Carry display metadata with the selected GET as well as
-                        // listing POST, including when older source records are reused.
-                        headers = mapOf(
-                            "X-Vueo-Provider-Name" to URLEncoder.encode(source.providerName.take(160), "UTF-8"),
-                            "X-Vueo-Subtitle-Id" to URLEncoder.encode(source.id.take(256), "UTF-8"),
-                        ),
+                        id = track.getString("id"), language = language, url = url,
+                        providerId = PROVIDER_ID, providerName = providerName,
+                        name = name,
+                        mimeType = track.optString("mimeType").takeIf { it.isNotBlank() },
+                        displayId = displayId,
                     ))
                 }
             }
             coroutineContext.ensureActive()
-            check(ai.isNotEmpty()) { "SmartSubs returned no AI tracks. Refresh subtitles to retry." }
             ai
         } finally {
             connection.disconnect()

@@ -126,6 +126,7 @@ object StremioStreamParser {
                     item.optString("name"),
                 ).takeIf { it.isNotBlank() },
                 mimeType = mimeType,
+                displayId = item.sourceText("displayId"),
             )
         }
     }

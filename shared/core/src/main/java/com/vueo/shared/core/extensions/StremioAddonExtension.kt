@@ -122,6 +122,7 @@ class StremioAddonExtension private constructor(
                 providerName = subtitle.providerName,
                 name = subtitle.name,
                 mimeType = subtitle.mimeType,
+                displayId = subtitle.displayId,
             )
         }
 
