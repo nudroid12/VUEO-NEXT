@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
@@ -475,12 +477,6 @@ private fun TvProfileEditorScreen(
                 modifier = Modifier.width(410.dp).fillMaxHeight().padding(horizontal = 6.dp),
             ) {
                 Row(modifier = Modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TvIconAction(
-                        icon = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        onClick = onBack,
-                    )
-                    Spacer(Modifier.width(14.dp))
                     Text(
                         text = if (profile == null) "Add Profile" else "Edit Profile",
                         color = Color.White,
@@ -629,33 +625,28 @@ private fun TvProfileEditorScreen(
                             )
                         }
                     }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                val canSave = name.trim().isNotBlank() && (!pinEnabled || hadPin || pendingPin?.length == 4)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TvProfileAction(
-                        label = if (profile == null) "Create Profile" else "Save Changes",
-                        onClick = ::save,
-                        enabled = canSave,
-                        width = if (profile == null || profile.id == ProfileStore.DEFAULT_PROFILE_ID) 230 else 210,
-                        primary = true,
-                    )
-
                     if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) {
                         TvProfileAction(
-                            label = "Delete",
+                            label = "Delete Profile",
                             onClick = { onRequestDelete(profile) },
                             width = 150,
+                            fillWidth = true,
                             danger = true,
                             icon = Icons.Default.Delete,
                         )
                     }
                 }
+
+                Spacer(Modifier.height(12.dp))
+                val canSave = name.trim().isNotBlank() && (!pinEnabled || hadPin || pendingPin?.length == 4)
+                TvProfileAction(
+                    label = if (profile == null) "Create Profile" else "Save Changes",
+                    onClick = ::save,
+                    enabled = canSave,
+                    width = 230,
+                    fillWidth = true,
+                    primary = true,
+                )
             }
 
             // Right pane scrolls independently so the avatar catalogue can stay large
@@ -673,22 +664,28 @@ private fun TvProfileEditorScreen(
                 }
                 Spacer(Modifier.height(10.dp))
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(8),
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp),
-                ) {
-                    items(
-                        items = ProfileAvatarCatalog.selectable,
-                        key = { it.id },
-                    ) { choice ->
-                        TvAvatarChoice(
-                            avatar = choice,
-                            selected = avatar == choice.id,
-                            onClick = { avatar = choice.id },
-                        )
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    // Seven columns put the existing 32 avatars into five rows.
+                    // Size rows from the available height so row five is visible.
+                    val avatarHeight = ((maxHeight - 52.dp) / 5).coerceIn(48.dp, 92.dp)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(7),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                    ) {
+                        items(
+                            items = ProfileAvatarCatalog.selectable,
+                            key = { it.id },
+                        ) { choice ->
+                            TvAvatarChoice(
+                                avatar = choice,
+                                selected = avatar == choice.id,
+                                height = avatarHeight,
+                                onClick = { avatar = choice.id },
+                            )
+                        }
                     }
                 }
             }
@@ -995,6 +992,7 @@ private fun TvAvatarChoice(
     avatar: ProfileAvatarSpec,
     selected: Boolean,
     onClick: () -> Unit,
+    height: Dp = 76.dp,
 ) {
     var focused by remember(avatar.id) { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -1005,7 +1003,7 @@ private fun TvAvatarChoice(
 
     Box(
         modifier = Modifier
-            .size(76.dp)
+            .fillMaxWidth().height(height)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
@@ -1153,6 +1151,7 @@ private fun TvProfileAction(
     danger: Boolean = false,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     requester: FocusRequester? = null,
+    fillWidth: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -1177,7 +1176,7 @@ private fun TvProfileAction(
 
     Row(
         modifier = Modifier
-            .width(width.dp)
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier.width(width.dp))
             .height(52.dp)
             .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
             .scale(scale)
