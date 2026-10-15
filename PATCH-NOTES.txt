@@ -1,14 +1,14 @@
-APP VUEO-NEXT — TV Edit Profile layout polish
+APP VUEO-NEXT — TV profile editor four-column avatar panel
 
-Apply to the VUEO-NEXT app repository root after the selected-avatar removal patch. No Worker changes, no new artwork, no workflow/YML files.
+Apply to VUEO-NEXT app repository root. Cumulative TvProfilePickerScreen.kt based on previous app patches; no Worker or mobile changes, no new avatar artwork, no YML.
 
-- Increase Profile name field height from 56dp to 68dp for text/label clearance.
-- Tighten preview and toggle title/description spacing, with explicit toggle text line heights.
-- Reduce editor switch visual scale and reserved footprint, retaining the full clickable row.
-- Use square avatar bounds with CircleShape crop, retaining existing artwork without stretching.
-- Calculate avatar diameter from both available width and height. Six columns / five rows for the current26 avatars; distribute row gaps so the final row bottom meets the pinned action row bottom.
-- Pin Save/Create to the shared bottom edge. When Delete is available, Delete and Save share one row, equal width and52dp height. Default profile/Create keeps a full-width action.
-- Keep avatar and editor action bounds stable on focus, using existing focus border/colors.
-- Preserve remote Back, name editing, PIN flows and delete confirmation.
+- Profile name, Kids Profile and Profile PIN use the same68dp field/row height.
+- Add ChildCare icon to Kids Profile, matching the PIN lock icon slot.
+- Retain tight title/description spacing and compact switches inside the larger rows.
+- Keep Save/Delete directly below the natural form height. Delete and Save have equal width and52dp height; Save/Create is full width when Delete is absent.
+- Measure the left form before the right pane in the same Compose layout pass. Right avatar panel ends at the same baseline as the action buttons without stretching the left form or avatar gaps.
+- Avatar catalogue is a scrollable four-column grid inside a rounded bordered panel.
+- Avatar bounds are square and cropped circular. Focus animates to1.18x with a white border. Each cell reserves enough space for the full focused size; panel padding protects edge cells.
+- Keep current26 avatar choices, remote Back behavior, keyboard handling, PIN flows and delete confirmation.
 
-Validation: Kotlin PSI syntax check passed. Layout arithmetic checked at three viewport sizes for square bounds, row fit and bottom alignment. No full Android build or TV device verification was available.
+Validation: final Kotlin PSI syntax check passed. Layout arithmetic checked for four columns,1.18x focus fitting in cells and shared panel/action baseline. Full Android compilation and TV device verification unavailable.

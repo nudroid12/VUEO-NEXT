@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
@@ -66,6 +67,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.key.Key
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -465,252 +468,281 @@ private fun TvProfileEditorScreen(
     }
 
     TvProfileBackground {
-        Row(
+        Layout(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 52.dp, end = 52.dp, top = 28.dp, bottom = 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(34.dp),
-        ) {
-            // Pin the header, profile preview and actions. Only editable rows scroll;
-            // focusing a text field must never scroll the preview under the header.
-            Column(
-                modifier = Modifier.width(410.dp).fillMaxHeight().padding(horizontal = 6.dp),
-            ) {
-                Row(modifier = Modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (profile == null) "Add Profile" else "Edit Profile",
-                        color = Color.White,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Black,
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                // Preview stays visible while focus moves through the form.
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
-                    color = PickerPanel,
-                    border = BorderStroke(1.dp, PickerStroke),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ProfileAvatarImage(
-                            profile = VueoProfile(
-                                id = profile?.id ?: "preview",
-                                name = name.ifBlank { "New profile" },
-                                avatar = avatar,
-                                isKids = isKids,
-                                createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
-                            ),
-                            size = 60,
-                        )
-                        Spacer(Modifier.width(15.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = name.ifBlank { "New profile" },
-                                color = Color.White,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(1.dp))
-                            Text(
-                                text = buildString {
-                                    append(if (isKids) "Kids profile" else "Standard profile")
-                                    if (pinEnabled) append(" • PIN")
-                                },
-                                color = PickerMuted,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(10.dp))
+            content = {
+                // Pin the header, profile preview and actions. Only editable rows scroll;
+                // focusing a text field must never scroll the preview under the header.
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.width(410.dp).padding(horizontal = 6.dp),
                 ) {
-
-                    Box {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it.take(24) },
-                            singleLine = true,
-                            readOnly = !editingName,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = {
-                                editingName = false
-                                keyboardController?.hide()
-                            }),
-                            label = { Text("Profile name") },
-                            shape = RoundedCornerShape(17.dp),
-                            modifier = Modifier.fillMaxWidth().height(68.dp)
-                                .focusRequester(firstRequester)
-                                .onFocusChanged { if (!it.isFocused) editingName = false }
-                                .onPreviewKeyEvent { event ->
-                                    if (!editingName && (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)) {
-                                        if (event.type == KeyEventType.KeyUp) editingName = true
-                                        true
-                                    } else false
-                                },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color.White,
-                                unfocusedBorderColor = PickerStroke,
-                                focusedLabelColor = Color.White,
-                                unfocusedLabelColor = PickerMuted,
-                                cursorColor = Color.White,
-                            ),
+                    Row(modifier = Modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (profile == null) "Add Profile" else "Edit Profile",
+                            color = Color.White,
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
                         )
                     }
 
-                    Box {
-                        TvEditorToggleRow(
-                            title = "Kids Profile",
-                            subtitle = "Marks this profile for age-aware controls.",
-                            checked = isKids,
-                            onClick = { isKids = !isKids },
-                        )
-                    }
+                    Spacer(Modifier.height(14.dp))
 
-                    Box {
-                        TvEditorToggleRow(
-                            title = "Profile PIN",
-                            subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
-                            checked = pinEnabled,
-                            leadingIcon = Icons.Default.Lock,
-                            onClick = {
-                                when {
-                                    pinEnabled && hadPin && !removeExistingPin -> {
-                                        pinError = null
-                                        pinFlow = TvEditorPinFlow.VerifyRemove
-                                    }
-                                    pinEnabled -> {
-                                        pinEnabled = false
-                                        pendingPin = null
-                                    }
-                                    hadPin && removeExistingPin -> {
-                                        removeExistingPin = false
-                                        pinEnabled = true
-                                    }
-                                    else -> {
-                                        pinError = null
-                                        pinFlow = TvEditorPinFlow.SetFirst
-                                    }
-                                }
-                            },
-                        )
-                    }
-
-                    if (pinEnabled && hadPin && !removeExistingPin) {
-                        Box {
-                            TvProfileAction(
-                                label = "Change PIN",
-                                onClick = {
-                                    pinError = null
-                                    pinFlow = TvEditorPinFlow.VerifyChange
-                                },
-                                width = 180,
-                            )
-                        }
-                    }
-
-                }
-
-                Spacer(Modifier.height(12.dp))
-                val canSave = name.trim().isNotBlank() && (!pinEnabled || hadPin || pendingPin?.length == 4)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            TvProfileAction(
-                                label = "Delete Profile",
-                                onClick = { onRequestDelete(profile) },
-                                width = 0,
-                                fillWidth = true,
-                                scaleOnFocus = false,
-                                danger = true,
-                                icon = Icons.Default.Delete,
-                            )
-                        }
-                    }
-                    Box(modifier = Modifier.weight(1f)) {
-                        TvProfileAction(
-                            label = if (profile == null) "Create Profile" else "Save Changes",
-                            onClick = ::save,
-                            enabled = canSave,
-                            width = 0,
-                            fillWidth = true,
-                            scaleOnFocus = false,
-                            primary = true,
-                        )
-                    }
-                }
-            }
-
-            // Both panes share the same bottom edge. Fit circular avatars into this
-            // viewport so the final row aligns with the pinned Save/Delete actions.
-            Column(
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(horizontal = 6.dp),
-            ) {
-                Box(modifier = Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
-                    Text(
-                        text = "Choose an avatar",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Black,
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val columns = 6
-                    val rows = (ProfileAvatarCatalog.selectable.size + columns - 1) / columns
-                    val topInset = 4.dp
-                    val minimumGap = 8.dp
-                    val usableHeight = (maxHeight - topInset).coerceAtLeast(0.dp)
-                    val avatarSize = minOf(
-                        (maxWidth - 12.dp * (columns - 1)) / columns,
-                        (usableHeight - minimumGap * (rows - 1)) / rows,
-                    ).coerceAtLeast(1.dp)
-                    val rowGap = if (rows > 1) {
-                        ((usableHeight - avatarSize * rows) / (rows - 1)).coerceAtLeast(0.dp)
-                    } else 0.dp
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(columns),
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(rowGap),
-                        contentPadding = PaddingValues(top = topInset),
+                    // Preview stays visible while focus moves through the form.
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(17.dp),
+                        color = PickerPanel,
+                        border = BorderStroke(1.dp, PickerStroke),
                     ) {
-                        items(
-                            items = ProfileAvatarCatalog.selectable,
-                            key = { it.id },
-                        ) { choice ->
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                TvAvatarChoice(
-                                    avatar = choice,
-                                    selected = avatar == choice.id,
-                                    size = avatarSize,
-                                    onClick = { avatar = choice.id },
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ProfileAvatarImage(
+                                profile = VueoProfile(
+                                    id = profile?.id ?: "preview",
+                                    name = name.ifBlank { "New profile" },
+                                    avatar = avatar,
+                                    isKids = isKids,
+                                    createdAtEpochMs = profile?.createdAtEpochMs ?: 0L,
+                                ),
+                                size = 60,
+                            )
+                            Spacer(Modifier.width(15.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = name.ifBlank { "New profile" },
+                                    color = Color.White,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(Modifier.height(1.dp))
+                                Text(
+                                    text = buildString {
+                                        append(if (isKids) "Kids profile" else "Standard profile")
+                                        if (pinEnabled) append(" • PIN")
+                                    },
+                                    color = PickerMuted,
+                                    fontSize = 12.sp,
                                 )
                             }
                         }
                     }
+
+                    Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+
+                        Box {
+                            OutlinedTextField(
+                                value = name,
+                                onValueChange = { name = it.take(24) },
+                                singleLine = true,
+                                readOnly = !editingName,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    editingName = false
+                                    keyboardController?.hide()
+                                }),
+                                label = { Text("Profile name") },
+                                shape = RoundedCornerShape(17.dp),
+                                modifier = Modifier.fillMaxWidth().height(68.dp)
+                                    .focusRequester(firstRequester)
+                                    .onFocusChanged { if (!it.isFocused) editingName = false }
+                                    .onPreviewKeyEvent { event ->
+                                        if (!editingName && (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)) {
+                                            if (event.type == KeyEventType.KeyUp) editingName = true
+                                            true
+                                        } else false
+                                    },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color.White,
+                                    unfocusedBorderColor = PickerStroke,
+                                    focusedLabelColor = Color.White,
+                                    unfocusedLabelColor = PickerMuted,
+                                    cursorColor = Color.White,
+                                ),
+                            )
+                        }
+
+                        Box {
+                            TvEditorToggleRow(
+                                title = "Kids Profile",
+                                subtitle = "Marks this profile for age-aware controls.",
+                                checked = isKids,
+                                leadingIcon = Icons.Default.ChildCare,
+                                onClick = { isKids = !isKids },
+                            )
+                        }
+
+                        Box {
+                            TvEditorToggleRow(
+                                title = "Profile PIN",
+                                subtitle = if (pinEnabled) "A 4-digit PIN is required to open this profile." else "Protect this profile with a 4-digit PIN.",
+                                checked = pinEnabled,
+                                leadingIcon = Icons.Default.Lock,
+                                onClick = {
+                                    when {
+                                        pinEnabled && hadPin && !removeExistingPin -> {
+                                            pinError = null
+                                            pinFlow = TvEditorPinFlow.VerifyRemove
+                                        }
+                                        pinEnabled -> {
+                                            pinEnabled = false
+                                            pendingPin = null
+                                        }
+                                        hadPin && removeExistingPin -> {
+                                            removeExistingPin = false
+                                            pinEnabled = true
+                                        }
+                                        else -> {
+                                            pinError = null
+                                            pinFlow = TvEditorPinFlow.SetFirst
+                                        }
+                                    }
+                                },
+                            )
+                        }
+
+                        if (pinEnabled && hadPin && !removeExistingPin) {
+                            Box {
+                                TvProfileAction(
+                                    label = "Change PIN",
+                                    onClick = {
+                                        pinError = null
+                                        pinFlow = TvEditorPinFlow.VerifyChange
+                                    },
+                                    width = 180,
+                                )
+                            }
+                        }
+
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    val canSave = name.trim().isNotBlank() && (!pinEnabled || hadPin || pendingPin?.length == 4)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (profile != null && profile.id != ProfileStore.DEFAULT_PROFILE_ID) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                TvProfileAction(
+                                    label = "Delete Profile",
+                                    onClick = { onRequestDelete(profile) },
+                                    width = 0,
+                                    fillWidth = true,
+                                    scaleOnFocus = false,
+                                    danger = true,
+                                    icon = Icons.Default.Delete,
+                                )
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            TvProfileAction(
+                                label = if (profile == null) "Create Profile" else "Save Changes",
+                                onClick = ::save,
+                                enabled = canSave,
+                                width = 0,
+                                fillWidth = true,
+                                scaleOnFocus = false,
+                                primary = true,
+                            )
+                        }
+                    }
                 }
+
+                // The grid panel follows the measured form height; it never stretches
+                // the form or the gaps between avatars to reach the screen bottom.
+                Column(
+                    modifier = Modifier.fillMaxHeight().padding(horizontal = 6.dp),
+                ) {
+                    Box(modifier = Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
+                        Text(
+                            text = "Choose an avatar",
+                            color = Color.White,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        shape = RoundedCornerShape(17.dp),
+                        color = PickerPanel,
+                        border = BorderStroke(1.dp, PickerStroke),
+                    ) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val columns = 4
+                            val inset = 12.dp
+                            val gap = 12.dp
+                            val cellSize = ((maxWidth - inset * 2 - gap * (columns - 1)) / columns)
+                                .coerceAtLeast(1.dp)
+                            // Reserve the full 1.18x focused diameter inside every cell.
+                            // Scaling only changes drawing, never grid measurement.
+                            val avatarSize = cellSize / 1.18f
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(columns),
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(gap),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(inset),
+                            ) {
+                                items(
+                                    items = ProfileAvatarCatalog.selectable,
+                                    key = { it.id },
+                                ) { choice ->
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().height(cellSize),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        TvAvatarChoice(
+                                            avatar = choice,
+                                            selected = avatar == choice.id,
+                                            size = avatarSize,
+                                            onClick = { avatar = choice.id },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        ) { panes, constraints ->
+            val leftWidth = 410.dp.roundToPx()
+            val gap = 34.dp.roundToPx()
+            val left = panes[0].measure(
+                Constraints(
+                    minWidth = leftWidth,
+                    maxWidth = leftWidth,
+                    maxHeight = constraints.maxHeight,
+                )
+            )
+            // Measure the form first, then give the scrollable panel exactly its
+            // height in this same layout pass. No delayed size-state feedback.
+            val right = panes[1].measure(
+                Constraints.fixed(
+                    width = (constraints.maxWidth - leftWidth - gap).coerceAtLeast(0),
+                    height = left.height,
+                )
+            )
+            layout(constraints.maxWidth, constraints.maxHeight) {
+                left.placeRelative(0, 0)
+                right.placeRelative(leftWidth + gap, 0)
             }
         }
     }
@@ -1018,11 +1050,16 @@ private fun TvAvatarChoice(
     size: Dp = 76.dp,
 ) {
     var focused by remember(avatar.id) { mutableStateOf(false) }
-
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.18f else 1f,
+        animationSpec = tvFocusSpec(focused),
+        label = "profileEditorAvatarScale",
+    )
 
     Box(
         modifier = Modifier
             .size(size)
+            .scale(scale)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .clip(CircleShape)
@@ -1137,6 +1174,7 @@ private fun TvEditorToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(68.dp)
             .onFocusChanged { focused = it.isFocused }
             .background(if (focused) PickerPanelRaised else PickerPanel, RoundedCornerShape(17.dp))
             .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else PickerStroke, RoundedCornerShape(17.dp))
