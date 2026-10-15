@@ -47,4 +47,24 @@ class SmartSubsSourcePolicyTest {
         assertEquals(2, SmartSubsSourcePolicy.eligibleSources(candidates, true).size)
         assertEquals(listOf(plugin), SmartSubsSourcePolicy.eligibleSources(candidates, false))
     }
+
+    @Test fun allSourcesPrioritizesPluginsAndFillsRemainingSlotsWithAddons() {
+        val addons = (1..6).map { track("addon-$it", "addon") }
+        val plugins = (1..2).map { track("plugin-$it", "plugin:repo:anime") }
+        val input = listOf(addons[0], plugins[0], addons[1], plugins[1]) + addons.drop(2)
+        assertEquals(plugins + addons.take(3), SmartSubsSourcePolicy.eligibleSources(input, true))
+    }
+
+    @Test fun fivePluginsLeaveNoSlotsForAddons() {
+        val addons = (1..6).map { track("addon-$it", "addon") }
+        val plugins = (1..6).map { track("plugin-$it", "plugin:repo:anime") }
+        assertEquals(plugins.take(5), SmartSubsSourcePolicy.eligibleSources(addons + plugins, true))
+    }
+
+    @Test fun pluginOwnsDuplicateUrlEvenWhenAddonArrivesFirst() {
+        val addon = track("addon", "addon")
+        val plugin = track("plugin", "plugin:repo:anime", url = addon.url)
+        val otherAddon = track("other-addon", "addon")
+        assertEquals(listOf(plugin, otherAddon), SmartSubsSourcePolicy.eligibleSources(listOf(addon, otherAddon, plugin), true))
+    }
 }

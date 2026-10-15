@@ -1,13 +1,10 @@
-APP VUEO-NEXT — TV profile editor layout
+APP VUEO-NEXT — SmartSubs plugin-first candidates (TV + Mobile)
 
-Apply to the VUEO-NEXT app repository, not the SmartSubs Worker repository.
-This patch contains the cumulative TV profile editor changes in TvProfilePickerScreen.kt.
+Apply to VUEO-NEXT app repository. Requires the earlier Gemini Subtitle Source Choice patch. No Worker changes.
 
-Changes:
-- Remove the top Back icon from the TV profile editor. Remote Back remains supported.
-- Arrange the existing 32 avatars in seven columns and five rows, sized to available height.
-- Make Save Changes / Create Profile fill the left pane width.
-- Keep Delete Profile available inside the form for non-default profiles.
+All sources now prioritizes eligible provider plugin English subtitles, then fills remaining slots with addon English subtitles, up to five unique URLs total. Original order within each group is preserved. Plugin metadata wins if a URL exists in both groups.
+Provider plugins only mode and existing AI/language/format/URL exclusions remain unchanged.
+Only the selected AI track starts translation, as before. Refresh subtitles or reopen playback to rebuild candidates.
 
-Validation: Kotlin PSI syntax check passed. Android compilation and TV device verification were not available.
+Validation: actual policy and dependencies compiled; all 8 JVM unit tests passed. Full Android build and device testing unavailable.
 No workflow/YML files included.

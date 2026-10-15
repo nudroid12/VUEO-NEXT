@@ -17,6 +17,9 @@ object SmartSubsSourcePolicy {
                 SubtitleFormatPolicy.detect(track.url, track.mimeType) in setOf(SubtitleFormat.SUBRIP, SubtitleFormat.WEBVTT) &&
                 isPublicSource(track.url)
         }
+        // Stable ordering keeps each source group's original order. Prioritize
+        // plugins before deduplication so they also own shared URLs.
+        .sortedBy { if (it.providerId.startsWith("plugin:")) 0 else 1 }
         .distinctBy { it.url }
         .take(5)
 
