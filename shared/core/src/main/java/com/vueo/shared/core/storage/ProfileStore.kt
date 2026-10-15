@@ -177,12 +177,7 @@ class ProfileStore(
                     .randomUUID()
                     .toString(),
                 name = cleanName,
-                avatar =
-                    avatar
-                        .takeIf {
-                            it.isNotBlank()
-                        }
-                        ?: DEFAULT_AVATAR,
+                avatar = ProfileAvatarCatalog.resolveId(avatar.ifBlank { DEFAULT_AVATAR }),
                 isKids = isKids,
                 createdAtEpochMs =
                     System.currentTimeMillis(),
@@ -236,12 +231,7 @@ class ProfileStore(
         current[index] =
             existing.copy(
                 name = cleanName,
-                avatar =
-                    avatar
-                        .takeIf {
-                            it.isNotBlank()
-                        }
-                        ?: DEFAULT_AVATAR,
+                avatar = ProfileAvatarCatalog.resolveId(avatar.ifBlank { DEFAULT_AVATAR }),
                 isKids = isKids,
             )
 
@@ -501,7 +491,7 @@ class ProfileStore(
                                     DEFAULT_AVATAR,
                                 ).ifBlank {
                                     DEFAULT_AVATAR
-                                },
+                                }.let(ProfileAvatarCatalog::resolveId),
                             isKids =
                                 json.optBoolean(
                                     "isKids",

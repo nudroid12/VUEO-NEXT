@@ -29,8 +29,6 @@ object ProfileAvatarCatalog {
         listOf(
             ProfileAvatarSpec("avatar_man_1", R.drawable.avatar_man_1, ProfileAvatarCategory.ADULTS),
             ProfileAvatarSpec("avatar_man_2", R.drawable.avatar_man_2, ProfileAvatarCategory.ADULTS),
-            ProfileAvatarSpec("avatar_man_3", R.drawable.avatar_man_3, ProfileAvatarCategory.ADULTS),
-            ProfileAvatarSpec("avatar_man_4", R.drawable.avatar_man_4, ProfileAvatarCategory.ADULTS),
             ProfileAvatarSpec("avatar_man_5", R.drawable.avatar_man_5, ProfileAvatarCategory.ADULTS),
             ProfileAvatarSpec("avatar_woman_1", R.drawable.avatar_woman_1, ProfileAvatarCategory.ADULTS),
             ProfileAvatarSpec("avatar_woman_2", R.drawable.avatar_woman_2, ProfileAvatarCategory.ADULTS),
@@ -47,10 +45,6 @@ object ProfileAvatarCatalog {
             ProfileAvatarSpec("avatar_character_2", R.drawable.avatar_character_2, ProfileAvatarCategory.CHARACTERS),
             ProfileAvatarSpec("avatar_character_3", R.drawable.avatar_character_3, ProfileAvatarCategory.CHARACTERS),
             ProfileAvatarSpec("avatar_character_4", R.drawable.avatar_character_4, ProfileAvatarCategory.CHARACTERS),
-            ProfileAvatarSpec("avatar_character_5", R.drawable.avatar_character_5, ProfileAvatarCategory.CHARACTERS),
-            ProfileAvatarSpec("avatar_character_6", R.drawable.avatar_character_6, ProfileAvatarCategory.CHARACTERS),
-            ProfileAvatarSpec("avatar_character_7", R.drawable.avatar_character_7, ProfileAvatarCategory.CHARACTERS),
-            ProfileAvatarSpec("avatar_character_8", R.drawable.avatar_character_8, ProfileAvatarCategory.CHARACTERS),
             ProfileAvatarSpec("avatar_malaysia_1", R.drawable.avatar_malaysia_1, ProfileAvatarCategory.MALAYSIA),
             ProfileAvatarSpec("avatar_malaysia_2", R.drawable.avatar_malaysia_2, ProfileAvatarCategory.MALAYSIA),
             ProfileAvatarSpec("avatar_malaysia_3", R.drawable.avatar_malaysia_3, ProfileAvatarCategory.MALAYSIA),
@@ -61,21 +55,29 @@ object ProfileAvatarCatalog {
             ProfileAvatarSpec("avatar_malaysia_8", R.drawable.avatar_malaysia_8, ProfileAvatarCategory.MALAYSIA),
         )
 
-    val legacy: List<ProfileAvatarSpec> =
-        listOf(
-            ProfileAvatarSpec("avatar_vueo_1", R.drawable.avatar_vueo_1, ProfileAvatarCategory.LEGACY),
-            ProfileAvatarSpec("avatar_vueo_2", R.drawable.avatar_vueo_2, ProfileAvatarCategory.LEGACY),
-            ProfileAvatarSpec("avatar_vueo_3", R.drawable.avatar_vueo_3, ProfileAvatarCategory.LEGACY),
-            ProfileAvatarSpec("avatar_vueo_4", R.drawable.avatar_vueo_4, ProfileAvatarCategory.LEGACY),
-        )
+    val all: List<ProfileAvatarSpec> = selectable
 
-    val all: List<ProfileAvatarSpec> = selectable + legacy
+    // Keep stored/synced profiles usable after their old artwork is removed.
+    private val retiredIds = mapOf(
+        "avatar_man_3" to DEFAULT_ID,
+        "avatar_man_4" to DEFAULT_ID,
+        "avatar_character_5" to DEFAULT_ID,
+        "avatar_character_6" to "avatar_woman_3",
+        "avatar_character_7" to DEFAULT_ID,
+        "avatar_character_8" to "avatar_woman_2",
+        "avatar_vueo_1" to DEFAULT_ID,
+        "avatar_vueo_2" to DEFAULT_ID,
+        "avatar_vueo_3" to DEFAULT_ID,
+        "avatar_vueo_4" to DEFAULT_ID,
+    )
+
+    fun resolveId(id: String): String = retiredIds[id] ?: id
 
     private val byId: Map<String, ProfileAvatarSpec> = all.associateBy(ProfileAvatarSpec::id)
 
-    fun find(id: String): ProfileAvatarSpec? = byId[id]
+    fun find(id: String): ProfileAvatarSpec? = byId[resolveId(id)]
 
-    fun drawableRes(id: String): Int? = byId[id]?.drawableRes
+    fun drawableRes(id: String): Int? = byId[resolveId(id)]?.drawableRes
 
-    fun isBuiltIn(id: String): Boolean = byId.containsKey(id)
+    fun isBuiltIn(id: String): Boolean = byId.containsKey(resolveId(id))
 }

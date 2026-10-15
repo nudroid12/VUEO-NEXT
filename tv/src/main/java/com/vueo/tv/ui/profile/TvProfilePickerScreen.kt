@@ -665,11 +665,11 @@ private fun TvProfileEditorScreen(
                 Spacer(Modifier.height(10.dp))
 
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    // Seven columns put the existing 32 avatars into five rows.
+                    // Six columns put the remaining 26 avatars into five rows.
                     // Size rows from the available height so row five is visible.
                     val avatarHeight = ((maxHeight - 52.dp) / 5).coerceIn(48.dp, 92.dp)
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(7),
+                        columns = GridCells.Fixed(6),
                         modifier = Modifier.fillMaxSize(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),

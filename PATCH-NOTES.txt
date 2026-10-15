@@ -1,10 +1,17 @@
-APP VUEO-NEXT — SmartSubs plugin-first candidates (TV + Mobile)
+APP VUEO-NEXT — Selected avatar removal (TV + Mobile)
 
-Apply to VUEO-NEXT app repository. Requires the earlier Gemini Subtitle Source Choice patch. No Worker changes.
+Upload this ZIP to the VUEO-NEXT app repository root using the existing Apply ZIP Patch workflow. No manual file deletion is required. The existing workflow handles .vueo-delete-files.txt; no YML changes included.
 
-All sources now prioritizes eligible provider plugin English subtitles, then fills remaining slots with addon English subtitles, up to five unique URLs total. Original order within each group is preserved. Plugin metadata wins if a URL exists in both groups.
-Provider plugins only mode and existing AI/language/format/URL exclusions remain unchanged.
-Only the selected AI track starts translation, as before. Refresh subtitles or reopen playback to rebuild candidates.
+Removed from the numbered review sheet: 03, 04, 21–24, 33–36.
+26 selectable avatars remain. The TV grid uses six columns and five rows.
+Mobile now uses the shared avatar catalogue so both apps offer the same choices.
+The deletion manifest removes exactly 20 retired shared/mobile WebP files.
 
-Validation: actual policy and dependencies compiled; all 8 JVM unit tests passed. Full Android build and device testing unavailable.
-No workflow/YML files included.
+Stored/synced retired IDs resolve to replacements:
+man_3, man_4, character_5, character_7, vueo_1–4 -> man_1
+character_6 -> woman_3
+character_8 -> woman_2
+Custom/local photos and retained avatar IDs remain unchanged.
+
+Includes the cumulative TV profile editor file, preserving prior Back-icon removal, full-width Save and layout fixes.
+Validation: 3 catalogue/replacement JVM tests passed, using a generated resource-ID stub. All four changed production Kotlin files passed PSI syntax checks. All retained drawable references and deletion paths verified. No full Android build or device verification.
