@@ -1,12 +1,17 @@
-APP PATCH — apply to VUEO-NEXT repository root only. TV profile editor only.
-Remove the description below Choose an avatar.
-Use common left-pane horizontal inset so preview, name, toggle cards and actions
-share their left/right edges. Match rounded corners on profile cards/name field.
-Reserve the same icon column for Kids Profile and Profile PIN, aligning titles and
-descriptions; switch alignment and compact row heights remain shared.
-Allow form body to wrap when it fits so Save Changes sits closer to the form.
-Both pane headers use a 48dp slot; first avatar row aligns with preview top, with
-small grid inset retained for focus paint. Existing name OK-to-edit behavior and
-pinned preview remain. Earlier Switch Profiles routing fix is in a separate file
-and is not overwritten by this patch. Mobile/worker untouched. No YML.
-Validation: Kotlin PSI syntax check passed; Android build and TV visual QA unavailable.
+APP PATCH — VUEO-NEXT repository root only. TV + Mobile. No worker or YML.
+Gemini > Subtitle sources:
+- Provider plugins only (default for existing and new installations).
+- All sources (includes addon English subtitles, including SmartSubsV2 English).
+Preference persists locally; account API-key sync does not copy this preference.
+Changing source scope does not clear Gemini key, session or translation cache.
+Both preflight eligibility and actual discovery use the saved source scope.
+English SRT/VTT, public HTTPS, URL dedupe and maximum-five limit remain unchanged.
+Own/generated AI tracks (including wrapped gemini-ai IDs) are never candidates,
+even if mislabeled English. No downloads/translation during eligibility filtering.
+Translation still begins only when a Malay AI track is selected.
+Refresh subtitle choices or reopen playback after changing the setting.
+Prior source display metadata and generated-track attachment fixes retained.
+
+Validation: 5 JVM candidate-policy tests pass (default, all sources, AI exclusion,
+format/public-URL rules, dedupe/cap, switch back). All 7 edited production Kotlin
+files parsed successfully. Full Android build/device UI not tested here.

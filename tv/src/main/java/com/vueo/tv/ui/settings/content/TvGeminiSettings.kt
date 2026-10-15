@@ -102,13 +102,27 @@ internal fun TvGeminiEnhancementSettings(
         ))
         add(toggleEntry(
             id = "smartsubs-enabled", title = "Use Gemini for SmartSubs",
-            subtitle = "Select a Malay AI track in the player to translate provider English subtitles.",
+            subtitle = "Select a Malay AI track in the player to translate eligible English subtitles.",
             checked = config.enabled && config.connected,
             enabled = config.connected && !testing,
         ) {
             try { store.setEnabled(it); config = store.configuration() }
             catch (_: Exception) { status = "Unable to save securely on this TV" }
         }.copy(section = "SMARTSUBS"))
+        fun changeSourceScope() {
+            if (!testing) {
+                try {
+                    store.setIncludeAddonSources(!config.includeAddonSources)
+                    config = store.configuration()
+                } catch (_: Exception) { diagnoseMessage = "Unable to save source choice on this TV" }
+            }
+        }
+        add(choiceEntry(
+            id = "smartsubs-source-scope", title = "Subtitle sources",
+            subtitle = "All sources includes addons. English SRT/VTT only, up to 5 choices. Translates when selected.",
+            value = if (config.includeAddonSources) "All sources" else "Provider plugins only",
+            previous = ::changeSourceScope, next = ::changeSourceScope,
+        ).copy(section = "SMARTSUBS", enabled = !testing))
         add(TvSettingsEntry(
             id = "smartsubs-diagnose", title = "Open Diagnose",
             subtitle = diagnoseMessage ?: "Open this TV session's subtitle and translation diagnostics in a browser.",
@@ -124,6 +138,6 @@ internal fun TvGeminiEnhancementSettings(
         title = "Gemini", subtitle = "Your own API key for VUEO SmartSubs.",
         entries = entries, onNavigate = onNavigate, onProfile = onProfile, onBack = onBack,
         topLabel = "Enhancements",
-        footer = "Account sync shares your API key. The session and SmartSubs ON/OFF stay on this TV. Select a Malay AI track in the player to translate provider English subtitles.",
+        footer = "Account sync shares your API key. The session, SmartSubs ON/OFF and subtitle source choice stay on this TV. Select a Malay AI track in the player to translate eligible English subtitles.",
     )
 }

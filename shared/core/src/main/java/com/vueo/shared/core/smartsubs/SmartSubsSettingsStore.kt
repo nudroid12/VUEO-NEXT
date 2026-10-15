@@ -16,6 +16,7 @@ class SmartSubsSettingsStore(context: Context) {
         val token: String = "",
         val expiresAt: Long = 0,
         val model: String = "",
+        val includeAddonSources: Boolean = false,
     ) {
         val connected: Boolean get() = apiKey.isNotBlank() && backendUrl.isNotBlank() &&
             token.isNotBlank() && expiresAt > System.currentTimeMillis()
@@ -28,7 +29,8 @@ class SmartSubsSettingsStore(context: Context) {
             enabled = sameBackend && value.optBoolean("enabled"),
             token = if (sameBackend) value.optString("token") else "",
             expiresAt = if (sameBackend) value.optLong("expiresAt") else 0,
-            model = if (sameBackend) value.optString("model") else "")
+            model = if (sameBackend) value.optString("model") else "",
+            includeAddonSources = value.optBoolean("includeAddonSources"))
     }.getOrDefault(Configuration()) }
 
     internal fun apiKeyForSync(): String = synchronized(LOCK) { file.read()?.optString("apiKey").orEmpty() }
@@ -76,6 +78,12 @@ class SmartSubsSettingsStore(context: Context) {
         val value = file.read() ?: JSONObject()
         val valid = value.optString("backendUrl") == VueoSmartSubsClient.BACKEND_URL && value.optString("token").isNotBlank() && value.optLong("expiresAt") > System.currentTimeMillis()
         value.put("enabled", enabled && valid)
+        file.write(value)
+    }
+
+    fun setIncludeAddonSources(include: Boolean) = synchronized(LOCK) {
+        val value = file.read() ?: JSONObject()
+        value.put("includeAddonSources", include)
         file.write(value)
     }
 

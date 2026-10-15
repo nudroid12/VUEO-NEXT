@@ -160,7 +160,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         item {
             VueoSettingsToggleCard(
                 title = "Use Gemini for SmartSubs",
-                subtitle = "Add Malay AI choices from provider English subtitles. Translation starts when an AI track is selected.",
+                subtitle = "Add Malay AI choices from eligible English subtitles. Translation starts when an AI track is selected.",
                 checked = config.enabled && config.connected && !edited,
                 enabled = config.connected && !edited && !testing,
                 onCheckedChange = {
@@ -171,6 +171,25 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
                     } else status = "Save settings and test connection first"
                 },
             )
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = VueoPalette.Surface)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text("Subtitle sources", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Choose which English subtitles can become Malay AI choices.", color = VueoPalette.Muted, fontSize = 12.sp)
+                    listOf(false to "Provider plugins only", true to "All sources").forEach { (includeAddons, label) ->
+                        VueoChoiceRow(label = label, selected = config.includeAddonSources == includeAddons, onClick = {
+                            if (!testing) {
+                                try {
+                                    store.setIncludeAddonSources(includeAddons)
+                                    config = store.configuration()
+                                } catch (_: Exception) { status = "Unable to save securely on this device" }
+                            }
+                        })
+                    }
+                    Text("All sources includes addons. English SRT/VTT only, up to 5 choices. Translates when selected.", color = VueoPalette.Muted, fontSize = 12.sp)
+                }
+            }
         }
         item {
             OutlinedButton(
@@ -186,7 +205,7 @@ internal fun GeminiEnhancementSettingsScreen(onBack: () -> Unit) {
         item {
             VueoInfoCard(
                 title = "On this device",
-                text = "Account sync shares your API key. The session and SmartSubs ON/OFF stay on this device. Clear the API key and save to remove it. Select a Malay AI track in the player to translate provider English subtitles.",
+                text = "Account sync shares your API key. The session, SmartSubs ON/OFF and subtitle source choice stay on this device. Clear the API key and save to remove it. Select a Malay AI track in the player to translate eligible English subtitles.",
             )
         }
     }

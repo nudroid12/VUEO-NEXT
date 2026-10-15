@@ -1,9 +1,6 @@
 package com.vueo.shared.core.smartsubs
 
-import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.shared.core.media.SubtitleTrack
-import com.vueo.shared.core.player.SubtitleFormat
-import com.vueo.shared.core.player.SubtitleFormatPolicy
 import com.vueo.shared.core.player.SubtitleSessionCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -20,25 +17,8 @@ object SmartSubsPlaybackBridge {
     const val PROVIDER_ID = "vueo-smartsubs-ai"
     private val allowedHeaders = setOf("referer", "origin", "user-agent", "authorization", "cookie", "accept", "accept-language")
 
-    fun eligibleSources(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks
-        .filter { track ->
-            // Only provider-plugin originals may feed VUEO SmartSubs. Addon
-            // English tracks (including SmartSubsV2) stay playable independently.
-            track.providerId.startsWith("plugin:") && LanguagePolicy.canonicalCode(track.language) == "en" &&
-                SubtitleFormatPolicy.detect(track.url, track.mimeType) in setOf(SubtitleFormat.SUBRIP, SubtitleFormat.WEBVTT) &&
-                isPublicSource(track.url)
-        }
-        .distinctBy { it.url }
-        .take(5)
-
-    private fun isPublicSource(url: String): Boolean = runCatching {
-        val uri = URI(url)
-        val host = uri.host?.lowercase().orEmpty()
-        uri.scheme.equals("https", true) && uri.userInfo == null && uri.fragment == null &&
-            uri.port in setOf(-1, 443) && '.' in host && ':' !in host &&
-            !Regex("\\d+(\\.\\d+){3}").matches(host) &&
-            !setOf("localhost", "local", "internal", "lan", "invalid", "test").any { host == it || host.endsWith(".$it") }
-    }.getOrDefault(false)
+    fun eligibleSources(tracks: List<SubtitleTrack>, includeAddonSources: Boolean = false): List<SubtitleTrack> =
+        SmartSubsSourcePolicy.eligibleSources(tracks, includeAddonSources)
 
     suspend fun discover(
         config: SmartSubsSettingsStore.Configuration,
@@ -47,7 +27,7 @@ object SmartSubsPlaybackBridge {
         tracks: List<SubtitleTrack>,
     ): List<SubtitleTrack> = withContext(Dispatchers.IO) {
         if (!config.enabled || !config.connected) return@withContext emptyList()
-        val sources = eligibleSources(tracks)
+        val sources = eligibleSources(tracks, config.includeAddonSources)
         if (sources.isEmpty()) return@withContext emptyList()
         val type = when (mediaType.lowercase()) {
             "movie" -> "movie"

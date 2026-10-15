@@ -474,7 +474,7 @@ internal fun PlayerScreen(
             smartSubsMessage = "SmartSubs session needs renewal. Test Connection in Gemini settings."
             return@LaunchedEffect
         }
-        val candidates = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.eligibleSources(providerSubtitles)
+        val candidates = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.eligibleSources(providerSubtitles, config.includeAddonSources)
         if (candidates.isEmpty()) {
             smartSubsTracks = emptyList(); smartSubsRefreshing = false
             if (providerSubtitles.any { com.vueo.shared.core.language.LanguagePolicy.canonicalCode(it.language) == "en" }) {
