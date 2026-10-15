@@ -1,17 +1,8 @@
-APP PATCH — VUEO-NEXT repository root ONLY. TV only; no worker or YML files.
-Fix shared entity-results poster navigation used by cast/person, production company
-and network result pages. Changes are confined to TvEntityResultsScreen.kt.
-
-Stable FocusRequesters keyed by media identity survive partial discovery/sorting.
-Focus restoration is entry/data handoff only, no longer triggered after each poster
-focus change. Confirm requestFocus return value rather than exception-free invocation.
-Sort-tab Down scrolls/composes the first poster before transferring actual focus.
-Poster D-pad navigation attaches offscreen targets before requesting focus; Up from
-first row returns to selected sort tab. Short final rows select nearest remaining
-poster. Lazy cell clickable is the single focus target (remove redundant focusable).
-Inactive screens stop focus jobs; loading/empty pages retain a usable sort focus.
-
-Validation: Kotlin compiler PSI parsed the edited file without syntax errors.
-No full Android build, Compose type checking, or device/remote navigation test was
-available. Reproduce on TV: person/company/network -> Down into posters; move across
-rows/offscreen and partial last row; Up to sort; change sort; open poster and Back.
+APP PATCH: VUEO-NEXT repository root only. TV and Mobile. No YML or worker change.
+Remove Title/Episode verification rows and permanent unverified Playback row.
+Remove absence-of-player-evidence placeholders and repetitive link-verification prose.
+Show source count and existing slow response note. Actual reported mismatches and
+observed subtitle load errors remain visible. Observed load/cue events remain factual.
+Detailed selection/fallback/provider logs remain in raw technical logs; collection,
+provider behavior, link extraction and playback are unchanged.
+Validation: Kotlin PSI syntax check passed. Full Android build/device UI not tested.

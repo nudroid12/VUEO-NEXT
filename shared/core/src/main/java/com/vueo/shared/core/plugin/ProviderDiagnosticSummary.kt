@@ -27,21 +27,17 @@ object ProviderDiagnosticSummary {
         return when (health.status) {
             ProviderHealthStatus.ONLINE, ProviderHealthStatus.SLOW ->
                 if (health.streamCount > 0) {
-                    "Source discovery returned ${health.streamCount} source link${if (health.streamCount == 1) "" else "s"}. " +
-                        "Links alone do not confirm the requested title, episode or playback." +
+                    "${health.streamCount} source link${if (health.streamCount == 1) "" else "s"} found." +
                         if (health.status == ProviderHealthStatus.SLOW) " Response was slow." else ""
-                } else "Source discovery returned no links. Check title/episode mapping and extraction evidence."
+                } else "No source links found."
             ProviderHealthStatus.NO_RESULTS ->
-                "Provider completed without source links. Check title/episode mapping and extraction evidence."
+                "No source links found."
             else -> "No completed source-discovery result is available in this record."
         }
     }
 
-    /**
-     * Optional provider report: [VUEO_MATCH] followed by a JSON object with
-     * titleMatch/episodeMatch = matched, mismatch or unverified, and optional
-     * selectedTitle/selectedSeason/selectedEpisode. Claims stay labelled as provider reports.
-     * Free-form search, TMDB metadata and result counts never imply a verified match.
+    /** Keep the overview factual; technical evidence remains in the raw log.
+     * Missing optional reports are not failures and should not generate warnings.
      */
     fun facts(health: ProviderHealthRecord): List<Pair<String, String>> = buildList {
         val count = health.streamCount.coerceAtLeast(0)
@@ -52,49 +48,23 @@ object ProviderDiagnosticSummary {
             val marker = line.indexOf("[VUEO_MATCH]")
             if (marker < 0) null else runCatching { JSONObject(line.substring(marker + 12).trim()) }.getOrNull()
         }
-        fun matchLabel(field: String): String = when (report?.optString(field)) {
-            "matched" -> "Match reported by provider"
-            "mismatch" -> "Mismatch reported by provider"
-            else -> "Not verified — provider supplied no confirmation"
-        }
-        add("Title match" to matchLabel("titleMatch"))
-        if (health.requestMediaType == "tv" || health.requestSeason != null || health.requestEpisode != null) {
-            add("Episode match" to matchLabel("episodeMatch"))
-        }
-        report?.optString("selectedTitle")?.takeIf { it.isNotBlank() }?.let {
-            add("Selected title" to it.take(500))
-        }
-        if (report?.has("selectedSeason") == true && report.has("selectedEpisode")) {
-            val season = report.optInt("selectedSeason", -1)
-            val episode = report.optInt("selectedEpisode", -1)
-            if (season >= 0 && episode > 0) add("Selected episode" to "S$season E$episode (provider report)")
-        }
-        val selected = health.logs.filter {
-            Regex("(?i)(using first result|selected title|matched title|selected episode|matched episode)\\s*[:=]").containsMatchIn(it)
-        }.distinct().takeLast(3)
-        if (selected.isNotEmpty()) add("Selection evidence" to selected.joinToString("\n") { it.take(500) })
-        val fallbacks = health.logs.filter {
-            Regex("(?i)\\b(fallback|falling back)\\b").containsMatchIn(it)
-        }.distinct().takeLast(3)
-        if (fallbacks.isNotEmpty()) {
-            add("Fallback evidence" to fallbacks.joinToString("\n") { it.take(500) })
-            if (fallbacks.none { Regex("(?i)(because|due to|reason\\s*[:=])").containsMatchIn(it) }) {
-                add("Fallback reason" to "Not supplied by provider")
-            }
-        }
-        add("Playback" to "Not verified by source discovery")
+        val mismatches = listOfNotNull(
+            "Title mismatch reported by provider".takeIf { report?.optString("titleMatch") == "mismatch" },
+            "Episode mismatch reported by provider".takeIf { report?.optString("episodeMatch") == "mismatch" },
+        )
+        if (mismatches.isNotEmpty()) add("Provider warning" to mismatches.joinToString("; "))
         val flow = SubtitleFlowDiagnostics.evidence(health)
         if (flow.isNotEmpty()) {
             val latestError = flow.indexOfLast { "SUBTITLE_LOAD_ERROR" in it }
             val latestCues = flow.indexOfLast { "SUBTITLE_CUES_DELIVERED" in it }
             val latestLoad = flow.indexOfLast { "SUBTITLE_LOAD_COMPLETED" in it }
-            add("Subtitle flow" to when {
+            val observedStatus = when {
                 latestError > latestCues && latestError > latestLoad -> "Text load error captured — see raw log"
-                latestCues >= 0 -> "Player delivered subtitle cues — see raw log"
-                latestLoad >= 0 -> "Text load completed; cue delivery not yet observed"
-                flow.any { "SUBTITLE_HANDOFF" in it } -> "Handoff captured; text load/cues not yet observed"
-                else -> "Provider payload captured; player evidence not yet observed"
-            })
+                latestCues >= 0 -> "Player received subtitle cues"
+                latestLoad >= 0 -> "Subtitle file loaded"
+                else -> null
+            }
+            observedStatus?.let { add("Subtitle flow" to it) }
         }
     }
 }
