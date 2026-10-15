@@ -1,14 +1,18 @@
-VUEO TV - Profile focus, delete cancel and avatar crop
+VUEO defaults and mobile Account layout
 
-Upload this ZIP to the root of the VUEO-NEXT app repository.
-Based on the latest Kids Age Controls / Avatar Scroll Fix profile editor patch.
+Upload this ZIP to the root of VUEO-NEXT. No YAML included.
 
-- DOWN from Profile PIN goes directly to Save Changes. LEFT from Save reaches Delete Profile.
-- When Change PIN is visible it remains reachable by UP from Save, then UP returns to the PIN row.
-- Delete confirmation now opens over the existing Edit Profile screen. Cancel/Back dismisses only the dialog; unsaved name/avatar/Kids/age/PIN draft state stays composed. Focus returns to Delete Profile. Confirmed deletion closes the editor and refreshes profiles.
-- Avatar artwork is recentered and cropped to the measured usable circle of each built-in source image. Uses the same helper for the avatar grid, edit preview, profile picker and manage cards. Legacy artwork keeps its original framing. Source files and saved avatar IDs are unchanged.
-- Existing Kids settings, four-column scrolling and 1.18 focus scale are retained.
+Shared defaults (TV + mobile):
+- Keep Cinemeta and OpenSubtitles v3 as the only automatically seeded addons.
+- Remove YAStream and both automatically seeded plugin repositories (yoruix/nuvio-providers and D3adlyRocket/All-in-One-Nuvio).
+- Revision 2 performs this cleanup once on existing installs as well as using the smaller defaults on new installs.
+- Other repositories/addons, including manually installed Cloudbank and CloudAnime, remain.
+- Plugin repository installation remains available manually. These retired URLs can be re-added after the one-time cleanup.
 
-Validation: reviewed focus requesters and dialog state lifetime; verified crop geometry fits inside all 32 bundled portrait circles and raster bounds; ZIP paths/CRC checked.
-Android compilation and TV remote/device visual checks were not run in this environment.
-No YAML or image assets included.
+Account mobile:
+- Connected stays at the upper right, with the Sync switch below it.
+- Sync now and Sign out share one equal-width action row.
+- Existing sign-out confirmation, sync callbacks, busy handling and login form remain.
+
+Validation: reviewed shared startup migration calls on TV/mobile, exact-URL cleanup and UI callback preservation; verified ZIP paths and CRC.
+Android compilation and on-device layout checks were not run here.

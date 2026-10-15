@@ -75,11 +75,10 @@ class PluginStore(context: Context) {
             return
         }
 
-        DEVELOPMENT_DEFAULT_MANIFESTS.forEach { manifestUrl ->
-            runCatching {
-                PluginRepositoryClient.fetch(manifestUrl)
-            }.onSuccess(::upsert)
-        }
+        // No repositories are installed automatically. Remove only the exact
+        // repositories seeded by the earlier revision, once per installation.
+        val retired = repositories().filter { it.manifestUrl in RETIRED_DEFAULT_MANIFESTS }
+        retired.forEach { remove(it.manifestUrl) }
 
         prefs.edit()
             .putInt(
@@ -235,9 +234,11 @@ class PluginStore(context: Context) {
         private const val KEY_DEV_DEFAULTS_REVISION =
             "plugin_dev_defaults_revision"
 
-        private const val DEV_DEFAULTS_REVISION = 1
+        private const val DEV_DEFAULTS_REVISION = 2
 
-        val DEVELOPMENT_DEFAULT_MANIFESTS = setOf(
+        val DEVELOPMENT_DEFAULT_MANIFESTS: Set<String> = emptySet()
+
+        private val RETIRED_DEFAULT_MANIFESTS = setOf(
             "https://raw.githubusercontent.com/yoruix/nuvio-providers/refs/heads/main/manifest.json",
             "https://raw.githubusercontent.com/D3adlyRocket/All-in-One-Nuvio/refs/heads/main/manifest.json",
         )

@@ -132,38 +132,43 @@ private fun VueoConnectedAccountCard(
                     Text(status, color = VueoPalette.Muted.copy(alpha = .8f),
                         fontSize = 10.sp, lineHeight = 14.sp)
                 }
-                Text("Connected", modifier = Modifier.padding(top = 2.dp),
-                    color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                Column(horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Connected", modifier = Modifier.padding(top = 2.dp),
+                        color = VueoPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Sync", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Switch(checked = syncOn, onCheckedChange = onSyncChanged, enabled = !busy,
+                            modifier = Modifier.scale(.8f).semantics { contentDescription = "Account sync" },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = VueoPalette.Surface,
+                                checkedTrackColor = Color.White,
+                                checkedBorderColor = Color.White,
+                            ))
+                    }
+                }
             }
             Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(1.dp)
                 .background(VueoPalette.Muted.copy(alpha = .12f)))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Switch(checked = syncOn, onCheckedChange = onSyncChanged, enabled = !busy,
-                        modifier = Modifier.scale(.8f).semantics { contentDescription = "Account sync" },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = VueoPalette.Surface,
-                            checkedTrackColor = Color.White,
-                            checkedBorderColor = Color.White,
-                        ))
-                    Text("Sync", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
                 Button(onClick = onSyncNow, enabled = !busy && syncOn,
+                    modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
-                    Text(if (busy) "Working…" else "Sync now", fontSize = 11.sp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                    Text(if (busy) "Working…" else "Sync now", fontSize = 11.sp, maxLines = 1)
+                }
+                TextButton(onClick = onSignOut, enabled = !busy,
+                    modifier = Modifier.weight(1f).height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)) {
+                    Text(if (confirmSignOut) "Cancel sign out" else "Sign out",
+                        color = VueoPalette.Muted.copy(alpha = if (busy) .5f else 1f),
+                        fontSize = 11.sp, maxLines = 1)
                 }
             }
             if (message.isNotBlank() && message != status) {
                 Text(message, color = VueoPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp)
-            }
-            TextButton(onClick = onSignOut, enabled = !busy,
-                modifier = Modifier.align(Alignment.End),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                Text(if (confirmSignOut) "Cancel sign out" else "Sign out",
-                    color = VueoPalette.Muted.copy(alpha = if (busy) .5f else 1f), fontSize = 11.sp)
             }
             if (confirmSignOut) {
                 Text("Sign out of this device? Your local data will be kept.",

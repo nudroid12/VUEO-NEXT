@@ -117,6 +117,8 @@ class ContentManagerStore(context: Context) {
         if (currentRevision >= DEV_DEFAULTS_REVISION) return false
 
         val next = manifestUrls().toMutableSet()
+        // One-time upgrade removes the retired default, leaving custom addons intact.
+        next.removeAll(RETIRED_DEFAULT_MANIFESTS)
         next += DEVELOPMENT_DEFAULT_MANIFESTS
         prefs.edit()
             .putStringSet(KEY_MANIFEST_URLS, next)
@@ -138,10 +140,13 @@ class ContentManagerStore(context: Context) {
         private const val KEY_RANDOM_CATALOG_ORDER = "random_catalog_order"
         private const val KEY_DISABLED_CATALOG_KEYS = "disabled_catalog_keys"
         private const val KEY_DEV_DEFAULTS_REVISION = "dev_defaults_revision"
-        private const val DEV_DEFAULTS_REVISION = 1
+        private const val DEV_DEFAULTS_REVISION = 2
+
+        private val RETIRED_DEFAULT_MANIFESTS = setOf(
+            "https://yastream.tamthai.de/manifest.json",
+        )
 
         val DEVELOPMENT_DEFAULT_MANIFESTS = setOf(
-            "https://yastream.tamthai.de/manifest.json",
             "https://v3-cinemeta.strem.io/manifest.json",
             "https://opensubtitles-v3.strem.io/manifest.json",
         )
