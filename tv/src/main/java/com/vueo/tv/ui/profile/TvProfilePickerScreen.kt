@@ -472,9 +472,9 @@ private fun TvProfileEditorScreen(
             // Pin the header, profile preview and actions. Only editable rows scroll;
             // focusing a text field must never scroll the preview under the header.
             Column(
-                modifier = Modifier.width(410.dp).fillMaxHeight(),
+                modifier = Modifier.width(410.dp).fillMaxHeight().padding(horizontal = 6.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                     TvIconAction(
                         icon = Icons.Default.ArrowBack,
                         contentDescription = "Back",
@@ -494,12 +494,12 @@ private fun TvProfileEditorScreen(
                 // Preview stays visible while focus moves through the form.
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(17.dp),
                     color = PickerPanel,
                     border = BorderStroke(1.dp, PickerStroke),
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         ProfileAvatarImage(
@@ -539,9 +539,9 @@ private fun TvProfileEditorScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .padding(vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
 
@@ -557,6 +557,7 @@ private fun TvProfileEditorScreen(
                                 keyboardController?.hide()
                             }),
                             label = { Text("Profile name") },
+                            shape = RoundedCornerShape(17.dp),
                             modifier = Modifier.fillMaxWidth().height(56.dp)
                                 .focusRequester(firstRequester)
                                 .onFocusChanged { if (!it.isFocused) editingName = false }
@@ -660,28 +661,24 @@ private fun TvProfileEditorScreen(
             // Right pane scrolls independently so the avatar catalogue can stay large
             // enough for sofa viewing without pushing actions below the viewport.
             Column(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(horizontal = 6.dp),
             ) {
-                Text(
-                    text = "Choose an avatar",
-                    color = Color.White,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Black,
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = "Built-in avatars are shared across VUEO Mobile and TV.",
-                    color = PickerMuted,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(14.dp))
+                Box(modifier = Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
+                    Text(
+                        text = "Choose an avatar",
+                        color = Color.White,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(8),
                     modifier = Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 28.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp),
                 ) {
                     items(
                         items = ProfileAvatarCatalog.selectable,
@@ -1131,10 +1128,12 @@ private fun TvEditorToggleRow(
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (leadingIcon != null) {
-            Icon(leadingIcon, contentDescription = null, tint = if (focused) Color.White else PickerMuted, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
+        Box(modifier = Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+            if (leadingIcon != null) {
+                Icon(leadingIcon, contentDescription = null, tint = if (focused) Color.White else PickerMuted, modifier = Modifier.size(22.dp))
+            }
         }
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(3.dp))

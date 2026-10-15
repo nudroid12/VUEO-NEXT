@@ -1,8 +1,12 @@
-APP PATCH: VUEO-NEXT repository root only. TV and Mobile. No YML or worker change.
-Remove Title/Episode verification rows and permanent unverified Playback row.
-Remove absence-of-player-evidence placeholders and repetitive link-verification prose.
-Show source count and existing slow response note. Actual reported mismatches and
-observed subtitle load errors remain visible. Observed load/cue events remain factual.
-Detailed selection/fallback/provider logs remain in raw technical logs; collection,
-provider behavior, link extraction and playback are unchanged.
-Validation: Kotlin PSI syntax check passed. Full Android build/device UI not tested.
+APP PATCH — apply to VUEO-NEXT repository root only. TV profile editor only.
+Remove the description below Choose an avatar.
+Use common left-pane horizontal inset so preview, name, toggle cards and actions
+share their left/right edges. Match rounded corners on profile cards/name field.
+Reserve the same icon column for Kids Profile and Profile PIN, aligning titles and
+descriptions; switch alignment and compact row heights remain shared.
+Allow form body to wrap when it fits so Save Changes sits closer to the form.
+Both pane headers use a 48dp slot; first avatar row aligns with preview top, with
+small grid inset retained for focus paint. Existing name OK-to-edit behavior and
+pinned preview remain. Earlier Switch Profiles routing fix is in a separate file
+and is not overwritten by this patch. Mobile/worker untouched. No YML.
+Validation: Kotlin PSI syntax check passed; Android build and TV visual QA unavailable.
