@@ -156,6 +156,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
@@ -905,6 +908,18 @@ internal fun PlayerScreen(
         mutableStateOf(true)
     }
 
+    val lifecycleOwner = context as? LifecycleOwner
+    val lifecycleState = remember(
+        lifecycleOwner, source.url, source.headers, mediaKey, initialPositionMs,
+    ) {
+        MobilePlayerLifecycleState(
+            initiallyForeground = lifecycleOwner?.lifecycle?.currentState
+                ?.isAtLeast(Lifecycle.State.STARTED) ?: true,
+            initiallyPlayWhenReady = !resumePromptVisible,
+        )
+    }
+    var playerForeground by remember(lifecycleState) { mutableStateOf(lifecycleState.foreground) }
+
     val player = remember(
         source.url,
         source.headers,
@@ -1031,7 +1046,7 @@ internal fun PlayerScreen(
                 volume = 0f
                 prepare()
                 playWhenReady =
-                    !resumePromptVisible
+                    !resumePromptVisible && lifecycleState.foreground
             }
     }
 
@@ -1082,6 +1097,67 @@ internal fun PlayerScreen(
                 null
             },
         )
+    }
+
+    // Async subtitle/recovery work may finish while this composition is retained.
+    // Playback requests must never start background audio.
+    fun requestForegroundPlayback() {
+        if (lifecycleState.foreground && !playerExitRequested) player.play()
+    }
+
+    var deferredSourceFailure by remember(player) { mutableStateOf<String?>(null) }
+    val latestLifecycleResumeAllowed = rememberUpdatedState(
+        !resumePromptVisible && !playerExitRequested && !completionPersistenceQueued &&
+            !episodeHandoffPersistenceQueued && latestEpisodeSwitchingTo.value == null &&
+            !nextEpisodeSwitching && playbackError == null && deferredSourceFailure == null,
+    )
+    val latestSaveLifecycleProgress = rememberUpdatedState<() -> Unit>({
+        if (!playerExitRequested && !episodeHandoffPersistenceQueued && !completionPersistenceQueued) {
+            val livePosition = player.currentPosition.coerceAtLeast(0L)
+            val liveDuration = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+            if (livePosition > minimumResumePositionMs) lastValidPlaybackPositionMs = livePosition
+            val stablePosition = if (livePosition > minimumResumePositionMs) livePosition else lastValidPlaybackPositionMs
+            if (stablePosition > minimumResumePositionMs) {
+                enqueuePlaybackProgress(stablePosition, liveDuration, notifyLibrary = true)
+            }
+        }
+    })
+
+    DisposableEffect(player, lifecycleOwner, lifecycleState) {
+        fun stopForBackground() {
+            if (lifecycleState.stop(player.playWhenReady)) {
+                playerForeground = false
+                player.pause()
+                latestSaveLifecycleProgress.value()
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> stopForBackground()
+                Lifecycle.Event.ON_START -> {
+                    val resume = lifecycleState.start(
+                        latestLifecycleResumeAllowed.value && player.playbackState != Player.STATE_ENDED,
+                    )
+                    playerForeground = lifecycleState.foreground
+                    if (resume) player.play()
+                }
+                else -> Unit
+            }
+        }
+        val backgroundGuard = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (playWhenReady && !lifecycleState.foreground) player.pause()
+            }
+        }
+        player.addListener(backgroundGuard)
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        // addObserver catches up to a started owner. A player created while
+        // stopped is initially paused and carries its initial intent until start.
+        if (!lifecycleState.foreground && player.playWhenReady) player.pause()
+        onDispose {
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
+            player.removeListener(backgroundGuard)
+        }
     }
 
     fun requestPlayerExit() {
@@ -1311,7 +1387,7 @@ internal fun PlayerScreen(
                     .build()
                 player.setMediaItem(updatedMediaItem, positionMs)
                 player.prepare()
-                player.playWhenReady = resumePlaying
+                player.playWhenReady = resumePlaying && lifecycleState.foreground
                 com.vueo.shared.core.player.SubtitleFlowDiagnostics.event(
                     "Mobile", source.url, "SMARTSUBS_SOURCES_REBUILT",
                     "tracks=${smartSubsKeys.size} positionMs=$positionMs",
@@ -1468,6 +1544,10 @@ internal fun PlayerScreen(
     fun handleSourceFailure(
         message: String,
     ) {
+        if (!lifecycleState.foreground) {
+            deferredSourceFailure = message
+            return
+        }
         if (recoveryInProgress) {
             return
         }
@@ -1524,6 +1604,14 @@ internal fun PlayerScreen(
                     .value
                     .invoke()
             }
+        }
+    }
+
+    LaunchedEffect(player, playerForeground, deferredSourceFailure) {
+        val failure = deferredSourceFailure
+        if (lifecycleState.foreground && failure != null) {
+            deferredSourceFailure = null
+            handleSourceFailure(failure)
         }
     }
 
@@ -2224,8 +2312,10 @@ internal fun PlayerScreen(
         retryGeneration,
         resumePromptVisible,
         hasRenderedFirstFrame,
+        playerForeground,
     ) {
         if (
+            !playerForeground ||
             resumePromptVisible ||
             hasRenderedFirstFrame ||
             playbackError != null
@@ -2241,6 +2331,7 @@ internal fun PlayerScreen(
             }
         delay(startupTimeoutMs)
         if (
+            lifecycleState.foreground &&
             !hasRenderedFirstFrame &&
             playbackError == null &&
             !recoveryInProgress
@@ -2257,8 +2348,10 @@ internal fun PlayerScreen(
         isBuffering,
         hasRenderedFirstFrame,
         retryGeneration,
+        playerForeground,
     ) {
         if (
+            !playerForeground ||
             !isBuffering ||
             !hasRenderedFirstFrame ||
             playbackError != null
@@ -2268,6 +2361,7 @@ internal fun PlayerScreen(
 
         delay(PLAYER_REBUFFER_TIMEOUT_MS)
         if (
+            lifecycleState.foreground &&
             isBuffering &&
             hasRenderedFirstFrame &&
             playbackError == null &&
@@ -2289,10 +2383,11 @@ internal fun PlayerScreen(
     LaunchedEffect(
         player,
         mediaKey,
+        playerForeground,
     ) {
+        if (!playerForeground) return@LaunchedEffect
         var librarySaveTicks = 0
-        while (true) {
-            delay(500L)
+        while (lifecycleState.foreground) {
             val sampledPositionMs =
                 player.currentPosition
                     .coerceAtLeast(0L)
@@ -2332,6 +2427,7 @@ internal fun PlayerScreen(
                 }
                 librarySaveTicks = 0
             }
+            delay(500L)
         }
     }
 
@@ -2342,8 +2438,10 @@ internal fun PlayerScreen(
         gestureActive,
         playerPanelVisible,
         nextEpisodeCardVisible,
+        playerForeground,
     ) {
         if (
+            playerForeground &&
             controlsVisible &&
             isPlaying &&
             !controlsLocked &&
@@ -2352,7 +2450,7 @@ internal fun PlayerScreen(
             !nextEpisodeCardVisible
         ) {
             delay(3_000L)
-            controlsVisible = false
+            if (lifecycleState.foreground) controlsVisible = false
         }
     }
 
@@ -2370,7 +2468,7 @@ internal fun PlayerScreen(
         mutableStateOf(false)
     }
     val nextEpisodePrefetchBaseEligible =
-        isPlaying &&
+        playerForeground && isPlaying &&
             episodeSwitchingTo == null &&
             nextEpisode != null &&
             durationMs > 0L
@@ -2446,7 +2544,7 @@ internal fun PlayerScreen(
             )
 
     val autoNextEligible =
-        !nextEpisodeSwitching &&
+        playerForeground && !nextEpisodeSwitching &&
             !nextEpisodeCardDismissed &&
             autoPlayNextEpisode &&
             nextEpisode != null &&
@@ -2499,7 +2597,7 @@ internal fun PlayerScreen(
         for (remaining in 8 downTo 1) {
             nextEpisodeCountdown = remaining
             delay(1_000L)
-            if (!latestAutoNextEligible.value) {
+            if (!lifecycleState.foreground || !latestAutoNextEligible.value) {
                 nextEpisodeCountdown = null
                 return@LaunchedEffect
             }
@@ -2525,6 +2623,7 @@ internal fun PlayerScreen(
 
         nextEpisodeCountdown = null
         if (
+            !lifecycleState.foreground ||
             !latestAutoNextEligible.value ||
             !player.playWhenReady ||
             playerPanelVisible ||
@@ -2571,14 +2670,14 @@ internal fun PlayerScreen(
                 formatPlaybackTime(savedPositionMs),
             onResume = {
                 player.seekTo(savedPositionMs)
-                player.playWhenReady = true
+                player.playWhenReady = lifecycleState.foreground
                 resumePromptVisible = false
             },
             onStartOver = {
                 playbackStore.clearPosition(mediaKey)
                 lastValidPlaybackPositionMs = 0L
                 player.seekTo(0L)
-                player.playWhenReady = true
+                player.playWhenReady = lifecycleState.foreground
                 resumePromptVisible = false
             },
             onDismiss = {
@@ -3433,7 +3532,7 @@ internal fun PlayerScreen(
                                         if (player.isPlaying) {
                                             player.pause()
                                         } else {
-                                            player.play()
+                                            requestForegroundPlayback()
                                         }
                                     }
                                 }
@@ -3658,7 +3757,7 @@ internal fun PlayerScreen(
                         if (player.isPlaying) {
                             player.pause()
                         } else {
-                            player.play()
+                            requestForegroundPlayback()
                         }
                         controlsVisible = true
                     },
@@ -3760,7 +3859,7 @@ internal fun PlayerScreen(
                             player.volume = 0f
                             retryGeneration++
                             player.prepare()
-                            player.play()
+                            requestForegroundPlayback()
                         },
                         onChooseSource = {
                             switchingSourceUrl = null
