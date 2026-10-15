@@ -459,6 +459,19 @@ internal fun PlayerScreen(
     // quick play first entered the player.
     val discoveredSubtitles by subtitlesState
     val context = LocalContext.current
+    if (!com.vueo.shared.core.profile.KidsContentPolicy.allows(media.certification, com.vueo.shared.core.storage.ProfileStore(context.applicationContext).kidsAgeLimit())) {
+        androidx.activity.compose.BackHandler(onBack = onBack)
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        ) {
+            androidx.compose.material3.Text("This title is unavailable for this Kids profile.", color = Color.White)
+            androidx.compose.material3.Button(onClick = onBack) { androidx.compose.material3.Text("Back") }
+        }
+        return
+    }
+
     val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(source, discoveredSubtitles)
     val smartSubsStore = remember(context) { com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context.applicationContext) }
     var smartSubsTracks by remember(mediaKey, source.url) { mutableStateOf(emptyList<SubtitleTrack>()) }

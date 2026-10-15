@@ -62,9 +62,9 @@ import kotlinx.coroutines.flow.collect
 class TvRuntime(context: Context) {
     private val appContext = context.applicationContext
 
-    val engine = UnifiedMediaEngine()
     val content = TvContentPreferences(appContext)
     val profileStore = ProfileStore(appContext)
+    val engine = UnifiedMediaEngine { profileStore.kidsAgeLimit() }
     // Match Mobile's proven Shared Core store semantics. TV is a separate
     // application sandbox, so these names do not couple TV to the Mobile app;
     // they simply remove legacy TV-specific storage behavior.
@@ -164,6 +164,7 @@ class TvRuntime(context: Context) {
         return (partial ?: CatalogDiscoveryCache.home(allowStale = true))
             .orEmpty()
             .let(::visibleHomeRows)
+            .let(engine::filterVisibleRows)
     }
 
     fun isHomeCatalogRuntimeReady(): Boolean = addonsPrepared
@@ -302,8 +303,10 @@ class TvRuntime(context: Context) {
                     activeIds.any { row.id.startsWith("$it:") }) && fresh.none { it.id == row.id }
             }
             val result = visibleHomeRows(fresh + fallback)
-            CatalogDiscoveryCache.putHome(result)
-            CatalogDiscoveryCache.persistHome(appContext, result)
+            if (profileStore.kidsAgeLimit() == null) {
+                CatalogDiscoveryCache.putHome(result)
+                CatalogDiscoveryCache.persistHome(appContext, result)
+            }
             homeCachePrefs.edit().putString("configuration", homeConfigurationKey()).apply()
             traceHome("catalogs_finished", result.size)
             result

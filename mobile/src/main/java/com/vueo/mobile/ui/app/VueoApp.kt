@@ -369,7 +369,7 @@ fun VueoApp(
         }
     }
 
-    val engine = remember { UnifiedMediaEngine() }
+    val engine = remember { UnifiedMediaEngine { ProfileStore(context.applicationContext).kidsAgeLimit() } }
     val homeRetainedState =
         rememberMobileHomeRetainedState()
     val settingsRetainedState =

@@ -306,7 +306,7 @@ fun TvDetailScreen(
                 emptyList()
             }
             if (!sessionCurrent()) return@launch
-            related = remoteRelated
+            related = runtime.engine.filterVisible(remoteRelated)
         }
 
         launch {

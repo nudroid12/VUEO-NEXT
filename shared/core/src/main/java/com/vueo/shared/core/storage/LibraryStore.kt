@@ -73,6 +73,7 @@ class LibraryStore(
     profileStore: ProfileStore? = null,
     private val profileIdOverride: String? = null,
     private val publishTraktChanges: Boolean = true,
+    private val filterForKids: Boolean = true,
 ) {
     private val appContext =
         context.applicationContext
@@ -96,6 +97,17 @@ class LibraryStore(
             key,
         )
 
+    private fun kidsFilterMedia(items: List<MediaItem>): List<MediaItem> {
+        if (!filterForKids) return items
+        val limit = profileStore.kidsAgeLimit() ?: return items
+        return items.filter { com.vueo.shared.core.profile.KidsContentPolicy.allows(it.certification, limit) }
+    }
+    private fun kidsFilter(items: List<LibraryPlaybackEntry>): List<LibraryPlaybackEntry> {
+        if (!filterForKids) return items
+        val limit = profileStore.kidsAgeLimit() ?: return items
+        return items.filter { com.vueo.shared.core.profile.KidsContentPolicy.allows(it.media.certification, limit) }
+    }
+
     @Synchronized
     fun watchlist(): List<MediaItem> =
         readWatchlist()
@@ -110,7 +122,7 @@ class LibraryStore(
                         "media"
                     )
                 )
-            }
+            }.let(::kidsFilterMedia)
 
     @Synchronized
     fun isWatchlisted(
@@ -228,7 +240,7 @@ class LibraryStore(
         readHistory()
             .sortedByDescending {
                 it.lastWatchedEpochMs
-            }
+            }.let(::kidsFilter)
 
     /**
      * Fast first-stage Continue Watching hydration for Home.
@@ -245,6 +257,7 @@ class LibraryStore(
                 markedWatchedKeys()
 
         return readContinueWatching()
+            .let(::kidsFilter)
             .sortedByDescending { it.lastWatchedEpochMs }
             .distinctBy { continueWatchingTitleKey(it.media) }
             .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
@@ -268,7 +281,7 @@ class LibraryStore(
     fun homeStartupContinueWatching(): List<LibraryPlaybackEntry> {
         synchronized(SYNC_STORAGE_LOCK) {
             val key = scopedKey(KEY_HOME_CONTINUE_WATCHING_CACHE)
-            if (prefs.contains(key)) return readHomeContinueWatchingCache()
+            if (prefs.contains(key)) return readHomeContinueWatchingCache().let(::kidsFilter)
 
             // One-time migration for installs upgraded from pre-v133 builds. From the
             // next write onward this path reads only the lightweight cache.
@@ -297,8 +310,8 @@ class LibraryStore(
             writeHomeContinueWatchingCache(continueWatching)
 
             return LibraryHomeSnapshot(
-                history = history,
-                continueWatching = continueWatching,
+                history = history.let(::kidsFilter),
+                continueWatching = continueWatching.let(::kidsFilter),
             )
         }
     }
@@ -335,10 +348,10 @@ class LibraryStore(
                 )
 
             return LibraryDetailSnapshot(
-                watchlist = watchlist,
-                history = history,
-                continueWatching = continueWatching,
-                playbackEntries = playbackEntries,
+                watchlist = watchlist.let(::kidsFilterMedia),
+                history = history.let(::kidsFilter),
+                continueWatching = continueWatching.let(::kidsFilter),
+                playbackEntries = playbackEntries.let(::kidsFilter),
             )
         }
     }
@@ -378,6 +391,7 @@ class LibraryStore(
     fun continueWatchingPlaybackEntries(): List<LibraryPlaybackEntry> =
         (readContinueWatching() + history()).sortedByDescending { it.lastWatchedEpochMs }
             .distinctBy { it.mediaKey }
+            .let(::kidsFilter)
 
     fun activeContinueWatchingProfileId(): String = profileStore.activeProfileId()
 

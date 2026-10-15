@@ -378,6 +378,7 @@ internal fun SearchScreen(
             if (fresh.isNotEmpty()) {
                 discoverRows = fresh
 
+                if (com.vueo.mobile.core.storage.ProfileStore(context.applicationContext).kidsAgeLimit() == null) {
                 CatalogDiscoveryCache
                     .persistHome(
                         context =
@@ -385,6 +386,7 @@ internal fun SearchScreen(
                                 .applicationContext,
                         rows = fresh,
                     )
+            }
             }
         }.onFailure {
             discoverRows =
@@ -442,7 +444,7 @@ internal fun SearchScreen(
             actorSourceAvailable = true
 
             val local =
-                SearchOrchestrator.localTitleResults(normalized)
+                engine.filterVisible(SearchOrchestrator.localTitleResults(normalized))
 
             searchResults = local
 
@@ -574,12 +576,9 @@ internal fun SearchScreen(
             }
         }
 
-    val sourceItems =
-        if (searchingMode) {
-            searchResults
-        } else {
-            discoverBaseItems
-        }
+    val sourceItems = engine.filterVisible(
+        if (searchingMode) searchResults else discoverBaseItems
+    )
 
     val availableGenres =
         remember(

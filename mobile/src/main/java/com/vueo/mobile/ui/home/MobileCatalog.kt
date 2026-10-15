@@ -267,6 +267,13 @@ internal fun CatalogSeeAllScreen(
     onMediaClick:
         (MediaItem) -> Unit,
 ) {
+    val kidsLimit = com.vueo.shared.core.storage.ProfileStore(
+        androidx.compose.ui.platform.LocalContext.current.applicationContext
+    ).kidsAgeLimit()
+    val visibleItems = row.items.filter {
+        com.vueo.shared.core.profile.KidsContentPolicy.allows(it.certification, kidsLimit)
+    }
+
     var catalogAction by remember(
         row.id,
         libraryVersion,
@@ -340,7 +347,7 @@ internal fun CatalogSeeAllScreen(
 
                 Text(
                     text =
-                        "${row.items.size} titles",
+                        "${visibleItems.size} titles",
                     color =
                         VueoPalette.Muted,
                     fontSize = 11.sp,
@@ -372,7 +379,7 @@ internal fun CatalogSeeAllScreen(
                 ),
         ) {
             gridItems(
-                items = row.items,
+                items = visibleItems,
                 key = {
                     "${row.id}:${it.id}"
                 },

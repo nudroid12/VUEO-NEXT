@@ -28,7 +28,82 @@ import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CopyOnWriteArraySet
 
-class UnifiedMediaEngine {
+class UnifiedMediaEngine(
+    private val kidsAgeLimit: () -> Int? = { null },
+) {
+    fun allowsContent(item: MediaItem): Boolean =
+        com.vueo.shared.core.profile.KidsContentPolicy.allows(item.certification, kidsAgeLimit())
+
+    fun filterVisible(items: List<MediaItem>): List<MediaItem> {
+        val limit = kidsAgeLimit() ?: return items
+        return items.filter { com.vueo.shared.core.profile.KidsContentPolicy.allows(it.certification, limit) }
+    }
+
+    fun filterVisibleRows(rows: List<CatalogRow>): List<CatalogRow> {
+        val limit = kidsAgeLimit() ?: return rows
+        return rows.mapNotNull { row ->
+            row.copy(items = row.items.filter {
+                com.vueo.shared.core.profile.KidsContentPolicy.allows(it.certification, limit)
+            }).takeIf { it.items.isNotEmpty() }
+        }
+    }
+
+    suspend fun loadCatalogRows(
+        maxRows: Int = Int.MAX_VALUE,
+        forceRefresh: Boolean = false,
+        catalogOrder: List<String> = emptyList(),
+        disabledCatalogKeys: Set<String> = emptySet(),
+        onPartial: ((List<CatalogRow>) -> Unit)? = null,
+        extensionIds: Set<String>? = null,
+        updateHomeCache: Boolean = true,
+        catalogLoadGate: Semaphore? = null,
+    ): List<CatalogRow> = filterVisibleRows(loadCatalogRowsUnfiltered(
+        maxRows = maxRows,
+        forceRefresh = forceRefresh,
+        catalogOrder = catalogOrder,
+        disabledCatalogKeys = disabledCatalogKeys,
+        onPartial = onPartial?.let { callback -> { values -> callback(filterVisibleRows(values)) } },
+        extensionIds = extensionIds,
+        updateHomeCache = updateHomeCache,
+        catalogLoadGate = catalogLoadGate,
+    ))
+
+    suspend fun search(
+        query: String,
+        maxCatalogs: Int = 12,
+        maxResults: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> = filterVisible(searchUnfiltered(
+        query = query,
+        maxCatalogs = maxCatalogs,
+        maxResults = maxResults,
+        onPartial = onPartial?.let { callback -> { values -> callback(filterVisible(values)) } },
+    ))
+
+    suspend fun searchActor(
+        query: String,
+        maxCatalogs: Int = 12,
+        maxResults: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> = filterVisible(searchActorUnfiltered(
+        query = query,
+        maxCatalogs = maxCatalogs,
+        maxResults = maxResults,
+        onPartial = onPartial?.let { callback -> { values -> callback(filterVisible(values)) } },
+    ))
+
+    suspend fun browse(
+        kind: MediaBrowseKind,
+        maxCatalogs: Int = 10,
+        maxResults: Int = 80,
+        catalogOrder: List<String> = emptyList(),
+    ): List<MediaItem> = filterVisible(browseUnfiltered(
+        kind = kind,
+        maxCatalogs = maxCatalogs,
+        maxResults = maxResults,
+        catalogOrder = catalogOrder,
+    ))
+
     private val extensions = CopyOnWriteArrayList<MediaExtension>()
     private val disabledExtensionIds =
         CopyOnWriteArraySet<String>()
@@ -87,7 +162,7 @@ class UnifiedMediaEngine {
     fun extension(id: String?): MediaExtension? =
         id?.let { target -> extensions.firstOrNull { it.descriptor.id == target } }
 
-    suspend fun loadCatalogRows(
+    private suspend fun loadCatalogRowsUnfiltered(
         maxRows: Int = Int.MAX_VALUE,
         forceRefresh: Boolean = false,
         catalogOrder: List<String> = emptyList(),
@@ -272,7 +347,7 @@ class UnifiedMediaEngine {
         defaultCatalogOrder = com.vueo.shared.core.home.HomeCatalogPolicy.defaultOrder(activeStremioAddons()),
     )
 
-    suspend fun search(
+    private suspend fun searchUnfiltered(
         query: String,
         maxCatalogs: Int = 12,
         maxResults: Int = 80,
@@ -418,7 +493,7 @@ class UnifiedMediaEngine {
      * filtering. Catalogs without an actor-capable extra are skipped entirely,
      * so actor mode never brute-force scans the regular title database.
      */
-    suspend fun searchActor(
+    private suspend fun searchActorUnfiltered(
         query: String,
         maxCatalogs: Int = 12,
         maxResults: Int = 80,
@@ -1038,7 +1113,7 @@ class UnifiedMediaEngine {
      * catalogs that require no extras. Anime additionally supports catalogs
      * explicitly named for anime and catalogs that expose a genre=Anime extra.
      */
-    suspend fun browse(
+    private suspend fun browseUnfiltered(
         kind: MediaBrowseKind,
         maxCatalogs: Int = 10,
         maxResults: Int = 80,

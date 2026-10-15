@@ -85,7 +85,7 @@ class TraktService private constructor(private val context: Context) {
             changed()
         }
     }
-    private fun library(profile: String) = LibraryStore(context, profileIdOverride = profile, publishTraktChanges = false)
+    private fun library(profile: String) = LibraryStore(context, profileIdOverride = profile, publishTraktChanges = false, filterForKids = false)
     data class DeviceLogin(val code: String, val userCode: String, val verificationUrl: String,
         val interval: Long, val expiresAt: Long, val profile: String, val generation: Long)
 

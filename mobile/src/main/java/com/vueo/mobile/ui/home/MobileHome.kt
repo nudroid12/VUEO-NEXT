@@ -391,7 +391,7 @@ internal fun HomeScreen(
             else disabledAddons.none { row.id.startsWith("$it:") }
         }
         return HomeCatalogPolicy.orderRows(
-            rows = validRows,
+            rows = engine.filterVisibleRows(validRows),
             catalogOrder = homeAddonStore.catalogOrder(),
             disabledCatalogKeys = homeAddonStore.disabledCatalogKeys(),
             defaultCatalogOrder = HomeCatalogPolicy.defaultOrder(engine.stremioAddons()),
@@ -591,7 +591,7 @@ internal fun HomeScreen(
         }.onSuccess {
             fresh ->
             rows = arrangeHomeRows(fresh)
-            if (fresh.isNotEmpty()) {
+            if (fresh.isNotEmpty() && profileStore.kidsAgeLimit() == null) {
                 CatalogDiscoveryCache
                     .persistHome(
                         context =
@@ -727,9 +727,10 @@ internal fun HomeScreen(
         }
     }
 
-    val forYouItems = if (forYouEnabled) homeRecommendations.forYou else emptyList()
-    val becauseYouWatchedSeed = if (becauseEnabled) homeRecommendations.becauseYouWatchedSeed else null
-    val becauseYouWatchedItems = if (becauseEnabled) homeRecommendations.becauseYouWatched else emptyList()
+    val visibleFeaturedItems = engine.filterVisible(featuredItems)
+    val forYouItems = if (forYouEnabled) engine.filterVisible(homeRecommendations.forYou) else emptyList()
+    val becauseYouWatchedSeed = if (becauseEnabled) homeRecommendations.becauseYouWatchedSeed?.takeIf(engine::allowsContent) else null
+    val becauseYouWatchedItems = if (becauseEnabled) engine.filterVisible(homeRecommendations.becauseYouWatched) else emptyList()
 
         LazyColumn(
         state = listState,
@@ -749,7 +750,7 @@ internal fun HomeScreen(
             ),
     ) {
         if (
-            featuredItems
+            visibleFeaturedItems
                 .isNotEmpty()
         ) {
             item(
@@ -758,7 +759,7 @@ internal fun HomeScreen(
             ) {
                 HomeFeaturedCarousel(
                     items =
-                        featuredItems,
+                        visibleFeaturedItems,
                     selectedMediaKey =
                         retainedState.featuredMediaKey,
                     onSelectedMediaKeyChange = {
@@ -887,7 +888,7 @@ internal fun HomeScreen(
     }
 
             items(
-            items = rows + traktRows,
+            items = engine.filterVisibleRows(rows + traktRows),
             key = {
                 "catalog:${it.id}"
             },

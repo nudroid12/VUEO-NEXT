@@ -203,6 +203,19 @@ fun TvPlayerScreen(
     val latestEpisodeFrameReady = androidx.compose.runtime.rememberUpdatedState(onEpisodeFrameReady)
     val latestEpisodePlaybackFailed = androidx.compose.runtime.rememberUpdatedState(onEpisodePlaybackFailed)
     val context = LocalContext.current
+    if (!com.vueo.shared.core.profile.KidsContentPolicy.allows(media.certification, runtime.profileStore.kidsAgeLimit())) {
+        androidx.activity.compose.BackHandler(onBack = onBack)
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        ) {
+            androidx.compose.material3.Text("This title is unavailable for this Kids profile.", color = Color.White)
+            androidx.compose.material3.Button(onClick = onBack) { androidx.compose.material3.Text("Back") }
+        }
+        return
+    }
+
     val lifecycleOwner = context as? LifecycleOwner
     val rootRequester = remember { FocusRequester() }
     val restartRequester = remember { FocusRequester() }

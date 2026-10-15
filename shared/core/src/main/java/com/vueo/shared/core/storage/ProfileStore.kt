@@ -3,6 +3,7 @@ package com.vueo.shared.core.storage
 import android.content.Context
 import android.util.Base64
 import com.vueo.shared.core.profile.ProfileAvatarCatalog
+import com.vueo.shared.core.profile.KidsContentPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -17,6 +18,7 @@ data class VueoProfile(
     val avatar: String,
     val isKids: Boolean,
     val createdAtEpochMs: Long,
+    val kidsMaxAge: Int = 7,
 )
 
 class ProfileStore(
@@ -151,6 +153,7 @@ class ProfileStore(
         name: String,
         avatar: String,
         isKids: Boolean,
+        kidsMaxAge: Int = 7,
     ): VueoProfile {
         val cleanName =
             name.trim()
@@ -179,6 +182,7 @@ class ProfileStore(
                 name = cleanName,
                 avatar = ProfileAvatarCatalog.resolveId(avatar.ifBlank { DEFAULT_AVATAR }),
                 isKids = isKids,
+                kidsMaxAge = KidsContentPolicy.normalizeLimit(kidsMaxAge),
                 createdAtEpochMs =
                     System.currentTimeMillis(),
             )
@@ -204,6 +208,7 @@ class ProfileStore(
         name: String,
         avatar: String,
         isKids: Boolean,
+        kidsMaxAge: Int? = null,
     ): Boolean {
         val cleanName =
             name.trim()
@@ -233,6 +238,7 @@ class ProfileStore(
                 name = cleanName,
                 avatar = ProfileAvatarCatalog.resolveId(avatar.ifBlank { DEFAULT_AVATAR }),
                 isKids = isKids,
+                kidsMaxAge = KidsContentPolicy.normalizeLimit(kidsMaxAge ?: existing.kidsMaxAge),
             )
 
         writeProfiles(current)
@@ -300,7 +306,7 @@ class ProfileStore(
     fun hasProfilePin(
         profileId: String,
     ): Boolean {
-        if (profiles().none { it.id == profileId }) {
+        if (profileId != PARENT_PIN_ID && profiles().none { it.id == profileId }) {
             return false
         }
 
@@ -319,7 +325,7 @@ class ProfileStore(
         profileId: String,
         pin: String,
     ): Boolean {
-        if (profiles().none { it.id == profileId }) {
+        if (profileId != PARENT_PIN_ID && profiles().none { it.id == profileId }) {
             return false
         }
 
@@ -411,6 +417,15 @@ class ProfileStore(
         return true
     }
 
+    fun kidsAgeLimit(): Int? = activeProfile().takeIf { it.isKids }?.kidsMaxAge
+
+    fun hasParentalPin(): Boolean = hasProfilePin(PARENT_PIN_ID)
+    fun setParentalPin(pin: String): Boolean = setProfilePin(PARENT_PIN_ID, pin)
+    fun verifyParentalPin(pin: String): Boolean = verifyProfilePin(PARENT_PIN_ID, pin)
+    fun needsParentalApproval(): Boolean = profiles().any { it.isKids }
+    fun needsParentalApprovalForSwitch(target: VueoProfile): Boolean =
+        needsParentalApproval() && !target.isKids
+
     fun askWhoIsWatchingOnStartup():
         Boolean =
         prefs.getBoolean(
@@ -436,7 +451,7 @@ class ProfileStore(
                 activeProfileId()
             )
 
-        return activeLocked ||
+        return needsParentalApproval() || activeLocked ||
             askWhoIsWatchingOnStartup()
     }
 
@@ -497,6 +512,7 @@ class ProfileStore(
                                     "isKids",
                                     false,
                                 ),
+                            kidsMaxAge = KidsContentPolicy.normalizeLimit(json.optInt("kidsMaxAge", 7)),
                             createdAtEpochMs =
                                 json.optLong(
                                     "createdAtEpochMs",
@@ -538,6 +554,7 @@ class ProfileStore(
                         "isKids",
                         profile.isKids,
                     )
+                    .put("kidsMaxAge", KidsContentPolicy.normalizeLimit(profile.kidsMaxAge))
                     .put(
                         "createdAtEpochMs",
                         profile.createdAtEpochMs,
@@ -624,6 +641,8 @@ class ProfileStore(
         "profile_pin_hash:$profileId"
 
     companion object {
+        private const val PARENT_PIN_ID = "__parental_guard__"
+
         const val PREFS_NAME =
             "vueo_profiles"
 

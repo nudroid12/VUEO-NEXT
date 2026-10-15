@@ -77,6 +77,30 @@ object SearchOrchestrator {
             .map { it.item }
     }
 
+    suspend fun remoteTitleResults(
+        engine: UnifiedMediaEngine,
+        query: String,
+        localResults: List<MediaItem>? = null,
+        limit: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> = engine.filterVisible(remoteTitleResultsUnfiltered(engine = engine, query = query, localResults = localResults, limit = limit, onPartial = onPartial?.let { callback -> { values -> callback(engine.filterVisible(values)) } }))
+
+    suspend fun actorResults(
+        engine: UnifiedMediaEngine,
+        query: String,
+        tmdbApiKey: String,
+        maxResults: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> = engine.filterVisible(actorResultsUnfiltered(engine = engine, query = query, tmdbApiKey = tmdbApiKey, maxResults = maxResults, onPartial = onPartial?.let { callback -> { values -> callback(engine.filterVisible(values)) } }))
+
+    suspend fun entityResults(
+        engine: UnifiedMediaEngine,
+        target: MediaEntityTarget,
+        tmdbApiKey: String,
+        maxResults: Int = 80,
+        onPartial: ((List<MediaItem>) -> Unit)? = null,
+    ): List<MediaItem> = engine.filterVisible(entityResultsUnfiltered(engine = engine, target = target, tmdbApiKey = tmdbApiKey, maxResults = maxResults, onPartial = onPartial?.let { callback -> { values -> callback(engine.filterVisible(values)) } }))
+
     suspend fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
         PerformanceDiagnostics.measuredContext(Dispatchers.Default, "search_local_rank", Tab.SEARCH) {
             SearchPolicy.rankAndDedupe(
@@ -85,7 +109,7 @@ object SearchOrchestrator {
             ).take(limit)
         }
 
-    suspend fun remoteTitleResults(
+    private suspend fun remoteTitleResultsUnfiltered(
         engine: UnifiedMediaEngine,
         query: String,
         localResults: List<MediaItem>? = null,
@@ -128,7 +152,7 @@ object SearchOrchestrator {
     fun actorAvailability(engine: UnifiedMediaEngine, tmdbApiKey: String): ActorAvailability =
         ActorAvailability(engine.hasActorSearchAddons(), tmdbApiKey.isNotBlank())
 
-    suspend fun actorResults(
+    private suspend fun actorResultsUnfiltered(
         engine: UnifiedMediaEngine,
         query: String,
         tmdbApiKey: String,
@@ -158,7 +182,7 @@ object SearchOrchestrator {
         }
     }
 
-    suspend fun entityResults(
+    private suspend fun entityResultsUnfiltered(
         engine: UnifiedMediaEngine,
         target: MediaEntityTarget,
         tmdbApiKey: String,

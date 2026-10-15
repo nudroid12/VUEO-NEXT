@@ -4,6 +4,9 @@ import com.vueo.tv.ui.motion.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -50,6 +53,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,6 +97,9 @@ import com.vueo.tv.R
 import com.vueo.tv.ui.motion.tvFocusSpec
 import com.vueo.tv.ui.motion.tvScreenBackTransition
 import com.vueo.tv.ui.motion.tvScreenFadeThrough
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 
 private val PickerBlack = Color(0xFF050706)
@@ -136,6 +144,10 @@ fun TvProfilePickerScreen(
     var lockedProfile by remember { mutableStateOf<VueoProfile?>(null) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pinResetToken by remember { mutableIntStateOf(0) }
+    var parentalAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun parentApprove(action: () -> Unit) {
+        if (profileStore.needsParentalApproval()) parentalAction = action else action()
+    }
     var deleteCandidate by remember { mutableStateOf<VueoProfile?>(null) }
 
     BackHandler {
@@ -194,12 +206,15 @@ fun TvProfilePickerScreen(
                             activeProfileId = activeProfileId,
                             profileStore = profileStore,
                             onSelect = { profile ->
-                                if (profileStore.hasProfilePin(profile.id)) {
-                                    pinError = null
-                                    lockedProfile = profile
-                                } else if (profileStore.setActiveProfile(profile.id)) {
-                                    onProfileSelected(profile.id)
+                                val select = {
+                                    if (profileStore.hasProfilePin(profile.id)) {
+                                        pinError = null
+                                        lockedProfile = profile
+                                    } else if (profileStore.setActiveProfile(profile.id)) {
+                                        onProfileSelected(profile.id)
+                                    }
                                 }
+                                if (profileStore.needsParentalApprovalForSwitch(profile) || (profile.isKids && !profileStore.hasParentalPin())) parentApprove(select) else select()
                             },
                             onManage = { mode = ProfilePickerMode.MANAGE },
                         )
@@ -208,8 +223,14 @@ fun TvProfilePickerScreen(
                         TvManageProfiles(
                             profiles = profiles,
                             profileStore = profileStore,
-                            onEdit = { editor = TvProfileEditorState(it) },
-                            onAdd = { editor = TvProfileEditorState(null) },
+                            onEdit = { target ->
+                                val edit = { editor = TvProfileEditorState(target) }
+                                if (profileStore.activeProfile().isKids) parentApprove(edit) else edit()
+                            },
+                            onAdd = {
+                                val add = { editor = TvProfileEditorState(null) }
+                                if (profileStore.activeProfile().isKids) parentApprove(add) else add()
+                            },
                             onChanged = ::refreshProfiles,
                             onDone = { if (startInManage) onBack() else mode = ProfilePickerMode.WATCHING },
                         )
@@ -253,12 +274,17 @@ fun TvProfilePickerScreen(
             confirmLabel = "Delete Profile",
             danger = true,
             onConfirm = {
-                profileStore.deleteProfile(deleting.id)
-                deleteCandidate = null
-                refreshProfiles()
+                parentApprove {
+                    profileStore.deleteProfile(deleting.id)
+                    deleteCandidate = null
+                    refreshProfiles()
+                }
             },
             onCancel = { deleteCandidate = null },
         )
+    }
+    parentalAction?.let { action ->
+        TvParentalPinGate(profileStore, onGranted = { parentalAction = null; action() }, onCancel = { parentalAction = null })
     }
 }
 
@@ -429,6 +455,8 @@ private fun TvProfileEditorScreen(
     }
     var name by remember(profile?.id) { mutableStateOf(profile?.name.orEmpty()) }
     var avatar by remember(profile?.id) { mutableStateOf(profile?.avatar ?: ProfileAvatarCatalog.DEFAULT_ID) }
+    var kidsMaxAge by remember(profile?.id) { mutableIntStateOf(profile?.kidsMaxAge ?: 7) }
+    var parentalSave by remember { mutableStateOf(false) }
     var isKids by remember(profile?.id) { mutableStateOf(profile?.isKids ?: false) }
     var pinEnabled by remember(profile?.id) { mutableStateOf(hadPin) }
     var pendingPin by remember(profile?.id) { mutableStateOf<String?>(null) }
@@ -449,22 +477,29 @@ private fun TvProfileEditorScreen(
         runCatching { firstRequester.requestFocus() }
     }
 
-    fun save() {
+    fun commitSave() {
         val cleanName = name.trim()
         if (cleanName.isBlank()) return
         if (profile == null) {
-            val created = profileStore.createProfile(cleanName, avatar, isKids)
+            val created = profileStore.createProfile(cleanName, avatar, isKids, kidsMaxAge)
             pendingPin?.takeIf { pinEnabled && it.length == 4 }?.let {
                 profileStore.setProfilePin(created.id, it)
             }
         } else {
-            profileStore.updateProfile(profile.id, cleanName, avatar, isKids)
+            profileStore.updateProfile(profile.id, cleanName, avatar, isKids, kidsMaxAge)
             when {
                 removeExistingPin -> profileStore.clearProfilePin(profile.id)
                 pendingPin != null && pinEnabled -> profileStore.setProfilePin(profile.id, pendingPin!!)
             }
         }
         onSaved()
+    }
+
+    fun save() {
+        if (isKids || profile?.isKids == true) parentalSave = true else commitSave()
+    }
+    if (parentalSave) {
+        TvParentalPinGate(profileStore, onGranted = { parentalSave = false; commitSave() }, onCancel = { parentalSave = false })
     }
 
     TvProfileBackground {
@@ -580,11 +615,27 @@ private fun TvProfileEditorScreen(
                         Box {
                             TvEditorToggleRow(
                                 title = "Kids Profile",
-                                subtitle = "Marks this profile for age-aware controls.",
+                                subtitle = "Only titles within the selected age rating.",
                                 checked = isKids,
                                 leadingIcon = Icons.Default.ChildCare,
                                 onClick = { isKids = !isKids },
                             )
+                        }
+
+                        if (isKids) {
+                            Text("Maximum age: $kidsMaxAge years", color = Color.White, fontSize = 14.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                com.vueo.shared.core.profile.KidsContentPolicy.ageLimits.forEach { age ->
+                                    Box(Modifier.weight(1f)) {
+                                        TvProfileAction(
+                                            label = "$age years", width = 0, fillWidth = true,
+                                            primary = kidsMaxAge == age, scaleOnFocus = false,
+                                            onClick = { kidsMaxAge = age },
+                                        )
+                                    }
+                                }
+                            }
+                            Text("Unrated titles are hidden. A parental PIN is needed to save Kids settings.", color = PickerMuted, fontSize = 11.sp)
                         }
 
                         Box {
@@ -694,7 +745,8 @@ private fun TvProfileEditorScreen(
                             // Reserve the full 1.18x focused diameter inside every cell.
                             // Scaling only changes drawing, never grid measurement.
                             val avatarSize = cellSize / 1.18f
-                            LazyVerticalGrid(
+                            TvAvatarFocusScroll {
+                        LazyVerticalGrid(
                                 columns = GridCells.Fixed(columns),
                                 modifier = Modifier.fillMaxSize(),
                                 horizontalArrangement = Arrangement.spacedBy(gap),
@@ -718,6 +770,7 @@ private fun TvProfileEditorScreen(
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -1059,9 +1112,9 @@ private fun TvAvatarChoice(
     Box(
         modifier = Modifier
             .size(size)
-            .scale(scale)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
+            .scale(scale)
             .clip(CircleShape)
             .border(
                 width = if (focused) 4.dp else if (selected) 3.dp else 1.dp,
@@ -1323,5 +1376,59 @@ private fun TvProfileConfirmOverlay(
                 }
             }
         }
+    }
+}
+
+
+/** Reveal only clipped rows. Horizontal moves within a visible row cannot re-pivot the grid. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TvAvatarFocusScroll(content: @Composable () -> Unit) {
+    val reveal = remember {
+        object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                val focusInset = size * .09f
+                return when {
+                    offset - focusInset < 0f -> offset - focusInset
+                    offset + size + focusInset > containerSize -> offset + size + focusInset - containerSize
+                    else -> 0f
+                }
+            }
+        }
+    }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides reveal, content = content)
+}
+
+@Composable
+private fun TvParentalPinGate(store: ProfileStore, onGranted: () -> Unit, onCancel: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val existing = remember { store.hasParentalPin() }
+    var first by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reset by remember { mutableIntStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    key(reset) {
+        TvPinEntryOverlay(
+            title = if (existing) "Parental PIN" else if (first == null) "Create parental PIN" else "Confirm parental PIN",
+            subtitle = if (existing) "Enter the 4-digit parental PIN" else "Protect Kids controls on this device. Keep this PIN private.",
+            errorText = error,
+            onComplete = { pin ->
+                if (!busy) {
+                    if (!existing && first == null) { first = pin; reset++ }
+                    else if (!existing && first != pin) { first = null; error = "PINs did not match"; reset++ }
+                    else {
+                        busy = true
+                        scope.launch {
+                            val accepted = withContext(Dispatchers.IO) {
+                                if (existing) store.verifyParentalPin(pin) else store.setParentalPin(pin)
+                            }
+                            busy = false
+                            if (accepted) onGranted() else { error = "Incorrect PIN"; reset++ }
+                        }
+                    }
+                }
+            },
+            onCancel = onCancel,
+        )
     }
 }

@@ -156,6 +156,13 @@ internal fun WhosWatchingScreen(
     onProfileSelected: () -> Unit,
     onProfilesChanged: () -> Unit,
 ) {
+    var parentalAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun parentApprove(action: () -> Unit) {
+        if (profileStore.needsParentalApproval()) parentalAction = action else action()
+    }
+    parentalAction?.let { action ->
+        MobileParentalPinGate(profileStore, onGranted = { parentalAction = null; action() }, onCancel = { parentalAction = null })
+    }
     val profiles = remember(profileVersion) {
         profileStore.profiles()
     }
@@ -251,11 +258,14 @@ internal fun WhosWatchingScreen(
                                 locked = profileStore.hasProfilePin(profile.id),
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    if (profileStore.hasProfilePin(profile.id)) {
-                                        lockedProfile = profile
-                                    } else if (profileStore.setActiveProfile(profile.id)) {
-                                        onProfileSelected()
+                                    val select = {
+                                        if (profileStore.hasProfilePin(profile.id)) {
+                                            lockedProfile = profile
+                                        } else if (profileStore.setActiveProfile(profile.id)) {
+                                            onProfileSelected()
+                                        }
                                     }
+                                    if (profileStore.needsParentalApprovalForSwitch(profile) || (profile.isKids && !profileStore.hasParentalPin())) parentApprove(select) else select()
                                 },
                             )
                         }
@@ -308,6 +318,13 @@ internal fun ProfileSettingsScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    var parentalAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun parentApprove(action: () -> Unit) {
+        if (profileStore.needsParentalApproval()) parentalAction = action else action()
+    }
+    parentalAction?.let { action ->
+        MobileParentalPinGate(profileStore, onGranted = { parentalAction = null; action() }, onCancel = { parentalAction = null })
+    }
     val profiles = remember(profileVersion) { profileStore.profiles() }
     var editor by remember { mutableStateOf<ProfileEditorState?>(null) }
     var deleteCandidate by remember { mutableStateOf<VueoProfile?>(null) }
@@ -325,13 +342,15 @@ internal fun ProfileSettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val wasActive = profile.id == profileStore.activeProfileId()
-                        if (profileStore.deleteProfile(profile.id)) {
-                            deleteLocalAvatar(context, profile.avatar)
-                            if (wasActive) onActiveProfileChanged()
-                            onProfilesChanged()
+                        parentApprove {
+                            val wasActive = profile.id == profileStore.activeProfileId()
+                            if (profileStore.deleteProfile(profile.id)) {
+                                deleteLocalAvatar(context, profile.avatar)
+                                if (wasActive) onActiveProfileChanged()
+                                onProfilesChanged()
+                            }
+                            deleteCandidate = null
                         }
-                        deleteCandidate = null
                     },
                 ) { Text("Delete") }
             },
@@ -360,13 +379,14 @@ internal fun ProfileSettingsScreen(
                 state = editorState,
                 profileStore = profileStore,
                 onBack = { editor = null },
-                onSave = { name, avatar, isKids, pinEnabled, pin ->
+                onSave = { name, avatar, isKids, kidsMaxAge, pinEnabled, pin ->
                     val existing = editorState.profile
                     if (existing == null) {
                         val created = profileStore.createProfile(
                             name = name,
                             avatar = avatar,
                             isKids = isKids,
+                            kidsMaxAge = kidsMaxAge,
                         )
                         if (pinEnabled && pin.length == 4) {
                             profileStore.setProfilePin(created.id, pin)
@@ -378,6 +398,7 @@ internal fun ProfileSettingsScreen(
                             name = name,
                             avatar = avatar,
                             isKids = isKids,
+                            kidsMaxAge = kidsMaxAge,
                         )
                         if (!pinEnabled && profileStore.hasProfilePin(existing.id)) {
                             profileStore.clearProfilePin(existing.id)
@@ -443,7 +464,8 @@ internal fun ProfileSettingsScreen(
                                 locked = profileStore.hasProfilePin(profile.id),
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    editor = ProfileEditorState(profile)
+                                    val edit = { editor = ProfileEditorState(profile) }
+                                    if (profileStore.activeProfile().isKids) parentApprove(edit) else edit()
                                 },
                             )
                         }
@@ -459,7 +481,10 @@ internal fun ProfileSettingsScreen(
                         ) {
                             AddProfileAvatar(
                                 modifier = Modifier.weight(1f),
-                                onClick = { editor = ProfileEditorState(null) },
+                                onClick = {
+                                    val add = { editor = ProfileEditorState(null) }
+                                    if (profileStore.activeProfile().isKids) parentApprove(add) else add()
+                                },
                             )
                             Spacer(Modifier.weight(1f))
                         }
@@ -533,7 +558,7 @@ private fun ProfileEditorScreen(
     state: ProfileEditorState,
     profileStore: ProfileStore,
     onBack: () -> Unit,
-    onSave: (String, String, Boolean, Boolean, String) -> Unit,
+    onSave: (String, String, Boolean, Int, Boolean, String) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     val context = LocalContext.current
@@ -544,6 +569,8 @@ private fun ProfileEditorScreen(
     }
     var name by remember(profile?.id) { mutableStateOf(profile?.name.orEmpty()) }
     var avatar by remember(profile?.id) { mutableStateOf(initialAvatar) }
+    var kidsMaxAge by remember(profile?.id) { mutableStateOf(profile?.kidsMaxAge ?: 7) }
+    var parentalSave by remember { mutableStateOf(false) }
     var isKids by remember(profile?.id) { mutableStateOf(profile?.isKids ?: false) }
     val hadPin = remember(profile?.id) {
         profile?.let { profileStore.hasProfilePin(it.id) } ?: false
@@ -551,6 +578,13 @@ private fun ProfileEditorScreen(
     var pinEnabled by remember(profile?.id) { mutableStateOf(hadPin) }
     var pin by remember(profile?.id) { mutableStateOf("") }
     var photoBusy by remember { mutableStateOf(false) }
+
+    if (parentalSave) {
+        MobileParentalPinGate(profileStore,
+            onGranted = { parentalSave = false; onSave(name.trim(), avatar, isKids, kidsMaxAge, pinEnabled, pin) },
+            onCancel = { parentalSave = false },
+        )
+    }
 
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -732,12 +766,28 @@ private fun ProfileEditorScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Kids Profile", color = Color.White, fontWeight = FontWeight.Bold)
                         Text(
-                            "Marks this profile for age-aware controls.",
+                            "Only titles within the selected age rating.",
                             color = VueoPalette.Muted,
                             fontSize = 11.sp,
                         )
                     }
                     Switch(checked = isKids, onCheckedChange = { isKids = it })
+                }
+            }
+        }
+
+        if (isKids) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Maximum age", color = Color.White, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.vueo.shared.core.profile.KidsContentPolicy.ageLimits.forEach { age ->
+                            OutlinedButton(onClick = { kidsMaxAge = age }, modifier = Modifier.weight(1f)) {
+                                Text(if (kidsMaxAge == age) "✓ $age" else "$age", color = Color.White)
+                            }
+                        }
+                    }
+                    Text("Unrated titles are hidden. A parental PIN is needed to save Kids settings.", color = VueoPalette.Muted, fontSize = 11.sp)
                 }
             }
         }
@@ -788,7 +838,8 @@ private fun ProfileEditorScreen(
             Button(
                 enabled = name.trim().isNotEmpty() && (!pinEnabled || hadPin || pin.length == 4),
                 onClick = {
-                    onSave(name.trim(), avatar, isKids, pinEnabled, pin)
+                    if (isKids || profile?.isKids == true) parentalSave = true
+                    else onSave(name.trim(), avatar, isKids, kidsMaxAge, pinEnabled, pin)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -1306,4 +1357,51 @@ private fun ProfileAvatar(
             }
         }
     }
+}
+
+
+@Composable
+private fun MobileParentalPinGate(store: ProfileStore, onGranted: () -> Unit, onCancel: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val existing = remember { store.hasParentalPin() }
+    var first by remember { mutableStateOf<String?>(null) }
+    var input by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(if (existing) "Parental PIN" else if (first == null) "Create parental PIN" else "Confirm parental PIN") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(if (existing) "Enter the 4-digit parental PIN." else "Protect Kids controls on this device. Keep this PIN private.")
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { value -> if (!busy && value.length <= 4 && value.all { it in '0'..'9' }) input = value },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    label = { Text("4-digit PIN") },
+                )
+                error?.let { Text(it, color = Color.Red) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = input.length == 4 && !busy, onClick = {
+                if (!existing && first == null) { first = input; input = ""; error = null }
+                else if (!existing && first != input) { first = null; input = ""; error = "PINs did not match" }
+                else {
+                    val candidate = input
+                    busy = true
+                    scope.launch {
+                        val accepted = withContext(Dispatchers.IO) {
+                            if (existing) store.verifyParentalPin(candidate) else store.setParentalPin(candidate)
+                        }
+                        busy = false
+                        if (accepted) onGranted() else { input = ""; error = "Incorrect PIN" }
+                    }
+                }
+            }) { Text(if (busy) "Checking…" else "Continue") }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+    )
 }

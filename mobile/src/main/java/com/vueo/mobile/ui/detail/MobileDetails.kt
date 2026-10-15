@@ -994,7 +994,7 @@ internal fun MediaDetailsScreen(
 
             if (sessionCurrent()) {
                 relatedItems =
-                    remoteRelated
+                    engine.filterVisible(remoteRelated)
             }
         }
 
@@ -1339,6 +1339,10 @@ internal fun MediaDetailsScreen(
         preferredSource: StreamSource? = null,
         prefetched: MobileEpisodePrefetch? = null,
     ) {
+        if (!engine.allowsContent(item)) {
+            android.widget.Toast.makeText(context, "This title is unavailable for this Kids profile.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         selectedPlaybackStartPositionMs = startPositionMs.coerceAtLeast(0L)
         if (autoPlayFirst) returnToSourcesOnPlayerExit = false
 

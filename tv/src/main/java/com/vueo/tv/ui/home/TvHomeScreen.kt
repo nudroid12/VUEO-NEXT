@@ -285,7 +285,15 @@ fun TvHomeScreen(
 
     val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
         else retainedState.presentationRows.filterNot { it.key == "because-you-watched" || it.key == "for-you" }
-    val rows = remember(baseRows, traktRows) { baseRows + buildTvHomeRows(traktRows, emptyList()) }
+    val kidsLimit = runtime.profileStore.kidsAgeLimit()
+    val rows = remember(baseRows, traktRows, kidsLimit) {
+        val combined = baseRows + buildTvHomeRows(traktRows, emptyList())
+        if (kidsLimit == null) combined else combined.mapNotNull { row ->
+            row.copy(entries = row.entries.filter {
+                com.vueo.shared.core.profile.KidsContentPolicy.allows(it.media.certification, kidsLimit)
+            }).takeIf { it.entries.isNotEmpty() }
+        }
+    }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
 

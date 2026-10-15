@@ -1,14 +1,33 @@
-APP VUEO-NEXT — TV profile editor four-column avatar panel
+APP VUEO-NEXT — Kids age controls (TV + Mobile) and TV avatar focus scroll
 
-Apply to VUEO-NEXT app repository root. Cumulative TvProfilePickerScreen.kt based on previous app patches; no Worker or mobile changes, no new avatar artwork, no YML.
+Upload this ZIP to the VUEO-NEXT app repository root. Paths overwrite app files directly. Apply on top of the previously supplied app patches. No Worker, SQL migration or workflow/YML changes.
 
-- Profile name, Kids Profile and Profile PIN use the same68dp field/row height.
-- Add ChildCare icon to Kids Profile, matching the PIN lock icon slot.
-- Retain tight title/description spacing and compact switches inside the larger rows.
-- Keep Save/Delete directly below the natural form height. Delete and Save have equal width and52dp height; Save/Create is full width when Delete is absent.
-- Measure the left form before the right pane in the same Compose layout pass. Right avatar panel ends at the same baseline as the action buttons without stretching the left form or avatar gaps.
-- Avatar catalogue is a scrollable four-column grid inside a rounded bordered panel.
-- Avatar bounds are square and cropped circular. Focus animates to1.18x with a white border. Each cell reserves enough space for the full focused size; panel padding protects edge cells.
-- Keep current26 avatar choices, remote Back behavior, keyboard handling, PIN flows and delete confirmation.
+Kids controls:
+- Enable Kids Profile, then choose maximum age7,12 or16 in either profile editor.
+- Existing Kids profiles default to7. Unsupported stored limits fall back to7.
+- kidsMaxAge is part of the existing profile JSON, so existing Account sync carries it with the profile.
+- Missing/ambiguous certifications are hidden in Kids profiles. The app does not fetch additional metadata per poster; a provider/feed that supplies no certification can yield empty Kids lists. PG is conservatively treated as10, PG-13 as13, TV-14 as14; mature ratings never pass16.
+- Catalogue/search partial and final output, local discovery/search caches, Home featured/recommendation/Trakt rows, entity results, related titles and Library views are filtered.
+- Source discovery rejects disallowed titles with a message. Both player entry points reject disallowed/unknown titles before player setup.
+- Original library records are retained. Filtering is for views; background Trakt synchronization explicitly reads raw data. Kids-filtered Home results do not replace the general persisted catalogue cache.
 
-Validation: final Kotlin PSI syntax check passed. Layout arithmetic checked for four columns,1.18x focus fitting in cells and shared panel/action baseline. Full Android compilation and TV device verification unavailable.
+PIN behavior:
+- Set up a separate four-digit parental PIN on first use, on EACH device. First-time setup must be completed by the parent. This is separate from individual profile unlock PINs.
+- Once set, the parental PIN gates saving Kids changes (including disabling Kids or changing the age), choosing an adult profile, deleting profiles when Kids exist, and entering adult/add-profile management from an active Kids profile.
+- The first entry into Kids also prompts setup if this device has no parental PIN. Accounts with Kids profiles show the picker at startup.
+- Salted PIN hashes stay local and do not sync. Existing profile unlock PIN behavior is retained.
+- These are app-level controls based on metadata supplied by content sources, not a guarantee about actual footage or a tamper-proof device control.
+
+TV avatar fix:
+- Four-column scrollable panel, circular avatars and1.18x focus retained.
+- Focus target coordinates stay fixed; scaling occurs inside the clickable target.
+- Scoped reveal policy scrolls only a clipped row, with space for the enlarged avatar, rather than repivoting a visible row on horizontal focus changes.
+- Previous profile editor alignment, same-size Delete/Save and Kids icon retained.
+
+Validation:
+-8 production rating-policy JVM tests passed.
+-Actual ProfileStore compiled and field/limit/PIN checks passed using in-memory Android and JSON adapters (not an Android integration test).
+-Extracted production engine boundary checks passed for filtered partial/final catalogue, title, actor and browse results; adult passthrough and source preservation checked.
+-Extracted avatar reveal policy checks passed for stationary visible rows and clipped-row reveal.
+-All20 packaged Kotlin files passed PSI syntax checks.
+-Full Android compilation, TV remote testing and on-device integration testing were unavailable.

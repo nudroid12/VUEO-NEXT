@@ -292,7 +292,7 @@ internal fun TvSearchScreen(
 
         if (requestedMode == TvSearchMode.TITLE) {
             session.actorSourceAvailable = true
-            val local = SearchOrchestrator.localTitleResults(normalized)
+            val local = runtime.engine.filterVisible(SearchOrchestrator.localTitleResults(normalized))
             if (local.isNotEmpty() || session.searchResults.isEmpty()) {
                 session.searchResults = local
             }
@@ -392,7 +392,7 @@ internal fun TvSearchScreen(
     val prepared = if (sameView) session.preparedResult else TvSearchPreparedResult()
     val preparing = session.preparedInput != prepareInput
     val availableGenres = prepared.genres
-    val filteredItems = prepared.items
+    val filteredItems = runtime.engine.filterVisible(prepared.items)
     val contentDiscovering = discovering || animeDiscovering || preparing
 
     LaunchedEffect(active, prepareInput) {
@@ -448,7 +448,7 @@ internal fun TvSearchScreen(
         initialFirstVisibleItemIndex = session.firstVisibleItemIndex,
         initialFirstVisibleItemScrollOffset = session.firstVisibleItemScrollOffset,
     )
-    val resultKeys = prepared.keys
+    val resultKeys = filteredItems.map(::mediaKey)
     val resultRequesterCache = remember(resultKeys, session.mode) { mutableMapOf<String, FocusRequester>() }
     val resultFocusJob = remember { arrayOfNulls<Job>(1) }
 
