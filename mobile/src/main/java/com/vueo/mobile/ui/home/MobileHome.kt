@@ -333,10 +333,12 @@ internal fun HomeScreen(
     onMediaClick: (MediaItem) -> Unit,
     onPlaybackClick:
         (LibraryPlaybackEntry) -> Unit,
+    onOpenCollection: (String, String) -> Unit,
     onSeeAll: (CatalogRow) -> Unit,
 ) {
     val context =
         LocalContext.current
+    val collectionHomeState = com.vueo.shared.collections.ui.rememberCollectionHomeState(activeProfileId)
     val trakt = remember { com.vueo.shared.core.trakt.TraktService.get(context) }
     val traktProfile = trakt.profileId()
     val traktRevision by trakt.catalogRevision.collectAsState()
@@ -875,6 +877,16 @@ internal fun HomeScreen(
         }
     }
 
+        collectionHomeState.error?.let { error ->
+            item(key = "user-collections-error") { Text(error, color = VueoPalette.Muted, modifier = Modifier.padding(16.dp)) }
+        }
+        items(collectionHomeState.collections.filter { it.enabled && it.folders.isNotEmpty() }, key = { "collection:${it.id}" }) { collection ->
+            com.vueo.shared.collections.ui.CollectionHomeRow(
+                collection = collection,
+                image = { url, label, modifier -> NetworkImage(url, label, modifier) },
+                onOpen = onOpenCollection,
+            )
+        }
             items(
             items = engine.filterVisibleRows(rows + traktRows),
             key = {

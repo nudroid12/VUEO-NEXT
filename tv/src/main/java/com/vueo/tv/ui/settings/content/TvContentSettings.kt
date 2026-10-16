@@ -150,6 +150,11 @@ internal fun TvContentManagerHub(
             accented = true,
         ),
         TvSettingsEntry(
+            "collections", "Collections", "Build Home rows with folders and catalog sources.", "Custom",
+            onActivate = { onOpen(TvSettingsPage.CONTENT_COLLECTIONS) },
+            section = "CONTENT", icon = Icons.Default.VideoLibrary, accented = true,
+        ),
+        TvSettingsEntry(
             "catalogs", "Catalog Order", "Choose the order catalogs appear on Home.",
             "$catalogCount catalogs",
             onActivate = { onOpen(TvSettingsPage.CONTENT_CATALOGS) },

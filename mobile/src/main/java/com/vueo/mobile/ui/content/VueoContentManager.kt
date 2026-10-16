@@ -255,6 +255,7 @@ internal fun ContentManagerScreen(
     onBack: () -> Unit,
     onAddons: () -> Unit,
     onPlugins: () -> Unit,
+    onCollections: () -> Unit,
     onCatalogOrder: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -359,6 +360,12 @@ internal fun ContentManagerScreen(
                     status = "$repositoryCount repos • $providerCount providers",
                     icon = Icons.Default.SettingsInputComponent,
                     onClick = onPlugins,
+                )
+                VueoSettingsHubDivider()
+                VueoSettingsHubRow(
+                    title = "Collections",
+                    subtitle = "Build Home rows with folders and catalog sources.",
+                    status = "Custom", icon = Icons.Default.VideoLibrary, onClick = onCollections,
                 )
                 VueoSettingsHubDivider()
                 VueoSettingsHubRow(

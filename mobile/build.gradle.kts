@@ -77,6 +77,7 @@ android {
 
 dependencies {
     implementation(project(":shared:core"))
+    implementation(project(":shared:collections-ui"))
 
     // Compose 1.11.x line, compatible with compileSdk 36.
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")

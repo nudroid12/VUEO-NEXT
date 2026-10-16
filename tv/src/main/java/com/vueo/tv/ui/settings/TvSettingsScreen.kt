@@ -61,6 +61,7 @@ internal enum class TvSettingsPage {
     CONTENT_PROVIDERS,
     CONTENT_PROVIDER_HEALTH,
     CONTENT_CATALOGS,
+    CONTENT_COLLECTIONS,
     ENHANCEMENTS,
     ENHANCEMENT_TRAKT,
     ENHANCEMENT_TMDB,
@@ -102,6 +103,7 @@ private fun TvSettingsPage.rootPage(): TvSettingsPage = when (this) {
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
+    TvSettingsPage.CONTENT_COLLECTIONS,
     TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
@@ -115,6 +117,7 @@ private fun TvSettingsPage.hasPanelParent(): Boolean = when (this) {
     TvSettingsPage.CONTENT_ADDONS,
     TvSettingsPage.CONTENT_PROVIDERS,
     TvSettingsPage.CONTENT_PROVIDER_HEALTH,
+    TvSettingsPage.CONTENT_COLLECTIONS,
     TvSettingsPage.CONTENT_CATALOGS,
     TvSettingsPage.ENHANCEMENT_TRAKT,
     TvSettingsPage.ENHANCEMENT_TMDB,
@@ -153,6 +156,7 @@ fun TvSettingsScreen(
             TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvSettingsPage.CONTENT_PROVIDERS
             TvSettingsPage.CONTENT_ADDONS,
             TvSettingsPage.CONTENT_PROVIDERS,
+            TvSettingsPage.CONTENT_COLLECTIONS,
             TvSettingsPage.CONTENT_CATALOGS -> TvSettingsPage.CONTENT_MANAGER
             TvSettingsPage.ENHANCEMENT_TRAKT,
             TvSettingsPage.ENHANCEMENT_TMDB,
@@ -210,6 +214,10 @@ fun TvSettingsScreen(
             )
             TvSettingsPage.CONTENT_PROVIDER_HEALTH -> TvProviderHealthOverview(
                 runtime, onNavigate, onProfile, ::backPanel
+            )
+            TvSettingsPage.CONTENT_COLLECTIONS -> com.vueo.shared.collections.ui.CollectionManagerScreen(
+                engine = runtime.engine, profileId = runtime.profileStore.activeProfileId(), onBack = ::backPanel,
+                image = { url, label, modifier -> com.vueo.tv.ui.TvNetworkImage(url, label, modifier) },
             )
             TvSettingsPage.CONTENT_CATALOGS -> TvCatalogSettings(
                 runtime, onNavigate, onProfile, onDataChanged, ::backPanel

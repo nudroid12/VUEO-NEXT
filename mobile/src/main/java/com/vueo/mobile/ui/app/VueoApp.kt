@@ -278,6 +278,7 @@ private enum class AppSurface {
     STARTUP,
     ROOT,
     CATALOG,
+    COLLECTION_FOLDER,
     DETAILS,
     ENTITY_RESULTS,
     PROFILES,
@@ -296,6 +297,7 @@ private enum class SettingsPage {
     ADDONS,
     PLUGINS,
     CATALOG_ORDER,
+    COLLECTIONS,
     ENHANCEMENTS,
     TRAKT,
     TMDB,
@@ -315,6 +317,7 @@ private fun parentSettingsPage(
     when (page) {
         SettingsPage.ADDONS,
         SettingsPage.PLUGINS,
+        SettingsPage.COLLECTIONS,
         SettingsPage.CATALOG_ORDER ->
             SettingsPage.CONTENT_MANAGER
 
@@ -489,6 +492,9 @@ fun VueoApp(
     var selectedEntityTarget by rememberSaveable(navigationOwner, stateSaver = MobileEntitySaver) {
         mutableStateOf<MediaEntityTarget?>(null)
     }
+    var selectedCollectionId by rememberSaveable(navigationOwner) { mutableStateOf<String?>(null) }
+    var selectedFolderId by rememberSaveable(navigationOwner) { mutableStateOf<String?>(null) }
+    val collectionUiState = rememberSaveableStateHolder()
     var selectedCatalogRow by remember {
         mutableStateOf<CatalogRow?>(null)
     }
@@ -755,6 +761,7 @@ fun VueoApp(
             selectedEntityTarget != null -> AppSurface.ENTITY_RESULTS
             selectedMedia != null -> AppSurface.DETAILS
             selectedCatalogRow != null -> AppSurface.CATALOG
+            selectedCollectionId != null && selectedFolderId != null -> AppSurface.COLLECTION_FOLDER
             else -> AppSurface.ROOT
         }
 
@@ -830,6 +837,23 @@ fun VueoApp(
                         libraryVersion++
                     },
                 )
+            }
+
+            AppSurface.COLLECTION_FOLDER -> {
+                val collectionId = selectedCollectionId
+                val folderId = selectedFolderId
+                if (collectionId != null && folderId != null) {
+                    collectionUiState.SaveableStateProvider("$navigationOwner:$collectionId:$folderId") {
+                        com.vueo.shared.collections.ui.CollectionFolderScreen(
+                            engine = engine, profileId = navigationProfile.id,
+                            collectionId = collectionId, folderId = folderId,
+                            contentRevision = contentVersion,
+                            image = { url, label, modifier -> com.vueo.mobile.ui.components.NetworkImage(url, label, modifier) },
+                            onBack = { selectedCollectionId = null; selectedFolderId = null },
+                            onMedia = { item -> selectedLibraryEntry = null; mediaBackStack = emptyList(); selectedMedia = item },
+                        )
+                    }
+                }
             }
 
             AppSurface.CATALOG -> {
@@ -1079,6 +1103,9 @@ fun VueoApp(
                                 selectedMedia =
                                     entry.media
                             },
+                            onOpenCollection = { collection, folder ->
+                                selectedCollectionId = collection; selectedFolderId = folder
+                            },
                             onSeeAll = {
                                 row ->
                                 selectedCatalogRow =
@@ -1211,6 +1238,7 @@ fun VueoApp(
                             onPlugins = {
                                 settingsPage = SettingsPage.PLUGINS
                             },
+                            onCollections = { settingsPage = SettingsPage.COLLECTIONS },
                             onCatalogOrder = {
                                 settingsPage =
                                     SettingsPage.CATALOG_ORDER
@@ -1237,6 +1265,12 @@ fun VueoApp(
                             onBack = {
                                 settingsPage = SettingsPage.CONTENT_MANAGER
                             },
+                        )
+                    SettingsPage.COLLECTIONS ->
+                        com.vueo.shared.collections.ui.CollectionManagerScreen(
+                            engine = engine, profileId = navigationProfile.id,
+                            onBack = { settingsPage = SettingsPage.CONTENT_MANAGER },
+                            image = { url, label, modifier -> com.vueo.mobile.ui.components.NetworkImage(url, label, modifier) },
                         )
                     SettingsPage.CATALOG_ORDER ->
                         CatalogOrderScreen(

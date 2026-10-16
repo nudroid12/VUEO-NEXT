@@ -106,6 +106,7 @@ private enum class TvRoute {
     PROFILE,
     DETAIL,
     ENTITY_RESULTS,
+    COLLECTION_FOLDER,
     SOURCE,
     PLAYER,
 }
@@ -124,6 +125,7 @@ private val retainedDetailParentRoutes = setOf(
     TvRoute.SEARCH,
     TvRoute.LIBRARY,
     TvRoute.ENTITY_RESULTS,
+    TvRoute.COLLECTION_FOLDER,
 )
 
 @Composable
@@ -158,6 +160,9 @@ fun VueoTvApp(
     var detailMotionClosing by remember { mutableStateOf(false) }
     var refreshToken by remember { mutableIntStateOf(0) }
     var watchNextSyncToken by remember { mutableIntStateOf(0) }
+    var collectionId by remember { mutableStateOf<String?>(null) }
+    var collectionFolderId by remember { mutableStateOf<String?>(null) }
+    val collectionSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var selectedMedia by remember { mutableStateOf<MediaItem?>(null) }
     var selectedEntityTarget by remember { mutableStateOf<MediaEntityTarget?>(null) }
     var selectedLibraryEntry by remember { mutableStateOf<LibraryPlaybackEntry?>(null) }
@@ -1240,6 +1245,10 @@ fun VueoTvApp(
                         active = route == TvRoute.HOME,
                         onNavigate = ::navigate,
                         onOpenMedia = { openDetail(it, TvRoute.HOME) },
+                        onOpenCollection = { collection, folder ->
+                            collectionId = collection; collectionFolderId = folder
+                            route = TvRoute.COLLECTION_FOLDER
+                        },
                         onResume = { openPlaybackDetail(it, TvRoute.HOME) },
                         onProfile = { openDna(TvRoute.HOME) },
                         onBack = onExit,
@@ -1365,6 +1374,23 @@ fun VueoTvApp(
                             onOpenEntity = ::openEntityResults,
                             onLibraryChanged = { notifyLibraryChanged() },
                         )
+                    }
+                }
+
+                TvRoute.COLLECTION_FOLDER -> {
+                    val currentCollection = collectionId
+                    val currentFolder = collectionFolderId
+                    if (currentCollection != null && currentFolder != null) {
+                        collectionSaveableState.SaveableStateProvider("${runtime.profileStore.activeProfileId()}:$currentCollection:$currentFolder") {
+                            com.vueo.shared.collections.ui.CollectionFolderScreen(
+                                engine = runtime.engine, profileId = runtime.profileStore.activeProfileId(),
+                                collectionId = currentCollection, folderId = currentFolder, contentRevision = refreshToken,
+                                active = route == TvRoute.COLLECTION_FOLDER,
+                                image = { url, label, modifier -> com.vueo.tv.ui.TvNetworkImage(url, label, modifier) },
+                                onBack = { route = TvRoute.HOME },
+                                onMedia = { openDetail(it, TvRoute.COLLECTION_FOLDER) },
+                            )
+                        }
                     }
                 }
 

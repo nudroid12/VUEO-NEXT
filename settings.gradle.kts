@@ -19,3 +19,5 @@ rootProject.name = "VUEO-NEXT"
 include(":mobile")
 include(":tv")
 include(":shared:core")
+
+include(":shared:collections-ui")

@@ -92,6 +92,7 @@ fun TvHomeScreen(
     active: Boolean = true,
     onNavigate: (String) -> Unit,
     onOpenMedia: (MediaItem) -> Unit,
+    onOpenCollection: (String, String) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
@@ -110,6 +111,20 @@ fun TvHomeScreen(
     }
     LaunchedEffect(traktProfile, traktLibraryRevision) {
         if (traktLibraryRevision > 0L) retainedState.libraryRevision += 1
+    }
+    val collectionStore = remember(traktContext, traktProfile) {
+        com.vueo.shared.core.collections.CollectionStore.get(traktContext, traktProfile)
+    }
+    val userCollections by collectionStore.collections.collectAsState()
+    LaunchedEffect(collectionStore) {
+        try { collectionStore.load() } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { /* Management screen surfaces file errors. */ }
+    }
+    val collectionRows = remember(userCollections) {
+        userCollections.filter { it.enabled && it.folders.isNotEmpty() }.map { collection ->
+            TvHomeRow("collection:${collection.id}", collection.title, TvHomeRowKind.COLLECTIONS,
+                collection.folders.map { TvHomeEntry.Folder(collection.id, it) })
+        }
     }
     val catalogRows = retainedState.catalogRows
     val loading = retainedState.presentationRows.isEmpty() && traktRows.isEmpty() && retainedState.error == null &&
@@ -286,10 +301,10 @@ fun TvHomeScreen(
     val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
         else retainedState.presentationRows.filterNot { it.key == "because-you-watched" || it.key == "for-you" }
     val kidsLimit = runtime.profileStore.kidsAgeLimit()
-    val rows = remember(baseRows, traktRows, kidsLimit) {
-        val combined = baseRows + buildTvHomeRows(traktRows, emptyList())
+    val rows = remember(baseRows, traktRows, kidsLimit, collectionRows) {
+        val combined = baseRows + buildTvHomeRows(traktRows, emptyList()) + collectionRows
         if (kidsLimit == null) combined else combined.mapNotNull { row ->
-            row.copy(entries = row.entries.filter {
+            if (row.kind == TvHomeRowKind.COLLECTIONS) row else row.copy(entries = row.entries.filter {
                 com.vueo.shared.core.profile.KidsContentPolicy.allows(it.media.certification, kidsLimit)
             }).takeIf { it.entries.isNotEmpty() }
         }
@@ -387,8 +402,8 @@ fun TvHomeScreen(
             },
             onOpenNavigation = ::focusSidebar,
             // Rows captures the retained anchor before this changes routes.
-            onOpen = { entry -> entry.open(onOpenMedia, onResume) },
-            onLongClick = { entry -> actionEntry = entry },
+            onOpen = { entry -> entry.open(onOpenMedia, onResume, onOpenCollection) },
+            onLongClick = { entry -> if (entry !is TvHomeEntry.Folder) actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )
 

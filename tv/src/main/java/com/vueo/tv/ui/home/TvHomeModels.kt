@@ -25,6 +25,14 @@ internal sealed interface TvHomeEntry {
         override val media: MediaItem,
     ) : TvHomeEntry
 
+    data class Folder(
+        val collectionId: String,
+        val folder: com.vueo.shared.core.collections.CollectionFolder,
+    ) : TvHomeEntry {
+        override val key = "collection:$collectionId:${folder.id}"
+        override val media = MediaItem(key, "collection-folder", folder.title, poster = folder.coverImageUrl, background = folder.coverImageUrl)
+    }
+
     data class Resume(
         override val key: String,
         override val media: MediaItem,
@@ -35,6 +43,7 @@ internal sealed interface TvHomeEntry {
 internal enum class TvHomeRowKind {
     CONTINUE_WATCHING,
     POSTERS,
+    COLLECTIONS,
 }
 
 internal data class TvHomeRow(
@@ -78,8 +87,10 @@ internal object TvHomeFocusMemory {
 internal fun TvHomeEntry.open(
     onOpenMedia: (MediaItem) -> Unit,
     onResume: (LibraryPlaybackEntry) -> Unit,
+    onFolder: (String, String) -> Unit,
 ) {
     when (this) {
+        is TvHomeEntry.Folder -> onFolder(collectionId, folder.id)
         is TvHomeEntry.Media -> onOpenMedia(media)
         is TvHomeEntry.Resume -> onResume(playback)
     }

@@ -153,6 +153,7 @@ internal fun TvHomePresentation(
     // rather than waiting twice (first for rapid mode, then for hero load).
     LaunchedEffect(focusedEntry?.key, artworkApiKey, verticalMotionActive, rapidHorizontalNavigation) {
         val next = focusedEntry ?: return@LaunchedEffect
+        if (next is TvHomeEntry.Folder) return@LaunchedEffect
         if (verticalMotionActive || (rapidHorizontalNavigation && heroScene != null)) {
             return@LaunchedEffect
         }
@@ -182,11 +183,13 @@ internal fun TvHomePresentation(
     LaunchedEffect(focusedEntry?.key, artworkApiKey, rows, verticalMotionActive, rapidHorizontalNavigation) {
         if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         val selected = focusedEntry ?: return@LaunchedEffect
+        if (selected is TvHomeEntry.Folder) return@LaunchedEffect
         val row = rows.firstOrNull { it.entries.any { item -> item.key == selected.key } }
             ?: return@LaunchedEffect
         val index = row.entries.indexOfFirst { it.key == selected.key }
         val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
             ?: return@LaunchedEffect
+        if (adjacent is TvHomeEntry.Folder) return@LaunchedEffect
         delay(750L)
         if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         try {

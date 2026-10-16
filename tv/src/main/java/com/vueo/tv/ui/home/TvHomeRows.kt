@@ -948,9 +948,9 @@ private fun TvModernHomeCard(
         label = "modernHomeCardScale",
     )
 
-    val width = if (kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingWidth else PosterWidth
-    val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueWatchingHeight else PosterHeight
-    val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING) ContinueShape else PosterShape
+    val width = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingWidth else PosterWidth
+    val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingHeight else PosterHeight
+    val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
 
     Box(
         modifier = Modifier
@@ -994,6 +994,14 @@ private fun TvModernHomeCard(
     ) {
         when (kind) {
             TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused)
+            TvHomeRowKind.COLLECTIONS -> {
+                TvNetworkImage(url = entry.media.poster, contentDescription = entry.media.name,
+                    modifier = Modifier.fillMaxSize(), loadEnabled = loadImage || focused)
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .3f)))
+                Text(text = listOfNotNull((entry as? TvHomeEntry.Folder)?.folder?.coverEmoji, entry.media.name).joinToString(" "),
+                    color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, modifier = Modifier.align(Alignment.Center).padding(12.dp))
+            }
             TvHomeRowKind.POSTERS -> PosterCardContent(entry, loadImage || focused, focused)
         }
     }
