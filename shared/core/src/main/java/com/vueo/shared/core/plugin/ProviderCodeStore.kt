@@ -225,6 +225,7 @@ class ProviderCodeStore(context: Context) {
 class ProviderCodeSyncManager(
     context: Context,
 ) {
+    private val pluginStore = PluginStore(context.applicationContext)
     private val store = ProviderCodeStore(
         context.applicationContext
     )
@@ -258,6 +259,9 @@ class ProviderCodeSyncManager(
     ): ProviderCodeSyncResult = coroutineScope {
         val errors = mutableListOf<String>()
         val uniqueProviders = providers.distinctBy { it.id }
+        if (uniqueProviders.isEmpty()) {
+            return@coroutineScope ProviderCodeSyncResult(repository, 0, 0, emptyList())
+        }
 
         val outcomes = uniqueProviders.map { provider ->
             async(Dispatchers.IO) {
@@ -283,11 +287,15 @@ class ProviderCodeSyncManager(
                                 PluginHttp.getText(url)
 
                             repositoryMutationLock(repository).withLock {
-                                store.write(
-                                    repository,
-                                    provider,
-                                    source,
-                                )
+                                // Compare under the write lock: explicit refresh can
+                                // return identical text. Ready/no-change syncs must
+                                // not evict useful short-lived discovery results.
+                                if (store.read(repository, provider) != source) {
+                                    store.write(repository, provider, source)
+                                    // Invalidate immediately after publication. Other
+                                    // provider jobs may fail or be cancelled later.
+                                    PluginRuntimeCache.clear()
+                                }
                             }
 
                             true
@@ -317,8 +325,6 @@ class ProviderCodeSyncManager(
                 }
             }
         }
-        PluginRuntimeCache.clear()
-
         ProviderCodeSyncResult(
             repository = repository,
             readyProviders = outcomes.count { it },
@@ -331,6 +337,7 @@ class ProviderCodeSyncManager(
         repositories: List<PluginRepositoryDescriptor>,
         pluginStore: PluginStore,
     ) = coroutineScope {
+        if (!pluginStore.pluginsEnabled()) return@coroutineScope
         repositories
             .filter(pluginStore::isRepositoryEnabled)
             .map { repository ->
@@ -355,14 +362,14 @@ class ProviderCodeSyncManager(
         Unit
     }
 
+    /** Automatic warm-up: respect master/repository/provider enable preferences.
+     * Missing code for a subsequently enabled provider is repaired by runtime
+     * preflight on first use. Explicit syncRepository/syncProviders retain their
+     * caller-selected scope, including manual refresh of disabled providers.
+     */
     suspend fun syncMissing(
         repositories: List<PluginRepositoryDescriptor>,
     ) {
-        repositories.forEach { repository ->
-            syncRepository(
-                repository = repository,
-                force = false,
-            )
-        }
+        syncEnabled(repositories, pluginStore)
     }
 }
