@@ -707,7 +707,7 @@ internal fun TvCatalogSettings(
     val addonRuntimeReady = runtime.isHomeCatalogRuntimeReady()
     val installedAddons = runtime.engine.stremioAddons()
         .sortedWith(compareBy<com.vueo.shared.core.extensions.MediaExtension> { it.descriptor.baseUrl.trim() }
-            .thenBy { it.descriptor.id })
+            .thenBy { it.descriptor.installationId })
     var randomOrder by remember { mutableStateOf(runtime.content.randomCatalogOrder()) }
     val availableCatalogs = remember(revision, installedAddons) {
         installedAddons.flatMap { extension ->
@@ -715,7 +715,7 @@ internal fun TvCatalogSettings(
                 .filter { it.shouldShowOnHome }
                 .map { catalog ->
                     TvCatalogDescriptorEntry(
-                        key = "${extension.descriptor.id}:${catalog.type}:${catalog.id}",
+                        key = "${extension.descriptor.installationId}:${catalog.type}:${catalog.id}",
                         title = catalog.name ?: catalog.id,
                         providerName = extension.descriptor.name,
                         type = catalog.type.replaceFirstChar { it.uppercase() },

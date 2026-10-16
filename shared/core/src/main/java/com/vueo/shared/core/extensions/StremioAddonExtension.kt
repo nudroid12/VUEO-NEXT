@@ -62,7 +62,7 @@ class StremioAddonExtension private constructor(
         return CatalogPage(
             items = (0 until metas.length())
                 .mapNotNull { index ->
-                    metas.optJSONObject(index)?.toMediaItem(descriptor.id)
+                    metas.optJSONObject(index)?.toMediaItem(descriptor.installationId)
                 },
         )
     }
@@ -73,7 +73,7 @@ class StremioAddonExtension private constructor(
     ): MediaItem? {
         val url = "$base/meta/${encode(type)}/${encode(id)}.json"
         val json = JSONObject(httpClient.get(url))
-        return json.optJSONObject("meta")?.toMediaItem(descriptor.id)
+        return json.optJSONObject("meta")?.toMediaItem(descriptor.installationId)
     }
 
     override suspend fun streams(

@@ -155,7 +155,7 @@ private fun buildProviderLogoLookup(runtime: TvRuntime): Map<String, String> =
         for (addon in runtime.engine.stremioAddons()) {
             val descriptor = addon.descriptor
             val logo = descriptor.logo?.trim()?.takeIf(String::isNotBlank) ?: continue
-            for (key in listOf(descriptor.name, descriptor.id)) {
+            for (key in listOf(descriptor.name, descriptor.id, descriptor.installationId)) {
                 val normalized = key.trim().lowercase()
                 if (normalized !in this) put(normalized, logo)
             }

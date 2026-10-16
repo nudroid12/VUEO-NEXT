@@ -78,4 +78,7 @@ data class ExtensionDescriptor(
     val configurationRequired: Boolean = false,
     val health: ExtensionHealth = ExtensionHealth.UNKNOWN,
     val logo: String? = null,
-)
+) {
+    /** Internal installation identity; id remains the provider's original manifest ID. */
+    val installationId: String = AddonInstallationIdentity.key(kind, id, baseUrl)
+}

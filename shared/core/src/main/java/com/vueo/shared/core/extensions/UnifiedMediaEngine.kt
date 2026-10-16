@@ -25,8 +25,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.CopyOnWriteArraySet
 
 class UnifiedMediaEngine(
     private val kidsAgeLimit: () -> Int? = { null },
@@ -128,9 +126,8 @@ class UnifiedMediaEngine(
         catalogOrder = catalogOrder,
     ))
 
-    private val extensions = CopyOnWriteArrayList<MediaExtension>()
-    private val disabledExtensionIds =
-        CopyOnWriteArraySet<String>()
+    private val registry = InstalledExtensionRegistry()
+    private val extensions: List<MediaExtension> get() = registry.installed()
 
     private val ACTOR_SEARCH_HINTS =
         setOf(
@@ -145,49 +142,32 @@ class UnifiedMediaEngine(
             "stars",
         )
 
-    fun install(extension: MediaExtension) {
-        extensions.removeAll { it.descriptor.id == extension.descriptor.id }
-        extensions += extension
+    fun install(extension: MediaExtension, enabledState: (() -> Boolean)? = null) {
+        registry.install(extension, enabledState)
         metadataCache.invalidate()
     }
 
     fun uninstall(id: String) {
-        val changed = extensions.removeAll { it.descriptor.id == id }
-        disabledExtensionIds.remove(id)
-        if (changed) metadataCache.invalidate()
+        if (registry.uninstall(id)) metadataCache.invalidate()
     }
 
-    fun setExtensionEnabled(
-        id: String,
-        enabled: Boolean,
-    ) {
-        val changed = if (enabled) {
-            disabledExtensionIds.remove(id)
-        } else {
-            disabledExtensionIds.add(id)
-        }
-        if (changed) metadataCache.invalidate()
+    fun setExtensionEnabled(id: String, enabled: Boolean) {
+        if (registry.setEnabled(id, enabled)) metadataCache.invalidate()
     }
 
-    fun isExtensionEnabled(
-        id: String,
-    ): Boolean =
-        id !in disabledExtensionIds
+    fun isExtensionEnabled(id: String): Boolean = registry.isEnabled(id)
 
-    fun installed(): List<MediaExtension> = extensions.toList()
+    fun installed(): List<MediaExtension> = registry.installed()
 
-    fun stremioAddons(): List<MediaExtension> =
-        extensions.filter { it.descriptor.kind == ExtensionKind.STREMIO_ADDON }
+    fun stremioAddons(): List<MediaExtension> = extensions
+        .filter { it.descriptor.kind == ExtensionKind.STREMIO_ADDON }
+        .sortedBy { it.descriptor.baseUrl.trim() }
 
     fun activeStremioAddons(): List<MediaExtension> =
-        stremioAddons().filter {
-            isExtensionEnabled(
-                it.descriptor.id
-            )
-        }
+        stremioAddons().filter { isExtensionEnabled(it.descriptor.installationId) }
 
-    fun extension(id: String?): MediaExtension? =
-        id?.let { target -> extensions.firstOrNull { it.descriptor.id == target } }
+    // Old saved media may contain a manifest ID. Resolve it only when unambiguous.
+    fun extension(id: String?): MediaExtension? = registry.extension(id)
 
     private suspend fun loadCatalogRowsUnfiltered(
         maxRows: Int = Int.MAX_VALUE,
@@ -206,7 +186,11 @@ class UnifiedMediaEngine(
                     ?.let { cachedRows ->
                         val enabledCachedRows =
                             orderCatalogRows(
-                                rows = cachedRows,
+                                rows = cachedRows.filter { row ->
+                                    activeStremioAddons().any { addon ->
+                                        row.id.startsWith("${addon.descriptor.installationId}:")
+                                    }
+                                },
                                 catalogOrder = catalogOrder,
                                 disabledCatalogKeys = disabledCatalogKeys,
                             ).take(maxRows)
@@ -226,13 +210,13 @@ class UnifiedMediaEngine(
 
             val candidates =
                 activeStremioAddons()
-                    .filter { extensionIds == null || it.descriptor.id in extensionIds }
+                    .filter { extensionIds == null || it.descriptor.installationId in extensionIds }
                     .flatMap { extension ->
                         extension.descriptor.catalogs
                             .filter { catalog ->
                                 catalog.shouldShowOnHome &&
                                     catalogKey(
-                                        extensionId = extension.descriptor.id,
+                                        extensionId = extension.descriptor.installationId,
                                         type = catalog.type,
                                         catalogId = catalog.id,
                                     ) !in disabledCatalogKeys
@@ -246,7 +230,7 @@ class UnifiedMediaEngine(
                         orderIndex[
                             catalogKey(
                                 extensionId =
-                                    extension.descriptor.id,
+                                    extension.descriptor.installationId,
                                 type = catalog.type,
                                 catalogId = catalog.id,
                             )
@@ -264,7 +248,7 @@ class UnifiedMediaEngine(
                 candidates
                     .mapIndexed { index, (extension, catalog) ->
                         catalogKey(
-                            extensionId = extension.descriptor.id,
+                            extensionId = extension.descriptor.installationId,
                             type = catalog.type,
                             catalogId = catalog.id,
                         ) to index
@@ -291,7 +275,7 @@ class UnifiedMediaEngine(
                                     id =
                                         catalogKey(
                                             extensionId =
-                                                extension.descriptor.id,
+                                                extension.descriptor.installationId,
                                             type =
                                                 catalog.type,
                                             catalogId =
@@ -558,7 +542,7 @@ class UnifiedMediaEngine(
         val sourceFingerprint =
             bindings
                 .map { binding ->
-                    "${binding.extension.descriptor.id}:${binding.catalog.id}"
+                    "${binding.extension.descriptor.installationId}:${binding.catalog.id}"
                 }
                 .sorted()
                 .joinToString("|")
@@ -1172,7 +1156,7 @@ class UnifiedMediaEngine(
                 }
                 .distinctBy { binding ->
                     catalogKey(
-                        extensionId = binding.extension.descriptor.id,
+                        extensionId = binding.extension.descriptor.installationId,
                         type = binding.catalog.type,
                         catalogId = binding.catalog.id,
                     ) + binding.extras.toString()
@@ -1181,7 +1165,7 @@ class UnifiedMediaEngine(
                     compareBy<BrowseCatalogBinding> { binding ->
                         orderIndex[
                             catalogKey(
-                                extensionId = binding.extension.descriptor.id,
+                                extensionId = binding.extension.descriptor.installationId,
                                 type = binding.catalog.type,
                                 catalogId = binding.catalog.id,
                             )
@@ -1353,6 +1337,7 @@ class UnifiedMediaEngine(
         item: MediaItem,
     ): MediaItem = PerformanceDiagnostics.measureWork("metadata_load", Tab.DETAILS) {
         coroutineScope {
+            val preferredInstallationId = extension(item.sourceExtensionId)?.descriptor?.installationId
             val providers =
                 activeStremioAddons()
                     .filter { extension ->
@@ -1364,8 +1349,7 @@ class UnifiedMediaEngine(
                     }
                     .sortedBy { extension ->
                         if (
-                            extension.descriptor.id ==
-                            item.sourceExtensionId
+                            extension.descriptor.installationId == preferredInstallationId
                         ) {
                             0
                         } else {
@@ -1379,7 +1363,7 @@ class UnifiedMediaEngine(
 
             val primaryProvider =
                 providers.firstOrNull {
-                    it.descriptor.id == item.sourceExtensionId
+                    it.descriptor.installationId == preferredInstallationId
                 }
             val primaryMetadata =
                 primaryProvider?.let { provider ->
@@ -1405,7 +1389,7 @@ class UnifiedMediaEngine(
                     mergeMediaMetadata(
                         current = item,
                         candidate = metadata,
-                        sourceExtensionId = item.sourceExtensionId,
+                        sourceExtensionId = preferredInstallationId ?: item.sourceExtensionId,
                     )
                 } ?: item
 
@@ -1416,7 +1400,7 @@ class UnifiedMediaEngine(
             val fallbackMetadata =
                 providers
                     .filterNot {
-                        it.descriptor.id == primaryProvider?.descriptor?.id
+                        it === primaryProvider
                     }
                     .map { provider ->
                         async {
@@ -1442,7 +1426,7 @@ class UnifiedMediaEngine(
                 mergeMediaMetadata(
                     current = merged,
                     candidate = candidate,
-                    sourceExtensionId = item.sourceExtensionId,
+                    sourceExtensionId = preferredInstallationId ?: item.sourceExtensionId,
                 )
             }
         }
@@ -1468,7 +1452,7 @@ class UnifiedMediaEngine(
         val providers =
             extensions.filter {
                 isExtensionEnabled(
-                    it.descriptor.id
+                    it.descriptor.installationId
                 ) &&
                     "stream" in
                         it.descriptor.resources &&
@@ -1579,7 +1563,7 @@ class UnifiedMediaEngine(
         val providers = extensions
             .filter {
                 isExtensionEnabled(
-                    it.descriptor.id
+                    it.descriptor.installationId
                 ) &&
                     "subtitles" in
                         it.descriptor.resources

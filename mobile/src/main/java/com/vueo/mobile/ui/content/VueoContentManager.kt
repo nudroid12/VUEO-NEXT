@@ -417,19 +417,19 @@ internal fun CatalogOrderScreen(
     val entries =
         remember(contentVersion) {
             engine.stremioAddons()
-                .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.id })
+                .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.installationId })
                 .flatMap { extension ->
                     extension.descriptor.catalogs
                         .filter { it.shouldShowOnHome }
                         .map { catalog ->
                             val key =
-                                "${extension.descriptor.id}:${catalog.type}:${catalog.id}"
+                                "${extension.descriptor.installationId}:${catalog.type}:${catalog.id}"
                             CatalogOrderEntry(
                                 key = key,
                                 title = catalog.name ?: catalog.id,
                                 providerName = extension.descriptor.name,
                                 type = catalog.type.replaceFirstChar { it.uppercase() },
-                                addonEnabled = engine.isExtensionEnabled(extension.descriptor.id),
+                                addonEnabled = engine.isExtensionEnabled(extension.descriptor.installationId),
                                 catalogEnabled = store.isCatalogEnabled(key),
                             )
                         }

@@ -21,7 +21,7 @@ private data class TvAnimeCatalog(
     val catalog: CatalogDescriptor,
     val extras: Map<String, String>,
 ) {
-    val key: String get() = "${extension.descriptor.id}:${catalog.type}:${catalog.id}"
+    val key: String get() = "${extension.descriptor.installationId}:${catalog.type}:${catalog.id}"
 }
 
 /** TV-only Anime browsing: publish completed catalogs without waiting for the slowest. */

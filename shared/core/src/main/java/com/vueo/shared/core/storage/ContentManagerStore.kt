@@ -27,15 +27,15 @@ class ContentManagerStore(context: Context) {
             .apply()
     }
 
+    @Synchronized
     fun add(manifestUrl: String) {
         val normalized = manifestUrl.trim()
         if (normalized.isBlank()) return
         val next = manifestUrls().toMutableSet()
         next += normalized
-        prefs.edit()
-            .putStringSet(KEY_MANIFEST_URLS, next)
-            .putBoolean(addonEnabledKey(normalized), true)
-            .apply()
+        val editor = prefs.edit().putStringSet(KEY_MANIFEST_URLS, next)
+        if (!prefs.contains(addonEnabledKey(normalized))) editor.putBoolean(addonEnabledKey(normalized), true)
+        editor.apply()
     }
 
     fun remove(manifestUrl: String) {
@@ -46,6 +46,21 @@ class ContentManagerStore(context: Context) {
         prefs.edit()
             .putStringSet(KEY_MANIFEST_URLS, next)
             .remove(addonEnabledKey(normalized))
+            .apply()
+    }
+
+    @Synchronized
+    fun migrateAddonCatalogIdentity(descriptor: com.vueo.shared.core.extensions.ExtensionDescriptor) {
+        if (descriptor.kind != com.vueo.shared.core.extensions.ExtensionKind.STREMIO_ADDON) return
+        val marker = "catalog_install_identity_v1:${descriptor.installationId}"
+        if (prefs.getBoolean(marker, false)) return
+        val migrated = com.vueo.shared.core.extensions.AddonInstallationIdentity.migrateCatalogPreferences(
+            catalogOrder(), disabledCatalogKeys(), descriptor,
+        )
+        prefs.edit()
+            .putString(KEY_CATALOG_ORDER, migrated.first.joinToString("\n"))
+            .putStringSet(KEY_DISABLED_CATALOG_KEYS, migrated.second)
+            .putBoolean(marker, true)
             .apply()
     }
 

@@ -379,7 +379,7 @@ internal fun AddonsScreen(
 
                     items(
                         addons,
-                        key = { it.descriptor.id },
+                        key = { it.descriptor.installationId },
                     ) { addon ->
                         AddonCard(
                             addon = addon,
@@ -394,7 +394,7 @@ internal fun AddonsScreen(
                                     enabled,
                                 )
                                 engine.setExtensionEnabled(
-                                    addon.descriptor.id,
+                                    addon.descriptor.installationId,
                                     enabled,
                                 )
                                 installed =
@@ -404,7 +404,7 @@ internal fun AddonsScreen(
                             isDevelopmentDefault = store.isDevelopmentDefault(
                                 addon.descriptor.baseUrl
                             ),
-                            refreshing = refreshingId == addon.descriptor.id,
+                            refreshing = refreshingId == addon.descriptor.installationId,
                             onConfigure = if (
                                 addon.descriptor.configurable || addon.descriptor.configurationRequired
                             ) {
@@ -414,7 +414,7 @@ internal fun AddonsScreen(
                             },
                             onRefresh = {
                                 scope.launch {
-                                    refreshingId = addon.descriptor.id
+                                    refreshingId = addon.descriptor.installationId
 
                                     runCatching {
                                         ExtensionInstaller.installStremioAddon(
@@ -422,17 +422,10 @@ internal fun AddonsScreen(
                                         )
                                     }.onSuccess {
                                         refreshed ->
-                                        engine.install(
-                                            refreshed
-                                        )
-                                        engine.setExtensionEnabled(
-                                            id =
-                                                refreshed.descriptor.id,
-                                            enabled =
-                                                store.isAddonEnabled(
-                                                    addon.descriptor.baseUrl
-                                                ),
-                                        )
+                                        store.migrateAddonCatalogIdentity(refreshed.descriptor)
+                                        engine.install(refreshed) {
+                                            store.isAddonEnabled(refreshed.descriptor.baseUrl)
+                                        }
                                         installed =
                                             engine.stremioAddons()
                                         onContentChanged()
@@ -442,7 +435,7 @@ internal fun AddonsScreen(
                                 }
                             },
                             onDelete = {
-                                engine.uninstall(addon.descriptor.id)
+                                engine.uninstall(addon.descriptor.installationId)
                                 store.remove(addon.descriptor.baseUrl)
                                 installed = engine.stremioAddons()
                                 onContentChanged()
@@ -512,11 +505,8 @@ internal fun AddonsScreen(
                                 store.add(
                                     addon.descriptor.baseUrl
                                 )
-                                engine.install(addon)
-                                engine.setExtensionEnabled(
-                                    addon.descriptor.id,
-                                    true,
-                                )
+                                store.migrateAddonCatalogIdentity(addon.descriptor)
+                                engine.install(addon) { store.isAddonEnabled(addon.descriptor.baseUrl) }
                                 installed = engine.stremioAddons()
                                 manifestUrl = ""
                                 showInstallDialog = false

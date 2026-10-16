@@ -14,9 +14,9 @@ object HomeCatalogPolicy {
 
     /** Stable addon order, preserving each manifest's original catalog order. */
     fun defaultOrder(extensions: List<MediaExtension>): List<String> = extensions
-        .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.id })
+        .sortedWith(compareBy<MediaExtension> { it.descriptor.baseUrl.trim() }.thenBy { it.descriptor.installationId })
         .flatMap { extension -> extension.descriptor.catalogs.filter { it.shouldShowOnHome }.map {
-            "${extension.descriptor.id}:${it.type}:${it.id}"
+            "${extension.descriptor.installationId}:${it.type}:${it.id}"
         } }.distinct()
 
     fun orderRows(

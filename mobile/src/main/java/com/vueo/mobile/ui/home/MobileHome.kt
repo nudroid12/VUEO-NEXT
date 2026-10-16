@@ -380,10 +380,10 @@ internal fun HomeScreen(
     fun arrangeHomeRows(catalogRows: List<CatalogRow>): List<CatalogRow> {
         val activeKeys = HomeCatalogPolicy.defaultOrder(engine.activeStremioAddons()).toSet()
         val disabledAddons = engine.stremioAddons()
-            .filterNot { engine.isExtensionEnabled(it.descriptor.id) }.map { it.descriptor.id }
+            .filterNot { engine.isExtensionEnabled(it.descriptor.installationId) }.map { it.descriptor.installationId }
         val validRows = catalogRows.filter { row ->
             if (addonsPrepared) row.id in activeKeys
-            else disabledAddons.none { row.id.startsWith("$it:") }
+            else com.vueo.shared.core.extensions.AddonInstallationIdentity.isScopedCatalogKey(row.id) && disabledAddons.none { row.id.startsWith("$it:") }
         }
         return HomeCatalogPolicy.orderRows(
             rows = engine.filterVisibleRows(validRows),

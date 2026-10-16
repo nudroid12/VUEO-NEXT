@@ -276,13 +276,13 @@ class TvRuntime(context: Context) {
             // during scheduling must trigger another pass, not be skipped.
             val preparationComplete = addonsPrepared
             engine.activeStremioAddons().forEach { extension ->
-                if (scheduled.add(extension.descriptor.id)) {
+                if (scheduled.add(extension.descriptor.installationId)) {
                     jobs += launch {
                         val rows = engine.loadCatalogRows(
                             forceRefresh = true,
                             catalogOrder = content.catalogOrder(),
                             disabledCatalogKeys = content.disabledCatalogKeys(),
-                            extensionIds = setOf(extension.descriptor.id),
+                            extensionIds = setOf(extension.descriptor.installationId),
                             updateHomeCache = false,
                             catalogLoadGate = homeLoadGate,
                             onPartial = ::publish,
@@ -297,7 +297,7 @@ class TvRuntime(context: Context) {
         jobs.joinAll()
         val fresh = synchronized(freshRows) { freshRows.values.toList() }
         if (fresh.isNotEmpty()) {
-            val activeIds = engine.activeStremioAddons().map { it.descriptor.id }
+            val activeIds = engine.activeStremioAddons().map { it.descriptor.installationId }
             val fallback = staleCached.filter { row ->
                 (cachedConfiguration == null || cachedConfiguration == configurationKey ||
                     activeIds.any { row.id.startsWith("$it:") }) && fresh.none { it.id == row.id }
@@ -328,7 +328,7 @@ class TvRuntime(context: Context) {
                 val configured = content.manifestUrls().map { it.trim() }.toSet()
                 engine.stremioAddons()
                     .filter { it.descriptor.baseUrl.trim() !in configured }
-                    .forEach { engine.uninstall(it.descriptor.id) }
+                    .forEach { engine.uninstall(it.descriptor.installationId) }
             }
             val summary = installConfiguredAddons()
             CatalogDiscoveryCache.clearAll(appContext)
@@ -349,11 +349,10 @@ class TvRuntime(context: Context) {
                         StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
                     }
                     result.onSuccess { extension ->
-                        engine.stremioAddons()
-                            .filter { it.descriptor.baseUrl.trim() == manifestUrl.trim() && it.descriptor.id != extension.descriptor.id }
-                            .forEach { engine.uninstall(it.descriptor.id) }
-                        engine.install(extension)
-                        engine.setExtensionEnabled(extension.descriptor.id, content.isAddonEnabled(manifestUrl))
+                        if (manifestUrl.trim() in content.manifestUrls().map(String::trim)) {
+                            content.migrateAddonCatalogIdentity(extension.descriptor)
+                            engine.install(extension) { content.isAddonEnabled(manifestUrl) }
+                        }
                         traceHome("manifest_ready")
                         signalAddonChange()
                     }
@@ -383,8 +382,8 @@ class TvRuntime(context: Context) {
         }
         val extension = StremioAddonExtension.fromManifestUrl(normalized)
         content.add(extension.descriptor.baseUrl)
-        engine.install(extension)
-        engine.setExtensionEnabled(extension.descriptor.id, true)
+        content.migrateAddonCatalogIdentity(extension.descriptor)
+        engine.install(extension) { content.isAddonEnabled(extension.descriptor.baseUrl) }
         CatalogDiscoveryCache.clearAll(appContext)
     }
 
@@ -392,7 +391,7 @@ class TvRuntime(context: Context) {
         val normalized = manifestUrl.trim()
         engine.stremioAddons()
             .firstOrNull { it.descriptor.baseUrl == normalized }
-            ?.let { engine.uninstall(it.descriptor.id) }
+            ?.let { engine.uninstall(it.descriptor.installationId) }
         content.remove(normalized)
         CatalogDiscoveryCache.clearAll(appContext)
     }
@@ -402,7 +401,7 @@ class TvRuntime(context: Context) {
         content.setAddonEnabled(normalized, enabled)
         engine.stremioAddons()
             .firstOrNull { it.descriptor.baseUrl == normalized }
-            ?.let { engine.setExtensionEnabled(it.descriptor.id, enabled) }
+            ?.let { engine.setExtensionEnabled(it.descriptor.installationId, enabled) }
         CatalogDiscoveryCache.clearAll(appContext)
     }
 
@@ -525,11 +524,11 @@ class TvRuntime(context: Context) {
     fun visibleHomeRows(rows: List<CatalogRow>): List<CatalogRow> {
         val installed = engine.stremioAddons()
         val available = HomeCatalogPolicy.defaultOrder(engine.activeStremioAddons()).toSet()
-        val disabledAddons = installed.filterNot { engine.isExtensionEnabled(it.descriptor.id) }
-            .map { it.descriptor.id }
+        val disabledAddons = installed.filterNot { engine.isExtensionEnabled(it.descriptor.installationId) }
+            .map { it.descriptor.installationId }
         val validRows = rows.filter { row ->
             if (addonsPrepared) row.id in available
-            else disabledAddons.none { row.id.startsWith("$it:") }
+            else com.vueo.shared.core.extensions.AddonInstallationIdentity.isScopedCatalogKey(row.id) && disabledAddons.none { row.id.startsWith("$it:") }
         }
         return HomeCatalogPolicy.orderRows(
             rows = validRows,

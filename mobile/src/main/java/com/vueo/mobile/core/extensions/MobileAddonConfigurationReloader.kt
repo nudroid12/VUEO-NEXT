@@ -60,10 +60,10 @@ internal class MobileAddonConfigurationReloader(
             // resurrect an addon removed during the fetch; use current toggles.
             val configured = configuredUrls().toSet()
             val removed = engine.stremioAddons().filter { it.descriptor.baseUrl.trim() !in configured }
-            removed.forEach { engine.uninstall(it.descriptor.id) }
+            removed.forEach { engine.uninstall(it.descriptor.installationId) }
             var loaded = 0
             var failed = 0
-            var conflicts = 0
+            val conflicts = 0
             prepared.forEach { (url, result) ->
                 if (url !in configured) return@forEach
                 val extension = result.getOrNull()
@@ -71,19 +71,8 @@ internal class MobileAddonConfigurationReloader(
                     failed++
                     return@forEach
                 }
-                // The shared engine indexes extensions by ID. A new URL must
-                // not silently evict a different, still-configured addon.
-                val conflicting = engine.stremioAddons().any {
-                    it.descriptor.id == extension.descriptor.id && it.descriptor.baseUrl.trim() != url
-                }
-                if (conflicting) {
-                    conflicts++
-                    return@forEach
-                }
-                engine.stremioAddons()
-                    .filter { it.descriptor.baseUrl.trim() == url && it.descriptor.id != extension.descriptor.id }
-                    .forEach { engine.uninstall(it.descriptor.id) }
-                engine.install(extension)
+                store.migrateAddonCatalogIdentity(extension.descriptor)
+                engine.install(extension) { store.isAddonEnabled(url) }
                 loaded++
             }
             // Apply enable/disable even when a refresh failed and the previous
@@ -91,7 +80,7 @@ internal class MobileAddonConfigurationReloader(
             // next queued configuration revision.
             engine.stremioAddons().forEach { extension ->
                 val url = extension.descriptor.baseUrl.trim()
-                if (url in configured) engine.setExtensionEnabled(extension.descriptor.id, store.isAddonEnabled(url))
+                if (url in configured) engine.setExtensionEnabled(extension.descriptor.installationId, store.isAddonEnabled(url))
             }
             Summary(
                 loaded = loaded,

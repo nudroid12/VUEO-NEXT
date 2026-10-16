@@ -124,7 +124,7 @@ class SourceDiscoveryEngine(
         val plannedSourceProviders = withContext(Dispatchers.Default) {
             (
                 mediaEngine.installed().filter {
-                    mediaEngine.isExtensionEnabled(it.descriptor.id) && "stream" in it.descriptor.resources
+                    mediaEngine.isExtensionEnabled(it.descriptor.installationId) && "stream" in it.descriptor.resources
                 }.map { it.descriptor.name }
                     .filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) } +
                     configuredPluginProviders
