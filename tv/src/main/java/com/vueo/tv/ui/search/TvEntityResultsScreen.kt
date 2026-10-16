@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,10 +38,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import android.view.KeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -55,13 +49,15 @@ import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.search.EntityResultOrder
 import com.vueo.shared.core.search.MediaEntityKind
 import com.vueo.shared.core.search.MediaEntityTarget
+import com.vueo.shared.core.search.EntityResultsPipeline
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import kotlinx.coroutines.flow.collect
 import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.motion.TvMotion
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 private const val ENTITY_COLUMNS = 6
 
@@ -75,96 +71,131 @@ internal fun TvEntityResultsScreen(
 ) {
     BackHandler(enabled = active, onBack = onBack)
 
-    var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
-    var loading by remember(target) { mutableStateOf(true) }
+    val entityEngine = runtime.engine
+    val tmdbApiKey = runtime.pluginStore.tmdbApiKey()
+    val requestKey = remember(entityEngine, target, tmdbApiKey) { Any() }
+    val latestRequestKey by androidx.compose.runtime.rememberUpdatedState(requestKey)
+    var retryGeneration by remember(requestKey) { mutableStateOf(0) }
+    val loadKey = remember(requestKey, retryGeneration) { Any() }
+    val latestLoadKey by androidx.compose.runtime.rememberUpdatedState(loadKey)
+    var results by remember(requestKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var loading by remember(requestKey) { mutableStateOf(true) }
+    var loadFailed by remember(requestKey) { mutableStateOf(false) }
+    var preparationFailed by remember(requestKey) { mutableStateOf(false) }
     var resultOrder by remember(target) { mutableStateOf(EntityResultOrder.NEWEST) }
-    val orderedResults = remember(results, resultOrder) {
-        SearchOrchestrator.orderEntityResults(results, resultOrder)
+    // Keep the current grid during same-target updates, including sort changes.
+    var orderedResults by remember(requestKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    val sortKey = remember(loadKey, results, resultOrder) { Any() }
+    val latestSortKey by androidx.compose.runtime.rememberUpdatedState(sortKey)
+    var preparedSortKey by remember(requestKey) { mutableStateOf<Any?>(null) }
+    val preparing = preparedSortKey !== sortKey
+    val busy = loading || preparing
+    val failed = loadFailed || preparationFailed
+
+    LaunchedEffect(loadKey) {
+        loading = true
+        loadFailed = false
+        results = emptyList()
+        try {
+            EntityResultsPipeline.batches { publish ->
+                PerformanceDiagnostics.measureWork("tv_entity_load", PerformanceDiagnostics.Tab.DETAILS) {
+                    SearchOrchestrator.entityResults(
+                        engine = entityEngine,
+                        target = target,
+                        tmdbApiKey = tmdbApiKey,
+                        onPartial = publish,
+                    )
+                }
+            }.collect { batch ->
+                if (latestRequestKey === requestKey && latestLoadKey === loadKey) {
+                    results = batch.items
+                    loading = !batch.complete
+                    loadFailed = batch.failureClass != null
+                    if (batch.failureClass != null) {
+                        PerformanceDiagnostics.captureRuntimeEvent(
+                            "ENTITY_RESULTS platform=tv event=load_failed error=${batch.failureClass}",
+                        )
+                    }
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (latestRequestKey === requestKey && latestLoadKey === loadKey) {
+                loadFailed = true
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "ENTITY_RESULTS platform=tv event=load_failed error=${error.javaClass.simpleName}",
+                )
+            }
+        } finally {
+            if (latestRequestKey === requestKey && latestLoadKey === loadKey) loading = false
+        }
+    }
+
+    LaunchedEffect(sortKey) {
+        val inputResults = results
+        val inputOrder = resultOrder
+        preparationFailed = false
+        try {
+            val prepared = EntityResultsPipeline.prepare {
+                PerformanceDiagnostics.measureWork("tv_entity_prepare", PerformanceDiagnostics.Tab.DETAILS) {
+                    SearchOrchestrator.orderEntityResults(inputResults, inputOrder)
+                }
+            }
+            if (latestRequestKey === requestKey && latestSortKey === sortKey) orderedResults = prepared
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (latestSortKey === sortKey) {
+                preparationFailed = true
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "ENTITY_RESULTS platform=tv event=prepare_failed error=${error.javaClass.simpleName}",
+                )
+            }
+        } finally {
+            if (latestRequestKey === requestKey && latestSortKey === sortKey) preparedSortKey = sortKey
+        }
     }
     val newestRequester = remember(target) { FocusRequester() }
     val popularRequester = remember(target) { FocusRequester() }
     val selectedOrderRequester =
         if (resultOrder == EntityResultOrder.NEWEST) newestRequester else popularRequester
     val gridState = rememberLazyGridState()
+    var scrolledOrder by remember(target) { mutableStateOf(resultOrder) }
+    LaunchedEffect(resultOrder) {
+        if (scrolledOrder != resultOrder) gridState.scrollToItem(0)
+        scrolledOrder = resultOrder
+    }
     var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
     val resultKeys = remember(orderedResults) {
         orderedResults.map { "${it.type}:${it.id}" }
     }
-    // Keep one requester per title while partial discovery and sorting update
-    // the result list. Requesters must not move between lazy grid cells.
-    val requesters = remember(target) { mutableMapOf<String, FocusRequester>() }
-    resultKeys.forEach { key -> requesters.getOrPut(key) { FocusRequester() } }
-    val latestActive = rememberUpdatedState(active)
-    val focusScope = rememberCoroutineScope()
-    var focusMoveJob by remember(target) { mutableStateOf<Job?>(null) }
-    var restoreFocusPending by remember(target) { mutableStateOf(true) }
-
-    suspend fun focusPosterAt(index: Int): Boolean {
-        if (!latestActive.value || index !in resultKeys.indices) return false
-        val key = resultKeys[index]
-        if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
-            gridState.scrollToItem(index)
-        }
-        // A visible index can still be waiting for composition after scroll/data
-        // changes. Confirm actual focus success, not merely absence of exception.
-        repeat(5) {
-            withFrameNanos { }
-            if (!latestActive.value) return false
-            if (runCatching { requesters[key]?.requestFocus() == true }.getOrDefault(false)) return true
-        }
-        return false
+    val requesterPool = remember(requestKey) { mutableMapOf<String, FocusRequester>() }
+    val requesters = remember(requestKey, resultKeys) {
+        requesterPool.keys.retainAll(resultKeys.toSet())
+        resultKeys.associateWith { key -> requesterPool.getOrPut(key) { FocusRequester() } }
     }
+    val firstRequester = resultKeys.firstOrNull()?.let(requesters::get) ?: FocusRequester.Cancel
+    var newestFocused by remember(target) { mutableStateOf(false) }
+    var popularFocused by remember(target) { mutableStateOf(false) }
+    val latestFocusedMediaKey by androidx.compose.runtime.rememberUpdatedState(focusedMediaKey)
 
-    fun moveToPoster(index: Int) {
-        if (!active || index !in resultKeys.indices || focusMoveJob?.isActive == true) return
-        restoreFocusPending = false
-        focusMoveJob = focusScope.launch { focusPosterAt(index) }
-    }
-
-    fun moveFromPoster(index: Int, direction: Int) {
-        when (direction) {
-            KeyEvent.KEYCODE_DPAD_UP -> if (index < ENTITY_COLUMNS) {
-                restoreFocusPending = false
-                runCatching { selectedOrderRequester.requestFocus() }
-            } else moveToPoster(index - ENTITY_COLUMNS)
-            KeyEvent.KEYCODE_DPAD_DOWN -> if (index / ENTITY_COLUMNS < resultKeys.lastIndex / ENTITY_COLUMNS) {
-                moveToPoster((index + ENTITY_COLUMNS).coerceAtMost(resultKeys.lastIndex))
+    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused) {
+        if (!active || busy || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
+        val restoreIndex = latestFocusedMediaKey?.let(resultKeys::indexOf)?.takeIf { it >= 0 } ?: 0
+        if (gridState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
+            gridState.scrollToItem(restoreIndex)
+        }
+        delay(90)
+        val focusedKey = latestFocusedMediaKey
+        val restored = focusedKey?.let { key ->
+            requesters[key]?.let { requester ->
+                runCatching { requester.requestFocus() }.isSuccess
             }
-            KeyEvent.KEYCODE_DPAD_LEFT -> if (index % ENTITY_COLUMNS > 0) moveToPoster(index - 1)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> if (index % ENTITY_COLUMNS < ENTITY_COLUMNS - 1) moveToPoster(index + 1)
+        } == true
+        if (!restored) {
+            runCatching { firstRequester.requestFocus() }
         }
-    }
-
-    LaunchedEffect(target) {
-        loading = true
-        results = emptyList()
-        results = SearchOrchestrator.entityResults(
-            engine = runtime.engine,
-            target = target,
-            tmdbApiKey = runtime.pluginStore.tmdbApiKey(),
-            onPartial = { partial ->
-                if (partial.isNotEmpty()) results = partial
-            },
-        )
-        loading = false
-    }
-
-    LaunchedEffect(active, resultKeys.isEmpty()) {
-        if (active && resultKeys.isEmpty()) {
-            withFrameNanos { }
-            if (latestActive.value) runCatching { selectedOrderRequester.requestFocus() }
-        }
-    }
-
-    LaunchedEffect(active, resultKeys, restoreFocusPending) {
-        if (!active) {
-            focusMoveJob?.cancel()
-            restoreFocusPending = true
-            return@LaunchedEffect
-        }
-        if (!restoreFocusPending || resultKeys.isEmpty()) return@LaunchedEffect
-        val index = resultKeys.indexOf(focusedMediaKey).takeIf { it >= 0 } ?: 0
-        if (focusPosterAt(index)) restoreFocusPending = false
     }
 
     Column(
@@ -208,12 +239,9 @@ internal fun TvEntityResultsScreen(
                         requester = newestRequester,
                         leftRequester = FocusRequester.Cancel,
                         rightRequester = popularRequester,
-                        onDown = { moveToPoster(0) },
-                        onClick = {
-                            focusedMediaKey = null
-                            restoreFocusPending = true
-                            resultOrder = EntityResultOrder.NEWEST
-                        },
+                        downRequester = firstRequester,
+                        onFocusChanged = { newestFocused = it },
+                        onClick = { resultOrder = EntityResultOrder.NEWEST },
                     )
                     TvEntitySortTab(
                         label = "Popular",
@@ -221,20 +249,26 @@ internal fun TvEntityResultsScreen(
                         requester = popularRequester,
                         leftRequester = newestRequester,
                         rightRequester = FocusRequester.Cancel,
-                        onDown = { moveToPoster(0) },
-                        onClick = {
-                            focusedMediaKey = null
-                            restoreFocusPending = true
-                            resultOrder = EntityResultOrder.POPULAR
-                        },
+                        downRequester = firstRequester,
+                        onFocusChanged = { popularFocused = it },
+                        onClick = { resultOrder = EntityResultOrder.POPULAR },
                     )
                 }
             }
             Text(
-                text = if (loading) "Loading…" else "${results.size} titles",
+                text = if (busy) "Loading…" else "${orderedResults.size} titles",
                 color = TvDesign.Muted,
                 fontSize = 11.sp,
             )
+        }
+
+        if (failed) {
+            androidx.compose.material3.TextButton(
+                onClick = { retryGeneration++ },
+                modifier = Modifier.padding(horizontal = 68.dp),
+            ) {
+                Text("Couldn't load all titles. Retry", color = TvDesign.White)
+            }
         }
 
         when {
@@ -265,7 +299,6 @@ internal fun TvEntityResultsScreen(
                             } else {
                                 null
                             },
-                            onDirection = { direction -> moveFromPoster(index, direction) },
                             onFocused = { focusedMediaKey = mediaKey },
                             onClick = {
                                 focusedMediaKey = mediaKey
@@ -276,7 +309,7 @@ internal fun TvEntityResultsScreen(
                 }
             }
 
-            loading -> {
+            busy -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         color = TvDesign.White,
@@ -291,7 +324,7 @@ internal fun TvEntityResultsScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = when (target.kind) {
+                        text = if (failed) "Go back or retry to load titles." else when (target.kind) {
                             MediaEntityKind.ACTOR -> "No titles found for this cast member."
                             MediaEntityKind.COMPANY -> "No titles found for this production company."
                             MediaEntityKind.NETWORK -> "No titles found for this network."
@@ -312,8 +345,9 @@ private fun TvEntitySortTab(
     requester: FocusRequester,
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
-    onDown: () -> Unit,
+    downRequester: FocusRequester,
     onClick: () -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
 ) {
     var focused by remember(label) { mutableStateOf(false) }
     val shape = RoundedCornerShape(9.dp)
@@ -324,13 +358,11 @@ private fun TvEntitySortTab(
             .focusProperties {
                 left = leftRequester
                 right = rightRequester
+                down = downRequester
             }
-            .onFocusChanged { focused = it.isFocused }
-            .onPreviewKeyEvent { event ->
-                if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    if (event.type == KeyEventType.KeyDown) onDown()
-                    true
-                } else false
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
             }
             .background(
                 when {
@@ -350,6 +382,7 @@ private fun TvEntitySortTab(
                 shape = shape,
             )
             .clickable(onClick = onClick)
+            .focusable()
             .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -367,7 +400,6 @@ private fun TvEntityPosterTile(
     item: MediaItem,
     requester: FocusRequester,
     upRequester: FocusRequester? = null,
-    onDirection: (Int) -> Unit,
     onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -398,17 +430,8 @@ private fun TvEntityPosterTile(
                 focused = state.isFocused
                 if (state.isFocused) onFocused()
             }
-            .onPreviewKeyEvent { event ->
-                val direction = event.nativeKeyEvent.keyCode
-                if (direction in listOf(
-                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
-                )) {
-                    if (event.type == KeyEventType.KeyDown) onDirection(direction)
-                    true
-                } else false
-            }
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .focusable(),
     ) {
         TvNetworkImage(
             url = item.poster,

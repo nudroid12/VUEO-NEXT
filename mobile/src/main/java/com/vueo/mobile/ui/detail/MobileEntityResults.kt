@@ -198,6 +198,9 @@ import com.vueo.shared.core.search.DiscoverSortMode
 import com.vueo.shared.core.search.SearchResultOrderPolicy
 import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.recommendation.RelatedContentOrchestrator
+import com.vueo.shared.core.search.EntityResultsPipeline
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import kotlinx.coroutines.flow.collect
 import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.shared.core.search.EntityResultOrder
 import com.vueo.shared.core.search.MediaEntityKind
@@ -266,28 +269,91 @@ internal fun MediaEntityResultsScreen(
     onBack: () -> Unit,
     onMediaClick: (MediaItem) -> Unit,
 ) {
-    var results by remember(target) { mutableStateOf<List<MediaItem>>(emptyList()) }
-    var loading by remember(target) { mutableStateOf(true) }
+    val entityEngine = engine
+    val requestKey = remember(entityEngine, target, tmdbApiKey) { Any() }
+    val latestRequestKey by androidx.compose.runtime.rememberUpdatedState(requestKey)
+    var retryGeneration by remember(requestKey) { mutableStateOf(0) }
+    val loadKey = remember(requestKey, retryGeneration) { Any() }
+    val latestLoadKey by androidx.compose.runtime.rememberUpdatedState(loadKey)
+    var results by remember(requestKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var loading by remember(requestKey) { mutableStateOf(true) }
+    var loadFailed by remember(requestKey) { mutableStateOf(false) }
+    var preparationFailed by remember(requestKey) { mutableStateOf(false) }
     var resultOrder by remember(target) { mutableStateOf(EntityResultOrder.NEWEST) }
-    val orderedResults = remember(results, resultOrder) {
-        SearchOrchestrator.orderEntityResults(results, resultOrder)
-    }
+    // Keep the current grid during same-target updates, including sort changes.
+    var orderedResults by remember(requestKey) { mutableStateOf<List<MediaItem>>(emptyList()) }
+    val sortKey = remember(loadKey, results, resultOrder) { Any() }
+    val latestSortKey by androidx.compose.runtime.rememberUpdatedState(sortKey)
+    var preparedSortKey by remember(requestKey) { mutableStateOf<Any?>(null) }
+    val preparing = preparedSortKey !== sortKey
+    val busy = loading || preparing
+    val failed = loadFailed || preparationFailed
 
-    BackHandler(onBack = onBack)
-
-    LaunchedEffect(target, tmdbApiKey) {
+    LaunchedEffect(loadKey) {
         loading = true
+        loadFailed = false
         results = emptyList()
-        results = SearchOrchestrator.entityResults(
-            engine = engine,
-            target = target,
-            tmdbApiKey = tmdbApiKey,
-            onPartial = { partial ->
-                if (partial.isNotEmpty()) results = partial
-            },
-        )
-        loading = false
+        try {
+            EntityResultsPipeline.batches { publish ->
+                PerformanceDiagnostics.measureWork("mobile_entity_load", PerformanceDiagnostics.Tab.DETAILS) {
+                    SearchOrchestrator.entityResults(
+                        engine = entityEngine,
+                        target = target,
+                        tmdbApiKey = tmdbApiKey,
+                        onPartial = publish,
+                    )
+                }
+            }.collect { batch ->
+                if (latestRequestKey === requestKey && latestLoadKey === loadKey) {
+                    results = batch.items
+                    loading = !batch.complete
+                    loadFailed = batch.failureClass != null
+                    if (batch.failureClass != null) {
+                        PerformanceDiagnostics.captureRuntimeEvent(
+                            "ENTITY_RESULTS platform=mobile event=load_failed error=${batch.failureClass}",
+                        )
+                    }
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (latestRequestKey === requestKey && latestLoadKey === loadKey) {
+                loadFailed = true
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "ENTITY_RESULTS platform=mobile event=load_failed error=${error.javaClass.simpleName}",
+                )
+            }
+        } finally {
+            if (latestRequestKey === requestKey && latestLoadKey === loadKey) loading = false
+        }
     }
+
+    LaunchedEffect(sortKey) {
+        val inputResults = results
+        val inputOrder = resultOrder
+        preparationFailed = false
+        try {
+            val prepared = EntityResultsPipeline.prepare {
+                PerformanceDiagnostics.measureWork("mobile_entity_prepare", PerformanceDiagnostics.Tab.DETAILS) {
+                    SearchOrchestrator.orderEntityResults(inputResults, inputOrder)
+                }
+            }
+            if (latestRequestKey === requestKey && latestSortKey === sortKey) orderedResults = prepared
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (latestSortKey === sortKey) {
+                preparationFailed = true
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "ENTITY_RESULTS platform=mobile event=prepare_failed error=${error.javaClass.simpleName}",
+                )
+            }
+        } finally {
+            if (latestRequestKey === requestKey && latestSortKey === sortKey) preparedSortKey = sortKey
+        }
+    }
+    BackHandler(onBack = onBack)
 
     Column(
         modifier = Modifier
@@ -349,12 +415,18 @@ internal fun MediaEntityResultsScreen(
             )
         }
 
-        if (loading) {
+        if (busy) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
                 color = Color.White,
                 trackColor = VueoPalette.SurfaceStrong,
             )
+        }
+
+        if (failed) {
+            TextButton(onClick = { retryGeneration++ }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text("Couldn't load all titles. Retry", color = Color.White)
+            }
         }
 
         when {
@@ -383,13 +455,13 @@ internal fun MediaEntityResultsScreen(
                     }
                 }
             }
-            !loading -> {
+            !busy -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(28.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = when (target.kind) {
+                        text = if (failed) "Go back or retry to load titles." else when (target.kind) {
                             MediaEntityKind.ACTOR -> "No titles found for this cast member."
                             MediaEntityKind.COMPANY -> "No titles found for this production company."
                             MediaEntityKind.NETWORK -> "No titles found for this network."
