@@ -281,6 +281,8 @@ internal fun SearchScreen(
     profileVersion: Int,
     booting: Boolean,
     query: String,
+    searchMode: SearchMode,
+    onSearchModeChange: (SearchMode) -> Unit,
     onQueryChange: (String) -> Unit,
     typeFilter: SearchTypeFilter,
     onTypeFilterChange:
@@ -311,12 +313,6 @@ internal fun SearchScreen(
     val latestProfileScope = androidx.compose.runtime.rememberUpdatedState(profileScope)
 
     val latestSearchQuery = androidx.compose.runtime.rememberUpdatedState(query)
-
-    var searchMode by remember {
-        mutableStateOf(
-            SearchMode.TITLE
-        )
-    }
 
     var actorSourceAvailable by remember(profileScope) {
         mutableStateOf(true)
@@ -864,7 +860,7 @@ internal fun SearchScreen(
                         mode = searchMode,
                         onModeChange = { next ->
                             if (next != searchMode) {
-                                searchMode = next
+                                onSearchModeChange(next)
                                 searchResults =
                                     emptyList()
                                 searching = false

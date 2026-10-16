@@ -130,6 +130,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -354,6 +355,28 @@ internal enum class SearchMode(
     ACTOR("Actor"),
 }
 
+// Persist only detail identity and lightweight artwork; playback state stays transient.
+private val MobileDetailSaver = Saver<MediaItem?, ArrayList<String>>(
+    save = { ArrayList(MobileNavigationSnapshot.media(it)) },
+    restore = { MobileNavigationSnapshot.restoreMedia(it) },
+)
+private val MobileDetailStackSaver = Saver<List<MediaItem>, ArrayList<String>>(
+    save = { ArrayList(MobileNavigationSnapshot.stack(it)) },
+    restore = { MobileNavigationSnapshot.restoreStack(it) },
+)
+private val MobileEntitySaver = Saver<MediaEntityTarget?, ArrayList<String>>(
+    save = { target ->
+        arrayListOf(target?.kind?.name.orEmpty(), target?.name?.take(512).orEmpty(),
+            target?.tmdbId?.toString().orEmpty())
+    },
+    restore = { fields ->
+        if (fields.size != 3 || fields[1].isBlank() || fields[1].length > 512) null
+        else MediaEntityKind.entries.firstOrNull { it.name == fields[0] }?.let {
+            MediaEntityTarget(it, fields[1], fields[2].toLongOrNull())
+        }
+    },
+)
+
 @Composable
 fun VueoApp(
     pendingAccountReturn: String? = null,
@@ -420,23 +443,30 @@ fun VueoApp(
         )
     }
 
-    var selectedTab by remember { mutableStateOf(AppTab.HOME) }
-    var settingsPage by remember { mutableStateOf(SettingsPage.ROOT) }
+    var profileVersion by remember {
+        mutableIntStateOf(0)
+    }
+    val navigationProfile = remember(profileVersion) { profileStore.activeProfile() }
+    val navigationOwner = navigationProfile.mobileHomeStateKey()
+    var savedNavigationOwner by rememberSaveable { mutableStateOf(navigationOwner) }
+    var searchMode by rememberSaveable(navigationOwner) { mutableStateOf(SearchMode.TITLE) }
+    var selectedTab by rememberSaveable(navigationOwner) { mutableStateOf(AppTab.HOME) }
+    var settingsPage by rememberSaveable(navigationOwner) { mutableStateOf(SettingsPage.ROOT) }
     var accountReturnHint by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember {
+    var searchQuery by rememberSaveable(navigationOwner) {
         mutableStateOf("")
     }
-    var searchTypeFilter by remember {
+    var searchTypeFilter by rememberSaveable(navigationOwner) {
         mutableStateOf(
             SearchTypeFilter.ALL
         )
     }
-    var searchSortMode by remember {
+    var searchSortMode by rememberSaveable(navigationOwner) {
         mutableStateOf(
             SearchSortMode.POPULAR
         )
     }
-    var searchGenre by remember {
+    var searchGenre by rememberSaveable(navigationOwner) {
         mutableStateOf<String?>(
             null
         )
@@ -453,24 +483,21 @@ fun VueoApp(
     var startupDestinationResolved by remember {
         mutableStateOf(false)
     }
-    var selectedMedia by remember {
+    var selectedMedia by rememberSaveable(navigationOwner, stateSaver = MobileDetailSaver) {
         mutableStateOf<MediaItem?>(null)
     }
-    var selectedEntityTarget by remember {
+    var selectedEntityTarget by rememberSaveable(navigationOwner, stateSaver = MobileEntitySaver) {
         mutableStateOf<MediaEntityTarget?>(null)
     }
     var selectedCatalogRow by remember {
         mutableStateOf<CatalogRow?>(null)
     }
-    var mediaBackStack by remember {
+    var mediaBackStack by rememberSaveable(navigationOwner, stateSaver = MobileDetailStackSaver) {
         mutableStateOf<List<MediaItem>>(
             emptyList()
         )
     }
     var libraryVersion by remember {
-        mutableIntStateOf(0)
-    }
-    var profileVersion by remember {
         mutableIntStateOf(0)
     }
     // UI restoration belongs to a local profile and its current Kids policy.
@@ -494,10 +521,10 @@ fun VueoApp(
         savedHomeKeys = (savedHomeKeys.filter { it in validHomeKeys } + homeStateKey).distinct()
     }
 
-    var showProfilePicker by remember {
+    var showProfilePicker by rememberSaveable {
         mutableStateOf(false)
     }
-    var profilePickerOpenedFromApp by remember {
+    var profilePickerOpenedFromApp by rememberSaveable {
         mutableStateOf(false)
     }
     var selectedLibraryEntry by remember {
@@ -505,6 +532,28 @@ fun VueoApp(
             LibraryPlaybackEntry?
         >(null)
     }
+
+    // rememberSaveable inputs reset live state, but Android restoration does not validate
+    // old inputs. Keep the tree hidden until the saved owner has been checked too.
+    LaunchedEffect(navigationOwner) {
+        if (savedNavigationOwner != navigationOwner) {
+            selectedTab = AppTab.HOME
+            settingsPage = SettingsPage.ROOT
+            searchQuery = ""
+            searchTypeFilter = SearchTypeFilter.ALL
+            searchSortMode = SearchSortMode.POPULAR
+            searchGenre = null
+            searchMode = SearchMode.TITLE
+            searchListState.scrollToItem(0)
+            selectedMedia = null
+            selectedEntityTarget = null
+            selectedCatalogRow = null
+            selectedLibraryEntry = null
+            mediaBackStack = emptyList()
+            savedNavigationOwner = navigationOwner
+        }
+    }
+    val restoringDetail = remember { selectedMedia != null }
 
     val vueoSync = remember { com.vueo.shared.core.sync.VueoSyncService.get(context) }
     DisposableEffect(vueoSync) { vueoSync.setForeground(true); onDispose { vueoSync.setForeground(false) } }
@@ -583,10 +632,10 @@ fun VueoApp(
         )
 
         profileStore.ensureDefaultProfile()
-        showProfilePicker =
-            profileStore
-                .shouldShowPickerOnStartup()
-        profilePickerOpenedFromApp = false
+        if (!showProfilePicker) {
+            showProfilePicker = profileStore.shouldShowPickerOnStartup()
+            profilePickerOpenedFromApp = false
+        }
         profileVersion++
         startupDestinationResolved = true
 
@@ -700,8 +749,9 @@ fun VueoApp(
 
     val appSurface =
         when {
-            !startupDestinationResolved -> AppSurface.STARTUP
+            !startupDestinationResolved || savedNavigationOwner != navigationOwner -> AppSurface.STARTUP
             showProfilePicker -> AppSurface.PROFILES
+            restoringDetail && !addonsPrepared && selectedMedia != null -> AppSurface.STARTUP
             selectedEntityTarget != null -> AppSurface.ENTITY_RESULTS
             selectedMedia != null -> AppSurface.DETAILS
             selectedCatalogRow != null -> AppSurface.CATALOG
@@ -751,18 +801,25 @@ fun VueoApp(
                     profileStore = profileStore,
                     profileVersion = profileVersion,
                     onProfileSelected = {
-                        selectedMedia = null
-                        selectedEntityTarget = null
-                        selectedCatalogRow = null
-                        selectedLibraryEntry = null
-                        mediaBackStack = emptyList()
-                        selectedTab =
-                            if (profilePickerOpenedFromApp) {
-                                AppTab.SETTINGS
-                            } else {
-                                AppTab.HOME
-                            }
-                        settingsPage = SettingsPage.ROOT
+                        val resumeSavedRoute = MobileNavigationSnapshot.mayResumeRoute(
+                            savedNavigationOwner,
+                            profileStore.activeProfile().mobileHomeStateKey(),
+                            profilePickerOpenedFromApp,
+                        )
+                        if (!resumeSavedRoute) {
+                            selectedMedia = null
+                            selectedEntityTarget = null
+                            selectedCatalogRow = null
+                            selectedLibraryEntry = null
+                            mediaBackStack = emptyList()
+                            selectedTab =
+                                if (profilePickerOpenedFromApp) {
+                                    AppTab.SETTINGS
+                                } else {
+                                    AppTab.HOME
+                                }
+                            settingsPage = SettingsPage.ROOT
+                        }
                         libraryVersion++
                         profileVersion++
                         showProfilePicker = false
@@ -1038,6 +1095,8 @@ fun VueoApp(
                     profileVersion = profileVersion,
                     booting = booting,
                     query = searchQuery,
+                    searchMode = searchMode,
+                    onSearchModeChange = { searchMode = it },
                     onQueryChange = {
                         searchQuery = it
                     },
