@@ -1035,6 +1035,7 @@ fun VueoApp(
                     engine = engine,
                     contentVersion =
                         contentVersion,
+                    profileVersion = profileVersion,
                     booting = booting,
                     query = searchQuery,
                     onQueryChange = {

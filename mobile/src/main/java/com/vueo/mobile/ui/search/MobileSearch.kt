@@ -257,12 +257,28 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+private data class MobileSearchView(
+    val query: String, val actor: Boolean, val type: SearchMediaFilter,
+    val sort: DiscoverSortMode, val genre: String?, val contentVersion: Int,
+    val profileId: String, val kidsLimit: Int?,
+)
+private data class MobileSearchPreparationKey(val input: MobileSearchPreparationInput, val view: MobileSearchView)
+private class MobileSearchPreparationState {
+    var dataset: MobileSearchPreparationInput? = null
+    val sources = LinkedHashMap<Pair<SearchMediaFilter, DiscoverSortMode>, MobileSearchPreparedSource>()
+    var key by mutableStateOf<MobileSearchPreparationKey?>(null)
+    var result by mutableStateOf(MobileSearchPreparedResult())
+}
 
 @Composable
 internal fun SearchScreen(
     engine: UnifiedMediaEngine,
     contentVersion: Int,
+    profileVersion: Int,
     booting: Boolean,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -288,6 +304,12 @@ internal fun SearchScreen(
             )
         }
 
+    val profileStore = remember(context) { ProfileStore(context.applicationContext) }
+    val searchProfile = remember(profileVersion) { profileStore.activeProfile() }
+    val profileScope = Triple(searchProfile.id, searchProfile.isKids, searchProfile.kidsMaxAge)
+    val kidsLimit = searchProfile.kidsMaxAge.takeIf { searchProfile.isKids }
+    val latestProfileScope = androidx.compose.runtime.rememberUpdatedState(profileScope)
+
     val latestSearchQuery = androidx.compose.runtime.rememberUpdatedState(query)
 
     var searchMode by remember {
@@ -296,14 +318,18 @@ internal fun SearchScreen(
         )
     }
 
-    var actorSourceAvailable by remember {
+    var actorSourceAvailable by remember(profileScope) {
         mutableStateOf(true)
     }
 
-    var searchResults by remember {
+    var searchResults by remember(profileScope) {
         mutableStateOf<List<MediaItem>>(
             emptyList()
         )
+    }
+
+    var searchResultsKey by remember(profileScope) {
+        mutableStateOf<Triple<String, SearchMode, Int>?>(null)
     }
 
     var discoverRows by remember {
@@ -316,11 +342,11 @@ internal fun SearchScreen(
         )
     }
 
-    var searching by remember {
+    var searching by remember(profileScope) {
         mutableStateOf(false)
     }
 
-    var completedSearchKey by remember {
+    var completedSearchKey by remember(profileScope) {
         mutableStateOf<Triple<String, SearchMode, Int>?>(null)
     }
 
@@ -347,6 +373,7 @@ internal fun SearchScreen(
     LaunchedEffect(
         contentVersion,
         booting,
+        profileScope,
     ) {
         CatalogDiscoveryCache
             .home(
@@ -388,7 +415,8 @@ internal fun SearchScreen(
                     )
             }
             }
-        }.onFailure {
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
             discoverRows =
                 CatalogDiscoveryCache
                     .home(
@@ -405,7 +433,9 @@ internal fun SearchScreen(
         contentVersion,
         booting,
         searchMode,
+        profileScope,
     ) {
+        val requestedProfileScope = profileScope
         val normalized =
             query.trim()
 
@@ -422,14 +452,17 @@ internal fun SearchScreen(
             searching = false
             actorSourceAvailable = true
             searchResults = emptyList()
+            searchResultsKey = null
             return@LaunchedEffect
         }
 
         searching = true
         searchResults = emptyList()
+        searchResultsKey = Triple(normalized, requestedMode, contentVersion)
         delay(250)
 
         if (
+            latestProfileScope.value != requestedProfileScope ||
             requestId != searchRequestId ||
             latestSearchQuery.value.trim() != normalized ||
             searchMode != requestedMode
@@ -444,7 +477,9 @@ internal fun SearchScreen(
             actorSourceAvailable = true
 
             val local =
-                engine.filterVisible(SearchOrchestrator.localTitleResults(normalized))
+                withContext(Dispatchers.Default) {
+                    engine.filterVisible(SearchOrchestrator.localTitleResults(normalized))
+                }
 
             searchResults = local
 
@@ -455,6 +490,7 @@ internal fun SearchScreen(
                     localResults = local,
                     onPartial = { partial ->
                         if (
+                            latestProfileScope.value == requestedProfileScope &&
                             requestId == searchRequestId &&
                             latestSearchQuery.value.trim() == normalized &&
                             searchMode == requestedMode
@@ -465,6 +501,7 @@ internal fun SearchScreen(
                 )
 
             if (
+                latestProfileScope.value == requestedProfileScope &&
                 requestId == searchRequestId &&
                 latestSearchQuery.value.trim() == normalized &&
                 searchMode == requestedMode
@@ -504,6 +541,7 @@ internal fun SearchScreen(
                     // Inherit the effect's Main dispatcher and cancellation lifetime.
                     launch {
                         if (
+                            latestProfileScope.value == requestedProfileScope &&
                             requestId == searchRequestId &&
                             latestSearchQuery.value.trim() == normalized &&
                             searchMode == requestedMode && searching
@@ -515,6 +553,7 @@ internal fun SearchScreen(
             )
 
         if (
+            latestProfileScope.value == requestedProfileScope &&
             requestId == searchRequestId &&
             latestSearchQuery.value.trim() == normalized &&
             searchMode == requestedMode
@@ -531,157 +570,60 @@ internal fun SearchScreen(
     val searchingMode =
         normalizedQuery.isNotBlank()
 
-    val searchPending = normalizedQuery.length >= 2 &&
+    val networkSearchPending = normalizedQuery.length >= 2 &&
         (booting || searching ||
             completedSearchKey != Triple(normalizedQuery, searchMode, contentVersion))
 
-    val animeCatalogKeys =
-        remember(discoverRows) {
-            PerformanceDiagnostics.measureBlock("mobile_search_animeCatalogKeys", Tab.SEARCH) {
-                discoverRows
-                    .filter {
-                        row ->
-                        listOf(
-                            row.id,
-                            row.title,
-                            row.providerName,
-                        ).any {
-                            value ->
-                            value.contains(
-                                "anime",
-                                ignoreCase = true,
-                            )
-                        }
-                    }
-                    .flatMap {
-                        it.items
-                    }
-                    .map {
-                        "${it.type}:${it.id}"
-                    }
-                    .toSet()
-            }
-        }
-
-    val discoverBaseItems =
-        remember(
-            discoverRows,
-            sortMode,
-        ) {
-            PerformanceDiagnostics.measureBlock("mobile_search_discoverBaseItems", Tab.SEARCH) {
-                DiscoverCatalogPolicy.baseItems(
-                    rows = discoverRows,
-                    mode = sortMode.toDiscoverSortMode(),
-                )
-            }
-        }
-
-    val sourceItems = engine.filterVisible(
-        if (searchingMode) searchResults else discoverBaseItems
+    val visibleSearchResults = if (searchResultsKey == Triple(normalizedQuery, searchMode, contentVersion)) {
+        searchResults
+    } else emptyList()
+    val preparation = remember(profileScope) { MobileSearchPreparationState() }
+    val input = MobileSearchPreparationInput(
+        discoverRows, visibleSearchResults, normalizedQuery, searchMode == SearchMode.ACTOR,
+        searchProfile.id, kidsLimit, contentVersion,
     )
+    val view = MobileSearchView(
+        normalizedQuery, searchMode == SearchMode.ACTOR, typeFilter.toSearchMediaFilter(),
+        sortMode.toDiscoverSortMode(), genre, contentVersion, searchProfile.id, kidsLimit,
+    )
+    val prepareKey = MobileSearchPreparationKey(input, view)
+    val preparing = preparation.key != prepareKey
+    // Keep the current grid during same-view incremental snapshots. A changed
+    // query/filter/configuration/profile must not display the previous view.
+    val prepared = if (preparation.key?.view == view) preparation.result else MobileSearchPreparedResult()
+    val availableGenres = prepared.genres
+    val filteredItems = prepared.items
+    val filteredGridRows = prepared.gridRows
+    val searchPending = networkSearchPending || preparing
 
-    val availableGenres =
-        remember(
-            sourceItems,
-            typeFilter,
-            animeCatalogKeys,
-        ) {
-            PerformanceDiagnostics.measureBlock("mobile_search_availableGenres", Tab.SEARCH) {
-                sourceItems
-                    .filter { item ->
-                        SearchResultOrderPolicy.matchesType(
-                            item = item,
-                            filter = typeFilter.toSearchMediaFilter(),
-                            animeCatalogKeys = animeCatalogKeys,
-                        )
-                    }
-                    .flatMap {
-                        it.genres
-                    }
-                    .map {
-                        it.trim()
-                    }
-                    .filter {
-                        it.isNotBlank() &&
-                            !it.equals(
-                                "anime",
-                                ignoreCase = true,
-                            )
-                    }
-                    .distinctBy {
-                        it.lowercase()
-                    }
-                    .sortedBy {
-                        it.lowercase()
-                    }
-            }
+    LaunchedEffect(prepareKey) {
+        if (preparation.key == prepareKey) return@LaunchedEffect
+        if (preparation.dataset != input) {
+            preparation.sources.clear()
+            preparation.dataset = input
         }
-
-    LaunchedEffect(
-        availableGenres,
-        genre,
-    ) {
-        if (
-            genre != null &&
-            availableGenres.none {
-                it.equals(
-                    genre,
-                    ignoreCase = true,
-                )
-            }
+        val sourceKey = view.type to view.sort
+        val cached = preparation.sources[sourceKey]
+        val (source, result) = PerformanceDiagnostics.measuredContext(
+            Dispatchers.Default, "mobile_search_prepare", Tab.SEARCH,
         ) {
+            val source = cached ?: prepareMobileSearchSource(input, view.type, view.sort)
+            source to prepareMobileSearchGenre(source, view.genre)
+        }
+        // Cancellation on changed keys prevents an obsolete result from publishing.
+        preparation.sources.remove(sourceKey)
+        preparation.sources[sourceKey] = source
+        while (preparation.sources.size > 6) preparation.sources.remove(preparation.sources.keys.first())
+        preparation.result = result
+        preparation.key = prepareKey
+    }
+
+    LaunchedEffect(preparing, availableGenres, genre, networkSearchPending, discovering) {
+        if (!preparing && !networkSearchPending && !discovering && genre != null &&
+            availableGenres.none { it.equals(genre, ignoreCase = true) }) {
             onGenreChange(null)
         }
     }
-
-    val filteredItems =
-        remember(
-            sourceItems,
-            typeFilter,
-            genre,
-            sortMode,
-            searchingMode,
-            searchMode,
-            animeCatalogKeys,
-        ) {
-            PerformanceDiagnostics.measureBlock("mobile_search_filteredItems", Tab.SEARCH) {
-                val filtered =
-                    sourceItems
-                        .filter {
-                            item ->
-                            SearchResultOrderPolicy.matchesType(
-                                item = item,
-                                filter = typeFilter.toSearchMediaFilter(),
-                                animeCatalogKeys = animeCatalogKeys,
-                            ) &&
-                                SearchResultOrderPolicy.matchesGenre(
-                                    item = item,
-                                    genre = genre,
-                                )
-                        }
-
-                if (
-                    searchingMode &&
-                    searchMode == SearchMode.ACTOR
-                ) {
-                    searchSortActorItems(
-                        items = filtered,
-                        mode = sortMode,
-                    )
-                } else if (searchingMode) {
-                    searchSortItems(
-                        items = filtered,
-                        mode = sortMode,
-                        query = normalizedQuery,
-                    )
-                } else {
-                    DiscoverCatalogPolicy.orderFiltered(
-                        items = filtered,
-                        mode = sortMode.toDiscoverSortMode(),
-                    )
-                }
-            }
-        }
 
     if (typeDialog) {
         SearchChoiceDialog(
@@ -983,7 +925,7 @@ internal fun SearchScreen(
                     )
                 } else if (searchingMode && searchPending) {
                     Text(
-                        text = if (booting) "Preparing search…" else "Searching…",
+                        text = if (booting) "Preparing search…" else if (networkSearchPending) "Searching…" else "Preparing results…",
                         color = VueoPalette.Muted,
                         fontSize = 12.sp,
                     )
@@ -1017,7 +959,7 @@ internal fun SearchScreen(
         if (
             !searchingMode &&
             discoverRows.isEmpty() &&
-            !discovering
+            !discovering && !preparing
         ) {
             item(
                 key = "search_empty_discover"
@@ -1071,8 +1013,7 @@ internal fun SearchScreen(
         ) {
             items(
                 items =
-                    filteredItems
-                        .chunked(3),
+                    filteredGridRows,
                 key = {
                     row ->
                     row.joinToString(
@@ -1146,26 +1087,6 @@ private fun SearchTypeFilter.toSearchMediaFilter(): SearchMediaFilter =
         SearchTypeFilter.SERIES -> SearchMediaFilter.SERIES
         SearchTypeFilter.ANIME -> SearchMediaFilter.ANIME
     }
-
-private fun searchSortActorItems(
-    items: List<MediaItem>,
-    mode: SearchSortMode,
-): List<MediaItem> =
-    SearchResultOrderPolicy.sortActorItems(
-        items = items,
-        mode = mode.toDiscoverSortMode(),
-    )
-
-private fun searchSortItems(
-    items: List<MediaItem>,
-    mode: SearchSortMode,
-    query: String? = null,
-): List<MediaItem> =
-    SearchResultOrderPolicy.sortTitleItems(
-        items = items,
-        mode = mode.toDiscoverSortMode(),
-        query = query,
-    )
 
 @Composable
 private fun SearchModeToggle(
