@@ -502,6 +502,7 @@ internal data class TvEpisodeProgress(
 @Composable
 internal fun VueoPlayerEpisodesPanel(
     mediaTitle: String,
+    media: com.vueo.shared.core.media.MediaItem,
     episodes: List<EpisodeItem>,
     currentEpisode: EpisodeItem?,
     watchedEpisodeKeys: Set<Pair<Int, Int>>,
@@ -524,6 +525,38 @@ internal fun VueoPlayerEpisodesPanel(
     }
     val seasonEpisodes = remember(episodes, selectedSeason) {
         episodes.filter { it.season == selectedSeason }.sortedBy { it.episode }
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val artworkSettings = remember(context) { com.vueo.shared.core.storage.SettingsStore(context) }
+    val artworkPlugins = remember(context) { com.vueo.shared.core.plugin.PluginStore(context) }
+    val tmdbApiKey = artworkPlugins.tmdbApiKey()
+    val artworkEnabled = artworkSettings.tmdbArtworkEnrichmentEnabled()
+    var tmdbArtwork by remember(media.type, media.id, tmdbApiKey) {
+        mutableStateOf<Map<Pair<Int, Int>, String>>(emptyMap())
+    }
+    var attemptedSeasons by remember(media.type, media.id, tmdbApiKey) { mutableStateOf(emptySet<Int>()) }
+    var failedPrimaries by remember(media.type, media.id) { mutableStateOf(emptySet<Pair<Int, Int>>()) }
+    val needsArtwork = seasonEpisodes.any {
+        com.vueo.shared.core.player.EpisodeArtworkPolicy.usable(it.thumbnail) == null ||
+            (it.season to it.episode) in failedPrimaries
+    }
+    LaunchedEffect(media.type, media.id, selectedSeason, needsArtwork, tmdbApiKey, artworkEnabled) {
+        val season = selectedSeason
+        if (!artworkEnabled || tmdbApiKey.isBlank() || !needsArtwork || season in attemptedSeasons) return@LaunchedEffect
+        try {
+            val artwork = com.vueo.shared.core.diagnostics.PerformanceDiagnostics.measuredContext(
+                kotlinx.coroutines.Dispatchers.IO, "tv_player_episode_artwork",
+                com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab.PLAYER,
+            ) {
+                com.vueo.shared.core.enrichment.TmdbEnhancementClient.episodeArtwork(media, season, tmdbApiKey)
+            }
+            tmdbArtwork = tmdbArtwork + artwork
+            attemptedSeasons = attemptedSeasons + season
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            attemptedSeasons = attemptedSeasons + season
+        }
     }
     val ranges = rememberTvEpisodeRanges(seasonEpisodes, currentEpisode?.id)
     val rangeRequester = remember { FocusRequester() }
@@ -612,6 +645,10 @@ internal fun VueoPlayerEpisodesPanel(
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     VueoEpisodeList(
                         episodes = ranges.visible,
+                        artwork = tmdbArtwork,
+                        fallbackBackground = media.background,
+                        fallbackPoster = media.poster,
+                        onPrimaryArtworkFailed = { failedPrimaries = failedPrimaries + it },
                         currentEpisode = currentEpisode,
                         watchedEpisodeKeys = watchedEpisodeKeys,
                         episodeProgress = episodeProgress,
@@ -705,6 +742,10 @@ private fun VueoSeasonChip(
 @Composable
 private fun VueoEpisodeList(
     episodes: List<EpisodeItem>,
+    artwork: Map<Pair<Int, Int>, String>,
+    fallbackBackground: String?,
+    fallbackPoster: String?,
+    onPrimaryArtworkFailed: (Pair<Int, Int>) -> Unit,
     currentEpisode: EpisodeItem?,
     watchedEpisodeKeys: Set<Pair<Int, Int>>,
     episodeProgress: Map<Pair<Int, Int>, TvEpisodeProgress>,
@@ -783,6 +824,10 @@ private fun VueoEpisodeList(
                 } == true
                 VueoEpisodeRow(
                     episode = episode,
+                    alternateThumbnail = artwork[episode.season to episode.episode],
+                    fallbackBackground = fallbackBackground,
+                    fallbackPoster = fallbackPoster,
+                    onPrimaryArtworkFailed = { onPrimaryArtworkFailed(episode.season to episode.episode) },
                     selected = selected,
                     watched = (episode.season to episode.episode) in watchedEpisodeKeys,
                     progress = episodeProgress[episode.season to episode.episode],
@@ -801,6 +846,10 @@ private fun VueoEpisodeList(
 @Composable
 private fun VueoEpisodeRow(
     episode: EpisodeItem,
+    alternateThumbnail: String?,
+    fallbackBackground: String?,
+    fallbackPoster: String?,
+    onPrimaryArtworkFailed: () -> Unit,
     selected: Boolean,
     watched: Boolean,
     progress: TvEpisodeProgress?,
@@ -865,12 +914,29 @@ private fun VueoEpisodeRow(
                 .clip(RoundedCornerShape(8.dp))
                 .background(TvDesign.SurfaceRaised)
         ) {
+            val artworkCandidates = remember(episode.thumbnail, alternateThumbnail, fallbackBackground, fallbackPoster) {
+                com.vueo.shared.core.player.EpisodeArtworkPolicy.candidates(
+                    episode.thumbnail, alternateThumbnail, fallbackBackground, fallbackPoster,
+                )
+            }
+            var failedArtwork by remember(episode.id, episode.season, episode.episode, episode.thumbnail) {
+                mutableStateOf(emptySet<String>())
+            }
+            val artworkUrl = com.vueo.shared.core.player.EpisodeArtworkPolicy.next(artworkCandidates, failedArtwork)
             TvNetworkImage(
-                episode.thumbnail,
+                artworkUrl,
                 episode.title,
                 Modifier.fillMaxSize(),
                 ContentScale.Crop,
                 TvDesign.SurfaceRaised,
+                onLoadResult = { loaded ->
+                    if (!loaded && artworkUrl != null) {
+                        failedArtwork = failedArtwork + artworkUrl
+                        if (artworkUrl == com.vueo.shared.core.player.EpisodeArtworkPolicy.usable(episode.thumbnail)) {
+                            onPrimaryArtworkFailed()
+                        }
+                    }
+                },
                 fadeEnabled = false,
             )
             val progressFraction = when {

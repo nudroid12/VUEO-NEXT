@@ -5,6 +5,7 @@ import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.plugin.TmdbResolver
 import com.vueo.shared.core.enrichment.MetadataHttp
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -746,6 +747,23 @@ object TmdbEnhancementClient {
         )
     }
 
+    /** One cached season lookup for the open Player episode panel, not one call per card. */
+    suspend fun episodeArtwork(
+        media: MediaItem,
+        season: Int,
+        apiKey: String,
+    ): Map<Pair<Int, Int>, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (media.type !in setOf("series", "tv") || season < 0 || apiKey.isBlank()) return@withContext emptyMap()
+        val tmdbId = resolveTmdbId(media.copy(type = "series"), apiKey) ?: return@withContext emptyMap()
+        val metadata = seasonEpisodeMetadata(tmdbId, season, apiKey)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        metadata.mapNotNull { episode ->
+            com.vueo.shared.core.player.EpisodeArtworkPolicy.usable(episode.thumbnail)?.let {
+                (episode.season to episode.episode) to it
+            }
+        }.toMap()
+    }
+
     suspend fun moreLikeThis(
         item: MediaItem,
         apiKey: String,
@@ -1010,7 +1028,10 @@ object TmdbEnhancementClient {
                         )
                     }
                 }
-            }.getOrDefault(emptyList())
+            }.getOrElse { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                emptyList()
+            }
 
         synchronized(seasonEpisodesCache) {
             seasonEpisodesCache[cacheKey] =

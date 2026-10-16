@@ -347,6 +347,7 @@ internal fun VueoPlayerPresentation(
                     exit = tvPlayerSidePanelExit(),
                 ),
                 mediaTitle = media.name,
+                media = media,
                 episodes = episodes,
                 currentEpisode = episode,
                 watchedEpisodeKeys = watchedEpisodeKeys,
