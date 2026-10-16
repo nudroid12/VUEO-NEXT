@@ -94,6 +94,24 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         registerListener()
     }
 
+    /** Permanent Compose disposal; ordinary window detach may still reattach. */
+    fun releasePlayerBinding() {
+        keepScreenOn = false
+        // Disposal must continue if one listener or observer cleanup fails.
+        val listenersCleared = runCatching { unregisterListener() }.isSuccess
+        boundPlayer = null
+        val playerCleared = runCatching { player = null }.isSuccess
+        runCatching { managedSubtitleView.setCues(emptyList()) }
+        runCatching { commentarySubtitleView.setCues(emptyList()) }
+        lastInputCues = null
+        lastDisplayedCues = emptyList()
+        lastDisplayedCommentaryCues = emptyList()
+        lastNormalBottomText = null
+        com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+            "PLAYER_VIEW_RESOURCE platform=Mobile event=unbind listenersCleared=$listenersCleared playerCleared=$playerCleared",
+        )
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         registerListener()
@@ -120,10 +138,16 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     }
 
     private fun unregisterListener() {
-        if (listenerRegistered) boundPlayer?.removeListener(captionListener)
-        flowObserver?.close()
-        flowObserver = null
-        listenerRegistered = false
+        try {
+            if (listenerRegistered) boundPlayer?.removeListener(captionListener)
+        } finally {
+            try {
+                flowObserver?.close()
+            } finally {
+                flowObserver = null
+                listenerRegistered = false
+            }
+        }
     }
 
     fun applySubtitlePresentation(

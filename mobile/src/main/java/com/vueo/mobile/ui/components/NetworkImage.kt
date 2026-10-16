@@ -44,6 +44,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import java.util.concurrent.atomic.AtomicBoolean
 
 private object VueoImageCache {
@@ -67,6 +70,23 @@ private object VueoImageCache {
     private var lastPruneMs = 0L // guarded by diskLock
     private var removedOrphanTemps = false // guarded by diskLock
     private val callbacksRegistered = AtomicBoolean(false)
+    private val activeLoads = AtomicInteger()
+    private val lastTraceMs = AtomicLong(-3_000L)
+
+    // Observe decoded cache ownership without retaining extra bitmaps or adding a timer.
+    private fun traceMemory(reason: String) {
+        if (!PerformanceDiagnostics.isCollecting()) return
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastTraceMs.get()
+        if (now - previous < 3_000L || !lastTraceMs.compareAndSet(previous, now)) return
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "IMAGE_CACHE_RESOURCE platform=Mobile reason=$reason " +
+                "cacheKiB=${memoryCache.size()} limitKiB=${memoryCache.maxSize()} " +
+                "entries=${memoryCache.snapshot().size} activeLoads=${activeLoads.get()} " +
+                "hits=${memoryCache.hitCount()} misses=${memoryCache.missCount()} evictions=${memoryCache.evictionCount()}",
+        )
+    }
+
     private val previews = LinkedHashMap<String, WeakReference<Bitmap>>(MAX_PREVIEWS, 0.75f, true)
 
     private fun key(url: String, size: IntSize) = "$url:${size.width}x${size.height}"
@@ -85,12 +105,15 @@ private object VueoImageCache {
         } else bitmap
     }
 
-    fun memoryEntry(url: String?, size: IntSize): Bitmap? =
-        url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
+    fun memoryEntry(url: String?, size: IntSize): Bitmap? {
+        traceMemory("access")
+        return url?.takeIf(String::isNotBlank)?.let { memoryCache.get(key(it, size)) }
+    }
 
     private fun clearMemory() {
         memoryCache.evictAll()
         synchronized(previews) { previews.clear() }
+        traceMemory("cleared")
         // Do not recycle: Compose may still be displaying an evicted bitmap.
     }
 
@@ -117,30 +140,36 @@ private object VueoImageCache {
                 currentCoroutineContext().ensureActive()
                 memoryCache.get(cacheKey)?.let { return@withLock it }
                 loadingPermits.withPermit {
-                    currentCoroutineContext().ensureActive()
-                    val directory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
-                    val file = File(directory, url.sha256())
-                    val cached = diskLock.withLock {
-                        directory.mkdirs()
-                        pruneDiskCache(directory)
-                        if (!file.isFile) null else decodeBitmap(file, size).also { bitmap ->
-                            if (bitmap == null) file.delete()
-                            else file.setLastModified(System.currentTimeMillis())
-                        }
-                    }
-                    var bitmap = cached
-                    if (bitmap == null) {
-                        repeat(2) { attempt ->
-                            if (bitmap == null) {
-                                bitmap = downloadBitmap(url, file, size)
-                                if (bitmap == null && attempt == 0) delay(250)
+                    activeLoads.incrementAndGet()
+                    try {
+                        currentCoroutineContext().ensureActive()
+                        val directory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
+                        val file = File(directory, url.sha256())
+                        val cached = diskLock.withLock {
+                            directory.mkdirs()
+                            pruneDiskCache(directory)
+                            if (!file.isFile) null else decodeBitmap(file, size).also { bitmap ->
+                                if (bitmap == null) file.delete()
+                                else file.setLastModified(System.currentTimeMillis())
                             }
                         }
-                    }
-                    currentCoroutineContext().ensureActive()
-                    bitmap?.also {
-                        memoryCache.put(cacheKey, it)
-                        rememberPreview(url, it)
+                        var bitmap = cached
+                        if (bitmap == null) {
+                            repeat(2) { attempt ->
+                                if (bitmap == null) {
+                                    bitmap = downloadBitmap(url, file, size)
+                                    if (bitmap == null && attempt == 0) delay(250)
+                                }
+                            }
+                        }
+                        currentCoroutineContext().ensureActive()
+                        bitmap?.also {
+                            memoryCache.put(cacheKey, it)
+                            rememberPreview(url, it)
+                        }
+                    } finally {
+                        activeLoads.decrementAndGet()
+                        traceMemory("load_finished")
                     }
                 }
             }

@@ -2029,8 +2029,10 @@ internal fun PlayerScreen(
         player.addListener(listener)
         publish()
         onDispose {
-            traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
-            player.removeListener(listener)
+            runCatching {
+                traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
+            }
+            runCatching { player.removeListener(listener) }
         }
     }
 
@@ -2233,45 +2235,54 @@ internal fun PlayerScreen(
     }
 
     DisposableEffect(player) {
+        val resources = MobilePlayerResourceLease(PerformanceDiagnostics::captureRuntimeEvent)
         onDispose {
-            player.volume = 0f
-            runCatching { player.pause() }
-            if (!playerExitRequested && !episodeHandoffPersistenceQueued && !completionPersistenceQueued) {
-                val livePositionMs =
-                    player.currentPosition.coerceAtLeast(0L)
-                val liveDurationMs =
-                    player.duration.coerceAtLeast(0L)
-                if (livePositionMs > minimumResumePositionMs) {
-                    lastValidPlaybackPositionMs = livePositionMs
-                }
-                val stablePositionMs =
-                    if (livePositionMs > minimumResumePositionMs) {
-                        livePositionMs
-                    } else {
-                        lastValidPlaybackPositionMs
+            resources.disposalStarted()
+            // Snapshot before any release; the deferred task must not query a released player.
+            val exitPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
+            val exitDurationMs = runCatching {
+                player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L
+            }.getOrDefault(0L)
+            try {
+                runCatching { player.volume = 0f }
+                runCatching { player.pause() }
+                if (!playerExitRequested && !episodeHandoffPersistenceQueued && !completionPersistenceQueued) {
+                    if (exitPositionMs > minimumResumePositionMs) lastValidPlaybackPositionMs = exitPositionMs
+                    val stablePositionMs = if (exitPositionMs > minimumResumePositionMs) {
+                        exitPositionMs
+                    } else lastValidPlaybackPositionMs
+                    if (stablePositionMs > minimumResumePositionMs) {
+                        enqueuePlaybackProgress(
+                            positionMs = stablePositionMs,
+                            durationMs = exitDurationMs,
+                            notifyLibrary = true,
+                        )
                     }
-                if (stablePositionMs > minimumResumePositionMs) {
-                    enqueuePlaybackProgress(
-                        positionMs = stablePositionMs,
-                        durationMs = liveDurationMs,
-                        notifyLibrary = true,
+                }
+            } catch (error: Exception) {
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "PLAYER_RESOURCE platform=Mobile event=progress_cleanup_failed error=${error.javaClass.simpleName}",
+                )
+            } finally {
+                // Clear the video output immediately. AndroidView also unbinds its
+                // PlayerView in onRelease, including subtitle observers and cues.
+                runCatching { player.clearVideoSurface() }
+                val releaseResources = {
+                    resources.release(
+                        beforeRelease = { traktPlayback.stop(exitPositionMs, exitDurationMs) },
+                        releasePlayer = { player.release() },
                     )
                 }
-            }
-
-            val episodeHandoff =
-                episodeHandoffPersistenceQueued || latestEpisodeSwitchingTo.value != null
-            if (episodeHandoff) {
-                // A next-episode switch stays inside Player. Free the old codec now
-                // instead of holding two decoder allocations for another 64 ms.
-                traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
-                runCatching { player.release() }
-            } else {
-                // Preserve the one-frame defer for actual Back/source disposal.
-                mobilePlayerCleanupScope.launch {
-                    delay(64L)
-                    traktPlayback.stop(player.currentPosition, player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L)
-                runCatching { player.release() }
+                val episodeHandoff = episodeHandoffPersistenceQueued || latestEpisodeSwitchingTo.value != null
+                if (episodeHandoff) {
+                    releaseResources()
+                } else {
+                    // Retain the existing short defer for View disposal, on the
+                    // player's application thread. Always release after cleanup.
+                    mobilePlayerCleanupScope.launch {
+                        delay(64L)
+                        releaseResources()
+                    }
                 }
             }
         }
@@ -3258,6 +3269,9 @@ internal fun PlayerScreen(
                     )
                     resizeMode = videoFit.toMedia3ResizeMode()
                 }
+            },
+            onRelease = { view ->
+                view.releasePlayerBinding()
             },
             update = { view ->
                 view.bindPlayer(player)
