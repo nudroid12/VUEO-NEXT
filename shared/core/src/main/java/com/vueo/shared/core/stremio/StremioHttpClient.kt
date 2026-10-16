@@ -21,7 +21,7 @@ interface StremioHttpClient {
  * The HTTPS-only rule preserves the current VUEO security baseline.
  */
 object DefaultStremioHttpClient : StremioHttpClient {
-    private const val MAX_DECLARED_BODY_BYTES = 8L * 1024L * 1024L
+    private const val MAX_RESPONSE_BODY_BYTES = 8L * 1024L * 1024L
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -60,12 +60,9 @@ object DefaultStremioHttpClient : StremioHttpClient {
                                     )
                                 }
 
-                                val length = response.body.contentLength()
-                                if (length > MAX_DECLARED_BODY_BYTES) {
-                                    error("Response too large ($length bytes)")
+                                response.body.readBoundedString(MAX_RESPONSE_BODY_BYTES) {
+                                    continuation.isActive
                                 }
-
-                                response.body.string()
                             }
                             if (continuation.isActive) continuation.resumeWith(result)
                         }
