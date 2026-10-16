@@ -128,6 +128,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -370,8 +373,6 @@ fun VueoApp(
     }
 
     val engine = remember { UnifiedMediaEngine { ProfileStore(context.applicationContext).kidsAgeLimit() } }
-    val homeRetainedState =
-        rememberMobileHomeRetainedState()
     val settingsRetainedState =
         rememberMobileSettingsRetainedState()
     val store = remember {
@@ -463,6 +464,27 @@ fun VueoApp(
     var profileVersion by remember {
         mutableIntStateOf(0)
     }
+    // UI restoration belongs to a local profile and its current Kids policy.
+    // Retain presentation data separately from Bundle-safe scroll coordinates.
+    val homeUiState = rememberSaveableStateHolder()
+    val homeRetainedStates = remember { mutableMapOf<String, MobileHomeRetainedState>() }
+    var savedHomeKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val homeProfiles = remember(profileVersion) { profileStore.profiles() }
+    val homeProfile = remember(profileVersion) { profileStore.activeProfile() }
+    val homeStateKey = homeProfile.mobileHomeStateKey()
+    val validHomeKeys = homeProfiles.map { it.mobileHomeStateKey() }.toSet()
+    val homeRetainedState = remember(homeStateKey) {
+        homeRetainedStates.getOrPut(homeStateKey) { MobileHomeRetainedState() }
+    }
+    LaunchedEffect(validHomeKeys, homeStateKey) {
+        val obsoleteKeys = (savedHomeKeys + homeRetainedStates.keys).toSet() - validHomeKeys
+        obsoleteKeys.forEach { obsolete ->
+            homeUiState.removeState(obsolete)
+            homeRetainedStates.remove(obsolete)
+        }
+        savedHomeKeys = (savedHomeKeys.filter { it in validHomeKeys } + homeStateKey).distinct()
+    }
+
     var showProfilePicker by remember {
         mutableStateOf(false)
     }
@@ -989,46 +1011,51 @@ fun VueoApp(
                 label = "VUEO main navigation transition",
             ) { (currentTab, currentSettingsPage) ->
                 when (currentTab) {
-                AppTab.HOME -> HomeScreen(
-                    engine = engine,
-                    retainedState = homeRetainedState,
-                    contentVersion = contentVersion,
-                    booting = booting,
-                    addonsPrepared = addonsPrepared,
-                    libraryStore = libraryStore,
-                    libraryVersion = libraryVersion,
-                    onLibraryChanged = {
-                        libraryVersion++
-                    },
-                    onOpenContentManager = {
-                        selectedTab =
-                            AppTab.SETTINGS
-                        settingsPage =
-                            SettingsPage
-                                .CONTENT_MANAGER
-                    },
-                    onMediaClick = {
-                        mediaBackStack =
-                            emptyList()
-                        selectedLibraryEntry =
-                            null
-                        selectedMedia = it
-                    },
-                    onPlaybackClick = {
-                        entry ->
-                        mediaBackStack =
-                            emptyList()
-                        selectedLibraryEntry =
-                            entry
-                        selectedMedia =
-                            entry.media
-                    },
-                    onSeeAll = {
-                        row ->
-                        selectedCatalogRow =
-                            row
-                    },
-                )
+                AppTab.HOME -> key(homeStateKey) {
+                    homeUiState.SaveableStateProvider(homeStateKey) {
+                        HomeScreen(
+                            engine = engine,
+                            retainedState = homeRetainedState,
+                            activeProfileId = homeProfile.id,
+                            contentVersion = contentVersion,
+                            booting = booting,
+                            addonsPrepared = addonsPrepared,
+                            libraryStore = libraryStore,
+                            libraryVersion = libraryVersion,
+                            onLibraryChanged = {
+                                libraryVersion++
+                            },
+                            onOpenContentManager = {
+                                selectedTab =
+                                    AppTab.SETTINGS
+                                settingsPage =
+                                    SettingsPage
+                                        .CONTENT_MANAGER
+                            },
+                            onMediaClick = {
+                                mediaBackStack =
+                                    emptyList()
+                                selectedLibraryEntry =
+                                    null
+                                selectedMedia = it
+                            },
+                            onPlaybackClick = {
+                                entry ->
+                                mediaBackStack =
+                                    emptyList()
+                                selectedLibraryEntry =
+                                    entry
+                                selectedMedia =
+                                    entry.media
+                            },
+                            onSeeAll = {
+                                row ->
+                                selectedCatalogRow =
+                                    row
+                            },
+                        )
+                    }
+                }
 
                 AppTab.SEARCH -> SearchScreen(
                     engine = engine,
@@ -1425,6 +1452,9 @@ private fun RowScope.BottomTab(
                 ),
     )
 }
+
+private fun VueoProfile.mobileHomeStateKey(): String =
+    "home:$id:${if (isKids) "kids:$kidsMaxAge" else "standard"}"
 
 @Composable
 private fun RowScope.ProfileBottomTab(

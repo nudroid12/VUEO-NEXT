@@ -299,12 +299,6 @@ internal class MobileHomeRetainedState {
         internal set
 }
 
-@Composable
-internal fun rememberMobileHomeRetainedState(): MobileHomeRetainedState =
-    remember {
-        MobileHomeRetainedState()
-    }
-
 private fun mergeHomeCatalogRows(
     baseline: List<CatalogRow>,
     fresh: List<CatalogRow>,
@@ -328,6 +322,7 @@ private fun MediaItem.homeFeaturedKey(): String =
 internal fun HomeScreen(
     engine: UnifiedMediaEngine,
     retainedState: MobileHomeRetainedState,
+    activeProfileId: String,
     contentVersion: Int,
     booting: Boolean,
     addonsPrepared: Boolean,
@@ -422,14 +417,6 @@ internal fun HomeScreen(
             )
         }
 
-    val activeProfileId =
-        remember(
-            libraryVersion
-        ) {
-            profileStore
-                .activeProfileId()
-        }
-
     val forYouEnabled = dnaPreferences.shouldShowForYou(activeProfileId)
     val becauseEnabled = dnaPreferences.shouldShowBecauseYouWatched(activeProfileId)
 
@@ -439,8 +426,9 @@ internal fun HomeScreen(
                 activeProfileId
             )
 
-        val listState =
-        rememberLazyListState()
+    // The root profile-scoped SaveableStateProvider retains this position and
+    // each LazyRow's default rememberLazyListState across route/tab disposal.
+    val listState = rememberLazyListState()
 
     var rows by remember(
         contentVersion,
