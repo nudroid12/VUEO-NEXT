@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -55,16 +56,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -328,13 +332,15 @@ internal fun ProfileSettingsScreen(
     val profiles = remember(profileVersion) { profileStore.profiles() }
     var editor by remember { mutableStateOf<ProfileEditorState?>(null) }
     var deleteCandidate by remember { mutableStateOf<VueoProfile?>(null) }
+    var deleteDraftAvatar by remember { mutableStateOf<String?>(null) }
+    fun cancelDelete() { deleteCandidate = null; deleteDraftAvatar = null }
     var askOnStartup by remember(profileVersion) {
         mutableStateOf(profileStore.askWhoIsWatchingOnStartup())
     }
 
-    deleteCandidate?.let { profile ->
+    deleteCandidate?.takeIf { parentalAction == null }?.let { profile ->
         AlertDialog(
-            onDismissRequest = { deleteCandidate = null },
+            onDismissRequest = { cancelDelete() },
             title = { Text("Delete ${profile.name}?") },
             text = {
                 Text("This removes this profile's local Favorites, history, playback progress and personal preferences.")
@@ -346,16 +352,18 @@ internal fun ProfileSettingsScreen(
                             val wasActive = profile.id == profileStore.activeProfileId()
                             if (profileStore.deleteProfile(profile.id)) {
                                 deleteLocalAvatar(context, profile.avatar)
+                                deleteDraftAvatar?.takeIf { it != profile.avatar }?.let { deleteLocalAvatar(context, it) }
+                                editor = null
                                 if (wasActive) onActiveProfileChanged()
                                 onProfilesChanged()
                             }
-                            deleteCandidate = null
+                            cancelDelete()
                         }
                     },
                 ) { Text("Delete") }
             },
             dismissButton = {
-                TextButton(onClick = { deleteCandidate = null }) { Text("Cancel") }
+                TextButton(onClick = { cancelDelete() }) { Text("Cancel") }
             },
         )
     }
@@ -415,8 +423,8 @@ internal fun ProfileSettingsScreen(
                 onDelete = editorState.profile?.takeIf {
                     it.id != ProfileStore.DEFAULT_PROFILE_ID
                 }?.let { profile ->
-                    {
-                        editor = null
+                    { draftAvatar: String ->
+                        deleteDraftAvatar = draftAvatar
                         deleteCandidate = profile
                     }
                 },
@@ -559,7 +567,7 @@ private fun ProfileEditorScreen(
     profileStore: ProfileStore,
     onBack: () -> Unit,
     onSave: (String, String, Boolean, Int, Boolean, String) -> Unit,
-    onDelete: (() -> Unit)?,
+    onDelete: ((String) -> Unit)?,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -578,6 +586,11 @@ private fun ProfileEditorScreen(
     var pinEnabled by remember(profile?.id) { mutableStateOf(hadPin) }
     var pin by remember(profile?.id) { mutableStateOf("") }
     var photoBusy by remember { mutableStateOf(false) }
+
+    BackHandler {
+        if (avatar != initialAvatar) deleteLocalAvatar(context, avatar)
+        onBack()
+    }
 
     if (parentalSave) {
         MobileParentalPinGate(profileStore,
@@ -743,12 +756,7 @@ private fun ProfileEditorScreen(
                                     if (selected) VueoPalette.BrandLime else VueoPalette.Stroke,
                                 ),
                             ) {
-                                Image(
-                                    painter = painterResource(choice.drawableRes),
-                                    contentDescription = "Choose profile avatar",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                                ProfileAvatarArtwork(choice.id, choice.drawableRes, "Choose profile avatar")
                             }
                         }
                         repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -851,7 +859,7 @@ private fun ProfileEditorScreen(
         if (onDelete != null) {
             item {
                 OutlinedButton(
-                    onClick = onDelete,
+                    onClick = { onDelete(avatar) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
@@ -1312,19 +1320,32 @@ private fun ManageProfileCard(
 }
 
 @Composable
-private fun ProfileAvatar(
+internal fun ProfileAvatar(
     profile: VueoProfile,
     size: Int,
 ) {
     val context = LocalContext.current
     val stockDrawable = stockAvatarDrawable(profile.avatar)
-    val localBitmap = remember(profile.avatar) {
-        localAvatarFile(context, profile.avatar)
-            ?.takeIf { it.isFile }
-            ?.let { BitmapFactory.decodeFile(it.absolutePath) }
-            ?.asImageBitmap()
+    val targetPixels = with(LocalDensity.current) { size.dp.roundToPx().coerceAtLeast(1) }
+    val localBitmap by key(profile.avatar) {
+        produceState<ImageBitmap?>(null, context, targetPixels) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    localAvatarFile(context, profile.avatar)?.takeIf { it.isFile }?.let { file ->
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeFile(file.absolutePath, bounds)
+                        var sample = 1
+                        while (bounds.outWidth / (sample * 2) >= targetPixels &&
+                            bounds.outHeight / (sample * 2) >= targetPixels && sample < (1 shl 20)) sample *= 2
+                        BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                            ?.asImageBitmap()
+                    }
+                }.getOrNull()
+            }
+        }
     }
 
+    val photoBitmap = localBitmap
     Box(
         modifier = Modifier
             .size(size.dp)
@@ -1334,16 +1355,11 @@ private fun ProfileAvatar(
     ) {
         when {
             stockDrawable != null -> {
-                Image(
-                    painter = painterResource(stockDrawable),
-                    contentDescription = "${profile.name} profile avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                ProfileAvatarArtwork(profile.avatar, stockDrawable, "${profile.name} profile avatar")
             }
-            localBitmap != null -> {
+            photoBitmap != null -> {
                 Image(
-                    bitmap = localBitmap,
+                    bitmap = photoBitmap,
                     contentDescription = "${profile.name} profile photo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -1351,7 +1367,9 @@ private fun ProfileAvatar(
             }
             else -> {
                 Text(
-                    text = profile.avatar.ifBlank { "🙂" },
+                    text = if (profile.avatar.startsWith(LOCAL_AVATAR_PREFIX)) {
+                        profile.name.take(1).uppercase().ifBlank { "🙂" }
+                    } else profile.avatar.ifBlank { "🙂" },
                     fontSize = (size / 2).sp,
                 )
             }

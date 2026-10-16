@@ -1408,8 +1408,6 @@ private fun RowScope.ProfileBottomTab(
     profile: VueoProfile,
     onSelect: (AppTab) -> Unit,
 ) {
-    val context =
-        LocalContext.current
     val profileTabSelected = selected == tab
     val profileAvatarSize by animateDpAsState(
         targetValue = if (profileTabSelected) 30.dp else 28.dp,
@@ -1441,31 +1439,6 @@ private fun RowScope.ProfileBottomTab(
         label = "VUEO profile tab border color",
     )
 
-    val avatarDrawable =
-        remember(
-            profile.avatar,
-            context,
-        ) {
-            if (
-                profile.avatar
-                    .startsWith(
-                        "avatar_"
-                    )
-            ) {
-                context.resources
-                    .getIdentifier(
-                        profile.avatar,
-                        "drawable",
-                        context.packageName,
-                    )
-                    .takeIf {
-                        it != 0
-                    }
-            } else {
-                null
-            }
-        }
-
     NavigationBarItem(
         selected = selected == tab,
         onClick = {
@@ -1490,47 +1463,7 @@ private fun RowScope.ProfileBottomTab(
                                 profileBorderColor,
                         ),
             ) {
-                Box(
-                    contentAlignment =
-                        Alignment.Center,
-                ) {
-                    if (
-                        avatarDrawable != null
-                    ) {
-                        Image(
-                            painter =
-                                painterResource(
-                                    avatarDrawable
-                                ),
-                            contentDescription =
-                                "Profile",
-                            contentScale =
-                                ContentScale.Crop,
-                            modifier =
-                                Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Text(
-                            text =
-                                profile.name
-                                    .trim()
-                                    .firstOrNull()
-                                    ?.uppercase()
-                                    ?: "P",
-                            color =
-                                if (
-                                    selected == tab
-                                ) {
-                                    VueoPalette.Accent
-                                } else {
-                                    VueoPalette.Muted
-                                },
-                            fontWeight =
-                                FontWeight.Bold,
-                            fontSize = 10.sp,
-                        )
-                    }
-                }
+                ProfileAvatar(profile = profile, size = 30)
             }
         },
         label = {
