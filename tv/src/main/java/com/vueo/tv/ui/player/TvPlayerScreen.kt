@@ -386,6 +386,7 @@ fun TvPlayerScreen(
     var subtitleDiscoveryRefreshing by remember(mediaKey) { mutableStateOf(false) }
     var subtitleRefreshMessage by remember(mediaKey) { mutableStateOf<String?>(null) }
 
+    val traceSource = androidx.compose.runtime.rememberUpdatedState(activeSource)
     val httpFactory = remember(bundle.videoId) {
         DefaultHttpDataSource.Factory()
             .setUserAgent("VUEO-TV")
@@ -403,7 +404,11 @@ fun TvPlayerScreen(
         )
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
-                    .setDataSourceFactory(SubtitleSessionDataSource.Factory(httpFactory))
+                    .setDataSourceFactory(SubtitleSessionDataSource.Factory(
+                        com.vueo.shared.core.player.PlaybackHttpTraceDataSource.Factory(
+                            httpFactory, "TV", { traceSource.value.headers }, { traceSource.value.url },
+                        )
+                    ))
             )
             .build()
             .apply { setAudioAttributes(AudioAttributes.DEFAULT, true) }

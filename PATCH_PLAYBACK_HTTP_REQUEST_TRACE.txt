@@ -1,0 +1,28 @@
+VUEO Playback HTTP Request Trace — Mobile + TV
+
+Based on supplied VUEO-NEXT-main (5).zip.
+This is diagnostic instrumentation, not a confirmed Ani.pm 403 fix.
+
+Audit: provider headers survive parsing/adaptation. Mobile configures source headers
+at player creation; TV configures active source headers before preparing playback.
+Existing errors report the original source host, not the failing downstream request.
+
+Adds HTTP_REQUEST_ERROR to existing Runtime/Performance diagnostics on open/read failure.
+Fields: platform, hashed request ID, inferred role (root/playlist/rendition/segment/key/init/subtitle/unknown),
+host, phase, HTTP status, position/length and presence of configured authentication/context headers.
+Role is inferred from completed parent manifests; unknown is retained when unavailable.
+Header presence describes configured headers at the transport boundary, not a packet capture.
+Automatic User-Agent/Range/redirect/cookie behavior of the underlying transport is not captured.
+No signed path, query, header value, response body, extra HTTP request or automatic retry is added.
+Only playlist bodies are retained transiently (max 256 KiB) to identify their child requests;
+binary data collection stops after the prefix check. URI role map is bounded to 2048 entries.
+Original exceptions and transfer callbacks are passed through. Subtitle caching remains outermost.
+
+Install: apply ZIP at repository root using existing apply-patch workflow; build/install Mobile or TV.
+Enable raw performance recording, retry Ani.pm once, then export the performance ZIP.
+Look for HTTP_REQUEST_ERROR beside PLAYBACK_ERROR. This should identify which request fails.
+
+Validation: reviewed source headers end-to-end and checked ZIP root paths/no YAML;
+compared player file diffs against uploaded baseline (only trace wiring).
+Full Kotlin/Android build not run: Gradle 9.3.1 and Android SDK are not installed locally.
+GitHub Actions build and real-device reproduction remain required.

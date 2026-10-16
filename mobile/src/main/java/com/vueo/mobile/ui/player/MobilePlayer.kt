@@ -940,7 +940,11 @@ internal fun PlayerScreen(
 
         val mediaSourceFactory =
             DefaultMediaSourceFactory(context)
-                .setDataSourceFactory(SubtitleSessionDataSource.Factory(httpFactory))
+                .setDataSourceFactory(SubtitleSessionDataSource.Factory(
+                    com.vueo.shared.core.player.PlaybackHttpTraceDataSource.Factory(
+                        httpFactory, "Mobile", { source.headers }, { source.url },
+                    )
+                ))
 
         ExoPlayer.Builder(
             context,
