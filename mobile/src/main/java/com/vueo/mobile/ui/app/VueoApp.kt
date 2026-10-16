@@ -185,7 +185,6 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.MediaItem as Media3MediaItem
 import com.vueo.mobile.core.extensions.AddonCategory
-import com.vueo.mobile.core.extensions.ExtensionInstaller
 import com.vueo.mobile.core.extensions.primaryAddonCategory
 import com.vueo.mobile.core.extensions.ExtensionKind
 import com.vueo.mobile.core.extensions.MediaExtension
@@ -258,7 +257,6 @@ import com.vueo.mobile.core.model.MediaPerson
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
@@ -378,6 +376,17 @@ fun VueoApp(
     val store = remember {
         AddonStore(context.applicationContext)
     }
+    val addonConfigurationReloader = remember(engine, store) {
+        com.vueo.mobile.core.extensions.MobileAddonConfigurationReloader(engine, store)
+    }
+    suspend fun reloadConfiguredAddons() {
+        val summary = addonConfigurationReloader.reload()
+        com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+            "ADDON_CONFIG_RELOAD platform=Mobile loaded=${summary.loaded} reused=${summary.reused} " +
+                "removed=${summary.removed} failed=${summary.failed} conflicts=${summary.conflicts}",
+        )
+    }
+
     val pluginStore = remember {
         PluginStore(context.applicationContext)
     }
@@ -522,14 +531,7 @@ fun VueoApp(
         vueoSync.configurationRevision.collect { revision ->
             if (revision > 0) {
                 withContext(Dispatchers.IO) {
-                    engine.stremioAddons().forEach { engine.uninstall(it.descriptor.id) }
-                    store.manifestUrls().forEach { url ->
-                        try {
-                            val extension = ExtensionInstaller.installStremioAddon(url)
-                            engine.install(extension)
-                            engine.setExtensionEnabled(extension.descriptor.id, store.isAddonEnabled(url))
-                        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
-                    }
+                    reloadConfiguredAddons()
                     providerCodeSync.syncMissing(pluginStore.repositories())
                     CatalogDiscoveryCache.clearAll(context.applicationContext)
                     SourceDiscoveryCache.clearAll()
@@ -619,40 +621,12 @@ fun VueoApp(
 
         // Local startup is complete at this point. Do not hold the entire app on
         // remote addon manifests; cached Home can render while addon preparation
-        // continues in a child coroutine. Keep manifest work sequential here on
-        // purpose to avoid replacing one startup bottleneck with a network/CPU burst.
+        // runs through the same bounded coordinator as account/import reloads.
         booting = false
         contentVersion++
 
         launch {
-            store.manifestUrls().forEach { manifestUrl ->
-                try {
-                    val extension =
-                        ExtensionInstaller
-                            .installStremioAddon(
-                                manifestUrl
-                            )
-
-                    engine.install(
-                        extension
-                    )
-                    engine.setExtensionEnabled(
-                        id =
-                            extension
-                                .descriptor
-                                .id,
-                        enabled =
-                            store
-                                .isAddonEnabled(
-                                    manifestUrl
-                                ),
-                    )
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    // Keep cached/local Home usable if one addon is unavailable.
-                }
-            }
+            reloadConfiguredAddons()
 
             // Trigger one catalog/search refresh after the configured addon set
             // has settled. Avoid restarting Home once per manifest.
@@ -1310,38 +1284,9 @@ fun VueoApp(
                                 contentVersion++
                             },
                             onPersistentDataChanged = {
-                                engine
-                                    .stremioAddons()
-                                    .forEach {
-                                        engine.uninstall(
-                                            it.descriptor.id
-                                        )
-                                    }
-
                                 store.seedDevelopmentDefaultsIfNeeded()
                                 pluginStore.seedDevelopmentDefaultsIfNeeded()
-
-                                store.manifestUrls()
-                                    .forEach { manifestUrl ->
-                                        runCatching {
-                                            ExtensionInstaller
-                                                .installStremioAddon(
-                                                    manifestUrl
-                                                )
-                                        }.onSuccess { extension ->
-                                    engine.install(
-                                        extension
-                                    )
-                                    engine.setExtensionEnabled(
-                                        id =
-                                            extension.descriptor.id,
-                                        enabled =
-                                            store.isAddonEnabled(
-                                                manifestUrl
-                                            ),
-                                    )
-                                }
-                                    }
+                                reloadConfiguredAddons()
 
                                 providerCodeSync.syncMissing(
                                     pluginStore.repositories()
