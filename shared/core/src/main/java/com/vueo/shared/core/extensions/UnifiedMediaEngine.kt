@@ -31,6 +31,30 @@ import java.util.concurrent.CopyOnWriteArraySet
 class UnifiedMediaEngine(
     private val kidsAgeLimit: () -> Int? = { null },
 ) {
+    // Per-engine cache: addon instances/configuration are never shared across engines.
+    private class MetadataKey(
+        val provider: MediaExtension,
+        val type: String,
+        val id: String,
+        val kidsLimit: Int?,
+    ) {
+        override fun equals(other: Any?): Boolean = other is MetadataKey &&
+            provider === other.provider && type == other.type && id == other.id && kidsLimit == other.kidsLimit
+        override fun hashCode(): Int = 31 * (31 * (31 * System.identityHashCode(provider) + type.hashCode()) + id.hashCode()) + (kidsLimit ?: -1)
+    }
+    private val metadataCache = MetadataRequestCache<MetadataKey, MediaItem>(weightOf = ::metadataCacheWeight)
+
+    private suspend fun providerMetadata(provider: MediaExtension, item: MediaItem): MediaItem? {
+        val metadata = metadataCache.getOrLoad(MetadataKey(provider, item.type, item.id, kidsAgeLimit())) {
+            provider.meta(item.type, item.id)
+        }
+        // Cache raw metadata, never an allow/deny decision. Recheck the current
+        // Kids policy on delivery, using the existing merge's rating precedence.
+        return metadata?.takeIf { candidate ->
+            metadataAllowedForKids(item, candidate, kidsAgeLimit())
+        }
+    }
+
     fun allowsContent(item: MediaItem): Boolean =
         com.vueo.shared.core.profile.KidsContentPolicy.allows(item.certification, kidsAgeLimit())
 
@@ -124,22 +148,25 @@ class UnifiedMediaEngine(
     fun install(extension: MediaExtension) {
         extensions.removeAll { it.descriptor.id == extension.descriptor.id }
         extensions += extension
+        metadataCache.invalidate()
     }
 
     fun uninstall(id: String) {
-        extensions.removeAll { it.descriptor.id == id }
+        val changed = extensions.removeAll { it.descriptor.id == id }
         disabledExtensionIds.remove(id)
+        if (changed) metadataCache.invalidate()
     }
 
     fun setExtensionEnabled(
         id: String,
         enabled: Boolean,
     ) {
-        if (enabled) {
+        val changed = if (enabled) {
             disabledExtensionIds.remove(id)
         } else {
             disabledExtensionIds.add(id)
         }
+        if (changed) metadataCache.invalidate()
     }
 
     fun isExtensionEnabled(
@@ -1360,10 +1387,7 @@ class UnifiedMediaEngine(
                         withTimeoutOrNull(
                             ADDON_REQUEST_TIMEOUT_MS
                         ) {
-                            provider.meta(
-                                item.type,
-                                item.id,
-                            )
+                            providerMetadata(provider, item)
                         }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -1400,10 +1424,7 @@ class UnifiedMediaEngine(
                                 withTimeoutOrNull(
                                     METADATA_FALLBACK_TIMEOUT_MS
                                 ) {
-                                    provider.meta(
-                                        item.type,
-                                        item.id,
-                                    )
+                                    providerMetadata(provider, item)
                                 }
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
