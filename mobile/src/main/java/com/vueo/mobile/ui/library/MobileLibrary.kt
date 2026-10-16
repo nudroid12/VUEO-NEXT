@@ -267,13 +267,32 @@ internal fun LibraryScreen(
     onPlaybackClick:
         (LibraryPlaybackEntry) -> Unit,
 ) {
-    val watchlist = remember(
-        version
-    ) {
-        store.watchlist()
-    }
-
     val context = LocalContext.current
+    val profileStore = remember(context) { ProfileStore(context.applicationContext) }
+    var watchlist by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+        mutableStateOf<List<MediaItem>>(emptyList())
+    }
+    var loading by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+        mutableStateOf(true)
+    }
+    var loadFailed by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(store, version, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+        loading = true
+        loadFailed = false
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                // The provided store follows the active profile. Reject a read
+                // spanning a profile switch instead of displaying another user's list.
+                if (profileStore.activeProfileId() != activeProfile.id) return@runCatching null
+                store.watchlist().takeIf { profileStore.activeProfileId() == activeProfile.id }
+            }
+        }
+        result.onSuccess { fresh -> if (fresh != null) watchlist = fresh }
+            .onFailure { loadFailed = true }
+        loading = false
+    }
 
     val libraryUiPreferences =
         remember {
@@ -360,7 +379,21 @@ internal fun LibraryScreen(
             }
         }
 
-        if (watchlist.isEmpty()) {
+        if (watchlist.isEmpty() && loading) {
+            item(key = "library-loading") {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp))
+            }
+        } else if (watchlist.isEmpty() && loadFailed) {
+            item(key = "library-load-failed") {
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    LibraryEmptyCard(
+                        title = "Couldn't load Favorites",
+                        body = "Try loading your library again.",
+                    )
+                    TextButton(onClick = onVersionChanged) { Text("Retry") }
+                }
+            }
+        } else if (watchlist.isEmpty()) {
             item(
                 key = "library-saved-empty"
             ) {

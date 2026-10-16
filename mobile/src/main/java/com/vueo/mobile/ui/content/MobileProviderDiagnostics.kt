@@ -132,6 +132,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -495,6 +499,49 @@ internal fun formatProviderAverageResponse(
     }
 
 @Composable
+private fun rememberDiagnosticVisibility(): Boolean {
+    val owner = LocalContext.current as? LifecycleOwner
+    var visible by remember(owner) {
+        mutableStateOf(owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true)
+    }
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, _ ->
+            visible = owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose { owner?.lifecycle?.removeObserver(observer) }
+    }
+    return visible
+}
+
+@Composable
+private fun rememberStyledDiagnosticPreview(
+    text: String,
+    query: String,
+    raw: Boolean,
+    providerMode: Boolean = false,
+): androidx.compose.ui.text.AnnotatedString {
+    val preview by produceState(
+        androidx.compose.ui.text.AnnotatedString("Loading diagnostics…"),
+        text, query, raw, providerMode,
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val display = if (providerMode && !raw) {
+                val needle = query.trim()
+                if (needle.isBlank()) text else text.split("\n\n")
+                    .filter { it.contains(needle, ignoreCase = true) }
+                    .joinToString("\n\n")
+                    .ifBlank { "No provider summaries match \"$needle\"." }
+            } else {
+                com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(text, raw, query, maxChars = 24_000)
+            }
+            styledProviderDiagnosticText(display)
+        }
+    }
+    return preview
+}
+
+@Composable
 internal fun RuntimeDiagnosticsDialog(
     onDismiss: () -> Unit,
 ) {
@@ -508,34 +555,28 @@ internal fun RuntimeDiagnosticsDialog(
     }
     var searchQuery by remember { mutableStateOf("") }
     val logScroll = rememberScrollState()
+    val diagnosticsVisible = rememberDiagnosticVisibility()
+    var refreshGeneration by remember { mutableIntStateOf(0) }
 
-    suspend fun loadDiagnostics(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
+    suspend fun loadDiagnostics(raw: Boolean): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (raw) RuntimeDiagnostics.exportRaw(context.applicationContext)
         else RuntimeDiagnostics.exportSummary(context.applicationContext)
     }
 
-    LaunchedEffect(showRaw, diagnosticsEnabled) {
-        diagnosticText = loadDiagnostics()
-        logScroll.scrollTo(0)
+    LaunchedEffect(showRaw, diagnosticsEnabled, diagnosticsVisible, refreshGeneration) {
+        if (!diagnosticsVisible) return@LaunchedEffect
+        diagnosticText = loadDiagnostics(showRaw)
         if (diagnosticsEnabled) {
             while (true) {
                 kotlinx.coroutines.delay(1_250L)
-                diagnosticText = loadDiagnostics()
+                diagnosticText = loadDiagnostics(showRaw)
             }
         }
     }
 
-    LaunchedEffect(diagnosticText, searchQuery, showRaw) {
-        if (showRaw && diagnosticsEnabled && searchQuery.isBlank()) {
-            logScroll.scrollTo(logScroll.maxValue)
-        }
-    }
-
-    val visibleLog = remember(diagnosticText, searchQuery, showRaw) {
-        com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(
-            diagnosticText, showRaw, searchQuery, maxChars = 24_000,
-        )
-    }
+    // Refreshing text must not drag the reader back to the log tail.
+    LaunchedEffect(searchQuery, showRaw) { logScroll.scrollTo(0) }
+    val styledLog = rememberStyledDiagnosticPreview(diagnosticText, searchQuery, showRaw)
 
     BackHandler(onBack = onDismiss)
 
@@ -714,7 +755,7 @@ internal fun RuntimeDiagnosticsDialog(
                             .padding(horizontal = 10.dp, vertical = 9.dp),
                     ) {
                         Text(
-                            text = remember(visibleLog) { styledProviderDiagnosticText(visibleLog) },
+                            text = styledLog,
                             color = Color.White.copy(alpha = .88f),
                             fontSize = if (!showRaw) 12.sp else 10.sp,
                             lineHeight = if (!showRaw) 17.sp else 14.sp,
@@ -737,23 +778,28 @@ internal fun RuntimeDiagnosticsDialog(
                         TextButton(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                val fullText = if (showRaw) {
-                                    RuntimeDiagnostics.exportRaw(context.applicationContext)
-                                } else {
-                                    RuntimeDiagnostics.exportSummary(context.applicationContext)
-                                }
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                clipboard?.setPrimaryClip(
-                                    ClipData.newPlainText(
-                                        if (showRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
-                                        fullText,
+                                val copyRaw = showRaw
+                                scope.launch {
+                                    val fullText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        if (copyRaw) {
+                                            RuntimeDiagnostics.exportRaw(context.applicationContext)
+                                        } else {
+                                            RuntimeDiagnostics.exportSummary(context.applicationContext)
+                                        }
+                                    }
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    clipboard?.setPrimaryClip(
+                                        ClipData.newPlainText(
+                                            if (copyRaw) "VUEO raw diagnostic" else "VUEO diagnostic summary",
+                                            fullText,
+                                        )
                                     )
-                                )
-                                Toast.makeText(
-                                    context,
-                                    if (showRaw) "Raw diagnostic copied" else "Diagnostic summary copied",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                    Toast.makeText(
+                                        context,
+                                        if (copyRaw) "Raw diagnostic copied" else "Diagnostic summary copied",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
                             },
                         ) { Text("Copy") }
 
@@ -788,11 +834,10 @@ internal fun RuntimeDiagnosticsDialog(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 scope.launch {
-                                    diagnosticText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                         RuntimeDiagnostics.clear(context.applicationContext)
-                                        if (showRaw) RuntimeDiagnostics.exportRaw(context.applicationContext)
-                                        else RuntimeDiagnostics.exportSummary(context.applicationContext)
                                     }
+                                    refreshGeneration++
                                     logScroll.scrollTo(0)
                                 }
                             },
@@ -824,55 +869,32 @@ internal fun PerformanceDiagnosticsDialog(
         mutableStateOf(diagnostics.isEnabled(context.applicationContext))
     }
     var diagnosticText by remember {
-        mutableStateOf(diagnostics.previewSummary(selectedTab))
+        mutableStateOf("Loading diagnostics…")
     }
     var searchQuery by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val logScroll = rememberScrollState()
+    val diagnosticsVisible = rememberDiagnosticVisibility()
+    var refreshGeneration by remember { mutableIntStateOf(0) }
 
-    fun refreshPreview(): String =
-        if (showRaw) diagnostics.previewRaw(selectedTab)
-        else diagnostics.previewSummary(selectedTab)
+    suspend fun refreshPreview(tab: DiagnosticsViewer.Tab, raw: Boolean): String =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            if (raw) diagnostics.previewRaw(tab) else diagnostics.previewSummary(tab)
+        }
 
-    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled) {
-        diagnosticText = refreshPreview()
-        logScroll.scrollTo(0)
+    LaunchedEffect(selectedTab, showRaw, diagnosticsEnabled, diagnosticsVisible, refreshGeneration) {
+        if (!diagnosticsVisible) return@LaunchedEffect
+        diagnosticText = refreshPreview(selectedTab, showRaw)
         if (diagnosticsEnabled) {
             while (true) {
                 kotlinx.coroutines.delay(1_250L)
-                diagnosticText = refreshPreview()
+                diagnosticText = refreshPreview(selectedTab, showRaw)
             }
         }
     }
 
-    LaunchedEffect(diagnosticText, searchQuery, showRaw) {
-        if (showRaw && diagnosticsEnabled && searchQuery.isBlank()) {
-            logScroll.scrollTo(logScroll.maxValue)
-        }
-    }
-
-    val visibleLog = remember(diagnosticText, searchQuery, providerMode, showRaw) {
-        if (!providerMode || showRaw) {
-            return@remember com.vueo.shared.core.diagnostics.DiagnosticLogDisplay.preview(
-                diagnosticText, showRaw, searchQuery,
-            )
-        }
-        val query = searchQuery.trim()
-        if (query.isBlank()) {
-            diagnosticText
-        } else if (!showRaw) {
-            diagnosticText.split("\n\n")
-                .filter { block -> block.contains(query, ignoreCase = true) }
-                .joinToString("\n\n")
-                .ifBlank { "No provider summaries match \"$query\"." }
-        } else {
-            diagnosticText
-                .lineSequence()
-                .filter { line -> line.contains(query, ignoreCase = true) }
-                .joinToString(if (providerMode) "\n\n" else "\n")
-                .ifBlank { "No diagnostic lines match \"$query\"." }
-        }
-    }
+    LaunchedEffect(selectedTab, searchQuery, showRaw) { logScroll.scrollTo(0) }
+    val styledLog = rememberStyledDiagnosticPreview(diagnosticText, searchQuery, showRaw, providerMode)
 
     BackHandler(onBack = onDismiss)
 
@@ -937,7 +959,7 @@ internal fun PerformanceDiagnosticsDialog(
                         onCheckedChange = { value ->
                             diagnostics.setEnabled(context.applicationContext, value)
                             diagnosticsEnabled = diagnostics.isCollecting()
-                            diagnosticText = refreshPreview()
+                            refreshGeneration++
                         },
                     )
                 }
@@ -1081,9 +1103,7 @@ internal fun PerformanceDiagnosticsDialog(
                             .padding(horizontal = 10.dp, vertical = 9.dp),
                     ) {
                         Text(
-                            text = remember(visibleLog, providerMode) {
-                                styledProviderDiagnosticText(visibleLog)
-                            },
+                            text = styledLog,
                             color = Color.White.copy(alpha = .88f),
                             fontSize = if (!showRaw) 12.sp else 10.sp,
                             lineHeight = if (!showRaw) 17.sp else 14.sp,
@@ -1106,23 +1126,29 @@ internal fun PerformanceDiagnosticsDialog(
                         TextButton(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                val fullText = if (showRaw) {
-                                    diagnostics.exportRaw(selectedTab)
-                                } else {
-                                    diagnostics.exportSummary(selectedTab)
-                                }
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                clipboard?.setPrimaryClip(
-                                    ClipData.newPlainText(
-                                        "VUEO ${diagnostics.kind} ${if (showRaw) "raw" else "summary"} ${selectedTab.label}",
-                                        fullText,
+                                val copyRaw = showRaw
+                                val copyTab = selectedTab
+                                scope.launch {
+                                    val fullText = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        if (copyRaw) {
+                                            diagnostics.exportRaw(copyTab)
+                                        } else {
+                                            diagnostics.exportSummary(copyTab)
+                                        }
+                                    }
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    clipboard?.setPrimaryClip(
+                                        ClipData.newPlainText(
+                                            "VUEO ${diagnostics.kind} ${if (copyRaw) "raw" else "summary"} ${copyTab.label}",
+                                            fullText,
+                                        )
                                     )
-                                )
-                                Toast.makeText(
-                                    context,
-                                    "${if (showRaw) "Raw" else "Summary"} ${selectedTab.label} copied",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                    Toast.makeText(
+                                        context,
+                                        "${if (copyRaw) "Raw" else "Summary"} ${copyTab.label} copied",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
                             },
                         ) { Text("Copy") }
 
@@ -1156,8 +1182,11 @@ internal fun PerformanceDiagnosticsDialog(
                         TextButton(
                             modifier = Modifier.weight(1f),
                             onClick = {
-                                diagnostics.clear()
-                                diagnosticText = refreshPreview()
+                                scope.launch {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { diagnostics.clear() }
+                                    refreshGeneration++
+                                    logScroll.scrollTo(0)
+                                }
                             },
                         ) { Text("Clear") }
 
