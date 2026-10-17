@@ -78,8 +78,15 @@ internal class PluginWebViewResolver(
             }
 
             val subtitles = Collections.synchronizedMap(linkedMapOf<String, CapturedSubtitle>())
-            val streams = resolve(request, subtitles)
+            val session = MediaSessionState()
+            val streams = resolve(request, subtitles, session)
             JSONObject().apply {
+                if (request.waitForMediaReady) {
+                    put("sessionHandoffVersion", 1)
+                    put("mediaReady", session.readyUrl.isNotBlank())
+                    put("finishReason", session.finishReason)
+                    put("capturedCount", streams.size)
+                }
                 if (request.captureSubtitles) {
                     put("subtitles", JSONArray().apply {
                         synchronized(subtitles) {
@@ -106,6 +113,10 @@ internal class PluginWebViewResolver(
                                     put("label", stream.label)
                                     put("url", stream.url)
                                     put("headers", JSONObject(stream.headers))
+                                    if (request.waitForMediaReady) {
+                                        put("mediaReady", session.readyUrl == stream.url)
+                                        put("networkObserved", stream.networkObserved)
+                                    }
                                 }
                             )
                         }
@@ -119,6 +130,7 @@ internal class PluginWebViewResolver(
     private suspend fun resolve(
         request: ResolveRequest,
         subtitles: MutableMap<String, CapturedSubtitle>,
+        session: MediaSessionState,
     ): List<CapturedStream> =
         suspendCancellableCoroutine { continuation ->
             val handler = Handler(Looper.getMainLooper())
@@ -134,7 +146,8 @@ internal class PluginWebViewResolver(
             ): Map<String, String> {
                 val headers = stream.headers
                     .filterKeys { key ->
-                        key.lowercase() !in BLOCKED_PLAYBACK_HEADERS
+                        (key.lowercase() !in BLOCKED_PLAYBACK_HEADERS ||
+                            (request.waitForMediaReady && key.equals("Origin", ignoreCase = true)))
                     }
                     .toMutableMap()
 
@@ -199,8 +212,9 @@ internal class PluginWebViewResolver(
                 runCatching { webView.destroy() }
             }
 
-            fun finish() {
+            fun finish(reason: String = "timeout") {
                 handler.post {
+                    session.finishReason = reason
                     if (continuation.isActive) {
                         val result = sortedResult()
                         safeDestroy()
@@ -212,10 +226,11 @@ internal class PluginWebViewResolver(
             }
 
             fun scheduleFinishSoon() {
+                if (request.waitForMediaReady && session.readyUrl.isBlank()) return
                 if (finishScheduled) return
                 finishScheduled = true
                 handler.postDelayed(
-                    { finish() },
+                    { finish(if (request.waitForMediaReady) "media-ready" else "first-candidate") },
                     request.finishAfterFirstMs,
                 )
             }
@@ -225,6 +240,7 @@ internal class PluginWebViewResolver(
                 rawUrl: String?,
                 headers: Map<String, String>,
                 forcePlayable: Boolean = false,
+                networkObserved: Boolean = false,
             ) {
                 val fixedUrl = rawUrl
                     ?.trim()
@@ -232,7 +248,9 @@ internal class PluginWebViewResolver(
                     ?.takeIf { forcePlayable || request.isStreamUrl(it) }
                     ?: return
 
-                val fixedHeaders = headers.toMutableMap().apply {
+                val fixedHeaders = if (request.waitForMediaReady) {
+                    WebViewSessionPolicy.withDefaults(headers, request.defaultHeaders())
+                } else headers.toMutableMap().apply {
                     putIfAbsent("User-Agent", request.userAgent)
                     putIfAbsent("Accept", "*/*")
                     putIfAbsent("Referer", request.referer.ifBlank { request.url })
@@ -240,13 +258,23 @@ internal class PluginWebViewResolver(
 
                 var added = false
                 synchronized(streams) {
-                    if (!streams.containsKey(fixedUrl)) {
+                    val previous = streams[fixedUrl]
+                    if (previous == null) {
                         streams[fixedUrl] = CapturedStream(
                             label = label.trim().ifBlank { guessLabel(fixedUrl) },
                             url = fixedUrl,
                             headers = fixedHeaders,
+                            networkObserved = networkObserved,
                         )
                         added = true
+                    } else if (request.waitForMediaReady) {
+                        streams[fixedUrl] = previous.copy(
+                            headers = WebViewSessionPolicy.mergeHeaders(
+                                previous.headers, fixedHeaders,
+                                preferIncoming = networkObserved,
+                            ),
+                            networkObserved = previous.networkObserved || networkObserved,
+                        )
                     }
                 }
 
@@ -278,6 +306,14 @@ internal class PluginWebViewResolver(
                 if (clean.isBlank()) return
 
                 when {
+                    clean.startsWith("VUEO_MEDIA_READY|") && request.waitForMediaReady -> {
+                        val file = clean.removePrefix("VUEO_MEDIA_READY|")
+                        if (request.isStreamUrl(file)) {
+                            session.readyUrl = file
+                            addStream(guessLabel(file), file, request.defaultHeaders())
+                            scheduleFinishSoon()
+                        }
+                    }
                     clean.startsWith("VUEO_SUBTITLE|") && request.captureSubtitles && clean.length <= 32768 -> {
                         runCatching {
                             val item = JSONObject(clean.substringAfter('|'))
@@ -356,6 +392,7 @@ internal class PluginWebViewResolver(
                 runCatching {
                     val hookScript = HOOK_JS
                         .replace("__VUEO_CAPTURE_SUBTITLES__", request.captureSubtitles.toString())
+                        .replace("__VUEO_WAIT_FOR_MEDIA_READY__", request.waitForMediaReady.toString())
                         .substringAfter("<script>")
                         .substringBeforeLast("</script>")
                     view?.evaluateJavascript(hookScript, null)
@@ -363,7 +400,7 @@ internal class PluginWebViewResolver(
             }
 
             fun clickWebView() {
-                if (streams.isNotEmpty()) return
+                if (streams.isNotEmpty() && (!request.waitForMediaReady || session.readyUrl.isNotBlank())) return
 
                 if (request.directLoad) {
                     runCatching {
@@ -754,6 +791,7 @@ internal class PluginWebViewResolver(
                     label = guessLabel(requestUrl),
                     rawUrl = requestUrl,
                     headers = headers,
+                    networkObserved = true,
                 )
             }
 
@@ -956,7 +994,7 @@ internal class PluginWebViewResolver(
 
                 handler.postDelayed({ finish() }, request.timeoutMs)
             }.onFailure {
-                finish()
+                finish("load-error")
             }
         }
 
@@ -976,10 +1014,16 @@ internal class PluginWebViewResolver(
         val headers: Map<String, String>,
     )
 
+    private class MediaSessionState {
+        @Volatile var readyUrl: String = ""
+        @Volatile var finishReason: String = "timeout"
+    }
+
     private data class CapturedStream(
         val label: String,
         val url: String,
         val headers: Map<String, String>,
+        val networkObserved: Boolean = false,
     )
 
     private data class ResolveRequest(
@@ -1003,11 +1047,14 @@ internal class PluginWebViewResolver(
         val clickY: Float,
         val blockMatchedRequests: Boolean,
         val captureSubtitles: Boolean,
+        val waitForMediaReady: Boolean,
+        val mediaHosts: List<String>,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
             if (value.isBlank()) return false
             if (blockedParts.any(value::contains)) return false
+            if (waitForMediaReady) return WebViewSessionPolicy.isMediaUrl(rawUrl.orEmpty(), mediaHosts)
 
             // Known final transports always stay eligible, even when a
             // provider supplies extra match probes for an API/player endpoint.
@@ -1091,6 +1138,9 @@ internal class PluginWebViewResolver(
                 return ResolveRequest(
                     url = url,
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
+                    waitForMediaReady = json.optBoolean("waitForMediaReady", false),
+                    mediaHosts = json.optJSONArray("mediaHosts").toVueoStringList()
+                        .map { it.lowercase() }.filter { Regex("[a-z0-9.-]+").matches(it) }.distinct().take(8),
                     referer = json.optString("referer").trim(),
                     timeoutMs = timeoutMs,
                     finishAfterFirstMs = json.optLong(
@@ -1348,6 +1398,7 @@ internal class PluginWebViewResolver(
   if (window.__vueoHooked) return;
   window.__vueoHooked = true;
   var captureSubtitles = "__VUEO_CAPTURE_SUBTITLES__" === "true";
+  var waitForMediaReady = "__VUEO_WAIT_FOR_MEDIA_READY__" === "true";
   var subtitleSeen = Object.create(null);
   function sendSubtitle(track) {
     try {
@@ -1499,6 +1550,10 @@ internal class PluginWebViewResolver(
         var src = videos[v].currentSrc || videos[v].src || videos[v].getAttribute("src") || "";
         if (src && String(src).indexOf("blob:") !== 0) {
           cap("VUEO_VIDEO|" + abs(src));
+          if (waitForMediaReady && String(videos[v].tagName).toLowerCase() === "video" &&
+              videos[v].readyState >= 2 && !videos[v].error) {
+            cap("VUEO_MEDIA_READY|" + abs(src));
+          }
         }
       }
     } catch(e) {}
