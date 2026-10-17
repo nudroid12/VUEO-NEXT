@@ -1,6 +1,7 @@
 package com.vueo.shared.core.plugin
 
 import java.net.URI
+import java.net.URLDecoder
 
 /** Optional media-session rules; legacy resolver requests retain their defaults. */
 internal object WebViewSessionPolicy {
@@ -17,6 +18,31 @@ internal object WebViewSessionPolicy {
         if (excludedPath.containsMatchIn(path)) return@runCatching false
         true
     }.getOrDefault(false)
+
+    /** Match a provider-supplied HTTP route plus its required query values.
+     * Unspecified query parameters (e.g. expiring signatures) may vary. */
+    fun matchesMediaRequest(url: String, matchers: List<String>, hosts: List<String>): Boolean {
+        if (!isMediaUrl(url, hosts)) return false
+        return runCatching {
+            val actual = URI(url)
+            fun query(uri: URI): Map<String, List<String>> = uri.rawQuery.orEmpty()
+                .split("&").filter { it.isNotEmpty() }.map { part ->
+                    val pair = part.split("=", limit = 2)
+                    URLDecoder.decode(pair[0], "UTF-8") to
+                        URLDecoder.decode(pair.getOrElse(1) { "" }, "UTF-8")
+                }.groupBy({ it.first }, { it.second })
+            val actualQuery = query(actual)
+            matchers.any { pattern ->
+                runCatching matcher@ {
+                    if (!isMediaUrl(pattern, hosts)) return@matcher false
+                    val expected = URI(pattern)
+                    actual.scheme == expected.scheme && actual.host.equals(expected.host, true) &&
+                        actual.port == expected.port && actual.rawPath == expected.rawPath &&
+                        query(expected).all { (key, values) -> actualQuery[key] == values }
+                }.getOrDefault(false)
+            }
+        }.getOrDefault(false)
+    }
 
     fun singleBlobCandidate(networkUrls: List<String>, hosts: List<String>): String? =
         networkUrls.filter { isMediaUrl(it, hosts) }.distinct().singleOrNull()

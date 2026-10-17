@@ -84,6 +84,7 @@ internal class PluginWebViewResolver(
             JSONObject().apply {
                 if (request.waitForMediaReady) {
                     put("sessionHandoffVersion", 1)
+                    put("networkHandoffVersion", 1)
                     put("blobHandoffVersion", 1)
                     put("readinessBasis", session.readinessBasis)
                     put("mediaReady", session.readyUrl.isNotBlank())
@@ -241,11 +242,20 @@ internal class PluginWebViewResolver(
             }
 
             fun scheduleFinishSoon() {
-                if (request.waitForMediaReady && session.readyUrl.isBlank()) return
+                val observedMatch = request.waitForMediaReady && synchronized(streams) {
+                    streams.values.any { it.networkObserved && WebViewSessionPolicy.matchesMediaRequest(
+                        it.url, request.mediaRequestMatchers, request.mediaHosts,
+                    ) }
+                }
+                if (request.waitForMediaReady && session.readyUrl.isBlank() && !observedMatch) return
                 if (finishScheduled) return
                 finishScheduled = true
                 handler.postDelayed(
-                    { finish(if (request.waitForMediaReady) "media-ready" else "first-candidate") },
+                    { finish(when {
+                        !request.waitForMediaReady -> "first-candidate"
+                        session.readyUrl.isNotBlank() -> "media-ready"
+                        else -> "network-candidate"
+                    }) },
                     request.finishAfterFirstMs,
                 )
             }
@@ -309,7 +319,7 @@ internal class PluginWebViewResolver(
                 }
 
                 reconcileBlobReadiness()
-                if (added) scheduleFinishSoon()
+                if (added || networkObserved) scheduleFinishSoon()
             }
 
             fun addSubtitle(rawUrl: String, label: String, language: String, inputHeaders: Map<String, String>) {
@@ -1148,6 +1158,7 @@ internal class PluginWebViewResolver(
         val waitForMediaReady: Boolean,
         val allowBlobMediaReady: Boolean,
         val mediaHosts: List<String>,
+        val mediaRequestMatchers: List<String>,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
@@ -1239,6 +1250,8 @@ internal class PluginWebViewResolver(
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
                     waitForMediaReady = json.optBoolean("waitForMediaReady", false),
                     allowBlobMediaReady = json.optBoolean("allowBlobMediaReady", false),
+                    mediaRequestMatchers = json.optJSONArray("mediaRequestMatchers").toVueoStringList()
+                        .filter { it.length <= 4096 }.distinct().take(16),
                     mediaHosts = json.optJSONArray("mediaHosts").toVueoStringList()
                         .map { it.lowercase() }.filter { Regex("[a-z0-9.-]+").matches(it) }.distinct().take(8),
                     referer = json.optString("referer").trim(),
