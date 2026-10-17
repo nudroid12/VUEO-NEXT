@@ -118,7 +118,8 @@ class SubtitleSessionDataSource private constructor(
     class Factory(
         private val upstreamFactory: DataSource.Factory,
     ) : DataSource.Factory {
+        private val flixFactory = FlixPlaylistDataSource.Factory(upstreamFactory)
         override fun createDataSource(): DataSource =
-            SubtitleSessionDataSource(upstreamFactory.createDataSource())
+            SubtitleSessionDataSource(flixFactory.createDataSource())
     }
 }

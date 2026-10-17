@@ -1,0 +1,35 @@
+VUEO Flix HLS compatibility v1 — Mobile + TV
+
+Based on supplied latest known VUEO-NEXT-main (53).zip. Functional support for
+CloudAnime Reanime2.0.0; install this app update BEFORE updating the provider.
+Apply at repository root and use existing GitHub Actions build/install workflow.
+
+Adds FlixPlaylistDataSource + pure Java FlixPlaylistCodec; only two factory lines
+change in SubtitleSessionDataSource. Player UI/navigation/settings and provider
+HTTP clients are not replaced. Existing SubtitleSession cache stays outermost.
+
+Decoder activates only for HTTPS *.flixcloud.cc source playlists carrying an explicit
+vueo_flix_key=64hex fragment and a UUID video identity. Fragment is removed before HTTP.
+Same-host child playlist URLs inherit the key only when referenced by decoded parent
+playlists (bounded 128 URI entries per player factory). No global/persistent token cache.
+
+Only marked .m3u8 responses are buffered (2MiB bound), base64/XOR decoded and validated
+as HLS. Master audio renditions are filtered to ja/jpn/Japanese, with Japanese default.
+An unavailable Japanese group fails instead of exposing foreign audio. Plain playlists
+remain supported. Binary AES keys, segments, subtitles and unmarked other providers
+pass through. No proxy, additional HTTP request, retry loop or diagnostic scan is added.
+Media3 continues handling the standard AES-128 media key and segment decryption.
+
+Validation: Java codec compiles; Kotlin wrapper + modified SubtitleSession compile
+against Android/Media3 API stubs; six transport integration checks pass. Real captured
+master/video/audio fixtures decode; standard AES video segment sample decrypts to TS.
+Full Gradle/APK build and Android device playback remain to be confirmed in your build.
+
+Build.gradle.kts is an unchanged root marker from supplied repo52. No YML included.
+
+Rebased and compared against user-uploaded repo53. SubtitleSessionDataSource,
+root build.gradle.kts and PluginRuntime are byte-identical to repo52. Tested decoder
+source bytes are unchanged. Mobile/TV player wiring was checked in repo53. This ZIP
+contains no Collections, settings, UI, navigation or workflow replacements. Phase16
+files present in repo53 remain untouched. Use this Repo53 ZIP instead of the earlier
+app ZIP. The CloudAnime Reanime2.0.0 provider ZIP is unchanged.
