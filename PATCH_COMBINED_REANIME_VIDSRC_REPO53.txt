@@ -1,0 +1,18 @@
+Combined app patch — VUEO repo53 — Mobile + TV
+
+Apply this one ZIP at VUEO repository root, build/install using the existing workflow.
+Includes Reanime/Flix HLS compatibility v1 and uploaded VidSrc.to subtitle capture.
+Use with CloudAnime Reanime2.0.0 and Cloudbank VidSrc.to1.0.1 provider updates.
+The provider patches belong in their separate repositories, not in VUEO.
+
+The changes use distinct Shared Core files: Flix playlist decoding connects through
+SubtitleSessionDataSource.Factory, while VidSrc subtitle capture is added in
+PluginWebViewResolver. Both are included; neither replaces the other.
+The supplied VidSrc resolver was diffed against repo53 and contains only its intended
+subtitle-capture additions. Existing repo53 Collections/Phase16, UI/player screens,
+settings, navigation and workflows are not replaced.
+
+Validation: supplied JS hook fixture passes (opt-in on/off, JW tracks, thumbnail
+exclusion). Reanime decoder source bytes are identical to the previously compiled
+and tested version. ZIP integrity, repository-root paths, merged file preservation
+and no YAML checked. Full Android APK build/device playback remains unverified.

@@ -77,8 +77,26 @@ internal class PluginWebViewResolver(
                 )
             }
 
-            val streams = resolve(request)
+            val subtitles = Collections.synchronizedMap(linkedMapOf<String, CapturedSubtitle>())
+            val streams = resolve(request, subtitles)
             JSONObject().apply {
+                if (request.captureSubtitles) {
+                    put("subtitles", JSONArray().apply {
+                        synchronized(subtitles) {
+                            subtitles.values.take(32).forEach { subtitle ->
+                                val headers = subtitle.headers.toMutableMap()
+                                runCatching { CookieManager.getInstance().getCookie(subtitle.url) }
+                                    .getOrNull()?.takeIf { it.isNotBlank() }?.let { headers["Cookie"] = it }
+                                put(JSONObject().apply {
+                                    put("url", subtitle.url)
+                                    put("label", subtitle.label)
+                                    put("language", subtitle.language)
+                                    put("headers", JSONObject(headers))
+                                })
+                            }
+                        }
+                    })
+                }
                 put(
                     "streams",
                     JSONArray().apply {
@@ -100,6 +118,7 @@ internal class PluginWebViewResolver(
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private suspend fun resolve(
         request: ResolveRequest,
+        subtitles: MutableMap<String, CapturedSubtitle>,
     ): List<CapturedStream> =
         suspendCancellableCoroutine { continuation ->
             val handler = Handler(Looper.getMainLooper())
@@ -234,11 +253,41 @@ internal class PluginWebViewResolver(
                 if (added) scheduleFinishSoon()
             }
 
+            fun addSubtitle(rawUrl: String, label: String, language: String, inputHeaders: Map<String, String>) {
+                if (!request.captureSubtitles || destroyed || rawUrl.isBlank()) return
+                val url = rawUrl.trim().toAbsoluteUrl(request.url)
+                if (!(url.startsWith("https://") || url.startsWith("http://"))) return
+                if (request.blockedParts.any { url.lowercase().contains(it) }) return
+                val headers = inputHeaders.filterKeys { it.lowercase() !in BLOCKED_PLAYBACK_HEADERS }.toMutableMap()
+                headers.putIfAbsent("User-Agent", request.userAgent)
+                headers.putIfAbsent("Referer", request.url)
+                synchronized(subtitles) {
+                    val previous = subtitles[url]
+                    if (previous == null && subtitles.size >= 32) return
+                    subtitles[url] = CapturedSubtitle(
+                        url = url,
+                        label = label.take(120).ifBlank { previous?.label.orEmpty() },
+                        language = language.take(40).ifBlank { previous?.language.orEmpty() },
+                        headers = previous?.headers.orEmpty() + headers,
+                    )
+                }
+            }
+
             fun handleBridgeCapture(value: String) {
                 val clean = value.trim()
                 if (clean.isBlank()) return
 
                 when {
+                    clean.startsWith("VUEO_SUBTITLE|") && request.captureSubtitles && clean.length <= 32768 -> {
+                        runCatching {
+                            val item = JSONObject(clean.substringAfter('|'))
+                            val ref = item.optString("referer").takeIf {
+                                it.startsWith("http://") || it.startsWith("https://")
+                            } ?: request.url
+                            addSubtitle(item.optString("url"), item.optString("label"),
+                                item.optString("language"), mapOf("Referer" to ref))
+                        }
+                    }
                     clean.startsWith("VUEO_SOURCE|") -> {
                         val parts = clean.split("|", limit = 4)
                         if (parts.size >= 4) {
@@ -306,6 +355,7 @@ internal class PluginWebViewResolver(
                 if (!request.directLoad) return
                 runCatching {
                     val hookScript = HOOK_JS
+                        .replace("__VUEO_CAPTURE_SUBTITLES__", request.captureSubtitles.toString())
                         .substringAfter("<script>")
                         .substringBeforeLast("</script>")
                     view?.evaluateJavascript(hookScript, null)
@@ -798,6 +848,9 @@ internal class PluginWebViewResolver(
                             }.getOrNull()
                         }
 
+                        if (request.captureSubtitles && Regex("\\.(vtt|srt)(?:$|[?#])", RegexOption.IGNORE_CASE).containsMatchIn(requestUrl)) {
+                            addSubtitle(requestUrl, "", "", webRequest?.requestHeaders.orEmpty())
+                        }
                         if (request.isStreamUrl(requestUrl)) {
                             captureStream(webRequest)
 
@@ -916,6 +969,13 @@ internal class PluginWebViewResolver(
         }
     }
 
+    private data class CapturedSubtitle(
+        val url: String,
+        val label: String,
+        val language: String,
+        val headers: Map<String, String>,
+    )
+
     private data class CapturedStream(
         val label: String,
         val url: String,
@@ -942,6 +1002,7 @@ internal class PluginWebViewResolver(
         val clickX: Float,
         val clickY: Float,
         val blockMatchedRequests: Boolean,
+        val captureSubtitles: Boolean,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
@@ -1029,6 +1090,7 @@ internal class PluginWebViewResolver(
 
                 return ResolveRequest(
                     url = url,
+                    captureSubtitles = json.optBoolean("captureSubtitles", false),
                     referer = json.optString("referer").trim(),
                     timeoutMs = timeoutMs,
                     finishAfterFirstMs = json.optLong(
@@ -1285,6 +1347,27 @@ internal class PluginWebViewResolver(
 (function() {
   if (window.__vueoHooked) return;
   window.__vueoHooked = true;
+  var captureSubtitles = "__VUEO_CAPTURE_SUBTITLES__" === "true";
+  var subtitleSeen = Object.create(null);
+  function sendSubtitle(track) {
+    try {
+      if (!captureSubtitles || !track || typeof track !== "object") return;
+      var kind = String(track.kind || track.type || "").toLowerCase();
+      if (/thumbnail|chapter|sprite/.test(kind)) return;
+      var url = abs(track.file || track.url || track.src || "");
+      if (!/^https?:\/\//i.test(url)) return;
+      var label = String(track.label || track.name || "");
+      var language = String(track.srclang || track.lang || track.language || "");
+      var key = JSON.stringify([url, label, language]);
+      if (subtitleSeen[key]) return;
+      subtitleSeen[key] = true;
+      cap("VUEO_SUBTITLE|" + JSON.stringify({url:url, label:label, language:language, referer:location.href}));
+    } catch(e) {}
+  }
+  function sendTracks(list) {
+    if (!captureSubtitles || !Array.isArray(list)) return;
+    for (var i=0; i<list.length && i<32; i++) sendSubtitle(list[i]);
+  }
 
   function cap(value) {
     try {
@@ -1345,9 +1428,14 @@ internal class PluginWebViewResolver(
         }
         return;
       }
+      if (captureSubtitles) {
+        var kind = String(value.kind || value.type || "").toLowerCase();
+        var file = String(value.file || value.url || value.src || "");
+        if (/caption|subtitle/.test(kind) || /(?:tracks|subtitles|captions)/i.test(tag) || /\.(?:vtt|srt)(?:$|[?#])/i.test(file)) sendSubtitle(value);
+      }
       var keys = Object.keys(value);
       for (var k = 0; k < keys.length && k < 64; k++) {
-        scanValue(value[keys[k]], tag, depth + 1, seen);
+        scanValue(value[keys[k]], tag + "." + keys[k], depth + 1, seen);
       }
     } catch(e) {}
   }
@@ -1378,26 +1466,34 @@ internal class PluginWebViewResolver(
               var item = playlist[i] || {};
               sendSources(item.sources);
               sendSources(item.allSources);
+              sendTracks(item.tracks);
             }
           }
           if (player.getPlaylistItem) {
             var current = player.getPlaylistItem() || {};
             sendSources(current.sources);
             sendSources(current.allSources);
+            sendTracks(current.tracks);
           }
           if (player.getConfig) {
             var config = player.getConfig() || {};
             sendSources(config.sources);
+            sendTracks(config.tracks);
             if (config.playlist && config.playlist.length) {
               for (var c = 0; c < config.playlist.length; c++) {
                 sendSources((config.playlist[c] || {}).sources);
                 sendSources((config.playlist[c] || {}).allSources);
+                sendTracks((config.playlist[c] || {}).tracks);
               }
             }
           }
         }
       }
 
+      if (captureSubtitles) {
+        var tracks = document.querySelectorAll("track[kind='subtitles'],track[kind='captions']");
+        for (var t=0; t<tracks.length && t<32; t++) sendSubtitle({src:tracks[t].src, label:tracks[t].label, srclang:tracks[t].srclang});
+      }
       var videos = document.querySelectorAll("video,source");
       for (var v = 0; v < videos.length; v++) {
         var src = videos[v].currentSrc || videos[v].src || videos[v].getAttribute("src") || "";
@@ -1432,6 +1528,7 @@ internal class PluginWebViewResolver(
       if (textLike && (numericLength < 0 || numericLength <= 524288)) {
         response.clone().text().then(function(text) {
           emitUrls("fetch-response", text);
+          if (captureSubtitles) { try { scanValue(JSON.parse(text), "fetch-response", 0, null); } catch(e) {} }
         }).catch(function(){});
       }
     } catch(e) {}
@@ -1483,6 +1580,7 @@ internal class PluginWebViewResolver(
                 lower === "";
               if (textLike && (!this.responseType || this.responseType === "text")) {
                 emitUrls("xhr-response", this.responseText || "");
+                if (captureSubtitles) { try { scanValue(JSON.parse(this.responseText), "xhr-response", 0, null); } catch(e) {} }
               }
             } catch(e) {}
           });
