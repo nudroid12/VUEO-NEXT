@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -86,6 +87,18 @@ internal class PluginWebViewResolver(
                     put("mediaReady", session.readyUrl.isNotBlank())
                     put("finishReason", session.finishReason)
                     put("capturedCount", streams.size)
+                    put("sessionDiagnosticsVersion", 1)
+                    put("diagnostics", JSONObject().apply {
+                        put("hookSeen", session.hookSeen)
+                        put("pageFinished", session.pageFinished)
+                        put("pageHttpStatus", session.pageHttpStatus)
+                        put("mediaHttpStatus", session.mediaHttpStatus)
+                        put("pageNetworkError", session.pageNetworkError)
+                        put("mediaNetworkError", session.mediaNetworkError)
+                        put("mseObserved", session.mseObserved)
+                        put("blobObserved", session.blobObserved)
+                        put("video", session.videoState)
+                    })
                 }
                 if (request.captureSubtitles) {
                     put("subtitles", JSONArray().apply {
@@ -306,6 +319,26 @@ internal class PluginWebViewResolver(
                 if (clean.isBlank()) return
 
                 when {
+                    clean.startsWith("VUEO_MEDIA_STATE|") && request.waitForMediaReady && clean.length <= 2048 -> {
+                        runCatching {
+                            val item = JSONObject(clean.substringAfter('|'))
+                            fun enumValue(key: String, allowed: List<String>): String =
+                                item.optString(key).takeIf { it in allowed } ?: "unknown"
+                            session.videoState = JSONObject().apply {
+                                put("count", item.optInt("count", 0).coerceIn(0, 16))
+                                put("readyState", item.optInt("readyState", -1).coerceIn(-1, 4))
+                                put("networkState", item.optInt("networkState", -1).coerceIn(-1, 3))
+                                put("errorCode", item.optInt("errorCode", 0).coerceIn(0, 4))
+                                put("paused", item.optBoolean("paused", true))
+                                put("sourceKind", enumValue("sourceKind", listOf("http", "https", "blob", "none", "other")))
+                                put("pageSignal", enumValue("pageSignal", listOf("none", "sandbox_required", "human_verification", "access_denied", "unavailable")))
+                                put("visibility", enumValue("visibility", listOf("visible", "hidden", "prerender")))
+                            }
+                            session.hookSeen = true
+                        }
+                    }
+                    clean.startsWith("VUEO_MSE|") && request.waitForMediaReady -> session.mseObserved = true
+                    clean.startsWith("VUEO_BLOB|") && request.waitForMediaReady -> session.blobObserved = true
                     clean.startsWith("VUEO_MEDIA_READY|") && request.waitForMediaReady -> {
                         val file = clean.removePrefix("VUEO_MEDIA_READY|")
                         if (request.isStreamUrl(file)) {
@@ -864,7 +897,30 @@ internal class PluginWebViewResolver(
                         view: WebView?,
                         url: String?,
                     ) {
+                        if (request.waitForMediaReady) session.pageFinished = true
                         injectRuntimeHook(view)
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?, webRequest: WebResourceRequest?, errorResponse: WebResourceResponse?,
+                    ) {
+                        if (request.waitForMediaReady) {
+                            val status = errorResponse?.statusCode?.coerceIn(100, 599) ?: 0
+                            if (webRequest?.isForMainFrame == true) session.pageHttpStatus = status
+                            if (request.isStreamUrl(webRequest?.url?.toString())) session.mediaHttpStatus = status
+                        }
+                        super.onReceivedHttpError(view, webRequest, errorResponse)
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView?, webRequest: WebResourceRequest?, error: WebResourceError?,
+                    ) {
+                        if (request.waitForMediaReady) {
+                            val code = error?.errorCode?.coerceIn(-100, 0) ?: 0
+                            if (webRequest?.isForMainFrame == true) session.pageNetworkError = code
+                            if (request.isStreamUrl(webRequest?.url?.toString())) session.mediaNetworkError = code
+                        }
+                        super.onReceivedError(view, webRequest, error)
                     }
 
                     override fun shouldInterceptRequest(
@@ -1017,6 +1073,15 @@ internal class PluginWebViewResolver(
     private class MediaSessionState {
         @Volatile var readyUrl: String = ""
         @Volatile var finishReason: String = "timeout"
+        @Volatile var hookSeen: Boolean = false
+        @Volatile var pageFinished: Boolean = false
+        @Volatile var pageHttpStatus: Int = 0
+        @Volatile var mediaHttpStatus: Int = 0
+        @Volatile var pageNetworkError: Int = 0
+        @Volatile var mediaNetworkError: Int = 0
+        @Volatile var mseObserved: Boolean = false
+        @Volatile var blobObserved: Boolean = false
+        @Volatile var videoState: JSONObject = JSONObject()
     }
 
     private data class CapturedStream(
@@ -1506,7 +1571,38 @@ internal class PluginWebViewResolver(
     } catch(e) {}
   }
 
+  var lastMediaState = "";
+  function inspectMediaState() {
+    if (!waitForMediaReady) return;
+    try {
+      var list = document.querySelectorAll("video"), selected = null;
+      for (var i = 0; i < list.length && i < 16; i++) {
+        if (!selected || list[i].readyState > selected.readyState) selected = list[i];
+      }
+      var src = "";
+      if (selected) {
+        src = selected.currentSrc || selected.src || selected.getAttribute("src") || "";
+        if (!src && selected.querySelector) {
+          var child = selected.querySelector("source");
+          if (child) src = child.src || child.getAttribute("src") || "";
+        }
+      }
+      var kind = !src ? "none" : /^https:/i.test(src) ? "https" : /^http:/i.test(src) ? "http" : /^blob:/i.test(src) ? "blob" : "other";
+      // Only return allowlisted classifications, never page text, URLs or error messages.
+      var text = (String(document.title || "") + " " + String(document.body && document.body.textContent || "").slice(0,8192)).toLowerCase();
+      var signal = /please disable sandbox/.test(text) ? "sandbox_required" :
+        /verify you are human|checking your browser|just a moment|performing security verification/.test(text) ? "human_verification" :
+        /sorry, you have been blocked|access denied|428 forbidden/.test(text) ? "access_denied" :
+        /we couldn't find this content|video unavailable|content unavailable/.test(text) ? "unavailable" : "none";
+      var state = JSON.stringify({count:Math.min(list.length,16),readyState:selected?Number(selected.readyState):-1,
+        networkState:selected?Number(selected.networkState):-1,errorCode:selected&&selected.error?Number(selected.error.code)||0:0,
+        paused:selected?selected.paused!==false:true,sourceKind:kind,pageSignal:signal,visibility:String(document.visibilityState||"unknown")});
+      if (state !== lastMediaState) {lastMediaState=state;cap("VUEO_MEDIA_STATE|"+state);}
+    } catch(e) {}
+  }
+
   function inspectPlayer() {
+    inspectMediaState();
     try {
       if (typeof window.jwplayer === "function") {
         var player = window.jwplayer();
