@@ -1,0 +1,39 @@
+VUEO explicit shared HTTP transport — uploaded repo53 baseline
+
+Apply at VUEO-NEXT root and build/install Mobile/TV with the existing workflow.
+Then apply the Ani.pm1.0.4 provider patch, refresh provider code and rescan.
+Both patches are required for the new transport choice. No YAML or APK is included.
+
+Evidence from the user's2026-10-17 19:11:56 performance export:
+- Softsub and Hardsub fail HTTP403 at kind=root, position0, length-1.
+- UA/Referer/Origin/proof are configured. This does not verify their wire values.
+- Failure occurs in DefaultHttpDataSource.open, before child playlists or segments.
+- Discovery had read the master successfully using PluginHttp's OkHttp client.
+This isolates the failing request stage; it does not prove the server's rejection
+reason or guarantee that changing HTTP clients resolves the device failure.
+
+Change:
+A provider may explicitly request X-VUEO-HTTP-Transport: shared in source headers.
+PlaybackHttpTraceDataSource.Factory then builds Media3 OkHttpDataSource using the
+exact PluginHttp.client instance already used for provider fetches. It preserves
+source headers, streaming reads, transfer listeners, redirects, DNS policy and
+DataSpec ranges. Master, child playlists, keys and segments use this transport.
+The internal marker is removed from default and per-request network headers.
+There are no site/domain/provider matching rules, proxy, extra preflight requests
+or automatic retry/fallback loops. Unmarked providers retain their existing client.
+The selected shared client retains its existing timeouts, including18s call timeout.
+
+Only shared/core/build.gradle.kts and PlaybackHttpTraceDataSource.kt change.
+Add media3-datasource-okhttp at the same1.11.0 version as existing Media3 datasource.
+Root build.gradle.kts is unchanged from uploaded repo53 and acts as root marker.
+Mobile/TV UI and the existing generic HLS/segment decoder are not overwritten.
+
+Validation:
+Kotlin transport class compiles against API stubs; six routing scenarios pass:
+legacy path, shared client identity for all request types, preserved headers/ranges,
+marker removal, case-insensitive choice/current headers, provider switching and
+invalid instruction rejection. Ani.pm replay regression scenarios pass.
+The full Gradle/APK build and Android playback remain unconfirmed locally.
+
+Official API reference:
+https://developer.android.com/reference/androidx/media3/datasource/okhttp/OkHttpDataSource.Factory

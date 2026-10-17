@@ -5,6 +5,8 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import com.vueo.shared.core.plugin.PluginHttp
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
@@ -15,6 +17,11 @@ class PlaybackHttpTraceDataSource private constructor(
     private val upstream: DataSource,
     private val owner: Factory,
 ) : DataSource {
+    private companion object {
+        // Explicit provider choice, with no site/provider-specific transport rules.
+        const val TRANSPORT_HEADER = "X-VUEO-HTTP-Transport"
+    }
+
     private var request: DataSpec? = null
     private var headers: Map<String, String> = emptyMap()
     private var capture: ByteArrayOutputStream? = null
@@ -32,7 +39,12 @@ class PlaybackHttpTraceDataSource private constructor(
             dataSpec.httpRequestHeaders.keys.none { it.equals(key, true) }
         } + dataSpec.httpRequestHeaders
         capture = ByteArrayOutputStream()
-        return try { upstream.open(dataSpec) } catch (error: Exception) {
+        val networkSpec = if (dataSpec.httpRequestHeaders.keys.any { it.equals(TRANSPORT_HEADER, true) }) {
+            dataSpec.buildUpon().setHttpRequestHeaders(dataSpec.httpRequestHeaders.filterKeys {
+                !it.equals(TRANSPORT_HEADER, true)
+            }).build()
+        } else dataSpec
+        return try { upstream.open(networkSpec) } catch (error: Exception) {
             runCatching { report(error, "open") }
             throw error
         }
@@ -126,7 +138,15 @@ class PlaybackHttpTraceDataSource private constructor(
                 }
             }
         }
-        override fun createDataSource(): DataSource =
-            PlaybackHttpTraceDataSource(upstreamFactory.createDataSource(), this)
+        override fun createDataSource(): DataSource {
+            val configured = defaultHeaders()
+            val instructions = configured.filterKeys { it.equals(TRANSPORT_HEADER, true) }.values
+            require(instructions.all { it.trim().equals("shared", true) }) { "Unsupported provider HTTP transport" }
+            val transport = if (instructions.isNotEmpty()) {
+                OkHttpDataSource.Factory(PluginHttp.client)
+                    .setDefaultRequestProperties(configured.filterKeys { !it.equals(TRANSPORT_HEADER, true) })
+            } else upstreamFactory
+            return PlaybackHttpTraceDataSource(transport.createDataSource(), this)
+        }
     }
 }
