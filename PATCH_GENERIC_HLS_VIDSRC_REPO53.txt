@@ -1,0 +1,35 @@
+VUEO generic provider HLS instructions v1 + existing subtitle capture — repo53
+
+Apply this combined app ZIP at VUEO repo root; build/install with existing Actions.
+Then update CloudAnime Reanime to2.0.1 and refresh/rescan. This ZIP replaces the older
+combined Flix-specific app patch and keeps its VidSrc subtitle-capture additions.
+No changes to UI, navigation, Collections Phase16, language preferences or workflows.
+
+ProviderHlsDataSource / ProviderHlsCodec expose general operations rather than site
+rules. An explicitly opted-in HTTPS source can declare:
+#vueo_hls_v1=plain[&audio=<comma-separated language tags>]
+#vueo_hls_v1=base64-xor&key=<hex>[&audio=<comma-separated language tags>]
+A missing audio list preserves all audio; a supplied list restricts master renditions
+and sets accepted tracks as default. No site names, domain lists, route UUID matching,
+Japanese language constants or provider identities occur in the new decoder code.
+The app still implements fixed supported protocol primitives and validation; this is
+not an unlimited runtime decoder and new unsupported algorithms may need app support.
+
+Only explicit source instructions activate processing. The URL fragment is stripped
+before HTTP. Decoder policy propagates only to referenced same-host child playlists,
+including opaque paths, never automatically to segments/AES keys or arbitrary URLs.
+Limits:1024-character instruction string,1-64 byte XOR key,16 audio tags,2MiB playlist,
+128 playlist-policy entries per player factory. No new HTTP requests or retries.
+Other providers without instructions remain on their existing path.
+
+Old FlixPlaylistDataSource.kt/FlixPlaylistCodec.java are overwritten with inert comments
+so an overlay patch also removes the previously installed active host-specific code.
+Only SubtitleSession factory wiring changes; generic WebView captureSubtitles remains.
+Root build.gradle.kts is byte-identical to uploaded repo53 and included as a root marker.
+
+Validation: new Java codec compiled; Kotlin decoder and SubtitleSession compiled
+against Android/Media3 API stubs. Ten transport cases pass, including a non-Flix domain,
+provider-selected English, no language filtering, child inheritance, no extra requests,
+headers, binary key passthrough, opt-in behavior and malformed instructions. VidSrc
+hook fixture passes. Live masters for both profiles were decoded in provider fixtures.
+These do not claim a successful complete APK build or real Android playback.
