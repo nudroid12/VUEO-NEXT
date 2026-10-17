@@ -867,6 +867,7 @@ fun TvPlayerScreen(
             resumeTargetMs.coerceAtLeast(0L),
         )
         var params = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
             .setTrackTypeDisabled(
                 C.TRACK_TYPE_TEXT,
                 subtitlesDisabled || pendingSubtitleSelectionId != null,
@@ -1077,6 +1078,10 @@ fun TvPlayerScreen(
         }
     }
 
+    val decoderRecovery = remember(player, activeSource.url) {
+        com.vueo.shared.core.player.VideoDecoderRecovery()
+    }
+
     DisposableEffect(player, activeSource.url, settings.autoSourceRecoveryEnabled()) {
         val listener = object : Player.Listener {
             override fun onTracksChanged(tracks: Tracks) {
@@ -1118,8 +1123,20 @@ fun TvPlayerScreen(
                         errorCode = error.errorCode, errorName = error.errorCodeName,
                         positionMs = player.currentPosition, state = player.playbackState, error = error,
                     )
-                    isBuffering = false
-                handleSourceFailure(error.message ?: "Playback failed.")
+                val failedFormat = (error as? androidx.media3.exoplayer.ExoPlaybackException)
+                    ?.rendererFormat
+                if (playerForeground && !exitingPlayer &&
+                    decoderRecovery.tryRecover(player, error, failedFormat, "TV")
+                ) {
+                    playbackError = null
+                    isBuffering = true
+                    return
+                }
+                isBuffering = false
+                handleSourceFailure(
+                    decoderRecovery.failureMessage(error, failedFormat)
+                        ?: (error.message ?: "Playback failed.")
+                )
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {

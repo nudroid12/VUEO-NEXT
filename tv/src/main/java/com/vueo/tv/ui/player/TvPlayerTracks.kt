@@ -275,6 +275,11 @@ internal class TvSubtitleOffsetRenderersFactory(
     context: Context,
     private val subtitleDelayUsProvider: () -> Long,
 ) : DefaultRenderersFactory(context) {
+    init {
+        // Some devices advertise HEVC support but reject a particular stream.
+        setEnableDecoderFallback(true)
+    }
+
     override fun buildTextRenderers(
         context: Context,
         output: TextOutput,

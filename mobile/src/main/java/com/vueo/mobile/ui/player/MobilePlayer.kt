@@ -2098,6 +2098,10 @@ internal fun PlayerScreen(
         }
     }
 
+    val decoderRecovery = remember(player, source.url) {
+        com.vueo.shared.core.player.VideoDecoderRecovery()
+    }
+
     DisposableEffect(
         player,
         mediaKey,
@@ -2115,9 +2119,19 @@ internal fun PlayerScreen(
                         errorCode = error.errorCode, errorName = error.errorCodeName,
                         positionMs = player.currentPosition, state = player.playbackState, error = error,
                     )
+                    val failedFormat = (error as? androidx.media3.exoplayer.ExoPlaybackException)
+                        ?.rendererFormat
+                    if (lifecycleState.foreground && !playerExitRequested &&
+                        decoderRecovery.tryRecover(player, error, failedFormat, "Mobile")
+                    ) {
+                        playbackError = null
+                        isBuffering = true
+                        return
+                    }
                     isBuffering = false
                     handleSourceFailure(
-                        friendlyPlaybackError(error)
+                        decoderRecovery.failureMessage(error, failedFormat)
+                            ?: friendlyPlaybackError(error)
                     )
                 }
 
