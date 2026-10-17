@@ -5,7 +5,7 @@ import java.net.URLDecoder
 
 /** Optional media-session rules; legacy resolver requests retain their defaults. */
 internal object WebViewSessionPolicy {
-    private val mediaPath = Regex("\\.(mp4|m3u8)$")
+    private val mediaPath = Regex("\\.(mp4|m3u8|mpd)$")
     private val excludedPath = Regex("(?:^|[/_-])(?:init|segment|trailer|preview|sample)(?:[/_.-]|$)")
     private val headerControls = Regex("[\\r\\n\\u0000]")
     fun isMediaUrl(url: String, hosts: List<String>): Boolean = runCatching {
@@ -17,6 +17,23 @@ internal object WebViewSessionPolicy {
         if (!mediaPath.containsMatchIn(path)) return@runCatching false
         if (excludedPath.containsMatchIn(path)) return@runCatching false
         true
+    }.getOrDefault(false)
+
+    fun isHttpUrl(url: String): Boolean = runCatching {
+        val uri = URI(url)
+        uri.scheme in listOf("https", "http") && !uri.host.isNullOrBlank() && uri.userInfo == null
+    }.getOrDefault(false)
+
+    fun matchesJsonPrefix(url: String, prefixes: List<String>): Boolean = runCatching {
+        if (!isHttpUrl(url)) return@runCatching false
+        val actual = URI(url)
+        prefixes.any { prefix -> runCatching prefixCheck@ {
+            if (!isHttpUrl(prefix)) return@prefixCheck false
+            val expected = URI(prefix)
+            actual.scheme == expected.scheme && actual.host.equals(expected.host, true) &&
+                actual.port == expected.port && expected.rawPath.endsWith("/") &&
+                actual.rawPath.startsWith(expected.rawPath)
+        }.getOrDefault(false) }
     }.getOrDefault(false)
 
     /** Match a provider-supplied HTTP route plus its required query values.

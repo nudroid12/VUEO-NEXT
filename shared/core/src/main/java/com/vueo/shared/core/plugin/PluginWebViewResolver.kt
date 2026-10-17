@@ -16,6 +16,9 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.RenderProcessGoneDetail
+import androidx.webkit.ScriptHandler
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -85,6 +88,11 @@ internal class PluginWebViewResolver(
                 if (request.waitForMediaReady) {
                     put("sessionHandoffVersion", 1)
                     put("networkHandoffVersion", 1)
+                    put("sessionResponseVersion", 1)
+                    put("documentStartHook", session.documentStartHook)
+                    put("responses", JSONArray().apply {
+                        synchronized(session.responses) { session.responses.values.forEach { put(it) } }
+                    })
                     put("blobHandoffVersion", 1)
                     put("readinessBasis", session.readinessBasis)
                     put("mediaReady", session.readyUrl.isNotBlank())
@@ -132,6 +140,7 @@ internal class PluginWebViewResolver(
                                     if (request.waitForMediaReady) {
                                         put("mediaReady", session.readyUrl == stream.url)
                                         put("networkObserved", stream.networkObserved)
+                                        put("responseObserved", stream.responseObserved)
                                     }
                                 }
                             )
@@ -156,6 +165,7 @@ internal class PluginWebViewResolver(
             )
             var finishScheduled = false
             var destroyed = false
+            var documentStartScript: ScriptHandler? = null
 
             fun finalizedPlaybackHeaders(
                 stream: CapturedStream,
@@ -189,6 +199,7 @@ internal class PluginWebViewResolver(
             fun transportScore(url: String): Int {
                 val value = url.lowercase()
                 return when {
+                    value.contains(".mpd") -> 40
                     value.contains(".m3u8") -> 30
                     value.contains(".mp4") -> 20
                     value.contains(".m4v") -> 20
@@ -220,6 +231,8 @@ internal class PluginWebViewResolver(
                 destroyed = true
                 runCatching {
                     handler.removeCallbacksAndMessages(null)
+                    runCatching { documentStartScript?.remove() }
+                    documentStartScript = null
                     webView.stopLoading()
                     webView.removeJavascriptInterface(BRIDGE_NAME)
                     webView.removeAllViews()
@@ -247,13 +260,21 @@ internal class PluginWebViewResolver(
                         it.url, request.mediaRequestMatchers, request.mediaHosts,
                     ) }
                 }
-                if (request.waitForMediaReady && session.readyUrl.isBlank() && !observedMatch) return
+                val sessionMedia = request.waitForMediaReady && request.captureSessionResponses &&
+                    synchronized(session.responses) { session.responses.isNotEmpty() } &&
+                    synchronized(streams) { streams.values.any {
+                        (it.networkObserved || it.responseObserved) && request.isStreamUrl(it.url)
+                    } }
+                if (request.waitForMediaReady && request.captureSessionResponses &&
+                    synchronized(session.responses) { session.responses.isEmpty() }) return
+                if (request.waitForMediaReady && session.readyUrl.isBlank() && !observedMatch && !sessionMedia) return
                 if (finishScheduled) return
                 finishScheduled = true
                 handler.postDelayed(
                     { finish(when {
                         !request.waitForMediaReady -> "first-candidate"
                         session.readyUrl.isNotBlank() -> "media-ready"
+                        sessionMedia -> "response-media"
                         else -> "network-candidate"
                     }) },
                     request.finishAfterFirstMs,
@@ -281,6 +302,7 @@ internal class PluginWebViewResolver(
                 headers: Map<String, String>,
                 forcePlayable: Boolean = false,
                 networkObserved: Boolean = false,
+                responseObserved: Boolean = false,
             ) {
                 val fixedUrl = rawUrl
                     ?.trim()
@@ -305,6 +327,7 @@ internal class PluginWebViewResolver(
                             url = fixedUrl,
                             headers = fixedHeaders,
                             networkObserved = networkObserved,
+                            responseObserved = responseObserved,
                         )
                         added = true
                     } else if (request.waitForMediaReady) {
@@ -314,12 +337,13 @@ internal class PluginWebViewResolver(
                                 preferIncoming = networkObserved,
                             ),
                             networkObserved = previous.networkObserved || networkObserved,
+                            responseObserved = previous.responseObserved || responseObserved,
                         )
                     }
                 }
 
                 reconcileBlobReadiness()
-                if (added || networkObserved) scheduleFinishSoon()
+                if (added || networkObserved || responseObserved) scheduleFinishSoon()
             }
 
             fun addSubtitle(rawUrl: String, label: String, language: String, inputHeaders: Map<String, String>) {
@@ -347,6 +371,43 @@ internal class PluginWebViewResolver(
                 if (clean.isBlank()) return
 
                 when {
+                    clean.startsWith("VUEO_JSON_RESPONSE|") && request.captureSessionResponses && clean.length <= 524288 -> {
+                        runCatching {
+                            val item = JSONObject(clean.substringAfter('|'))
+                            val url = item.optString("url")
+                            if (item.optInt("status") !in 200..299 ||
+                                !WebViewSessionPolicy.matchesJsonPrefix(url, request.jsonResponsePrefixes)) return@runCatching
+                            val body = item.optString("body")
+                            if (body.length > 262144) return@runCatching
+                            val record = JSONObject().apply {
+                                put("url", url)
+                                put("status", item.optInt("status"))
+                                put("body", JSONObject(body))
+                            }
+                            synchronized(session.responses) {
+                                if (session.responses.size < 4 || session.responses.containsKey(url)) session.responses[url] = record
+                            }
+                            scheduleFinishSoon()
+                        }
+                    }
+                    clean.startsWith("VUEO_HTTP_RESPONSE|") && request.captureSessionResponses && clean.length <= 16384 -> {
+                        runCatching {
+                            val item = JSONObject(clean.substringAfter('|'))
+                            val url = item.optString("url")
+                            val status = item.optInt("status")
+                            if (status !in listOf(200, 206) || !WebViewSessionPolicy.isHttpUrl(url) ||
+                                !request.isPlayableResponse(url, item.optString("mime"), item.optLong("length", -1L))) return@runCatching
+                            val ref = item.optString("referer").takeIf { WebViewSessionPolicy.isHttpUrl(it) }
+                                ?: request.referer.ifBlank { request.url }
+                            val headers = request.defaultHeaders().toMutableMap().apply {
+                                put("Referer", ref)
+                                runCatching { URI(ref) }.getOrNull()?.let { uri ->
+                                    put("Origin", "${uri.scheme}://${uri.rawAuthority}")
+                                }
+                            }
+                            addStream(guessLabel(url), url, headers, forcePlayable = true, responseObserved = true)
+                        }
+                    }
                     clean.startsWith("VUEO_MEDIA_STATE|") && request.waitForMediaReady && clean.length <= 2048 -> {
                         runCatching {
                             val item = JSONObject(clean.substringAfter('|'))
@@ -460,17 +521,17 @@ internal class PluginWebViewResolver(
                 }
             }
 
+            fun runtimeHookScript(): String = HOOK_JS
+                .replace("__VUEO_CAPTURE_SUBTITLES__", request.captureSubtitles.toString())
+                .replace("__VUEO_WAIT_FOR_MEDIA_READY__", request.waitForMediaReady.toString())
+                .replace("__VUEO_ALLOW_BLOB_MEDIA_READY__", request.allowBlobMediaReady.toString())
+                .replace("__VUEO_CAPTURE_SESSION_RESPONSES__", request.captureSessionResponses.toString())
+                .replace("[\"__VUEO_JSON_RESPONSE_PREFIXES__\"]", JSONArray(request.jsonResponsePrefixes).toString())
+                .substringAfter("<script>").substringBeforeLast("</script>")
+
             fun injectRuntimeHook(view: WebView?) {
                 if (!request.directLoad) return
-                runCatching {
-                    val hookScript = HOOK_JS
-                        .replace("__VUEO_CAPTURE_SUBTITLES__", request.captureSubtitles.toString())
-                        .replace("__VUEO_WAIT_FOR_MEDIA_READY__", request.waitForMediaReady.toString())
-                        .replace("__VUEO_ALLOW_BLOB_MEDIA_READY__", request.allowBlobMediaReady.toString())
-                        .substringAfter("<script>")
-                        .substringBeforeLast("</script>")
-                    view?.evaluateJavascript(hookScript, null)
-                }
+                runCatching { view?.evaluateJavascript(runtimeHookScript(), null) }
             }
 
             fun clickWebView() {
@@ -1068,6 +1129,17 @@ internal class PluginWebViewResolver(
                 """.trimIndent()
 
                 if (request.directLoad) {
+                    if (request.waitForMediaReady && request.captureSessionResponses) {
+                        runCatching {
+                            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                                val entry = URI(request.url)
+                                documentStartScript = WebViewCompat.addDocumentStartJavaScript(
+                                    webView, runtimeHookScript(), setOf("${entry.scheme}://${entry.rawAuthority}"),
+                                )
+                                session.documentStartHook = true
+                            }
+                        }
+                    }
                     val initialHeaders = mutableMapOf<String, String>()
                     if (request.referer.isNotBlank()) {
                         initialHeaders["Referer"] = request.referer
@@ -1112,6 +1184,7 @@ internal class PluginWebViewResolver(
     )
 
     private class MediaSessionState {
+        @Volatile var documentStartHook: Boolean = false
         @Volatile var readyUrl: String = ""
         @Volatile var readinessBasis: String = "none"
         @Volatile var blobReady: Boolean = false
@@ -1125,6 +1198,7 @@ internal class PluginWebViewResolver(
         @Volatile var mseObserved: Boolean = false
         @Volatile var blobObserved: Boolean = false
         @Volatile var videoState: JSONObject = JSONObject()
+        val responses = Collections.synchronizedMap(linkedMapOf<String, JSONObject>())
     }
 
     private data class CapturedStream(
@@ -1132,6 +1206,7 @@ internal class PluginWebViewResolver(
         val url: String,
         val headers: Map<String, String>,
         val networkObserved: Boolean = false,
+        val responseObserved: Boolean = false,
     )
 
     private data class ResolveRequest(
@@ -1159,6 +1234,8 @@ internal class PluginWebViewResolver(
         val allowBlobMediaReady: Boolean,
         val mediaHosts: List<String>,
         val mediaRequestMatchers: List<String>,
+        val captureSessionResponses: Boolean,
+        val jsonResponsePrefixes: List<String>,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
@@ -1250,6 +1327,9 @@ internal class PluginWebViewResolver(
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
                     waitForMediaReady = json.optBoolean("waitForMediaReady", false),
                     allowBlobMediaReady = json.optBoolean("allowBlobMediaReady", false),
+                    captureSessionResponses = json.optBoolean("captureSessionResponses", false),
+                    jsonResponsePrefixes = json.optJSONArray("jsonResponsePrefixes").toVueoStringList()
+                        .filter { it.length <= 1024 }.distinct().take(4),
                     mediaRequestMatchers = json.optJSONArray("mediaRequestMatchers").toVueoStringList()
                         .filter { it.length <= 4096 }.distinct().take(16),
                     mediaHosts = json.optJSONArray("mediaHosts").toVueoStringList()
@@ -1529,6 +1609,37 @@ internal class PluginWebViewResolver(
     } catch(e) {}
     if (ready !== lastBlobReady) {lastBlobReady=ready;cap("VUEO_BLOB_READY|"+String(ready));}
   }
+  var captureSessionResponses = waitForMediaReady && "__VUEO_CAPTURE_SESSION_RESPONSES__" === "true";
+  var jsonCapturePrefixes = ["__VUEO_JSON_RESPONSE_PREFIXES__"];
+  var jsonCaptureSeen = Object.create(null);
+  function jsonCaptureMatches(url) {
+    if (!captureSessionResponses) return false;
+    try {
+      var actual = new URL(url);
+      return jsonCapturePrefixes.some(function(prefix) {
+        try {var expected=new URL(prefix);return actual.origin===expected.origin &&
+          expected.pathname.slice(-1)==="/" && actual.pathname.indexOf(expected.pathname)===0;} catch(e) {return false;}
+      });
+    } catch(e) {return false;}
+  }
+  function captureJsonResponse(url, status, text) {
+    if (!jsonCaptureMatches(url) || status<200 || status>299 || typeof text!=="string" ||
+        text.length>262144 || jsonCaptureSeen[url]) return;
+    try {
+      var body=JSON.parse(text);
+      if (!body || typeof body!=="object" || Array.isArray(body)) return;
+      if (Object.keys(jsonCaptureSeen).length>=4) return;
+      jsonCaptureSeen[url]=true;
+      cap("VUEO_JSON_RESPONSE|"+JSON.stringify({url:url,status:status,body:text}));
+    } catch(e) {}
+  }
+  function captureHttpResponse(url,status,mime,length) {
+    if (!captureSessionResponses || (status!==200 && status!==206)) return;
+    var lower=String(mime||"").toLowerCase();
+    if (!/^(https?):\/\//i.test(url) || !/mpegurl|dash\+xml|^video\//.test(lower)) return;
+    cap("VUEO_HTTP_RESPONSE|"+JSON.stringify({url:url,status:status,mime:mime,
+      length:parseInt(length||"-1",10),referer:String((window.location && window.location.href)||document.baseURI||"")}));
+  }
   var subtitleSeen = Object.create(null);
   function sendSubtitle(track) {
     try {
@@ -1733,6 +1844,7 @@ internal class PluginWebViewResolver(
         cap("VUEO_RESPONSE|" + type + "|" + length + "|" + responseUrl);
       }
 
+      captureHttpResponse(responseUrl, response.status, type, length);
       var lower = String(type || "").toLowerCase();
       var numericLength = parseInt(length || "-1", 10);
       var textLike =
@@ -1744,6 +1856,7 @@ internal class PluginWebViewResolver(
 
       if (textLike && (numericLength < 0 || numericLength <= 524288)) {
         response.clone().text().then(function(text) {
+          if (lower.indexOf("json")!==-1) captureJsonResponse(responseUrl,response.status,text);
           emitUrls("fetch-response", text);
           if (captureSubtitles) { try { scanValue(JSON.parse(text), "fetch-response", 0, null); } catch(e) {} }
         }).catch(function(){});
@@ -1788,7 +1901,11 @@ internal class PluginWebViewResolver(
               if (responseUrl) {
                 cap("VUEO_RESPONSE|" + type + "|" + length + "|" + responseUrl);
               }
+              captureHttpResponse(responseUrl, this.status, type, length);
               var lower = String(type || "").toLowerCase();
+              if (lower.indexOf("json")!==-1 && this.responseType==="json") {
+                captureJsonResponse(responseUrl,this.status,JSON.stringify(this.response));
+              }
               var textLike =
                 lower.indexOf("json") !== -1 ||
                 lower.indexOf("text/") === 0 ||
@@ -1796,6 +1913,7 @@ internal class PluginWebViewResolver(
                 lower.indexOf("xml") !== -1 ||
                 lower === "";
               if (textLike && (!this.responseType || this.responseType === "text")) {
+                if (lower.indexOf("json")!==-1) captureJsonResponse(responseUrl,this.status,this.responseText||"");
                 emitUrls("xhr-response", this.responseText || "");
                 if (captureSubtitles) { try { scanValue(JSON.parse(this.responseText), "xhr-response", 0, null); } catch(e) {} }
               }
