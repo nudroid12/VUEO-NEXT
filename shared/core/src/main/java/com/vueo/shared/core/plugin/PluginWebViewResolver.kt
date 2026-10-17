@@ -84,6 +84,8 @@ internal class PluginWebViewResolver(
             JSONObject().apply {
                 if (request.waitForMediaReady) {
                     put("sessionHandoffVersion", 1)
+                    put("blobHandoffVersion", 1)
+                    put("readinessBasis", session.readinessBasis)
                     put("mediaReady", session.readyUrl.isNotBlank())
                     put("finishReason", session.finishReason)
                     put("capturedCount", streams.size)
@@ -248,6 +250,21 @@ internal class PluginWebViewResolver(
                 )
             }
 
+            // Blob readiness is a conservative session correlation, not byte provenance.
+            // Only a single eligible request actually observed by native interception qualifies.
+            fun reconcileBlobReadiness() {
+                if (!request.waitForMediaReady || !request.allowBlobMediaReady || !session.blobReady) return
+                synchronized(streams) {
+                    if (session.readinessBasis == "direct-http") return
+                    val candidate = WebViewSessionPolicy.singleBlobCandidate(
+                        streams.values.filter { it.networkObserved }.map { it.url }, request.mediaHosts,
+                    )
+                    session.readyUrl = candidate.orEmpty()
+                    session.readinessBasis = if (candidate != null) "blob-single-network" else "none"
+                }
+                scheduleFinishSoon()
+            }
+
             fun addStream(
                 label: String,
                 rawUrl: String?,
@@ -291,6 +308,7 @@ internal class PluginWebViewResolver(
                     }
                 }
 
+                reconcileBlobReadiness()
                 if (added) scheduleFinishSoon()
             }
 
@@ -339,10 +357,22 @@ internal class PluginWebViewResolver(
                     }
                     clean.startsWith("VUEO_MSE|") && request.waitForMediaReady -> session.mseObserved = true
                     clean.startsWith("VUEO_BLOB|") && request.waitForMediaReady -> session.blobObserved = true
+                    clean == "VUEO_BLOB_READY|true" && request.waitForMediaReady && request.allowBlobMediaReady -> {
+                        session.blobReady = true
+                        reconcileBlobReadiness()
+                    }
+                    clean == "VUEO_BLOB_READY|false" && request.waitForMediaReady && request.allowBlobMediaReady -> {
+                        session.blobReady = false
+                        if (session.readinessBasis == "blob-single-network") {
+                            session.readyUrl = ""
+                            session.readinessBasis = "none"
+                        }
+                    }
                     clean.startsWith("VUEO_MEDIA_READY|") && request.waitForMediaReady -> {
                         val file = clean.removePrefix("VUEO_MEDIA_READY|")
                         if (request.isStreamUrl(file)) {
                             session.readyUrl = file
+                            session.readinessBasis = "direct-http"
                             addStream(guessLabel(file), file, request.defaultHeaders())
                             scheduleFinishSoon()
                         }
@@ -426,6 +456,7 @@ internal class PluginWebViewResolver(
                     val hookScript = HOOK_JS
                         .replace("__VUEO_CAPTURE_SUBTITLES__", request.captureSubtitles.toString())
                         .replace("__VUEO_WAIT_FOR_MEDIA_READY__", request.waitForMediaReady.toString())
+                        .replace("__VUEO_ALLOW_BLOB_MEDIA_READY__", request.allowBlobMediaReady.toString())
                         .substringAfter("<script>")
                         .substringBeforeLast("</script>")
                     view?.evaluateJavascript(hookScript, null)
@@ -1072,6 +1103,8 @@ internal class PluginWebViewResolver(
 
     private class MediaSessionState {
         @Volatile var readyUrl: String = ""
+        @Volatile var readinessBasis: String = "none"
+        @Volatile var blobReady: Boolean = false
         @Volatile var finishReason: String = "timeout"
         @Volatile var hookSeen: Boolean = false
         @Volatile var pageFinished: Boolean = false
@@ -1113,6 +1146,7 @@ internal class PluginWebViewResolver(
         val blockMatchedRequests: Boolean,
         val captureSubtitles: Boolean,
         val waitForMediaReady: Boolean,
+        val allowBlobMediaReady: Boolean,
         val mediaHosts: List<String>,
     ) {
         fun isStreamUrl(rawUrl: String?): Boolean {
@@ -1204,6 +1238,7 @@ internal class PluginWebViewResolver(
                     url = url,
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
                     waitForMediaReady = json.optBoolean("waitForMediaReady", false),
+                    allowBlobMediaReady = json.optBoolean("allowBlobMediaReady", false),
                     mediaHosts = json.optJSONArray("mediaHosts").toVueoStringList()
                         .map { it.lowercase() }.filter { Regex("[a-z0-9.-]+").matches(it) }.distinct().take(8),
                     referer = json.optString("referer").trim(),
@@ -1464,6 +1499,23 @@ internal class PluginWebViewResolver(
   window.__vueoHooked = true;
   var captureSubtitles = "__VUEO_CAPTURE_SUBTITLES__" === "true";
   var waitForMediaReady = "__VUEO_WAIT_FOR_MEDIA_READY__" === "true";
+  var allowBlobMediaReady = waitForMediaReady && "__VUEO_ALLOW_BLOB_MEDIA_READY__" === "true";
+  var ownedMediaSources = Object.create(null);
+  var lastBlobReady = null;
+  function inspectBlobReady() {
+    if (!allowBlobMediaReady) return;
+    var ready = false;
+    try {
+      var videos = document.querySelectorAll("video");
+      if (videos.length === 1) {
+        var video = videos[0], src = String(video.currentSrc || video.src || "");
+        var owner = ownedMediaSources[src];
+        ready = !!(owner && owner.sourceBuffers && owner.sourceBuffers.length > 0 &&
+          video.readyState >= 2 && !video.error);
+      }
+    } catch(e) {}
+    if (ready !== lastBlobReady) {lastBlobReady=ready;cap("VUEO_BLOB_READY|"+String(ready));}
+  }
   var subtitleSeen = Object.create(null);
   function sendSubtitle(track) {
     try {
@@ -1603,6 +1655,7 @@ internal class PluginWebViewResolver(
 
   function inspectPlayer() {
     inspectMediaState();
+    inspectBlobReady();
     try {
       if (typeof window.jwplayer === "function") {
         var player = window.jwplayer();
@@ -1819,6 +1872,9 @@ internal class PluginWebViewResolver(
       var oldCreateObjectURL = window.URL.createObjectURL.bind(window.URL);
       window.URL.createObjectURL = function(value) {
         var objectUrl = oldCreateObjectURL(value);
+        if (allowBlobMediaReady && window.MediaSource && value instanceof window.MediaSource) {
+          ownedMediaSources[objectUrl] = value;
+        }
         try {
           var type = value && value.type ? String(value.type) : "";
           var size = value && typeof value.size === "number" ? value.size : -1;

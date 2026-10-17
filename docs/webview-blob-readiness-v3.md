@@ -1,0 +1,13 @@
+# VUEO WebView blob readiness v3 — TV and mobile
+
+Apply these root-relative files over app repo 54 with the earlier session-handoff/diagnostics changes, build through the existing GitHub workflow, and install that app before refreshing Cloudbank VidLink v1.0.9. This ZIP includes the complete changed source files and does not contain YML. The implementation is in shared core used by TV and mobile.
+
+New generic option: allowBlobMediaReady, default false. It is effective only with waitForMediaReady=true. Site domains, provider identifiers and requested TMDB routes remain in the provider script, not in this feature's Kotlin code.
+
+The existing inspection timer recognizes exactly one healthy video with readyState >= 2 whose current blob URL was created from an observed MediaSource in that same document and has a source buffer. Unknown blobs, metadata-only video, errors and multiple video elements do not qualify. Losing readiness emits false. It adds no timer, HTTP request, subtitle fetch or timeout extension. MediaSources created before hook installation or inside an unobserved worker do not qualify.
+
+Native handling requires exactly one distinct eligible HTTP MP4/HLS URL captured by native request interception on provider-allowed hosts. JS-only candidates are insufficient; segments, trailers and non-media paths stay excluded. New eligible network candidates revoke uniqueness. Provider checks the requested API media identity (including upstream host) again before its existing bounded HTTP check. Returned fields: blobHandoffVersion=1 and readinessBasis=none|direct-http|blob-single-network. The established sessionHandoffVersion remains 1 for compatibility.
+
+This is conservative session correlation, not proof that a specific HTTP response supplied a blob's bytes. No blobs are returned to the native player. A browser being ready does not establish reusable native HTTP access: the existing final probe may still receive 428 and reject the source. Multiple eligible requests may cause a conservative no-result. Existing direct HTTP readiness and providers not opting into the new option retain their behavior.
+
+Validation: actual injected JavaScript hook tests passed for owned MSE, absent source buffer, unknown blob, metadata-only/error states, readiness revocation, multiple video rejection and disabled options. Provider tests passed for one API/session/probe, exact identity and upstream host checks, no observed network rejection, blob readiness, and 428/HTML rejection. Pure Kotlin checks are included but were not executed in this run: the Kotlin compiler from the prior environment is unavailable. Full Android compilation and device playback remain unverified; build using the existing GitHub workflow.

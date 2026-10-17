@@ -18,6 +18,9 @@ internal object WebViewSessionPolicy {
         true
     }.getOrDefault(false)
 
+    fun singleBlobCandidate(networkUrls: List<String>, hosts: List<String>): String? =
+        networkUrls.filter { isMediaUrl(it, hosts) }.distinct().singleOrNull()
+
     fun withDefaults(headers: Map<String, String>, defaults: Map<String, String>): Map<String, String> =
         mergeHeaders(mergeHeaders(emptyMap(), headers, true), defaults, false)
 

@@ -8,6 +8,13 @@ fun main() {
         check(!WebViewSessionPolicy.isMediaUrl(it, hosts)) { it }
     }
     check(!WebViewSessionPolicy.isMediaUrl("https://media.example/movie.mp4", emptyList()))
+    val media = "https://media.example/mp/film.mp4?sign=browser"
+    check(WebViewSessionPolicy.singleBlobCandidate(emptyList(), hosts) == null)
+    check(WebViewSessionPolicy.singleBlobCandidate(listOf(media, media), hosts) == media)
+    check(WebViewSessionPolicy.singleBlobCandidate(listOf(media, "https://ads.example/ad.mp4"), hosts) == media)
+    check(WebViewSessionPolicy.singleBlobCandidate(listOf(media, "https://media.example/other.mp4"), hosts) == null)
+    check(WebViewSessionPolicy.singleBlobCandidate(listOf(media, media + "2"), hosts) == null)
+    check(WebViewSessionPolicy.singleBlobCandidate(listOf("blob:https://media.example/id", "https://media.example/segment.mp4"), hosts) == null)
     val defaults = mapOf("User-Agent" to "default", "Referer" to "https://entry.example/")
     val observed = mapOf("user-agent" to "native", "referer" to "https://player.example/", "origin" to "https://player.example", "cookie" to "session=example")
     check(WebViewSessionPolicy.withDefaults(observed, defaults)["User-Agent"] == "native")
