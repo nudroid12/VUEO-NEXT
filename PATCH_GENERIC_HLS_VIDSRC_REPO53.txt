@@ -1,35 +1,42 @@
-VUEO generic provider HLS instructions v1 + existing subtitle capture — repo53
+VUEO generic HLS media transform + subtitle capture — repo53
 
-Apply this combined app ZIP at VUEO repo root; build/install with existing Actions.
-Then update CloudAnime Reanime to2.0.1 and refresh/rescan. This ZIP replaces the older
-combined Flix-specific app patch and keeps its VidSrc subtitle-capture additions.
-No changes to UI, navigation, Collections Phase16, language preferences or workflows.
+Install order:
+1. Overlay this ZIP at VUEO-NEXT root, using the user's uploaded repo53 baseline.
+2. Build/install Mobile/TV using the existing workflow.
+3. Overlay the CloudAnime Reanime2.0.2 ZIP, refresh provider code and rescan sources.
+Both updates are required. This is source code, not an APK. No YML is included.
 
-ProviderHlsDataSource / ProviderHlsCodec expose general operations rather than site
-rules. An explicitly opted-in HTTPS source can declare:
-#vueo_hls_v1=plain[&audio=<comma-separated language tags>]
-#vueo_hls_v1=base64-xor&key=<hex>[&audio=<comma-separated language tags>]
-A missing audio list preserves all audio; a supplied list restricts master renditions
-and sets accepted tracks as default. No site names, domain lists, route UUID matching,
-Japanese language constants or provider identities occur in the new decoder code.
-The app still implements fixed supported protocol primitives and validation; this is
-not an unlimited runtime decoder and new unsupported algorithms may need app support.
+Cause verified: HD-2 child playlists reference PNG/WebP-wrapped MPEG-TS media.
+The website's HLS loader strips 8-byte PNG or 12-byte RIFF/WEBP prefixes, and
+conditionally applies repeated XOR before demuxing. The previous app decoded only
+playlists; wrapped segments reached Media3 unchanged.
 
-Only explicit source instructions activate processing. The URL fragment is stripped
-before HTTP. Decoder policy propagates only to referenced same-host child playlists,
-including opaque paths, never automatically to segments/AES keys or arbitrary URLs.
-Limits:1024-character instruction string,1-64 byte XOR key,16 audio tags,2MiB playlist,
-128 playlist-policy entries per player factory. No new HTTP requests or retries.
-Other providers without instructions remain on their existing path.
+No provider domains, route IDs, media prefix constants or site XOR keys are embedded
+in the VUEO decoder. Provider code supplies the patterns/key using explicit source
+instructions. This is a finite set of general byte transformations, not an arbitrary
+runtime capable of every future algorithm. Website changes may need provider updates.
 
-Old FlixPlaylistDataSource.kt/FlixPlaylistCodec.java are overwritten with inert comments
-so an overlay patch also removes the previously installed active host-specific code.
-Only SubtitleSession factory wiring changes; generic WebView captureSubtitles remains.
-Root build.gradle.kts is byte-identical to uploaded repo53 and included as a root marker.
+Optional source fragment parameters, alongside existing vueo_hls_v1/key/audio:
+segment_prefixes: comma-separated hexadecimal patterns; ?? matches any byte.
+segment_key: optional repeated-XOR key in hexadecimal, 1–64 bytes.
+segment_plain: optional plaintext prefix; matching stripped payload skips XOR.
+Matched segment prefixes are stripped. Unmatched segment bodies pass through.
+Policies apply only to exact media URLs explicitly referenced by decoded playlists,
+including external HTTPS media hosts. AES key and initialization-data URLs do not
+inherit segment processing. No automatic domain matching or additional HTTP calls.
+Range retries fetch the complete wrapped segment once, transform it, and then expose
+the requested decoded offset/length. Segments are buffered up to32MiB per open;
+playlists up to2MiB. Maximum4096 exact segment and128 playlist policies per factory.
 
-Validation: new Java codec compiled; Kotlin decoder and SubtitleSession compiled
-against Android/Media3 API stubs. Ten transport cases pass, including a non-Flix domain,
-provider-selected English, no language filtering, child inheritance, no extra requests,
-headers, binary key passthrough, opt-in behavior and malformed instructions. VidSrc
-hook fixture passes. Live masters for both profiles were decoded in provider fixtures.
-These do not claim a successful complete APK build or real Android playback.
+Shared Core only. Retains previous VidSrc subtitle capture. No Mobile/TV UI changes.
+Root build.gradle.kts is unchanged from uploaded repo53, included as a root marker.
+Old Flix-specific classes remain inert overlay tombstones.
+
+Validation:
+-13 provider integration scenarios pass; both Sub profiles, eight discovery calls.
+-13 transport scenarios pass using Java/Kotlin with Android/Media3 API stubs.
+-Real One-Punch Man S01E02 HD-2 video/audio samples decode to MPEG-TS sync packets.
+-ffprobe recognizes H.264 1920x1080 video and AAC audio from decoded samples.
+-Existing HD-1 playlist, child playlist, AES key and opt-in regression checks pass.
+-Existing VidSrc subtitle-capture fixture passes.
+No complete Gradle/APK build or end-to-end Android playback has been confirmed here.

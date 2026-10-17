@@ -8,9 +8,28 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Pure playlist transformation. Network keys/segments remain handled by Media3. */
+/** Provider-directed playlist and media-byte transformations. */
 public final class ProviderHlsCodec {
     private ProviderHlsCodec() {}
+    /** Provider-supplied byte-prefix patterns (?? wildcard), stripping and optional repeated XOR. */
+    public static byte[] decodeSegment(byte[] raw, String[] patterns, byte[] key, byte[] plainPrefix) throws IOException {
+        for (String pattern : patterns) {
+            int skip = pattern.length() / 2;
+            if (raw.length <= skip) continue;
+            boolean matches = true;
+            for (int i = 0; i < skip; i++) {
+                String hex = pattern.substring(i * 2, i * 2 + 2);
+                if (!hex.equals("??") && (raw[i] & 255) != Integer.parseInt(hex, 16)) { matches = false; break; }
+            }
+            if (!matches) continue;
+            boolean plain = plainPrefix.length > 0 && raw.length - skip >= plainPrefix.length;
+            for (int i = 0; plain && i < plainPrefix.length; i++) plain = raw[skip + i] == plainPrefix[i];
+            byte[] result = java.util.Arrays.copyOfRange(raw, skip, raw.length);
+            if (!plain && key.length > 0) for (int i = 0; i < result.length; i++) result[i] ^= key[i % key.length];
+            return result;
+        }
+        return raw;
+    }
     private static String attribute(String line, String key) {
         Matcher match = Pattern.compile("(?:[:,])" + key + "=(?:\"([^\"]*)\"|([^,]*))", Pattern.CASE_INSENSITIVE).matcher(line);
         return match.find() ? (match.group(1) != null ? match.group(1) : match.group(2)) : "";
