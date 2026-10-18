@@ -8,7 +8,7 @@ import java.io.StringReader
 
 /** Saved items contain identity/display fields, never an episode catalogue or people metadata. */
 object CompactLibraryCodec {
-    private val mediaFields=setOf("id","type","name","poster","background","description","releaseInfo",
+    private val mediaFields=setOf("tmdbId","id","type","name","poster","background","description","releaseInfo",
         "originalTitle","aliases","originalLanguage","countries","genres","sourceExtensionId","catalogSources",
         "imdbRating","tmdbRating","runtimeMinutes","certification","directors","creators","writers")
 

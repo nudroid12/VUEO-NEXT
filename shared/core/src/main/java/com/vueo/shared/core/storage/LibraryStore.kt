@@ -1074,7 +1074,7 @@ class LibraryStore(
     private fun mediaToJson(media: MediaItem): JSONObject {
         episodeCache.save(media.type,media.id,media.episodes)
         return JSONObject()
-            .put("id",media.id).put("type",media.type).put("name",media.name)
+            .put("id",media.id).put("type",media.type).put("name",media.name).put("tmdbId",media.tmdbId)
             .put("poster",media.poster).put("background",media.background)
             .put("description",media.description).put("releaseInfo",media.releaseInfo)
             .put("originalTitle",media.originalTitle).put("aliases",JSONArray(media.aliases))
@@ -1092,6 +1092,7 @@ class LibraryStore(
     ): MediaItem =
         MediaItem(
             id = json.getString("id"),
+            tmdbId = com.vueo.shared.core.plugin.TmdbResolver.metadataId(json),
             type = json.getString("type"),
             name = json.getString("name"),
             poster = json.optNullableString("poster"),

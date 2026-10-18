@@ -667,23 +667,29 @@ class SourceDiscoveryEngine(
         }
 
         val item = request.item
-        val tmdbId = try {
-            TmdbResolver.resolve(
-                rawId = item.id,
-                mediaType = item.type,
-                apiKey = pluginStore.tmdbApiKey(),
-            )
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Throwable) {
-            null
-        }
-
+        val apiKey = pluginStore.tmdbApiKey()
+        val resolution = TmdbResolver.resolveDetailed(
+            rawId = item.id,
+            mediaType = item.type,
+            apiKey = apiKey,
+            knownTmdbId = item.tmdbId,
+        )
+        val tmdbId = resolution.tmdbId
+        com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+            "[SOURCES] TMDB_IDENTITY type=${item.type} rawId=${item.id.take(100)} " +
+                "metadataTmdb=${item.tmdbId ?: "none"} route=${resolution.route} resolved=${tmdbId ?: "none"} " +
+                "keyConfigured=${apiKey.isNotBlank()}"
+        )
         if (tmdbId == null) {
-            onSkipped(
-                "Plugin providers skipped: VUEO could not resolve a TMDB ID. " +
-                    "Add your TMDB API key in Settings > Enhancements > TMDB."
-            )
+            val reason = when (resolution.route) {
+                TmdbResolver.Route.UNSUPPORTED_ID -> "the addon ID format is unsupported and metadata supplied no TMDB ID"
+                TmdbResolver.Route.INVALID_TYPE -> "the media type is unsupported"
+                TmdbResolver.Route.CONFLICT -> "the supplied identity fields disagree"
+                TmdbResolver.Route.AMBIGUOUS -> "multiple TMDB identities matched the exact external ID"
+                TmdbResolver.Route.REQUEST_FAILED -> "the exact ID lookup failed; check the connection or configured TMDB key"
+                else -> "no exact TMDB mapping was available for this item"
+            }
+            onSkipped("Plugin providers skipped: $reason.")
             return null
         }
 

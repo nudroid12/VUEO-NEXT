@@ -1,0 +1,52 @@
+[
+  {
+    "path": "mobile/src/main/java/com/vueo/mobile/core/plugin/TmdbResolver.kt",
+    "baseline_sha256": "245436213c0449b10e1740c3be4ff82b32f0eb0d2a3f74aae117bdecaa8e6330",
+    "patch_sha256": "d2cf6f5a1a2007cb47d59ecbedb6604780bf87610faf12e394c7648ee5a92ac5"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/enrichment/TmdbEnhancementClient.kt",
+    "baseline_sha256": "d7a3093b0af532b6c54ab58280d7cffff2fef7bae6530b01aefb0136eb8bb1cc",
+    "patch_sha256": "ff380c1c5065f96c3fbce1c37e8156c93717bcab6a827bf82bc287071984b48b"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/extensions/CatalogDiscoveryJson.kt",
+    "baseline_sha256": "c98e378d9518b867b6a9909fd1161fcf1c1ad9697a9572fe1ac3519c486bc5d4",
+    "patch_sha256": "adf6887b7ac739de0febd921b668b6bb9295cc0388cb0a48a35d3f8b5d290090"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/extensions/StremioAddonExtension.kt",
+    "baseline_sha256": "71f8a2f9e472d73fba29c5302b38500cd8cf7f573affaf89eff6f22a35ef13d7",
+    "patch_sha256": "319a459776eca17afc7c9726327e66f41500a5ece4d9a3dd969d2595ad4ab26b"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/extensions/UnifiedMediaEngine.kt",
+    "baseline_sha256": "7957ee613ff8a238336109676bf42769984a2d8ed6539aa8a0f552b0ff3f4b1a",
+    "patch_sha256": "25befc1db3a4460079a9a62486b4f1b844deb86ae549ea7906bef08fd7abab5b"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/media/MediaModels.kt",
+    "baseline_sha256": "d8f5184a72813abd0d2a9d45b18d190cd4af8364bc90308a39602e2b960942aa",
+    "patch_sha256": "e2adf793835fcab276062202dd15a6ff9a05eae7e5a7f757aa1a1a2d21edc793"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/plugin/TmdbResolver.kt",
+    "baseline_sha256": "c37f7375736b665072cc3e2a53ccf4c1fc8034e5274048ee4405cf4e2ddb3c3b",
+    "patch_sha256": "14ec479e22bb8d0131099fc0e8326e15bbf27924dde13c6e0932f5db15efa6cb"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt",
+    "baseline_sha256": "86bf39147562b333ca92022533ba2608c545d6942a09beda3851314c42ef72c0",
+    "patch_sha256": "0eeb85c9500a7c67615ab255d101589caafe636065602ded010147a3694c643c"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/storage/CompactLibraryCodec.kt",
+    "baseline_sha256": "a022cd4a7201054cf10d05514fd1f3b9233694448f5a18586d7c302e2ecfca80",
+    "patch_sha256": "d5054c7b76b015ea5a8a6a2953f3710f547b29f95726bdb1ac167b3f59f8a29f"
+  },
+  {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/storage/LibraryStore.kt",
+    "baseline_sha256": "89d66ce1dab7fa58c1d23216e62c8be59c6e2a23a35a716d1e57ccb45fc67c4e",
+    "patch_sha256": "1ccdb98c4c6551fcab96efa7e2780882554968695a672511b66b6fd2fbafd402"
+  }
+]

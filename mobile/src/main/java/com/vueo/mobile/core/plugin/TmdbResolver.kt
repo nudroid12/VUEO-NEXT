@@ -13,5 +13,6 @@ object TmdbResolver {
             rawId = media.id,
             mediaType = media.type,
             apiKey = apiKey,
+            knownTmdbId = media.tmdbId,
         )
 }

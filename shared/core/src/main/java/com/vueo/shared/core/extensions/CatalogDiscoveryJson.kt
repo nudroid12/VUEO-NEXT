@@ -85,6 +85,7 @@ internal fun List<MediaItem>
                         "aliases",
                         JSONArray(item.aliases),
                     )
+                    .put("tmdbId", item.tmdbId)
                     .put(
                         "originalLanguage",
                         item.originalLanguage,
@@ -215,6 +216,7 @@ internal fun JSONArray?
             add(
                 MediaItem(
                     id = id,
+                    tmdbId = com.vueo.shared.core.plugin.TmdbResolver.metadataId(json),
                     type =
                         json.optString(
                             "type",

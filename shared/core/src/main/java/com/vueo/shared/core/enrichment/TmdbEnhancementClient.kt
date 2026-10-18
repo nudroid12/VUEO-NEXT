@@ -1062,6 +1062,7 @@ object TmdbEnhancementClient {
                 rawId = media.id,
                 mediaType = media.type,
                 apiKey = apiKey,
+                knownTmdbId = media.tmdbId,
             )
                 ?: return null
 
@@ -1077,6 +1078,7 @@ object TmdbEnhancementClient {
         media: MediaItem,
         tmdbId: String,
     ) {
+        TmdbResolver.remember(media.id, media.type, tmdbId)
         synchronized(resolvedIds) {
             resolvedIds[
                 "${media.type}:${media.id}"
@@ -1141,6 +1143,7 @@ object TmdbEnhancementClient {
                 }
 
         return item.copy(
+            tmdbId = TmdbResolver.directId(details.optString("id")) ?: item.tmdbId,
             name =
                 if (
                     metadataEnabled &&

@@ -322,6 +322,7 @@ private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
 
     return MediaItem(
         id = id,
+        tmdbId = com.vueo.shared.core.plugin.TmdbResolver.metadataId(this),
         type = optString("type", "movie").trim().ifBlank { "movie" },
         name = name,
         poster = optString("poster").trim().takeIf { it.startsWith("https://", true) },

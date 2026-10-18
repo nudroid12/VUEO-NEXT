@@ -1,45 +1,21 @@
-VUEO Details Immediate-Back Responsiveness v121
+# VUEO Search TMDB identity patch
 
-Base: v120 Next Episode Handoff Optimization
-Scope: Mobile + TV Details orchestration. No shared-core changes.
-No Gradle build.
+Based on VUEO-NEXT-main (55).zip. Copy the mobile/ and shared/ directories into the matching repository root and replace the ten listed Kotlin files, then build Mobile/TV normally. This is a source patch, not an APK. No YML/workflow files are included. Baseline and replacement SHA-256 hashes are listed in PATCH_FILES.json; compare or merge manually if your files have changed since this baseline.
 
-Goal
-Remove the remaining delay when the user opens Details and immediately presses Back. Waiting on Details for a moment already made Back fast; the remaining hitch came from startup metadata/enrichment work still resuming and parsing on Main before Back could be handled.
+## Change
 
-Changes
-1. Core Detail startup moved off Main
-   - Mobile TMDB identity preparation now runs on Dispatchers.IO.
-   - Mobile core Stremio metadata load + episode normalization now run off Main.
-   - TV prepareDetailForCore() + loadCoreDetail() now run off Main.
-   - Heavy fallback episode normalization runs on Dispatchers.Default.
-   - The visible Detail shell is still published immediately from the catalog/search item.
+Preserve explicit TMDB identity from addon metadata (tmdbId, tmdb_id, moviedb_id, ids.tmdb, or a tmdb-prefixed ID), including catalogue/library persistence. Keep the addon ID for its normal addon requests. Preserve a hint during detail merging only for matching identity and media type. Share successful enrichment mappings with the source resolver.
 
-2. Immediate Detail-session cancellation on Back
-   - Mobile and TV retain a reference to the active Detail startup coroutine.
-   - Back invalidates the Detail session and cancels that coroutine before outer navigation changes the route.
-   - Mobile's visible back button uses the same cancellation path as system Back.
-   - Mobile also invalidates library hydration, source discovery and episode prefetch before leaving Details.
+Resolution uses a direct TMDB ID, explicit metadata mapping, then cached mapping before considering API-key availability. With a configured key, retain official TMDB IMDb find, requiring exactly one result of the requested type. Without a key, an uncached valid IMDb ID gets one exact-ID Cinemeta metadata request, requiring the same IMDb and media type plus an explicit TMDB mapping. Successful mappings are cached. No title search, title-specific IDs, movie-to-series substitution, or season guessing.
 
-3. Late-result protection
-   - Each Detail open receives a generation/session token.
-   - Library hydration, artwork, metadata, recommendations, enrichment and ratings verify that the session is still current before publishing Compose state.
-   - Results from an outgoing or replaced Detail page cannot repaint the retained AnimatedContent tree.
+Source discovery reports the actual skip reason. Performance diagnostics include TMDB_IDENTITY with the resolution route and whether a key is configured; they do not print the key.
 
-4. Progressive enrichment no longer competes with Back on Main
-   - TV artwork, related-title remote work, TMDB/rich enrichment, episode ratings and supplemental ratings run off Main.
-   - Mobile local related scoring runs on Dispatchers.Default.
-   - Mobile remote recommendations, TMDB/rich enrichment and MDBList requests run on Dispatchers.IO.
-   - Compose state publication remains on Main after the background work completes.
+## Validation
 
-5. Cancellation is no longer treated as a normal metadata failure in the Detail orchestration
-   - CancellationException is rethrown in Mobile/TV Detail fallback paths.
-   - Normal network/provider errors still fall back gracefully.
+Kotlin compilation and 30 executable identity/resolver checks passed. Includes the production addon parser, metadata merge functions, media models and catalogue JSON codec; covers metadata/cache without a key, exact-ID fallback, malformed/conflicting mapping, type mismatch, cancellation, official lookup ambiguity, and catalogue persistence. Android-dependent integration files were reviewed; no full Android APK build or device playback validation was performed in this environment.
 
-Unchanged
-- v117 cross-transition motion
-- Details UI/focus layout
-- source selection behavior
-- Player / Next Episode logic from v120
-- Continue Watching / resume cursor rules
-- shared/core
+## Device check
+
+After building/installing, reopen the title from Search and select S1E1. Existing cached items without a TMDB hint can use the exact IMDb fallback. For the supplied Smoking Behind the Supermarket with You example (IMDb tt37614297), the verified mapping is TV 296286; this mapping is not hardcoded in the app. Confirm providers now execute and inspect TMDB_IDENTITY in performance diagnostics if still skipped.
+
+This patch addresses discovery identity. It does not change provider extraction or repair a separate video failure after playback starts. A movie catalogue item remains a movie even if its title resembles a series.

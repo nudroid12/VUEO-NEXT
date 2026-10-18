@@ -1756,6 +1756,10 @@ private fun mergeMediaMetadata(
     sourceExtensionId: String?,
 ): MediaItem =
     current.copy(
+        tmdbId = current.tmdbId ?: candidate.tmdbId.takeIf {
+            (current.type == candidate.type || current.type in setOf("tv", "series") && candidate.type in setOf("tv", "series")) &&
+                (current.id == candidate.id || com.vueo.shared.core.plugin.TmdbResolver.directId(current.id) == candidate.tmdbId)
+        },
         name = current.name.ifBlank { candidate.name },
         poster = current.poster ?: candidate.poster,
         background = current.background ?: candidate.background,
