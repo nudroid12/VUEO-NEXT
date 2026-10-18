@@ -1,0 +1,11 @@
+VUEO generic decimal SRT normalization — based on VUEO-NEXT-main (55)
+
+Applies to Mobile and TV through the shared SubtitleSessionDataSource already used by both players. No UI, Gradle, HLS codec or workflow changes.
+
+Repair numbered UTF-8 SubRip cue times such as 0:00:20.71 --> 0:00:21.75 to 0:00:20,710 --> 0:00:21,750 before Media3 parsing. Preserve text, line endings, BOM and cue ordering. Standard SRT, WEBVTT, ASS/SSA, TTML and non-UTF-8 bytes remain unchanged.
+
+Prepare only registered full GET subtitle loads up to 2 MiB. Normalize cached preflight bytes too. Preserve per-track HTTP headers and cached seeking without a second fetch. Larger files replay the inspected prefix and stream the remaining bytes on the same connection; videos and partial requests avoid preparation. Empty files return EOF.
+
+Validation: eight standalone Kotlin/JVM integration checks passed against the actual changed Kotlin sources using Android/Media3 API test stubs and the existing compiled generic HLS codec. Actual website fixture: all 190 cues and dialogue text retained, timestamps corrected. Covered BOM/CRLF, standard formats, non-UTF-8, cache seek/headers, >2 MiB streaming, unregistered video/partial loads, empty subtitles and Japanese audio policy. Five JUnit regression tests included for the project's normal test runner.
+
+Full Android Gradle build was unavailable in this environment (Android SDK/JDK development tools and Gradle wrapper JAR absent). Device playback remains to be tested. Build using the existing project workflow; no YML supplied.
