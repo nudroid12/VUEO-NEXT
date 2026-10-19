@@ -12,6 +12,7 @@ import com.vueo.shared.core.player.StreamSubtitlePolicy
 import com.vueo.shared.core.plugin.PluginDiscoveryResult
 import com.vueo.shared.core.plugin.PluginSourceEngine
 import com.vueo.shared.core.plugin.PluginStore
+import com.vueo.shared.core.plugin.AnimeIdResolver
 import com.vueo.shared.core.plugin.TmdbResolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -668,20 +669,29 @@ class SourceDiscoveryEngine(
 
         val item = request.item
         val apiKey = pluginStore.tmdbApiKey()
-        val resolution = TmdbResolver.resolveDetailed(
+        // Anime catalogue IDs identify a part, whose local episode numbers can differ from TMDB.
+        val anime = if (AnimeIdResolver.supports(item.id)) AnimeIdResolver.resolve(
+            rawId = item.id, mediaType = item.type, episode = request.episode,
+            apiKey = apiKey, knownTmdbId = item.tmdbId,
+        ) else null
+        val resolution = if (anime != null) TmdbResolver.Resolution(
+            anime.tmdbId, if (anime.tmdbId != null) TmdbResolver.Route.ANIME_ID else TmdbResolver.Route.NO_MAPPING,
+        ) else TmdbResolver.resolveDetailed(
             rawId = item.id,
             mediaType = item.type,
             apiKey = apiKey,
             knownTmdbId = item.tmdbId,
         )
+        val pluginSeason = anime?.season ?: request.episode?.season
+        val pluginEpisode = anime?.episode ?: request.episode?.episode
         val tmdbId = resolution.tmdbId
         com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
             "[SOURCES] TMDB_IDENTITY type=${item.type} rawId=${item.id.take(100)} " +
                 "metadataTmdb=${item.tmdbId ?: "none"} route=${resolution.route} resolved=${tmdbId ?: "none"} " +
-                "keyConfigured=${apiKey.isNotBlank()}"
+                "keyConfigured=${apiKey.isNotBlank()} pluginEpisode=$pluginSeason:$pluginEpisode animeReason=${anime?.reason ?: "none"}"
         )
         if (tmdbId == null) {
-            val reason = when (resolution.route) {
+            val reason = anime?.reason ?: when (resolution.route) {
                 TmdbResolver.Route.UNSUPPORTED_ID -> "the addon ID format is unsupported and metadata supplied no TMDB ID"
                 TmdbResolver.Route.INVALID_TYPE -> "the media type is unsupported"
                 TmdbResolver.Route.CONFLICT -> "the supplied identity fields disagree"
@@ -697,8 +707,8 @@ class SourceDiscoveryEngine(
             pluginEngine.discoverProgressive(
                 tmdbId = tmdbId,
                 mediaType = MediaTypePolicy.pluginType(item.type),
-                season = request.episode?.season,
-                episode = request.episode?.episode,
+                season = pluginSeason,
+                episode = pluginEpisode,
                 mediaTitle = item.name,
                 mediaOriginalTitle = item.originalTitle,
                 mediaAliases = item.aliases,

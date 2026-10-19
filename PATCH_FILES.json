@@ -30,14 +30,19 @@
     "patch_sha256": "e2adf793835fcab276062202dd15a6ff9a05eae7e5a7f757aa1a1a2d21edc793"
   },
   {
+    "path": "shared/core/src/main/java/com/vueo/shared/core/plugin/AnimeIdResolver.kt",
+    "baseline_sha256": null,
+    "patch_sha256": "cb9fd46804e43c4ac5841c3761a5481fafdabbe9b4f98395aa7ebf30cd5c87a1"
+  },
+  {
     "path": "shared/core/src/main/java/com/vueo/shared/core/plugin/TmdbResolver.kt",
     "baseline_sha256": "c37f7375736b665072cc3e2a53ccf4c1fc8034e5274048ee4405cf4e2ddb3c3b",
-    "patch_sha256": "14ec479e22bb8d0131099fc0e8326e15bbf27924dde13c6e0932f5db15efa6cb"
+    "patch_sha256": "0f45797ff457edf651cf044b21bbd9239dcd310707c341dad30b46fea7e8f4c8"
   },
   {
     "path": "shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt",
     "baseline_sha256": "86bf39147562b333ca92022533ba2608c545d6942a09beda3851314c42ef72c0",
-    "patch_sha256": "0eeb85c9500a7c67615ab255d101589caafe636065602ded010147a3694c643c"
+    "patch_sha256": "a71d06d59049c7d96c2b50021e85eb1b3cf85a07079e92cfb5a2eb2e7c729914"
   },
   {
     "path": "shared/core/src/main/java/com/vueo/shared/core/storage/CompactLibraryCodec.kt",

@@ -1,21 +1,25 @@
-# VUEO Search TMDB identity patch
+# VUEO Search Anime Identity v2 — Mobile and TV
 
-Based on VUEO-NEXT-main (55).zip. Copy the mobile/ and shared/ directories into the matching repository root and replace the ten listed Kotlin files, then build Mobile/TV normally. This is a source patch, not an APK. No YML/workflow files are included. Baseline and replacement SHA-256 hashes are listed in PATCH_FILES.json; compare or merge manually if your files have changed since this baseline.
+Cumulative replacement for VUEO-Search-TMDB-Identity-Patch-No-YML.zip. Based on VUEO-NEXT-main (55).zip. Copy mobile/ and shared/ into the repository root, replace matching files, and add AnimeIdResolver.kt. Build/install Mobile or TV normally. This is a source patch, not an APK. No provider, manifest or YML changes. SHA-256 hashes in PATCH_FILES.json allow checking the baseline before replacement; manually merge if your working files differ.
 
-## Change
+## Confirmed failure
 
-Preserve explicit TMDB identity from addon metadata (tmdbId, tmdb_id, moviedb_id, ids.tmdb, or a tmdb-prefixed ID), including catalogue/library persistence. Keep the addon ID for its normal addon requests. Preserve a hint during detail merging only for matching identity and media type. Share successful enrichment mappings with the source resolver.
+The supplied Performance ZIP records rawId=mal:62076, metadataTmdb=none, route=UNSUPPORTED_ID, keyConfigured=true. The prior patch handled IMDb/TMDB identity but missed MyAnimeList identity. API-key storage was not the cause.
 
-Resolution uses a direct TMDB ID, explicit metadata mapping, then cached mapping before considering API-key availability. With a configured key, retain official TMDB IMDb find, requiring exactly one result of the requested type. Without a key, an uncached valid IMDb ID gets one exact-ID Cinemeta metadata request, requiring the same IMDb and media type plus an explicit TMDB mapping. Successful mappings are cached. No title search, title-specific IDs, movie-to-series substitution, or season guessing.
+## Resolution
 
-Source discovery reports the actual skip reason. Performance diagnostics include TMDB_IDENTITY with the resolution route and whether a key is configured; they do not print the key.
+Retain the prior explicit TMDB metadata and persistence fixes, cache-before-key order and useful skip reasons. Add one shared source-discovery bridge for mal:/myanimelist:, anilist: and kitsu: numeric IDs. Keep addon IDs and video requests unchanged. Anime identity is not added to background enrichment: that could overwrite local episode metadata with a different TMDB episode's data.
 
-## Validation
+For movies: one ARM exact source-ID lookup, verify source ID and movie type, then use the explicit TMDB ID. For series: verify the same identity plus the explicitly mapped TMDB season; obtain the selected anime episode's published air date from AniZip and compare with TMDB season episodes. Only a single date match within one day is accepted. Missing/ambiguous data stops with a specific reason; local episode numbers are never substituted blindly. Existing conflicting TMDB hints are rejected.
 
-Kotlin compilation and 30 executable identity/resolver checks passed. Includes the production addon parser, metadata merge functions, media models and catalogue JSON codec; covers metadata/cache without a key, exact-ID fallback, malformed/conflicting mapping, type mismatch, cancellation, official lookup ambiguity, and catalogue persistence. Android-dependent integration files were reviewed; no full Android APK build or device playback validation was performed in this environment.
+An initial uncached anime series resolution uses up to three requests: ARM mapping, AniZip episode dataset, and the mapped TMDB season. The successful JSON responses are held in a bounded 64-entry, one-hour in-memory cache; repeated scans and later episodes in the same datasets reuse them. Cold series verification requires the user's configured TMDB key. No title searches, title-specific ID tables, retry loops or fallback service chains are added.
 
-## Device check
+ARM and AniZip responses were fetched for MAL 62076 and 58514. MAL 62076 explicitly maps to TV 296286, season 1. MAL 58514 illustrates why local anime numbering cannot be sent straight through: its ARM TMDB season is 1 while the associated TVDB season is 2. Production discovery uses the verified result only for plugin season/episode arguments. Addon playback/subtitle requests retain their existing IDs.
 
-After building/installing, reopen the title from Search and select S1E1. Existing cached items without a TMDB hint can use the exact IMDb fallback. For the supplied Smoking Behind the Supermarket with You example (IMDb tt37614297), the verified mapping is TV 296286; this mapping is not hardcoded in the app. Confirm providers now execute and inspect TMDB_IDENTITY in performance diagnostics if still skipped.
+## Validation and limits
 
-This patch addresses discovery identity. It does not change provider extraction or repair a separate video failure after playback starts. A movie catalogue item remains a movie even if its title resembles a series.
+49 executable checks passed: 30 prior metadata/identity regression cases and 19 anime identity/episode/integration cases. Kotlin compilation included the production resolver, anime bridge, models, catalogue codec, extracted production addon parser and merge functions, and the production discoverPlugins function with test boundaries for Android services. The latter verifies mapped episode arguments reach the plugin engine without rewriting the addon identity.
+
+Live ARM/AniZip responses were used as fixtures. TMDB season responses in the tests are controlled fixtures, including an offset example and ambiguous same-day episodes; the complete live TMDB/provider flow and Android APK build were not validated here. Automatic approval review rejected a separate live TMDB probe because it attempted to use an embedded provider API key; it was not retried. No credential is included in this patch or documentation.
+
+After installation, reopen Smoking Behind the Supermarket with You from Search and select S1E1. The TMDB_IDENTITY diagnostic should show rawId=mal:62076, route=ANIME_ID, resolved=296286, pluginEpisode=1:1 on a successful match. If mapping fails, animeReason gives the stage/reason. This patch fixes discovery identity; a separate video playback failure after discovery is outside its scope.

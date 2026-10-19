@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets
 /** Exact identity resolution shared by Mobile and TV; never searches by title. */
 object TmdbResolver {
     private const val MAX_CACHE_ENTRIES = 256
-    enum class Route { DIRECT, METADATA, CACHE, TMDB_FIND, PUBLIC_METADATA, UNSUPPORTED_ID, INVALID_TYPE, CONFLICT, NO_MAPPING, AMBIGUOUS, REQUEST_FAILED }
+    enum class Route { DIRECT, METADATA, CACHE, TMDB_FIND, PUBLIC_METADATA, ANIME_ID, UNSUPPORTED_ID, INVALID_TYPE, CONFLICT, NO_MAPPING, AMBIGUOUS, REQUEST_FAILED }
     data class Resolution(val tmdbId: String?, val route: Route)
 
     private val resolvedIdCache = object : LinkedHashMap<String, String>(MAX_CACHE_ENTRIES + 1, 0.75f, true) {
