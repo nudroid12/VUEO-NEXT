@@ -1068,6 +1068,14 @@ private fun emptyDiscoveryResult():
                         } ?: "{\"error\":\"Provider execution completed\"}"
                     }
 
+                    // Metadata only: scoped to this repository/provider version and bounded in memory.
+                    function<String, String>("vueoMetadataCache") { requestJson ->
+                        ProviderMetadataCache.execute(
+                            namespace = "${repository.manifestUrl}|${provider.id}|${provider.version}",
+                            requestJson = requestJson,
+                        )
+                    }
+
                     function<String, String>(
                         "__vueoTrace"
                     ) { traceJson ->
