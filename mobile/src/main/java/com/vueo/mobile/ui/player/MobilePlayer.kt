@@ -1309,6 +1309,9 @@ internal fun PlayerScreen(
                 startupWaits += 1
             }
             delay(if (startupWaits > 0) 500L else 350L)
+            if (player.currentMediaItem?.localConfiguration?.uri?.toString() != source.url ||
+                latestSubtitleUrls == appliedSubtitleUrls
+            ) return@LaunchedEffect
             val positionMs = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
                 currentPositionMs = player.currentPosition,
                 lastKnownPositionMs = lastValidPlaybackPositionMs,
@@ -1381,6 +1384,10 @@ internal fun PlayerScreen(
                     )
                     .build()
             val smartSubsKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(subtitles)
+            com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent(
+                "Mobile", "SUBTITLE_MEDIA_UPDATE",
+                "rebuild=${smartSubsKeys != appliedSmartSubsSourceKeys} firstFrame=$hasRenderedFirstFrame tracks=${subtitles.size}",
+            )
             if (smartSubsKeys != appliedSmartSubsSourceKeys) {
                 // replaceMediaItem can update only the primary source and retain
                 // the old subtitle children. Rebuild for generated-track changes.
@@ -1398,7 +1405,8 @@ internal fun PlayerScreen(
                 )
             } else {
                 player.replaceMediaItem(currentIndex, updatedMediaItem)
-                player.seekTo(currentIndex, positionMs)
+                // replaceMediaItem preserves the current playback position.
+                // Seeking again flushes the decoder and triggers another buffer.
             }
             appliedSmartSubsSourceKeys = smartSubsKeys
             appliedSubtitleUrls = latestSubtitleUrls
@@ -2082,7 +2090,16 @@ internal fun PlayerScreen(
                 if (PerformanceDiagnostics.isCollecting() && !firstFrameLogged) {
                     firstFrameLogged = true
                     log("FIRST_FRAME", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms")
+                } else if (firstFrameLogged) {
+                    log("VIDEO_FIRST_FRAME_AGAIN", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms positionMs=${player.currentPosition}")
                 }
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                log("POSITION_DISCONTINUITY", "reason=$reason fromMs=${oldPosition.positionMs} toMs=${newPosition.positionMs}")
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (PerformanceDiagnostics.isCollecting()) {
@@ -3280,7 +3297,7 @@ internal fun PlayerScreen(
                 MobileSubtitlePlayerView(playerContext).apply {
                     useController = false
                     keepScreenOn = true
-                    bindPlayer(player)
+                    bindPlayer(player, "$mediaKey:${source.url}")
                     applySubtitlePresentation(
                         style = subtitleStyle,
                         bottomPadding = subtitleBottomPaddingFraction,
@@ -3292,7 +3309,7 @@ internal fun PlayerScreen(
                 view.releasePlayerBinding()
             },
             update = { view ->
-                view.bindPlayer(player)
+                view.bindPlayer(player, "$mediaKey:${source.url}")
                 view.useController = false
                 view.applySubtitlePresentation(
                     style = subtitleStyle,

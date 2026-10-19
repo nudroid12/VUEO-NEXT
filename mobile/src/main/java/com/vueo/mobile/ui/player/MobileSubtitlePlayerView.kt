@@ -26,6 +26,7 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
     private val managedSubtitleView = SubtitleView(context)
     private val commentarySubtitleView = SubtitleView(context)
     private var boundPlayer: Player? = null
+    private var boundContentKey: String? = null
     private var flowObserver: MobileSubtitleFlowObserver? = null
     private var listenerRegistered = false
     private var lastStyle: PlayerSubtitleStyleState? = null
@@ -77,11 +78,18 @@ internal class MobileSubtitlePlayerView(context: Context) : PlayerView(context) 
         view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
-    fun bindPlayer(next: Player?) {
-        if (boundPlayer !== next) {
+    fun bindPlayer(next: Player?, contentKey: String) {
+        val contentChanged = boundContentKey != contentKey
+        if (boundPlayer !== next || contentChanged) {
+            // Retain a frame only for updates to this video. A genuine source or
+            // episode change must clear the previous picture before rebinding.
+            setKeepContentOnPlayerReset(false)
+            if (contentChanged && boundPlayer === next) player = null
             unregisterListener()
             boundPlayer = next
+            boundContentKey = contentKey
             player = next
+            setKeepContentOnPlayerReset(true)
             managedSubtitleView.setCues(emptyList())
             commentarySubtitleView.setCues(emptyList())
             lastInputCues = null

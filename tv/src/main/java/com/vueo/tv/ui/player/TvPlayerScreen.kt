@@ -916,7 +916,9 @@ fun TvPlayerScreen(
             startupWaits += 1
         }
         delay(if (startupWaits > 0) 500L else 350L)
-        if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url) return@LaunchedEffect
+        if (player.currentMediaItem?.localConfiguration?.uri?.toString() != url ||
+            latestSubtitleUrls == appliedSubtitleUrls
+        ) return@LaunchedEffect
         val currentPosition = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
             currentPositionMs = player.currentPosition,
             lastKnownPositionMs = positionMs,
@@ -958,6 +960,10 @@ fun TvPlayerScreen(
         // Apply the text-track lock before replacing the playing item so
         // Media3 cannot race the readiness probe to the external URL.
         val smartSubsKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(liveSubtitles)
+        com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent(
+            "TV", "SUBTITLE_MEDIA_UPDATE",
+            "rebuild=${smartSubsKeys != appliedSmartSubsSourceKeys} firstFrame=$hasRenderedFirstFrame tracks=${liveSubtitles.size}",
+        )
         if (smartSubsKeys != appliedSmartSubsSourceKeys) {
             val resumePlaying = player.playWhenReady
             player.setMediaItem(updatedMediaItem, currentPosition)
@@ -969,7 +975,7 @@ fun TvPlayerScreen(
             )
         } else {
             player.replaceMediaItem(currentIndex, updatedMediaItem)
-            player.seekTo(currentIndex, currentPosition)
+            // Do not flush the decoder with a redundant seek after replacement.
         }
         appliedSmartSubsSourceKeys = smartSubsKeys
         appliedSubtitleUrls = latestSubtitleUrls
@@ -1062,7 +1068,16 @@ fun TvPlayerScreen(
                 if (PerformanceDiagnostics.isCollecting() && !firstFrameLogged) {
                     firstFrameLogged = true
                     log("FIRST_FRAME", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms")
+                } else if (firstFrameLogged) {
+                    log("VIDEO_FIRST_FRAME_AGAIN", "elapsed=${(System.nanoTime() - startedNs) / 1_000_000L}ms positionMs=${player.currentPosition}")
                 }
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                log("POSITION_DISCONTINUITY", "reason=$reason fromMs=${oldPosition.positionMs} toMs=${newPosition.positionMs}")
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (PerformanceDiagnostics.isCollecting()) {
@@ -2004,14 +2019,14 @@ fun TvPlayerScreen(
                     isFocusable = false
                     isFocusableInTouchMode = false
                     keepScreenOn = true
-                    bindPlayer(exoPlayer)
+                    bindPlayer(exoPlayer, "$mediaKey:${activeSource.url}")
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     this.resizeMode = resizeMode
                     applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction)
                 }
             },
             update = {
-                it.bindPlayer(exoPlayer)
+                it.bindPlayer(exoPlayer, "$mediaKey:${activeSource.url}")
                 it.isFocusable = false
                 it.isFocusableInTouchMode = false
                 it.keepScreenOn = true
