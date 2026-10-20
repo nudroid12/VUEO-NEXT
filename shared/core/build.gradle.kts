@@ -19,6 +19,7 @@ android {
 dependencies {
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.media3:media3-datasource:1.11.0")
+    implementation("androidx.media3:media3-extractor:1.11.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.4.0")

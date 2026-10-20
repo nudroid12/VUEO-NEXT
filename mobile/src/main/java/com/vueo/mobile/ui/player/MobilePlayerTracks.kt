@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.player.LiveSmartSubs
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -853,6 +854,10 @@ internal fun applyTrackChoice(
     choice: PlayerTrackChoice,
 ) {
     val trackOverride = choice.override ?: return
+    if (trackType == C.TRACK_TYPE_TEXT) {
+        if (LiveSmartSubs.select(player, trackOverride)) return
+        LiveSmartSubs.clear(player)
+    }
     player.trackSelectionParameters =
         player
             .trackSelectionParameters
@@ -875,6 +880,7 @@ internal fun clearTrackOverride(
     trackType: Int,
     disable: Boolean,
 ) {
+    if (trackType == C.TRACK_TYPE_TEXT) LiveSmartSubs.clear(player)
     player.trackSelectionParameters =
         player
             .trackSelectionParameters

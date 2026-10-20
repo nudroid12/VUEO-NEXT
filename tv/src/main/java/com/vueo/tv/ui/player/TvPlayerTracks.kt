@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.player.LiveSmartSubs
 import android.content.Context
 import android.os.Looper
 import android.text.Layout
@@ -209,6 +210,10 @@ internal fun tvApplyTrackChoice(
     choice: TvPlayerTrackChoice,
 ) {
     val trackOverride = choice.override ?: return
+    if (trackType == C.TRACK_TYPE_TEXT) {
+        if (LiveSmartSubs.select(player, trackOverride)) return
+        LiveSmartSubs.clear(player)
+    }
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .setTrackTypeDisabled(trackType, false)
         .clearOverridesOfType(trackType)
@@ -221,6 +226,7 @@ internal fun tvClearTrackOverride(
     trackType: Int,
     disable: Boolean,
 ) {
+    if (trackType == C.TRACK_TYPE_TEXT) LiveSmartSubs.clear(player)
     player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
         .clearOverridesOfType(trackType)
         .setTrackTypeDisabled(trackType, disable)

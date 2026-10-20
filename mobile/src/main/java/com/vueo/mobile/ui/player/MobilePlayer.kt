@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.player.LiveSmartSubs
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
@@ -1054,6 +1055,12 @@ internal fun PlayerScreen(
             }
     }
 
+    val liveSmartSubs = remember(player, mediaKey, source.url) {
+        LiveSmartSubs(player, "Mobile") { latestSubtitleDelayMs.value.toLong() }
+    }
+    DisposableEffect(liveSmartSubs) { onDispose { liveSmartSubs.close() } }
+    LaunchedEffect(liveSmartSubs, subtitles) { liveSmartSubs.update(subtitles) }
+
     fun enqueuePlaybackProgress(
         positionMs: Long,
         durationMs: Long,
@@ -1254,11 +1261,8 @@ internal fun PlayerScreen(
 
     var appliedSubtitleUrls by remember(player) {
         mutableStateOf(
-            PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
+            PlayerSubtitleUpdatePolicy.sourceKeys(LiveSmartSubs.videoSubtitles(subtitles))
         )
-    }
-    var appliedSmartSubsSourceKeys by remember(player) {
-        mutableStateOf(PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(subtitles))
     }
     var subtitleTrackRefreshInProgress by remember(player) {
         mutableStateOf(false)
@@ -1282,7 +1286,7 @@ internal fun PlayerScreen(
                 PlayerTrackPolicy::externalSubtitleSelectionId
             )
         val availablePlayerChoices = playerTrackChoices(
-            tracks = player.currentTracks,
+            tracks = LiveSmartSubs.mergedTracks(player),
             trackType = C.TRACK_TYPE_TEXT,
             externalSubtitles = discoveredBySelectionId,
         )
@@ -1297,7 +1301,7 @@ internal fun PlayerScreen(
         subtitles,
     ) {
         val latestSubtitleUrls =
-            PlayerSubtitleUpdatePolicy.sourceKeys(subtitles)
+            PlayerSubtitleUpdatePolicy.sourceKeys(LiveSmartSubs.videoSubtitles(subtitles))
 
         if (latestSubtitleUrls != appliedSubtitleUrls) {
             // Prefetch subtitle results may arrive while the next episode decoder
@@ -1312,11 +1316,6 @@ internal fun PlayerScreen(
             if (player.currentMediaItem?.localConfiguration?.uri?.toString() != source.url ||
                 latestSubtitleUrls == appliedSubtitleUrls
             ) return@LaunchedEffect
-            val positionMs = PlayerSubtitleUpdatePolicy.stableResumePositionMs(
-                currentPositionMs = player.currentPosition,
-                lastKnownPositionMs = lastValidPlaybackPositionMs,
-            )
-
             audioPreferenceRestored = false
             subtitlePreferenceRestored = false
 
@@ -1379,36 +1378,15 @@ internal fun PlayerScreen(
                     .buildUpon()
                     .setTrackTypeDisabled(
                         C.TRACK_TYPE_TEXT,
-                        subtitlesDisabled ||
+                        subtitlesDisabled || LiveSmartSubs.ownsCues(player) ||
                             pendingSubtitleSelectionId != null,
                     )
                     .build()
-            val smartSubsKeys = PlayerSubtitleUpdatePolicy.smartSubsSourceKeys(subtitles)
+            // AI captions are owned by LiveSmartSubs and never reach this path.
+            player.replaceMediaItem(currentIndex, updatedMediaItem)
             com.vueo.shared.core.diagnostics.RuntimeDiagnostics.recordPlayerEvent(
-                "Mobile", "SUBTITLE_MEDIA_UPDATE",
-                "rebuild=${smartSubsKeys != appliedSmartSubsSourceKeys} firstFrame=$hasRenderedFirstFrame tracks=${subtitles.size}",
+                "Mobile", "SUBTITLE_MEDIA_UPDATE", "rebuild=false aiOverlay=true",
             )
-            if (smartSubsKeys != appliedSmartSubsSourceKeys) {
-                // replaceMediaItem can update only the primary source and retain
-                // the old subtitle children. Rebuild for generated-track changes.
-                val resumePlaying = player.playWhenReady
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                    .build()
-                player.setMediaItem(updatedMediaItem, positionMs)
-                player.prepare()
-                player.playWhenReady = resumePlaying && lifecycleState.foreground
-                com.vueo.shared.core.player.SubtitleFlowDiagnostics.event(
-                    "Mobile", source.url, "SMARTSUBS_SOURCES_REBUILT",
-                    "tracks=${smartSubsKeys.size} positionMs=$positionMs",
-                )
-            } else {
-                player.replaceMediaItem(currentIndex, updatedMediaItem)
-                // replaceMediaItem preserves the current playback position.
-                // Seeking again flushes the decoder and triggers another buffer.
-            }
-            appliedSmartSubsSourceKeys = smartSubsKeys
             appliedSubtitleUrls = latestSubtitleUrls
 
             // ExoPlayer can publish an empty/intermediate track snapshot when
@@ -1426,7 +1404,7 @@ internal fun PlayerScreen(
                     latestSubtitles.value
                         .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
                 val refreshedTextTracks = playerTrackChoices(
-                    tracks = player.currentTracks,
+                    tracks = LiveSmartSubs.mergedTracks(player),
                     trackType = C.TRACK_TYPE_TEXT,
                     externalSubtitles = latestExternalSubtitles,
                 )
@@ -1461,7 +1439,7 @@ internal fun PlayerScreen(
                 latestSubtitles.value
                     .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
             val finalTextTracks = playerTrackChoices(
-                tracks = player.currentTracks,
+                tracks = LiveSmartSubs.mergedTracks(player),
                 trackType = C.TRACK_TYPE_TEXT,
                 externalSubtitles = finalExternalSubtitles,
             )
@@ -1631,15 +1609,16 @@ internal fun PlayerScreen(
         tracks: Tracks = player.currentTracks,
         acceptEmptyTextTracks: Boolean = !subtitleTrackRefreshInProgress,
     ) {
+        val combinedTracks = LiveSmartSubs.mergedTracks(player, tracks)
         val externalSubtitles =
             latestSubtitles.value
                 .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
         audioTracks = playerTrackChoices(
-            tracks = tracks,
+            tracks = combinedTracks,
             trackType = C.TRACK_TYPE_AUDIO,
         )
         val refreshedTextTracks = playerTrackChoices(
-            tracks = tracks,
+            tracks = combinedTracks,
             trackType = C.TRACK_TYPE_TEXT,
             externalSubtitles = externalSubtitles,
         )
@@ -1821,7 +1800,7 @@ internal fun PlayerScreen(
                             val latestExternalSubtitles = latestSubtitles.value
                                 .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
                             latestChoice = playerTrackChoices(
-                                tracks = player.currentTracks,
+                                tracks = LiveSmartSubs.mergedTracks(player),
                                 trackType = C.TRACK_TYPE_TEXT,
                                 externalSubtitles = latestExternalSubtitles,
                             ).firstOrNull {
@@ -2121,6 +2100,7 @@ internal fun PlayerScreen(
 
     DisposableEffect(
         player,
+        liveSmartSubs,
         mediaKey,
         source.url,
     ) {
@@ -2185,7 +2165,7 @@ internal fun PlayerScreen(
                         if (subtitleTrackRefreshInProgress) {
                             subtitleTrackRefreshInProgress = false
                             refreshTrackChoices(
-                                tracks = player.currentTracks,
+                                tracks = LiveSmartSubs.mergedTracks(player),
                                 acceptEmptyTextTracks = true,
                             )
                         }
@@ -2261,10 +2241,16 @@ internal fun PlayerScreen(
                 }
             }
 
+        val overlayTracksChanged: (Boolean) -> Unit = { choicesChanged ->
+            if (choicesChanged) subtitlePreferenceRestored = false
+            refreshTrackChoices()
+        }
+        liveSmartSubs.addTrackListener(overlayTracksChanged)
         player.addListener(listener)
         refreshTrackChoices()
 
         onDispose {
+            liveSmartSubs.removeTrackListener(overlayTracksChanged)
             player.removeListener(listener)
         }
     }
@@ -2845,7 +2831,7 @@ internal fun PlayerScreen(
                     val latestExternalSubtitles = latestSubtitles.value
                         .associateBy(PlayerTrackPolicy::externalSubtitleSelectionId)
                     latestChoice = playerTrackChoices(
-                        tracks = player.currentTracks,
+                        tracks = LiveSmartSubs.mergedTracks(player),
                         trackType = C.TRACK_TYPE_TEXT,
                         externalSubtitles = latestExternalSubtitles,
                     ).firstOrNull {
@@ -4173,7 +4159,7 @@ private suspend fun applyAndConfirmMobileSubtitleChoice(
         stillRequested()
     ) {
         val currentChoice = playerTrackChoices(
-            tracks = player.currentTracks,
+            tracks = LiveSmartSubs.mergedTracks(player),
             trackType = C.TRACK_TYPE_TEXT,
             externalSubtitles = externalSubtitles(),
         ).firstOrNull { it.selectionId == selectionId }
@@ -4196,7 +4182,7 @@ private suspend fun applyAndConfirmMobileSubtitleChoice(
     }
 
     return playerTrackChoices(
-        tracks = player.currentTracks,
+        tracks = LiveSmartSubs.mergedTracks(player),
         trackType = C.TRACK_TYPE_TEXT,
         externalSubtitles = externalSubtitles(),
     ).any { it.selectionId == selectionId && it.selected }

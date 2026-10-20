@@ -1,5 +1,6 @@
 package com.vueo.tv.player
 
+import com.vueo.shared.core.player.LiveSmartSubs
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import android.content.Context
 import android.graphics.Paint
@@ -22,6 +23,8 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     val managedSubtitleView = SubtitleView(context)
     private val commentarySubtitleView = SubtitleView(context)
     private var boundPlayer: Player? = null
+    private var smartSubsBinding: LiveSmartSubs? = null
+    private val smartSubsCues: (List<Cue>) -> Unit = { displayCues(it) }
     private var boundContentKey: String? = null
     private var flowObserver: TvSubtitleFlowObserver? = null
     private var listenerRegistered = false
@@ -39,7 +42,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
 
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
-            displayCues(cueGroup.cues)
+            if (boundPlayer?.let(LiveSmartSubs::ownsCues) != true) displayCues(cueGroup.cues)
         }
     }
 
@@ -122,10 +125,14 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         listenerRegistered = true
         flowObserver = (current as? androidx.media3.exoplayer.ExoPlayer)?.let { TvSubtitleFlowObserver(it) }
         // Also normalize the cached group when attaching or switching sources mid-cue.
-        displayCues(current.currentCues.cues)
+        smartSubsBinding = LiveSmartSubs.get(current)
+        smartSubsBinding?.addCueListener(smartSubsCues)
+        displayCues(LiveSmartSubs.cues(current))
     }
 
     private fun unregisterListener() {
+        smartSubsBinding?.removeCueListener(smartSubsCues)
+        smartSubsBinding = null
         if (listenerRegistered) boundPlayer?.removeListener(captionListener)
         flowObserver?.close()
         flowObserver = null

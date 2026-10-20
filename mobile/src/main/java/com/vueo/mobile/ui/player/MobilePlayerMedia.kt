@@ -401,6 +401,7 @@ internal fun buildPlayerMediaItem(
 
     val subtitleConfigurations =
         orderedSubtitles
+            .filterNot(com.vueo.shared.core.player.LiveSmartSubs::isSmart)
             .mapIndexed {
                 index,
                 subtitle ->
