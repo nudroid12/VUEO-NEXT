@@ -161,7 +161,6 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ForwardingRenderer
 import androidx.media3.exoplayer.Renderer
@@ -307,13 +306,10 @@ private fun withSubtitleAlpha(colour: Int, opacityPercent: Int): Int {
 )
 internal class VueoSubtitleOffsetRenderersFactory(
     context: Context,
+    decoderSession: com.vueo.shared.core.player.VideoDecoderSession,
     internal val subtitleDelayUsProvider: () -> Long,
     internal val shouldNormalizeCuePositionProvider: () -> Boolean,
-) : DefaultRenderersFactory(context) {
-    init {
-        // Some devices advertise HEVC support but reject a particular stream.
-        setEnableDecoderFallback(true)
-    }
+) : com.vueo.shared.core.player.CompatibleVideoRenderersFactory(context, decoderSession) {
 
     override fun buildTextRenderers(
         context: Context,

@@ -393,11 +393,15 @@ fun TvPlayerScreen(
             .setUserAgent("VUEO-TV")
             .setAllowCrossProtocolRedirects(true)
     }
+    val videoDecoderSession = remember(bundle.videoId) {
+        com.vueo.shared.core.player.VideoDecoderSession("TV").apply { beginSource(activeSource.url) }
+    }
     val player = remember(bundle.videoId) {
         ExoPlayer.Builder(
             context,
             TvSubtitleOffsetRenderersFactory(
                 context = context,
+                decoderSession = videoDecoderSession,
                 subtitleDelayUsProvider = {
                     latestSubtitleDelayMs.value.toLong() * 1_000L
                 },
@@ -835,6 +839,7 @@ fun TvPlayerScreen(
 
     LaunchedEffect(activeSource.url, activeSource.headers, bundle.videoId) {
         val url = activeSource.url ?: return@LaunchedEffect
+        videoDecoderSession.beginSource(url)
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
@@ -1083,7 +1088,7 @@ fun TvPlayerScreen(
     }
 
     val decoderRecovery = remember(player, activeSource.url) {
-        com.vueo.shared.core.player.VideoDecoderRecovery()
+        com.vueo.shared.core.player.VideoDecoderRecovery(videoDecoderSession)
     }
 
     DisposableEffect(player, liveSmartSubs, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -1131,7 +1136,7 @@ fun TvPlayerScreen(
                 val failedFormat = (error as? androidx.media3.exoplayer.ExoPlaybackException)
                     ?.rendererFormat
                 if (playerForeground && !exitingPlayer &&
-                    decoderRecovery.tryRecover(player, error, failedFormat, "TV")
+                    decoderRecovery.tryRecover(player, error, failedFormat, "TV", positionMs)
                 ) {
                     playbackError = null
                     isBuffering = true
@@ -2182,6 +2187,9 @@ fun TvPlayerScreen(
                 player.volume = 0f
                 isBuffering = false
                 retryGeneration += 1
+                decoderRecovery.reset()
+                player.stop()
+                player.seekTo(resumeTargetMs)
                 player.prepare()
                 player.play()
                 requestControlFocus(progressRequester)

@@ -8,10 +8,15 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 
-/** One bounded recovery session per player/source. Never retries the failed video configuration. */
+/** Bounded codec then track recovery per source; failed decoder/configuration pairs stay excluded. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class VideoDecoderRecovery {
-    private val policy = VideoFallbackPolicy()
+class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
+    private var policy = VideoFallbackPolicy()
+
+    fun reset() {
+        policy = VideoFallbackPolicy()
+        decoderSession.reset()
+    }
 
     private fun isVideoDecoderError(error: PlaybackException, format: Format?): Boolean =
         format?.sampleMimeType?.startsWith("video/") == true &&
@@ -28,9 +33,32 @@ class VideoDecoderRecovery {
 
     private data class Candidate(val group: Tracks.Group, val index: Int, val format: Format)
 
-    fun tryRecover(player: Player, error: PlaybackException, failedFormat: Format?, platform: String): Boolean {
+    fun tryRecover(player: Player, error: PlaybackException, failedFormat: Format?, platform: String, resumePositionMs: Long = 0L): Boolean {
         if (!isVideoDecoderError(error, failedFormat)) return false
         val failed = failedFormat ?: return false
+        val codecName = generateSequence(error as Throwable) { it.cause }
+            .take(8)
+            .filterIsInstance<androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException>()
+            .firstOrNull()?.codecInfo?.name
+        // Media3 already exhausts initialization fallback. Manual recovery is for later failures.
+        val decoder = if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
+            null
+        } else {
+            decoderSession.next(failed, codecName)
+        }
+        if (decoder != null) {
+            val position = player.currentPosition.coerceAtLeast(resumePositionMs).coerceAtLeast(0L)
+            val shouldPlay = player.playWhenReady
+            // stop() releases the failed renderer/codec; prepare() rebuilds its candidate list.
+            // The MediaItem, request headers and track selection parameters are retained.
+            player.stop()
+            player.seekTo(position)
+            player.prepare()
+            player.playWhenReady = shouldPlay
+            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_RECOVERY",
+                "route=codec next=$decoder positionMs=$position")
+            return true
+        }
         val candidates = player.currentTracks.groups
             .filter { it.type == C.TRACK_TYPE_VIDEO }
             .flatMap { group ->
@@ -42,10 +70,10 @@ class VideoDecoderRecovery {
         val nextIndex = policy.next(snapshot(failed), candidates.map { snapshot(it.format) })
         val next = nextIndex?.let(candidates::get)
         if (next == null) {
-            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_EXHAUSTED", "attempts=${policy.attempts} alternatives=${candidates.size}")
+            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_EXHAUSTED", "trackAttempts=${policy.attempts} alternatives=${candidates.size}")
             return false
         }
-        val position = player.currentPosition.coerceAtLeast(0L)
+        val position = player.currentPosition.coerceAtLeast(resumePositionMs).coerceAtLeast(0L)
         val shouldPlay = player.playWhenReady
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
@@ -67,6 +95,7 @@ class VideoDecoderRecovery {
         val codec = when (format?.sampleMimeType) {
             "video/hevc" -> "HEVC/H.265"
             "video/avc" -> "H.264"
+            "video/dolby-vision" -> "Dolby Vision"
             else -> "this video format"
         }
         return "This device could not decode $codec from this source. No compatible video fallback succeeded. Try another source."

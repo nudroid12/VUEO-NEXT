@@ -13,7 +13,6 @@ import androidx.media3.exoplayer.Renderer
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.text.TextOutput
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import com.vueo.shared.core.language.LanguagePolicy
 import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.player.PlayerTrackPolicy
@@ -279,12 +278,9 @@ private fun tvBuildAudioSelectionId(
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class TvSubtitleOffsetRenderersFactory(
     context: Context,
+    decoderSession: com.vueo.shared.core.player.VideoDecoderSession,
     private val subtitleDelayUsProvider: () -> Long,
-) : DefaultRenderersFactory(context) {
-    init {
-        // Some devices advertise HEVC support but reject a particular stream.
-        setEnableDecoderFallback(true)
-    }
+) : com.vueo.shared.core.player.CompatibleVideoRenderersFactory(context, decoderSession) {
 
     override fun buildTextRenderers(
         context: Context,

@@ -921,6 +921,10 @@ internal fun PlayerScreen(
     }
     var playerForeground by remember(lifecycleState) { mutableStateOf(lifecycleState.foreground) }
 
+    val videoDecoderSession = remember(source.url, source.headers, mediaKey, initialPositionMs) {
+        com.vueo.shared.core.player.VideoDecoderSession("Mobile").apply { beginSource(source.url) }
+    }
+
     val player = remember(
         source.url,
         source.headers,
@@ -951,6 +955,7 @@ internal fun PlayerScreen(
             context,
             VueoSubtitleOffsetRenderersFactory(
                 context = context,
+                decoderSession = videoDecoderSession,
                 subtitleDelayUsProvider = {
                     latestSubtitleDelayMs.value.toLong() * 1_000L
                 },
@@ -2095,7 +2100,7 @@ internal fun PlayerScreen(
     }
 
     val decoderRecovery = remember(player, source.url) {
-        com.vueo.shared.core.player.VideoDecoderRecovery()
+        com.vueo.shared.core.player.VideoDecoderRecovery(videoDecoderSession)
     }
 
     DisposableEffect(
@@ -2119,7 +2124,7 @@ internal fun PlayerScreen(
                     val failedFormat = (error as? androidx.media3.exoplayer.ExoPlaybackException)
                         ?.rendererFormat
                     if (lifecycleState.foreground && !playerExitRequested &&
-                        decoderRecovery.tryRecover(player, error, failedFormat, "Mobile")
+                        decoderRecovery.tryRecover(player, error, failedFormat, "Mobile", currentPositionMs)
                     ) {
                         playbackError = null
                         isBuffering = true
@@ -3893,6 +3898,10 @@ internal fun PlayerScreen(
                             startupAudioMuted.value = true
                             player.volume = 0f
                             retryGeneration++
+                            decoderRecovery.reset()
+                            val retryPosition = player.currentPosition.coerceAtLeast(currentPositionMs).coerceAtLeast(0L)
+                            player.stop()
+                            player.seekTo(retryPosition)
                             player.prepare()
                             requestForegroundPlayback()
                         },
