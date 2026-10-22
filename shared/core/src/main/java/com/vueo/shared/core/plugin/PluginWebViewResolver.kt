@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -87,15 +88,32 @@ internal class PluginWebViewResolver(
             JSONObject().apply {
                 if (request.sessionDiagnostics) {
                     put("frameInteraction", JSONObject().apply {
-                        put("version", 1)
+                        put("version", 2)
                         put("hookSupported", session.frameHookSupported)
                         synchronized(session.frameEvents) {
+                            put("createdFrames", session.frameEvents.values.count { "created" in it })
+                            put("documents", JSONObject().apply {
+                                session.frameStages.values.toSet().forEach { stage ->
+                                    val rows = session.frameEvents.filterKeys { session.frameStages[it] == stage }.values
+                                    put(stage, JSONObject().apply {
+                                        put("created", rows.count { "created" in it })
+                                        put("ready", rows.count { "ready" in it })
+                                        put("loaded", rows.count { "loaded" in it })
+                                        put("unloaded", rows.count { "unloaded" in it })
+                                        put("scriptLoads", rows.sumOf { events -> events.count { it.startsWith("script-loaded-") } })
+                                        put("scriptErrors", rows.sumOf { events -> events.count { it.startsWith("script-error-") } })
+                                        put("runtimeErrors", rows.sumOf { events -> events.count { it.startsWith("runtime-error-") } })
+                                    })
+                                }
+                            })
+                            put("progress", JSONArray(request.frameProgressEvents.indices.map { index -> session.frameEvents.values.count { "progress-$index" in it } }))
                             put("readyFrames", session.frameEvents.values.count { "ready" in it })
                             put("playClicks", session.frameEvents.values.sumOf { events -> events.count { it.startsWith("play-click-") } })
                             put("playerFrames", session.frameEvents.values.count { "player-frame" in it })
                         }
                         synchronized(session.stageRequests) { put("requests", JSONObject(session.stageRequests.toMap())) }
                         synchronized(session.stageErrors) { put("errors", JSONObject(session.stageErrors.toMap())) }
+                        synchronized(session.consoleSignals) { put("consoleSignals", JSONObject(session.consoleSignals.toMap())) }
                     })
                     put("sessionHandoffVersion", 1)
                     put("networkHandoffVersion", 1)
@@ -390,12 +408,17 @@ internal class PluginWebViewResolver(
                             val event = JSONObject(clean.substringAfter('|'))
                             val id = event.optString("id").take(64)
                             val kind = event.optString("event")
-                            if (!Regex("[A-Za-z0-9_-]{1,64}").matches(id) || kind !in setOf("ready", "play-click", "player-frame")) return@runCatching
+                            if (!Regex("[A-Za-z0-9_-]{1,64}").matches(id) || (kind !in setOf("created", "ready", "loaded", "unloaded", "play-click", "player-frame", "script-error", "runtime-error", "script-loaded") && !Regex("progress-[0-7]").matches(kind))) return@runCatching
                             synchronized(session.frameEvents) {
                                 if (id !in session.frameEvents && session.frameEvents.size >= 64) return@runCatching
+                                val stage = event.optString("stage").takeIf { it in request.stagePathPrefixes.keys } ?: "frame"
+                                session.frameStages.putIfAbsent(id, stage)
                                 val events = session.frameEvents.getOrPut(id) { linkedSetOf() }
                                 if (kind == "play-click") {
                                     if (events.count { it.startsWith("play-click-") } < 2) events.add("play-click-${events.size}")
+                                } else if (kind == "script-error" || kind == "runtime-error" || kind == "script-loaded") {
+                                    val count = events.count { it.startsWith("$kind-") }
+                                    if (count < (if (kind == "script-loaded") 32 else 8)) events.add("$kind-$count")
                                 } else events.add(kind)
                             }
                         }
@@ -938,6 +961,14 @@ internal class PluginWebViewResolver(
                 }
             }
 
+            fun stagesForUrl(raw: String): Set<String> = runCatching {
+                val uri = URI(raw)
+                val path = uri.path.orEmpty()
+                val keys = uri.rawQuery.orEmpty().split('&').map { it.substringBefore('=') }.toSet()
+                request.stagePathPrefixes.filterValues { path.startsWith(it) }.keys +
+                    request.stageQueryKeys.filterValues { it in keys }.keys
+            }.getOrDefault(emptySet())
+
             fun captureStream(requestInfo: WebResourceRequest?) {
                 val requestUrl = requestInfo?.url?.toString()?.trim().orEmpty()
                 if (!request.isStreamUrl(requestUrl)) return
@@ -992,7 +1023,19 @@ internal class PluginWebViewResolver(
                     URI(request.url).host.orEmpty().lowercase()
                 }.getOrDefault("")
 
-                webView.webChromeClient = WebChromeClient()
+                webView.webChromeClient = object : WebChromeClient() {
+                    override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                        if (request.framePlaySelectors.isNotEmpty()) {
+                            val text = message?.message().orEmpty().lowercase()
+                            request.frameConsoleMatchers.forEach { (label, needle) ->
+                                if (text.take(4096).contains(needle.lowercase())) synchronized(session.consoleSignals) {
+                                    session.consoleSignals[label] = ((session.consoleSignals[label] ?: 0) + 1).coerceAtMost(10000)
+                                }
+                            }
+                        }
+                        return super.onConsoleMessage(message)
+                    }
+                }
                 webView.webViewClient = object : WebViewClient() {
                     override fun onRenderProcessGone(
                         view: WebView?,
@@ -1038,9 +1081,8 @@ internal class PluginWebViewResolver(
                     ) {
                         if (request.sessionDiagnostics) {
                             val status = errorResponse?.statusCode?.coerceIn(100, 599) ?: 0
-                            val path = runCatching { URI(webRequest?.url?.toString().orEmpty()).path.orEmpty() }.getOrDefault("")
-                            request.stagePathPrefixes.forEach { (stage, prefix) ->
-                                if (path.startsWith(prefix)) synchronized(session.stageErrors) { session.stageErrors[stage] = status }
+                            stagesForUrl(webRequest?.url?.toString().orEmpty()).forEach { stage ->
+                                synchronized(session.stageErrors) { session.stageErrors[stage] = status }
                             }
                             if (webRequest?.isForMainFrame == true) session.pageHttpStatus = status
                             if (request.isStreamUrl(webRequest?.url?.toString())) session.mediaHttpStatus = status
@@ -1065,9 +1107,8 @@ internal class PluginWebViewResolver(
                     ): WebResourceResponse? {
                         val requestUrl = webRequest?.url?.toString().orEmpty()
                         if (request.framePlaySelectors.isNotEmpty()) {
-                            val path = runCatching { URI(requestUrl).path.orEmpty() }.getOrDefault("")
-                            request.stagePathPrefixes.forEach { (stage, prefix) ->
-                                if (path.startsWith(prefix)) synchronized(session.stageRequests) {
+                            stagesForUrl(requestUrl).forEach { stage ->
+                                synchronized(session.stageRequests) {
                                     session.stageRequests[stage] = ((session.stageRequests[stage] ?: 0) + 1).coerceAtMost(10000)
                                 }
                             }
@@ -1177,6 +1218,8 @@ internal class PluginWebViewResolver(
                                 val script = appContext.assets.open("provider_frame_interaction.js").bufferedReader().use { it.readText() }
                                     .replace("__VUEO_FRAME_PLAY_SELECTORS__", JSONArray(request.framePlaySelectors).toString())
                                     .replace("__VUEO_PLAYER_FRAME_SELECTORS__", JSONArray(request.playerFrameSelectors).toString())
+                                    .replace("__VUEO_FRAME_STAGE_PATHS__", JSONObject(request.stagePathPrefixes).toString())
+                                    .replace("__VUEO_FRAME_PROGRESS_EVENTS__", JSONArray(request.frameProgressEvents).toString())
                                 frameStartScript = WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
                                 session.frameHookSupported = true
                             }
@@ -1252,6 +1295,8 @@ internal class PluginWebViewResolver(
         @Volatile var blobObserved: Boolean = false
         @Volatile var videoState: JSONObject = JSONObject()
         @Volatile var frameHookSupported: Boolean = false
+        val frameStages = linkedMapOf<String, String>() // Guarded by frameEvents.
+        val consoleSignals = Collections.synchronizedMap(linkedMapOf<String, Int>())
         val frameEvents = Collections.synchronizedMap(linkedMapOf<String, MutableSet<String>>())
         val stageRequests = Collections.synchronizedMap(linkedMapOf<String, Int>())
         val stageErrors = Collections.synchronizedMap(linkedMapOf<String, Int>())
@@ -1296,6 +1341,9 @@ internal class PluginWebViewResolver(
         val framePlaySelectors: List<String>,
         val playerFrameSelectors: List<String>,
         val stagePathPrefixes: Map<String, String>,
+        val stageQueryKeys: Map<String, String>,
+        val frameProgressEvents: List<String>,
+        val frameConsoleMatchers: Map<String, String>,
     ) {
         val sessionDiagnostics: Boolean get() = waitForMediaReady || framePlaySelectors.isNotEmpty()
 
@@ -1393,6 +1441,16 @@ internal class PluginWebViewResolver(
                     stagePathPrefixes = json.optJSONObject("stagePathPrefixes")?.let { stages ->
                         stages.keys().asSequence().take(8).filter { Regex("[a-z0-9_-]{1,24}").matches(it) }
                             .mapNotNull { key -> stages.optString(key).takeIf { value -> value.startsWith("/") && value.length <= 256 && !value.contains('?') && !value.contains('#') }?.let { key to it } }.toMap()
+                    }.orEmpty(),
+                    stageQueryKeys = json.optJSONObject("stageQueryKeys")?.let { entries ->
+                        entries.keys().asSequence().take(8).filter { Regex("[a-z0-9_-]{1,24}").matches(it) }
+                            .mapNotNull { key -> entries.optString(key).takeIf { Regex("[A-Za-z][A-Za-z0-9_-]{0,63}").matches(it) }?.let { key to it } }.toMap()
+                    }.orEmpty(),
+                    frameProgressEvents = json.optJSONArray("frameProgressEvents").toVueoStringList()
+                        .filter { Regex("[A-Za-z][A-Za-z0-9:_-]{0,63}").matches(it) }.distinct().take(8),
+                    frameConsoleMatchers = json.optJSONObject("frameConsoleMatchers")?.let { entries ->
+                        entries.keys().asSequence().take(8).filter { Regex("[a-z0-9_-]{1,24}").matches(it) }
+                            .mapNotNull { key -> entries.optString(key).takeIf { it.length in 4..128 }?.let { key to it } }.toMap()
                     }.orEmpty(),
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
                     waitForMediaReady = json.optBoolean("waitForMediaReady", false),
