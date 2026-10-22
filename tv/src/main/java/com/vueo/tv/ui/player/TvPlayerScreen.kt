@@ -10,11 +10,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.SystemClock
 import android.view.KeyEvent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.vueo.shared.core.player.ExternalVlcActivity
-import com.vueo.shared.core.player.SourcePlaybackTarget
-import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -398,15 +393,11 @@ fun TvPlayerScreen(
             .setUserAgent("VUEO-TV")
             .setAllowCrossProtocolRedirects(true)
     }
-    val videoDecoderSession = remember(bundle.videoId) {
-        com.vueo.shared.core.player.VideoDecoderSession("TV").apply { beginSource(activeSource.url) }
-    }
     val player = remember(bundle.videoId) {
         ExoPlayer.Builder(
             context,
             TvSubtitleOffsetRenderersFactory(
                 context = context,
-                decoderSession = videoDecoderSession,
                 subtitleDelayUsProvider = {
                     latestSubtitleDelayMs.value.toLong() * 1_000L
                 },
@@ -844,7 +835,6 @@ fun TvPlayerScreen(
 
     LaunchedEffect(activeSource.url, activeSource.headers, bundle.videoId) {
         val url = activeSource.url ?: return@LaunchedEffect
-        videoDecoderSession.beginSource(url)
         sourceRecoverySession.begin(activeSource.toSourceCandidateForPlayer())
         recoveryInProgress = false
         hasRenderedFirstFrame = false
@@ -1093,7 +1083,7 @@ fun TvPlayerScreen(
     }
 
     val decoderRecovery = remember(player, activeSource.url) {
-        com.vueo.shared.core.player.VideoDecoderRecovery(videoDecoderSession)
+        com.vueo.shared.core.player.VideoDecoderRecovery()
     }
 
     DisposableEffect(player, liveSmartSubs, activeSource.url, settings.autoSourceRecoveryEnabled()) {
@@ -2095,30 +2085,9 @@ fun TvPlayerScreen(
         val watchedEpisodeKeys = remember(episodeProgress) {
             episodeProgress.filterValues { it.completed }.keys
         }
-        var playbackTarget by remember(activePanel, bundle.videoId) { mutableStateOf(SourcePlaybackTarget.DEFAULT) }
-        val softwareTestLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val returnedPosition = result.data?.getLongExtra(SoftwarePlaybackActivity.POSITION, -1L) ?: -1L
-            if (returnedPosition >= 0L) {
-                player.seekTo(returnedPosition)
-                positionMs = returnedPosition
-                resumeTargetMs = returnedPosition
-            }
-            player.pause()
-            playbackError = null
-            player.prepare()
-            closePanel()
-            controlsVisible = true
-        }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
-            TvPlayerPanel.SOURCES -> listOf(
-                TvPlayerOption(
-                    key = "vueo:playback-target",
-                    title = "Playback: ${playbackTarget.label}",
-                    meta = "Select to change engine, then choose a source",
-                    selected = playbackTarget != SourcePlaybackTarget.DEFAULT,
-                ),
-            ) + playableSources.map { item ->
+            TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
                     title = PlayerSourceDisplay.groupTitle(item),
@@ -2279,25 +2248,8 @@ fun TvPlayerScreen(
                 when (activePanel) {
                     TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
                     TvPlayerPanel.SOURCES -> {
-                        if (option.key == "vueo:playback-target") {
-                            playbackTarget = playbackTarget.next()
-                        }
                         val target = playableSources.firstOrNull { it.url == option.key }
-                        if (target != null && playbackTarget != SourcePlaybackTarget.DEFAULT) {
-                            target.url?.let { url ->
-                                val savedPosition = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
-                                saveProgress()
-                                player.pause()
-                                player.stop()
-                                closePanel()
-                                val targetIntent = if (playbackTarget == SourcePlaybackTarget.VLC) {
-                                    ExternalVlcActivity.intent(context, url, savedPosition, "TV")
-                                } else {
-                                    SoftwarePlaybackActivity.intent(context, url, target.headers, savedPosition, "TV", media.originalLanguage)
-                                }
-                                softwareTestLauncher.launch(targetIntent)
-                            }
-                        } else if (target != null) {
+                        if (target != null) {
                             if (target.url != activeSource.url) {
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
                                 saveProgress()

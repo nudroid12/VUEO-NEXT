@@ -306,10 +306,10 @@ private fun withSubtitleAlpha(colour: Int, opacityPercent: Int): Int {
 )
 internal class VueoSubtitleOffsetRenderersFactory(
     context: Context,
-    decoderSession: com.vueo.shared.core.player.VideoDecoderSession,
     internal val subtitleDelayUsProvider: () -> Long,
     internal val shouldNormalizeCuePositionProvider: () -> Boolean,
-) : com.vueo.shared.core.player.CompatibleVideoRenderersFactory(context, decoderSession) {
+) : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+    init { setEnableDecoderFallback(true) }
 
     override fun buildTextRenderers(
         context: Context,

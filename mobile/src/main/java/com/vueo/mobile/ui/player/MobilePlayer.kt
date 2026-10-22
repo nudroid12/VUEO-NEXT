@@ -16,10 +16,6 @@ import android.os.Build
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.vueo.shared.core.player.ExternalVlcActivity
-import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -925,9 +921,6 @@ internal fun PlayerScreen(
     }
     var playerForeground by remember(lifecycleState) { mutableStateOf(lifecycleState.foreground) }
 
-    val videoDecoderSession = remember(source.url, source.headers, mediaKey, initialPositionMs) {
-        com.vueo.shared.core.player.VideoDecoderSession("Mobile").apply { beginSource(source.url) }
-    }
 
     val player = remember(
         source.url,
@@ -959,7 +952,6 @@ internal fun PlayerScreen(
             context,
             VueoSubtitleOffsetRenderersFactory(
                 context = context,
-                decoderSession = videoDecoderSession,
                 subtitleDelayUsProvider = {
                     latestSubtitleDelayMs.value.toLong() * 1_000L
                 },
@@ -2104,7 +2096,7 @@ internal fun PlayerScreen(
     }
 
     val decoderRecovery = remember(player, source.url) {
-        com.vueo.shared.core.player.VideoDecoderRecovery(videoDecoderSession)
+        com.vueo.shared.core.player.VideoDecoderRecovery()
     }
 
     DisposableEffect(
@@ -3112,20 +3104,6 @@ internal fun PlayerScreen(
         )
     }
 
-    val softwareTestLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val returnedPosition = result.data?.getLongExtra(SoftwarePlaybackActivity.POSITION, -1L) ?: -1L
-        if (returnedPosition >= 0L) {
-            player.seekTo(returnedPosition)
-            currentPositionMs = returnedPosition
-        }
-        // Rebuild the original player's pipeline paused after releasing its decoder.
-        player.pause()
-        playbackError = null
-        player.prepare()
-        showSourceDialog = false
-        controlsVisible = true
-    }
-
     PlayerSourcesWorkspace(
             visible = showSourceDialog,
             title = episode?.let {
@@ -3151,26 +3129,6 @@ internal fun PlayerScreen(
                 hasRenderedFirstFrame = false
                 playbackPhase = PlayerPlaybackPhase.LOADING
                 onSwitchSource(candidate, switchPosition)
-            },
-            onSoftwareSelect = { candidate ->
-                candidate.url?.let { url ->
-                    val savedPosition = player.currentPosition.coerceAtLeast(currentPositionMs).coerceAtLeast(0L)
-                    savePosition()
-                    player.pause()
-                    player.stop()
-                    showSourceDialog = false
-                    softwareTestLauncher.launch(SoftwarePlaybackActivity.intent(context, url, candidate.headers, savedPosition, "Mobile", media.originalLanguage))
-                }
-            },
-            onVlcSelect = { candidate ->
-                candidate.url?.let { url ->
-                    val savedPosition = player.currentPosition.coerceAtLeast(currentPositionMs).coerceAtLeast(0L)
-                    savePosition()
-                    player.pause()
-                    player.stop()
-                    showSourceDialog = false
-                    softwareTestLauncher.launch(ExternalVlcActivity.intent(context, url, savedPosition, "Mobile"))
-                }
             },
             onDismiss = {
                 showSourceDialog = false

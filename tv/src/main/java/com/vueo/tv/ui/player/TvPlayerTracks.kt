@@ -278,9 +278,9 @@ private fun tvBuildAudioSelectionId(
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class TvSubtitleOffsetRenderersFactory(
     context: Context,
-    decoderSession: com.vueo.shared.core.player.VideoDecoderSession,
     private val subtitleDelayUsProvider: () -> Long,
-) : com.vueo.shared.core.player.CompatibleVideoRenderersFactory(context, decoderSession) {
+) : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+    init { setEnableDecoderFallback(true) }
 
     override fun buildTextRenderers(
         context: Context,

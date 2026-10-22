@@ -1,18 +1,13 @@
-# Decoder recovery checks
+# Track recovery checks — Phase 23
 
-These standalone checks live outside Android source sets. Do not copy the diagnostics stub into src/main.
+These checks live outside Android source sets. Never copy the validation stubs into src/main.
 
-Pure policies, using Kotlin/JVM 2.3.21 and Java 17:
+The pure VideoFallbackPolicyTest runs 16 checks for supported-track selection, failed-configuration exclusion and bounded attempts. Compile it with VideoFallbackPolicy.kt using Kotlin/JVM and run VideoFallbackPolicyTestKt.
 
-```sh
-kotlinc shared/core/src/main/java/com/vueo/shared/core/player/VideoQueueingPolicy.kt validation/video-decoder-recovery/VideoQueueingPolicyCheck.kt -include-runtime -d /tmp/vueo-queueing-policy.jar
-java -jar /tmp/vueo-queueing-policy.jar
-kotlinc shared/core/src/main/java/com/vueo/shared/core/player/VideoCodecPolicy.kt validation/video-decoder-recovery/VideoCodecPolicyCheck.kt -include-runtime -d /tmp/vueo-codec-policy.jar
-java -jar /tmp/vueo-codec-policy.jar
-kotlinc shared/core/src/main/java/com/vueo/shared/core/player/VideoFallbackPolicy.kt validation/video-decoder-recovery/VideoFallbackPolicyTest.kt -include-runtime -d /tmp/vueo-track-policy.jar
-java -jar /tmp/vueo-track-policy.jar
-```
+VideoDecoderRecoveryJvmCheck runs 20 checks against actual Media3 1.11.0 common model objects. The Player is a controlled dynamic proxy; RuntimeDiagnostics is a test sink. A tiny JVM-only android.text.TextUtils shim supplies string helpers that Android's API signature JAR does not implement. No codec or device capability is simulated as a playback result.
 
-For VideoDecoderRecoveryJvmCheck, compile VideoQueueingPolicy, VideoCodecPolicy, VideoFallbackPolicy, VideoDecoderSession and VideoDecoderRecovery with the validation diagnostics stub and the test file, against the real Media3 1.11.0 common/exoplayer/container/decoder/datasource/extractor JARs, Android API signatures, Guava and AndroidX annotation/annotation-experimental. Run com.vueo.shared.core.player.VideoDecoderRecoveryJvmCheckKt with those libraries on the JVM classpath. The test injects capability snapshots using reflection and substitutes only the Player calls and diagnostics sink; it does not instantiate an Android codec or claim device support.
+Compile VideoFallbackPolicy, VideoDecoderRecovery, this check and the two stubs with Media3 common, Android API signatures, Guava, Kotlin standard library and AndroidX annotations. Run com.vueo.shared.core.player.VideoDecoderRecoveryJvmCheckKt. Check that unsupported tracks are ignored, the expected override is installed, pause/resume position are preserved, retries are bounded, non-video/network errors bypass this recovery, and exhaustion returns control to the existing source fallback caller.
 
-Expected counts: 15 queueing-policy, 23 codec-policy, 16 track-policy and 27 recovery checks (81 total). Device tests and a full Android build are still required.
+Actual Mobile and TV subtitle-renderer class bodies were separately extracted and compiled against Media3 1.11.0 ExoPlayer. Both now inherit DefaultRenderersFactory and retain setEnableDecoderFallback(true). Six changed Compose files passed Kotlin PSI syntax checks.
+
+Total executed assertions: 36. Full Android builds and real-device playback remain required. Experimental codec/session/queueing tests and the VLC tests were removed along with their production code.

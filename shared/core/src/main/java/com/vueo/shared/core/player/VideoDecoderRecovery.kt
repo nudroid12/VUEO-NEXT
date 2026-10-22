@@ -8,14 +8,13 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 
-/** Bounded codec then track recovery per source; failed decoder/configuration pairs stay excluded. */
+/** Bounded recovery using supported alternate video tracks; source fallback remains with the caller. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
+class VideoDecoderRecovery {
     private var policy = VideoFallbackPolicy()
 
     fun reset() {
         policy = VideoFallbackPolicy()
-        decoderSession.reset()
     }
 
     private fun isVideoDecoderError(error: PlaybackException, format: Format?): Boolean =
@@ -36,29 +35,6 @@ class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
     fun tryRecover(player: Player, error: PlaybackException, failedFormat: Format?, platform: String, resumePositionMs: Long = 0L): Boolean {
         if (!isVideoDecoderError(error, failedFormat)) return false
         val failed = failedFormat ?: return false
-        val codecName = generateSequence(error as Throwable) { it.cause }
-            .take(8)
-            .filterIsInstance<androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException>()
-            .firstOrNull()?.codecInfo?.name
-        // Media3 already exhausts initialization fallback. Manual recovery is for later failures.
-        val decoder = if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
-            null
-        } else {
-            decoderSession.next(failed, codecName, allowSynchronous = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED)
-        }
-        if (decoder != null) {
-            val position = player.currentPosition.coerceAtLeast(resumePositionMs).coerceAtLeast(0L)
-            val shouldPlay = player.playWhenReady
-            // stop() releases the failed renderer/codec; prepare() rebuilds its candidate list.
-            // The MediaItem, request headers and track selection parameters are retained.
-            player.stop()
-            player.seekTo(position)
-            player.prepare()
-            player.playWhenReady = shouldPlay
-            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_RECOVERY",
-                "route=${if (decoder.synchronous) "queueing" else "codec"} next=${decoder.name} positionMs=$position")
-            return true
-        }
         val candidates = player.currentTracks.groups
             .filter { it.type == C.TRACK_TYPE_VIDEO }
             .flatMap { group ->
@@ -98,6 +74,6 @@ class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
             "video/dolby-vision" -> "Dolby Vision"
             else -> "this video format"
         }
-        return "This device could not decode $codec from this source. No compatible video fallback succeeded. Try another source."
+        return "This source could not be decoded as $codec with the available video tracks. Try another source."
     }
 }

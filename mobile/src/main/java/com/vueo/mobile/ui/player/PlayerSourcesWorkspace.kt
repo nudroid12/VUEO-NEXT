@@ -54,7 +54,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.player.PlayerSourcePolicy
-import com.vueo.shared.core.player.SourcePlaybackTarget
 import com.vueo.shared.core.player.PlayerSourceDisplay
 
 private val SourceAccent = Color(0xFFB9FF3A)
@@ -77,13 +76,8 @@ internal fun PlayerSourcesWorkspace(
     onRefresh: () -> Unit,
     onStop: () -> Unit,
     onSelect: (StreamSource) -> Unit,
-    onSoftwareSelect: (StreamSource) -> Unit,
-    onVlcSelect: (StreamSource) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var playbackTarget by remember(visible) { mutableStateOf(SourcePlaybackTarget.DEFAULT) }
-    val softwareTest = playbackTarget == SourcePlaybackTarget.SOFTWARE_TEST
-    val externalVlc = playbackTarget == SourcePlaybackTarget.VLC
     val availableProviders = remember(sources) {
         sources
             .map(::sourceProviderKey)
@@ -237,15 +231,6 @@ internal fun PlayerSourcesWorkspace(
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SourcePlaybackTarget.entries.forEach { target ->
-                            SourceFilterChip(label = target.label, selected = playbackTarget == target, onClick = { playbackTarget = target })
-                        }
-                    }
-                    if (softwareTest || externalVlc) {
-                        Text(if (externalVlc) "Select a source to open in the VLC app" else "Select a source to test with software decoding", color = Color.White.copy(alpha = .7f), fontSize = 10.sp)
-                    }
-                    Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -302,13 +287,8 @@ internal fun PlayerSourcesWorkspace(
                                         it in failedSourceUrls
                                     } == true ||
                                     (current && currentPlaybackFailed),
-                                allowCurrentSelection = softwareTest || externalVlc,
                                 onClick = {
-                                    if (externalVlc && !switching) {
-                                        onVlcSelect(candidate)
-                                    } else if (softwareTest && !switching) {
-                                        onSoftwareSelect(candidate)
-                                    } else if (!current && !switching) {
+                                    if (!current && !switching) {
                                         onSelect(candidate)
                                     }
                                 },
@@ -330,7 +310,6 @@ private fun SourceListRow(
     recommended: Boolean,
     automaticRecoveryEligible: Boolean,
     playbackFailed: Boolean,
-    allowCurrentSelection: Boolean,
     onClick: () -> Unit,
 ) {
     val assessment = PlayerSourcePolicy.assess(
@@ -341,7 +320,7 @@ private fun SourceListRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
-                enabled = (allowCurrentSelection || !current) && !switching,
+                enabled = !current && !switching,
                 onClick = onClick,
             ),
         shape = SourceCardShape,
