@@ -99,6 +99,9 @@ object PluginHttp {
     suspend fun executeJson(requestJson: String): String = withContext(Dispatchers.IO) {
         runCatching {
             val input = JSONObject(requestJson)
+            // Generic opt-in transport for small binary resources (e.g. public
+            // WASM modules). Existing text and large-media behavior stays intact.
+            val binaryResponse = input.optString("responseEncoding") == "base64"
             val url = input.optString("url")
             requireHttps(url)
             rejectLocalAddress(url)
@@ -143,81 +146,7 @@ object PluginHttp {
             }
 
             executeResponse(requestClient, requestBuilder.build()) { response ->
-                val responseHeaders = JSONObject()
-                response.headers.names().forEach { name ->
-                    responseHeaders.put(name, response.headers.values(name).joinToString(", "))
-                }
-
-                /*
-                 * Providers often fetch a URL only to inspect status, headers
-                 * or redirects. Never copy an entire direct media/download
-                 * response into the Java heap. Normal scraper text remains
-                 * available, bounded to protect a 256 MB process.
-                 */
-                val responseBody = response.body
-                val mediaType = responseBody.contentType()
-                val contentType = mediaType?.toString().orEmpty().lowercase()
-                val declaredLength = responseBody.contentLength()
-
-                val textualResponse =
-                    contentType.isBlank() ||
-                        contentType.startsWith("text/") ||
-                        "json" in contentType ||
-                        "javascript" in contentType ||
-                        "xml" in contentType ||
-                        "mpegurl" in contentType
-
-                val oversizedBody =
-                    declaredLength > MAX_PLUGIN_RESPONSE_BODY_BYTES
-
-                val skipBody =
-                    method == "HEAD" ||
-                        contentType.startsWith("video/") ||
-                        contentType.startsWith("audio/") ||
-                        (oversizedBody && !textualResponse)
-
-                var bodyTruncated =
-                    oversizedBody && method != "HEAD"
-
-                val responseText =
-                    if (skipBody) {
-                        ""
-                    } else {
-                        val source = responseBody.source()
-                        val buffer = Buffer()
-                        var remaining = MAX_PLUGIN_RESPONSE_BODY_BYTES
-
-                        while (remaining > 0L) {
-                            val read =
-                                source.read(
-                                    buffer,
-                                    minOf(
-                                        HTTP_READ_CHUNK_BYTES,
-                                        remaining,
-                                    ),
-                                )
-                            if (read == -1L) break
-                            remaining -= read
-                        }
-
-                        if (remaining == 0L) {
-                            bodyTruncated = true
-                        }
-
-                        buffer.readString(
-                            mediaType?.charset(Charsets.UTF_8)
-                                ?: Charsets.UTF_8
-                        )
-                    }
-
-                JSONObject()
-                    .put("status", response.code)
-                    .put("statusText", response.message)
-                    .put("url", response.request.url.toString())
-                    .put("body", responseText)
-                    .put("bodyTruncated", bodyTruncated)
-                    .put("headers", responseHeaders)
-                    .toString()
+                encodeResponse(response, method, binaryResponse)
             }
         }.getOrElse { error ->
             if (error is CancellationException) throw error
@@ -225,6 +154,89 @@ object PluginHttp {
                 .put("error", error.message ?: error::class.java.simpleName)
                 .toString()
         }
+    }
+
+    internal fun encodeResponse(response: Response, method: String, binaryResponse: Boolean): String {
+        val responseHeaders = JSONObject()
+        response.headers.names().forEach { name ->
+            responseHeaders.put(name, response.headers.values(name).joinToString(", "))
+        }
+
+        /*
+         * Providers often fetch a URL only to inspect status, headers
+         * or redirects. Never copy an entire direct media/download
+         * response into the Java heap. Normal scraper text remains
+         * available, bounded to protect a 256 MB process.
+         */
+        val responseBody = response.body
+        val mediaType = responseBody.contentType()
+        val contentType = mediaType?.toString().orEmpty().lowercase()
+        val declaredLength = responseBody.contentLength()
+
+        val textualResponse =
+            contentType.isBlank() ||
+                contentType.startsWith("text/") ||
+                "json" in contentType ||
+                "javascript" in contentType ||
+                "xml" in contentType ||
+                "mpegurl" in contentType
+
+        val oversizedBody =
+            declaredLength > (if (binaryResponse) MAX_PLUGIN_BINARY_RESPONSE_BYTES else MAX_PLUGIN_RESPONSE_BODY_BYTES)
+
+        val skipBody =
+            method == "HEAD" ||
+                contentType.startsWith("video/") ||
+                contentType.startsWith("audio/") ||
+                (oversizedBody && !textualResponse)
+
+        var bodyTruncated =
+            oversizedBody && method != "HEAD"
+
+        val responseText =
+            if (skipBody) {
+                ""
+            } else {
+                val source = responseBody.source()
+                val buffer = Buffer()
+                var remaining = if (binaryResponse) MAX_PLUGIN_BINARY_RESPONSE_BYTES else MAX_PLUGIN_RESPONSE_BODY_BYTES
+
+                while (remaining > 0L) {
+                    val read =
+                        source.read(
+                            buffer,
+                            minOf(
+                                HTTP_READ_CHUNK_BYTES,
+                                remaining,
+                            ),
+                        )
+                    if (read == -1L) break
+                    remaining -= read
+                }
+
+                if (remaining == 0L) {
+                    bodyTruncated = true
+                }
+
+                if (binaryResponse) {
+                    buffer.readByteString().base64()
+                } else {
+                    buffer.readString(
+                        mediaType?.charset(Charsets.UTF_8)
+                            ?: Charsets.UTF_8
+                    )
+                }
+            }
+
+        return JSONObject()
+            .put("status", response.code)
+            .put("statusText", response.message)
+            .put("url", response.request.url.toString())
+            .put("body", responseText)
+            .put("bodyTruncated", bodyTruncated)
+            .put("headers", responseHeaders)
+            .apply { if (binaryResponse) put("bodyEncoding", "base64") }
+            .toString()
     }
 
     // Process the body on OkHttp's worker, keeping cancellation attached until
@@ -322,6 +334,9 @@ object PluginHttp {
 
     private const val MAX_PLUGIN_RESPONSE_BODY_BYTES =
         4L * 1024L * 1024L
+
+    private const val MAX_PLUGIN_BINARY_RESPONSE_BYTES =
+        256L * 1024L
 
     private const val HTTP_READ_CHUNK_BYTES =
         32L * 1024L

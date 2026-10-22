@@ -1,0 +1,1 @@
+Apply these files at the VUEO repository root, then build and install TV/Mobile as usual. One shared PluginHttp.kt file adds generic opt-in binary transport. Use alongside the separate Cloudbank VidSrc v3.0.0 patch. No provider-specific app logic. Full Android playback remains unverified.
