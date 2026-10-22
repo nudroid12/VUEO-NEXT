@@ -85,7 +85,18 @@ internal class PluginWebViewResolver(
             val session = MediaSessionState()
             val streams = resolve(request, subtitles, session)
             JSONObject().apply {
-                if (request.waitForMediaReady) {
+                if (request.sessionDiagnostics) {
+                    put("frameInteraction", JSONObject().apply {
+                        put("version", 1)
+                        put("hookSupported", session.frameHookSupported)
+                        synchronized(session.frameEvents) {
+                            put("readyFrames", session.frameEvents.values.count { "ready" in it })
+                            put("playClicks", session.frameEvents.values.sumOf { events -> events.count { it.startsWith("play-click-") } })
+                            put("playerFrames", session.frameEvents.values.count { "player-frame" in it })
+                        }
+                        synchronized(session.stageRequests) { put("requests", JSONObject(session.stageRequests.toMap())) }
+                        synchronized(session.stageErrors) { put("errors", JSONObject(session.stageErrors.toMap())) }
+                    })
                     put("sessionHandoffVersion", 1)
                     put("networkHandoffVersion", 1)
                     put("sessionResponseVersion", 1)
@@ -137,7 +148,7 @@ internal class PluginWebViewResolver(
                                     put("label", stream.label)
                                     put("url", stream.url)
                                     put("headers", JSONObject(stream.headers))
-                                    if (request.waitForMediaReady) {
+                                    if (request.sessionDiagnostics) {
                                         put("mediaReady", session.readyUrl == stream.url)
                                         put("networkObserved", stream.networkObserved)
                                         put("responseObserved", stream.responseObserved)
@@ -166,6 +177,7 @@ internal class PluginWebViewResolver(
             var finishScheduled = false
             var destroyed = false
             var documentStartScript: ScriptHandler? = null
+            var frameStartScript: ScriptHandler? = null
 
             fun finalizedPlaybackHeaders(
                 stream: CapturedStream,
@@ -233,6 +245,8 @@ internal class PluginWebViewResolver(
                     handler.removeCallbacksAndMessages(null)
                     runCatching { documentStartScript?.remove() }
                     documentStartScript = null
+                    runCatching { frameStartScript?.remove() }
+                    frameStartScript = null
                     webView.stopLoading()
                     webView.removeJavascriptInterface(BRIDGE_NAME)
                     webView.removeAllViews()
@@ -371,6 +385,21 @@ internal class PluginWebViewResolver(
                 if (clean.isBlank()) return
 
                 when {
+                    clean.startsWith("VUEO_FRAME_PLAY|") && request.framePlaySelectors.isNotEmpty() && clean.length <= 256 -> {
+                        runCatching {
+                            val event = JSONObject(clean.substringAfter('|'))
+                            val id = event.optString("id").take(64)
+                            val kind = event.optString("event")
+                            if (!Regex("[A-Za-z0-9_-]{1,64}").matches(id) || kind !in setOf("ready", "play-click", "player-frame")) return@runCatching
+                            synchronized(session.frameEvents) {
+                                if (id !in session.frameEvents && session.frameEvents.size >= 64) return@runCatching
+                                val events = session.frameEvents.getOrPut(id) { linkedSetOf() }
+                                if (kind == "play-click") {
+                                    if (events.count { it.startsWith("play-click-") } < 2) events.add("play-click-${events.size}")
+                                } else events.add(kind)
+                            }
+                        }
+                    }
                     clean.startsWith("VUEO_JSON_RESPONSE|") && request.captureSessionResponses && clean.length <= 524288 -> {
                         runCatching {
                             val item = JSONObject(clean.substringAfter('|'))
@@ -535,6 +564,7 @@ internal class PluginWebViewResolver(
             }
 
             fun clickWebView() {
+                if (request.framePlaySelectors.isNotEmpty()) return // Frame-local selectors own interaction in this opt-in mode.
                 if (streams.isNotEmpty() && (!request.waitForMediaReady || session.readyUrl.isNotBlank())) return
 
                 if (request.directLoad) {
@@ -999,15 +1029,19 @@ internal class PluginWebViewResolver(
                         view: WebView?,
                         url: String?,
                     ) {
-                        if (request.waitForMediaReady) session.pageFinished = true
+                        if (request.sessionDiagnostics) session.pageFinished = true
                         injectRuntimeHook(view)
                     }
 
                     override fun onReceivedHttpError(
                         view: WebView?, webRequest: WebResourceRequest?, errorResponse: WebResourceResponse?,
                     ) {
-                        if (request.waitForMediaReady) {
+                        if (request.sessionDiagnostics) {
                             val status = errorResponse?.statusCode?.coerceIn(100, 599) ?: 0
+                            val path = runCatching { URI(webRequest?.url?.toString().orEmpty()).path.orEmpty() }.getOrDefault("")
+                            request.stagePathPrefixes.forEach { (stage, prefix) ->
+                                if (path.startsWith(prefix)) synchronized(session.stageErrors) { session.stageErrors[stage] = status }
+                            }
                             if (webRequest?.isForMainFrame == true) session.pageHttpStatus = status
                             if (request.isStreamUrl(webRequest?.url?.toString())) session.mediaHttpStatus = status
                         }
@@ -1017,7 +1051,7 @@ internal class PluginWebViewResolver(
                     override fun onReceivedError(
                         view: WebView?, webRequest: WebResourceRequest?, error: WebResourceError?,
                     ) {
-                        if (request.waitForMediaReady) {
+                        if (request.sessionDiagnostics) {
                             val code = error?.errorCode?.coerceIn(-100, 0) ?: 0
                             if (webRequest?.isForMainFrame == true) session.pageNetworkError = code
                             if (request.isStreamUrl(webRequest?.url?.toString())) session.mediaNetworkError = code
@@ -1030,6 +1064,14 @@ internal class PluginWebViewResolver(
                         webRequest: WebResourceRequest?,
                     ): WebResourceResponse? {
                         val requestUrl = webRequest?.url?.toString().orEmpty()
+                        if (request.framePlaySelectors.isNotEmpty()) {
+                            val path = runCatching { URI(requestUrl).path.orEmpty() }.getOrDefault("")
+                            request.stagePathPrefixes.forEach { (stage, prefix) ->
+                                if (path.startsWith(prefix)) synchronized(session.stageRequests) {
+                                    session.stageRequests[stage] = ((session.stageRequests[stage] ?: 0) + 1).coerceAtMost(10000)
+                                }
+                            }
+                        }
 
                         if (
                             request.injectAbyssHook &&
@@ -1129,6 +1171,17 @@ internal class PluginWebViewResolver(
                 """.trimIndent()
 
                 if (request.directLoad) {
+                    if (request.framePlaySelectors.isNotEmpty()) {
+                        runCatching {
+                            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                                val script = appContext.assets.open("provider_frame_interaction.js").bufferedReader().use { it.readText() }
+                                    .replace("__VUEO_FRAME_PLAY_SELECTORS__", JSONArray(request.framePlaySelectors).toString())
+                                    .replace("__VUEO_PLAYER_FRAME_SELECTORS__", JSONArray(request.playerFrameSelectors).toString())
+                                frameStartScript = WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+                                session.frameHookSupported = true
+                            }
+                        }
+                    }
                     if (request.waitForMediaReady && request.captureSessionResponses) {
                         runCatching {
                             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1198,6 +1251,10 @@ internal class PluginWebViewResolver(
         @Volatile var mseObserved: Boolean = false
         @Volatile var blobObserved: Boolean = false
         @Volatile var videoState: JSONObject = JSONObject()
+        @Volatile var frameHookSupported: Boolean = false
+        val frameEvents = Collections.synchronizedMap(linkedMapOf<String, MutableSet<String>>())
+        val stageRequests = Collections.synchronizedMap(linkedMapOf<String, Int>())
+        val stageErrors = Collections.synchronizedMap(linkedMapOf<String, Int>())
         val responses = Collections.synchronizedMap(linkedMapOf<String, JSONObject>())
     }
 
@@ -1236,7 +1293,12 @@ internal class PluginWebViewResolver(
         val mediaRequestMatchers: List<String>,
         val captureSessionResponses: Boolean,
         val jsonResponsePrefixes: List<String>,
+        val framePlaySelectors: List<String>,
+        val playerFrameSelectors: List<String>,
+        val stagePathPrefixes: Map<String, String>,
     ) {
+        val sessionDiagnostics: Boolean get() = waitForMediaReady || framePlaySelectors.isNotEmpty()
+
         fun isStreamUrl(rawUrl: String?): Boolean {
             val value = rawUrl?.lowercase().orEmpty()
             if (value.isBlank()) return false
@@ -1324,6 +1386,14 @@ internal class PluginWebViewResolver(
 
                 return ResolveRequest(
                     url = url,
+                    framePlaySelectors = json.optJSONArray("framePlaySelectors").toVueoStringList()
+                        .filter { it.length <= 96 && Regex("button[.#][A-Za-z][A-Za-z0-9_-]*").matches(it) }.distinct().take(8),
+                    playerFrameSelectors = json.optJSONArray("playerFrameSelectors").toVueoStringList()
+                        .filter { it.length <= 96 && Regex("iframe[.#][A-Za-z][A-Za-z0-9_-]*").matches(it) }.distinct().take(8),
+                    stagePathPrefixes = json.optJSONObject("stagePathPrefixes")?.let { stages ->
+                        stages.keys().asSequence().take(8).filter { Regex("[a-z0-9_-]{1,24}").matches(it) }
+                            .mapNotNull { key -> stages.optString(key).takeIf { value -> value.startsWith("/") && value.length <= 256 && !value.contains('?') && !value.contains('#') }?.let { key to it } }.toMap()
+                    }.orEmpty(),
                     captureSubtitles = json.optBoolean("captureSubtitles", false),
                     waitForMediaReady = json.optBoolean("waitForMediaReady", false),
                     allowBlobMediaReady = json.optBoolean("allowBlobMediaReady", false),
