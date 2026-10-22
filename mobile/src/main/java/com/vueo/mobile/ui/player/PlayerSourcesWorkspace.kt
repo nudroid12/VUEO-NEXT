@@ -54,6 +54,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.player.PlayerSourcePolicy
+import com.vueo.shared.core.player.SourcePlaybackTarget
 import com.vueo.shared.core.player.PlayerSourceDisplay
 
 private val SourceAccent = Color(0xFFB9FF3A)
@@ -77,9 +78,12 @@ internal fun PlayerSourcesWorkspace(
     onStop: () -> Unit,
     onSelect: (StreamSource) -> Unit,
     onSoftwareSelect: (StreamSource) -> Unit,
+    onVlcSelect: (StreamSource) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var softwareTest by remember(visible) { mutableStateOf(false) }
+    var playbackTarget by remember(visible) { mutableStateOf(SourcePlaybackTarget.DEFAULT) }
+    val softwareTest = playbackTarget == SourcePlaybackTarget.SOFTWARE_TEST
+    val externalVlc = playbackTarget == SourcePlaybackTarget.VLC
     val availableProviders = remember(sources) {
         sources
             .map(::sourceProviderKey)
@@ -233,12 +237,13 @@ internal fun PlayerSourcesWorkspace(
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SourceFilterChip(label = "Default player", selected = !softwareTest, onClick = { softwareTest = false })
-                        SourceFilterChip(label = "Software test", selected = softwareTest, onClick = { softwareTest = true })
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SourcePlaybackTarget.entries.forEach { target ->
+                            SourceFilterChip(label = target.label, selected = playbackTarget == target, onClick = { playbackTarget = target })
+                        }
                     }
-                    if (softwareTest) {
-                        Text("Select a source to test with software decoding", color = Color.White.copy(alpha = .7f), fontSize = 10.sp)
+                    if (softwareTest || externalVlc) {
+                        Text(if (externalVlc) "Select a source to open in the VLC app" else "Select a source to test with software decoding", color = Color.White.copy(alpha = .7f), fontSize = 10.sp)
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(
@@ -297,9 +302,11 @@ internal fun PlayerSourcesWorkspace(
                                         it in failedSourceUrls
                                     } == true ||
                                     (current && currentPlaybackFailed),
-                                allowCurrentSelection = softwareTest,
+                                allowCurrentSelection = softwareTest || externalVlc,
                                 onClick = {
-                                    if (softwareTest && !switching) {
+                                    if (externalVlc && !switching) {
+                                        onVlcSelect(candidate)
+                                    } else if (softwareTest && !switching) {
                                         onSoftwareSelect(candidate)
                                     } else if (!current && !switching) {
                                         onSelect(candidate)

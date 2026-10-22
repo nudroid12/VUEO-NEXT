@@ -18,6 +18,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.vueo.shared.core.player.ExternalVlcActivity
 import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -3159,6 +3160,16 @@ internal fun PlayerScreen(
                     player.stop()
                     showSourceDialog = false
                     softwareTestLauncher.launch(SoftwarePlaybackActivity.intent(context, url, candidate.headers, savedPosition, "Mobile", media.originalLanguage))
+                }
+            },
+            onVlcSelect = { candidate ->
+                candidate.url?.let { url ->
+                    val savedPosition = player.currentPosition.coerceAtLeast(currentPositionMs).coerceAtLeast(0L)
+                    savePosition()
+                    player.pause()
+                    player.stop()
+                    showSourceDialog = false
+                    softwareTestLauncher.launch(ExternalVlcActivity.intent(context, url, savedPosition, "Mobile"))
                 }
             },
             onDismiss = {

@@ -12,6 +12,8 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.vueo.shared.core.player.ExternalVlcActivity
+import com.vueo.shared.core.player.SourcePlaybackTarget
 import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -2093,7 +2095,7 @@ fun TvPlayerScreen(
         val watchedEpisodeKeys = remember(episodeProgress) {
             episodeProgress.filterValues { it.completed }.keys
         }
-        var softwareTestMode by remember(activePanel, bundle.videoId) { mutableStateOf(false) }
+        var playbackTarget by remember(activePanel, bundle.videoId) { mutableStateOf(SourcePlaybackTarget.DEFAULT) }
         val softwareTestLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val returnedPosition = result.data?.getLongExtra(SoftwarePlaybackActivity.POSITION, -1L) ?: -1L
             if (returnedPosition >= 0L) {
@@ -2111,10 +2113,10 @@ fun TvPlayerScreen(
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
             TvPlayerPanel.SOURCES -> listOf(
                 TvPlayerOption(
-                    key = "vueo:software-test-toggle",
-                    title = if (softwareTestMode) "Software test: ON" else "Software test: OFF",
+                    key = "vueo:playback-target",
+                    title = "Playback: ${playbackTarget.label}",
                     meta = "Select to change engine, then choose a source",
-                    selected = softwareTestMode,
+                    selected = playbackTarget != SourcePlaybackTarget.DEFAULT,
                 ),
             ) + playableSources.map { item ->
                 TvPlayerOption(
@@ -2277,18 +2279,23 @@ fun TvPlayerScreen(
                 when (activePanel) {
                     TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
                     TvPlayerPanel.SOURCES -> {
-                        if (option.key == "vueo:software-test-toggle") {
-                            softwareTestMode = !softwareTestMode
+                        if (option.key == "vueo:playback-target") {
+                            playbackTarget = playbackTarget.next()
                         }
                         val target = playableSources.firstOrNull { it.url == option.key }
-                        if (target != null && softwareTestMode) {
+                        if (target != null && playbackTarget != SourcePlaybackTarget.DEFAULT) {
                             target.url?.let { url ->
                                 val savedPosition = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
                                 saveProgress()
                                 player.pause()
                                 player.stop()
                                 closePanel()
-                                softwareTestLauncher.launch(SoftwarePlaybackActivity.intent(context, url, target.headers, savedPosition, "TV", media.originalLanguage))
+                                val targetIntent = if (playbackTarget == SourcePlaybackTarget.VLC) {
+                                    ExternalVlcActivity.intent(context, url, savedPosition, "TV")
+                                } else {
+                                    SoftwarePlaybackActivity.intent(context, url, target.headers, savedPosition, "TV", media.originalLanguage)
+                                }
+                                softwareTestLauncher.launch(targetIntent)
                             }
                         } else if (target != null) {
                             if (target.url != activeSource.url) {
