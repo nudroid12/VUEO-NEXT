@@ -11,9 +11,12 @@ class VideoDecoderSession(private val platform: String) {
     private var sourceKey: String? = null
     private var generation = 0L
     private var policy = VideoCodecPolicy()
+    private var queueing = VideoQueueingPolicy()
     private val plans = mutableMapOf<String, List<VideoCodecCandidate>>()
     private val initialized = mutableMapOf<String, String>()
     private var lastFailure: Pair<String, String>? = null
+
+    internal data class Retry(val name: String, val synchronous: Boolean)
 
     internal data class Plan(val infos: List<MediaCodecInfo>, val generation: Long)
 
@@ -28,6 +31,7 @@ class VideoDecoderSession(private val platform: String) {
     internal fun reset() {
         generation++
         policy = VideoCodecPolicy()
+        queueing = VideoQueueingPolicy()
         plans.clear()
         initialized.clear()
         lastFailure = null
@@ -55,9 +59,14 @@ class VideoDecoderSession(private val platform: String) {
             initialized.remove(oldest)
         }
         plans[key] = capabilities
-        val ordered = policy.ordered(key, capabilities)
+        val syncTarget = queueing.target(key)
+        val ordered = if (syncTarget != null) {
+            capabilities.filter { it.name == syncTarget }
+        } else {
+            policy.ordered(key, capabilities)
+        }
         RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_PLAN",
-            "${description(format)} candidates=" + ordered.joinToString(",") {
+            "${description(format)} mode=${if (syncTarget != null) "sync-test" else "auto"} candidates=" + ordered.joinToString(",") {
                 "${it.name}:${if (it.supported) "supported" else "exceeds-or-unsupported"}:${if (it.hardware) "hw" else "sw"}"
             })
         return Plan(ordered.mapNotNull { candidate -> infos.firstOrNull { it.name == candidate.name } }, generation)
@@ -78,15 +87,48 @@ class VideoDecoderSession(private val platform: String) {
     }
 
     @Synchronized
-    internal fun next(format: Format, reportedName: String?): String? {
+    internal fun synchronous(format: Format, name: String): Boolean = queueing.target(key(format)) == name
+
+    @Synchronized
+    internal fun adapterCreated(format: Format, name: String, synchronous: Boolean) {
+        RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_CODEC_ADAPTER",
+            "name=$name mode=${if (synchronous) "synchronous" else "auto"} ${description(format)}")
+    }
+
+    @Synchronized
+    internal fun initializationFailed(format: Format?, name: String?, epoch: Long, diagnostic: String?, cause: String?) {
+        if (epoch != generation) return
+        val safeDiagnostic = diagnostic?.replace(Regex("https?://\\S+"), "<url>")?.take(160)
+        RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_CODEC_INIT_FAILED",
+            "name=${name ?: "unknown"} diagnostic=${safeDiagnostic ?: "none"} cause=${cause ?: "unknown"} " +
+                (format?.let(::description) ?: "format=unknown"))
+    }
+
+    @Synchronized
+    internal fun next(format: Format, reportedName: String?, allowSynchronous: Boolean = false): Retry? {
         val key = key(format)
         val name = reportedName ?: lastFailure?.takeIf { it.first == key }?.second ?: initialized[key]
         val candidates = plans[key].orEmpty()
+        queueing.failed(key, name)
         val next = policy.next(key, name, candidates)
-        RuntimeDiagnostics.recordPlayerEvent(platform,
-            if (next == null) "VIDEO_CODEC_EXHAUSTED" else "VIDEO_CODEC_RETRY",
-            "failed=${name ?: "unknown"} next=${next ?: "none"} attempts=${policy.attempts} " +
+        if (next != null) {
+            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_CODEC_RETRY",
+                "failed=${name ?: "unknown"} next=$next attempts=${policy.attempts} ${description(format)}")
+            return Retry(next, synchronous = false)
+        }
+        // Capability reports can be conservative. Change only queueing mode for the decoder
+        // that actually initialized; never force a different unsupported decoder or spoof MIME.
+        val sync = if (allowSynchronous && candidates.any { it.name == name }) {
+            queueing.request(key, name, initialized[key], encrypted = format.drmInitData != null)
+        } else null
+        if (sync != null) {
+            RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_QUEUEING_RETRY",
+                "name=$sync mode=synchronous reportedSupported=${candidates.firstOrNull { it.name == sync }?.supported} ${description(format)}")
+            return Retry(sync, synchronous = true)
+        }
+        RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_CODEC_EXHAUSTED",
+            "failed=${name ?: "unknown"} next=none attempts=${policy.attempts} " +
                 "supported=${candidates.count { it.supported }} ${description(format)}")
-        return next
+        return null
     }
 }

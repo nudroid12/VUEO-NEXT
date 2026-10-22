@@ -44,7 +44,7 @@ class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
         val decoder = if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
             null
         } else {
-            decoderSession.next(failed, codecName)
+            decoderSession.next(failed, codecName, allowSynchronous = error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED)
         }
         if (decoder != null) {
             val position = player.currentPosition.coerceAtLeast(resumePositionMs).coerceAtLeast(0L)
@@ -56,7 +56,7 @@ class VideoDecoderRecovery(private val decoderSession: VideoDecoderSession) {
             player.prepare()
             player.playWhenReady = shouldPlay
             RuntimeDiagnostics.recordPlayerEvent(platform, "VIDEO_DECODER_RECOVERY",
-                "route=codec next=$decoder positionMs=$position")
+                "route=${if (decoder.synchronous) "queueing" else "codec"} next=${decoder.name} positionMs=$position")
             return true
         }
         val candidates = player.currentTracks.groups

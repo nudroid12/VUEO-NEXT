@@ -7,6 +7,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
+import androidx.media3.exoplayer.mediacodec.DefaultMediaCodecAdapterFactory
+import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
@@ -36,7 +38,7 @@ open class CompatibleVideoRenderersFactory(
         // Preserve extension renderer ordering; replace only the platform video renderer.
         val index = (first until out.size).firstOrNull { out[it] is MediaCodecVideoRenderer } ?: return
         val builder = MediaCodecVideoRenderer.Builder(context)
-            .setCodecAdapterFactory(getCodecAdapterFactory())
+            .setCodecAdapterFactory(VideoQueueingAdapterFactory(context, decoderSession, getCodecAdapterFactory()))
             .setMediaCodecSelector(mediaCodecSelector)
             .setAllowedJoiningTimeMs(allowedVideoJoiningTimeMs)
             .setEnableDecoderFallback(true)
@@ -80,8 +82,29 @@ private class CompatibleVideoRenderer(
     }
 
     override fun onCodecError(codecError: Exception) {
+        val initError = codecError as? MediaCodecRenderer.DecoderInitializationException
+        if (initError != null) {
+            session.initializationFailed(queriedFormat, initError.codecInfo?.name, epoch,
+                initError.diagnosticInfo, initError.cause?.javaClass?.simpleName)
+        }
         val name = (codecError as? MediaCodecDecoderException)?.codecInfo?.name ?: getCodecInfo()?.name
         session.failed(queriedFormat, name, epoch)
         super.onCodecError(codecError)
+    }
+}
+
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private class VideoQueueingAdapterFactory(
+    context: Context,
+    private val session: VideoDecoderSession,
+    private val normal: MediaCodecAdapter.Factory,
+) : MediaCodecAdapter.Factory {
+    private val synchronous = DefaultMediaCodecAdapterFactory(context).forceDisableAsynchronous()
+
+    override fun createAdapter(configuration: MediaCodecAdapter.Configuration): MediaCodecAdapter {
+        val useSync = session.synchronous(configuration.format, configuration.codecInfo.name)
+        val adapter = (if (useSync) synchronous else normal).createAdapter(configuration)
+        session.adapterCreated(configuration.format, configuration.codecInfo.name, useSync)
+        return adapter
     }
 }

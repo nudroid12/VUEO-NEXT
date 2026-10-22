@@ -47,7 +47,12 @@ fun main() {
     // No current track alternatives: give control back to the existing source recovery caller.
     session.initialized(format, "good", 1L)
     operations.clear()
+    verify(recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_DECODING_FAILED), format, "Test"))
+    verify(session.synchronous(format, "good"))
+    verify(RuntimeDiagnostics.events.any { it.contains("VIDEO_QUEUEING_RETRY") })
+    operations.clear()
     verify(!recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_DECODING_FAILED), format, "Test"))
+    verify(!session.synchronous(format, "good"))
     verify(operations.isEmpty())
     verify(recovery.failureMessage(TestDecoderError(PlaybackException.ERROR_CODE_DECODING_FAILED), format)?.contains("HEVC") == true)
     // Manual retry grants a fresh policy; source switching clears plans and stale callbacks.
@@ -70,5 +75,18 @@ fun main() {
     verify(!recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_DECODER_INIT_FAILED), format, "Test"))
     verify(operations.isEmpty())
     verify(!recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED), format, "Test"))
+    // Reproduce a capability report of zero supported decoders without treating it as proof
+    // that playback is impossible: only the decoder that really initialized gets one sync test.
+    recovery.reset()
+    plans[key] = listOf(VideoCodecCandidate("observed-software", false, false), VideoCodecCandidate("unopened-hardware", false, true))
+    session.initialized(format, "observed-software", 5L)
+    verify(recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_DECODING_FAILED), format, "Test"))
+    verify(session.synchronous(format, "observed-software"))
+    verify(!session.synchronous(format, "unopened-hardware"))
+    operations.clear()
+    verify(!recovery.tryRecover(player, TestDecoderError(PlaybackException.ERROR_CODE_DECODING_FAILED), format, "Test"))
+    verify(operations.isEmpty())
+    session.initializationFailed(format, "unopened-hardware", 5L, "android.media.MediaCodec.error_neg_1100", "CodecException")
+    verify(RuntimeDiagnostics.events.any { it.contains("VIDEO_CODEC_INIT_FAILED") && it.contains("error_neg_1100") })
     println("PASS: $checks decoder recovery JVM checks")
 }
