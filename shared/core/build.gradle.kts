@@ -8,6 +8,7 @@ android {
 
     defaultConfig {
         minSdk = 23
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     compileOptions {
@@ -17,6 +18,7 @@ android {
 }
 
 dependencies {
+    implementation("org.videolan.android:libvlc-all:3.7.7")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-datasource:1.11.0")

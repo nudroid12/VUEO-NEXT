@@ -1,0 +1,13 @@
+LibVLC-Android 3.7.7
+Copyright VLC authors and VideoLAN.
+Published license: GNU Lesser General Public License 2.1 or later.
+License text: LibVLC-LGPL-2.1.txt in this directory.
+
+Publisher and source:
+https://code.videolan.org/videolan/libvlcjni
+https://code.videolan.org/videolan/vlc
+https://repo.maven.apache.org/maven2/org/videolan/android/libvlc-all/3.7.7/
+
+VUEO uses the unmodified Maven Central AAR as a dynamically linked native
+library. Build coordinates are declared in shared/core/build.gradle.kts.
+The software test activity requests the avcodec decoder module explicitly.

@@ -10,6 +10,9 @@ import android.graphics.Typeface
 import android.net.Uri
 import android.os.SystemClock
 import android.view.KeyEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -2090,9 +2093,30 @@ fun TvPlayerScreen(
         val watchedEpisodeKeys = remember(episodeProgress) {
             episodeProgress.filterValues { it.completed }.keys
         }
+        var softwareTestMode by remember(activePanel, bundle.videoId) { mutableStateOf(false) }
+        val softwareTestLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val returnedPosition = result.data?.getLongExtra(SoftwarePlaybackActivity.POSITION, -1L) ?: -1L
+            if (returnedPosition >= 0L) {
+                player.seekTo(returnedPosition)
+                positionMs = returnedPosition
+                resumeTargetMs = returnedPosition
+            }
+            player.pause()
+            playbackError = null
+            player.prepare()
+            closePanel()
+            controlsVisible = true
+        }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
-            TvPlayerPanel.SOURCES -> playableSources.map { item ->
+            TvPlayerPanel.SOURCES -> listOf(
+                TvPlayerOption(
+                    key = "vueo:software-test-toggle",
+                    title = if (softwareTestMode) "Software test: ON" else "Software test: OFF",
+                    meta = "Select to change engine, then choose a source",
+                    selected = softwareTestMode,
+                ),
+            ) + playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
                     title = PlayerSourceDisplay.groupTitle(item),
@@ -2253,8 +2277,20 @@ fun TvPlayerScreen(
                 when (activePanel) {
                     TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> Unit
                     TvPlayerPanel.SOURCES -> {
+                        if (option.key == "vueo:software-test-toggle") {
+                            softwareTestMode = !softwareTestMode
+                        }
                         val target = playableSources.firstOrNull { it.url == option.key }
-                        if (target != null) {
+                        if (target != null && softwareTestMode) {
+                            target.url?.let { url ->
+                                val savedPosition = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
+                                saveProgress()
+                                player.pause()
+                                player.stop()
+                                closePanel()
+                                softwareTestLauncher.launch(SoftwarePlaybackActivity.intent(context, url, target.headers, savedPosition, "TV", media.originalLanguage))
+                            }
+                        } else if (target != null) {
                             if (target.url != activeSource.url) {
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
                                 saveProgress()

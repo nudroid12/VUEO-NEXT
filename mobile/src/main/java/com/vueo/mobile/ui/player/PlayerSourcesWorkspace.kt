@@ -76,8 +76,10 @@ internal fun PlayerSourcesWorkspace(
     onRefresh: () -> Unit,
     onStop: () -> Unit,
     onSelect: (StreamSource) -> Unit,
+    onSoftwareSelect: (StreamSource) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var softwareTest by remember(visible) { mutableStateOf(false) }
     val availableProviders = remember(sources) {
         sources
             .map(::sourceProviderKey)
@@ -231,6 +233,14 @@ internal fun PlayerSourcesWorkspace(
                     }
 
                     Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SourceFilterChip(label = "Default player", selected = !softwareTest, onClick = { softwareTest = false })
+                        SourceFilterChip(label = "Software test", selected = softwareTest, onClick = { softwareTest = true })
+                    }
+                    if (softwareTest) {
+                        Text("Select a source to test with software decoding", color = Color.White.copy(alpha = .7f), fontSize = 10.sp)
+                    }
+                    Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -287,8 +297,11 @@ internal fun PlayerSourcesWorkspace(
                                         it in failedSourceUrls
                                     } == true ||
                                     (current && currentPlaybackFailed),
+                                allowCurrentSelection = softwareTest,
                                 onClick = {
-                                    if (!current && !switching) {
+                                    if (softwareTest && !switching) {
+                                        onSoftwareSelect(candidate)
+                                    } else if (!current && !switching) {
                                         onSelect(candidate)
                                     }
                                 },
@@ -310,6 +323,7 @@ private fun SourceListRow(
     recommended: Boolean,
     automaticRecoveryEligible: Boolean,
     playbackFailed: Boolean,
+    allowCurrentSelection: Boolean,
     onClick: () -> Unit,
 ) {
     val assessment = PlayerSourcePolicy.assess(
@@ -320,7 +334,7 @@ private fun SourceListRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
-                enabled = !current && !switching,
+                enabled = (allowCurrentSelection || !current) && !switching,
                 onClick = onClick,
             ),
         shape = SourceCardShape,

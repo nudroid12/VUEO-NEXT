@@ -16,6 +16,9 @@ import android.os.Build
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.vueo.shared.core.player.SoftwarePlaybackActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -3108,6 +3111,20 @@ internal fun PlayerScreen(
         )
     }
 
+    val softwareTestLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val returnedPosition = result.data?.getLongExtra(SoftwarePlaybackActivity.POSITION, -1L) ?: -1L
+        if (returnedPosition >= 0L) {
+            player.seekTo(returnedPosition)
+            currentPositionMs = returnedPosition
+        }
+        // Rebuild the original player's pipeline paused after releasing its decoder.
+        player.pause()
+        playbackError = null
+        player.prepare()
+        showSourceDialog = false
+        controlsVisible = true
+    }
+
     PlayerSourcesWorkspace(
             visible = showSourceDialog,
             title = episode?.let {
@@ -3133,6 +3150,16 @@ internal fun PlayerScreen(
                 hasRenderedFirstFrame = false
                 playbackPhase = PlayerPlaybackPhase.LOADING
                 onSwitchSource(candidate, switchPosition)
+            },
+            onSoftwareSelect = { candidate ->
+                candidate.url?.let { url ->
+                    val savedPosition = player.currentPosition.coerceAtLeast(currentPositionMs).coerceAtLeast(0L)
+                    savePosition()
+                    player.pause()
+                    player.stop()
+                    showSourceDialog = false
+                    softwareTestLauncher.launch(SoftwarePlaybackActivity.intent(context, url, candidate.headers, savedPosition, "Mobile", media.originalLanguage))
+                }
             },
             onDismiss = {
                 showSourceDialog = false

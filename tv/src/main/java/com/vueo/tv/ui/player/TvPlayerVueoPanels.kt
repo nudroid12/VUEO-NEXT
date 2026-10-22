@@ -144,7 +144,7 @@ internal fun VueoPlayerSourcesPanel(
     val providers = options.mapNotNull { it.providerName }.distinct()
     val tabRequesters = remember { mutableMapOf<String?, FocusRequester>() }
     fun tabRequester(provider: String?) = tabRequesters.getOrPut(provider) { FocusRequester() }
-    val filteredOptions = options.filter { selectedProvider == null || it.providerName == selectedProvider }
+    val filteredOptions = options.filter { selectedProvider == null || it.providerName == null || it.providerName == selectedProvider }
     LaunchedEffect(providers) {
         if (selectedProvider != null && selectedProvider !in providers) selectedProvider = null
     }
