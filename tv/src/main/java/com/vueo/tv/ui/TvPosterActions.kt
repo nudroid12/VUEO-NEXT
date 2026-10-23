@@ -87,7 +87,9 @@ internal fun TvPosterActionDialog(
     onOpenDetails: () -> Unit,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
+    onDeleteHistory: (() -> Unit)? = null,
 ) {
+    var confirmHistoryDelete by remember(media.id, media.type) { mutableStateOf(false) }
     var watchlisted by remember(media.id, media.type) {
         mutableStateOf(libraryStore.isWatchlisted(media))
     }
@@ -111,6 +113,16 @@ internal fun TvPosterActionDialog(
                 )
                 .padding(24.dp),
         ) {
+            if (confirmHistoryDelete) {
+                Text("Delete history?", color = TvDesign.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(18.dp))
+                TvPosterActionRow(label = "Cancel", requestInitialFocus = true,
+                    onClick = { finish { onDismiss() } })
+                Spacer(Modifier.height(8.dp))
+                TvPosterActionRow(label = "Delete", requestInitialFocus = false,
+                    onClick = { finish { onDeleteHistory?.invoke(); onDismiss() } })
+                return@Column
+            }
             Text(
                 text = media.name,
                 color = TvDesign.White,
@@ -128,6 +140,7 @@ internal fun TvPosterActionDialog(
             Spacer(Modifier.height(18.dp))
 
             val actions = buildList {
+                if (onDeleteHistory != null) add("Delete history" to { confirmHistoryDelete = true })
                 add("Open details" to {
                     finish { onDismiss(); onOpenDetails() }
                 })

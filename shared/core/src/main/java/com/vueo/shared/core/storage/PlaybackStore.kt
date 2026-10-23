@@ -320,12 +320,28 @@ class PlaybackStore(
         )
     }
 
-    fun applyCloudTitleClear(profileId: String, titleKey: String) {
-        val prefix = ProfileStore.scopedPreferenceKey(profileId, "")
-        prefs.all.keys.filter { it.startsWith("updated_at:" + prefix + titleKey + ":") }.forEach { raw ->
-            applyCloudPosition(profileId, raw.removePrefix("updated_at:" + prefix), 0L, 0L)
+    /** Clears every episode cursor, including process memory and entries outside bounded history. */
+    fun clearTitle(profileId: String, titleKey: String) {
+        synchronized(PERSISTENCE_LOCK) {
+            val prefix = ProfileStore.scopedPreferenceKey(profileId, "")
+            val mediaKeys = linkedSetOf<String>()
+            for (raw in prefs.all.keys) {
+                for (kind in listOf("position:", "duration:", "updated_at:")) {
+                    val start = kind + prefix
+                    if (raw.startsWith(start)) {
+                        val key = raw.removePrefix(start)
+                        if (key.startsWith("$titleKey:")) mediaKeys.add(key)
+                    }
+                }
+            }
+            PlaybackSessionCursorMemory.snapshots.values
+                .filter { it.profileId == profileId && it.mediaKey.startsWith("$titleKey:") }
+                .forEach { mediaKeys.add(it.mediaKey) }
+            mediaKeys.forEach { applyCloudPosition(profileId, it, 0L, 0L) }
         }
     }
+
+    fun applyCloudTitleClear(profileId: String, titleKey: String) = clearTitle(profileId, titleKey)
 
     /** Remote cursor gets a local monotonic stamp; stale queued player saves cannot undo it. */
     fun applyCloudPosition(profileId: String, mediaKey: String, positionMs: Long, durationMs: Long) {

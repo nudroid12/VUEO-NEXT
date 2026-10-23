@@ -66,6 +66,8 @@ import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -131,6 +133,8 @@ fun TvLibraryScreen(
         history.associate { libraryMediaKey(it.media) to LibraryHistoryPresentation.caption(it) }
     }
     val context = LocalContext.current
+    val historyScope = rememberCoroutineScope()
+    var deleteHistoryError by remember(profileId) { mutableStateOf(false) }
     val libraryUiPreferences = remember {
         context.getSharedPreferences(LIBRARY_UI_PREFS, Context.MODE_PRIVATE)
     }
@@ -344,6 +348,7 @@ fun TvLibraryScreen(
                         onDown = ::requestFirstMediaFocus,
                     )
                 }
+                if (deleteHistoryError) Text("Couldn't delete history. Try again.", color = TvDesign.Muted, fontSize = 12.sp)
                 Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     listOf("Favorites", "History").forEachIndexed { index, label ->
                         val selected = historySelected == (index == 1)
@@ -492,6 +497,20 @@ fun TvLibraryScreen(
             onOpenDetails = { onOpenMedia(media) },
             onChanged = { libraryRevision += 1 },
             onDismiss = { actionMedia = null },
+            onDeleteHistory = if (historySelected) ({
+                deleteHistoryError = false
+                historyScope.launch {
+                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = profileId).resetTitleHistory(media) }
+                    }
+                    if (result.isSuccess) {
+                        TvLibraryFocusMemory.firstVisibleItemIndex = 0
+                        TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
+                        rememberTarget("section")
+                        libraryRevision += 1
+                    } else deleteHistoryError = true
+                }
+            }) else null,
         )
     }
 

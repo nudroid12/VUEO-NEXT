@@ -26,6 +26,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -308,6 +309,40 @@ internal fun LibraryScreen(
     val historyCaptions = remember(history) {
         history.associate { "${it.media.type}:${it.media.id}" to LibraryHistoryPresentation.caption(it) }
     }
+    var historyAction by remember(activeProfile.id) { mutableStateOf<MediaItem?>(null) }
+    var confirmHistoryDelete by remember(activeProfile.id) { mutableStateOf(false) }
+    var deletingHistory by remember(activeProfile.id) { mutableStateOf(false) }
+    var deleteHistoryError by remember(activeProfile.id) { mutableStateOf(false) }
+    val historyScope = rememberCoroutineScope()
+    historyAction?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!deletingHistory) historyAction = null },
+            title = { Text(if (confirmHistoryDelete) "Delete history?" else target.name) },
+            text = if (deleteHistoryError) ({ Text("Couldn't delete history. Try again.") }) else null,
+            dismissButton = { TextButton(enabled = !deletingHistory, onClick = { historyAction = null }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(enabled = !deletingHistory, onClick = {
+                    if (!confirmHistoryDelete) confirmHistoryDelete = true
+                    else {
+                        deletingHistory = true
+                        historyScope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { LibraryStore(context, profileIdOverride = activeProfile.id).resetTitleHistory(target) }
+                            }
+                            deletingHistory = false
+                            if (result.isSuccess) { historyAction = null; onVersionChanged() }
+                            else deleteHistoryError = true
+                        }
+                    }
+                }) { Text(if (confirmHistoryDelete) "Delete" else "Delete history") }
+            },
+        )
+    }
+    fun showHistoryActions(media: MediaItem) {
+        confirmHistoryDelete = false
+        deleteHistoryError = false
+        historyAction = media
+    }
     val listState = rememberLazyListState()
     LaunchedEffect(historySelected) { listState.scrollToItem(0) }
     val libraryUiPreferences =
@@ -466,15 +501,16 @@ internal fun LibraryScreen(
                                 media ->
 
                                 Column(modifier = Modifier.weight(1f)) {
-                                    SearchPosterTile(
-                                        item = media,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        onClick = { onMediaClick(media) },
-                                    )
                                     if (historySelected) {
-                                        Text(historyCaptions["${media.type}:${media.id}"].orEmpty(),
-                                            color = VueoPalette.Muted, fontSize = 11.sp,
-                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        LibraryHistoryPoster(
+                                            media = media,
+                                            caption = historyCaptions["${media.type}:${media.id}"].orEmpty(),
+                                            onClick = { onMediaClick(media) },
+                                            onLongClick = { showHistoryActions(media) },
+                                        )
+                                    } else {
+                                        SearchPosterTile(item = media, modifier = Modifier.fillMaxWidth(),
+                                            onClick = { onMediaClick(media) })
                                     }
                                 }
                             }
@@ -515,6 +551,7 @@ internal fun LibraryScreen(
                     LibrarySavedListRow(
                         media = media,
                         historyCaption = if (historySelected) historyCaptions["${media.type}:${media.id}"] else null,
+                        onLongClick = if (historySelected) ({ showHistoryActions(media) }) else null,
                         onClick = {
                             onMediaClick(
                                 media
@@ -669,19 +706,19 @@ private fun LibraryEmptyCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibrarySavedListRow(
     media: MediaItem,
     historyCaption: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(
-                    onClick = onClick
-                )
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(
                     vertical = 2.dp
                 ),
@@ -821,3 +858,17 @@ internal fun playbackEntrySubtitle(
     }
 
 
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryHistoryPoster(media: MediaItem, caption: String, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+        NetworkImage(url = media.poster, contentDescription = media.name, fallbackText = media.name,
+            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)),
+            contentScale = ContentScale.Crop)
+        Spacer(Modifier.height(7.dp))
+        Text(media.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(caption, color = VueoPalette.Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}

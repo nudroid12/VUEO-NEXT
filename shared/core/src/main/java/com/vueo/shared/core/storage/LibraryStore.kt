@@ -449,6 +449,8 @@ class LibraryStore(
                         .takeIf { it > 0L }
                         ?: PlaybackUpdateClock.next()
                 PlaybackUpdateClock.observe(updateEpochMs)
+                // A save captured before Delete must not recreate an old watch.
+                if (updateEpochMs <= resetAt(media)) return
 
                 val entries =
                     readHistory()
@@ -517,6 +519,31 @@ class LibraryStore(
             }
         }
     }
+
+    /** Forget this title's viewing state while retaining Favorites and metadata. */
+    @Synchronized
+    fun resetTitleHistory(media: MediaItem) {
+        synchronized(SYNC_STORAGE_LOCK) {
+            synchronized(PLAYBACK_PERSISTENCE_LOCK) {
+                val titleKey = continueWatchingTitleKey(media)
+                val profileId = profileIdOverride ?: profileStore.activeProfileId()
+                val resetAt = PlaybackUpdateClock.next()
+                prefs.edit().putLong(scopedKey("history_reset:$titleKey"), resetAt).apply()
+                PlaybackStore(appContext).clearTitle(profileId, titleKey)
+                writeHistory(readHistory().filterNot { continueWatchingTitleKey(it.media) == titleKey })
+                writeArray(scopedKey(continueWatchingStorageKey),
+                    readContinueWatching().filterNot { continueWatchingTitleKey(it.media) == titleKey }.map(::playbackToJson))
+                writeDismissedContinueWatchingKeys(dismissedContinueWatchingKeys() - titleKey)
+                writeMarkedWatchedKeys(markedWatchedKeys() - titleKey)
+                refreshHomeContinueWatchingCache(exact = true)
+                if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
+                    .watchedChanged(media, false, profileId)
+            }
+        }
+    }
+
+    private fun resetAt(media: MediaItem): Long =
+        prefs.getLong(scopedKey("history_reset:${continueWatchingTitleKey(media)}"), 0L)
 
     @Synchronized
     fun removeHistory(
@@ -623,20 +650,21 @@ class LibraryStore(
     fun mergeTraktHistory(remote: List<LibraryPlaybackEntry>, protectedTitles: Set<String> = emptySet()) {
         synchronized(SYNC_STORAGE_LOCK) {
             synchronized(PLAYBACK_PERSISTENCE_LOCK) {
+                val acceptedRemote = remote.filter { resetAt(it.media).let { cutoff -> cutoff == 0L || it.lastWatchedEpochMs > cutoff } }
                 val previous = runCatching { JSONObject(prefs.getString(scopedKey("trakt_history_stamps"), "{}")) }.getOrDefault(JSONObject())
-                val remoteKeys = remote.map { it.mediaKey }.toSet()
+                val remoteKeys = acceptedRemote.map { it.mediaKey }.toSet()
                 val local = readHistory().filterNot { entry -> entry.mediaKey !in remoteKeys &&
                     previous.has(entry.mediaKey) && entry.lastWatchedEpochMs == previous.optLong(entry.mediaKey) }
-                val imported = remote.filter { entry -> "${entry.media.type}:${entry.media.id}" !in protectedTitles && local.none { it.mediaKey == entry.mediaKey && it.lastWatchedEpochMs >= entry.lastWatchedEpochMs } }
+                val imported = acceptedRemote.filter { entry -> "${entry.media.type}:${entry.media.id}" !in protectedTitles && local.none { it.mediaKey == entry.mediaKey && it.lastWatchedEpochMs >= entry.lastWatchedEpochMs } }
                 val merged = (local + imported).groupBy { it.mediaKey }.values.map { group -> group.maxBy { it.lastWatchedEpochMs } }
                     .sortedByDescending { it.lastWatchedEpochMs }.take(MAX_HISTORY)
                 writeHistory(merged)
                 // Watched truth is separate from the bounded recent history, so old movie watches remain known.
-                val remoteMovies = remote.filter { !ContinueWatchingPolicy.isSeries(it.media) && "${it.media.type}:${it.media.id}" !in protectedTitles }.map { continueWatchingTitleKey(it.media) }.toSet()
+                val remoteMovies = acceptedRemote.filter { !ContinueWatchingPolicy.isSeries(it.media) && "${it.media.type}:${it.media.id}" !in protectedTitles }.map { continueWatchingTitleKey(it.media) }.toSet()
                 val previousMovies = prefs.getStringSet(scopedKey("trakt_watched_movie_ids"), emptySet()).orEmpty()
                 writeMarkedWatchedKeys((markedWatchedKeys() - (previousMovies - protectedTitles)) + remoteMovies)
                 val stamps = JSONObject()
-                remote.forEach { stamps.put(it.mediaKey, it.lastWatchedEpochMs) }
+                acceptedRemote.forEach { stamps.put(it.mediaKey, it.lastWatchedEpochMs) }
                 prefs.edit().putStringSet(scopedKey("trakt_watched_movie_ids"), remoteMovies)
                     .putString(scopedKey("trakt_history_stamps"), stamps.toString()).apply()
                 refreshHomeContinueWatchingCache(exact = true)
