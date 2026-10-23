@@ -6,6 +6,10 @@ import kotlinx.coroutines.*
 import org.json.JSONArray
 
 fun main() = runBlocking {
+ val identity=com.vueo.shared.core.media.MediaItem(id="tt123",type="movie",name="Identity",tmdbId="12345")
+ check(identity.copy(name="Copy").tmdbId=="12345")
+ check(identity.id=="tt123")
+ println("PASS restored TMDB constructor/property/copy alongside addon identity")
  var count=0
  fun verify(name:String, test:Boolean){check(test){name};count++;println("PASS $name")}
  val descriptors=parsePluginSubtitleRequests(JSONArray("""[{"url":"https://api.example/subtitles/movie/12345","headers":{"Authorization":"private-index-token"}}]"""),"plugin:test","Fixture")
@@ -28,6 +32,12 @@ fun main() = runBlocking {
  verify("all late tracks use live overlay",tracks.all{it.liveOverlay && LiveSmartSubs.isOverlay(it)})
  verify("late tracks excluded from video MediaItem configuration",LiveSmartSubs.videoSubtitles(listOf(normal)+tracks)==listOf(normal))
  verify("video URL remains identical",source.url=="https://media.example/master.m3u8")
+ val repeated=tracks.map{it.copy(liveOverlay=false)}
+ val merged=StreamSubtitlePolicy.forPlayback(source,repeated+tracks)
+ verify("regular duplicate cannot replace overlay track",merged.filter{it.url in tracks.map{it.url}}.all{it.liveOverlay})
+ verify("duplicate merge never attaches late tracks to video",LiveSmartSubs.videoSubtitles(merged)==listOf(normal))
+ verify("overlay retained when duplicate order reverses",StreamSubtitlePolicy.forPlayback(source,tracks+repeated)==merged)
+
  verify("duplicate endpoint fetched once",DeferredPluginSubtitles.load(descriptors+descriptors){calls++;"[]"}.isEmpty() && calls==2)
  verify("failed list has no playback failure",DeferredPluginSubtitles.load(descriptors){error("HTTP 503")}.isEmpty())
  val started=CompletableDeferred<Unit>();var cancelled=false
