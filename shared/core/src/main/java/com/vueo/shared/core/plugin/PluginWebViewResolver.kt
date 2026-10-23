@@ -118,6 +118,8 @@ internal class PluginWebViewResolver(
                     put("sessionHandoffVersion", 1)
                     put("networkHandoffVersion", 1)
                     put("sessionResponseVersion", 1)
+                    put("jsonSourceCompletionVersion", 1)
+                    put("jsonSourceEligible", session.jsonSourceEligible)
                     put("documentStartHook", session.documentStartHook)
                     put("responses", JSONArray().apply {
                         synchronized(session.responses) { session.responses.values.forEach { put(it) } }
@@ -287,6 +289,7 @@ internal class PluginWebViewResolver(
             }
 
             fun scheduleFinishSoon() {
+                val jsonSource = request.waitForMediaReady && request.captureSessionResponses && session.jsonSourceEligible
                 val observedMatch = request.waitForMediaReady && synchronized(streams) {
                     streams.values.any { it.networkObserved && WebViewSessionPolicy.matchesMediaRequest(
                         it.url, request.mediaRequestMatchers, request.mediaHosts,
@@ -299,11 +302,12 @@ internal class PluginWebViewResolver(
                     } }
                 if (request.waitForMediaReady && request.captureSessionResponses &&
                     synchronized(session.responses) { session.responses.isEmpty() }) return
-                if (request.waitForMediaReady && session.readyUrl.isBlank() && !observedMatch && !sessionMedia) return
+                if (request.waitForMediaReady && !jsonSource && session.readyUrl.isBlank() && !observedMatch && !sessionMedia) return
                 if (finishScheduled) return
                 finishScheduled = true
                 handler.postDelayed(
                     { finish(when {
+                        jsonSource -> "json-source"
                         !request.waitForMediaReady -> "first-candidate"
                         session.readyUrl.isNotBlank() -> "media-ready"
                         sessionMedia -> "response-media"
@@ -436,8 +440,19 @@ internal class PluginWebViewResolver(
                                 put("status", item.optInt("status"))
                                 put("body", JSONObject(body))
                             }
+                            val eligible = request.waitForMediaReady && JsonSourceCompletionPolicy.eligible(
+                                url, record.getJSONObject("body"), request.jsonSourceCompletion, request.mediaHosts,
+                            )
                             synchronized(session.responses) {
+                                // Keep the accepted response even if earlier empty responses filled the bounded capture list.
+                                if (eligible && !session.responses.containsKey(url) && session.responses.size >= 4) {
+                                    session.responses.keys.firstOrNull()?.let { session.responses.remove(it) }
+                                }
                                 if (session.responses.size < 4 || session.responses.containsKey(url)) session.responses[url] = record
+                            }
+                            if (eligible) {
+                                session.jsonSourceEligible = true
+                                session.readinessBasis = "json-source"
                             }
                             scheduleFinishSoon()
                         }
@@ -579,6 +594,7 @@ internal class PluginWebViewResolver(
                 .replace("__VUEO_ALLOW_BLOB_MEDIA_READY__", request.allowBlobMediaReady.toString())
                 .replace("__VUEO_CAPTURE_SESSION_RESPONSES__", request.captureSessionResponses.toString())
                 .replace("[\"__VUEO_JSON_RESPONSE_PREFIXES__\"]", JSONArray(request.jsonResponsePrefixes).toString())
+                .replace("__VUEO_JSON_SOURCE_COMPLETION_ENABLED__", (request.jsonSourceCompletion != null).toString())
                 .substringAfter("<script>").substringBeforeLast("</script>")
 
             fun injectRuntimeHook(view: WebView?) {
@@ -1280,6 +1296,7 @@ internal class PluginWebViewResolver(
     )
 
     private class MediaSessionState {
+        @Volatile var jsonSourceEligible: Boolean = false
         @Volatile var documentStartHook: Boolean = false
         @Volatile var readyUrl: String = ""
         @Volatile var readinessBasis: String = "none"
@@ -1338,6 +1355,7 @@ internal class PluginWebViewResolver(
         val mediaRequestMatchers: List<String>,
         val captureSessionResponses: Boolean,
         val jsonResponsePrefixes: List<String>,
+        val jsonSourceCompletion: JSONObject?,
         val framePlaySelectors: List<String>,
         val playerFrameSelectors: List<String>,
         val stagePathPrefixes: Map<String, String>,
@@ -1458,6 +1476,7 @@ internal class PluginWebViewResolver(
                     captureSessionResponses = json.optBoolean("captureSessionResponses", false),
                     jsonResponsePrefixes = json.optJSONArray("jsonResponsePrefixes").toVueoStringList()
                         .filter { it.length <= 1024 }.distinct().take(4),
+                    jsonSourceCompletion = json.optJSONObject("jsonSourceCompletion")?.takeIf { it.toString().length <= 4096 },
                     mediaRequestMatchers = json.optJSONArray("mediaRequestMatchers").toVueoStringList()
                         .filter { it.length <= 4096 }.distinct().take(16),
                     mediaHosts = json.optJSONArray("mediaHosts").toVueoStringList()
@@ -1740,6 +1759,7 @@ internal class PluginWebViewResolver(
   var captureSessionResponses = waitForMediaReady && "__VUEO_CAPTURE_SESSION_RESPONSES__" === "true";
   var jsonCapturePrefixes = ["__VUEO_JSON_RESPONSE_PREFIXES__"];
   var jsonCaptureSeen = Object.create(null);
+  var jsonCaptureLimit = "__VUEO_JSON_SOURCE_COMPLETION_ENABLED__" === "true" ? 8 : 4;
   function jsonCaptureMatches(url) {
     if (!captureSessionResponses) return false;
     try {
@@ -1756,7 +1776,7 @@ internal class PluginWebViewResolver(
     try {
       var body=JSON.parse(text);
       if (!body || typeof body!=="object" || Array.isArray(body)) return;
-      if (Object.keys(jsonCaptureSeen).length>=4) return;
+      if (Object.keys(jsonCaptureSeen).length>=jsonCaptureLimit) return;
       jsonCaptureSeen[url]=true;
       cap("VUEO_JSON_RESPONSE|"+JSON.stringify({url:url,status:status,body:text}));
     } catch(e) {}
