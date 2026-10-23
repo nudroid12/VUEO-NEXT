@@ -1730,12 +1730,18 @@ internal fun MediaDetailsScreen(
     var transitionPlaybackVideoId by remember {
         mutableStateOf<String?>(null)
     }
+    // AnimatedContent retains the outgoing player after selected state is cleared.
+    // Keep its resume input stable too: PlayerScreen uses it as an ExoPlayer remember key.
+    var transitionPlaybackStartPositionMs by remember {
+        mutableStateOf(0L)
+    }
 
     sourcePickerStreams?.let { streams ->
         transitionSourceStreams = streams
     }
     playbackSource?.let { source ->
         transitionPlaybackSource = source
+        transitionPlaybackStartPositionMs = selectedPlaybackStartPositionMs
     }
     playbackVideoId?.let { videoId ->
         transitionPlaybackVideoId = videoId
@@ -1837,7 +1843,7 @@ internal fun MediaDetailsScreen(
                         },
                         subtitlesState = sourcePickerSubtitlesState,
                         initialPositionMs =
-                            selectedPlaybackStartPositionMs,
+                            transitionPlaybackStartPositionMs,
                         episodeSwitchingTo =
                             pendingPlaybackEpisode,
                         episodeSwitchFailed =
