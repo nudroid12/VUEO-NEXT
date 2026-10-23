@@ -1,0 +1,96 @@
+name: Cleanup Subtitle Rollback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vueo-subtitle-rollback-cleanup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Delete obsolete subtitle files and commit
+        shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          python3 <<'PYTHON'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          def git(*args, capture=False):
+              return subprocess.run(["git", *args], check=True, text=True,
+                  stdout=subprocess.PIPE if capture else None).stdout
+
+          if os.environ.get("REF_TYPE") != "branch":
+              raise SystemExit("Select a branch, not a tag.")
+          branch = os.environ["TARGET_BRANCH"]
+          if git("symbolic-ref", "--short", "HEAD", capture=True).strip() != branch:
+              raise SystemExit("Selected branch and checkout do not match.")
+          if git("status", "--porcelain", capture=True).strip():
+              raise SystemExit("Checkout must be clean before cleanup.")
+
+          # Exact rollback list. No wildcard deletion and no change to other files.
+          obsolete = [
+              "shared/core/src/main/java/com/vueo/shared/core/player/DeferredPluginSubtitles.kt",
+              "shared/core/src/main/java/com/vueo/shared/core/player/StartupSubtitleDiscovery.kt",
+              "validation/DeferredSubtitleCheck.kt",
+              "validation/StartupSubtitleDiscoveryCheck.kt",
+              "validation/DeferredIndexFixture.kt",
+              "README-VIDEO-FIRST.txt",
+              "README-TMDB-MODEL-FIX.txt",
+              "README-DEFERRED-SUBTITLE-ATTACH-FIX.txt",
+              "README-STARTUP-SUBTITLES.txt",
+          ]
+          required = [
+              "mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt",
+              "tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt",
+              "shared/core/src/main/java/com/vueo/shared/core/plugin/PluginSubtitleParser.kt",
+              "shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntimeParsing.kt",
+              "shared/core/src/main/java/com/vueo/shared/core/media/MediaModels.kt",
+          ]
+          if not all(Path(name).is_file() for name in required):
+              raise SystemExit("Run this in the VUEO app repository after uploading the rollback code.")
+          pattern = re.compile(r"\b(?:DeferredPluginSubtitles|StartupSubtitleDiscovery|liveOverlay|parsePluginSubtitleRequests|onStopSubtitleDiscovery|stopSubtitles|SUBTITLE_DISCOVERY_CLOSED)\b")
+          paths = git("ls-files", "--", "mobile/src", "tv/src", "shared/core/src", capture=True).splitlines()
+          remaining = [name for name in paths if name.endswith(".kt") and name not in obsolete
+                       and pattern.search(Path(name).read_text(encoding="utf-8"))]
+          if remaining:
+              print("Upload the rollback replacement files first; old references remain in:")
+              print("\n".join(remaining))
+              raise SystemExit(1)
+
+          tracked = set(git("ls-files", capture=True).splitlines())
+          removing = [name for name in obsolete if name in tracked]
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          if not removing:
+              print("Already clean. No commit needed.")
+              summary.write_text("## Subtitle rollback cleanup\nAlready clean; no commit needed.\n")
+              raise SystemExit(0)
+          git("rm", "--", *removing)
+          git("config", "user.name", "github-actions[bot]")
+          git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+          git("commit", "-m", "Remove obsolete deferred subtitle rollback files")
+          # No force push. If another workflow updated the branch, rerun cleanup.
+          git("push", "origin", "HEAD:refs/heads/" + branch)
+          summary.write_text("## Subtitle rollback cleanup\nDeleted and committed:\n\n" +
+              "\n".join("- `" + name + "`" for name in removing) +
+              "\n\nRun VUEO Smart Build and Publish afterwards.\n")
+          PYTHON
