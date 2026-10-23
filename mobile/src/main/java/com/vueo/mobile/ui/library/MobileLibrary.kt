@@ -114,6 +114,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.vueo.shared.core.storage.LibraryHistoryPresentation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.DisposableEffect
@@ -269,7 +271,11 @@ internal fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val profileStore = remember(context) { ProfileStore(context.applicationContext) }
-    var watchlist by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+    var historySelected by rememberSaveable(activeProfile.id) { mutableStateOf(false) }
+    var history by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
+        mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
+    }
+    var favorites by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
         mutableStateOf<List<MediaItem>>(emptyList())
     }
     var loading by remember(store, activeProfile.id, activeProfile.isKids, activeProfile.kidsMaxAge) {
@@ -286,14 +292,24 @@ internal fun LibraryScreen(
                 // The provided store follows the active profile. Reject a read
                 // spanning a profile switch instead of displaying another user's list.
                 if (profileStore.activeProfileId() != activeProfile.id) return@runCatching null
-                store.watchlist().takeIf { profileStore.activeProfileId() == activeProfile.id }
+                (store.watchlist() to LibraryHistoryPresentation.latestTitles(store.history()))
+                    .takeIf { profileStore.activeProfileId() == activeProfile.id }
             }
         }
-        result.onSuccess { fresh -> if (fresh != null) watchlist = fresh }
+        result.onSuccess { fresh -> if (fresh != null) {
+            favorites = fresh.first
+            history = fresh.second
+        } }
             .onFailure { loadFailed = true }
         loading = false
     }
 
+    val watchlist = if (historySelected) history.map { it.media } else favorites
+    val historyCaptions = remember(history) {
+        history.associate { "${it.media.type}:${it.media.id}" to LibraryHistoryPresentation.caption(it) }
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(historySelected) { listState.scrollToItem(0) }
     val libraryUiPreferences =
         remember {
             context.getSharedPreferences(
@@ -312,6 +328,7 @@ internal fun LibraryScreen(
     }
 
     LazyColumn(
+        state = listState,
         modifier =
             Modifier
                 .fillMaxSize()
@@ -376,6 +393,15 @@ internal fun LibraryScreen(
                         },
                     )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf("Favorites", "History").forEachIndexed { index, label ->
+                        val selected = historySelected == (index == 1)
+                        TextButton(onClick = { historySelected = index == 1 }) {
+                            Text(label, color = if (selected) Color.White else VueoPalette.Muted,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
             }
         }
 
@@ -387,7 +413,7 @@ internal fun LibraryScreen(
             item(key = "library-load-failed") {
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     LibraryEmptyCard(
-                        title = "Couldn't load Favorites",
+                        title = if (historySelected) "Couldn't load History" else "Couldn't load Favorites",
                         body = "Try loading your library again.",
                     )
                     TextButton(onClick = onVersionChanged) { Text("Retry") }
@@ -405,9 +431,9 @@ internal fun LibraryScreen(
                 ) {
                     LibraryEmptyCard(
                         title =
-                            "Your library is empty",
+                            if (historySelected) "No watch history yet" else "Your library is empty",
                         body =
-                            "Titles added to Favorites will appear here.",
+                            if (historySelected) "Titles you watch will appear here." else "Titles added to Favorites will appear here.",
                     )
                 }
             }
@@ -439,18 +465,18 @@ internal fun LibraryScreen(
                             rowItems.forEach {
                                 media ->
 
-                                SearchPosterTile(
-                                    item = media,
-                                    modifier =
-                                        Modifier.weight(
-                                            1f
-                                        ),
-                                    onClick = {
-                                        onMediaClick(
-                                            media
-                                        )
-                                    },
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    SearchPosterTile(
+                                        item = media,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        onClick = { onMediaClick(media) },
+                                    )
+                                    if (historySelected) {
+                                        Text(historyCaptions["${media.type}:${media.id}"].orEmpty(),
+                                            color = VueoPalette.Muted, fontSize = 11.sp,
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
                             }
 
                             repeat(
@@ -488,6 +514,7 @@ internal fun LibraryScreen(
                 ) {
                     LibrarySavedListRow(
                         media = media,
+                        historyCaption = if (historySelected) historyCaptions["${media.type}:${media.id}"] else null,
                         onClick = {
                             onMediaClick(
                                 media
@@ -645,6 +672,7 @@ private fun LibraryEmptyCard(
 @Composable
 private fun LibrarySavedListRow(
     media: MediaItem,
+    historyCaption: String? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -712,7 +740,7 @@ private fun LibrarySavedListRow(
 
             Text(
                 text =
-                    listOfNotNull(
+                    historyCaption ?: listOfNotNull(
                         media.releaseInfo,
                         searchTypeLabel(
                             media

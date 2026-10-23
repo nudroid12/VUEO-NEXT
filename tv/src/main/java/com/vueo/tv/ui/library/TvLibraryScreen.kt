@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.MediaItem
+import com.vueo.shared.core.storage.LibraryHistoryPresentation
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
@@ -83,7 +84,8 @@ private const val LIBRARY_GRID_GAP_DP = 16f
  * source of truth.
  */
 private object TvLibraryFocusMemory {
-    var lastTarget: String = "view"
+    var historySelected: Boolean = false
+    var lastTarget: String = "section"
     var lastMediaKey: String? = null
     var firstVisibleItemIndex: Int = 0
     var firstVisibleItemScrollOffset: Int = 0
@@ -101,13 +103,32 @@ fun TvLibraryScreen(
     onResume: (LibraryPlaybackEntry) -> Unit,
     onBack: () -> Unit,
 ) {
-    // Mobile parity: Library's visible content is Favorites. Continue Watching
-    // and History remain shared LibraryStore data, but they are not Library UI
-    // sections here.
+    val profileId = runtime.profileStore.activeProfileId()
+    val kidsLimit = runtime.profileStore.kidsAgeLimit()
+    var historySelected by remember(profileId) { mutableStateOf(TvLibraryFocusMemory.historySelected) }
     var libraryRevision by remember { mutableStateOf(0) }
     var actionMedia by remember { mutableStateOf<MediaItem?>(null) }
-    val watchlist = remember(refreshToken, libraryRevision) {
-        runtime.libraryStore.watchlist()
+    var favorites by remember(profileId, kidsLimit) { mutableStateOf(emptyList<MediaItem>()) }
+    var history by remember(profileId, kidsLimit) { mutableStateOf(emptyList<LibraryPlaybackEntry>()) }
+    var loading by remember(profileId, kidsLimit) { mutableStateOf(true) }
+    var loadFailed by remember(profileId, kidsLimit) { mutableStateOf(false) }
+    LaunchedEffect(refreshToken, libraryRevision, profileId, kidsLimit) {
+        loading = true
+        loadFailed = false
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                if (runtime.profileStore.activeProfileId() != profileId) return@runCatching null
+                (runtime.libraryStore.watchlist() to LibraryHistoryPresentation.latestTitles(runtime.libraryStore.history()))
+                    .takeIf { runtime.profileStore.activeProfileId() == profileId }
+            }
+        }
+        result.onSuccess { fresh -> if (fresh != null) { favorites = fresh.first; history = fresh.second } }
+            .onFailure { loadFailed = true }
+        loading = false
+    }
+    val watchlist = if (historySelected) history.map { it.media } else favorites
+    val historyCaptions = remember(history) {
+        history.associate { libraryMediaKey(it.media) to LibraryHistoryPresentation.caption(it) }
     }
     val context = LocalContext.current
     val libraryUiPreferences = remember {
@@ -121,6 +142,8 @@ fun TvLibraryScreen(
     val navRequesters = remember { TvPrimaryDestinations.associateWith { FocusRequester() } }
     val profileRequester = remember { FocusRequester() }
     val viewModeRequester = remember { FocusRequester() }
+    val favoritesRequester = remember { FocusRequester() }
+    val historyRequester = remember { FocusRequester() }
 
     val mediaKeys = remember(watchlist) {
         watchlist.map(::libraryMediaKey)
@@ -166,7 +189,7 @@ fun TvLibraryScreen(
 
     fun requestHeaderFocus(): Boolean =
         runCatching {
-            viewModeRequester.requestFocus()
+            (if (historySelected) historyRequester else favoritesRequester).requestFocus()
             true
         }.getOrDefault(false)
 
@@ -182,6 +205,7 @@ fun TvLibraryScreen(
     fun restoreContentFocus(): Boolean {
         navExpanded = false
         return when {
+            lastTarget == "section" -> requestHeaderFocus()
             lastTarget == "view" ->
                 runCatching {
                     viewModeRequester.requestFocus()
@@ -198,6 +222,10 @@ fun TvLibraryScreen(
         }
     }
 
+    LaunchedEffect(historySelected) {
+        TvLibraryFocusMemory.historySelected = historySelected
+    }
+
     LaunchedEffect(gridState) {
         snapshotFlow {
             gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
@@ -211,7 +239,7 @@ fun TvLibraryScreen(
 
     // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
-    LaunchedEffect(active, mediaKeys, gridView, navExpanded) {
+    LaunchedEffect(active, mediaKeys, gridView, historySelected, navExpanded) {
         if (!active || navExpanded) return@LaunchedEffect
         delay(110)
         if (navExpanded) return@LaunchedEffect
@@ -238,6 +266,7 @@ fun TvLibraryScreen(
         }
 
         if (!restored) {
+            if (lastTarget == "section") gridState.scrollToItem(0)
             restored = restoreContentFocus()
         }
         if (!restored) {
@@ -279,6 +308,7 @@ fun TvLibraryScreen(
                 key = "library-header",
                 span = { GridItemSpan(maxLineSpan) },
             ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -308,11 +338,40 @@ fun TvLibraryScreen(
                             rememberTarget("view")
                         },
                         onLeft = {
-                            focusSidebar()
+                            (if (historySelected) historyRequester else favoritesRequester).requestFocus()
                             true
                         },
                         onDown = ::requestFirstMediaFocus,
                     )
+                }
+                Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf("Favorites", "History").forEachIndexed { index, label ->
+                        val selected = historySelected == (index == 1)
+                        LibraryViewModeButton(
+                            gridView = gridView,
+                            label = if (selected) "$label ✓" else label,
+                            requester = if (index == 0) favoritesRequester else historyRequester,
+                            onFocused = { if (!navExpanded) rememberTarget("section") },
+                            onToggle = {
+                                if (!selected) {
+                                    historySelected = index == 1
+                                    TvLibraryFocusMemory.firstVisibleItemIndex = 0
+                                    TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
+                                    rememberTarget("section")
+                                }
+                            },
+                            onLeft = {
+                                if (index == 0) focusSidebar() else favoritesRequester.requestFocus()
+                                true
+                            },
+                            onRight = {
+                                if (index == 0) historyRequester.requestFocus() else viewModeRequester.requestFocus()
+                                true
+                            },
+                            onDown = ::requestFirstMediaFocus,
+                        )
+                    }
+                }
                 }
             }
 
@@ -323,8 +382,18 @@ fun TvLibraryScreen(
                         span = { GridItemSpan(maxLineSpan) },
                     ) {
                         LibraryEmptyState(
-                            title = "Your library is empty",
-                            body = "Titles added to Favorites will appear here.",
+                            title = when {
+                                loading -> "Loading library…"
+                                loadFailed -> "Couldn't load library"
+                                historySelected -> "No watch history yet"
+                                else -> "Your library is empty"
+                            },
+                            body = when {
+                                loading -> "Please wait."
+                                loadFailed -> "Reopen Library to try again."
+                                historySelected -> "Titles you watch will appear here."
+                                else -> "Titles added to Favorites will appear here."
+                            },
                         )
                     }
                 }
@@ -335,6 +404,7 @@ fun TvLibraryScreen(
                         item(key = "library-grid:$key") {
                             LibraryPosterCard(
                                 media = media,
+                                historyCaption = if (historySelected) historyCaptions[key] else null,
                                 requester = mediaRequesters.getValue(key),
                                 onFocused = {
                                     if (!navExpanded) rememberTarget("item", key)
@@ -373,6 +443,7 @@ fun TvLibraryScreen(
                         ) {
                             LibraryListRow(
                                 media = media,
+                                historyCaption = if (historySelected) historyCaptions[key] else null,
                                 requester = mediaRequesters.getValue(key),
                                 onFocused = {
                                     if (!navExpanded) rememberTarget("item", key)
@@ -425,8 +496,7 @@ fun TvLibraryScreen(
     }
 
     // `onResume` stays in the existing route contract for compatibility.
-    // Library now exposes the local Favorites directly; the unused Cloud selector
-    // has been removed from both TV and Mobile.
+    // Both Library sections open details; player resume stays on the detail page.
 }
 
 @Composable
@@ -437,6 +507,8 @@ private fun LibraryViewModeButton(
     onToggle: () -> Unit,
     onLeft: () -> Boolean,
     onDown: () -> Boolean,
+    label: String? = null,
+    onRight: () -> Boolean = { true },
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -464,7 +536,7 @@ private fun LibraryViewModeButton(
                 val code = event.nativeKeyEvent.keyCode
                 when {
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_LEFT -> onLeft()
-                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                    event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_RIGHT -> onRight()
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_DOWN -> onDown()
                     event.type == KeyEventType.KeyDown && code == KeyEvent.KEYCODE_DPAD_UP -> true
                     event.isTvActivationKey() -> {
@@ -492,9 +564,9 @@ private fun LibraryViewModeButton(
         horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LibraryModeGlyph(grid = gridView, focused = focused)
+        if (label == null) LibraryModeGlyph(grid = gridView, focused = focused)
         Text(
-            text = if (gridView) "Grid" else "List",
+            text = label ?: if (gridView) "Grid" else "List",
             color = if (focused) TvDesign.White else TvDesign.Muted,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
@@ -539,6 +611,7 @@ private fun LibraryModeGlyph(
 @Composable
 private fun LibraryPosterCard(
     media: MediaItem,
+    historyCaption: String? = null,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
@@ -627,7 +700,7 @@ private fun LibraryPosterCard(
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            text = listOfNotNull(
+            text = historyCaption ?: listOfNotNull(
                 media.releaseInfo,
                 libraryTypeLabel(media),
             ).joinToString(" • "),
@@ -642,6 +715,7 @@ private fun LibraryPosterCard(
 @Composable
 private fun LibraryListRow(
     media: MediaItem,
+    historyCaption: String? = null,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onClick: () -> Unit,
@@ -734,7 +808,7 @@ private fun LibraryListRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = listOfNotNull(
+                text = historyCaption ?: listOfNotNull(
                     media.releaseInfo,
                     libraryTypeLabel(media),
                 ).joinToString(" • "),
