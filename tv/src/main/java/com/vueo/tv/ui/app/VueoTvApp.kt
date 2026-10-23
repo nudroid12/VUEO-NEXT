@@ -1520,6 +1520,7 @@ fun VueoTvApp(
                                 onRefreshSources = { startSourceDiscovery(media, selectedEpisode, force = true) },
                                 sourcesStopped = sourceDiscoverySnapshot?.sourcesStopped == true,
                                 onStopSources = { sourceDiscoveryControl?.stopSources() },
+                                onStopSubtitleDiscovery = { sourceDiscoveryControl?.stopSubtitles() },
                                 onRefreshSubtitles = {
                                     refreshPlayerSubtitles(
                                         media = media,

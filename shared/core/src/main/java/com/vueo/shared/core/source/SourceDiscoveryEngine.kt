@@ -326,7 +326,7 @@ class SourceDiscoveryEngine(
         }
         publish(latestProgress, streams = cachedStreams)
 
-        val subtitlesUpdateDeferred = async {
+        val subtitlesUpdateDeferred = async(start = CoroutineStart.LAZY) {
             if (!request.discoverSubtitles) {
                 subtitlesResolved = true
                 return@async
@@ -381,6 +381,10 @@ class SourceDiscoveryEngine(
                 publish(latestProgress)
             }
         }
+
+        control?.attachSubtitles(subtitlesUpdateDeferred)
+        subtitlesUpdateDeferred.invokeOnCompletion { control?.detachSubtitles(subtitlesUpdateDeferred) }
+        subtitlesUpdateDeferred.start()
 
         val addonsDeferred = async(start = CoroutineStart.LAZY) {
             activity("requests", message = "Addon source requests started")
@@ -630,7 +634,13 @@ class SourceDiscoveryEngine(
         // Streams are complete independently from subtitle addons. Publish the
         // playable result now; slow subtitle retries may continue and merge into
         // the active player without holding source selection or next-episode play.
-        subtitlesUpdateDeferred.await()
+        try {
+            subtitlesUpdateDeferred.await()
+        } catch (cancelled: CancellationException) {
+            // Only the explicitly stopped subtitle child may finish independently.
+            currentCoroutineContext().ensureActive()
+            if (control?.subtitlesStopped != true) throw cancelled
+        }
         finalBundle = finalBundle.copy(
             subtitles = StreamSubtitlePolicy.forEpisode(freshFinal + finalStreams, subtitles),
         )
