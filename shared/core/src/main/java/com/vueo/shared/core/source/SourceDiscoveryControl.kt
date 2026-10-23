@@ -2,7 +2,7 @@ package com.vueo.shared.core.source
 
 import kotlinx.coroutines.Job
 
-/** Source branch controls for one scan. Video and subtitle branches have separate cancellation controls. */
+/** Source branch controls for one scan. Subtitle jobs are never attached here. */
 class SourceDiscoveryControl {
     private val lock = Any()
     private var addonJob: Job? = null
@@ -22,24 +22,6 @@ class SourceDiscoveryControl {
     fun stopSources() {
         val job = synchronized(lock) { sourcesStopped = true; addonJob }
         stopPlugins()
-        job?.cancel()
-    }
-
-    private var subtitleJob: Job? = null
-    @Volatile var subtitlesStopped: Boolean = false
-        private set
-
-    internal fun attachSubtitles(job: Job) {
-        val stop = synchronized(lock) { subtitleJob = job; subtitlesStopped }
-        if (stop) job.cancel()
-    }
-
-    internal fun detachSubtitles(job: Job) {
-        synchronized(lock) { if (subtitleJob === job) subtitleJob = null }
-    }
-
-    fun stopSubtitles() {
-        val job = synchronized(lock) { subtitlesStopped = true; subtitleJob }
         job?.cancel()
     }
 

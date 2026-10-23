@@ -120,9 +120,6 @@ internal fun parseProviderStreams(
             val subtitles = parsePluginSubtitles(subtitleArray, headers,
                 "plugin:${repository.manifestUrl.hashCode()}:${provider.id}",
                 provider.name)
-            val deferredSubtitles = parsePluginSubtitleRequests(item.optJSONArray("subtitleRequests"),
-                "plugin:${repository.manifestUrl.hashCode()}:${provider.id}", provider.name)
-            if (deferredSubtitles.isNotEmpty()) onDiagnostic?.invoke("SUBTITLE_DEFERRED entry=$index requests=${deferredSubtitles.size} route=selected_player")
             SubtitleFlowDiagnostics.received(
                 repository.manifestUrl, provider.id, url,
                 subtitleArray?.length() ?: 0, subtitleField != null && subtitleArray == null,
@@ -217,7 +214,7 @@ internal fun parseProviderStreams(
                     },
                 headers =
                     headers,
-                subtitles = subtitles + deferredSubtitles,
+                subtitles = subtitles,
                 providerId =
                     "plugin:" +
                     repository.manifestUrl

@@ -1832,7 +1832,6 @@ internal fun MediaDetailsScreen(
                             sourcePickerPluginsStopped = true
                             sourcePickerSourcesStopped = true
                         },
-                        onStopSubtitleDiscovery = { sourceDiscoveryControl?.stopSubtitles() },
                         onRefreshSubtitles = {
                             refreshPlayerSubtitles(playerVideoId)
                         },

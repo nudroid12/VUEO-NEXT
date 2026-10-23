@@ -9,15 +9,9 @@ object StreamSubtitlePolicy {
      * Caller places fresh sources first to retain current sidecar credentials.
      */
     fun forEpisode(sources: List<StreamSource>, addonTracks: List<SubtitleTrack>): List<SubtitleTrack> =
-        (sources.flatMap { it.subtitles } + addonTracks).filterNot(DeferredPluginSubtitles::isIndex).distinctBy { it.url }
+        (sources.flatMap { it.subtitles } + addonTracks).distinctBy { it.url }
 
 
     fun forPlayback(source: StreamSource, addonTracks: List<SubtitleTrack>): List<SubtitleTrack> =
-        mergePlaybackTracks(source.subtitles + addonTracks)
-
-    /** A later duplicate must not move an overlay track back into the video source. */
-    private fun mergePlaybackTracks(tracks: List<SubtitleTrack>): List<SubtitleTrack> =
-        tracks.filterNot(DeferredPluginSubtitles::isIndex).groupBy { it.url }.values.map { duplicates ->
-            duplicates.firstOrNull { it.liveOverlay } ?: duplicates.first()
-        }
+        (source.subtitles + addonTracks).distinctBy { it.url }
 }

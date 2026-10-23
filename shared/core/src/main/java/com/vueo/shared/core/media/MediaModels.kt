@@ -107,8 +107,6 @@ data class SubtitleTrack(
     val headers: Map<String, String> = emptyMap(),
     /** Display metadata only; never used as track identity or cache key. */
     val displayId: String? = null,
-    /** Late external text uses the overlay, without rebuilding the video source. */
-    val liveOverlay: Boolean = false,
 )
 
 data class CatalogPage(

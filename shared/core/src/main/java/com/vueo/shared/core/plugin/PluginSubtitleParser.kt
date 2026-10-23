@@ -8,7 +8,6 @@ import org.json.JSONArray
 internal fun parsePluginSubtitles(
     array: JSONArray?, streamHeaders: Map<String, String>,
     providerId: String, providerName: String,
-    limit: Int = 32,
 ): List<SubtitleTrack> = (0 until (array?.length() ?: 0)).mapNotNull { index ->
     val item = array?.optJSONObject(index) ?: return@mapNotNull null
     fun text(vararg fields: String): String? = fields.firstNotNullOfOrNull { field ->
@@ -28,13 +27,4 @@ internal fun parsePluginSubtitles(
             item.optJSONObject("headers")?.keys()?.asSequence()?.none { it.equals(key, true) } ?: true
         } + item.optJSONObject("headers").toStringMap(),
     )
-}.distinctBy { it.url }.take(limit.coerceIn(1, 128))
-
-/** JSON indexes travel with their owning source; they are not subtitle tracks for playback. */
-internal fun parsePluginSubtitleRequests(array: JSONArray?, providerId: String, providerName: String): List<SubtitleTrack> =
-    parsePluginSubtitles(array, emptyMap(), providerId, providerName, 2)
-        .filter { track -> runCatching {
-            val uri = java.net.URI(track.url)
-            uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null
-        }.getOrDefault(false) }
-        .map { it.copy(mimeType = com.vueo.shared.core.player.DeferredPluginSubtitles.INDEX_MIME, language = "und") }
+}.distinctBy { it.url }.take(32)

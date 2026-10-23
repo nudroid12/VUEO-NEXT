@@ -1,0 +1,12 @@
+e6d4f009ba78b4edced24f15d9f8870d54bd3a1bf9ccd540b0dc3c22b8ba12e8  mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt
+09a4d9edde20ef3f8795dc49e0793dd9a73b2207c105f903d5fa7e8870c20bf4  tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
+b9ce12345babda454ce7a9704654179e5c8be1936c4602a44bcaa0c949943bc9  shared/core/src/main/java/com/vueo/shared/core/player/LiveSmartSubs.kt
+1ebea43a693f9dfdce4e4e395a274e3e037e07539d524e8fde0f227dd9dd8c3f  mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayerMedia.kt
+4a0f6a17964a98eeb473f944173a70c8b028ecec05213f81c6085a3a948bf963  shared/core/src/main/java/com/vueo/shared/core/plugin/PluginSubtitleParser.kt
+ac66739540260bd538299b626f5c998358cec0ed9f3c477d326b627461f680f3  shared/core/src/main/java/com/vueo/shared/core/player/StreamSubtitlePolicy.kt
+2f2b2a217780a55904e212ede165f006c199b9a2dcc334e5a432c8cea0c84871  shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntimeParsing.kt
+6c865e2eb01a3452204f56e866b0bb4e9098bbb75975bb1d000965882412fe83  shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryControl.kt
+a71d06d59049c7d96c2b50021e85eb1b3cf85a07079e92cfb5a2eb2e7c729914  shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt
+04824160191b7395ec171943187dfc59de9e41538cc91ca374ab2ceda16a536d  mobile/src/main/java/com/vueo/mobile/ui/detail/MobileDetails.kt
+265b080e455a2b3708f611ab1b9e3f0b69281cea18e1962b9df3d8e5cb92d23f  tv/src/main/java/com/vueo/tv/ui/app/VueoTvApp.kt
+e2adf793835fcab276062202dd15a6ff9a05eae7e5a7f757aa1a1a2d21edc793  shared/core/src/main/java/com/vueo/shared/core/media/MediaModels.kt

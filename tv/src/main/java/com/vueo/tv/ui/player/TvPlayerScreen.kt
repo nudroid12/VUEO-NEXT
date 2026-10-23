@@ -190,7 +190,6 @@ fun TvPlayerScreen(
     onRefreshSources: () -> Unit = {},
     sourcesStopped: Boolean = false,
     onStopSources: () -> Unit = {},
-    onStopSubtitleDiscovery: () -> Unit = {},
     onRefreshSubtitles: suspend () -> Int = { 0 },
     onLibraryChanged: () -> Unit,
     onPlayNextEpisode: (EpisodeItem, StreamSource) -> Unit = { _, _ -> },
@@ -273,46 +272,13 @@ fun TvPlayerScreen(
                 "episode=${episode?.episode ?: 0} received=${latestDiscoveredSubtitles.size} total=${merged.size}")
         }
     }
-    val startupSubtitles = remember(mediaKey, activeSource.url) {
-        com.vueo.shared.core.player.StartupSubtitleDiscovery()
-    }
-    var subtitleDiscoveryClosed by remember(startupSubtitles) { mutableStateOf(false) }
-    val latestStopSubtitleDiscovery = androidx.compose.runtime.rememberUpdatedState(onStopSubtitleDiscovery)
-    DisposableEffect(startupSubtitles) { onDispose { startupSubtitles.close() } }
-    fun closeStartupSubtitleDiscovery() {
-        if (!startupSubtitles.isOpen) return
-        startupSubtitles.close()
-        subtitleDiscoveryClosed = true
-        latestStopSubtitleDiscovery.value.invoke()
-        com.vueo.shared.core.player.SubtitleFlowDiagnostics.event("TV", activeSource.url,
-            "SUBTITLE_DISCOVERY_CLOSED", "reason=first_frame tracks=${startupSubtitles.snapshot(emptyList()).size}")
-    }
-    val deferredSubtitleRequests = remember(mediaKey, activeSource.url, activeSource.subtitles) {
-        com.vueo.shared.core.player.DeferredPluginSubtitles.requests(activeSource.subtitles)
-    }
-    var deferredSubtitleTracks by remember(mediaKey, activeSource.url) { mutableStateOf(emptyList<SubtitleTrack>()) }
-    LaunchedEffect(startupSubtitles, deferredSubtitleRequests) {
-        deferredSubtitleTracks = emptyList()
-        if (deferredSubtitleRequests.isNotEmpty()) {
-            com.vueo.shared.core.player.SubtitleFlowDiagnostics.event("TV", activeSource.url,
-                "DEFERRED_SUBTITLES_STARTED", "requests=${deferredSubtitleRequests.size} videoReset=false")
-            val found = startupSubtitles.discover {
-                com.vueo.shared.core.player.DeferredPluginSubtitles.load(deferredSubtitleRequests)
-            } ?: return@LaunchedEffect
-            startupSubtitles.snapshot(found)
-            deferredSubtitleTracks = found
-            com.vueo.shared.core.player.SubtitleFlowDiagnostics.event("TV", activeSource.url,
-                "DEFERRED_SUBTITLES_READY", "tracks=${deferredSubtitleTracks.size} videoReset=false")
-        }
-    }
-    val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(activeSource, addonSubtitles + deferredSubtitleTracks)
+    val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(activeSource, addonSubtitles)
     val smartSubsStore = remember(context) { com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context.applicationContext) }
     var smartSubsTracks by remember(mediaKey, activeSource.url) { mutableStateOf(emptyList<SubtitleTrack>()) }
     var smartSubsMessage by remember(mediaKey, activeSource.url) { mutableStateOf<String?>(null) }
     var smartSubsRefreshing by remember(mediaKey) { mutableStateOf(false) }
     var smartSubsRefreshGeneration by remember(mediaKey) { mutableIntStateOf(0) }
-    LaunchedEffect(startupSubtitles, providerSubtitles, smartSubsRefreshGeneration) {
-        if (!startupSubtitles.isOpen) return@LaunchedEffect
+    LaunchedEffect(mediaKey, activeSource.url, providerSubtitles, smartSubsRefreshGeneration) {
         val config = smartSubsStore.configuration()
         smartSubsMessage = null
         if (!config.enabled) { smartSubsTracks = emptyList(); smartSubsRefreshing = false; return@LaunchedEffect }
@@ -333,22 +299,16 @@ fun TvPlayerScreen(
         try {
             // Batch late provider/addon updates. This POST only lists tracks, never translates.
             delay(350L)
-            val found = startupSubtitles.discover {
-                com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
+            smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
                 config = config, mediaType = media.type, videoId = bundle.videoId, tracks = candidates,
             )
-            } ?: return@LaunchedEffect
-            startupSubtitles.snapshot(found)
-            smartSubsTracks = found
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             smartSubsMessage = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.failureMessage(error)
         } finally { smartSubsRefreshing = false }
     }
-    // Read the boundary state so first-frame closure immediately freezes this UI projection.
-    val liveSubtitles = if (subtitleDiscoveryClosed) startupSubtitles.snapshot(emptyList())
-        else startupSubtitles.snapshot(providerSubtitles + smartSubsTracks)
+    val liveSubtitles = (providerSubtitles + smartSubsTracks).distinctBy { it.url }
 
     val externalSubtitlesBySelectionId = remember(liveSubtitles) {
         liveSubtitles.associateBy(::tvExternalSubtitleSelectionId)
@@ -1280,7 +1240,6 @@ fun TvPlayerScreen(
             }
 
             override fun onRenderedFirstFrame() {
-                closeStartupSubtitleDiscovery()
                 if (startupAudioMuted) {
                     player.volume = 1f
                     startupAudioMuted = false
@@ -2343,10 +2302,6 @@ fun TvPlayerScreen(
         )
 
         fun requestSubtitleRefresh() {
-            if (!startupSubtitles.isOpen) {
-                subtitleRefreshMessage = "Subtitle list is fixed for this playback session"
-                return
-            }
             if (subtitleDiscoveryRefreshing) return
             subtitleDiscoveryRefreshing = true
             subtitleRefreshMessage = null
