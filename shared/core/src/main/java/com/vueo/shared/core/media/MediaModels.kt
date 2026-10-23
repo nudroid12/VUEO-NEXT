@@ -54,8 +54,6 @@ data class MediaItem(
     /** Transient ranking metadata; does not change displayed rating sources. */
     val recommendationRating: Double? = null,
     val recommendationVoteCount: Int? = null,
-    /** Explicit TMDB identity supplied by metadata; item.id remains the addon identity. */
-    val tmdbId: String? = null,
 ) {
     val displayType: String
         get() =
@@ -107,6 +105,8 @@ data class SubtitleTrack(
     val headers: Map<String, String> = emptyMap(),
     /** Display metadata only; never used as track identity or cache key. */
     val displayId: String? = null,
+    /** Late external text uses the overlay, without rebuilding the video source. */
+    val liveOverlay: Boolean = false,
 )
 
 data class CatalogPage(

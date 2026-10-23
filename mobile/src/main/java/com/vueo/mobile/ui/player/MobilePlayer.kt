@@ -476,7 +476,21 @@ internal fun PlayerScreen(
         return
     }
 
-    val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(source, discoveredSubtitles)
+    val deferredSubtitleRequests = remember(mediaKey, source.url, source.subtitles) {
+        com.vueo.shared.core.player.DeferredPluginSubtitles.requests(source.subtitles)
+    }
+    var deferredSubtitleTracks by remember(mediaKey, source.url) { mutableStateOf(emptyList<SubtitleTrack>()) }
+    LaunchedEffect(mediaKey, source.url, deferredSubtitleRequests) {
+        deferredSubtitleTracks = emptyList()
+        if (deferredSubtitleRequests.isNotEmpty()) {
+            com.vueo.shared.core.player.SubtitleFlowDiagnostics.event("Mobile", source.url,
+                "DEFERRED_SUBTITLES_STARTED", "requests=${deferredSubtitleRequests.size} videoReset=false")
+            deferredSubtitleTracks = com.vueo.shared.core.player.DeferredPluginSubtitles.load(deferredSubtitleRequests)
+            com.vueo.shared.core.player.SubtitleFlowDiagnostics.event("Mobile", source.url,
+                "DEFERRED_SUBTITLES_READY", "tracks=${deferredSubtitleTracks.size} videoReset=false")
+        }
+    }
+    val providerSubtitles = com.vueo.shared.core.player.StreamSubtitlePolicy.forPlayback(source, discoveredSubtitles + deferredSubtitleTracks)
     val smartSubsStore = remember(context) { com.vueo.shared.core.smartsubs.SmartSubsSettingsStore(context.applicationContext) }
     var smartSubsTracks by remember(mediaKey, source.url) { mutableStateOf(emptyList<SubtitleTrack>()) }
     var smartSubsMessage by remember(mediaKey, source.url) { mutableStateOf<String?>(null) }

@@ -55,7 +55,7 @@ class LiveSmartSubs(
     }
 
     fun update(subtitles: List<SubtitleTrack>) {
-        val incoming = subtitles.filter(::isSmart).distinctBy(PlayerTrackPolicy::externalSubtitleSelectionId)
+        val incoming = subtitles.filter(::isOverlay).distinctBy(PlayerTrackPolicy::externalSubtitleSelectionId)
         if (incoming == tracks) return
         val old = tracks.firstOrNull { PlayerTrackPolicy.externalSubtitleSelectionId(it) == (selectedId ?: pendingId) }
         tracks = incoming
@@ -113,7 +113,13 @@ class LiveSmartSubs(
                 val bytes = requireNotNull(SubtitleSessionCache.get(track.url)) { "Prepared caption bytes unavailable" }
                 val parsed = withContext(parsingDispatcher) {
                     val spans = mutableListOf<SmartSubsCueTimeline.Span<Cue>>()
-                    WebvttParser().parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { output ->
+                    val parser: SubtitleParser = when (SubtitleFormatPolicy.detect(track.url, track.mimeType)) {
+                        SubtitleFormat.SUBRIP -> androidx.media3.extractor.text.subrip.SubripParser()
+                        SubtitleFormat.SSA -> androidx.media3.extractor.text.ssa.SsaParser()
+                        SubtitleFormat.TTML -> androidx.media3.extractor.text.ttml.TtmlParser()
+                        SubtitleFormat.WEBVTT -> WebvttParser()
+                    }
+                    parser.parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { output ->
                         check(spans.size < 50_000) { "Too many generated caption intervals" }
                         spans.add(SmartSubsCueTimeline.Span(output.startTimeUs, output.endTimeUs, output.cues.toList()))
                     }
@@ -178,7 +184,8 @@ class LiveSmartSubs(
     companion object {
         private val sessions = IdentityHashMap<Player, LiveSmartSubs>()
         fun isSmart(track: SubtitleTrack): Boolean = track.providerId == "vueo-smartsubs-ai"
-        fun videoSubtitles(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks.filterNot(::isSmart)
+        fun isOverlay(track: SubtitleTrack): Boolean = isSmart(track) || track.liveOverlay
+        fun videoSubtitles(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks.filterNot(::isOverlay)
         fun get(player: Player): LiveSmartSubs? = sessions[player]
         fun mergedTracks(player: Player, videoTracks: Tracks = player.currentTracks): Tracks =
             sessions[player]?.let { Tracks(videoTracks.groups.toList() + it.groups()) } ?: videoTracks

@@ -9,9 +9,9 @@ object StreamSubtitlePolicy {
      * Caller places fresh sources first to retain current sidecar credentials.
      */
     fun forEpisode(sources: List<StreamSource>, addonTracks: List<SubtitleTrack>): List<SubtitleTrack> =
-        (sources.flatMap { it.subtitles } + addonTracks).distinctBy { it.url }
+        (sources.flatMap { it.subtitles } + addonTracks).filterNot(DeferredPluginSubtitles::isIndex).distinctBy { it.url }
 
 
     fun forPlayback(source: StreamSource, addonTracks: List<SubtitleTrack>): List<SubtitleTrack> =
-        (source.subtitles + addonTracks).distinctBy { it.url }
+        (source.subtitles + addonTracks).filterNot(DeferredPluginSubtitles::isIndex).distinctBy { it.url }
 }
