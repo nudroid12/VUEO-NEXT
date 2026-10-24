@@ -345,7 +345,6 @@ class TvRuntime(context: Context) {
             val results = content.manifestUrls().map { manifestUrl ->
                 async {
                     val result = runCatching {
-                        require(manifestUrl.startsWith("https://"))
                         StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
                     }
                     result.onSuccess { extension ->
@@ -376,10 +375,7 @@ class TvRuntime(context: Context) {
     }
 
     suspend fun addAddon(manifestUrl: String) {
-        val normalized = manifestUrl.trim()
-        require(normalized.startsWith("https://")) {
-            "VUEO requires an HTTPS addon manifest URL."
-        }
+        val normalized = com.vueo.shared.core.stremio.StremioUrls.normalizeManifest(manifestUrl)
         val extension = StremioAddonExtension.fromManifestUrl(normalized)
         content.add(extension.descriptor.baseUrl)
         content.migrateAddonCatalogIdentity(extension.descriptor)

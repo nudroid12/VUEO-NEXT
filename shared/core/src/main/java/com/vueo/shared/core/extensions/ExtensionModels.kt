@@ -78,7 +78,19 @@ data class ExtensionDescriptor(
     val configurationRequired: Boolean = false,
     val health: ExtensionHealth = ExtensionHealth.UNKNOWN,
     val logo: String? = null,
+    val idPrefixes: Set<String> = emptySet(),
+    val resourceDescriptors: List<com.vueo.shared.core.stremio.StremioResource> = emptyList(),
 ) {
     /** Internal installation identity; id remains the provider's original manifest ID. */
     val installationId: String = AddonInstallationIdentity.key(kind, id, baseUrl)
+}
+
+/** Skip incompatible addon resources before allocating a network request. */
+fun ExtensionDescriptor.supportsAddonRequest(resource: String, type: String, videoId: String): Boolean {
+    if (kind != ExtensionKind.STREMIO_ADDON) return true
+    return com.vueo.shared.core.stremio.StremioManifest(
+        id = id, name = name, version = version, manifestUrl = baseUrl, baseUrl = baseUrl,
+        resources = resources, types = types, idPrefixes = idPrefixes,
+        resourceDescriptors = resourceDescriptors,
+    ).supportsRequest(resource, type, videoId)
 }

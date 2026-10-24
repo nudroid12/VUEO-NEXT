@@ -35,10 +35,15 @@ class EpisodeArtworkPolicyTest {
         assertEquals(tmdb, EpisodeArtworkPolicy.next(EpisodeArtworkPolicy.candidates(primary, tmdb, background, poster), failures))
     }
     @Test fun invalidArtworkIsSkippedInsteadOfBlockingOtherCandidates() {
-        for (bad in listOf(null, "", " ", "http://addon.test/image.jpg", "/relative.jpg", "https://", "https:///missing-host", "https://bad host/a")) {
+        for (bad in listOf(null, "", " ", "/relative.jpg", "https://", "https:///missing-host", "https://bad host/a")) {
             assertNull(EpisodeArtworkPolicy.usable(bad))
             assertEquals(background, EpisodeArtworkPolicy.candidates(bad, null, background, poster).first())
         }
+    }
+    @Test fun httpArtworkPreservesLanSchemeAndSignedQuery() {
+        val url = "http://192.168.1.2:7000/episode.jpg?token=A%2FB"
+        assertEquals(url, EpisodeArtworkPolicy.usable(url))
+        assertEquals(url, EpisodeArtworkPolicy.candidates(url, null, background, poster).first())
     }
     @Test fun schemeAndWhitespaceAreNormalizedWithoutChangingSignedQuery() {
         val input = "  HTTPS://addon.test/a.jpg?signature=AbC%2Fxyz&expires=99  "

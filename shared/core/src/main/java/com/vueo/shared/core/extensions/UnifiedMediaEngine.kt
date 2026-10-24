@@ -1456,7 +1456,8 @@ class UnifiedMediaEngine(
                 ) &&
                     "stream" in
                         it.descriptor.resources &&
-                    (providerNameFilter == null || it.descriptor.name.equals(providerNameFilter, true))
+                    (providerNameFilter == null || it.descriptor.name.equals(providerNameFilter, true)) &&
+                    it.descriptor.supportsAddonRequest("stream", type, videoId)
             }
 
         if (providers.isEmpty()) {
@@ -1566,7 +1567,7 @@ class UnifiedMediaEngine(
                     it.descriptor.installationId
                 ) &&
                     "subtitles" in
-                        it.descriptor.resources
+                        it.descriptor.resources && it.descriptor.supportsAddonRequest("subtitles", type, videoId)
             }
 
         if (providers.isEmpty()) {
@@ -1582,7 +1583,7 @@ class UnifiedMediaEngine(
             val snapshot = mutex.withLock {
                 var changed = false
                 tracks
-                    .filter { it.url.startsWith("https://") }
+                    .filter { com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(it.url) }
                     .forEach { track ->
                         if (discoveredUrls.add(track.url)) {
                             discovered += track
@@ -2031,6 +2032,7 @@ object SourceCleaner {
             serverName = primary.serverName?.takeIf { it.isNotBlank() }
                 ?: duplicate.serverName,
             mimeType = primary.mimeType ?: duplicate.mimeType,
+            addonHints = primary.addonHints ?: duplicate.addonHints,
             sizeBytes = primary.sizeBytes ?: duplicate.sizeBytes,
             headers = mergeHeaders(primary.headers, duplicate.headers),
         )

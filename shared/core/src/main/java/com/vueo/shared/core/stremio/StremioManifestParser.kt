@@ -8,9 +8,7 @@ object StremioManifestParser {
         manifestUrl: String,
         payload: String,
     ): StremioManifest {
-        require(manifestUrl.startsWith("https://", ignoreCase = true)) {
-            "VUEO requires HTTPS addon manifest URLs."
-        }
+        val normalizedUrl = StremioUrls.normalizeManifest(manifestUrl)
 
         val json = JSONObject(payload)
         val id = json.optString("id")
@@ -28,19 +26,34 @@ object StremioManifestParser {
             id = id,
             name = name,
             version = json.optString("version", "0.0.0"),
-            manifestUrl = manifestUrl,
-            baseUrl = manifestUrl
-                .removeSuffix("/manifest.json")
-                .removeSuffix("manifest.json")
-                .removeSuffix("/"),
+            manifestUrl = normalizedUrl,
+            baseUrl = normalizedUrl.substringBefore("?").removeSuffix("/manifest.json"),
             description = json.optString("description")
                 .trim()
                 .takeIf(String::isNotBlank),
             resources = parseResources(json.optJSONArray("resources")),
             types = json.optJSONArray("types").toStringSet(),
+            idPrefixes = json.optJSONArray("idPrefixes").toStringSet(),
+            resourceDescriptors = parseResourceDescriptors(json),
             configurable = behaviorHints?.optBoolean("configurable", false) == true,
             configurationRequired = behaviorHints?.optBoolean("configurationRequired", false) == true,
         )
+    }
+
+    fun parseResourceDescriptors(json: JSONObject): List<StremioResource> {
+        val types = json.optJSONArray("types").toStringSet()
+        val prefixes = json.optJSONArray("idPrefixes").toStringSet()
+        val resources = json.optJSONArray("resources") ?: return emptyList()
+        return (0 until resources.length()).mapNotNull { index ->
+            when (val entry = resources.opt(index)) {
+                is String -> entry.trim().takeIf(String::isNotBlank)?.let { StremioResource(it, types, prefixes) }
+                is JSONObject -> entry.optString("name").trim().takeIf(String::isNotBlank)?.let {
+                    StremioResource(it, entry.optJSONArray("types").toStringSet().ifEmpty { types },
+                        entry.optJSONArray("idPrefixes").toStringSet().ifEmpty { prefixes })
+                }
+                else -> null
+            }
+        }
     }
 
     private fun parseResources(array: JSONArray?): Set<String> {

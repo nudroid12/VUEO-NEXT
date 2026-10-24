@@ -45,7 +45,7 @@ object StremioStreamParser {
             val requestHeaders = behaviorHints
                 ?.optJSONObject("proxyHeaders")
                 ?.optJSONObject("request")
-                .toStringMap()
+                .toStringMap().filterKeys { !it.equals("Range", true) }
             val videoSize = behaviorHints
                 ?.optLong("videoSize", -1L)
                 ?.takeIf { it > 0L }
@@ -73,6 +73,22 @@ object StremioStreamParser {
                 },
                 sizeBytes = videoSize,
                 headers = requestHeaders,
+                mimeType = item.sourceText("mimeType"),
+                subtitles = parseSubtitleItems(
+                    item.optJSONArray("subtitles") ?: JSONArray(), manifest,
+                ).map { subtitle -> com.vueo.shared.core.media.SubtitleTrack(
+                    id = subtitle.id, language = subtitle.language, url = subtitle.url,
+                    providerId = subtitle.providerId, providerName = subtitle.providerName,
+                    name = subtitle.name, mimeType = subtitle.mimeType, displayId = subtitle.displayId,
+                    headers = subtitle.headers,
+                ) },
+                addonHints = com.vueo.shared.core.media.AddonStreamHints(
+                    filename = behaviorHints?.sourceText("filename"),
+                    videoHash = behaviorHints?.sourceText("videoHash"),
+                    bingeGroup = behaviorHints?.sourceText("bingeGroup"),
+                    notWebReady = behaviorHints?.optBoolean("notWebReady", false) == true,
+                    responseHeaders = behaviorHints?.optJSONObject("proxyHeaders")?.optJSONObject("response").toStringMap(),
+                ),
                 providerId = manifest.id,
                 providerName = manifest.name,
                 serverName = server,
@@ -84,13 +100,17 @@ object StremioStreamParser {
         payload: String,
         manifest: StremioManifest,
     ): List<SubtitleCandidate> {
-        val subtitles = JSONObject(payload).optJSONArray("subtitles") ?: JSONArray()
+        return parseSubtitleItems(JSONObject(payload).optJSONArray("subtitles") ?: JSONArray(), manifest)
+    }
+
+    private fun parseSubtitleItems(subtitles: JSONArray, manifest: StremioManifest): List<SubtitleCandidate> {
         return (0 until subtitles.length()).mapNotNull { index ->
             val item = subtitles.optJSONObject(index) ?: return@mapNotNull null
             val url = item.optString("url")
                 .trim()
                 .takeIf(String::isNotBlank)
                 ?: return@mapNotNull null
+            if (!StremioUrls.isHttpUrl(url)) return@mapNotNull null
             val language = listOf(
                 "lang",
                 "language",
@@ -127,6 +147,7 @@ object StremioStreamParser {
                 ).takeIf { it.isNotBlank() },
                 mimeType = mimeType,
                 displayId = item.sourceText("displayId"),
+                headers = item.optJSONObject("headers").toStringMap(),
             )
         }
     }

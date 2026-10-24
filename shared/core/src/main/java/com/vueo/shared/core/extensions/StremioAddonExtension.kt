@@ -9,9 +9,9 @@ import com.vueo.shared.core.media.SubtitleTrack
 import com.vueo.shared.core.stremio.DefaultStremioHttpClient
 import com.vueo.shared.core.stremio.StremioAddonClient
 import com.vueo.shared.core.stremio.StremioHttpClient
+import com.vueo.shared.core.stremio.StremioManifestParser
+import com.vueo.shared.core.stremio.StremioUrls
 import com.vueo.shared.core.stremio.StremioManifest
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
@@ -28,18 +28,15 @@ class StremioAddonExtension private constructor(
     private val httpClient: StremioHttpClient,
 ) : MediaExtension {
 
-    private val base = descriptor.baseUrl
-        .removeSuffix("/manifest.json")
-        .removeSuffix("manifest.json")
-        .removeSuffix("/")
-
     private val sharedClient = StremioAddonClient(
         manifest = StremioManifest(
             id = descriptor.id,
             name = descriptor.name,
             version = descriptor.version,
             manifestUrl = descriptor.baseUrl,
-            baseUrl = base,
+            baseUrl = descriptor.baseUrl,
+            idPrefixes = descriptor.idPrefixes,
+            resourceDescriptors = descriptor.resourceDescriptors,
             description = descriptor.description,
             resources = descriptor.resources,
             types = descriptor.types,
@@ -54,8 +51,7 @@ class StremioAddonExtension private constructor(
         catalogId: String,
         extras: Map<String, String>,
     ): CatalogPage {
-        val suffix = encodeExtras(extras)
-        val url = "$base/catalog/${encode(type)}/${encode(catalogId)}$suffix.json"
+        val url = StremioUrls.resource(descriptor.baseUrl, "catalog", type, catalogId, extras)
         val json = JSONObject(httpClient.get(url))
         val metas = json.optJSONArray("metas") ?: JSONArray()
 
@@ -71,7 +67,8 @@ class StremioAddonExtension private constructor(
         type: String,
         id: String,
     ): MediaItem? {
-        val url = "$base/meta/${encode(type)}/${encode(id)}.json"
+        if (!sharedClient.manifest.supportsRequest("meta", type, id)) return null
+        val url = StremioUrls.resource(descriptor.baseUrl, "meta", StremioUrls.canonicalType(type), id)
         val json = JSONObject(httpClient.get(url))
         return json.optJSONObject("meta")?.toMediaItem(descriptor.installationId)
     }
@@ -101,6 +98,8 @@ class StremioAddonExtension private constructor(
                 providerName = source.providerName,
                 serverName = source.serverName,
                 mimeType = source.mimeType,
+                subtitles = source.subtitles,
+                addonHints = source.addonHints,
             )
         }
 
@@ -123,6 +122,7 @@ class StremioAddonExtension private constructor(
                 name = subtitle.name,
                 mimeType = subtitle.mimeType,
                 displayId = subtitle.displayId,
+                headers = subtitle.headers,
             )
         }
 
@@ -154,11 +154,7 @@ class StremioAddonExtension private constructor(
             manifestUrl: String,
             httpClient: StremioHttpClient = DefaultStremioHttpClient,
         ): StremioAddonExtension {
-            require(manifestUrl.startsWith("https://", ignoreCase = true)) {
-                "VUEO requires HTTPS addon manifest URLs."
-            }
-
-            val normalizedUrl = manifestUrl.trim()
+            val normalizedUrl = StremioUrls.normalizeManifest(manifestUrl)
             val json = JSONObject(httpClient.get(normalizedUrl))
 
             val id = json.optString("id")
@@ -181,6 +177,8 @@ class StremioAddonExtension private constructor(
                     description = json.optString("description")
                         .trim()
                         .takeIf(String::isNotBlank),
+                    idPrefixes = json.optJSONArray("idPrefixes").toStringSet(),
+                    resourceDescriptors = StremioManifestParser.parseResourceDescriptors(json),
                     resources = parseResources(json.optJSONArray("resources")),
                     types = json.optJSONArray("types").toStringSet(),
                     catalogs = parseCatalogs(json.optJSONArray("catalogs")),
@@ -325,8 +323,8 @@ private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
         tmdbId = com.vueo.shared.core.plugin.TmdbResolver.metadataId(this),
         type = optString("type", "movie").trim().ifBlank { "movie" },
         name = name,
-        poster = optString("poster").trim().takeIf { it.startsWith("https://", true) },
-        background = optString("background").trim().takeIf { it.startsWith("https://", true) },
+        poster = optString("poster").trim().takeIf { StremioUrls.isHttpUrl(it) },
+        background = optString("background").trim().takeIf { StremioUrls.isHttpUrl(it) },
         description = optString("description").trim().takeIf(String::isNotBlank),
         releaseInfo = optString("releaseInfo").trim().takeIf(String::isNotBlank),
         originalTitle = originalTitle,
@@ -480,7 +478,7 @@ private fun JSONArray?.toEpisodeList(): List<EpisodeItem> {
                 ?: item.optString("description").trim().takeIf(String::isNotBlank),
             thumbnail = item.optString("thumbnail")
                 .trim()
-                .takeIf { it.startsWith("https://", true) },
+                .takeIf { StremioUrls.isHttpUrl(it) },
         )
     }
 
@@ -507,16 +505,3 @@ private fun JSONArray?.toStringList(): List<String> {
 }
 
 private fun JSONArray?.toStringSet(): Set<String> = toStringList().toSet()
-
-private fun encode(value: String): String =
-    URLEncoder.encode(value, StandardCharsets.UTF_8.name())
-        .replace("+", "%20")
-
-private fun encodeExtras(extras: Map<String, String>): String {
-    if (extras.isEmpty()) return ""
-    return extras.entries
-        .joinToString("&") { (key, value) ->
-            "${encode(key)}=${encode(value)}"
-        }
-        .let { "/$it" }
-}

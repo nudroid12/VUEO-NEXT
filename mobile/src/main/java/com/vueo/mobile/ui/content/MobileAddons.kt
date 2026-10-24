@@ -321,7 +321,7 @@ internal fun AddonsScreen(
                         fontSize = 20.sp,
                     )
                     Text(
-                        "Install an HTTPS addon manifest URL. Catalogs exposed by the addon can then populate Home.",
+                        "Install an HTTP or HTTPS addon manifest URL. Catalogs exposed by the addon can then populate Home.",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f),
                     )
                     Spacer(Modifier.height(16.dp))
@@ -461,7 +461,7 @@ internal fun AddonsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "Paste the addon's HTTPS manifest URL. VUEO will inspect its resources and catalogs before installing it."
+                        "Paste the addon's HTTP or HTTPS manifest URL. VUEO will inspect its resources and catalogs before installing it."
                     )
 
                     OutlinedTextField(
@@ -538,27 +538,9 @@ internal fun AddonsScreen(
 }
 
 private fun addonConfigurationUrl(manifestUrl: String): String? {
-    val manifestUri = runCatching { Uri.parse(manifestUrl.trim()) }.getOrNull() ?: return null
-    if (!manifestUri.scheme.equals("https", ignoreCase = true) || manifestUri.host.isNullOrBlank()) {
-        return null
-    }
-
-    val manifestPath = manifestUri.path.orEmpty()
-    val addonBasePath = when {
-        manifestPath.endsWith("/manifest.json", ignoreCase = true) ->
-            manifestPath.dropLast("/manifest.json".length)
-        manifestPath.endsWith("manifest.json", ignoreCase = true) ->
-            manifestPath.dropLast("manifest.json".length).trimEnd('/')
-        else -> manifestPath.substringBeforeLast('/', "")
-    }
-
-    val configurePath = addonBasePath.trimEnd('/') + "/configure"
-    return manifestUri.buildUpon()
-        .clearQuery()
-        .fragment(null)
-        .path(configurePath)
-        .build()
-        .toString()
+    return runCatching {
+        com.vueo.shared.core.stremio.StremioUrls.configuration(manifestUrl)
+    }.getOrNull()
 }
 
 private fun openAddonConfiguration(

@@ -44,7 +44,7 @@ object NextEpisodePrefetchValidator {
         withContext(Dispatchers.IO) {
             val url = source.url
                 ?.trim()
-                ?.takeIf { it.startsWith("https://", ignoreCase = true) }
+                ?.takeIf { com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(it) }
                 ?: return@withContext PrefetchedSourceValidation.INVALID
 
             val request = try {

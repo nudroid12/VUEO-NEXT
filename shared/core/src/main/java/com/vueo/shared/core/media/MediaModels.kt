@@ -91,9 +91,10 @@ data class StreamSource(
     val serverName: String? = null,
     val mimeType: String? = null,
     val subtitles: List<SubtitleTrack> = emptyList(),
+    val addonHints: com.vueo.shared.core.media.AddonStreamHints? = null,
 ) {
     val isDirectPlayable: Boolean
-        get() = url?.startsWith("https://") == true
+        get() = com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)
 }
 
 data class SubtitleTrack(

@@ -256,7 +256,7 @@ internal fun TvAddonSettings(
             TvSettingsEntry(
                 id = "add",
                 title = "Add Addon",
-                subtitle = "Install an HTTPS addon manifest URL.",
+                subtitle = "Install an HTTP or HTTPS addon manifest URL.",
                 onActivate = { managementMessage = null; showAdd = true },
                 operationStatus = managementMessage,
                 section = "ADDONS",

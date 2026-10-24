@@ -237,7 +237,7 @@ private object TvImageCache {
 
 /** Opt-in Home prefetch; shares existing limits, cache and download policy. */
 internal suspend fun tvPrefetchImage(context: Context, url: String?, size: IntSize) {
-    if (url.isNullOrBlank() || !url.startsWith("https://")) return
+    if (url.isNullOrBlank() || !com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)) return
     val target = IntSize(
         TvImageDecodePolicy.targetDimension(size.width),
         TvImageDecodePolicy.targetDimension(size.height),
@@ -274,7 +274,7 @@ fun TvNetworkImage(
             return@LaunchedEffect
         }
         if (!loadEnabled) return@LaunchedEffect
-        if (url.isNullOrBlank() || !url.startsWith("https://")) {
+        if (url.isNullOrBlank() || !com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)) {
             latestLoadResult?.invoke(false)
             return@LaunchedEffect
         }

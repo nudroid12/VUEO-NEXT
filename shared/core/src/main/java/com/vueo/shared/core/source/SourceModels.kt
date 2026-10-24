@@ -32,13 +32,13 @@ data class SourceCandidate(
     val serverName: String? = null,
     val mimeType: String? = null,
     val subtitles: List<com.vueo.shared.core.media.SubtitleTrack> = emptyList(),
+    val addonHints: com.vueo.shared.core.media.AddonStreamHints? = null,
 ) {
     /**
-     * Keep the same security baseline as current VUEO Mobile: only HTTPS
-     * direct URLs are considered immediately playable by the shared core.
+     * HTTP(S) direct media URLs can be opened by the shared playback transport.
      */
     val isDirectPlayable: Boolean
-        get() = url?.startsWith("https://") == true
+        get() = com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)
 
     val isTorrent: Boolean
         get() = !infoHash.isNullOrBlank()
@@ -53,6 +53,7 @@ data class SubtitleCandidate(
     val name: String? = null,
     val mimeType: String? = null,
     val displayId: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 enum class SourceQuality(

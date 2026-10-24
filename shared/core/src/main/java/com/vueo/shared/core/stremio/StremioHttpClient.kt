@@ -18,7 +18,7 @@ interface StremioHttpClient {
  * Default pooled transport for shared Stremio traffic.
  *
  * Network I/O is asynchronous so callers do not block the Android main thread.
- * The HTTPS-only rule preserves the current VUEO security baseline.
+ * HTTP and HTTPS addon URLs share this transport; HTTPS certificate validation stays enabled.
  */
 object DefaultStremioHttpClient : StremioHttpClient {
     private const val MAX_RESPONSE_BODY_BYTES = 8L * 1024L * 1024L
@@ -30,8 +30,8 @@ object DefaultStremioHttpClient : StremioHttpClient {
         .build()
 
     override suspend fun get(url: String): String {
-        require(url.startsWith("https://", ignoreCase = true)) {
-            "VUEO network requests require HTTPS."
+        require(StremioUrls.isHttpUrl(url)) {
+            "VUEO addon requests require HTTP or HTTPS."
         }
 
         val request = Request.Builder()

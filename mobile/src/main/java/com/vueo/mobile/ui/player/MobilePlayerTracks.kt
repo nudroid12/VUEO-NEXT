@@ -504,7 +504,7 @@ internal fun mergeDiscoveredSubtitleChoices(
         val selectionId =
             PlayerTrackPolicy.externalSubtitleSelectionId(subtitle)
         if (
-            !subtitle.url.startsWith("https://") ||
+            !com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(subtitle.url) ||
             !knownSelectionIds.add(selectionId)
         ) {
             return@forEach

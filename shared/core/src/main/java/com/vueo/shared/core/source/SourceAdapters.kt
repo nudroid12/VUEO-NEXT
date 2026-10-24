@@ -30,6 +30,7 @@ fun StreamSource.toSourceCandidate(): SourceCandidate =
         serverName = serverName,
         mimeType = mimeType,
         subtitles = subtitles,
+        addonHints = addonHints,
     )
 
 fun SourceCandidate.toStreamSource(): StreamSource =
@@ -51,4 +52,5 @@ fun SourceCandidate.toStreamSource(): StreamSource =
         serverName = serverName,
         mimeType = mimeType,
         subtitles = subtitles,
+        addonHints = addonHints,
     )

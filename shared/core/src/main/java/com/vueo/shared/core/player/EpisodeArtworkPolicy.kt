@@ -3,11 +3,9 @@ package com.vueo.shared.core.player
 object EpisodeArtworkPolicy {
     fun usable(url: String?): String? {
         val value = url?.trim() ?: return null
-        if (!value.startsWith("https://", ignoreCase = true)) return null
-        val normalized = "https://" + value.substring(8)
-        return runCatching {
-            normalized.takeIf { !java.net.URI(it).host.isNullOrBlank() }
-        }.getOrNull()
+        if (!com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(value)) return null
+        val scheme = java.net.URI(value).scheme
+        return scheme.lowercase() + value.substring(scheme.length)
     }
 
     fun candidates(primary: String?, tmdb: String?, background: String?, poster: String?): List<String> =

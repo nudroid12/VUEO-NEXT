@@ -69,7 +69,7 @@ object SubtitleFlowDiagnostics {
         supplied.take(32).forEach { track ->
             val trackKey = key(track.url)
             val reason = when {
-                !track.url.startsWith("https://") -> "rejected_non_https"
+                !com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(track.url) -> "rejected_non_http"
                 !seen.add(track.url) -> "duplicate_url"
                 track.url !in configured -> "not_configured"
                 else -> "configured"

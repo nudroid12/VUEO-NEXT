@@ -2731,7 +2731,7 @@ private fun buildMediaItem(
         .distinct()
 
     val ordered = subtitles
-        .filter { it.url.startsWith("https://") }
+        .filter { com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(it.url) }
         .distinctBy { it.url }
         .sortedBy { subtitle ->
             normalizedPreferredLanguages.indexOf(tvCanonicalLanguage(subtitle.language))

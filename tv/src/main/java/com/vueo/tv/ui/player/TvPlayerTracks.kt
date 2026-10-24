@@ -75,7 +75,7 @@ internal fun tvMergeDiscoveredSubtitleChoices(
 
     discoveredSubtitles.forEach { subtitle ->
         val selectionId = tvExternalSubtitleSelectionId(subtitle)
-        if (!subtitle.url.startsWith("https://") || !knownSelectionIds.add(selectionId)) {
+        if (!com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(subtitle.url) || !knownSelectionIds.add(selectionId)) {
             return@forEach
         }
         result += TvPlayerTrackChoice(

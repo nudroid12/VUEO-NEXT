@@ -2,8 +2,6 @@ package com.vueo.shared.core.stremio
 
 import com.vueo.shared.core.source.SourceCandidate
 import com.vueo.shared.core.source.SubtitleCandidate
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 class StremioAddonClient(
     val manifest: StremioManifest,
@@ -13,12 +11,11 @@ class StremioAddonClient(
         type: String,
         videoId: String,
     ): List<SourceCandidate> {
-        if (!manifest.supportsResource("stream") || !manifest.supportsType(type)) {
+        if (!manifest.supportsRequest("stream", type, videoId)) {
             return emptyList()
         }
 
-        val url = "${manifest.baseUrl}/stream/" +
-            "${encode(type)}/${encode(videoId)}.json"
+        val url = StremioUrls.resource(manifest.manifestUrl, "stream", StremioUrls.canonicalType(type), videoId)
         return StremioStreamParser.parseSources(
             payload = httpClient.get(url),
             manifest = manifest,
@@ -30,13 +27,11 @@ class StremioAddonClient(
         videoId: String,
         extras: Map<String, String> = emptyMap(),
     ): List<SubtitleCandidate> {
-        if (!manifest.supportsResource("subtitles") || !manifest.supportsType(type)) {
+        if (!manifest.supportsRequest("subtitles", type, videoId)) {
             return emptyList()
         }
 
-        val suffix = encodeExtras(extras)
-        val url = "${manifest.baseUrl}/subtitles/" +
-            "${encode(type)}/${encode(videoId)}$suffix.json"
+        val url = StremioUrls.resource(manifest.manifestUrl, "subtitles", StremioUrls.canonicalType(type), videoId, extras)
         return StremioStreamParser.parseSubtitles(
             payload = httpClient.get(url),
             manifest = manifest,
@@ -48,29 +43,15 @@ class StremioAddonClient(
             manifestUrl: String,
             httpClient: StremioHttpClient = DefaultStremioHttpClient,
         ): StremioAddonClient {
-            require(manifestUrl.startsWith("https://", ignoreCase = true)) {
-                "VUEO requires HTTPS addon manifest URLs."
-            }
-            val payload = httpClient.get(manifestUrl)
+            val normalizedUrl = StremioUrls.normalizeManifest(manifestUrl)
+            val payload = httpClient.get(normalizedUrl)
             return StremioAddonClient(
                 manifest = StremioManifestParser.parse(
-                    manifestUrl = manifestUrl,
+                    manifestUrl = normalizedUrl,
                     payload = payload,
                 ),
                 httpClient = httpClient,
             )
         }
     }
-}
-
-private fun encode(value: String): String =
-    URLEncoder.encode(value, StandardCharsets.UTF_8.name())
-        .replace("+", "%20")
-
-private fun encodeExtras(extras: Map<String, String>): String {
-    if (extras.isEmpty()) return ""
-    val encoded = extras.entries.joinToString("&") { (key, value) ->
-        "${encode(key)}=${encode(value)}"
-    }
-    return "/$encoded"
 }
