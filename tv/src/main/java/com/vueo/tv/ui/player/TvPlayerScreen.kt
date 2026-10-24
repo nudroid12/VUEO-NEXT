@@ -407,7 +407,18 @@ fun TvPlayerScreen(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(SubtitleSessionDataSource.Factory(
                         com.vueo.shared.core.player.PlaybackHttpTraceDataSource.Factory(
-                            httpFactory, "TV", { traceSource.value.headers }, { traceSource.value.url },
+                            androidx.media3.datasource.DataSource.Factory {
+                                val current = traceSource.value
+                                if (com.vueo.shared.core.player.AddonPlaybackPolicy.usesNetworkStartup(current.providerId)) {
+                                    DefaultHttpDataSource.Factory()
+                                        .setUserAgent(current.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: "VUEO-TV")
+                                        .setAllowCrossProtocolRedirects(true)
+                                        .setDefaultRequestProperties(current.headers)
+                                        .setConnectTimeoutMs(com.vueo.shared.core.player.AddonPlaybackPolicy.NETWORK_TIMEOUT_MS)
+                                        .setReadTimeoutMs(com.vueo.shared.core.player.AddonPlaybackPolicy.NETWORK_TIMEOUT_MS)
+                                        .createDataSource()
+                                } else httpFactory.createDataSource()
+                            }, "TV", { traceSource.value.headers }, { traceSource.value.url },
                         )
                     ))
             )
@@ -1267,8 +1278,12 @@ fun TvPlayerScreen(
         }
     }
 
-    LaunchedEffect(activeSource.url, hasRenderedFirstFrame, playbackError, retryGeneration) {
+    LaunchedEffect(activeSource.url, activeSource.providerId, hasRenderedFirstFrame, playbackError, retryGeneration) {
         if (hasRenderedFirstFrame || playbackError != null) return@LaunchedEffect
+
+        if (com.vueo.shared.core.player.AddonPlaybackPolicy.usesNetworkStartup(activeSource.providerId)) {
+            return@LaunchedEffect
+        }
 
         val timeoutMs = if (sourceRecoverySession.isAutomaticRecoveryActive()) {
             SOURCE_RECOVERY_SOURCE_TIMEOUT_MS

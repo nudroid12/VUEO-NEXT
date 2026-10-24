@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import androidx.compose.material.icons.filled.ContentCopy
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -591,6 +593,10 @@ private fun AddonCard(
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val addressText = remember(addon.descriptor.description) {
+        com.vueo.shared.core.extensions.AddonAddressText.parse(addon.descriptor.description)
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(17.dp),
@@ -651,8 +657,8 @@ private fun AddonCard(
 
             operationStatus?.let { Text(it, color = VueoPalette.Muted, fontSize = 11.5.sp) }
 
-            addon.descriptor.description
-                ?.let(::neutralizePlatformCopy)
+            addressText.description
+                .let(::neutralizePlatformCopy)
                 ?.takeIf { it.isNotBlank() }
                 ?.let { description ->
                     Text(
@@ -664,6 +670,22 @@ private fun AddonCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+            addressText.address?.let { address ->
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Address:", color = VueoPalette.Muted, fontSize = 10.5.sp)
+                        Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
+                    }
+                    IconButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Addon address", address))
+                        Toast.makeText(context, "URL copied", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

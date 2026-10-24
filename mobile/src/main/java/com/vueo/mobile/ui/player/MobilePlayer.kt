@@ -923,6 +923,7 @@ internal fun PlayerScreen(
 
 
     val player = remember(
+        source.providerId,
         source.url,
         source.headers,
         mediaKey,
@@ -930,6 +931,12 @@ internal fun PlayerScreen(
     ) {
         val httpFactory =
             DefaultHttpDataSource.Factory()
+                .apply {
+                    if (com.vueo.shared.core.player.AddonPlaybackPolicy.usesNetworkStartup(source.providerId)) {
+                        setConnectTimeoutMs(com.vueo.shared.core.player.AddonPlaybackPolicy.NETWORK_TIMEOUT_MS)
+                        setReadTimeoutMs(com.vueo.shared.core.player.AddonPlaybackPolicy.NETWORK_TIMEOUT_MS)
+                    }
+                }
                 .setUserAgent(
                     source.headers.entries.firstOrNull {
                         it.key.equals("User-Agent", ignoreCase = true) && it.value.isNotBlank()
@@ -2353,6 +2360,10 @@ internal fun PlayerScreen(
             hasRenderedFirstFrame ||
             playbackError != null
         ) {
+            return@LaunchedEffect
+        }
+
+        if (com.vueo.shared.core.player.AddonPlaybackPolicy.usesNetworkStartup(source.providerId)) {
             return@LaunchedEffect
         }
 
