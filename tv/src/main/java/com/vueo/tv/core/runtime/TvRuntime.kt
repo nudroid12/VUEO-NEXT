@@ -383,6 +383,14 @@ class TvRuntime(context: Context) {
         CatalogDiscoveryCache.clearAll(appContext)
     }
 
+    suspend fun refreshAddon(manifestUrl: String) {
+        val extension = StremioAddonExtension.fromManifestUrlWithRetry(manifestUrl)
+        if (manifestUrl.trim() !in content.manifestUrls()) return
+        content.migrateAddonCatalogIdentity(extension.descriptor)
+        engine.install(extension) { content.isAddonEnabled(manifestUrl) }
+        CatalogDiscoveryCache.clearAll(appContext)
+    }
+
     suspend fun removeAddon(manifestUrl: String) {
         val normalized = manifestUrl.trim()
         engine.stremioAddons()

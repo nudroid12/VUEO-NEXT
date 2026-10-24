@@ -191,6 +191,12 @@ internal fun TvAddonSettings(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val restoreInstallFocus = rememberTvSettingsDeferredFocusRestore()
+    var installDraft by remember { mutableStateOf("") }
+    var installing by remember { mutableStateOf(false) }
+    var manageUrl by remember { mutableStateOf<String?>(null) }
+    var refreshingUrl by remember { mutableStateOf<String?>(null) }
     var selectedCategory by remember { mutableStateOf("Catalog & Metadata") }
     var revision by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
@@ -210,19 +216,32 @@ internal fun TvAddonSettings(
             title = "Add Addon",
             themedInstall = true,
             confirmLabel = "Install",
-            initialValue = "",
+            initialValue = installDraft,
+            busy = installing,
+            restoreOnSave = false,
+            message = managementMessage,
             placeholder = "https://…/manifest.json",
-            onDismiss = { showAdd = false },
+            onDismiss = { if (!installing) showAdd = false },
             onSave = { url ->
-                showAdd = false
-                scope.launch {
+                installDraft = url
+                if (!installing) scope.launch {
+                    installing = true
+                    managementMessage = "Installing addon…"
+                    try {
                     runCatching { runtime.addAddon(url) }
                         .onSuccess {
                             revision++
-                            addonMessages[url.trim()] = "Addon installed."
+                            installDraft = ""
+                            showAdd = false
+                            restoreInstallFocus()
+                            managementMessage = "Addon installed."
                             onDataChanged()
                         }
-                        .onFailure { managementMessage = it.message ?: "Unable to install addon." }
+                        .onFailure {
+                            if (it is kotlinx.coroutines.CancellationException) throw it
+                            managementMessage = com.vueo.shared.core.extensions.AddonManagementMessage.failure(it)
+                        }
+                    } finally { installing = false }
                 }
             },
         )
@@ -257,7 +276,7 @@ internal fun TvAddonSettings(
                 id = "add",
                 title = "Add Addon",
                 subtitle = "Install an HTTP or HTTPS addon manifest URL.",
-                onActivate = { managementMessage = null; showAdd = true },
+                onActivate = { if (!installing) { managementMessage = null; showAdd = true } },
                 operationStatus = managementMessage,
                 section = "ADDONS",
                 icon = Icons.Default.Extension,
@@ -272,7 +291,7 @@ internal fun TvAddonSettings(
                 subtitle = "Reload installed manifests while keeping your enable and disable choices.",
                 value = if (refreshingAddons) "Refreshing…" else "Refresh",
                 onActivate = {
-                    if (!refreshingAddons) {
+                    if (!refreshingAddons && refreshingUrl == null) {
                         refreshingAddons = true
                         refreshMessage = null
                         scope.launch {
@@ -286,7 +305,10 @@ internal fun TvAddonSettings(
                                     }
                                     onDataChanged()
                                 }
-                                .onFailure { error -> refreshMessage = error.message ?: "Unable to refresh addons." }
+                                .onFailure { error ->
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                    refreshMessage = com.vueo.shared.core.extensions.AddonManagementMessage.failure(error)
+                                }
                             refreshingAddons = false
                         }
                     }
@@ -347,13 +369,60 @@ internal fun TvAddonSettings(
                     },
                     section = null,
                     icon = Icons.Default.Extension,
-                    onRightAction = { removeUrl = url },
+                    onRightAction = { manageUrl = url },
                     accented = true,
-                    rightActionLabel = "Remove",
+                    rightActionLabel = "Manage",
                     operationStatus = addonMessages[url.trim()],
                 )
             )
         }
+    }
+
+    manageUrl?.let { url ->
+        val descriptor = addonByManifest[url.trim()]?.descriptor
+        val working = refreshingUrl == url || refreshingAddons
+        val actions = buildList {
+            if (descriptor?.configurable == true || descriptor?.configurationRequired == true) {
+                add(TvSettingsEntry(
+                    id = "configure", title = "Configure", subtitle = "Open addon settings in your browser.",
+                    icon = Icons.Default.Settings, onActivate = {
+                        runCatching {
+                            val target = com.vueo.shared.core.stremio.StremioUrls.configuration(url)
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(target)))
+                        }.onFailure { addonMessages[url.trim()] = "No browser available to configure this addon." }
+                    },
+                ))
+            }
+            add(TvSettingsEntry(
+                id = "refresh", title = "Refresh", subtitle = "Reload this addon's manifest.",
+                icon = Icons.Default.Refresh, operationStatus = if (working) "Refreshing…" else addonMessages[url.trim()],
+                onActivate = {
+                    if (refreshingUrl == null && !refreshingAddons) scope.launch {
+                        refreshingUrl = url
+                        addonMessages.remove(url.trim())
+                        try {
+                            runtime.refreshAddon(url)
+                            addonMessages[url.trim()] = "Addon refreshed."
+                            revision++
+                            onDataChanged()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                        } catch (error: Exception) {
+                            addonMessages[url.trim()] = com.vueo.shared.core.extensions.AddonManagementMessage.failure(error)
+                        } finally { refreshingUrl = null }
+                    }
+                },
+            ))
+            add(TvSettingsEntry(
+                id = "remove", title = "Remove", subtitle = "Remove this addon from VUEO.",
+                icon = Icons.Default.Extension, onActivate = { if (!working) { manageUrl = null; removeUrl = url } },
+            ))
+        }
+        TvSettingsListScreen(
+            title = descriptor?.name ?: "Addon", subtitle = "Manage addon", entries = actions,
+            onNavigate = onNavigate, onProfile = onProfile, onBack = { manageUrl = null },
+            topLabel = "Addons", contentManager = true,
+        )
+        return
     }
 
     val enabledCount = manifests.count { runtime.content.isAddonEnabled(it) }
@@ -376,7 +445,7 @@ internal fun TvAddonSettings(
             TvSettingsMetric(catalogCount.toString(), "Catalogs"),
             TvSettingsMetric(resourceCount.toString(), "Resources"),
         ),
-        footer = "Select an addon to enable or disable it. Press right on an addon for Remove.",
+        footer = "Select an addon to enable or disable it. Press right on an addon for Configure, Refresh or Remove.",
     )
 }
 

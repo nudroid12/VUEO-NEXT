@@ -270,6 +270,7 @@ internal fun AddonsScreen(
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var refreshingId by remember { mutableStateOf<String?>(null) }
+    val addonMessages = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
 
     LaunchedEffect(pendingInstallManifestUrl) {
         pendingInstallManifestUrl?.let { incomingUrl ->
@@ -405,6 +406,7 @@ internal fun AddonsScreen(
                                 addon.descriptor.baseUrl
                             ),
                             refreshing = refreshingId == addon.descriptor.installationId,
+                            operationStatus = addonMessages[addon.descriptor.installationId],
                             onConfigure = if (
                                 addon.descriptor.configurable || addon.descriptor.configurationRequired
                             ) {
@@ -413,15 +415,17 @@ internal fun AddonsScreen(
                                 null
                             },
                             onRefresh = {
-                                scope.launch {
+                                if (refreshingId == null) scope.launch {
                                     refreshingId = addon.descriptor.installationId
-
+                                    addonMessages.remove(addon.descriptor.installationId)
+                                    try {
                                     runCatching {
                                         ExtensionInstaller.installStremioAddon(
                                             addon.descriptor.baseUrl
                                         )
                                     }.onSuccess {
                                         refreshed ->
+                                        if (addon.descriptor.baseUrl !in store.manifestUrls()) return@onSuccess
                                         store.migrateAddonCatalogIdentity(refreshed.descriptor)
                                         engine.install(refreshed) {
                                             store.isAddonEnabled(refreshed.descriptor.baseUrl)
@@ -429,9 +433,12 @@ internal fun AddonsScreen(
                                         installed =
                                             engine.stremioAddons()
                                         onContentChanged()
+                                        addonMessages[addon.descriptor.installationId] = "Addon refreshed."
+                                    }.onFailure {
+                                        if (it is kotlinx.coroutines.CancellationException) throw it
+                                        addonMessages[addon.descriptor.installationId] = com.vueo.shared.core.extensions.AddonManagementMessage.failure(it)
                                     }
-
-                                    refreshingId = null
+                                    } finally { refreshingId = null }
                                 }
                             },
                             onDelete = {
@@ -461,7 +468,7 @@ internal fun AddonsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "Paste the addon's HTTP or HTTPS manifest URL. VUEO will inspect its resources and catalogs before installing it."
+                        "Enter an HTTP, HTTPS or Stremio addon URL. /manifest.json is added automatically."
                     )
 
                     OutlinedTextField(
@@ -512,7 +519,8 @@ internal fun AddonsScreen(
                                 showInstallDialog = false
                                 onContentChanged()
                             }.onFailure {
-                                status = it.message ?: "Unable to install addon."
+                                if (it is kotlinx.coroutines.CancellationException) throw it
+                                status = com.vueo.shared.core.extensions.AddonManagementMessage.failure(it)
                             }
 
                             busy = false
@@ -578,6 +586,7 @@ private fun AddonCard(
     onEnabledChanged: (Boolean) -> Unit,
     isDevelopmentDefault: Boolean,
     refreshing: Boolean,
+    operationStatus: String?,
     onConfigure: (() -> Unit)?,
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
@@ -632,12 +641,15 @@ private fun AddonCard(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChanged,
+                    enabled = !refreshing,
                 )
             }
 
             if (refreshing) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
+
+            operationStatus?.let { Text(it, color = VueoPalette.Muted, fontSize = 11.5.sp) }
 
             addon.descriptor.description
                 ?.let(::neutralizePlatformCopy)
@@ -672,6 +684,7 @@ private fun AddonCard(
                 if (onConfigure != null) {
                     TextButton(
                         onClick = onConfigure,
+                        enabled = !refreshing,
                         modifier = Modifier.height(34.dp),
                         contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
                     ) {
@@ -703,6 +716,7 @@ private fun AddonCard(
                 }
                 IconButton(
                     onClick = onDelete,
+                    enabled = !refreshing,
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
