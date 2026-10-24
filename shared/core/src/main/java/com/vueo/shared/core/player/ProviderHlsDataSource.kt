@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Base64
 import androidx.media3.datasource.ByteArrayDataSource
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSchemeDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import java.io.ByteArrayOutputStream
@@ -15,13 +16,26 @@ class ProviderHlsDataSource private constructor(
     private val upstream: DataSource,
     private val session: Factory,
 ) : DataSource {
+    private val listeners = mutableListOf<TransferListener>()
     private var active: DataSource? = null
     private var response: Map<String, List<String>> = emptyMap()
 
-    override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
+    override fun addTransferListener(transferListener: TransferListener) {
+        listeners += transferListener
+        upstream.addTransferListener(transferListener)
+        active?.takeIf { it !== upstream }?.addTransferListener(transferListener)
+    }
 
     override fun open(dataSpec: DataSpec): Long {
         check(active == null) { "DataSource is already open" }
+        // HLS may reference inline keys or other embedded bytes. These are local
+        // data, so route them before the provider policy and HTTP transport.
+        if (dataSpec.uri.scheme.equals(DataSchemeDataSource.SCHEME_DATA, ignoreCase = true)) {
+            val embedded = DataSchemeDataSource()
+            listeners.forEach(embedded::addTransferListener)
+            active = embedded
+            return embedded.open(dataSpec)
+        }
         active = upstream
         val playlistPolicy = session.policy(dataSpec.uri)
         val segment = playlistPolicy == null
