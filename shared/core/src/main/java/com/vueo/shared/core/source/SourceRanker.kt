@@ -121,12 +121,14 @@ object SourceRanker : SourceRankingPolicy {
         sources: List<SourceCandidate>,
         preferredQuality: String?,
         originalLanguage: String?,
-    ): List<SourceCandidate> = sources.sortedWith(
-        comparator(
-            preferredQuality = preferredQuality,
-            originalLanguage = originalLanguage,
-        ),
-    )
+    ): List<SourceCandidate> = sources
+        .map { source -> source to assess(source, preferredQuality, originalLanguage).score }
+        .sortedWith(
+            compareByDescending<Pair<SourceCandidate, Int>> { it.second }
+                .thenBy { it.first.sizeBytes ?: Long.MAX_VALUE }
+                .thenBy { it.first.providerName.lowercase() },
+        )
+        .map { it.first }
 
     override fun automaticRecoveryCandidates(
         rankedSources: List<SourceCandidate>,

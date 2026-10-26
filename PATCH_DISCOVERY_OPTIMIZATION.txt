@@ -1,0 +1,46 @@
+VUEO discovery optimization — Mobile and TV shared core
+Base: VUEO-NEXT-main (59).zip + corrected text-tab/Sources patch.
+Extract into repository root and replace matching files. Use this combined ZIP.
+No YAML/workflows included.
+
+Changes:
+1. Provider-filtered plugin scans have separate cache AND single-flight keys.
+   Null (all providers), blank, and named provider filters cannot collide.
+2. Ready providers start without waiting for missing scripts elsewhere.
+   Missing scripts are repaired on IO per provider before execution slots are
+   acquired. Existing execution/WebView concurrency limits remain in force.
+3. The central discovery engine receives immutable raw addon snapshots and owns
+   cleaning/ranking. Other UnifiedMediaEngine callers retain cleaned results.
+4. Cache+fresh merges are reused for status/subtitle-only publications.
+   Unchanged plugin source lists no longer remap and invalidate source cleaning.
+5. Ranking assesses each candidate once per rank operation while preserving
+   score, size, provider-name ordering and stable ties. The general comparator
+   remains available to existing callers.
+6. Explicit Refresh skips the outer source-session cache and invalidates the
+   scoped plugin result cache. Normal cache loading says checking providers,
+   since plugin results may themselves still be fresh in cache.
+7. Successful empty subtitle responses get at most one late-result retry.
+   Failure/timeouts retain the existing overall retry/time budget; nonempty
+   responses stop retrying as before, including language-filtered results.
+
+Previous fixes included:
+- Recovered source status clears on Mobile and TV.
+- Mobile Sources rows retain their positions.
+- TV underline marker on original Addon/Repository/Cast text-tab rows only.
+- Pill/segmented controls retain their original appearance and activation.
+
+Validation:
+Static lexical and integration checks passed on 10 new/modified discovery files.
+Five JUnit tests added: cache scoping (2), subtitle retry policy (2), ranking
+parity against the existing comparator (1, multiple quality/language inputs).
+JUnit and Android builds NOT executed: Gradle/Android SDK/Kotlin toolchain is
+unavailable here. No measured latency improvement or device behavior is claimed.
+ZIP integrity and no-YAML checks passed.
+
+Suggested device checks:
+- Normal discovery, repeat discovery from cache, explicit Refresh.
+- Full-provider scan alongside provider-only next-episode prefetch.
+- One missing provider script with another provider already installed.
+- Early source selection while other providers and subtitle work continue.
+- Empty subtitle response versus request failure/timeout; manual subtitle refresh.
+- Mobile/TV rapid Stop/Refresh, next episode and returning from playback.

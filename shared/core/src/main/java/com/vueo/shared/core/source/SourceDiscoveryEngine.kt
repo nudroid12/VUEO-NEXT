@@ -66,7 +66,7 @@ class SourceDiscoveryEngine(
             mediaId = item.id,
             videoId = videoId,
         )
-        val cached = if (request.sourceProviderName == null) SourceDiscoveryCache.get(cacheKey) else null
+        val cached = if (!request.forceRefresh && request.sourceProviderName == null) SourceDiscoveryCache.get(cacheKey) else null
         // Per-scan memoization avoids parsing the same source on every update.
         val episodeDecisions = ConcurrentHashMap<StreamSource, String>()
         fun rejectionReason(source: StreamSource): String {
@@ -110,7 +110,7 @@ class SourceDiscoveryEngine(
         var firstResultMs: Long? = null
         var searching = true
         var latestProgress = if (cached != null) {
-            "Recent sources loaded instantly • refreshing in background"
+            "Recent sources loaded instantly • checking providers"
         } else {
             "Starting source discovery…"
         }
@@ -251,6 +251,30 @@ class SourceDiscoveryEngine(
             return lastCleanFresh
         }
 
+        var lastDisplayFresh: List<StreamSource>? = null
+        var lastDisplayMerged: List<StreamSource> = emptyList()
+        fun mergedWithCache(fresh: List<StreamSource>): List<StreamSource> {
+            if (cachedStreams.isEmpty()) return fresh
+            if (fresh.isEmpty()) return cachedStreams
+            if (lastDisplayFresh !== fresh) {
+                lastDisplayFresh = fresh
+                lastDisplayMerged = SourceCleaner.clean(
+                    sources = cachedStreams + fresh,
+                    preferredQuality = preferredQuality,
+                    originalLanguage = item.originalLanguage,
+                )
+            }
+            return lastDisplayMerged
+        }
+
+        var lastPluginCandidates: List<com.vueo.shared.core.source.SourceCandidate>? = null
+        fun acceptPluginSources(candidates: List<com.vueo.shared.core.source.SourceCandidate>) {
+            if (candidates != lastPluginCandidates) {
+                lastPluginCandidates = candidates
+                freshPluginStreams = candidates.map { it.toStreamSource() }
+            }
+        }
+
         fun publish(
             progress: String,
             streams: List<StreamSource>? = null,
@@ -260,11 +284,7 @@ class SourceDiscoveryEngine(
             latestProgress = displayedProgress
             val fresh = cleanFresh()
             val display = streams ?: if (searching) {
-                SourceCleaner.clean(
-                    sources = cachedStreams + fresh,
-                    preferredQuality = preferredQuality,
-                    originalLanguage = item.originalLanguage,
-                )
+                mergedWithCache(fresh)
             } else {
                 fresh.ifEmpty { cachedStreams }
             }
@@ -388,6 +408,7 @@ class SourceDiscoveryEngine(
             try {
                 mediaEngine.resolveStreamsProgressive(
                     providerNameFilter = request.sourceProviderName,
+                    cleanResults = false,
                     type = item.type,
                     videoId = videoId,
                     onActivity = { event ->
@@ -462,7 +483,7 @@ class SourceDiscoveryEngine(
                         )
                     },
                     onProgress = { progressResult, completed, total ->
-                        freshPluginStreams = progressResult.streams.map { it.toStreamSource() }
+                        acceptPluginSources(progressResult.streams)
                         pluginRawCount = progressResult.streams.size
                         pluginCompleted = completed
                         pluginTotal = total
@@ -547,17 +568,15 @@ class SourceDiscoveryEngine(
         }
 
         if (pluginResult != null) {
-            freshPluginStreams = pluginResult.streams.map { it.toStreamSource() }
+            acceptPluginSources(pluginResult.streams)
             pluginRawCount = pluginResult.streams.size
             notice = pluginSummary(pluginResult)
         }
 
         val freshFinal = cleanFresh()
-        val finalStreams = if (control?.pluginsStopped == true || control?.sourcesStopped == true) SourceCleaner.clean(
-            sources = cachedStreams + freshFinal,
-            preferredQuality = preferredQuality,
-            originalLanguage = item.originalLanguage,
-        ) else freshFinal.ifEmpty { cachedStreams }
+        val finalStreams = if (control?.pluginsStopped == true || control?.sourcesStopped == true) {
+            mergedWithCache(freshFinal)
+        } else freshFinal.ifEmpty { cachedStreams }
         searching = false
         synchronized(loadingProviders) { loadingProviders.clear() }
         recordProviders(finalStreams)

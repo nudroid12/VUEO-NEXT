@@ -1446,6 +1446,7 @@ class UnifiedMediaEngine(
         type: String,
         videoId: String,
         providerNameFilter: String? = null,
+        cleanResults: Boolean = true,
         onActivity: (AddonRequestActivity) -> Unit = {},
         onProgress: suspend (AddonStreamProgress) -> Unit,
     ): List<StreamSource> = coroutineScope {
@@ -1515,9 +1516,7 @@ class UnifiedMediaEngine(
 
                         AddonStreamProgress(
                             streams =
-                                SourceCleaner.clean(
-                                    rawStreams
-                                ),
+                                if (cleanResults) SourceCleaner.clean(rawStreams) else rawStreams.toList(),
                             rawCount =
                                 rawStreams.size,
                             completedAddons =
@@ -1546,9 +1545,7 @@ class UnifiedMediaEngine(
         }.awaitAll()
 
         mutex.withLock {
-            SourceCleaner.clean(
-                rawStreams
-            )
+            if (cleanResults) SourceCleaner.clean(rawStreams) else rawStreams.toList()
         }
     }
 
@@ -1664,9 +1661,13 @@ class UnifiedMediaEngine(
                 mergeAndPublish(accepted)
             }
 
-            // Successful providers stop here. Empty, failed and timed-out
-            // providers remain eligible for bounded late-result checks.
-            return errorType == null && !result.isNullOrEmpty()
+            // Allow one late-result retry for a valid empty response; transient
+            // failures/timeouts retain the existing bounded retry window.
+            return !SubtitleDiscoveryRetryPolicy.shouldRetry(
+                attempt = attempt,
+                successful = errorType == null && result != null,
+                hasResults = !result.isNullOrEmpty(),
+            )
         }
 
         var pendingProviders = providers

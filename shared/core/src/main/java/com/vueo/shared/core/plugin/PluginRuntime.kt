@@ -257,6 +257,7 @@ suspend fun discoverProgressive(
                 mediaType = mediaType,
                 season = season,
                 episode = episode,
+                providerNameFilter = providerNameFilter,
             )
 
         if (forceRefresh) {
@@ -337,8 +338,16 @@ suspend fun discoverProgressive(
         )
 
         try {
-            val preparation =
-                preflight.prepare(targets)
+            val initiallyReady = withContext(Dispatchers.IO) {
+                targets.filter { (repository, provider) -> codeStore.isReady(repository, provider) }.toSet()
+            }
+            var preparation = PluginRuntimePreparation(
+                targetProviders = targets.size,
+                alreadyReadyProviders = initiallyReady.size,
+                repairedProviders = 0,
+                failedRepairs = 0,
+                errors = emptyList(),
+            )
 
             val runs =
                 mutableListOf<ProviderRun>()
@@ -355,6 +364,18 @@ suspend fun discoverProgressive(
 
                         val run =
                             try {
+                                if ((repository to provider) !in initiallyReady) {
+                                    val repaired = withContext(Dispatchers.IO) {
+                                        preflight.prepare(listOf(repository to provider))
+                                    }
+                                    mutex.withLock {
+                                        preparation = preparation.copy(
+                                            repairedProviders = preparation.repairedProviders + repaired.repairedProviders,
+                                            failedRepairs = preparation.failedRepairs + repaired.failedRepairs,
+                                            errors = (preparation.errors + repaired.errors).distinct().take(8),
+                                        )
+                                    }
+                                }
                                 val execute: suspend () -> ProviderRun = {
                                     concurrency.withPermit {
                                         withContext(Dispatchers.Default) {

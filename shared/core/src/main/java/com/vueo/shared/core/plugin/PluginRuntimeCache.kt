@@ -125,6 +125,7 @@ internal object PluginRuntimeCache {
         mediaType: String,
         season: Int?,
         episode: Int?,
+        providerNameFilter: String? = null,
     ): String {
         val topology =
             buildString {
@@ -170,7 +171,7 @@ internal object PluginRuntimeCache {
             season?.toString().orEmpty(),
             episode?.toString().orEmpty(),
             topologyHash,
-        ).joinToString("|")
+        ).joinToString("|").let { PluginDiscoveryCacheScope.key(it, providerNameFilter) }
     }
 
     private fun sha256(value: String): String =
