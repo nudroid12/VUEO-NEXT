@@ -25,3 +25,12 @@ Android build attempted; blocked by unavailable com.android.application Gradle p
 Mobile rating UI placement corrected after build log: moved out of playback onClick into the composable action area.
 Kotlin parser checked all patched Kotlin files. Full Android rebuild not verified.
 Compose UI, remote focus, persisted rating interactions and device performance still require testing.
+
+UI polish revision:
+Single neutral ThumbsUpDown icon opens Like/Dislike icons. Active choice replaces neutral icon.
+Tap active option again to clear; dismissing does not change the stored rating.
+Watchlist uses outlined/filled bookmark. Mobile actions share one row with 48dp touch targets.
+TV uses focusable popup; focus enters current selection and returns to rating trigger on dismissal.
+TV spacing below actions reduced to 8dp. Previous rating/Watched fixes included.
+Only the two Details UI files differ from the previous corrected personal-rating patch.
+All patched Kotlin syntax parsed successfully. No Android build, device UI or remote test verified.

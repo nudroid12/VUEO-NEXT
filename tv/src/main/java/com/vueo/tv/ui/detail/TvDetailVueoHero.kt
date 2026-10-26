@@ -22,11 +22,20 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material.icons.outlined.ThumbsUpDown
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +81,7 @@ internal fun VueoDetailHero(
     val context = LocalContext.current
     val profile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
     val store = remember(profile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = profile) }
+    val ratingRequester = remember { FocusRequester() }
     val likeRequester = remember { FocusRequester() }
     val dislikeRequester = remember { FocusRequester() }
     val item = state.item
@@ -79,6 +89,13 @@ internal fun VueoDetailHero(
         it.media.id == item.id && it.media.type == item.type
     }?.value ?: 0) }
 
+    var ratingExpanded by remember(item.id, item.type, profile) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val closeRating: () -> Unit = {
+        ratingExpanded = false
+        scope.launch { withFrameNanos { }; ratingRequester.requestFocus() }
+    }
+    val popupOffset = with(LocalDensity.current) { 52.dp.roundToPx() }
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
     val canPlay = !seriesNeedsEpisode || state.selectedEpisode != null
@@ -140,31 +157,56 @@ internal fun VueoDetailHero(
                 onClick = onPlay,
             )
             VueoCircleAction(
-                icon = if (state.watchlisted) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                icon = if (state.watchlisted) Icons.Default.Bookmark else Icons.Outlined.BookmarkBorder,
                 contentDescription = if (state.watchlisted) "Remove from Watchlist" else "Add to Watchlist",
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = likeRequester,
+                rightRequester = ratingRequester,
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
-            VueoCircleAction(
-                icon = Icons.Default.ThumbUp, contentDescription = if (rating == 1) "Remove Like" else "Like",
-                selected = rating == 1, requester = likeRequester, leftRequester = listRequester,
-                rightRequester = dislikeRequester, downRequester = downRequester,
-                onClick = { rating = if (rating == 1) 0 else 1; store.setRating(item, rating) },
-            )
-            VueoCircleAction(
-                icon = Icons.Default.ThumbDown, contentDescription = if (rating == -1) "Remove Dislike" else "Dislike",
-                selected = rating == -1, requester = dislikeRequester, leftRequester = likeRequester,
-                rightRequester = null, downRequester = downRequester,
-                onClick = { rating = if (rating == -1) 0 else -1; store.setRating(item, rating) },
-            )
+            Box {
+                VueoCircleAction(
+                    icon = when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbsUpDown },
+                    contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" },
+                    selected = rating != 0, requester = ratingRequester, leftRequester = listRequester,
+                    rightRequester = null, downRequester = downRequester,
+                    onClick = { ratingExpanded = true },
+                )
+                if (ratingExpanded) {
+                    Popup(alignment = Alignment.TopStart, offset = IntOffset(0, popupOffset),
+                        onDismissRequest = closeRating, properties = PopupProperties(focusable = true)) {
+                        Row(Modifier.background(TvDesign.SurfaceRaised, RoundedCornerShape(28.dp)).padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            VueoCircleAction(
+                                icon = Icons.Default.ThumbUp,
+                                contentDescription = if (rating == 1) "Clear rating" else "Like",
+                                selected = rating == 1, requester = likeRequester,
+                                leftRequester = FocusRequester.Cancel, rightRequester = dislikeRequester,
+                                downRequester = FocusRequester.Cancel,
+                                onClick = { rating = if (rating == 1) 0 else 1; store.setRating(item, rating); closeRating() },
+                            )
+                            VueoCircleAction(
+                                icon = Icons.Default.ThumbDown,
+                                contentDescription = if (rating == -1) "Clear rating" else "Dislike",
+                                selected = rating == -1, requester = dislikeRequester,
+                                leftRequester = likeRequester, rightRequester = null,
+                                downRequester = FocusRequester.Cancel,
+                                onClick = { rating = if (rating == -1) 0 else -1; store.setRating(item, rating); closeRating() },
+                            )
+                        }
+                        LaunchedEffect(Unit) {
+                            withFrameNanos { }
+                            (if (rating == -1) dislikeRequester else likeRequester).requestFocus()
+                        }
+                    }
+                }
+            }
 
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
         if (creditLines.isNotEmpty()) {
             Column(

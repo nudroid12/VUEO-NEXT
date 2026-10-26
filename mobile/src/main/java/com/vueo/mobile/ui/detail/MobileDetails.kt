@@ -70,10 +70,16 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ThumbsUpDown
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.ThumbDown
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -2341,6 +2347,15 @@ internal fun MediaDetailsScreen(
                         item.episodes
                             .isNotEmpty()
 
+                val ratingProfile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
+                val ratingStore = remember(ratingProfile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = ratingProfile) }
+                var rating by remember(item.id, item.type, ratingProfile) {
+                    mutableStateOf(ratingStore.ratings().firstOrNull { row ->
+                        row.media.id == item.id && row.media.type == item.type
+                    }?.value ?: 0)
+                }
+                var ratingExpanded by remember(item.id, item.type, ratingProfile) { mutableStateOf(false) }
+
                 Row(
                     horizontalArrangement =
                         Arrangement.spacedBy(
@@ -2393,73 +2408,42 @@ internal fun MediaDetailsScreen(
                         )
                     }
 
-                    OutlinedButton(
-                        modifier =
-                            Modifier.height(
-                                48.dp
-                            ),
+                    OutlinedIconButton(
                         onClick = {
-                            // Keep an explicit user override so an in-flight startup
-                            // snapshot cannot repaint the button with its pre-click state.
-                            val updated =
-                                libraryStore
-                                    .toggleWatchlist(
-                                        item
-                                    )
+                            val updated = libraryStore.toggleWatchlist(item)
                             watchlistUserOverride = updated
                             inWatchlist = updated
-
                             onLibraryChanged()
                         },
+                        modifier = Modifier.size(48.dp).semantics { selected = inWatchlist },
                     ) {
-                        Icon(
-                            if (inWatchlist) {
-                                Icons.Default.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription =
-                                null,
-                        )
-
-                        Spacer(
-                            Modifier.width(6.dp)
-                        )
-
-                        Text(
-                            if (inWatchlist) {
-                                "In Watchlist"
-                            } else {
-                                "Watchlist"
-                            }
-                        )
+                        Icon(if (inWatchlist) Icons.Default.Bookmark else Icons.Outlined.BookmarkBorder,
+                            contentDescription = if (inWatchlist) "Remove from Watchlist" else "Add to Watchlist")
                     }
-                }
-
-
-                // Explicit feedback is independent of the saved Watchlist.
-                run {
-                    val ratingProfile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
-                    val ratingStore = remember(ratingProfile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = ratingProfile) }
-                    var rating by remember(item.id, item.type, ratingProfile) {
-                        mutableStateOf(ratingStore.ratings().firstOrNull { row ->
-                            row.media.id == item.id && row.media.type == item.type
-                        }?.value ?: 0)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(1 to "Like", -1 to "Dislike").forEach { (value, label) ->
-                            OutlinedButton(onClick = {
-                                rating = if (rating == value) 0 else value
-                                ratingStore.setRating(item, rating)
-                            }) {
-                                Icon(if (value == 1) Icons.Default.ThumbUp else Icons.Default.ThumbDown, contentDescription = null)
-                                Spacer(Modifier.width(6.dp))
-                                Text((if (rating == value) "✓ " else "") + label)
+                    Box {
+                        OutlinedIconButton(onClick = { ratingExpanded = true },
+                            modifier = Modifier.size(48.dp).semantics { selected = rating != 0 }) {
+                            Icon(when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbsUpDown },
+                                contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" })
+                        }
+                        DropdownMenu(expanded = ratingExpanded, onDismissRequest = { ratingExpanded = false }) {
+                            Row(Modifier.padding(horizontal = 4.dp)) {
+                                listOf(1, -1).forEach { value ->
+                                    IconButton(onClick = {
+                                        rating = if (rating == value) 0 else value
+                                        ratingStore.setRating(item, rating)
+                                        ratingExpanded = false
+                                    }, modifier = Modifier.size(48.dp).semantics { selected = rating == value },
+                                        colors = IconButtonDefaults.iconButtonColors(
+                                            contentColor = if (rating == value) VueoPalette.Accent else Color.White)) {
+                                        Icon(if (value == 1) Icons.Default.ThumbUp else Icons.Default.ThumbDown,
+                                            contentDescription = if (rating == value) "Clear rating" else if (value == 1) "Like" else "Dislike")
+                                    }
+                                }
                             }
                         }
                     }
                 }
-
 
 
                 if (canResume) {
