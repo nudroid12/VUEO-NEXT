@@ -47,6 +47,7 @@ object HomeRecommendationFeeds {
         val similarEnabled: Boolean,
         val forYouEnabled: Boolean = true,
         val becauseEnabled: Boolean = true,
+        val ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList(),
     )
 
     private data class Record(
@@ -84,10 +85,10 @@ object HomeRecommendationFeeds {
         val excluded = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.distinct().sorted()
         val favorites = request.favorites.flatMap(ForYouPolicy::aliases).distinct().sorted()
-        val forYou = if (!request.forYouEnabled) "" else "dna-v2:" + hash(listOf(now / 86_400_000L,
+        val forYou = if (!request.forYouEnabled) "" else "rating-v1:" + hash(listOf(now / 86_400_000L,
             request.history.map { listOf(it.media.copy(episodes = emptyList()), it.isCompleted,
                 (it.progressFraction * 20).toInt(), it.positionMs / 300_000L, it.lastWatchedEpochMs / 86_400_000L) },
-            request.favorites.map { it.copy(episodes = emptyList()) }, excluded, favorites).toString())
+            request.favorites.map { it.copy(episodes = emptyList()) }, excluded, favorites, request.ratings).toString())
         val seed = if (request.becauseEnabled) HomeRecommendationPolicy.latestMeaningfulSeed(request.history) else null
         val because = if (!request.becauseEnabled) "" else hash(listOf(seed?.copy(episodes = emptyList()), excluded).toString())
         return forYou to because
@@ -97,7 +98,7 @@ object HomeRecommendationFeeds {
     internal fun visible(cached: HomeRecommendationSections, request: Request): HomeRecommendationSections {
         val watched = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.toSet()
-        val excluded = watched + request.favorites.flatMap(ForYouPolicy::aliases)
+        val excluded = watched + request.favorites.flatMap(ForYouPolicy::aliases) + request.ratings.flatMap { ForYouPolicy.aliases(it.media) }
         val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
         val sameSeed = seed != null && cached.becauseYouWatchedSeed?.let {
             ForYouPolicy.identity(it) == ForYouPolicy.identity(seed)
@@ -118,7 +119,8 @@ object HomeRecommendationFeeds {
         )
     }
 
-    suspend fun observe(context: Context, request: Request): StateFlow<HomeRecommendationSections> = withContext(Dispatchers.IO) {
+    suspend fun observe(context: Context, input: Request): StateFlow<HomeRecommendationSections> = withContext(Dispatchers.IO) {
+        val request = input.copy(ratings = com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = input.profile).ratings())
         val key = scopeKey(request)
         val entry = synchronized(entries) {
             entries.getOrPut(key) {
@@ -136,7 +138,7 @@ object HomeRecommendationFeeds {
             val now = System.currentTimeMillis()
             val (forYouSignature, becauseSignature) = requestSignatures(request, now)
             entry.record = entry.record.copy(sections = entry.record.sections.copy(
-                forYou = entry.record.sections.forYou.takeIf { entry.record.forYouSignature.startsWith("dna-v2:") && usable(entry.record.forYouSavedAt, now) }.orEmpty(),
+                forYou = entry.record.sections.forYou.takeIf { entry.record.forYouSignature.startsWith("rating-v1:") && usable(entry.record.forYouSavedAt, now) }.orEmpty(),
                 becauseYouWatched = entry.record.sections.becauseYouWatched.takeIf { usable(entry.record.becauseSavedAt, now) }.orEmpty()))
             val record = entry.record
             val forYouFresh = record.forYouSignature == forYouSignature && fresh(record.forYouAt, record.forYouRetry, now)
@@ -170,12 +172,12 @@ object HomeRecommendationFeeds {
 
     private suspend fun refreshForYou(entry: Entry, generation: Long, request: Request, signature: String) {
         try {
-            val sources = ForYouCandidateLoader.load(request.profile, request.history, request.favorites, request.traktClientId)
+            val sources = ForYouCandidateLoader.load(request.profile, request.history, request.favorites, request.traktClientId, request.ratings)
             val result = withContext(Dispatchers.Default) {
                 val context = currentCoroutineContext()
                 ForYouPolicy.rank(sources.seeds, sources.batches, sources.discovery, request.history,
                     request.favorites, limit = 24, checkActive = { context.ensureActive() },
-                    dna = sources.dna ?: ForYouPolicy.profile(request.history, request.favorites) { context.ensureActive() })
+                    ratings = request.ratings, dna = sources.dna ?: ForYouPolicy.profile(request.history, request.favorites) { context.ensureActive() })
             }
             publish(entry, generation, request, forYou = true) { old ->
                 old.copy(sections = old.sections.copy(forYou = result.ifEmpty {

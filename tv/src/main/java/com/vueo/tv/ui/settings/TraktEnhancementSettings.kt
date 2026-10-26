@@ -208,7 +208,7 @@ internal fun TvTraktEnhancementSettings(
             "discovery", "Discovery Rows", "Show Trakt trending and popular titles on Home. Works without login.", state.discovery,
         ) { state.setFeature("discovery", it) }.copy(section = "DISCOVERY", switchChecked = state.discovery))
         add(toggleEntry(
-            "favorites-sync", "Sync Favorites", "Sync Favorites with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
+            "favorites-sync", "Sync Watchlist", "Sync Watchlist with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
             state.favorites, enabled = state.connected && !state.busy,
         ) { state.setFeature("sync_favorites", it) }.copy(section = "SYNC & PLAYBACK", switchChecked = state.favorites))
         add(toggleEntry(

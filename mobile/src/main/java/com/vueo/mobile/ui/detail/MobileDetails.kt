@@ -70,6 +70,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.ArrowBack
@@ -2364,7 +2366,30 @@ internal fun MediaDetailsScreen(
                                 targetEpisode =
                                     selectedEpisode,
                                 startPositionMs =
-                                    if (canResume) {
+                                    // Explicit feedback is independent of the saved Watchlist.
+                run {
+                    val ratingProfile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
+                    val ratingStore = remember(ratingProfile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = ratingProfile) }
+                    var rating by remember(item.id, item.type, ratingProfile) {
+                        mutableStateOf(ratingStore.ratings().firstOrNull { row ->
+                            row.media.id == item.id && row.media.type == item.type
+                        }?.value ?: 0)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1 to "Like", -1 to "Dislike").forEach { (value, label) ->
+                            OutlinedButton(onClick = {
+                                rating = if (rating == value) 0 else value
+                                ratingStore.setRating(item, rating)
+                            }) {
+                                Icon(if (value == 1) Icons.Default.ThumbUp else Icons.Default.ThumbDown, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text((if (rating == value) "✓ " else "") + label)
+                            }
+                        }
+                    }
+                }
+
+                if (canResume) {
                                         activePlaybackEntry
                                             ?.positionMs
                                             ?: 0L
@@ -2426,9 +2451,9 @@ internal fun MediaDetailsScreen(
 
                         Text(
                             if (inWatchlist) {
-                                "In Favorites"
+                                "In Watchlist"
                             } else {
-                                "Favorites"
+                                "Watchlist"
                             }
                         )
                     }

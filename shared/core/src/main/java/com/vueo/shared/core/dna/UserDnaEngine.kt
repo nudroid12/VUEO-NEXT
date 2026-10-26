@@ -614,7 +614,7 @@ class UserDnaEngine(
 
 
         private const val MIN_BEHAVIOR_POSITION_MS = 5_000L
-        private const val MY_LIST_WEIGHT = 3.0
+        private const val MY_LIST_WEIGHT = 0.5
         private const val DAY_MS = 24L * 60L * 60L * 1_000L
         private const val ABANDONED_AFTER_MS = 7L * DAY_MS
         private const val ABANDONED_PROGRESS_THRESHOLD = 0.15f

@@ -12,6 +12,15 @@ import kotlin.math.ln
 
 /** Shares the existing DNA model; no per-candidate profile rebuild or text vectors. */
 object ForYouPolicy {
+    private fun feedback(item: MediaItem, ratings: List<com.vueo.shared.core.storage.TitleRating>): Double {
+        val own = genres(item)
+        if (own.isEmpty()) return 0.0
+        val signals = ratings.map { rating -> jaccard(own, genres(rating.media)) * rating.value }
+        return (signals.sum() / kotlin.math.sqrt(signals.size.coerceAtLeast(1).toDouble())).coerceIn(-1.0, 1.0)
+    }
+    private fun rated(item: MediaItem, ratings: List<com.vueo.shared.core.storage.TitleRating>) =
+        ratings.any { rating -> aliases(item).any(aliases(rating.media)::contains) }
+
     data class Seed(val media: MediaItem, val weight: Double, val lastWatched: Long)
     data class RelatedBatch(val seed: Seed, val items: List<MediaItem>)
     fun identity(item: MediaItem): String = "${type(item)}:${item.id}"
@@ -22,11 +31,12 @@ object ForYouPolicy {
 
     fun seeds(history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>,
         now: Long = System.currentTimeMillis(), dna: UserDnaSnapshot = profile(history, favorites, now),
-        checkActive: () -> Unit = {}): List<Seed> {
+        checkActive: () -> Unit = {}, ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList()): List<Seed> {
         val values = linkedMapOf<String, Seed>()
         val favoriteKeys = favorites.flatMap(::aliases).toSet()
         history.forEach { entry ->
             checkActive()
+            if (ratings.any { it.value < 0 && aliases(it.media).any(aliases(entry.media)::contains) }) return@forEach
             if (!LibraryViewingPolicy.isMeaningfullyWatched(entry)) return@forEach
             val key = identity(entry.media)
             val strength = when {
@@ -39,10 +49,15 @@ object ForYouPolicy {
                 maxOf(old?.lastWatched ?: 0L, entry.lastWatchedEpochMs))
         }
         favorites.forEach { media ->
+            if (ratings.any { it.value < 0 && aliases(it.media).any(aliases(media)::contains) }) return@forEach
             checkActive()
             val key = identity(media)
             val old = values[key]
-            values[key] = Seed(richer(old?.media, media), old?.weight ?: .65, old?.lastWatched ?: 0L)
+            values[key] = Seed(richer(old?.media, media), old?.weight ?: .20, old?.lastWatched ?: 0L)
+        }
+        ratings.filter { it.value > 0 }.forEach { rating ->
+            val key = identity(rating.media)
+            values[key] = Seed(richer(values[key]?.media, rating.media), 2.0, values[key]?.lastWatched ?: 0L)
         }
         // Resolve title/year aliases before selection; unsupported IDs never consume a request slot.
         val unique = linkedMapOf<String, Seed>()
@@ -63,7 +78,7 @@ object ForYouPolicy {
             // Recent viewing is at most five percent, never a dedicated slot.
             val ageDays = (now - seed.lastWatched).coerceAtLeast(0L) / 86_400_000.0
             seed.copy(weight = .55 * taste.affinity(seed.media) + .30 * seed.weight +
-                (if (favorite) .10 else 0.0) + (if (seed.lastWatched > 0) .05 / (1 + ageDays / 30) else 0.0))
+                (if (favorite) .03 else 0.0) + .35 * feedback(seed.media, ratings) + (if (seed.lastWatched > 0) .05 / (1 + ageDays / 30) else 0.0))
         }.toMutableList()
         val diversity = Diversity(candidates.map { it.media })
         val selected = mutableListOf<Seed>()
@@ -82,6 +97,7 @@ object ForYouPolicy {
     fun rank(seeds: List<Seed>, batches: List<RelatedBatch>, catalog: List<MediaItem>,
         history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>, limit: Int = 12,
         checkActive: () -> Unit = {}, dna: UserDnaSnapshot = profile(history, favorites, checkActive = checkActive),
+        ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList(),
     ): List<MediaItem> {
         if (limit <= 0) return emptyList()
         val excluded = history.filter(LibraryViewingPolicy::isMeaningfullyWatched).flatMap { aliases(it.media) }.toSet() + favorites.flatMap(::aliases)
@@ -90,7 +106,7 @@ object ForYouPolicy {
         (batches.flatMap { it.items }.take(108) + catalog.take(72)).forEach { item ->
             checkActive()
             val keys = aliases(item)
-            if (keys.none(excluded::contains)) {
+            if (keys.none(excluded::contains) && !rated(item, ratings)) {
                 val key = keys.firstNotNullOfOrNull { candidateAliases[it] } ?: identity(item)
                 candidates[key] = richer(candidates[key], item)
                 keys.forEach { candidateAliases[it] = key }
@@ -126,7 +142,7 @@ object ForYouPolicy {
             val score = if (seeds.isEmpty()) .85 * quality + .15 * popularity else
                 .45 * taste.affinity(media) + .25 * source + .15 * quality + .10 * topical + .05 * popularity
             val owner = ranks.keys.sortedWith(compareByDescending<String> { ranks.getValue(it) * (seedById[it]?.weight ?: .5) }.thenBy { it }).firstOrNull()
-            Scored(media, score, owner)
+            Scored(media, score + .35 * feedback(media, ratings), owner)
         }.toMutableList()
         val diversity = Diversity(candidates.values.toList())
         val selected = mutableListOf<MediaItem>()

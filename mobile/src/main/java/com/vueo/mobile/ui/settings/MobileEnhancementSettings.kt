@@ -171,7 +171,7 @@ internal fun PersonalizationSettingsScreen(
             ) {
                 VueoSettingsToggleRow(
                     title = "User DNA",
-                    subtitle = "Build a local taste profile from History, playback progress and Favorites.",
+                    subtitle = "Build a local taste profile from History, playback progress and Watchlist.",
                     checked = userDnaEnabled,
                     onCheckedChange = { enabled ->
                         userDnaEnabled = enabled
@@ -224,7 +224,7 @@ internal fun PersonalizationSettingsScreen(
         item(key = "personalization-local") {
             VueoCompactInfo(
                 title = "Local by design",
-                text = "Turning User DNA off keeps History, Favorites and playback progress. It only stops those signals from shaping DNA Match and recommendations.",
+                text = "Turning User DNA off keeps History, Watchlist and playback progress. It only stops those signals from shaping DNA Match and recommendations.",
             )
         }
     }

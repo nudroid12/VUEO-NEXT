@@ -18,6 +18,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -66,7 +69,16 @@ internal fun VueoDetailHero(
     onToggleList: () -> Unit,
     onToggleWatched: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val profile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
+    val store = remember(profile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = profile) }
+    val likeRequester = remember { FocusRequester() }
+    val dislikeRequester = remember { FocusRequester() }
     val item = state.item
+    var rating by remember(item.id, item.type, profile) { mutableStateOf(store.ratings().firstOrNull {
+        it.media.id == item.id && it.media.type == item.type
+    }?.value ?: 0) }
+
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
     val canPlay = !seriesNeedsEpisode || state.selectedEpisode != null
@@ -129,13 +141,25 @@ internal fun VueoDetailHero(
             )
             VueoCircleAction(
                 icon = if (state.watchlisted) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = if (state.watchlisted) "Remove from Favorites" else "Add to Favorites",
+                contentDescription = if (state.watchlisted) "Remove from Watchlist" else "Add to Watchlist",
                 selected = state.watchlisted,
                 requester = listRequester,
                 leftRequester = playRequester,
-                rightRequester = null,
+                rightRequester = likeRequester,
                 downRequester = downRequester,
                 onClick = onToggleList,
+            )
+            VueoCircleAction(
+                icon = Icons.Default.ThumbUp, contentDescription = if (rating == 1) "Remove Like" else "Like",
+                selected = rating == 1, requester = likeRequester, leftRequester = listRequester,
+                rightRequester = dislikeRequester, downRequester = downRequester,
+                onClick = { rating = if (rating == 1) 0 else 1; store.setRating(item, rating) },
+            )
+            VueoCircleAction(
+                icon = Icons.Default.ThumbDown, contentDescription = if (rating == -1) "Remove Dislike" else "Dislike",
+                selected = rating == -1, requester = dislikeRequester, leftRequester = likeRequester,
+                rightRequester = null, downRequester = downRequester,
+                onClick = { rating = if (rating == -1) 0 else -1; store.setRating(item, rating) },
             )
 
         }

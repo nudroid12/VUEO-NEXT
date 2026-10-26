@@ -350,7 +350,7 @@ fun TvLibraryScreen(
                 }
                 if (deleteHistoryError) Text("Couldn't delete history. Try again.", color = TvDesign.Muted, fontSize = 12.sp)
                 Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf("Favorites", "History").forEachIndexed { index, label ->
+                    listOf("Watchlist", "History").forEachIndexed { index, label ->
                         val selected = historySelected == (index == 1)
                         LibraryViewModeButton(
                             gridView = gridView,
@@ -397,7 +397,7 @@ fun TvLibraryScreen(
                                 loading -> "Please wait."
                                 loadFailed -> "Reopen Library to try again."
                                 historySelected -> "Titles you watch will appear here."
-                                else -> "Titles added to Favorites will appear here."
+                                else -> "Titles added to Watchlist will appear here."
                             },
                         )
                     }

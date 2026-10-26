@@ -139,7 +139,7 @@ fun TvUserDnaScreen(
             DnaAffinityCard(
                 modifier = Modifier.weight(1.05f),
                 title = "Top Genres",
-                subtitle = "What your recent watching and Favorites say about your taste.",
+                subtitle = "What your recent watching and Watchlist say about your taste.",
                 affinities = snapshot.topGenres.take(5),
                 emptyText = if (snapshot.readiness == UserDnaReadiness.STARTING) {
                     "Your DNA is just getting started. Keep watching to build your taste profile."
@@ -157,7 +157,7 @@ fun TvUserDnaScreen(
         DnaViewingCard(modifier = Modifier.fillMaxWidth(), snapshot = snapshot)
 
         Text(
-            text = "Your DNA is calculated locally from this profile's History and Favorites. Nothing is sent to a server or AI API.",
+            text = "Your DNA is calculated locally from this profile's History and Watchlist. Nothing is sent to a server or AI API.",
             color = TvDesign.Muted,
             fontSize = 12.sp,
         )
@@ -207,7 +207,7 @@ private fun DnaDisabledScreen(
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-        Text("History, Favorites and playback progress are retained.", color = TvDesign.Muted, fontSize = 13.sp)
+        Text("History, Watchlist and playback progress are retained.", color = TvDesign.Muted, fontSize = 13.sp)
     }
 }
 
@@ -496,7 +496,7 @@ private fun DnaViewingCard(
         Text("Viewing Signals", color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DnaStat(Modifier.weight(1f), "Watched titles", behavior.watchedTitles.toString())
-            DnaStat(Modifier.weight(1f), "Favorites", behavior.myListTitles.toString())
+            DnaStat(Modifier.weight(1f), "Watchlist", behavior.myListTitles.toString())
             DnaStat(Modifier.weight(1f), "Completion", "${behavior.completionRatePercent}%")
             DnaStat(Modifier.weight(1f), "Taste titles", behavior.uniqueTitles.toString())
             DnaStat(Modifier.weight(1f), "History entries", behavior.historyEntries.toString())

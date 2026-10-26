@@ -275,7 +275,8 @@ fun TvHomeScreen(
     val currentTmdbRecommendations = runtime.settingsStore.tmdbRecommendationsEnabled()
     val currentTmdbSimilar = runtime.settingsStore.tmdbSimilarTitlesEnabled()
     val personalized = runtime.dnaPreferences.shouldPersonalizeRecommendations(activeProfileId)
-    LaunchedEffect(active, runtime, activeProfileId, refreshToken, libraryRevision,
+    val ratingRevision by com.vueo.shared.core.storage.RatingChanges.revision.collectAsState()
+    LaunchedEffect(ratingRevision, active, runtime, activeProfileId, refreshToken, libraryRevision,
         retainedState.libraryHydrationRefreshToken, retainedState.libraryHydrationRevision,
         currentRecommendationEngine, currentTraktClientId, currentTmdbKey,
         currentTmdbRecommendations, currentTmdbSimilar, personalized, forYouEnabled, becauseEnabled) {

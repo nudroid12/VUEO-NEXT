@@ -696,7 +696,8 @@ internal fun HomeScreen(
         retainedState.presentationProfileId = activeProfileId
         recommendationSnapshot = snapshot
     }
-    LaunchedEffect(recommendationSnapshot, activeProfileId, personalizedHomeEnabled,
+    val ratingRevision by com.vueo.shared.core.storage.RatingChanges.revision.collectAsState()
+    LaunchedEffect(ratingRevision, recommendationSnapshot, activeProfileId, personalizedHomeEnabled,
         recommendationEngine, recommendationKey, recommendationTmdbEnabled,
         recommendationSimilarEnabled, recommendationTraktClientId, forYouEnabled, becauseEnabled) {
         val snapshot = recommendationSnapshot ?: return@LaunchedEffect

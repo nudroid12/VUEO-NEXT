@@ -130,7 +130,7 @@ internal enum class DataClearAction(
     ),
     WATCH_HISTORY(
         title = "Clear Watch History?",
-        message = "Previously watched playback history will be removed. Favorites remains unchanged.",
+        message = "Previously watched playback history will be removed. Watchlist remains unchanged.",
     ),
 }
 

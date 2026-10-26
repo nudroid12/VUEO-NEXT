@@ -253,7 +253,7 @@ internal fun TraktEnhancementSettingsScreen(onBack: () -> Unit) {
         item(key = "trakt-sync-label") { VueoSectionLabel("SYNC & PLAYBACK") }
         item(key = "trakt-favorites") {
             VueoSettingsToggleCard(
-                title = "Sync Favorites", subtitle = "Sync Favorites with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
+                title = "Sync Watchlist", subtitle = "Sync Watchlist with your Trakt Watchlist. Turning this on uploads saved titles and imports your Watchlist.",
                 checked = state.favorites, enabled = state.connected && !state.busy,
                 onCheckedChange = { state.setFeature("sync_favorites", it) },
             )

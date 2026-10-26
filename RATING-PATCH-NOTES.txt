@@ -1,0 +1,20 @@
+VUEO personal rating patch — base: VUEO-NEXT-main (61).zip
+
+Extract at repository root and replace files. No YML files included.
+
+Mobile and TV Details: Like / Dislike; click selected choice to clear.
+Personal feedback is local and scoped to each existing profile. No public rating number.
+Favorites labels become Watchlist; storage keys and existing saved titles stay intact.
+Watchlist weight in User DNA is reduced from 3.0 to 0.5; existing DNA readouts therefore change.
+For You adds liked titles as seeds, excludes disliked seeds and rated titles, and adjusts genre affinity.
+Dislike lowers similar candidates; it does not block the entire genre.
+Ratings participate in feed and candidate cache signatures. Home re-observes after changes.
+Existing request concurrency, seed limits, remote recommendation service and cache TTLs remain.
+Rating does not enable personalization when User DNA/personal recommendations are disabled.
+Related-title requests for liked titles still use the existing recommendation service.
+Ratings are not synced with Trakt or across devices. Existing profile cleanup covers the library prefs.
+
+Validation: 19 standalone Kotlin policy checks passed using actual policy/DNA code with storage and assertion stubs.
+Five new JUnit policy tests included. This is not an Android instrumentation or full Gradle test run.
+Android build attempted; blocked by unavailable com.android.application Gradle plugin 9.1.1 in offline resolution.
+Compose UI, remote focus, persisted rating interactions and device performance still require testing.

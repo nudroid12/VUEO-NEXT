@@ -429,7 +429,7 @@ internal fun LibraryScreen(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf("Favorites", "History").forEachIndexed { index, label ->
+                    listOf("Watchlist", "History").forEachIndexed { index, label ->
                         val selected = historySelected == (index == 1)
                         TextButton(onClick = { historySelected = index == 1 }) {
                             Text(label, color = if (selected) Color.White else VueoPalette.Muted,
@@ -448,7 +448,7 @@ internal fun LibraryScreen(
             item(key = "library-load-failed") {
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     LibraryEmptyCard(
-                        title = if (historySelected) "Couldn't load History" else "Couldn't load Favorites",
+                        title = if (historySelected) "Couldn't load History" else "Couldn't load Watchlist",
                         body = "Try loading your library again.",
                     )
                     TextButton(onClick = onVersionChanged) { Text("Retry") }
@@ -468,7 +468,7 @@ internal fun LibraryScreen(
                         title =
                             if (historySelected) "No watch history yet" else "Your library is empty",
                         body =
-                            if (historySelected) "Titles you watch will appear here." else "Titles added to Favorites will appear here.",
+                            if (historySelected) "Titles you watch will appear here." else "Titles added to Watchlist will appear here.",
                     )
                 }
             }
@@ -826,7 +826,7 @@ private fun LibraryPosterCard(
             Icon(
                 Icons.Default.Delete,
                 contentDescription =
-                    "Remove from Favorites",
+                    "Remove from Watchlist",
                 modifier =
                     Modifier.size(16.dp),
             )

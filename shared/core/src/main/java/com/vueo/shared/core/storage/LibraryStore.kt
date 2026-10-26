@@ -108,6 +108,28 @@ class LibraryStore(
         return items.filter { com.vueo.shared.core.profile.KidsContentPolicy.allows(it.media.certification, limit) }
     }
 
+    /** Local explicit feedback; storage remains in the profile's existing library prefs. */
+    fun ratings(): List<TitleRating> = synchronized(SYNC_STORAGE_LOCK) {
+        val array = runCatching { JSONArray(prefs.getString(scopedKey("title_ratings_v1"), "[]")) }.getOrElse { JSONArray() }
+        (0 until array.length()).mapNotNull { index -> runCatching {
+            val row = array.getJSONObject(index)
+            TitleRating(mediaFromJson(row.getJSONObject("media")), row.getInt("value"))
+        }.getOrNull()?.takeIf { it.value == 1 || it.value == -1 } }
+    }
+
+    fun setRating(media: MediaItem, value: Int) = synchronized(SYNC_STORAGE_LOCK) {
+        require(value in -1..1)
+        val remaining = ratings().filterNot {
+            com.vueo.shared.core.home.ForYouPolicy.aliases(it.media).any(
+                com.vueo.shared.core.home.ForYouPolicy.aliases(media)::contains)
+        }
+        val rows = if (value == 0) remaining else remaining + TitleRating(media.copy(episodes = emptyList()), value)
+        val array = JSONArray()
+        rows.forEach { array.put(JSONObject().put("media", mediaToJson(it.media)).put("value", it.value)) }
+        prefs.edit().putString(scopedKey("title_ratings_v1"), array.toString()).apply()
+        RatingChanges.revision.value += 1L
+    }
+
     @Synchronized
     fun watchlist(): List<MediaItem> =
         readWatchlist()

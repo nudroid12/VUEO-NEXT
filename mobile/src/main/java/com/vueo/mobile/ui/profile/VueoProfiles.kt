@@ -343,7 +343,7 @@ internal fun ProfileSettingsScreen(
             onDismissRequest = { cancelDelete() },
             title = { Text("Delete ${profile.name}?") },
             text = {
-                Text("This removes this profile's local Favorites, history, playback progress and personal preferences.")
+                Text("This removes this profile's local Watchlist, history, playback progress and personal preferences.")
             },
             confirmButton = {
                 Button(

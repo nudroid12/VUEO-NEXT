@@ -31,7 +31,7 @@ object ForYouCandidateLoader {
 
     suspend fun load(
         profileId: String, history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>,
-        traktClientId: String,
+        traktClientId: String, ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList(),
     ): Result = withContext(Dispatchers.IO) {
         if (traktClientId.isBlank()) return@withContext Result(emptyList(), emptyList())
         val now = System.currentTimeMillis()
@@ -48,13 +48,19 @@ object ForYouCandidateLoader {
             digest.update(it.copy(episodes = emptyList()).toString().toByteArray())
             digest.update(0.toByte())
         }
+        digest.update(ratings.toString().toByteArray())
         val key = Key(profileId, traktClientId.trim(), now / 86_400_000L,
             digest.digest().joinToString("") { "%02x".format(it) })
         synchronized(cache) { cache[key]?.takeIf { it.until > now } }?.let { return@withContext it.result }
         val context = coroutineContext
         val (dna, seeds) = withContext(Dispatchers.Default) {
-            val dna = ForYouPolicy.profile(history, favorites, now) { context.ensureActive() }
-            dna to ForYouPolicy.seeds(history, favorites, now, dna) { context.ensureActive() }
+            val positiveHistory = history.filterNot { entry -> ratings.any { rating ->
+                rating.value < 0 && ForYouPolicy.aliases(rating.media).any(ForYouPolicy.aliases(entry.media)::contains)
+            } }
+            val dna = ForYouPolicy.profile(positiveHistory, favorites.filterNot { media -> ratings.any {
+                it.value < 0 && ForYouPolicy.aliases(it.media).any(ForYouPolicy.aliases(media)::contains)
+            } }, now) { context.ensureActive() }
+            dna to ForYouPolicy.seeds(history, favorites, now, dna, { context.ensureActive() }, ratings)
         }
         val received = ConcurrentHashMap<Int, List<MediaItem>>()
         val gate = Semaphore(3)

@@ -486,7 +486,7 @@ internal fun VueoSettingsHub(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    VueoProfileStat(Modifier.weight(1f), "Favorites", hubSnapshot?.myListCount?.toString() ?: "…")
+                                    VueoProfileStat(Modifier.weight(1f), "Watchlist", hubSnapshot?.myListCount?.toString() ?: "…")
                                     VueoProfileStat(Modifier.weight(1f), "Watched", watchedTitlesCount?.toString() ?: "…")
                                     VueoProfileStat(
                                         modifier = Modifier.weight(1f),

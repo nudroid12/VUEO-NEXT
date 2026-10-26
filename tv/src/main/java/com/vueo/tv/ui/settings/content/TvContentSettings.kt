@@ -71,7 +71,7 @@ internal fun TvPersonalizationSettings(
     var forYou by remember(profile.id) { mutableStateOf(dna.forYouEnabled(profile.id)) }
     var because by remember(profile.id) { mutableStateOf(dna.becauseYouWatchedEnabled(profile.id)) }
     val entries = listOf(
-        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and Favorites.", dnaEnabled) {
+        toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and Watchlist.", dnaEnabled) {
             dnaEnabled = it
             dna.setUserDnaEnabled(profile.id, it)
         }.copy(section = "USER DNA"),
