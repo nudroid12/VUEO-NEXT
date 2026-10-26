@@ -122,19 +122,8 @@ internal fun PlayerSourcesWorkspace(
             candidate.url?.let { it !in failedSourceUrls } == true
         }
     }
-    val orderedSources = remember(
-        visibleSources,
-        recommended?.url,
-    ) {
-        val recommendedUrl = recommended?.url
-        if (recommendedUrl == null) {
-            visibleSources
-        } else {
-            visibleSources.sortedByDescending {
-                it.url == recommendedUrl
-            }
-        }
-    }
+    // Keep row positions stable when playback/recommendation status changes.
+    val orderedSources = visibleSources
 
     VueoMotionDialogHost(
         visible = visible,

@@ -1,0 +1,1 @@
+Combined with previous status fix. Mobile now preserves incoming source order; Recommended and Playing badges no longer move rows. Extract into repo root and replace files. Static check passed; build/device tests unavailable. No YAML included.
