@@ -6,6 +6,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import java.util.LinkedHashMap
+import com.vueo.shared.core.media.SubtitleTextTransform
 import java.io.ByteArrayOutputStream
 
 /**
@@ -17,12 +18,21 @@ object SubtitleSessionCache {
     private const val MAX_TOTAL_BYTES = 8 * 1024 * 1024
     internal const val MAX_FILE_BYTES = 2 * 1024 * 1024
     private val entries = LinkedHashMap<String, ByteArray>(MAX_ENTRIES, .75f, true)
+    private val transforms = mutableMapOf<String, SubtitleTextTransform>()
     private val registered = LinkedHashMap<String, Map<String, String>>()
 
     @Synchronized
-    fun register(url: String, headers: Map<String, String> = emptyMap()) {
+    fun register(url: String, headers: Map<String, String> = emptyMap(), textTransform: SubtitleTextTransform? = null) {
+        val transform = textTransform?.takeIf { it.algorithm == "aes-cbc" && it.scope == "cue-lines" && it.keys.size in 1..4 }
+        if (transforms[url] != transform) entries.remove(url)
+        if (transform == null) transforms.remove(url) else transforms[url] = transform
         registered[url] = headers.toMap()
-        while (registered.size > 256) registered.remove(registered.keys.first())
+        while (registered.size > 256) {
+            val oldest = registered.keys.first()
+            registered.remove(oldest)
+            transforms.remove(oldest)
+            entries.remove(oldest)
+        }
     }
 
     @Synchronized
@@ -34,11 +44,21 @@ object SubtitleSessionCache {
     @Synchronized
     fun put(url: String, bytes: ByteArray) {
         if (bytes.isEmpty() || bytes.size > MAX_FILE_BYTES) return
-        entries[url] = bytes
+        entries[url] = prepare(url, bytes)
         while (entries.size > MAX_ENTRIES || entries.values.sumOf { it.size } > MAX_TOTAL_BYTES) {
             entries.remove(entries.keys.first())
         }
     }
+
+    @Synchronized
+    fun requiresTransform(url: String): Boolean = transforms[url] != null
+
+    @Synchronized
+    fun prepare(url: String, bytes: ByteArray): ByteArray = SubtitleTextNormalizer.normalize(
+        transforms[url]?.let { transform ->
+            SubtitleCipherDecoder.decode(bytes, transform.keys.map { it.key }, transform.keys.map { it.iv })
+        } ?: bytes
+    )
 
     @Synchronized
     fun get(url: String): ByteArray? = entries[url]
@@ -72,6 +92,9 @@ class SubtitleSessionDataSource private constructor(
                 } + trackHeaders
             ).build()
         } else dataSpec
+        if (SubtitleSessionCache.requiresTransform(url) &&
+            (dataSpec.position != 0L || dataSpec.length != -1L || dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET)
+        ) throw java.io.IOException("Encrypted subtitle must be prepared with a full GET")
         active = upstream
         val length = upstream.open(request)
         // Text parsers need the complete sidecar. Prepare registered full GETs once;
@@ -85,12 +108,17 @@ class SubtitleSessionDataSource private constructor(
             val count = upstream.read(buffer, 0, buffer.size)
             if (count == -1) {
                 if (output.size() == 0) return length
-                val prepared = SubtitleTextNormalizer.normalize(output.toByteArray())
+                val prepared = SubtitleSessionCache.prepare(url, output.toByteArray())
                 upstream.close()
                 SubtitleSessionCache.put(url, prepared)
                 return openPrepared(dataSpec, prepared)
             }
             output.write(buffer, 0, count)
+        }
+        if (SubtitleSessionCache.requiresTransform(url)) {
+            upstream.close()
+            active = null
+            throw java.io.IOException("Encrypted subtitle exceeds the 2 MB limit")
         }
         active = PrefixedDataSource(output.toByteArray(), upstream)
         return length

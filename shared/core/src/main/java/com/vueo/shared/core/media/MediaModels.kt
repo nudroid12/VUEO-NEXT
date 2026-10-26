@@ -97,6 +97,14 @@ data class StreamSource(
         get() = com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)
 }
 
+/** Provider-declared sidecar processing. No provider identifiers or built-in keys. */
+data class SubtitleCipherKey(val key: String, val iv: String)
+data class SubtitleTextTransform(
+    val algorithm: String,
+    val scope: String,
+    val keys: List<SubtitleCipherKey>,
+)
+
 data class SubtitleTrack(
     val id: String,
     val language: String,
@@ -108,6 +116,8 @@ data class SubtitleTrack(
     val headers: Map<String, String> = emptyMap(),
     /** Display metadata only; never used as track identity or cache key. */
     val displayId: String? = null,
+    /** Optional provider-declared text transform, applied only when loading this sidecar. */
+    val textTransform: SubtitleTextTransform? = null,
 )
 
 data class CatalogPage(

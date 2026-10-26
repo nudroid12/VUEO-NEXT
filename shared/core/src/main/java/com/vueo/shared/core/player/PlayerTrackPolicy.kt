@@ -20,7 +20,7 @@ object PlayerTrackPolicy {
     }
 
     fun externalSubtitleLabel(track: SubtitleTrack): String {
-        SubtitleSessionCache.register(track.url, track.headers)
+        SubtitleSessionCache.register(track.url, track.headers, track.textTransform)
         return "$SUBTITLE_LABEL_PREFIX${externalSubtitleSelectionId(track)}"
     }
 

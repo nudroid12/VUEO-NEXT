@@ -1,0 +1,4 @@
+shared/core/src/main/java/com/vueo/shared/core/player/KissKhSubtitleDecoder.java
+validation/kisskh-subtitles/DecoderCheck.java
+validation/kisskh-subtitles/CacheCheck.kt
+validation/kisskh-subtitles/stubs/android/util/Base64.java

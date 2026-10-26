@@ -61,7 +61,7 @@ class LiveSmartSubs(
         tracks = incoming
         val replacement = tracks.firstOrNull { PlayerTrackPolicy.externalSubtitleSelectionId(it) == (selectedId ?: pendingId) }
         if (old != null && (replacement == null || replacement.url != old.url)) clear()
-        tracks.forEach { SubtitleSessionCache.register(it.url, it.headers) }
+        tracks.forEach { SubtitleSessionCache.register(it.url, it.headers, it.textTransform) }
         notifyTracks(choicesChanged = true)
         SubtitleFlowDiagnostics.event(platform, player.currentMediaItem?.localConfiguration?.uri?.toString(),
             "SMARTSUBS_OVERLAY_UPDATED", "tracks=${tracks.size} videoReset=false")
