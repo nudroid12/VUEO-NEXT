@@ -101,31 +101,7 @@ internal fun PlayerSourcesWorkspace(
     val visibleSources = sources.filter {
         activeProvider == null || sourceProviderKey(it) == activeProvider
     }
-    val recommended = remember(
-        sources,
-        currentSource.url,
-        currentPlaybackFailed,
-        failedSourceUrls,
-        originalLanguage,
-    ) {
-        sources.firstOrNull { candidate ->
-            candidate.url?.let { it !in failedSourceUrls } == true &&
-                PlayerSourcePolicy
-                    .assess(
-                        source = candidate,
-                        originalLanguage = originalLanguage,
-                    ).let { assessment ->
-                        assessment.quality
-                            .automaticRecoveryEligible &&
-                            assessment.audioMatch
-                                .recommendationEligible
-                    } &&
-                (!currentPlaybackFailed || candidate.url != currentSource.url)
-        } ?: sources.firstOrNull { candidate ->
-            candidate.url?.let { it !in failedSourceUrls } == true
-        }
-    }
-    // Keep row positions stable when playback/recommendation status changes.
+    // Keep row positions stable when playback status changes.
     val orderedSources = visibleSources
 
     VueoMotionDialogHost(
@@ -267,8 +243,6 @@ internal fun PlayerSourcesWorkspace(
                                 originalLanguage = originalLanguage,
                                 current = current,
                                 switching = switching,
-                                recommended =
-                                    candidate.url == recommended?.url,
                                 automaticRecoveryEligible = assessment
                                     .quality
                                     .automaticRecoveryEligible &&
@@ -299,7 +273,6 @@ private fun SourceListRow(
     originalLanguage: String?,
     current: Boolean,
     switching: Boolean,
-    recommended: Boolean,
     automaticRecoveryEligible: Boolean,
     playbackFailed: Boolean,
     onClick: () -> Unit,
@@ -388,7 +361,6 @@ private fun SourceListRow(
                         playbackFailed -> SourceBadge("Failed", failed = true)
                         switching -> SourceBadge("Switching", accent = true)
                         current -> SourceBadge("Playing", accent = true)
-                        recommended -> SourceBadge("Recommended", accent = true)
                         !automaticRecoveryEligible -> SourceBadge("Manual only")
                         else -> SourceBadge("Direct")
                     }

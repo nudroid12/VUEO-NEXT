@@ -1,0 +1,13 @@
+VUEO — remove Recommended from the in-player Sources workspace
+
+Base: supplied VUEO-NEXT-main (5).zip. Apply after existing patches.
+Replace only mobile/src/main/java/com/vueo/mobile/ui/player/PlayerSourcesWorkspace.kt, then rebuild Mobile.
+Removes the Recommended candidate search, parameter passed to each row and badge branch.
+Keeps stable display order, provider filter and Playing/Switching/Failed/Direct/Manual only statuses.
+Keeps recovery policy and source ranking outside the panel.
+TV does not have a Recommended badge in the supplied code, so no TV file needs changes.
+Does not change the pre-play source picker or story recommendations/For You.
+
+Validation: diff reviewed against supplied ZIP; removed calculation/parameter/badge verified and remaining row calls/status branches checked.
+No Android build or device test completed in this environment.
+No YML.
