@@ -1,0 +1,26 @@
+VUEO TV text-tab marker correction
+Base: VUEO-NEXT-main (59).zip. Apply by extracting into repository root.
+This corrected patch replaces the previously delivered TV tab patch.
+
+Marker changes apply ONLY to the existing plain-text tab rows:
+- Addon categories: Catalog & Metadata / Streams / Subtitles.
+- Repository workspace tabs rendered by the same text-tab component.
+- Cast / Production / Network tabs.
+- Cast / More like this / Trailer text tabs wherever that row is available.
+These rows already activate on focus; existing activation is preserved.
+A short white underline follows the selected tab, using 160 ms ease-out by
+default, and respects the existing Tabs motion tuning and Reduce Motion.
+
+Pill/button/segmented controls remain byte-for-byte identical to the uploaded
+base: Library Favorites/History, detail seasons, player seasons, episode ranges,
+Sources provider chips, entity sort buttons, diagnostic segmented buttons.
+No pill styles or activation behaviors are changed by this corrected patch.
+Only 2 existing TV files plus 1 shared TV marker file change for the tab task.
+
+Earlier Sources fixes remain included: failed status clears after successful
+playback on Mobile/TV, and Mobile Sources rows keep their original order.
+No workflow/YAML files included.
+
+Validation: exact-byte restoration checks passed for 7 formerly modified TV
+files; static marker integration and ZIP checks passed. Full Android build and
+real-device tests remain unverified because the build toolchain is unavailable.

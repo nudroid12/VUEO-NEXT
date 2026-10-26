@@ -1,5 +1,8 @@
 package com.vueo.tv.settings
 
+import com.vueo.tv.ui.theme.TvTabMarkerHost
+import com.vueo.tv.ui.theme.tvTabMarker
+
 import android.view.KeyEvent
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import androidx.activity.compose.BackHandler
@@ -1785,6 +1788,7 @@ private fun TvAddonControls(
                 onLeftToSidebar = onLeftToSidebar, onFocused = { onFocused(entry.id) },
             )
         }
+TvTabMarkerHost {
         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             categories.forEachIndexed { index, entry ->
                 var focused by remember(entry.id) { mutableStateOf(false) }
@@ -1793,7 +1797,7 @@ private fun TvAddonControls(
                     color = if (focused || entry.value == "Selected") TvDesign.White else TvDesign.White.copy(alpha = .58f),
                     fontSize = 14.sp,
                     fontWeight = if (entry.value == "Selected") FontWeight.Medium else FontWeight.Normal,
-                    modifier = Modifier
+                    modifier = Modifier.tvTabMarker(entry.value == "Selected")
                         .focusRequester(requesterFor(entry.id))
                         .focusProperties {
                             (systemCards.lastOrNull() ?: actions.firstOrNull())?.let { up = requesterFor(it.id) }
@@ -1820,6 +1824,7 @@ private fun TvAddonControls(
                 if (index < categories.lastIndex) Box(Modifier.width(1.dp).height(20.dp).background(TvDesign.White.copy(alpha = .48f)))
             }
         }
+}
     }
 }
 

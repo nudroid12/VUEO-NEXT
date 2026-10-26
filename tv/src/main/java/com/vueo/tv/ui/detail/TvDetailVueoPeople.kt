@@ -1,5 +1,8 @@
 package com.vueo.tv.detail
 
+import com.vueo.tv.ui.theme.TvTabMarkerHost
+import com.vueo.tv.ui.theme.tvTabMarker
+
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
@@ -188,6 +191,7 @@ private fun VueoPeopleTabs(
         available.drop(1).associateWith { FocusRequester() }
     }
 
+TvTabMarkerHost {
     Row(
         modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -211,7 +215,7 @@ private fun VueoPeopleTabs(
                 fontSize = 19.sp,
                 lineHeight = 22.sp,
                 fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,
-                modifier = Modifier
+                modifier = Modifier.tvTabMarker(active == tab)
                     .focusRequester(requester)
                     .focusProperties {
                         up = upRequester
@@ -239,6 +243,7 @@ private fun VueoPeopleTabs(
             }
         }
     }
+}
 }
 
 @Composable
@@ -790,6 +795,7 @@ internal fun VueoDetailCastCompanyTabs(
             .padding(top = 14.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+TvTabMarkerHost {
         Row(
             modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding, vertical = 5.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -803,7 +809,7 @@ internal fun VueoDetailCastCompanyTabs(
                     fontSize = 19.sp,
                     lineHeight = 22.sp,
                     fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,
-                    modifier = Modifier
+                    modifier = Modifier.tvTabMarker(active == tab)
                         .focusRequester(tabRequesters.getValue(tab))
                         .focusProperties {
                             up = upRequester
@@ -830,6 +836,7 @@ internal fun VueoDetailCastCompanyTabs(
                 }
             }
         }
+}
         // The same height prevents the page from moving when Cast changes to a shorter logo row.
         Box(
             modifier = Modifier.fillMaxWidth().height(185.dp)
