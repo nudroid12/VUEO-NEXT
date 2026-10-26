@@ -48,6 +48,7 @@ object HomeRecommendationFeeds {
         val forYouEnabled: Boolean = true,
         val becauseEnabled: Boolean = true,
         val ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList(),
+        val markedWatched: List<MediaItem> = emptyList(),
     )
 
     private data class Record(
@@ -82,7 +83,7 @@ object HomeRecommendationFeeds {
         request.tmdbKey, request.traktClientId, request.recommendationsEnabled, request.similarEnabled).joinToString("\u0000"))
 
     internal fun requestSignatures(request: Request, now: Long): Pair<String, String> {
-        val excluded = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
+        val excluded = request.markedWatched.flatMap(ForYouPolicy::aliases).distinct().sorted() + request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.distinct().sorted()
         val favorites = request.favorites.flatMap(ForYouPolicy::aliases).distinct().sorted()
         val forYou = if (!request.forYouEnabled) "" else "rating-v1:" + hash(listOf(now / 86_400_000L,
@@ -96,7 +97,7 @@ object HomeRecommendationFeeds {
 
     /** Preserve order, but never show newly watched/favorited titles or a mismatched Because seed. */
     internal fun visible(cached: HomeRecommendationSections, request: Request): HomeRecommendationSections {
-        val watched = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
+        val watched = request.markedWatched.flatMap(ForYouPolicy::aliases).toSet() + request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
             .flatMap { ForYouPolicy.aliases(it.media) }.toSet()
         val excluded = watched + request.favorites.flatMap(ForYouPolicy::aliases) + request.ratings.flatMap { ForYouPolicy.aliases(it.media) }
         val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
@@ -120,7 +121,8 @@ object HomeRecommendationFeeds {
     }
 
     suspend fun observe(context: Context, input: Request): StateFlow<HomeRecommendationSections> = withContext(Dispatchers.IO) {
-        val request = input.copy(ratings = com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = input.profile).ratings())
+        val library = com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = input.profile)
+        val request = input.copy(ratings = library.ratings(), markedWatched = library.markedWatchedMedia())
         val key = scopeKey(request)
         val entry = synchronized(entries) {
             entries.getOrPut(key) {
@@ -177,7 +179,7 @@ object HomeRecommendationFeeds {
                 val context = currentCoroutineContext()
                 ForYouPolicy.rank(sources.seeds, sources.batches, sources.discovery, request.history,
                     request.favorites, limit = 24, checkActive = { context.ensureActive() },
-                    ratings = request.ratings, dna = sources.dna ?: ForYouPolicy.profile(request.history, request.favorites) { context.ensureActive() })
+                    ratings = request.ratings, markedWatched = request.markedWatched, dna = sources.dna ?: ForYouPolicy.profile(request.history, request.favorites) { context.ensureActive() })
             }
             publish(entry, generation, request, forYou = true) { old ->
                 old.copy(sections = old.sections.copy(forYou = result.ifEmpty {
@@ -194,7 +196,7 @@ object HomeRecommendationFeeds {
             val seed = HomeRecommendationPolicy.latestMeaningfulSeed(request.history)
             val related = seed?.let { RelatedContentOrchestrator.direct(it, request.tmdbKey,
                 request.recommendationsEnabled, request.similarEnabled, 18, request.engine, request.traktClientId) }.orEmpty()
-            val watched = request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
+            val watched = request.markedWatched.flatMap(ForYouPolicy::aliases).toSet() + request.history.filter(LibraryViewingPolicy::isMeaningfullyWatched)
                 .map { "${it.media.type}:${it.media.id}" }.toSet()
             val result = seed?.let { HomeRecommendationPolicy.filterBecauseRelated(related, it, watched, 12) }.orEmpty()
             publish(entry, generation, request, forYou = false) { old ->

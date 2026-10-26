@@ -70,4 +70,14 @@ class HomeRecommendationFeedsTest {
         assertEquals(overlap, visible.becauseYouWatched)
     }
 
+
+    @Test fun manualWatchedFiltersCachedForYouImmediately() {
+        val item = media("tt900", "Seen")
+        val other = media("tt901")
+        val cached = HomeRecommendationSections(forYou = listOf(item.copy(id = "tmdb:900"), other))
+        val input = request(emptyList()).copy(markedWatched = listOf(item))
+        assertEquals(listOf(other), HomeRecommendationFeeds.visible(cached, input).forYou)
+        assertNotEquals(HomeRecommendationFeeds.requestSignatures(input, now),
+            HomeRecommendationFeeds.requestSignatures(input.copy(markedWatched = emptyList()), now))
+    }
 }

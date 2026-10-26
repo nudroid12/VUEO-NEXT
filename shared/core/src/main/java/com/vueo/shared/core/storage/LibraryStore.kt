@@ -634,12 +634,31 @@ class LibraryStore(
                 marked -= key
             }
 
+            val metadataKey = scopedKey("marked_watched_metadata_v1")
+            val metadata = runCatching { JSONObject(prefs.getString(metadataKey, "{}")) }.getOrElse { JSONObject() }
+            if (watched) metadata.put(key, mediaToJson(media.copy(episodes = emptyList()))) else metadata.remove(key)
+            prefs.edit().putString(metadataKey, metadata.toString()).apply()
             writeMarkedWatchedKeys(
                 marked
             )
             refreshHomeContinueWatchingCache(exact = false)
             if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
                 .watchedChanged(media, watched, profileIdOverride ?: profileStore.activeProfileId())
+        }
+    }
+
+    /** Metadata preserves title/year aliases for matching TMDB and IMDb recommendations. */
+    fun markedWatchedMedia(): List<MediaItem> = synchronized(SYNC_STORAGE_LOCK) {
+        val metadata = runCatching { JSONObject(prefs.getString(scopedKey("marked_watched_metadata_v1"), "{}")) }.getOrElse { JSONObject() }
+        val known = readHistory().map { it.media } + readWatchlist().mapNotNull { row ->
+            row.optJSONObject("media")?.let { runCatching { mediaFromJson(it) }.getOrNull() }
+        }
+        markedWatchedKeys().mapNotNull { key ->
+            metadata.optJSONObject(key)?.let { runCatching { mediaFromJson(it) }.getOrNull() }
+                ?: known.firstOrNull { continueWatchingTitleKey(it) == key }
+                ?: key.split(':', limit = 2).takeIf { it.size == 2 }?.let {
+                    MediaItem(id = it[1], type = it[0], name = it[1])
+                }
         }
     }
 
@@ -897,6 +916,7 @@ class LibraryStore(
                 keys.toSet(),
             )
             .apply()
+        RatingChanges.revision.value += 1L
     }
 
     private fun restoreContinueWatching(

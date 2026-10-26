@@ -98,9 +98,10 @@ object ForYouPolicy {
         history: List<LibraryPlaybackEntry>, favorites: List<MediaItem>, limit: Int = 12,
         checkActive: () -> Unit = {}, dna: UserDnaSnapshot = profile(history, favorites, checkActive = checkActive),
         ratings: List<com.vueo.shared.core.storage.TitleRating> = emptyList(),
+        markedWatched: List<MediaItem> = emptyList(),
     ): List<MediaItem> {
         if (limit <= 0) return emptyList()
-        val excluded = history.filter(LibraryViewingPolicy::isMeaningfullyWatched).flatMap { aliases(it.media) }.toSet() + favorites.flatMap(::aliases)
+        val excluded = history.filter(LibraryViewingPolicy::isMeaningfullyWatched).flatMap { aliases(it.media) }.toSet() + favorites.flatMap(::aliases) + markedWatched.flatMap(::aliases)
         val candidates = linkedMapOf<String, MediaItem>()
         val candidateAliases = mutableMapOf<String, String>()
         (batches.flatMap { it.items }.take(108) + catalog.take(72)).forEach { item ->

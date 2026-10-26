@@ -33,4 +33,19 @@ class TitleRatingPolicyTest {
         assertEquals(action.id, result.first().id)
         assertTrue(result.contains(similar))
     }
+
+    @Test fun manualWatchedExcludesWithoutPlaybackHistory() {
+        assertTrue(ForYouPolicy.rank(emptyList(), emptyList(), listOf(drama), emptyList(), emptyList(),
+            markedWatched = listOf(drama)).isEmpty())
+    }
+    @Test fun manualWatchedMatchesKnownTitleYearAlias() {
+        val watched = drama.copy(releaseInfo = "2020")
+        val alias = watched.copy(id = "tmdb:123")
+        assertTrue(ForYouPolicy.rank(emptyList(), emptyList(), listOf(alias), emptyList(), emptyList(),
+            markedWatched = listOf(watched)).isEmpty())
+    }
+    @Test fun removingManualWatchedAllowsCandidateAgain() {
+        assertEquals(listOf(drama), ForYouPolicy.rank(emptyList(), emptyList(), listOf(drama), emptyList(), emptyList(),
+            markedWatched = emptyList()))
+    }
 }

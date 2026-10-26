@@ -14,7 +14,12 @@ Rating does not enable personalization when User DNA/personal recommendations ar
 Related-title requests for liked titles still use the existing recommendation service.
 Ratings are not synced with Trakt or across devices. Existing profile cleanup covers the library prefs.
 
-Validation: 19 standalone Kotlin policy checks passed using actual policy/DNA code with storage and assertion stubs.
-Five new JUnit policy tests included. This is not an Android instrumentation or full Gradle test run.
+Manual Watched is now read by For You and cached feed visibility, and changes invalidate feed signatures.
+Mark/unmark triggers Home re-observation without generating a rating or a playback record.
+New manual marks retain compact metadata for title/year ID aliases; older ID-only marks match their saved ID, with aliases when library metadata remains available.
+Because You Watched also hides manual Watched titles.
+
+Validation: 22 standalone Kotlin policy checks passed using actual policy/DNA code with storage and assertion stubs.
+Eight rating/Watched JUnit policy tests included, plus a cache visibility/signature regression test (the latter requires Gradle and was not run). This is not an Android instrumentation or full Gradle test run.
 Android build attempted; blocked by unavailable com.android.application Gradle plugin 9.1.1 in offline resolution.
 Compose UI, remote focus, persisted rating interactions and device performance still require testing.
