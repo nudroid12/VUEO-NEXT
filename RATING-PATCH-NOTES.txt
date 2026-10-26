@@ -22,4 +22,6 @@ Because You Watched also hides manual Watched titles.
 Validation: 22 standalone Kotlin policy checks passed using actual policy/DNA code with storage and assertion stubs.
 Eight rating/Watched JUnit policy tests included, plus a cache visibility/signature regression test (the latter requires Gradle and was not run). This is not an Android instrumentation or full Gradle test run.
 Android build attempted; blocked by unavailable com.android.application Gradle plugin 9.1.1 in offline resolution.
+Mobile rating UI placement corrected after build log: moved out of playback onClick into the composable action area.
+Kotlin parser checked all patched Kotlin files. Full Android rebuild not verified.
 Compose UI, remote focus, persisted rating interactions and device performance still require testing.
