@@ -131,6 +131,8 @@ private val retainedDetailParentRoutes = setOf(
 @Composable
 fun VueoTvApp(
     onExit: () -> Unit = {},
+    channelLink: String? = null,
+    onChannelConsumed: (String) -> Unit = {},
     watchNextMediaKey: String? = null,
     onWatchNextConsumed: (String) -> Unit = {},
 ) {
@@ -331,6 +333,13 @@ fun VueoTvApp(
         RuntimeDiagnostics.recordScreen("TV ${route.name}")
     }
 
+    val channelProfileId = runtime.profileStore.activeProfileId()
+    LaunchedEffect(channelProfileId, refreshToken, route == TvRoute.STARTUP || route == TvRoute.PROFILE) {
+        if (route != TvRoute.STARTUP && route != TvRoute.PROFILE) {
+            com.vueo.tv.channels.TvHomeChannels.schedule(context.applicationContext)
+        }
+    }
+
     LaunchedEffect(watchNextSyncToken) {
         if (watchNextSyncToken <= 0) return@LaunchedEffect
         withContext(Dispatchers.IO) {
@@ -432,6 +441,20 @@ fun VueoTvApp(
         detailBackStack = emptyList()
         detailReturnRoute = TvRoute.ENTITY_RESULTS
         route = TvRoute.DETAIL
+    }
+
+    LaunchedEffect(channelLink, route) {
+        val link = channelLink ?: return@LaunchedEffect
+        if (route == TvRoute.STARTUP || route == TvRoute.PROFILE) return@LaunchedEffect
+        val media = withContext(Dispatchers.IO) { com.vueo.tv.channels.TvHomeChannels.resolve(context.applicationContext, link) }
+        onChannelConsumed(link)
+        if (media != null) openDetail(media, TvRoute.HOME)
+        else {
+            val uri = android.net.Uri.parse(link)
+            if (uri.getQueryParameter("media") == null && com.vueo.tv.channels.TvHomeChannels.accepts(uri)) {
+                route = if (uri.getQueryParameter("kind") == "watchlist") TvRoute.LIBRARY else TvRoute.HOME
+            }
+        }
     }
 
     LaunchedEffect(watchNextMediaKey, route) {

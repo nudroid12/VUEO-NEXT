@@ -33,6 +33,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : ComponentActivity() {
     private val motionBackShortcut = TvMotionBackShortcut()
     private val exitHandler = Handler(Looper.getMainLooper())
+    private var pendingChannelLink by mutableStateOf<String?>(null)
     private var pendingWatchNextMediaKey by mutableStateOf<String?>(null)
     private var lastExitPressMs: Long? = null
     private var showExitPrompt by mutableStateOf(false)
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
         RuntimeDiagnostics.install(applicationContext)
         pendingWatchNextMediaKey = TvWatchNextDeepLink.parseMediaKey(intent?.data)
+        pendingChannelLink = intent?.data?.takeIf(com.vueo.tv.channels.TvHomeChannels::accepts)?.toString()
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -58,6 +60,8 @@ class MainActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize()) {
                 VueoTvApp(
                     onExit = ::requestExit,
+                    channelLink = pendingChannelLink,
+                    onChannelConsumed = { if (pendingChannelLink == it) pendingChannelLink = null },
                     watchNextMediaKey = pendingWatchNextMediaKey,
                     onWatchNextConsumed = { consumed ->
                         if (pendingWatchNextMediaKey == consumed) {
@@ -84,6 +88,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pendingChannelLink = intent.data?.takeIf(com.vueo.tv.channels.TvHomeChannels::accepts)?.toString()
         TvWatchNextDeepLink.parseMediaKey(intent.data)?.let { mediaKey ->
             pendingWatchNextMediaKey = mediaKey
         }
@@ -119,6 +124,7 @@ class MainActivity : ComponentActivity() {
         exitHandler.removeCallbacks(clearExitPrompt)
         clearExitPrompt.run()
         TvWatchNextPublisher.schedule(applicationContext)
+        com.vueo.tv.channels.TvHomeChannels.schedule(applicationContext)
         super.onPause()
     }
 

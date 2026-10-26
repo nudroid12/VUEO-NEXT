@@ -1,0 +1,29 @@
+VUEO — Android TV Launcher Channels
+
+Base: repo (61) with the previous rating/Watched patches applied.
+This ZIP only changes TV launcher integration. Extract at repository root and replace.
+No YML; no APK; build TV release after applying.
+
+Creates two stable Preview Channels: Watchlist (default), For You (optional).
+Requests default visibility only when Watchlist is first created; later sync does not force a hidden channel back on.
+Enable For You through Android TV Customize channels. Launcher behavior depends on the device.
+Adds the required TV-provider permission and INITIALIZE_PROGRAMS receiver.
+Uses existing Watchlist and already-received Home For You results: no stream scan or recommendation API request.
+At most 24 programs per channel. Programs update in place; stale/profile-old entries are removed.
+For You snapshot is profile-scoped, respects kids certification and personalization settings, expires after 24 hours.
+When visiting Home, feed updates refresh the snapshot. No periodic background network work.
+Refresh also occurs at app startup, library/profile changes and when leaving the app.
+Cards open Details; logo opens Library or Home. Cross-profile stale card links are ignored.
+The existing Watch Next path remains separate.
+
+After installing: open VUEO, select profile and let Home load, then return to launcher.
+Check Customize channels -> Vueo. Save at least one Watchlist title and obtain For You suggestions to populate rows.
+Empty rows may not be rendered by the launcher. Additional channel visibility is controlled by the user/system.
+
+Validation: Kotlin parser checked all four patched Kotlin files; manifest XML and expected entries checked; ZIP integrity verified.
+Attempted :tv:compileDebugKotlin; blocked resolving com.android.application plugin 9.1.1 before compilation.
+Android compilation, actual TvProvider writes, default-channel visibility, deep links and remote behavior need device verification.
+
+Official API references:
+https://developer.android.com/training/tv/discovery/recommendations-channel
+https://developer.android.com/reference/androidx/tvprovider/media/tv/PreviewChannelHelper

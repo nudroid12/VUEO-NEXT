@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
@@ -41,8 +42,18 @@
                     android:scheme="vueo"
                     android:host="watch-next" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vueo" android:host="channel" />
+            </intent-filter>
         </activity>
 
+
+        <receiver android:name=".channels.TvHomeChannelsReceiver" android:exported="true">
+            <intent-filter><action android:name="android.media.tv.action.INITIALIZE_PROGRAMS" /></intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -220,6 +220,7 @@ fun TvHomeScreen(
                 runtime.libraryStore.homeStartupContinueWatching()
             }
             retainedState.watchHistory = emptyList()
+            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, emptyList())
             retainedState.homeRecommendations = HomeRecommendationSections()
             retainedState.libraryHydrationProfileId = activeProfileId
         }
@@ -296,7 +297,10 @@ fun TvHomeScreen(
             currentTmdbKey, currentTraktClientId, currentTmdbRecommendations, currentTmdbSimilar, forYouEnabled, becauseEnabled)
         val feed = com.vueo.shared.core.home.HomeRecommendationFeeds.observe(traktContext, request)
         retainedState.recommendationEngine = currentRecommendationEngine
-        feed.collect { sections -> retainedState.homeRecommendations = sections }
+        feed.collect { sections ->
+            retainedState.homeRecommendations = sections
+            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, sections.forYou)
+        }
     }
 
     val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
