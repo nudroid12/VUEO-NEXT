@@ -900,6 +900,15 @@ internal fun PlayerScreen(
             )
     }
 
+    // UI row identity is session-stable. Keep recovery ranking separate from display order.
+    val sourceDisplayOrder = remember(mediaKey) { linkedMapOf<String, Int>() }
+    val workspaceSources = remember(mediaKey, playableSources) {
+        playableSources.forEach { candidate ->
+            candidate.url?.let { url -> sourceDisplayOrder.getOrPut(url) { sourceDisplayOrder.size } }
+        }
+        playableSources.sortedBy { it.url?.let(sourceDisplayOrder::get) ?: Int.MAX_VALUE }
+    }
+
     val startupAudioMuted = remember(
         source.url,
         source.headers,
@@ -3123,7 +3132,7 @@ internal fun PlayerScreen(
             title = episode?.let {
                 "S${it.season} E${it.episode} • ${it.title}"
             } ?: title,
-            sources = playableSources,
+            sources = workspaceSources,
             currentSource = source,
             currentPlaybackFailed = playbackError != null,
             failedSourceUrls = failedSourceUrls,

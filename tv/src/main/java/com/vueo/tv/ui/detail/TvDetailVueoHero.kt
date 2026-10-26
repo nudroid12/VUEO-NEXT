@@ -30,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.material.icons.outlined.ThumbsUpDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
@@ -168,7 +168,7 @@ internal fun VueoDetailHero(
             )
             Box {
                 VueoCircleAction(
-                    icon = when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbsUpDown },
+                    icon = when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbUp },
                     contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" },
                     selected = rating != 0, requester = ratingRequester, leftRequester = listRequester,
                     rightRequester = null, downRequester = downRequester,

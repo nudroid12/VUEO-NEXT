@@ -92,8 +92,11 @@ internal fun PlayerSourcesWorkspace(
                 availableProviders.filter { it !in providerOrder }
             ).distinct()
     }
-    var activeProvider by remember(sources) {
+    var activeProvider by remember(title) {
         mutableStateOf<String?>(null)
+    }
+    androidx.compose.runtime.LaunchedEffect(availableProviders) {
+        if (activeProvider != null && activeProvider !in availableProviders) activeProvider = null
     }
     val visibleSources = sources.filter {
         activeProvider == null || sourceProviderKey(it) == activeProvider

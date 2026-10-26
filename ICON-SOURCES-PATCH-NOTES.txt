@@ -1,0 +1,17 @@
+VUEO — visible icons and stable Mobile Sources
+
+Follow-up to the previously applied rating/Watched/UI patches based on repo (61).
+Extract to repository root and replace these four files. Build mobile and TV.
+No YML files. No channel-integration files; retain the separate launcher patch.
+
+1. Explicit white/accent icon colors and translucent white borders fix dark bookmark/rating controls on Mobile.
+2. Neutral rating icon is outlined ThumbUp; rated states are filled ThumbUp or ThumbDown on both Mobile and TV.
+   Tap opens icon choices. Tap selected choice to clear. Mobile choice popup has an explicit dark background.
+3. Mobile player keeps a per-media-session URL-to-display-position registry for the Sources workspace.
+   Changing the selected source no longer moves equal-ranked sources to the top.
+   New URLs append; existing URLs keep order when metadata/status/ranking changes.
+   Recovery keeps its existing ranked playableSources list; only workspace display uses stable ordering.
+   Provider tab selection is retained across source updates unless that provider disappears.
+
+Validation: Kotlin parser accepted all four files. Six standalone source-order scenarios passed using the production ordering body with a minimal source model.
+No full Android compile or UI/device verification. Prior build attempt was blocked resolving Android Gradle plugin 9.1.1.

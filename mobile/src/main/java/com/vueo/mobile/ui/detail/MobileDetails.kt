@@ -70,7 +70,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ThumbsUpDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.IconButtonDefaults
@@ -2416,17 +2416,28 @@ internal fun MediaDetailsScreen(
                             onLibraryChanged()
                         },
                         modifier = Modifier.size(48.dp).semantics { selected = inWatchlist },
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .30f)),
+                        colors = IconButtonDefaults.outlinedIconButtonColors(
+                            contentColor = if (inWatchlist) VueoPalette.Accent else Color.White,
+                            disabledContentColor = Color.White.copy(alpha = .38f),
+                        ),
                     ) {
                         Icon(if (inWatchlist) Icons.Default.Bookmark else Icons.Outlined.BookmarkBorder,
                             contentDescription = if (inWatchlist) "Remove from Watchlist" else "Add to Watchlist")
                     }
                     Box {
                         OutlinedIconButton(onClick = { ratingExpanded = true },
-                            modifier = Modifier.size(48.dp).semantics { selected = rating != 0 }) {
-                            Icon(when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbsUpDown },
+                            modifier = Modifier.size(48.dp).semantics { selected = rating != 0 },
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .30f)),
+                            colors = IconButtonDefaults.outlinedIconButtonColors(
+                                contentColor = if (rating != 0) VueoPalette.Accent else Color.White,
+                                disabledContentColor = Color.White.copy(alpha = .38f),
+                            )) {
+                            Icon(when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbUp },
                                 contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" })
                         }
-                        DropdownMenu(expanded = ratingExpanded, onDismissRequest = { ratingExpanded = false }) {
+                        DropdownMenu(expanded = ratingExpanded, onDismissRequest = { ratingExpanded = false },
+                            containerColor = Color(0xFF202226)) {
                             Row(Modifier.padding(horizontal = 4.dp)) {
                                 listOf(1, -1).forEach { value ->
                                     IconButton(onClick = {
