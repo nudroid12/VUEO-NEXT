@@ -1,0 +1,24 @@
+VUEO Sources status fix — base: VUEO-NEXT-main (59).zip
+
+Apply: extract into repository root and replace matching files.
+No workflow/YAML files included.
+
+Cause: both recovery-session implementations reset only the recovery timer on
+markReady(), retaining the recovered URL in failedUrls. Failed takes precedence
+over Playing in the badge UI. Mobile manual selection also omitted allowRetry.
+TV normally clears failures on manual switching/retry, so reproduction differs.
+
+Fix: both markReady methods now accept the successful source and remove only
+its failure, preserving other failures and attempted-source guards. Both players
+publish failure snapshots on READY and first video frame. Mobile clears failure
+on manual selection. TV uses observable failure state for panel updates.
+
+Validation: static integration checks passed; ZIP integrity checked.
+Two JUnit regression tests added: successful retry, repeated READY, independent
+failures, immutable snapshots, later failures, explicit retries, attempt guards.
+Tests/build NOT run: no installed Gradle; bootstrap download failed with Proxy
+CONNECT aborted. Android SDK/Kotlin compiler unavailable. No device testing.
+This fixes stale status; initial playback/network failure needs separate logs.
+
+Device check (Mobile + TV): fail a source, switch away, retry it successfully,
+reopen Sources and confirm Playing. Other failed sources should retain Failed.

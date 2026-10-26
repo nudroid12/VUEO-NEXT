@@ -173,7 +173,12 @@ class PlayerSourceRecoverySession(
         recoveryStartedAtMs = null
     }
 
-    fun markReady() {
+    /** Clear only the recovered source; preserve other failures and attempted URLs. */
+    fun markReady(source: StreamSource) {
+        source.url?.let {
+            attemptedUrls += it
+            failedUrls -= it
+        }
         recoveryStartedAtMs = null
     }
 

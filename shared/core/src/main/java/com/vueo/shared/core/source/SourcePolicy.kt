@@ -35,7 +35,12 @@ class SourceRecoverySession(
         recoveryStartedAtMs = null
     }
 
-    fun markReady() {
+    /** Clear only the recovered source; preserve other failures and attempted URLs. */
+    fun markReady(source: SourceCandidate) {
+        source.url?.let {
+            attemptedUrls += it
+            failedUrls -= it
+        }
         recoveryStartedAtMs = null
     }
 

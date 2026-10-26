@@ -2177,7 +2177,8 @@ internal fun PlayerScreen(
                                 acceptEmptyTextTracks = true,
                             )
                         }
-                        sourceRecoverySession.markReady()
+                        sourceRecoverySession.markReady(source)
+                        failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                         playbackError = null
                         playbackPhase = PlayerPlaybackPhase.READY
                         recoveryInProgress = false
@@ -2226,6 +2227,8 @@ internal fun PlayerScreen(
                 }
 
                 override fun onRenderedFirstFrame() {
+                    sourceRecoverySession.markReady(source)
+                    failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                     hasRenderedFirstFrame = true
                     playbackPhase = PlayerPlaybackPhase.READY
                     playbackError = null
@@ -3133,6 +3136,8 @@ internal fun PlayerScreen(
             onRefresh = onRefreshSources,
             onStop = onStopSources,
             onSelect = { candidate ->
+                sourceRecoverySession.allowRetry(candidate)
+                failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                 val switchPosition = player.currentPosition
                     .coerceAtLeast(0L)
                 savePosition()

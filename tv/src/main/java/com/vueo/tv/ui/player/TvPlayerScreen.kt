@@ -318,6 +318,7 @@ fun TvPlayerScreen(
     val latestLiveSubtitles = androidx.compose.runtime.rememberUpdatedState(liveSubtitles)
     var resumeTargetMs by remember(bundle.videoId) { mutableLongStateOf(startPosition) }
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
+    var failedSourceUrls by remember(bundle.videoId) { mutableStateOf<Set<String>>(emptySet()) }
     var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }
     var isBuffering by remember(bundle.videoId) { mutableStateOf(false) }
     var recoveryInProgress by remember(bundle.videoId) { mutableStateOf(false) }
@@ -786,6 +787,7 @@ fun TvPlayerScreen(
         if (recoveryInProgress) return
 
         sourceRecoverySession.markFailed(activeSource.toSourceCandidateForPlayer())
+        failedSourceUrls = sourceRecoverySession.failedSourceUrls()
         val latestSources = latestPlayableSources.value
         val alternateCandidate = if (settings.autoSourceRecoveryEnabled()) {
             sourceRecoverySession.next(
@@ -1179,7 +1181,8 @@ fun TvPlayerScreen(
                             requestedSubtitleSelectionId = null
                         }
                     }
-                    sourceRecoverySession.markReady()
+                    sourceRecoverySession.markReady(activeSource.toSourceCandidateForPlayer())
+                    failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                     recoveryInProgress = false
                     playbackError = null
                 }
@@ -1260,7 +1263,8 @@ fun TvPlayerScreen(
                 }
                 hasRenderedFirstFrame = true
                 isBuffering = false
-                sourceRecoverySession.markReady()
+                sourceRecoverySession.markReady(activeSource.toSourceCandidateForPlayer())
+                failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                 recoveryInProgress = false
                 playbackError = null
                 latestEpisodeFrameReady.value.invoke()
@@ -2110,7 +2114,7 @@ fun TvPlayerScreen(
                     providerName = item.providerName,
                     qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
                     selected = item.url == activeSource.url,
-                    playbackFailed = item.url in sourceRecoverySession.failedSourceUrls() ||
+                    playbackFailed = item.url in failedSourceUrls ||
                         (item.url == activeSource.url && playbackError != null),
                 )
             }
@@ -2189,6 +2193,7 @@ fun TvPlayerScreen(
             onRetryPlayback = {
                 saveProgress()
                 sourceRecoverySession.allowRetry(activeSource.toSourceCandidateForPlayer())
+                failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                 resumeTargetMs = player.currentPosition.coerceAtLeast(positionMs).coerceAtLeast(0L)
                 playbackError = null
                 recoveryInProgress = false
@@ -2269,6 +2274,7 @@ fun TvPlayerScreen(
                                 resumeTargetMs = player.currentPosition.coerceAtLeast(0L)
                                 saveProgress()
                                 sourceRecoverySession.allowRetry(target.toSourceCandidateForPlayer())
+                                failedSourceUrls = sourceRecoverySession.failedSourceUrls()
                                 activeSource = target
                             }
                             closePanel()
