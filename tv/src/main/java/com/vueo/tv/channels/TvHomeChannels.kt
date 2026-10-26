@@ -12,8 +12,6 @@ import androidx.tvprovider.media.tv.PreviewChannel
 import androidx.tvprovider.media.tv.PreviewChannelHelper
 import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
-import com.vueo.shared.core.extensions.toJson
-import com.vueo.shared.core.extensions.toMediaItems
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.storage.LibraryStore
@@ -25,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import org.json.JSONArray
 
 /** Two stable app channels; profile switches replace programs, never channel IDs or visibility. */
@@ -45,7 +44,7 @@ object TvHomeChannels {
         scope.launch { guarded {
             synchronized(lock) {
                 if (ProfileStore(app).activeProfileId() != profile) return@synchronized
-                prefs(app).edit().putLong(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_at_v1"), System.currentTimeMillis()).putString(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_v1"), items.take(24).map { it.copy(episodes = emptyList()) }.toJson().toString()).apply()
+                prefs(app).edit().putLong(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_at_v1"), System.currentTimeMillis()).putString(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_v1"), items.take(24).map { it.copy(episodes = emptyList()) }.toChannelJson().toString()).apply()
                 syncLocked(app)
             }
         } }
@@ -58,7 +57,7 @@ object TvHomeChannels {
     private fun cached(context: Context, profile: String): List<MediaItem> = runCatching {
         val age = System.currentTimeMillis() - prefs(context).getLong(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_at_v1"), 0L)
         if (age !in 0L..86_400_000L) return@runCatching emptyList()
-        JSONArray(prefs(context).getString(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_v1"), "[]")).toMediaItems()
+        JSONArray(prefs(context).getString(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_v1"), "[]")).toChannelMediaItems()
     }.getOrDefault(emptyList())
 
     fun resolve(context: Context, link: String): MediaItem? = synchronized(lock) {
@@ -134,4 +133,36 @@ class TvHomeChannelsReceiver : BroadcastReceiver() {
         val pending = goAsync()
         TvHomeChannels.schedule(context) { pending.finish() }
     }
+}
+
+/** Channel snapshots only need presentation and navigation metadata, never stream data. */
+private fun List<MediaItem>.toChannelJson(): JSONArray = JSONArray().also { array ->
+    take(24).forEach { media ->
+        array.put(JSONObject().put("id", media.id).put("type", media.type).put("name", media.name)
+            .put("poster", media.poster).put("background", media.background)
+            .put("description", media.description).put("releaseInfo", media.releaseInfo)
+            .put("originalTitle", media.originalTitle).put("originalLanguage", media.originalLanguage)
+            .put("certification", media.certification).put("sourceExtensionId", media.sourceExtensionId)
+            .put("tmdbId", media.tmdbId).put("genres", JSONArray(media.genres))
+            .put("catalogSources", JSONArray(media.catalogSources)))
+    }
+}
+
+private fun JSONArray.toChannelMediaItems(): List<MediaItem> = (0 until minOf(length(), 24)).mapNotNull { index ->
+    val row = optJSONObject(index) ?: return@mapNotNull null
+    val id = row.channelString("id") ?: return@mapNotNull null
+    val type = row.channelString("type") ?: return@mapNotNull null
+    val name = row.channelString("name") ?: return@mapNotNull null
+    MediaItem(id = id, type = type, name = name, poster = row.channelString("poster"),
+        background = row.channelString("background"), description = row.channelString("description"),
+        releaseInfo = row.channelString("releaseInfo"), originalTitle = row.channelString("originalTitle"),
+        originalLanguage = row.channelString("originalLanguage"), certification = row.channelString("certification"),
+        sourceExtensionId = row.channelString("sourceExtensionId"), tmdbId = row.channelString("tmdbId"),
+        genres = row.channelStrings("genres"), catalogSources = row.channelStrings("catalogSources"))
+}
+private fun JSONObject.channelString(key: String): String? =
+    if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
+private fun JSONObject.channelStrings(key: String): List<String> {
+    val array = optJSONArray(key) ?: return emptyList()
+    return (0 until minOf(array.length(), 100)).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
 }

@@ -1,0 +1,8 @@
+Apply after the previous launcher channel patch and other existing patches.
+Extract at repository root and replace tv/src/main/java/com/vueo/tv/channels/TvHomeChannels.kt.
+Fixes logs_109405416763: TV called internal shared-module JSON extensions.
+Uses private TV-local channel JSON helpers; no shared API visibility changes.
+Retains navigation/presentation fields and certification; caps snapshots at 24 items.
+Validation: Kotlin syntax parsed. Extracted production codec compiled against org.json with actual MediaItem model; 5 roundtrip/null/malformed/size-limit checks passed.
+Full Android build and TV behavior remain unverified; this environment cannot resolve Android Gradle plugin 9.1.1.
+No YML or changes to rating/Sources UI.
