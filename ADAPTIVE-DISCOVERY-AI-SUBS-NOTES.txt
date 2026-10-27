@@ -28,3 +28,5 @@ Validation:
 All eight changed/new Kotlin files parsed without syntax errors. JUnit regression tests included but Gradle tests were not run.
 Attempted shared tests + Mobile/TV Kotlin compilation; blocked before compilation by unavailable Android Gradle plugin 9.1.1.
 Full Android type-check, Media3 runtime behavior, actual provider scheduling, subtitle selection and network-request observation still require device verification.
+
+Build-log fix: moved animeContent from addon resolveStreamsProgressive to pluginEngine.discoverProgressive, whose signature declares it. Full Android rebuild required.

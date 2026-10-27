@@ -407,8 +407,7 @@ class SourceDiscoveryEngine(
             publish(latestProgress)
             try {
                 mediaEngine.resolveStreamsProgressive(
-                    animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
-                providerNameFilter = request.sourceProviderName,
+                    providerNameFilter = request.sourceProviderName,
                     cleanResults = false,
                     type = item.type,
                     videoId = videoId,
@@ -735,6 +734,7 @@ class SourceDiscoveryEngine(
                 mediaYear = item.releaseInfo,
                 mediaExternalId = item.id,
                 mediaOriginalLanguage = item.originalLanguage,
+                animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
                 providerNameFilter = request.sourceProviderName,
                 forceRefresh = forceRefresh,
             ) { progress ->
