@@ -28,6 +28,13 @@ public class DecoderCheck {
   String cipher=encrypt("Hello", "xxxxxxxxxxxxxxxx", "yyyyyyyyyyyyyyyy");
   try { decode(bytes("1\n00:00:01,000 --> 00:00:03,000\n"+cipher));throw new AssertionError("Ciphertext escaped"); } catch(java.io.IOException expected) {}
   try { decode(new byte[2*1024*1024+1]);throw new AssertionError(); } catch(java.io.IOException expected) {}
+  StringBuilder longFile = new StringBuilder();
+  String first = encrypt("First independent line", "0123456789abcdef", "fedcba9876543210");
+  String second = encrypt("Second independent line", "0011223344556677", "7766554433221100");
+  for (int i=0;i<3000;i++) longFile.append(i+1).append("\n00:00:01,000 --> 00:00:03,000\n").append(i%2==0?first:second).append("\n\n");
+  String longResult = new String(decode(bytes(longFile.toString())),StandardCharsets.UTF_8);
+  check(longResult.contains("First independent line") && longResult.contains("Second independent line"));
+  check(!longResult.contains(first) && !longResult.contains(second));
   System.out.println("PASS provider-declared key/IV pairs, timestamp preservation, mixed plaintext, idempotent cached text, VTT plaintext, wrong key rejection, size bound");
  }
 }

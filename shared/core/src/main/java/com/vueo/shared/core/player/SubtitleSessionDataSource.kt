@@ -44,7 +44,14 @@ object SubtitleSessionCache {
     @Synchronized
     fun put(url: String, bytes: ByteArray) {
         if (bytes.isEmpty() || bytes.size > MAX_FILE_BYTES) return
-        entries[url] = prepare(url, bytes)
+        putPrepared(url, prepare(url, bytes))
+    }
+
+    /** Stores bytes already transformed and normalized; never applies AES twice. */
+    @Synchronized
+    internal fun putPrepared(url: String, bytes: ByteArray) {
+        if (bytes.isEmpty() || bytes.size > MAX_FILE_BYTES) return
+        entries[url] = bytes
         while (entries.size > MAX_ENTRIES || entries.values.sumOf { it.size } > MAX_TOTAL_BYTES) {
             entries.remove(entries.keys.first())
         }
@@ -80,9 +87,7 @@ class SubtitleSessionDataSource private constructor(
         val url = dataSpec.uri.toString()
         val cached = SubtitleSessionCache.get(url)
         if (cached != null) {
-            val prepared = SubtitleTextNormalizer.normalize(cached)
-            if (prepared !== cached) SubtitleSessionCache.put(url, prepared)
-            return openPrepared(dataSpec, prepared)
+            return openPrepared(dataSpec, cached)
         }
         val trackHeaders = SubtitleSessionCache.headers(url)
         val request = if (trackHeaders.isNotEmpty()) {
@@ -110,7 +115,7 @@ class SubtitleSessionDataSource private constructor(
                 if (output.size() == 0) return length
                 val prepared = SubtitleSessionCache.prepare(url, output.toByteArray())
                 upstream.close()
-                SubtitleSessionCache.put(url, prepared)
+                SubtitleSessionCache.putPrepared(url, prepared)
                 return openPrepared(dataSpec, prepared)
             }
             output.write(buffer, 0, count)

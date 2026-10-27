@@ -24,6 +24,17 @@ public final class SubtitleCipherDecoder {
         try { source = utf8(bytes); }
         catch (Exception e) { throw new IOException("Invalid subtitle encoding", e); }
         String[] lines = source.split("\\r?\\n", -1);
+        // Per-file state only: no provider keys or mutable Cipher instances are shared.
+        Cipher[] ciphers = new Cipher[keys.size()];
+        SecretKeySpec[] keySpecs = new SecretKeySpec[keys.size()];
+        IvParameterSpec[] ivSpecs = new IvParameterSpec[keys.size()];
+        boolean[] unavailable = new boolean[keys.size()];
+        for (int key = 0; key < keys.size(); key++) {
+            try {
+                keySpecs[key] = new SecretKeySpec(Base64.decode(keys.get(key), Base64.DEFAULT), "AES");
+                ivSpecs[key] = new IvParameterSpec(Base64.decode(ivs.get(key), Base64.DEFAULT));
+            } catch (Exception ignored) { unavailable[key] = true; }
+        }
         boolean cue = false, changed = false;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -37,15 +48,20 @@ public final class SubtitleCipherDecoder {
             String plain = null;
             for (int key = 0; key < keys.size(); key++) {
                 try {
-                    Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                    cipher.init(Cipher.DECRYPT_MODE,
-                        new SecretKeySpec(Base64.decode(keys.get(key), Base64.DEFAULT), "AES"),
-                        new IvParameterSpec(Base64.decode(ivs.get(key), Base64.DEFAULT)));
-                    String candidate = utf8(cipher.doFinal(encrypted));
+                    if (unavailable[key]) continue;
+                    if (ciphers[key] == null) {
+                        ciphers[key] = Cipher.getInstance("AES/CBC/PKCS5Padding");
+                        ciphers[key].init(Cipher.DECRYPT_MODE, keySpecs[key], ivSpecs[key]);
+                    }
+                    // Successful doFinal resets CBC to its post-init state, including IV.
+                    String candidate = utf8(ciphers[key].doFinal(encrypted));
                     if (candidate.trim().isEmpty() || candidate.matches("(?s).*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F].*")) continue;
                     plain = candidate;
                     break;
-                } catch (Exception ignored) { /* Try the next provider-declared key. */ }
+                } catch (Exception ignored) {
+                    // After failure the Cipher state is unspecified; reinitialize before reuse.
+                    ciphers[key] = null;
+                }
             }
             if (plain == null) throw new IOException("Subtitle decryption failed");
             lines[i] = plain;

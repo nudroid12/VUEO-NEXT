@@ -1,0 +1,4 @@
+General subtitle preparation optimization, based on VUEO-NEXT-main (62).
+Reuses per-file Cipher state after successful doFinal; resets failed Cipher before reuse. Provider key/IV metadata unchanged. Stores prepared bytes directly and uses cache hits without repeated normalization. Existing raw put callers continue preparing bytes. No provider-name rules, video changes or AI subtitle requests.
+Java decoder compiled and DecoderCheck passed, including 3000 alternating-key cues. Android/Kotlin build not run. No parsed-cue cache added; this does not claim to resolve all track-switch latency or buffering.
+Apply files at repository root. Shared code applies to Mobile and TV.
