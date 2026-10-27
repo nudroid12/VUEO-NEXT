@@ -9,7 +9,6 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.text.Cue
 import androidx.media3.extractor.text.SubtitleParser
-import androidx.media3.extractor.text.webvtt.WebvttParser
 import com.vueo.shared.core.media.SubtitleTrack
 import java.util.IdentityHashMap
 import kotlinx.coroutines.CancellationException
@@ -113,7 +112,14 @@ class LiveSmartSubs(
                 val bytes = requireNotNull(SubtitleSessionCache.get(track.url)) { "Prepared caption bytes unavailable" }
                 val parsed = withContext(parsingDispatcher) {
                     val spans = mutableListOf<SmartSubsCueTimeline.Span<Cue>>()
-                    WebvttParser().parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { output ->
+                    val mime = if (track.providerId == "vueo-smartsubs-ai") MimeTypes.TEXT_VTT else when (SubtitleFormatPolicy.detect(track.url, track.mimeType)) {
+                        SubtitleFormat.WEBVTT -> MimeTypes.TEXT_VTT
+                        SubtitleFormat.SUBRIP -> MimeTypes.APPLICATION_SUBRIP
+                        SubtitleFormat.SSA -> MimeTypes.TEXT_SSA
+                        SubtitleFormat.TTML -> MimeTypes.APPLICATION_TTML
+                    }
+                    val parser = androidx.media3.extractor.text.DefaultSubtitleParserFactory().create(Format.Builder().setSampleMimeType(mime).build())
+                    parser.parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { output ->
                         check(spans.size < 50_000) { "Too many generated caption intervals" }
                         spans.add(SmartSubsCueTimeline.Span(output.startTimeUs, output.endTimeUs, output.cues.toList()))
                     }
@@ -177,7 +183,7 @@ class LiveSmartSubs(
 
     companion object {
         private val sessions = IdentityHashMap<Player, LiveSmartSubs>()
-        fun isSmart(track: SubtitleTrack): Boolean = track.providerId == "vueo-smartsubs-ai"
+        fun isSmart(track: SubtitleTrack): Boolean = track.providerId == "vueo-smartsubs-ai" || AutomaticSubtitlePolicy.isAi(track)
         fun videoSubtitles(tracks: List<SubtitleTrack>): List<SubtitleTrack> = tracks.filterNot(::isSmart)
         fun get(player: Player): LiveSmartSubs? = sessions[player]
         fun mergedTracks(player: Player, videoTracks: Tracks = player.currentTracks): Tracks =

@@ -152,6 +152,7 @@ suspend fun discoverProgressive(
     mediaExternalId: String? = null,
     mediaOriginalLanguage: String? = null,
     forceRefresh: Boolean = false,
+    animeContent: Boolean = false,
     providerNameFilter: String? = null,
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
@@ -195,7 +196,9 @@ suspend fun discoverProgressive(
                             provider.supportedTypes
                                 .isEmpty() ||
                                 mediaType.lowercase() in
-                                provider.supportedTypes
+                                provider.supportedTypes || (animeContent && provider.supportedTypes.any {
+                                    it.lowercase() in setOf("anime", "animemovie", "anime_movie")
+                                })
                         }
                         .filter { provider ->
                             "android" !in
@@ -215,7 +218,8 @@ suspend fun discoverProgressive(
                             PluginRepositoryDescriptor,
                             PluginProviderDescriptor
                         >
-                    > { target ->
+                    > { target -> AdaptiveProviderOrder.tier(animeContent, target.second.supportedTypes, target.second.name + " " + target.second.description.orEmpty()) }
+                    .thenBy { target ->
                         knownHealthSortKeys[
                             target.first.manifestUrl to
                                 target.second.id
@@ -250,7 +254,7 @@ suspend fun discoverProgressive(
             return@supervisorScope emptyDiscoveryResult()
         }
 
-        val cacheKey =
+        val baseCacheKey =
             PluginRuntimeCache.key(
                 store = store,
                 tmdbId = tmdbId,
@@ -259,6 +263,9 @@ suspend fun discoverProgressive(
                 episode = episode,
                 providerNameFilter = providerNameFilter,
             )
+
+        // Anime scheduling/targets cannot reuse a non-anime in-flight result.
+        val cacheKey = baseCacheKey + ":anime=$animeContent"
 
         if (forceRefresh) {
             PluginRuntimeCache.invalidate(cacheKey)

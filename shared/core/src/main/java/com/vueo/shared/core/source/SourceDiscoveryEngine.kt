@@ -407,7 +407,8 @@ class SourceDiscoveryEngine(
             publish(latestProgress)
             try {
                 mediaEngine.resolveStreamsProgressive(
-                    providerNameFilter = request.sourceProviderName,
+                    animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
+                providerNameFilter = request.sourceProviderName,
                     cleanResults = false,
                     type = item.type,
                     videoId = videoId,

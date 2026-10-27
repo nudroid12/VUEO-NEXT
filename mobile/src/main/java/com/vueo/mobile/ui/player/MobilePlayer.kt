@@ -771,6 +771,7 @@ internal fun PlayerScreen(
             ?.removePrefix(PLAYER_SUBTITLE_LANGUAGE_PREFIX)
         mutableStateOf(
             contentSelection
+                ?.takeUnless { id -> com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(null, id) || subtitles.any { com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) && PlayerTrackPolicy.externalSubtitleSelectionId(it) == id } }
                 ?.takeIf {
                     globalSelection != PLAYER_SUBTITLE_OFF &&
                         it.startsWith("external:")
@@ -780,11 +781,9 @@ internal fun PlayerScreen(
                     globalSelection != PLAYER_SUBTITLE_OFF &&
                     savedLanguage != null
                 ) {
-                    PlayerTrackPolicy.preferredSubtitle(
-                        tracks = subtitles, language = savedLanguage,
-                        providerId = settingsStore.lastSubtitleProviderId(),
-                        languageOf = { it.language }, providerOf = { it.providerId },
-                    )?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                    com.vueo.shared.core.player.AutomaticSubtitlePolicy.choose(
+                            subtitles.sortedBy { if (it.providerId == settingsStore.lastSubtitleProviderId()) 0 else 1 }, listOf(savedLanguage, settingsStore.preferredSubtitleLanguage().languageCode, settingsStore.secondarySubtitleLanguage().languageCode),
+                            { it.language }, { !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) })?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
                 } else {
                     null
                 }
@@ -1343,6 +1342,7 @@ internal fun PlayerScreen(
                     ?.takeIf { it.startsWith(PLAYER_SUBTITLE_LANGUAGE_PREFIX) }
                     ?.removePrefix(PLAYER_SUBTITLE_LANGUAGE_PREFIX)
                 pendingSubtitleSelectionId = contentSelection
+                    ?.takeUnless { id -> com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(null, id) || subtitles.any { com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) && PlayerTrackPolicy.externalSubtitleSelectionId(it) == id } }
                     ?.takeIf {
                         globalSelection != PLAYER_SUBTITLE_OFF &&
                             it.startsWith("external:")
@@ -1352,11 +1352,9 @@ internal fun PlayerScreen(
                         globalSelection != PLAYER_SUBTITLE_OFF &&
                         savedLanguage != null
                     ) {
-                        PlayerTrackPolicy.preferredSubtitle(
-                            tracks = subtitles, language = savedLanguage,
-                            providerId = settingsStore.lastSubtitleProviderId(),
-                            languageOf = { it.language }, providerOf = { it.providerId },
-                        )?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
+                        com.vueo.shared.core.player.AutomaticSubtitlePolicy.choose(
+                            subtitles.sortedBy { if (it.providerId == settingsStore.lastSubtitleProviderId()) 0 else 1 }, listOf(savedLanguage, settingsStore.preferredSubtitleLanguage().languageCode, settingsStore.secondarySubtitleLanguage().languageCode),
+                            { it.language }, { !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) })?.let(PlayerTrackPolicy::externalSubtitleSelectionId)
                     } else {
                         null
                     }
@@ -1736,23 +1734,11 @@ internal fun PlayerScreen(
                 ?.removePrefix(
                     PLAYER_SUBTITLE_LANGUAGE_PREFIX
                 )
-            val savedTrack =
-                contentSelection
-                    ?.let { selectionId ->
-                        textTracks.firstOrNull {
-                            it.selectionId == selectionId
-                        }
-                    }
-                    ?: savedLanguage?.let { language ->
-                        PlayerTrackPolicy.preferredSubtitle(
-                            tracks = textTracks, language = language,
-                            providerId = settingsStore.lastSubtitleProviderId(),
-                            languageOf = { it.language }, providerOf = { it.externalSubtitle?.providerId },
-                        )
-                    }
-                    ?: textTracks.firstOrNull {
-                        it.selectionId == savedSelection
-                    }
+            val savedTrack = if (savedLanguage == null && (subtitlesDisabled || !settingsStore.autoSelectPreferredSubtitle())) null else com.vueo.shared.core.player.AutomaticSubtitlePolicy.choose(
+                textTracks.sortedBy { if (it.externalSubtitle?.providerId == settingsStore.lastSubtitleProviderId()) 0 else 1 }, listOf(savedLanguage, settingsStore.preferredSubtitleLanguage().languageCode, settingsStore.secondarySubtitleLanguage().languageCode),
+                { it.language }, { choice -> choice.externalSubtitle?.let { !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) }
+                    ?: !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(choice.label, choice.selectionId) })
+
 
             when {
                 savedSelection == PLAYER_SUBTITLE_OFF -> {
@@ -2776,6 +2762,7 @@ internal fun PlayerScreen(
         )
 
     fun requestSubtitleChoice(choice: PlayerTrackChoice) {
+        subtitlePreferenceRestored = true
         val sameRequestInFlight =
             pendingSubtitleSelectionId == choice.selectionId &&
                 subtitlePreparationJob?.isActive == true

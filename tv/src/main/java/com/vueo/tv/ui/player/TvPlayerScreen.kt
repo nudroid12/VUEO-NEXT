@@ -368,12 +368,11 @@ fun TvPlayerScreen(
         )
     }
     fun rememberedExternalSubtitle(): String? {
-        val savedLanguage = settings.lastSubtitleSelection()
-            ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
-            ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX) ?: return null
-        return liveSubtitles.firstOrNull {
-            tvCanonicalLanguage(it.language) == tvCanonicalLanguage(savedLanguage)
-        }?.let(::tvExternalSubtitleSelectionId)
+        val savedLanguage = settings.lastSubtitleSelection()?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
+        if (settings.lastSubtitleSelection() == TV_SUBTITLE_OFF || (savedLanguage == null && (!settings.subtitlesOnByDefault() || !settings.autoSelectPreferredSubtitle()))) return null
+        return com.vueo.shared.core.player.AutomaticSubtitlePolicy.choose(liveSubtitles,
+            listOf(savedLanguage, settings.preferredSubtitleLanguage().languageCode, settings.secondarySubtitleLanguage().languageCode),
+            { it.language }, { !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) })?.let(::tvExternalSubtitleSelectionId)
     }
     var pendingSubtitleSelectionId by remember(mediaKey) {
         mutableStateOf(rememberedExternalSubtitle())
@@ -1446,11 +1445,10 @@ fun TvPlayerScreen(
                 val savedLanguage = globalSelection
                     ?.takeIf { it.startsWith(TV_SUBTITLE_LANGUAGE_PREFIX) }
                     ?.removePrefix(TV_SUBTITLE_LANGUAGE_PREFIX)
-                val savedTrack = savedLanguage?.let { language ->
-                    currentTextTracks.firstOrNull {
-                        tvCanonicalLanguage(it.language) == tvCanonicalLanguage(language)
-                    }
-                }
+                val savedTrack = if (savedLanguage == null && (subtitlesDisabled || !settings.autoSelectPreferredSubtitle())) null else com.vueo.shared.core.player.AutomaticSubtitlePolicy.choose(currentTextTracks,
+                    listOf(savedLanguage, settings.preferredSubtitleLanguage().languageCode, settings.secondarySubtitleLanguage().languageCode),
+                    { it.language }, { choice -> choice.externalSubtitle?.let { !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(it) }
+                        ?: !com.vueo.shared.core.player.AutomaticSubtitlePolicy.isAi(choice.label, choice.selectionId) })
 
                 when {
                     savedSelection == TV_SUBTITLE_OFF -> {
@@ -2347,6 +2345,7 @@ fun TvPlayerScreen(
         }
 
         fun requestSubtitleChoice(choice: TvPlayerTrackChoice) {
+            subtitlePreferenceRestored = true
             val sameRequestInFlight =
                 pendingSubtitleSelectionId == choice.selectionId &&
                     subtitlePreparationJob?.isActive == true

@@ -1,0 +1,30 @@
+VUEO — Adaptive Plugin Discovery and Manual-Only AI Subtitles
+
+Base: supplied VUEO-NEXT-main (5).zip. Apply after previous patches. Extract at repo root and replace these files.
+Mobile + TV. No YML. SmartSubs repository is not changed.
+
+Discovery:
+- Existing source metadata classifies anime using AnimeMediaPolicy.
+- Plugin queue now sorts by content suitability before existing health/performance keys.
+- Provider declared supportedTypes plus generic anime/donghua hints in name/description are used; no brand-specific list or network request.
+- Anime-capable providers lead for anime; general providers lead for other content. Unknown providers remain eligible under existing type/platform/enabled rules.
+- Explicit anime supportedTypes can enter an anime scan even when the request is normalized as movie/tv.
+- Anime classification participates in plugin cache/in-flight identity.
+- This changes the plugin queue. Stremio stream addons retain their existing parallel request behavior.
+
+Subtitles:
+- A case-insensitive substring AI in subtitle name or id marks that track as AI; absence is treated as ordinary, exactly as requested.
+- AI sidecars are excluded from the video's subtitle configurations and exposed through the on-demand text overlay.
+- Automatic startup/restoration filters AI before selecting or probing external subtitles.
+- Automatic selection uses last language, first preference, then second preference; no Malay/English hardcoding.
+- Automatic fallback does not change an existing saved last-language preference.
+- Manual selection retains permission to request/probe AI and remembers the manual choice as before.
+- Generic AI overlay supports the existing subtitle format detector and Media3 parser factory, instead of assuming WebVTT for every AI source.
+- Off/default-off controls are retained. No network readiness probe is added to decide whether a track is AI.
+- Name/id matching is a heuristic: it can misclassify other strings containing ai, and cannot identify an AI track with no such marker.
+
+Validation:
+12 standalone Kotlin checks passed against actual policy implementations and actual LanguagePolicy, with a minimal subtitle model stub.
+All eight changed/new Kotlin files parsed without syntax errors. JUnit regression tests included but Gradle tests were not run.
+Attempted shared tests + Mobile/TV Kotlin compilation; blocked before compilation by unavailable Android Gradle plugin 9.1.1.
+Full Android type-check, Media3 runtime behavior, actual provider scheduling, subtitle selection and network-request observation still require device verification.
