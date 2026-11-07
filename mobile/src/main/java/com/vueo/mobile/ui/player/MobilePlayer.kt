@@ -2762,6 +2762,11 @@ internal fun PlayerScreen(
         )
 
     fun requestSubtitleChoice(choice: PlayerTrackChoice) {
+        choice.externalSubtitle?.let { track ->
+            val span = com.vueo.shared.core.player.SubtitlePreparationDiagnostics.start(track.url, "user_request")
+            com.vueo.shared.core.player.SubtitlePreparationDiagnostics.end(span)
+        }
+
         subtitlePreferenceRestored = true
         val sameRequestInFlight =
             pendingSubtitleSelectionId == choice.selectionId &&

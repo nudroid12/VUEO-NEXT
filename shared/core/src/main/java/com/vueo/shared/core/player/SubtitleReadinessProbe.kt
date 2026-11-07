@@ -28,84 +28,94 @@ object SubtitleReadinessProbe {
         val normalizedUrl = url.trim()
         if (normalizedUrl.isEmpty()) return@withContext false
 
-        val timeoutNs = timeoutMs.coerceAtLeast(1L) * NANOS_PER_MILLISECOND
-        val deadlineNs = System.nanoTime() + timeoutNs
-        val nowMs = System.currentTimeMillis()
-        if (!forceNetwork) {
-            // Session bytes remain usable even after the readiness timestamp expires.
-            if (SubtitleSessionCache.get(normalizedUrl) != null) return@withContext true
-            readyAtMs[normalizedUrl]
-                ?.takeIf { nowMs - it <= READY_CACHE_MS }
-                ?.let { return@withContext true }
-        }
-
-        val probeLock = probeLocks.computeIfAbsent(normalizedUrl) { Mutex() }
-        var waitingReported = false
-        if (probeLock.isLocked) {
-            waitingReported = true
-            withContext(Dispatchers.Main.immediate) {
-                onWaiting()
+        val readySpan = SubtitlePreparationDiagnostics.start(normalizedUrl, if (forceNetwork) "await_ready_forced" else "await_ready")
+        var readyResult = "not_ready"
+        try {
+            val timeoutNs = timeoutMs.coerceAtLeast(1L) * NANOS_PER_MILLISECOND
+            val deadlineNs = System.nanoTime() + timeoutNs
+            val nowMs = System.currentTimeMillis()
+            if (!forceNetwork) {
+                // Session bytes remain usable even after the readiness timestamp expires.
+                if (SubtitleSessionCache.get(normalizedUrl) != null) {
+                    readyResult = "cache_hit"
+                    return@withContext true
+                }
+                readyAtMs[normalizedUrl]
+                    ?.takeIf { nowMs - it <= READY_CACHE_MS }
+                    ?.let { readyResult = "ready_timestamp_hit"; return@withContext true }
             }
-        }
-
-        probeLock.withLock {
-            // Another caller may have completed the same URL while this caller
-            // was waiting for the per-URL single-flight lock.
-            if (!forceNetwork && SubtitleSessionCache.get(normalizedUrl) != null) {
-                return@withContext true
-            }
-            val cachedAtMs = readyAtMs[normalizedUrl]
-            if (
-                !forceNetwork &&
-                cachedAtMs != null &&
-                System.currentTimeMillis() - cachedAtMs <= READY_CACHE_MS
-            ) {
-                return@withContext true
-            }
-
-            while (System.nanoTime() < deadlineNs) {
-                coroutineContext.ensureActive()
-                val remainingMs = remainingMillis(deadlineNs)
-                if (remainingMs <= 0L) break
-
-                val connectTimeoutMs =
-                    min(CONNECT_TIMEOUT_MS.toLong(), remainingMs)
-                        .coerceAtLeast(1L)
-                        .toInt()
-                val readBudgetMs =
-                    (remainingMs - connectTimeoutMs)
-                        .coerceAtLeast(1L)
-                val readTimeoutMs =
-                    min(READ_TIMEOUT_MS.toLong(), readBudgetMs)
-                        .coerceAtLeast(1L)
-                        .toInt()
-                val result = probeOnce(
-                    url = normalizedUrl,
-                    connectTimeoutMs = connectTimeoutMs,
-                    readTimeoutMs = readTimeoutMs,
-                )
-                when (result) {
-                    ProbeResult.READY -> {
-                        readyAtMs[normalizedUrl] = System.currentTimeMillis()
-                        return@withContext true
-                    }
-                    ProbeResult.FAILED -> return@withContext false
-                    ProbeResult.RETRY -> {
-                        if (!waitingReported) {
-                            waitingReported = true
-                            withContext(Dispatchers.Main.immediate) {
-                                onWaiting()
-                            }
-                        }
-                        val retryWaitMs =
-                            min(RETRY_DELAY_MS, remainingMillis(deadlineNs))
-                        if (retryWaitMs > 0L) delay(retryWaitMs)
-                    }
+    
+            val probeLock = probeLocks.computeIfAbsent(normalizedUrl) { Mutex() }
+            var waitingReported = false
+            if (probeLock.isLocked) {
+                waitingReported = true
+                withContext(Dispatchers.Main.immediate) {
+                    onWaiting()
                 }
             }
-
-            false
-        }
+    
+            probeLock.withLock {
+                // Another caller may have completed the same URL while this caller
+                // was waiting for the per-URL single-flight lock.
+                if (!forceNetwork && SubtitleSessionCache.get(normalizedUrl) != null) {
+                    readyResult = "cache_hit_after_lock"
+                    return@withContext true
+                }
+                val cachedAtMs = readyAtMs[normalizedUrl]
+                if (
+                    !forceNetwork &&
+                    cachedAtMs != null &&
+                    System.currentTimeMillis() - cachedAtMs <= READY_CACHE_MS
+                ) {
+                    readyResult = "ready"
+                    return@withContext true
+                }
+    
+                while (System.nanoTime() < deadlineNs) {
+                    coroutineContext.ensureActive()
+                    val remainingMs = remainingMillis(deadlineNs)
+                    if (remainingMs <= 0L) break
+    
+                    val connectTimeoutMs =
+                        min(CONNECT_TIMEOUT_MS.toLong(), remainingMs)
+                            .coerceAtLeast(1L)
+                            .toInt()
+                    val readBudgetMs =
+                        (remainingMs - connectTimeoutMs)
+                            .coerceAtLeast(1L)
+                    val readTimeoutMs =
+                        min(READ_TIMEOUT_MS.toLong(), readBudgetMs)
+                            .coerceAtLeast(1L)
+                            .toInt()
+                    val result = probeOnce(
+                        url = normalizedUrl,
+                        connectTimeoutMs = connectTimeoutMs,
+                        readTimeoutMs = readTimeoutMs,
+                    )
+                    when (result) {
+                        ProbeResult.READY -> {
+                            readyAtMs[normalizedUrl] = System.currentTimeMillis()
+                            readyResult = "ready"
+                            return@withContext true
+                        }
+                        ProbeResult.FAILED -> return@withContext false
+                        ProbeResult.RETRY -> {
+                            if (!waitingReported) {
+                                waitingReported = true
+                                withContext(Dispatchers.Main.immediate) {
+                                    onWaiting()
+                                }
+                            }
+                            val retryWaitMs =
+                                min(RETRY_DELAY_MS, remainingMillis(deadlineNs))
+                            if (retryWaitMs > 0L) delay(retryWaitMs)
+                        }
+                    }
+                }
+    
+                false
+            }
+        } finally { SubtitlePreparationDiagnostics.end(readySpan, readyResult) }
     }
 
     private fun probeOnce(
@@ -119,6 +129,10 @@ object SubtitleReadinessProbe {
             return ProbeResult.FAILED
         }
 
+        val downloadSpan = SubtitlePreparationDiagnostics.start(url, "readiness_download")
+        var downloadResult = "exception"
+        var downloadBytes = 0
+        var downloadEnded = false
         return try {
             connection.instanceFollowRedirects = true
             connection.connectTimeout = connectTimeoutMs
@@ -130,7 +144,9 @@ object SubtitleReadinessProbe {
                 connection.setRequestProperty(key, value)
             }
 
-            when (connection.responseCode) {
+            val status = connection.responseCode
+            downloadResult = "http_$status"
+            when (status) {
                 in 200..201, in 203..299 -> {
                     connection.inputStream.use { input ->
                         val buffer = ByteArray(BUFFER_SIZE)
@@ -139,12 +155,15 @@ object SubtitleReadinessProbe {
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
+                            downloadBytes += count
                             if (cacheable && output.size() + count <= MAX_CACHE_BYTES) {
                                 output.write(buffer, 0, count)
                             } else {
                                 cacheable = false
                             }
                         }
+                        SubtitlePreparationDiagnostics.end(downloadSpan, downloadResult, downloadBytes)
+                        downloadEnded = true
                         if (cacheable && output.size() > 0) {
                             SubtitleSessionCache.put(url, output.toByteArray())
                         }
@@ -160,6 +179,7 @@ object SubtitleReadinessProbe {
         } catch (_: Throwable) {
             ProbeResult.RETRY
         } finally {
+            if (!downloadEnded) SubtitlePreparationDiagnostics.end(downloadSpan, downloadResult, downloadBytes)
             connection.disconnect()
         }
     }

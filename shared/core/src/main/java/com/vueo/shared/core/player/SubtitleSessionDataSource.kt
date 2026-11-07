@@ -58,11 +58,14 @@ object SubtitleSessionCache {
     internal fun prepareAndCache(url: String, bytes: ByteArray): ByteArray {
         val snapshot = synchronized(this) { Pair(transforms[url], transformVersions[url]) }
         val transform = snapshot.first
-        val prepared = SubtitleTextNormalizer.normalize(
+        val decoded = SubtitlePreparationDiagnostics.measure(url, if (transform == null) "plaintext" else "decrypt") {
             transform?.let {
                 SubtitleCipherDecoder.decode(bytes, it.keys.map { key -> key.key }, it.keys.map { key -> key.iv })
             } ?: bytes
-        )
+        }
+        val prepared = SubtitlePreparationDiagnostics.measure(url, "normalize") {
+            SubtitleTextNormalizer.normalize(decoded)
+        }
         synchronized(this) {
             if (transformVersions[url] !== snapshot.second) {
                 throw java.io.IOException("Subtitle transform changed during preparation")
@@ -98,7 +101,10 @@ class SubtitleSessionDataSource private constructor(
     override fun open(dataSpec: DataSpec): Long {
         check(active == null) { "DataSource is already open" }
         val url = dataSpec.uri.toString()
+        val registeredSubtitle = SubtitleSessionCache.isRegistered(url)
+        val cacheSpan = if (registeredSubtitle) SubtitlePreparationDiagnostics.start(url, "media3_cache") else null
         val cached = SubtitleSessionCache.get(url)
+        SubtitlePreparationDiagnostics.end(cacheSpan, if (cached == null) "miss" else "hit", cached?.size ?: -1)
         if (cached != null) {
             return openPrepared(dataSpec, cached)
         }
@@ -114,38 +120,53 @@ class SubtitleSessionDataSource private constructor(
             (dataSpec.position != 0L || dataSpec.length != -1L || dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET)
         ) throw java.io.IOException("Encrypted subtitle must be prepared with a full GET")
         active = upstream
-        val length = upstream.open(request)
-        // Text parsers need the complete sidecar. Prepare registered full GETs once;
-        // videos, partial requests and oversized sidecars retain their streaming path.
-        if (!SubtitleSessionCache.isRegistered(url) || dataSpec.position != 0L ||
-            dataSpec.length != -1L || dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET
-        ) return length
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(8192)
-        while (output.size() <= SubtitleSessionCache.MAX_FILE_BYTES) {
-            val count = upstream.read(buffer, 0, buffer.size)
-            if (count == -1) {
-                if (output.size() == 0) return length
-                val prepared = SubtitleSessionCache.prepareAndCache(url, output.toByteArray())
-                upstream.close()
-                return openPrepared(dataSpec, prepared)
+        val downloadSpan = if (registeredSubtitle) SubtitlePreparationDiagnostics.start(url, "media3_download") else null
+        var downloadEnded = false
+        var downloadResult = "not_prepared"
+        try {
+            val length = upstream.open(request)
+            // Text parsers need the complete sidecar. Prepare registered full GETs once;
+            // videos, partial requests and oversized sidecars retain their streaming path.
+            if (!SubtitleSessionCache.isRegistered(url) || dataSpec.position != 0L ||
+                dataSpec.length != -1L || dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET
+            ) return length
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (output.size() <= SubtitleSessionCache.MAX_FILE_BYTES) {
+                val count = upstream.read(buffer, 0, buffer.size)
+                if (count == -1) {
+                    if (output.size() == 0) return length
+                    SubtitlePreparationDiagnostics.end(downloadSpan, "ok", output.size())
+                    downloadEnded = true
+                    val prepared = SubtitleSessionCache.prepareAndCache(url, output.toByteArray())
+                    upstream.close()
+                    return openPrepared(dataSpec, prepared)
+                }
+                output.write(buffer, 0, count)
             }
-            output.write(buffer, 0, count)
+            if (SubtitleSessionCache.requiresTransform(url)) {
+                upstream.close()
+                active = null
+                throw java.io.IOException("Encrypted subtitle exceeds the 2 MB limit")
+            }
+            active = PrefixedDataSource(output.toByteArray(), upstream)
+            return length
+        } catch (e: Throwable) {
+            downloadResult = e.javaClass.simpleName
+            throw e
+        } finally {
+            if (!downloadEnded) SubtitlePreparationDiagnostics.end(downloadSpan, downloadResult)
         }
-        if (SubtitleSessionCache.requiresTransform(url)) {
-            upstream.close()
-            active = null
-            throw java.io.IOException("Encrypted subtitle exceeds the 2 MB limit")
-        }
-        active = PrefixedDataSource(output.toByteArray(), upstream)
-        return length
     }
 
     private fun openPrepared(dataSpec: DataSpec, bytes: ByteArray): Long {
         val prepared = ByteArrayDataSource(bytes)
         listeners.forEach(prepared::addTransferListener)
         active = prepared
-        return prepared.open(dataSpec)
+        return prepared.open(dataSpec).also {
+            val span = SubtitlePreparationDiagnostics.start(dataSpec.uri.toString(), "media3_bytes_ready")
+            SubtitlePreparationDiagnostics.end(span, bytes = bytes.size)
+        }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int =

@@ -850,6 +850,10 @@ internal fun applyTrackChoice(
     choice: PlayerTrackChoice,
 ) {
     val trackOverride = choice.override ?: return
+    if (trackType == C.TRACK_TYPE_TEXT) choice.externalSubtitle?.let { track ->
+        val span = com.vueo.shared.core.player.SubtitlePreparationDiagnostics.start(track.url, "apply_track_request")
+        com.vueo.shared.core.player.SubtitlePreparationDiagnostics.end(span)
+    }
     if (trackType == C.TRACK_TYPE_TEXT) {
         if (LiveSmartSubs.select(player, trackOverride)) return
         LiveSmartSubs.clear(player)
