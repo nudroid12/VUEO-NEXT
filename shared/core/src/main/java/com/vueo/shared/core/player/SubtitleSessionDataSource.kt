@@ -19,17 +19,22 @@ object SubtitleSessionCache {
     internal const val MAX_FILE_BYTES = 2 * 1024 * 1024
     private val entries = LinkedHashMap<String, ByteArray>(MAX_ENTRIES, .75f, true)
     private val transforms = mutableMapOf<String, SubtitleTextTransform>()
+    private val transformVersions = mutableMapOf<String, Any>()
     private val registered = LinkedHashMap<String, Map<String, String>>()
 
     @Synchronized
     fun register(url: String, headers: Map<String, String> = emptyMap(), textTransform: SubtitleTextTransform? = null) {
         val transform = textTransform?.takeIf { it.algorithm == "aes-cbc" && it.scope == "cue-lines" && it.keys.size in 1..4 }
-        if (transforms[url] != transform) entries.remove(url)
+        if (!registered.containsKey(url) || transforms[url] != transform) {
+            entries.remove(url)
+            transformVersions[url] = Any()
+        }
         if (transform == null) transforms.remove(url) else transforms[url] = transform
         registered[url] = headers.toMap()
         while (registered.size > 256) {
             val oldest = registered.keys.first()
             registered.remove(oldest)
+            transformVersions.remove(oldest)
             transforms.remove(oldest)
             entries.remove(oldest)
         }
@@ -41,31 +46,39 @@ object SubtitleSessionCache {
     @Synchronized
     fun isRegistered(url: String): Boolean = registered.containsKey(url)
 
-    @Synchronized
     fun put(url: String, bytes: ByteArray) {
         if (bytes.isEmpty() || bytes.size > MAX_FILE_BYTES) return
-        putPrepared(url, prepare(url, bytes))
+        prepareAndCache(url, bytes)
     }
 
-    /** Stores bytes already transformed and normalized; never applies AES twice. */
-    @Synchronized
-    internal fun putPrepared(url: String, bytes: ByteArray) {
-        if (bytes.isEmpty() || bytes.size > MAX_FILE_BYTES) return
-        entries[url] = bytes
-        while (entries.size > MAX_ENTRIES || entries.values.sumOf { it.size } > MAX_TOTAL_BYTES) {
-            entries.remove(entries.keys.first())
+    /**
+     * Snapshot configuration under the cache lock, prepare outside it, then publish
+     * only if that registration still exists. No shared mutable Cipher state.
+     */
+    internal fun prepareAndCache(url: String, bytes: ByteArray): ByteArray {
+        val snapshot = synchronized(this) { Pair(transforms[url], transformVersions[url]) }
+        val transform = snapshot.first
+        val prepared = SubtitleTextNormalizer.normalize(
+            transform?.let {
+                SubtitleCipherDecoder.decode(bytes, it.keys.map { key -> key.key }, it.keys.map { key -> key.iv })
+            } ?: bytes
+        )
+        synchronized(this) {
+            if (transformVersions[url] !== snapshot.second) {
+                throw java.io.IOException("Subtitle transform changed during preparation")
+            }
+            if (prepared.isNotEmpty() && prepared.size <= MAX_FILE_BYTES) {
+                entries[url] = prepared
+                while (entries.size > MAX_ENTRIES || entries.values.sumOf { it.size } > MAX_TOTAL_BYTES) {
+                    entries.remove(entries.keys.first())
+                }
+            }
         }
+        return prepared
     }
 
     @Synchronized
     fun requiresTransform(url: String): Boolean = transforms[url] != null
-
-    @Synchronized
-    fun prepare(url: String, bytes: ByteArray): ByteArray = SubtitleTextNormalizer.normalize(
-        transforms[url]?.let { transform ->
-            SubtitleCipherDecoder.decode(bytes, transform.keys.map { it.key }, transform.keys.map { it.iv })
-        } ?: bytes
-    )
 
     @Synchronized
     fun get(url: String): ByteArray? = entries[url]
@@ -113,9 +126,8 @@ class SubtitleSessionDataSource private constructor(
             val count = upstream.read(buffer, 0, buffer.size)
             if (count == -1) {
                 if (output.size() == 0) return length
-                val prepared = SubtitleSessionCache.prepare(url, output.toByteArray())
+                val prepared = SubtitleSessionCache.prepareAndCache(url, output.toByteArray())
                 upstream.close()
-                SubtitleSessionCache.putPrepared(url, prepared)
                 return openPrepared(dataSpec, prepared)
             }
             output.write(buffer, 0, count)

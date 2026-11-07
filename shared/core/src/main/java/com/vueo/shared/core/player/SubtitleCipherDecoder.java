@@ -17,6 +17,8 @@ public final class SubtitleCipherDecoder {
     private static final Pattern TIME = Pattern.compile(".*\\d{1,2}:\\d{2}[.,]\\d{1,3}\\s*-->.*");
     private static final Pattern ENCODED = Pattern.compile("[A-Za-z0-9+/]{20,}={0,2}");
 
+    private static final Pattern CONTROL = Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]");
+
     public static byte[] decode(byte[] bytes, List<String> keys, List<String> ivs) throws IOException {
         if (keys == null || ivs == null || keys.isEmpty() || keys.size() > 4 || keys.size() != ivs.size()) throw new IOException("Invalid subtitle transform configuration");
         if (bytes.length > 2 * 1024 * 1024) throw new IOException("Subtitle too large");
@@ -36,6 +38,7 @@ public final class SubtitleCipherDecoder {
             } catch (Exception ignored) { unavailable[key] = true; }
         }
         boolean cue = false, changed = false;
+        int preferredKey = 0; // Local to this file; mixed-key cues retain full fallback.
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) { cue = false; continue; }
@@ -46,7 +49,9 @@ public final class SubtitleCipherDecoder {
             catch (IllegalArgumentException e) { throw new IOException("Invalid subtitle cipher text", e); }
             if (encrypted.length == 0 || encrypted.length % 16 != 0) continue;
             String plain = null;
-            for (int key = 0; key < keys.size(); key++) {
+            for (int attempt = 0; attempt < keys.size(); attempt++) {
+                int key = attempt == 0 ? preferredKey : attempt - 1;
+                if (attempt > 0 && key >= preferredKey) key++;
                 try {
                     if (unavailable[key]) continue;
                     if (ciphers[key] == null) {
@@ -55,8 +60,9 @@ public final class SubtitleCipherDecoder {
                     }
                     // Successful doFinal resets CBC to its post-init state, including IV.
                     String candidate = utf8(ciphers[key].doFinal(encrypted));
-                    if (candidate.trim().isEmpty() || candidate.matches("(?s).*[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F].*")) continue;
+                    if (candidate.trim().isEmpty() || CONTROL.matcher(candidate).find()) continue;
                     plain = candidate;
+                    preferredKey = key;
                     break;
                 } catch (Exception ignored) {
                     // After failure the Cipher state is unspecified; reinitialize before reuse.
