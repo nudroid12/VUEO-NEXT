@@ -235,13 +235,14 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     private fun displayCues(cues: List<Cue>) {
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
 
-        // Separate simultaneous lower-screen subtitle layers by occupancy, not only by
-        // the global parenthetical commentary rule. A full (...) cue gets Commentary Size, while two
-        // ordinary tracks (for example original + translated addon subtitles) are also
-        // rendered as distinct lower/upper layers with the same collision gap.
+        // Commentary keeps its own layer. Preserve authored positions on the main
+        // layer; the collision guard moves them only when they meet the bottom block.
         val layers = splitLowerSubtitleLayers(cues, showCommentary)
         val stackedMain = tvStackCollidingSubtitleCues(layers.lowerCues)
-        val stackedUpper = tvStackCollidingSubtitleCues(layers.upperCues)
+        val stackedUpper = tvStackCollidingSubtitleCues(
+            layers.upperCues,
+            preserveAuthoredPositions = !layers.upperUsesCommentarySize,
+        )
 
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
@@ -302,24 +303,14 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         val commentaryUnique = parentheticalCommentary
             .let { if (commentaryEnabled) it else emptyList() }
 
-        return when {
-            commentaryUnique.isNotEmpty() -> TvSubtitleLayerSplit(
-                lowerCues = nonLower + remainingNormal,
-                upperCues = commentaryUnique,
-                upperUsesCommentarySize = true,
-            )
-            remainingNormal.size >= 2 -> TvSubtitleLayerSplit(
-                // When there is no commentary role, retain generic dual-layer spacing.
-                lowerCues = nonLower + remainingNormal.last(),
-                upperCues = remainingNormal.dropLast(1),
-                upperUsesCommentarySize = false,
-            )
-            else -> TvSubtitleLayerSplit(
-                lowerCues = nonLower + remainingNormal,
-                upperCues = emptyList(),
-                upperUsesCommentarySize = false,
-            )
-        }
+        // Source-authored positions stay on the main layer. Cue ordering cannot
+        // identify dialogue: unpositioned cues form the ordinary bottom block,
+        // while authored cues retain their anchors for the collision guard.
+        return TvSubtitleLayerSplit(
+            lowerCues = nonLower + remainingNormal,
+            upperCues = commentaryUnique,
+            upperUsesCommentarySize = true,
+        )
     }
 
     private fun isFullyParenthesizedCue(cue: Cue): Boolean {
