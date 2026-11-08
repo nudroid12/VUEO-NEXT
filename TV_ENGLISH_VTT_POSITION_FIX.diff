@@ -1,0 +1,16 @@
+--- a/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitleTimelineLoader.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitleTimelineLoader.kt
+@@ -42,7 +42,12 @@
+                 val positionedParser = androidx.media3.extractor.text.DefaultSubtitleParserFactory()
+                     .create(Format.Builder().setSampleMimeType("text/vtt").build())
+                 positionedParser.parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { group ->
+-                    group.cues.mapNotNullTo(protected) { it.text?.toString() }
++                    // A negative numbered WebVTT line is a lower-stack cue, not an
++                    // authored sign position. Keep only genuinely non-automatic
++                    // placements protected so ordinary English tracks can use the
++                    // same lower/upper layer policy as SmartSubs.
++                    group.cues.filterNot(::isAutomaticText)
++                        .mapNotNullTo(protected) { it.text?.toString() }
+                 }
+             }
+         }

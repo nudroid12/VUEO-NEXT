@@ -1,5 +1,24 @@
-VUEO only. Apply at the VUEO repository root, build and install TV/Mobile, then apply the separate Cloudbank VidSrc v3.2.1 patch. Replaces the previous frame-interaction patch with generic diagnostics v2.
+# VUEO TV English VTT position classification fix
 
-Adds document-start/DOM-ready/window-load/unload and script/runtime error counters per configured stage; configured custom-event observations; request-query-key classification; configured console-signal counters. No raw page/console/URL/token content is returned. No domain, title, verification bypass or authentication rules are hardcoded. Existing interaction behavior and limits are retained.
+Baseline: commit 32fdffa (the user's confirmed baseline).
 
-The full modified resolver/session policy compile against Android API 35 and WebKit 1.14.0. Run node tests/provider-frame-interaction.cjs for script fixtures. Full APK and real playback unverified. This is instrumentation to identify the failure stage, not a confirmed playback fix.
+Scope:
+- One file only: TvSubtitleTimelineLoader.kt
+- Changes how VTT cues are added to protectedText.
+- Negative numbered line cues that satisfy the existing automatic-placement policy
+  (for example line:-1 through line:-4) are no longer blanket-protected merely
+  because the WebVTT cue has a line setting.
+- Authored/non-automatic placements remain protected, including non-central
+  horizontal placement, non-default size, vertical writing, bitmap cues, and
+  unsupported line placement.
+- This allows ordinary English VTT cues to enter the existing TV lower/upper
+  subtitle layer policy. SmartSubs/Malay AI code is not modified.
+
+No provider, video, decryptor, timing, commentary, Mobile, or SmartSubs renderer
+changes are included.
+
+Important:
+- This is a narrow source patch, not a full APK/build.
+- It relies on the existing automaticPlacement() policy and temporal layer logic.
+- Verify on the same scene: English and Malay AI should have matching layer
+  behavior, while authored sign translations retain their source positions.
