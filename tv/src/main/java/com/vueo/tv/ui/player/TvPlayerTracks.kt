@@ -310,15 +310,12 @@ internal class TvSubtitleOffsetRenderersFactory(
     }
 }
 
-/** Stack ordinary unpositioned captions, preserving authored positions by default.
+/** Stack simultaneous lower-screen captions even when their horizontal metadata differs.
  * Commentary classification is owned by TvSubtitlePlayerView using the global v101
  * full-parentheses rule. This helper only combines cues within the layer it receives.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
-internal fun tvStackCollidingSubtitleCues(
-    cues: List<Cue>,
-    preserveAuthoredPositions: Boolean = true,
-): List<Cue> {
+internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
     if (cues.isEmpty()) return emptyList()
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
@@ -328,7 +325,7 @@ internal fun tvStackCollidingSubtitleCues(
             orderedGroups.add(mutableListOf(cue))
             continue
         }
-        if (tvIsBottomSubtitleCue(cue, preserveAuthoredPositions)) {
+        if (tvIsBottomSubtitleCue(cue)) {
             if (bottomGroup.isEmpty()) orderedGroups.add(bottomGroup)
             bottomGroup.add(cue)
             continue
@@ -385,9 +382,8 @@ private fun tvBuildBottomSubtitleCue(cues: List<Cue>): Cue {
         .build()
 }
 
-private fun tvIsBottomSubtitleCue(cue: Cue, preserveAuthoredPositions: Boolean): Boolean = when {
+private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = when {
     cue.line == Cue.DIMEN_UNSET -> true
-    preserveAuthoredPositions -> false
     cue.lineType == Cue.LINE_TYPE_FRACTION -> cue.line >= .70f
     cue.lineType == Cue.LINE_TYPE_NUMBER -> cue.line in -3f..-1f
     else -> false
