@@ -315,13 +315,13 @@ internal class TvSubtitleOffsetRenderersFactory(
  * full-parentheses rule. This helper only combines cues within the layer it receives.
  * No timing, subtitle offset, bitmap or vertical-caption metadata is changed.
  */
-internal fun tvStackCollidingSubtitleCues(cues: List<Cue>): List<Cue> {
+internal fun tvStackCollidingSubtitleCues(cues: List<Cue>, protectedText: Set<String> = emptySet()): List<Cue> {
     if (cues.isEmpty()) return emptyList()
     val orderedGroups = mutableListOf<MutableList<Cue>>()
     val groups = linkedMapOf<TvSubtitlePlacement, MutableList<Cue>>()
     val bottomGroup = mutableListOf<Cue>()
     for (cue in cues) {
-        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank()) {
+        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank() || cue.text.toString() in protectedText) {
             orderedGroups.add(mutableListOf(cue))
             continue
         }
@@ -382,12 +382,7 @@ private fun tvBuildBottomSubtitleCue(cues: List<Cue>): Cue {
         .build()
 }
 
-private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = when {
-    cue.line == Cue.DIMEN_UNSET -> true
-    cue.lineType == Cue.LINE_TYPE_FRACTION -> cue.line >= .70f
-    cue.lineType == Cue.LINE_TYPE_NUMBER -> cue.line in -3f..-1f
-    else -> false
-}
+private fun tvIsBottomSubtitleCue(cue: Cue): Boolean = TvSubtitleTimelineLoader.isAutomaticText(cue)
 
 private data class TvSubtitlePlacement(
     val line: Float,

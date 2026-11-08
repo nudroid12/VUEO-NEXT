@@ -1,0 +1,26 @@
+package com.vueo.tv.player
+fun main() {
+    fun e(t: String, a: Long, b: Long) = TvSubtitleTemporalPolicy.Event(t, a*1_000_000, b*1_000_000)
+    val info = listOf(e("title",0,12),e("name",0,12),e("age",0,12))
+    val dialogue = listOf(e("first",1,4),e("second",5,8))
+    val result = TvSubtitleTemporalPolicy.analyze(info + dialogue)
+    check(result.single().info == setOf("title","name","age"))
+    check(result.single().dialogue == setOf("first","second"))
+    check(TvSubtitleTemporalPolicy.analyze(listOf(e("long dialogue",0,12)) + dialogue).isEmpty())
+    check(TvSubtitleTemporalPolicy.analyze(info + e("one overlap",1,4)).isEmpty())
+    check(TvSubtitleTemporalPolicy.analyze(info + listOf(e("voice1",1,4),e("voice2",1,4))).isEmpty())
+    check(TvSubtitleTemporalPolicy.analyze(listOf(e("lyrics",0,20))).isEmpty())
+    check(TvSubtitleTemporalPolicy.analyze(listOf(e("normal",0,3),e("normal2",4,7))).isEmpty())
+    val segmented = info.flatMap { x -> listOf(x.copy(endUs=4_000_000),x.copy(startUs=4_000_000)) }
+    check(TvSubtitleTemporalPolicy.analyze(segmented + dialogue) == result)
+    check(TvSubtitleTemporalPolicy.analyze((info + dialogue).reversed()) == result)
+    check(TvSubtitleTemporalPolicy.automaticPlacement(-4f,true,.5f,1f))
+    check(TvSubtitleTemporalPolicy.automaticPlacement(-9f,true,null,null))
+    check(!TvSubtitleTemporalPolicy.automaticPlacement(.8f,false,null,null))
+    check(!TvSubtitleTemporalPolicy.automaticPlacement(2f,true,null,null))
+    check(!TvSubtitleTemporalPolicy.automaticPlacement(-1f,true,.2f,null))
+    check(!TvSubtitleTemporalPolicy.automaticPlacement(null,false,null,null,vertical=true))
+    check(TvSubtitleTemporalPolicy.hasVttPositionSettings("00:00:00.000 --> 00:00:10.000 line:-4 position:50%"))
+    check(!TvSubtitleTemporalPolicy.hasVttPositionSettings("00:00:00.000 --> 00:00:10.000"))
+    println("16 temporal/position policy checks passed")
+}

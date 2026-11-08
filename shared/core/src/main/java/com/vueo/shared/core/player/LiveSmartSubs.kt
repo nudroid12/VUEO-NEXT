@@ -66,6 +66,11 @@ class LiveSmartSubs(
             "SMARTSUBS_OVERLAY_UPDATED", "tracks=${tracks.size} videoReset=false")
     }
 
+    /** Read-only metadata for layout; does not start generation or select a track. */
+    fun selectedSubtitleForLayout(): SubtitleTrack? = tracks.firstOrNull {
+        PlayerTrackPolicy.externalSubtitleSelectionId(it) == selectedId
+    }
+
     fun addTrackListener(listener: (Boolean) -> Unit) { trackListeners.add(listener) }
     fun removeTrackListener(listener: (Boolean) -> Unit) { trackListeners.remove(listener) }
     fun addCueListener(listener: (List<Cue>) -> Unit) { cueListeners.add(listener); listener(currentCues()) }

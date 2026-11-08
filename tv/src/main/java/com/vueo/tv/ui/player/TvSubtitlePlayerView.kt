@@ -2,6 +2,8 @@ package com.vueo.tv.player
 
 import com.vueo.shared.core.player.LiveSmartSubs
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import android.content.Context
 import android.graphics.Paint
 import android.text.Layout
@@ -40,16 +42,61 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     private var lastNormalFontSizeSp = 26
     private var upperLayerUsesCommentarySize = true
 
-    private var cueDiagnosticGroups = 0
-    private var upperBottomPadding = Float.NaN
-    private val subtitleLineSpacing = context.obtainStyledAttributes(
-        null, intArrayOf(android.R.attr.lineSpacingExtra, android.R.attr.lineSpacingMultiplier), 0, 0,
-    ).let { attributes ->
-        val spacing = attributes.getDimensionPixelSize(0, 0).toFloat() to attributes.getFloat(1, 1f)
-        attributes.recycle()
-        spacing
+    private var layoutRequestKey: String? = null
+    private var layoutGeneration = 0
+    private var layoutAnalysisFailed = false
+    private var layoutReady = false
+    private var protectedTimelineText = emptySet<String>()
+    private var timelineRegions = emptyList<TvSubtitleTemporalPolicy.Region>()
+    private var infoLayerActive = false
+    private var infoReservedHeightPx = 0f
+    private var infoMeasureKey: List<Any?>? = null
+    private var subtitleLayoutDelayMs = 0L
+    private var layoutScope: kotlinx.coroutines.CoroutineScope? = null
+
+    private fun prepareTimelineLayout() {
+        val current = boundPlayer ?: return
+        val request = TvSubtitleTimelineLoader.request(current)
+        if (request == null) {
+            if (layoutRequestKey != null) resetTimelineLayout()
+            return
+        }
+        if (request.key == layoutRequestKey) return
+        resetTimelineLayout()
+        layoutRequestKey = request.key
+        val version = layoutGeneration
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        layoutScope = scope
+        scope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching { TvSubtitleTimelineLoader.parse(request) }.getOrNull()
+            }
+            if (version != layoutGeneration || boundPlayer !== current) return@launch
+            timelineRegions = result?.regions.orEmpty()
+            protectedTimelineText = result?.protectedText.orEmpty()
+            layoutAnalysisFailed = result == null
+            layoutReady = true
+            PerformanceDiagnostics.captureRuntimeEvent("TV_SUBTITLE_TIMELINE regions=${timelineRegions.size} protected=${protectedTimelineText.size} cached=true parsed=${result != null}")
+            refreshRenderedCues()
+        }
     }
 
+    private fun resetTimelineLayout() {
+        layoutGeneration++
+        layoutScope?.cancel()
+        layoutScope = null
+        layoutRequestKey = null
+        timelineRegions = emptyList()
+        protectedTimelineText = emptySet()
+        layoutReady = false
+        layoutAnalysisFailed = false
+        lastInputCues = null
+        infoLayerActive = false
+        infoMeasureKey = null
+    }
+
+    private var cueDiagnosticGroups = 0
+    private var upperBottomPadding = Float.NaN
     private val captionListener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
             if (boundPlayer?.let(LiveSmartSubs::ownsCues) != true) displayCues(cueGroup.cues)
@@ -144,6 +191,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     }
 
     private fun unregisterListener() {
+        resetTimelineLayout()
         smartSubsBinding?.removeCueListener(smartSubsCues)
         smartSubsBinding = null
         if (listenerRegistered) boundPlayer?.removeListener(captionListener)
@@ -156,7 +204,10 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     fun applySubtitlePresentation(
         style: TvPlayerSubtitleStyleState,
         bottomPadding: Float,
+        subtitleDelayMs: Long = 0L,
     ) {
+        val delayChanged = subtitleLayoutDelayMs != subtitleDelayMs
+        subtitleLayoutDelayMs = subtitleDelayMs
         val previous = lastStyle
         if (previous == null || previous.fontSizeSp != style.fontSizeSp) {
             managedSubtitleView.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, style.fontSizeSp.toFloat())
@@ -213,7 +264,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             showCommentary = style.showCommentary
             // Re-filter the active group immediately, without seeking or restarting playback.
             displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
-        } else if (presentationChanged || paddingChanged) {
+        } else if (presentationChanged || paddingChanged || delayChanged) {
             refreshRenderedCues()
         }
     }
@@ -235,6 +286,17 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     }
 
     private fun displayCues(cues: List<Cue>) {
+        prepareTimelineLayout()
+        if (layoutRequestKey != null && !layoutReady) {
+            // Show captions immediately with their source coordinates while analysis runs.
+            val visible = if (!showCommentary && cues.size >= 2) cues.filterNot {
+                TvSubtitleTimelineLoader.isAutomaticText(it) && isFullyParenthesizedCue(it)
+            } else cues
+            managedSubtitleView.setCues(visible)
+            commentarySubtitleView.setCues(emptyList())
+            lastInputCues = null
+            return
+        }
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
 
         // Separate simultaneous lower-screen subtitle layers by occupancy, not only by
@@ -248,9 +310,27 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             boundPlayer?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty(), auditGroup, "input", cues,
             "viewport=${width}x$height font=$lastNormalFontSizeSp pad=$lastBottomPadding overlay=${boundPlayer?.let(LiveSmartSubs::ownsCues) == true}",
         )
-        val layers = splitLowerSubtitleLayers(cues, showCommentary)
-        val stackedMain = tvStackCollidingSubtitleCues(layers.lowerCues)
-        val stackedUpper = tvStackCollidingSubtitleCues(layers.upperCues)
+        val clockUs = ((boundPlayer?.currentPosition ?: 0L) - subtitleLayoutDelayMs) * 1_000L
+        val region = timelineRegions.firstOrNull { clockUs >= it.startUs && clockUs < it.endUs }
+        val automatic = cues.filter(::isLowerTextCue)
+        val info = if (region != null) automatic.filter { it.text.toString() in region.info } else emptyList()
+        val dialogue = if (region != null) automatic.filter { it.text.toString() in region.dialogue } else emptyList()
+        // Do not reinterpret an ambiguous group, or override the commentary rule.
+        infoLayerActive = info.isNotEmpty() && automatic.all { it in info || it in dialogue } &&
+            automatic.none(::isFullyParenthesizedCue)
+        val measureKey = listOf(region, lastStyle?.fontSizeSp, lastStyle?.fontFamily, lastStyle?.bold, width, height)
+        if (infoLayerActive && region != null && infoMeasureKey != measureKey) {
+            infoReservedHeightPx = region.dialogue.maxOfOrNull { measuredNormalBottomHeightPx(it) } ?: 0f
+            infoMeasureKey = measureKey
+        }
+        val layers = if (infoLayerActive) TvSubtitleLayerSplit(
+            lowerCues = cues.filterNot { it in info }, upperCues = info,
+            upperUsesCommentarySize = false,
+        ) else splitLowerSubtitleLayers(cues, showCommentary)
+        val effectiveProtected = if (layoutReady && !layoutAnalysisFailed) protectedTimelineText else
+            protectedTimelineText + cues.filter { it.line != Cue.DIMEN_UNSET }.map { it.text.toString() }
+        val stackedMain = tvStackCollidingSubtitleCues(layers.lowerCues, effectiveProtected)
+        val stackedUpper = tvStackCollidingSubtitleCues(layers.upperCues, effectiveProtected)
 
         lastInputCues = cues
         lastDisplayCommentary = showCommentary
@@ -261,7 +341,8 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         lastNormalBottomLineCount = normalBottomLineCount(stackedMain)
         lastNormalBottomText = normalBottomText(stackedMain)
         updateCommentaryBottomPadding()
-        val adjusted = avoidAuthoredCueCollisions(stackedMain, stackedUpper)
+        // Authored positions are immutable. The old collision solver moved signs.
+        val adjusted = stackedMain to stackedUpper
         val mainDisplayed = adjusted.first
         val upperDisplayed = adjusted.second
 
@@ -270,7 +351,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             TvSubtitleCueDiagnostics.capture(source, auditGroup, "main", mainDisplayed,
                 "pad=$lastBottomPadding font=$lastNormalFontSizeSp")
             TvSubtitleCueDiagnostics.capture(source, auditGroup, "upper", upperDisplayed,
-                "pad=$upperBottomPadding commentary=${layers.upperUsesCommentarySize} font=${if (layers.upperUsesCommentarySize) lastStyle?.commentaryFontSizeSp else lastNormalFontSizeSp}")
+                "pad=$upperBottomPadding commentary=${layers.upperUsesCommentarySize} info=$infoLayerActive font=${if (layers.upperUsesCommentarySize) lastStyle?.commentaryFontSizeSp else lastNormalFontSizeSp}")
         }
 
         if (lastDisplayedCues != mainDisplayed) {
@@ -359,12 +440,8 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         return depth == 0
     }
 
-    private fun isLowerTextCue(cue: Cue): Boolean = when {
-        cue.line == Cue.DIMEN_UNSET -> true
-        cue.lineType == Cue.LINE_TYPE_FRACTION -> cue.line >= .70f
-        cue.lineType == Cue.LINE_TYPE_NUMBER -> cue.line in -3f..-1f
-        else -> false
-    }
+    private fun isLowerTextCue(cue: Cue): Boolean = cue.text.toString() !in protectedTimelineText &&
+        TvSubtitleTimelineLoader.isAutomaticText(cue) && (cue.line == Cue.DIMEN_UNSET || (layoutReady && !layoutAnalysisFailed))
 
     private fun applyUpperLayerTextSize(style: TvPlayerSubtitleStyleState) {
         val sizeSp = if (upperLayerUsesCommentarySize) {
@@ -388,15 +465,15 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         .mapNotNull { it.text }
         .maxByOrNull { it.length }
 
-    private fun measuredNormalBottomHeightPx(): Float {
-        val text = lastNormalBottomText?.takeIf { it.isNotBlank() } ?: return 0f
+    private fun measuredNormalBottomHeightPx(value: CharSequence? = lastNormalBottomText): Float {
+        val text = value?.takeIf { it.isNotBlank() } ?: return 0f
         val metrics = resources.displayMetrics
         val fontPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_SP,
             lastNormalFontSizeSp.toFloat(),
             metrics,
         )
-        val fallback = fontPx * SUBTITLE_LINE_HEIGHT_FACTOR * lastNormalBottomLineCount.coerceAtLeast(1)
+        val fallback = fontPx * SUBTITLE_LINE_HEIGHT_FACTOR * (text.count { it == '\n' } + 1).coerceAtLeast(1)
         val availableWidthPx = (width * SUBTITLE_MEASURE_WIDTH_FRACTION).toInt()
         if (availableWidthPx <= 0) return fallback
 
@@ -432,143 +509,16 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             COMMENTARY_GAP_DP,
             metrics,
         )
-        val extraPx = if (lastNormalBottomLineCount > 0) {
+        val extraPx = if (infoLayerActive) {
+            infoReservedHeightPx + gapPx
+        } else if (lastNormalBottomLineCount > 0) {
             measuredNormalBottomHeightPx() + gapPx
         } else {
             0f
         }
         val extraFraction = extraPx / playerHeight.toFloat()
-        upperBottomPadding = (base + extraFraction).coerceAtMost(MAX_COMMENTARY_BOTTOM_PADDING)
+        upperBottomPadding = ((if (infoLayerActive) maxOf(.18f, (lastStyle?.bottomPaddingPercent ?: 9) / 100f) else base) + extraFraction).coerceAtMost(MAX_COMMENTARY_BOTTOM_PADDING)
         commentarySubtitleView.setBottomPaddingFraction(upperBottomPadding)
-    }
-
-    private data class MeasuredCue(
-        val cue: Cue,
-        val upper: Boolean,
-        val index: Int,
-        val bounds: TvSubtitleCollisionLayout.Box,
-        val layoutTop: Float,
-        val parentTop: Float,
-        val parentHeight: Float,
-    )
-
-    /**
-     * Measure both visible layers with current TV typography. Only authored-position
-     * text can move. Default-position dialogue/commentary retains its existing policy.
-     * Bounds follow Media3 Canvas SubtitlePainter geometry, with a small edge guard.
-     */
-    private fun avoidAuthoredCueCollisions(
-        main: List<Cue>, upper: List<Cue>,
-    ): Pair<List<Cue>, List<Cue>> {
-        val all = main + upper
-        // Ordinary dialogue/commentary-only frames keep the existing inexpensive path.
-        if (all.size > 32) return main to upper
-        if (all.none { it.line == Cue.DIMEN_UNSET && it.bitmap == null && !it.text.isNullOrBlank() } ||
-            all.none { it.line != Cue.DIMEN_UNSET && it.bitmap == null && !it.text.isNullOrBlank() }) {
-            return main to upper
-        }
-        val mainSize = lastStyle?.fontSizeSp ?: lastNormalFontSizeSp
-        val upperSize = if (upperLayerUsesCommentarySize) lastStyle?.commentaryFontSizeSp ?: mainSize else mainSize
-        val measured = main.mapIndexedNotNull { index, cue ->
-            measureCue(cue, false, index, managedSubtitleView, mainSize, lastBottomPadding)
-        } + upper.mapIndexedNotNull { index, cue ->
-            measureCue(cue, true, index, commentarySubtitleView, upperSize, upperBottomPadding)
-        }
-        if (measured.none { it.cue.line == Cue.DIMEN_UNSET }) return main to upper
-        val boxes = measured.map { it.bounds }.toMutableList()
-        val resultMain = main.toMutableList()
-        val resultUpper = upper.toMutableList()
-        val gap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f, resources.displayMetrics)
-        var shifted = 0
-        for ((i, item) in measured.withIndex()) {
-            if (item.cue.line == Cue.DIMEN_UNSET) continue
-            val placed = TvSubtitleCollisionLayout.resolve(
-                boxes[i], boxes.filterIndexed { other, _ -> other != i },
-                item.parentTop, item.parentTop + item.parentHeight, gap,
-            )
-            if (placed == boxes[i]) continue
-            val delta = placed.top - boxes[i].top
-            val adjusted = item.cue.buildUpon()
-                .setLine((item.layoutTop + delta - item.parentTop) / item.parentHeight, Cue.LINE_TYPE_FRACTION)
-                .setLineAnchor(Cue.ANCHOR_TYPE_START)
-                .build()
-            if (item.upper) resultUpper[item.index] = adjusted else resultMain[item.index] = adjusted
-            boxes[i] = placed
-            shifted++
-        }
-        if (shifted > 0) PerformanceDiagnostics.captureRuntimeEvent(
-            "TV_SUBTITLE_COLLISION shifted=$shifted viewport=${width}x$height",
-        )
-        return resultMain to resultUpper
-    }
-
-    private fun measureCue(
-        cue: Cue, upper: Boolean, index: Int, view: SubtitleView, fontSp: Int, bottomPadding: Float,
-    ): MeasuredCue? {
-        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET || cue.text.isNullOrBlank() ||
-            cue.shearDegrees != 0f || bottomPadding.isNaN()) return null
-        val w = view.width - view.paddingLeft - view.paddingRight
-        val h = view.height - view.paddingTop - view.paddingBottom
-        if (w <= 0 || h <= 0) return null
-        val fontPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, fontSp.toFloat(), resources.displayMetrics)
-        val textPadding = (fontPx * .125f + .5f).toInt()
-        var available = w - textPadding * 2
-        if (cue.size != Cue.DIMEN_UNSET) available = (available * cue.size).toInt()
-        if (available <= 0) return null
-        val text = cue.text.toString()
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = fontPx
-            typeface = com.vueo.shared.core.player.SubtitleFonts.resolve(
-                context, lastStyle?.fontFamily ?: "default", lastStyle?.bold ?: false,
-            )
-        }
-        fun layout(width: Int) = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
-            .setAlignment(cue.textAlignment ?: Layout.Alignment.ALIGN_CENTER)
-            .setLineSpacing(subtitleLineSpacing.first, subtitleLineSpacing.second)
-            .setIncludePad(true).build()
-        val initial = layout(available)
-        var textWidth = (0 until initial.lineCount).maxOf { kotlin.math.ceil(initial.getLineWidth(it).toDouble()).toInt() }
-        if (cue.size != Cue.DIMEN_UNSET) textWidth = maxOf(textWidth, available)
-        textWidth += textPadding * 2
-        val parentLeft = view.paddingLeft
-        val parentTop = view.paddingTop.toFloat()
-        val parentBottom = parentTop + h
-        var left = if (cue.position == Cue.DIMEN_UNSET) {
-            (w - textWidth) / 2 + parentLeft
-        } else {
-            val anchor = kotlin.math.round(w * cue.position).toInt() + parentLeft
-            when (cue.positionAnchor) {
-                Cue.ANCHOR_TYPE_END -> anchor - textWidth
-                Cue.ANCHOR_TYPE_MIDDLE -> (anchor * 2 - textWidth) / 2
-                else -> anchor
-            }
-        }
-        left = maxOf(left, parentLeft)
-        val right = minOf(left + textWidth, parentLeft + w)
-        if (right <= left) return null
-        val finalLayout = layout(right - left)
-        // Conservative across layout engines: retain the taller wrapping estimate.
-        val textHeight = maxOf(initial.height, finalLayout.height).toFloat()
-        val lineHeight = (initial.getLineBottom(0) - initial.getLineTop(0)).toFloat()
-        var top = if (cue.line == Cue.DIMEN_UNSET) {
-            parentBottom - textHeight - (h * bottomPadding).toInt()
-        } else if (cue.lineType == Cue.LINE_TYPE_FRACTION) {
-            val anchor = kotlin.math.round(h * cue.line) + parentTop
-            when (cue.lineAnchor) {
-                Cue.ANCHOR_TYPE_END -> anchor - textHeight
-                Cue.ANCHOR_TYPE_MIDDLE -> anchor - textHeight / 2
-                else -> anchor
-            }
-        } else if (cue.line >= 0) {
-            kotlin.math.round(cue.line * lineHeight) + parentTop
-        } else {
-            kotlin.math.round((cue.line + 1) * lineHeight) + parentBottom - textHeight
-        }
-        if (cue.line != Cue.DIMEN_UNSET) top = top.coerceIn(parentTop, maxOf(parentTop, parentBottom - textHeight))
-        val edge = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics)
-        return MeasuredCue(cue, upper, index,
-            TvSubtitleCollisionLayout.Box(left - edge, top - edge, right + edge, top + textHeight + edge),
-            top, parentTop, h.toFloat())
     }
 
     private data class TvSubtitleLayerSplit(

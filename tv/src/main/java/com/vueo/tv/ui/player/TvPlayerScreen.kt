@@ -2037,7 +2037,7 @@ fun TvPlayerScreen(
                     bindPlayer(exoPlayer, "$mediaKey:${activeSource.url}")
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     this.resizeMode = resizeMode
-                    applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction)
+                    applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction, subtitleDelayMs.toLong())
                 }
             },
             update = {
@@ -2046,7 +2046,7 @@ fun TvPlayerScreen(
                 it.isFocusableInTouchMode = false
                 it.keepScreenOn = true
                 it.resizeMode = resizeMode
-                it.applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction)
+                it.applySubtitlePresentation(subtitlePresentation, subtitleBottomPaddingFraction, subtitleDelayMs.toLong())
             },
             modifier = Modifier.fillMaxSize(),
         )
