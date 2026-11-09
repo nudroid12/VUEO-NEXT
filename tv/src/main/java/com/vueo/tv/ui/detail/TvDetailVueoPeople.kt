@@ -37,6 +37,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -280,14 +286,16 @@ private fun VueoCastRow(
     sectionRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
+    listState: LazyListState = rememberLazyListState(),
     onOpen: (MediaPerson) -> Unit,
 ) {
     val visible = remember(cast) { cast.take(20) }
-    val requesters = remember(visible.map { it.name + "|" + it.character.orEmpty() }) {
+    val requesters = remember(sectionRequester, visible.map { it.name + "|" + it.character.orEmpty() }) {
         visible.indices.associateWith { index -> if (index == 0) sectionRequester else FocusRequester() }
     }
 
     LazyRow(
+        state = listState,
         modifier = Modifier
             .fillMaxWidth()
             .focusRestorer { sectionRequester }
@@ -775,6 +783,12 @@ internal fun VueoDetailCastCompanyTabs(
     val contentRequesters = remember(mediaKey) {
         VueoCompanyTab.entries.associateWith { FocusRequester() }
     }
+    // Keep each tab's row state accessible before entering its lazy content.
+    val castListState = rememberLazyListState()
+    val productionListState = rememberLazyListState()
+    val networkListState = rememberLazyListState()
+    val focusScope = rememberCoroutineScope()
+    var enterContentJob by remember(mediaKey) { mutableStateOf<Job?>(null) }
     var sectionFocused by remember(mediaKey) { mutableStateOf(false) }
     var contentTop by remember(mediaKey) { mutableStateOf(0f) }
     var contentHeight by remember(mediaKey) { mutableStateOf(0f) }
@@ -818,10 +832,40 @@ TvTabMarkerHost {
                             right = available.getOrNull(index + 1)?.let(tabRequesters::getValue) ?: FocusRequester.Cancel
                         }
                         .onPreviewKeyEvent { event ->
-                            if (event.key != Key.DirectionUp) false
-                            else {
-                                if (event.type == KeyEventType.KeyDown) onMoveUp()
-                                true
+                            when (event.key) {
+                                Key.DirectionDown -> {
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        enterContentJob?.cancel()
+                                        selected = tab
+                                        enterContentJob = focusScope.launch {
+                                            // Let the selected tab compose before scrolling its row.
+                                            withFrameNanos { }
+                                            val rowState = when (tab) {
+                                                VueoCompanyTab.CAST -> castListState
+                                                VueoCompanyTab.PRODUCTION -> productionListState
+                                                VueoCompanyTab.NETWORK -> networkListState
+                                            }
+                                            rowState.scrollToItem(0)
+                                            // Scroll may materialize the previously offscreen first card.
+                                            repeat(3) {
+                                                withFrameNanos { }
+                                                if (!focused || selected != tab) return@launch
+                                                if (runCatching { contentRequesters.getValue(tab).requestFocus() }.getOrDefault(false)) {
+                                                    return@launch
+                                                }
+                                            }
+                                        }
+                                    }
+                                    true
+                                }
+                                Key.DirectionUp -> {
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        enterContentJob?.cancel()
+                                        onMoveUp()
+                                    }
+                                    true
+                                }
+                                else -> false
                             }
                         }
                         .onFocusChanged {
@@ -858,6 +902,7 @@ TvTabMarkerHost {
                     sectionRequester = contentRequesters.getValue(active),
                     upRequester = tabRequesters.getValue(active),
                     downRequester = downRequester,
+                    listState = castListState,
                     onOpen = onOpenCast,
                 )
                 VueoCompanyTab.PRODUCTION, VueoCompanyTab.NETWORK -> {
@@ -867,6 +912,7 @@ TvTabMarkerHost {
                         companies.take(14).indices.map { if (it == 0) firstRequester else FocusRequester() }
                     }
                     LazyRow(
+                        state = if (active == VueoCompanyTab.PRODUCTION) productionListState else networkListState,
                         modifier = Modifier.fillMaxWidth().focusRestorer { firstRequester }.focusGroup(),
                         contentPadding = PaddingValues(horizontal = VueoDetailHorizontalPadding, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
