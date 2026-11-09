@@ -16,6 +16,7 @@ import com.vueo.shared.core.source.SourceResolver
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
@@ -140,50 +141,12 @@ suspend fun discover(
         onProgress = {},
     )
 
-suspend fun discoverProgressive(
-    tmdbId: String,
-    mediaType: String,
-    season: Int?,
-    episode: Int?,
-    mediaTitle: String? = null,
-    mediaOriginalTitle: String? = null,
-    mediaAliases: List<String> = emptyList(),
-    mediaYear: String? = null,
-    mediaExternalId: String? = null,
-    mediaOriginalLanguage: String? = null,
-    forceRefresh: Boolean = false,
-    animeContent: Boolean = false,
-    providerNameFilter: String? = null,
-    onProviderExecution: suspend (String, Boolean) -> Unit = { _, _ -> },
-    onProgress: suspend (PluginDiscoveryProgress) -> Unit,
-): PluginDiscoveryResult =
-    supervisorScope {
-
-        if (!store.pluginsEnabled()) {
-            return@supervisorScope emptyDiscoveryResult()
-        }
-
-        val knownHealth =
-            healthStore.records()
-                .associateBy {
-                    it.repositoryManifestUrl to
-                        it.providerId
-                }
-        val knownHealthSortKeys =
-            knownHealth.mapValues {
-                (_, record) ->
-
-                providerHealthSortKey(
-                    record
-                )
-            }
-        val defaultHealthSortKey =
-            providerHealthSortKey(
-                null
-            )
-
-        val targets =
-            store.repositories()
+    private fun eligibleDiscoveryTargets(
+        mediaType: String,
+        animeContent: Boolean,
+        providerNameFilter: String?,
+    ): List<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>> =
+        store.repositories()
                 .filter(store::isRepositoryEnabled)
                 .flatMap { repository ->
                     repository.providers
@@ -213,6 +176,75 @@ suspend fun discoverProgressive(
                     providerNameFilter == null ||
                         "${repository.name} / ${provider.name}".equals(providerNameFilter, true)
                 }
+
+    fun discoveryProviderKeys(mediaType: String, animeContent: Boolean, providerNameFilter: String?): List<String> {
+        if (!store.pluginsEnabled()) return emptyList()
+        return eligibleDiscoveryTargets(mediaType, animeContent, providerNameFilter)
+            .map { (repository, provider) -> "${repository.name} / ${provider.name}" }.distinct()
+    }
+
+suspend fun discoverProgressive(
+    tmdbId: String,
+    mediaType: String,
+    season: Int?,
+    episode: Int?,
+    mediaTitle: String? = null,
+    mediaOriginalTitle: String? = null,
+    mediaAliases: List<String> = emptyList(),
+    mediaYear: String? = null,
+    mediaExternalId: String? = null,
+    mediaOriginalLanguage: String? = null,
+    forceRefresh: Boolean = false,
+    animeContent: Boolean = false,
+    providerNameFilter: String? = null,
+    onProviderExecution: (String, Boolean) -> Unit = { _, _ -> },
+    onProgress: suspend (PluginDiscoveryProgress) -> Unit,
+): PluginDiscoveryResult =
+    supervisorScope {
+
+        suspend fun notifyProgress(progress: PluginDiscoveryProgress) {
+            try {
+                onProgress(progress)
+            } catch (error: Exception) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+                    "DISCOVERY_OBSERVER_ERROR stage=progress type=${error::class.java.simpleName}") }
+            }
+        }
+        suspend fun notifyExecution(provider: String, running: Boolean) {
+            try {
+                onProviderExecution(provider, running)
+            } catch (error: Exception) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+                    "DISCOVERY_OBSERVER_ERROR stage=execution type=${error::class.java.simpleName}") }
+            }
+        }
+
+        if (!store.pluginsEnabled()) {
+            return@supervisorScope emptyDiscoveryResult()
+        }
+
+        val knownHealth =
+            healthStore.records()
+                .associateBy {
+                    it.repositoryManifestUrl to
+                        it.providerId
+                }
+        val knownHealthSortKeys =
+            knownHealth.mapValues {
+                (_, record) ->
+
+                providerHealthSortKey(
+                    record
+                )
+            }
+        val defaultHealthSortKey =
+            providerHealthSortKey(
+                null
+            )
+
+        val targets = eligibleDiscoveryTargets(mediaType, animeContent, providerNameFilter)
                 .sortedWith(
                     compareBy<
                         Pair<
@@ -274,7 +306,7 @@ suspend fun discoverProgressive(
 
         PluginRuntimeCache.get(cacheKey)
             ?.let { cached ->
-                onProgress(
+                notifyProgress(
                     PluginDiscoveryProgress(
                         result = cached,
                         completedProviders = targets.size,
@@ -297,7 +329,7 @@ suspend fun discoverProgressive(
                         coalesced = true
                     )
 
-            onProgress(
+            notifyProgress(
                 PluginDiscoveryProgress(
                     result = joined,
                     completedProviders = targets.size,
@@ -388,7 +420,7 @@ suspend fun discoverProgressive(
                                     concurrency.withPermit {
                                         val executionKey = "${repository.name} / ${provider.name}"
                                         try {
-                                            onProviderExecution(executionKey, true)
+                                            notifyExecution(executionKey, true)
                                             withContext(Dispatchers.Default) {
                                                 val providerDiagnosticToken =
                                                     RuntimeDiagnostics.beginProvider(
@@ -443,7 +475,7 @@ suspend fun discoverProgressive(
                                             }
                                         } finally {
                                             withContext(kotlinx.coroutines.NonCancellable) {
-                                                onProviderExecution(executionKey, false)
+                                                notifyExecution(executionKey, false)
                                             }
                                         }
                                     }
@@ -502,7 +534,7 @@ suspend fun discoverProgressive(
                                 )
                             }
 
-                        onProgress(snapshot)
+                        notifyProgress(snapshot)
                     }
                 }
 

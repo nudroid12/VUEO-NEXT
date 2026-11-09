@@ -1,328 +1,499 @@
 --- a/shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntime.kt
 +++ b/shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntime.kt
-@@ -154,6 +154,7 @@
-     forceRefresh: Boolean = false,
-     animeContent: Boolean = false,
-     providerNameFilter: String? = null,
-+    onProviderExecution: suspend (String, Boolean) -> Unit = { _, _ -> },
-     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
- ): PluginDiscoveryResult =
-     supervisorScope {
-@@ -385,56 +386,64 @@
-                                 }
-                                 val execute: suspend () -> ProviderRun = {
+@@ -16,6 +16,7 @@
+ import kotlinx.coroutines.TimeoutCancellationException
+ import kotlinx.coroutines.CancellationException
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.ensureActive
+ import kotlinx.coroutines.async
+ import kotlinx.coroutines.awaitAll
+ import kotlinx.coroutines.supervisorScope
+@@ -140,50 +141,12 @@
+         onProgress = {},
+     )
+ 
+-suspend fun discoverProgressive(
+-    tmdbId: String,
+-    mediaType: String,
+-    season: Int?,
+-    episode: Int?,
+-    mediaTitle: String? = null,
+-    mediaOriginalTitle: String? = null,
+-    mediaAliases: List<String> = emptyList(),
+-    mediaYear: String? = null,
+-    mediaExternalId: String? = null,
+-    mediaOriginalLanguage: String? = null,
+-    forceRefresh: Boolean = false,
+-    animeContent: Boolean = false,
+-    providerNameFilter: String? = null,
+-    onProviderExecution: suspend (String, Boolean) -> Unit = { _, _ -> },
+-    onProgress: suspend (PluginDiscoveryProgress) -> Unit,
+-): PluginDiscoveryResult =
+-    supervisorScope {
+-
+-        if (!store.pluginsEnabled()) {
+-            return@supervisorScope emptyDiscoveryResult()
+-        }
+-
+-        val knownHealth =
+-            healthStore.records()
+-                .associateBy {
+-                    it.repositoryManifestUrl to
+-                        it.providerId
+-                }
+-        val knownHealthSortKeys =
+-            knownHealth.mapValues {
+-                (_, record) ->
+-
+-                providerHealthSortKey(
+-                    record
+-                )
+-            }
+-        val defaultHealthSortKey =
+-            providerHealthSortKey(
+-                null
+-            )
+-
+-        val targets =
+-            store.repositories()
++    private fun eligibleDiscoveryTargets(
++        mediaType: String,
++        animeContent: Boolean,
++        providerNameFilter: String?,
++    ): List<Pair<PluginRepositoryDescriptor, PluginProviderDescriptor>> =
++        store.repositories()
+                 .filter(store::isRepositoryEnabled)
+                 .flatMap { repository ->
+                     repository.providers
+@@ -213,6 +176,75 @@
+                     providerNameFilter == null ||
+                         "${repository.name} / ${provider.name}".equals(providerNameFilter, true)
+                 }
++
++    fun discoveryProviderKeys(mediaType: String, animeContent: Boolean, providerNameFilter: String?): List<String> {
++        if (!store.pluginsEnabled()) return emptyList()
++        return eligibleDiscoveryTargets(mediaType, animeContent, providerNameFilter)
++            .map { (repository, provider) -> "${repository.name} / ${provider.name}" }.distinct()
++    }
++
++suspend fun discoverProgressive(
++    tmdbId: String,
++    mediaType: String,
++    season: Int?,
++    episode: Int?,
++    mediaTitle: String? = null,
++    mediaOriginalTitle: String? = null,
++    mediaAliases: List<String> = emptyList(),
++    mediaYear: String? = null,
++    mediaExternalId: String? = null,
++    mediaOriginalLanguage: String? = null,
++    forceRefresh: Boolean = false,
++    animeContent: Boolean = false,
++    providerNameFilter: String? = null,
++    onProviderExecution: (String, Boolean) -> Unit = { _, _ -> },
++    onProgress: suspend (PluginDiscoveryProgress) -> Unit,
++): PluginDiscoveryResult =
++    supervisorScope {
++
++        suspend fun notifyProgress(progress: PluginDiscoveryProgress) {
++            try {
++                onProgress(progress)
++            } catch (error: Exception) {
++                kotlinx.coroutines.currentCoroutineContext().ensureActive()
++                runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
++                    "DISCOVERY_OBSERVER_ERROR stage=progress type=${error::class.java.simpleName}") }
++            }
++        }
++        suspend fun notifyExecution(provider: String, running: Boolean) {
++            try {
++                onProviderExecution(provider, running)
++            } catch (error: Exception) {
++                kotlinx.coroutines.currentCoroutineContext().ensureActive()
++                runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
++                    "DISCOVERY_OBSERVER_ERROR stage=execution type=${error::class.java.simpleName}") }
++            }
++        }
++
++        if (!store.pluginsEnabled()) {
++            return@supervisorScope emptyDiscoveryResult()
++        }
++
++        val knownHealth =
++            healthStore.records()
++                .associateBy {
++                    it.repositoryManifestUrl to
++                        it.providerId
++                }
++        val knownHealthSortKeys =
++            knownHealth.mapValues {
++                (_, record) ->
++
++                providerHealthSortKey(
++                    record
++                )
++            }
++        val defaultHealthSortKey =
++            providerHealthSortKey(
++                null
++            )
++
++        val targets = eligibleDiscoveryTargets(mediaType, animeContent, providerNameFilter)
+                 .sortedWith(
+                     compareBy<
+                         Pair<
+@@ -274,7 +306,7 @@
+ 
+         PluginRuntimeCache.get(cacheKey)
+             ?.let { cached ->
+-                onProgress(
++                notifyProgress(
+                     PluginDiscoveryProgress(
+                         result = cached,
+                         completedProviders = targets.size,
+@@ -297,7 +329,7 @@
+                         coalesced = true
+                     )
+ 
+-            onProgress(
++            notifyProgress(
+                 PluginDiscoveryProgress(
+                     result = joined,
+                     completedProviders = targets.size,
+@@ -388,7 +420,7 @@
                                      concurrency.withPermit {
--                                        withContext(Dispatchers.Default) {
--                                            val providerDiagnosticToken =
--                                                RuntimeDiagnostics.beginProvider(
--                                                    scanId = runtimeDiagnosticScanId,
--                                                    providerName = provider.name,
--                                                    providerId = provider.id,
--                                                    pluginName = repository.name,
--                                                )
--                                            try {
--                                                runProvider(
--                                                    repository =
--                                                        repository,
--                                                    provider =
--                                                        provider,
--                                                    tmdbId =
--                                                        tmdbId,
--                                                    mediaType =
--                                                        mediaType,
--                                                    season =
--                                                        season,
--                                                    episode =
--                                                        episode,
--                                                    runtimeDiagnosticScanId =
--                                                        runtimeDiagnosticScanId,
--                                                    discoveryContextBroker =
--                                                        discoveryContextBroker,
--                                                ).also { providerRun ->
-+                                        val executionKey = "${repository.name} / ${provider.name}"
-+                                        try {
-+                                            onProviderExecution(executionKey, true)
-+                                            withContext(Dispatchers.Default) {
-+                                                val providerDiagnosticToken =
-+                                                    RuntimeDiagnostics.beginProvider(
-+                                                        scanId = runtimeDiagnosticScanId,
-+                                                        providerName = provider.name,
-+                                                        providerId = provider.id,
-+                                                        pluginName = repository.name,
-+                                                    )
-+                                                try {
-+                                                    runProvider(
-+                                                        repository =
-+                                                            repository,
-+                                                        provider =
-+                                                            provider,
-+                                                        tmdbId =
-+                                                            tmdbId,
-+                                                        mediaType =
-+                                                            mediaType,
-+                                                        season =
-+                                                            season,
-+                                                        episode =
-+                                                            episode,
-+                                                        runtimeDiagnosticScanId =
-+                                                            runtimeDiagnosticScanId,
-+                                                        discoveryContextBroker =
-+                                                            discoveryContextBroker,
-+                                                    ).also { providerRun ->
-+                                                        RuntimeDiagnostics.finishProvider(
-+                                                            token = providerDiagnosticToken,
-+                                                            status = providerRun.diagnostic.status.name,
-+                                                            streamCount = providerRun.diagnostic.streamCount,
-+                                                            errorType = providerRun.diagnostic.errorType,
-+                                                        )
-+                                                    }
-+                                                } catch (error: CancellationException) {
-                                                     RuntimeDiagnostics.finishProvider(
-                                                         token = providerDiagnosticToken,
--                                                        status = providerRun.diagnostic.status.name,
--                                                        streamCount = providerRun.diagnostic.streamCount,
--                                                        errorType = providerRun.diagnostic.errorType,
-+                                                        status = "CANCELLED",
-+                                                        streamCount = 0,
-+                                                        errorType = error::class.java.simpleName,
-                                                     )
-+                                                    throw error
-+                                                } catch (error: Throwable) {
-+                                                    RuntimeDiagnostics.finishProvider(
-+                                                        token = providerDiagnosticToken,
-+                                                        status = "THREW",
-+                                                        streamCount = 0,
-+                                                        errorType = error::class.java.simpleName,
-+                                                    )
-+                                                    throw error
-                                                 }
--                                            } catch (error: CancellationException) {
--                                                RuntimeDiagnostics.finishProvider(
--                                                    token = providerDiagnosticToken,
--                                                    status = "CANCELLED",
--                                                    streamCount = 0,
--                                                    errorType = error::class.java.simpleName,
--                                                )
--                                                throw error
--                                            } catch (error: Throwable) {
--                                                RuntimeDiagnostics.finishProvider(
--                                                    token = providerDiagnosticToken,
--                                                    status = "THREW",
--                                                    streamCount = 0,
--                                                    errorType = error::class.java.simpleName,
--                                                )
--                                                throw error
-+                                            }
-+                                        } finally {
-+                                            withContext(kotlinx.coroutines.NonCancellable) {
-+                                                onProviderExecution(executionKey, false)
+                                         val executionKey = "${repository.name} / ${provider.name}"
+                                         try {
+-                                            onProviderExecution(executionKey, true)
++                                            notifyExecution(executionKey, true)
+                                             withContext(Dispatchers.Default) {
+                                                 val providerDiagnosticToken =
+                                                     RuntimeDiagnostics.beginProvider(
+@@ -443,7 +475,7 @@
+                                             }
+                                         } finally {
+                                             withContext(kotlinx.coroutines.NonCancellable) {
+-                                                onProviderExecution(executionKey, false)
++                                                notifyExecution(executionKey, false)
                                              }
                                          }
                                      }
+@@ -502,7 +534,7 @@
+                                 )
+                             }
+ 
+-                        onProgress(snapshot)
++                        notifyProgress(snapshot)
+                     }
+                 }
+ 
 --- a/shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt
 +++ b/shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt
-@@ -121,6 +121,7 @@
-             .distinct()
-             .toList()
+@@ -19,6 +19,8 @@
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.currentCoroutineContext
+ import kotlinx.coroutines.ensureActive
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.channels.Channel
+ import kotlinx.coroutines.async
+ import kotlinx.coroutines.coroutineScope
+ import kotlinx.coroutines.withContext
+@@ -58,6 +60,14 @@
+         control: SourceDiscoveryControl? = null,
+         onUpdate: (SourceDiscoverySnapshot) -> Unit = {},
+     ): SourceDiscoveryBundle = coroutineScope {
++        val discoveryContext = kotlin.coroutines.coroutineContext
++        fun emitSnapshot(snapshot: SourceDiscoverySnapshot) {
++            try { onUpdate(snapshot) } catch (error: Exception) {
++                discoveryContext.ensureActive()
++                runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
++                    "DISCOVERY_OBSERVER_ERROR stage=snapshot type=${error::class.java.simpleName}") }
++            }
++        }
+         val item = request.item
+         val videoId = request.videoId
+         val preferredQuality = request.preferredQuality
+@@ -123,6 +133,8 @@
          val loadingProviders = linkedSetOf<String>()
-+        val runningProviders = linkedSetOf<String>()
+         val runningProviders = linkedSetOf<String>()
          val completedSourceProviders = linkedSetOf<String>()
++        val cancelledProviders = linkedSetOf<String>()
++        val skippedProviders = linkedSetOf<String>()
          val plannedSourceProviders = withContext(Dispatchers.Default) {
              (
-@@ -144,6 +145,7 @@
-             val key = provider.trim().ifBlank { "Other" }
+                 mediaEngine.installed().filter {
+@@ -138,6 +150,8 @@
              synchronized(loadingProviders) {
-                 loadingProviders -= key
-+                runningProviders -= key
-                 completedSourceProviders += key
+                 loadingProviders += key
+                 completedSourceProviders -= key
++                cancelledProviders -= key
++                skippedProviders -= key
              }
          }
-@@ -174,6 +176,7 @@
-             if (event.resource == "sources") {
-                 if (event.phase == "started") {
-                     markProviderLoading(event.providerName)
-+                    synchronized(loadingProviders) { runningProviders += event.providerName.trim().ifBlank { "Other" } }
-                 } else {
-                     markProviderComplete(event.providerName)
-                 }
-@@ -323,6 +326,7 @@
-                     subtitlesResolved = subtitlesResolved,
-                     activityLog = activityLog.toList(),
-                     loadingProviders = loadingProviderSnapshot(),
-+                    runningProviders = synchronized(loadingProviders) { runningProviders.toList() },
+ 
+@@ -147,6 +161,24 @@
+                 loadingProviders -= key
+                 runningProviders -= key
+                 completedSourceProviders += key
++                cancelledProviders -= key
++                skippedProviders -= key
++            }
++        }
++
++        fun finishUnattempted(providers: List<String>, skipped: Boolean) {
++            synchronized(loadingProviders) {
++                providers.filter { it !in completedSourceProviders }.forEach { provider ->
++                    loadingProviders -= provider
++                    runningProviders -= provider
++                    if (skipped) {
++                        cancelledProviders -= provider
++                        skippedProviders += provider
++                    } else {
++                        skippedProviders -= provider
++                        cancelledProviders += provider
++                    }
++                }
+             }
+         }
+ 
+@@ -305,7 +337,7 @@
+                 cached?.rawCount ?: 0,
+                 addonRawCount + pluginRawCount,
+             )
+-            onUpdate(
++            emitSnapshot(
+                 SourceDiscoverySnapshot(
+                     bundle = SourceDiscoveryBundle(
+                         videoId = videoId,
+@@ -329,6 +361,8 @@
+                     runningProviders = synchronized(loadingProviders) { runningProviders.toList() },
                      completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
                      plannedSourceProviders = plannedSourceProviders,
++                    cancelledProviders = synchronized(loadingProviders) { cancelledProviders.toList() },
++                    skippedProviders = synchronized(loadingProviders) { skippedProviders.toList() },
                  )
-@@ -470,6 +474,14 @@
-                 val result = discoverPlugins(
+             )
+         }
+@@ -454,6 +488,21 @@
+         addonsDeferred.start()
+ 
+         val pluginsDeferred = async(start = CoroutineStart.LAZY) {
++            val executionEvents = Channel<Pair<String, Boolean>>(Channel.UNLIMITED)
++            val executionObserver = launch {
++                for ((provider, running) in executionEvents) {
++                    synchronized(loadingProviders) {
++                        if (provider in loadingProviders) {
++                            if (running) runningProviders += provider else runningProviders -= provider
++                        }
++                    }
++                    try { publish(latestProgress) } catch (error: Exception) {
++                        currentCoroutineContext().ensureActive()
++                        runCatching { com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
++                            "DISCOVERY_OBSERVER_ERROR stage=status-ui type=${error::class.java.simpleName}") }
++                    }
++                }
++            }
+             try {
+                 configuredPluginProviders.forEach(::markProviderLoading)
+                 pluginTotal = configuredPluginProviders.size
+@@ -475,15 +524,13 @@
                      request = request,
                      configuredPluginProviders = configuredPluginProviders,
-+                    onProviderExecution = { provider, running ->
-+                        if (running) {
-+                            synchronized(loadingProviders) { runningProviders += provider }
-+                        } else {
-+                            markProviderComplete(provider)
-+                        }
-+                        publish(latestProgress)
-+                    },
+                     onProviderExecution = { provider, running ->
+-                        if (running) {
+-                            synchronized(loadingProviders) { runningProviders += provider }
+-                        } else {
+-                            markProviderComplete(provider)
+-                        }
+-                        publish(latestProgress)
++                        // Constant-time enqueue; no UI publication while a provider holds a slot.
++                        executionEvents.trySend(provider to running)
++                        Unit
+                     },
                      onSkipped = { skippedNotice ->
                          notice = skippedNotice
++                        finishUnattempted(configuredPluginProviders, skipped = true)
                          publish(
-@@ -578,7 +590,7 @@
+                             progressLabel(
+                                 addonCompleted = addonCompleted,
+@@ -540,7 +587,10 @@
+                     },
+                     forceRefresh = request.forceRefresh,
+                 )
+-                configuredPluginProviders.forEach(::markProviderComplete)
++                result?.diagnostics?.forEach { diagnostic ->
++                    markProviderComplete("${diagnostic.repositoryName} / ${diagnostic.providerName}")
++                }
++                finishUnattempted(configuredPluginProviders, skipped = result == null)
+                 publish(
+                     progressLabel(
+                         addonCompleted = addonCompleted,
+@@ -552,7 +602,9 @@
+                 )
+                 result
+             } finally {
+-                configuredPluginProviders.forEach(::markProviderComplete)
++                executionEvents.close()
++                withContext(kotlinx.coroutines.NonCancellable) { executionObserver.join() }
++                finishUnattempted(configuredPluginProviders.filter { it !in skippedProviders }, skipped = false)
+                 if (control?.pluginsStopped == true) {
+                     activity("system", message = "Plugin discovery stopped for playback; addon/subtitle work continues")
+                     publish(latestProgress)
+@@ -590,6 +642,7 @@
              mergedWithCache(freshFinal)
          } else freshFinal.ifEmpty { cachedStreams }
          searching = false
--        synchronized(loadingProviders) { loadingProviders.clear() }
-+        synchronized(loadingProviders) { loadingProviders.clear(); runningProviders.clear() }
++        finishUnattempted(loadingProviderSnapshot(), skipped = false)
+         synchronized(loadingProviders) { loadingProviders.clear(); runningProviders.clear() }
          recordProviders(finalStreams)
  
-         val rawCount = maxOf(
-@@ -679,6 +691,7 @@
+@@ -638,7 +691,7 @@
+             )
+         }
+ 
+-        onUpdate(
++        emitSnapshot(
+             SourceDiscoverySnapshot(
+                 bundle = finalBundle,
+                 rawCount = rawCount,
+@@ -655,6 +708,8 @@
+                 loadingProviders = emptyList(),
+                 completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                 plannedSourceProviders = plannedSourceProviders,
++                cancelledProviders = synchronized(loadingProviders) { cancelledProviders.toList() },
++                skippedProviders = synchronized(loadingProviders) { skippedProviders.toList() },
+             )
+         )
+ 
+@@ -665,7 +720,7 @@
+         finalBundle = finalBundle.copy(
+             subtitles = StreamSubtitlePolicy.forEpisode(freshFinal + finalStreams, subtitles),
+         )
+-        onUpdate(
++        emitSnapshot(
+             SourceDiscoverySnapshot(
+                 bundle = finalBundle,
+                 rawCount = rawCount,
+@@ -682,6 +737,8 @@
+                 loadingProviders = emptyList(),
+                 completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                 plannedSourceProviders = plannedSourceProviders,
++                cancelledProviders = synchronized(loadingProviders) { cancelledProviders.toList() },
++                skippedProviders = synchronized(loadingProviders) { skippedProviders.toList() },
+             )
+         )
+         finalBundle
+@@ -691,7 +748,7 @@
          request: SourceDiscoveryRequest,
          configuredPluginProviders: List<String>,
          onSkipped: (String) -> Unit,
-+        onProviderExecution: suspend (String, Boolean) -> Unit,
+-        onProviderExecution: suspend (String, Boolean) -> Unit,
++        onProviderExecution: (String, Boolean) -> Unit,
          onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
          forceRefresh: Boolean,
      ): PluginDiscoveryResult? {
-@@ -736,6 +749,7 @@
-                 mediaOriginalLanguage = item.originalLanguage,
-                 animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
-                 providerNameFilter = request.sourceProviderName,
-+                onProviderExecution = onProviderExecution,
-                 forceRefresh = forceRefresh,
-             ) { progress ->
-                 onProgress(
-@@ -828,6 +842,7 @@
-     val sourcesStopped: Boolean = false,
+@@ -779,23 +836,11 @@
+     private fun configuredPluginProviderKeys(
+         request: SourceDiscoveryRequest,
+     ): List<String> {
+-        if (!pluginStore.pluginsEnabled()) return emptyList()
+-        val mediaType = MediaTypePolicy.pluginType(request.item.type).lowercase()
+-        return pluginStore.repositories()
+-            .asSequence()
+-            .filter(pluginStore::isRepositoryEnabled)
+-            .flatMap { repository ->
+-                repository.providers.asSequence()
+-                    .filter { provider ->
+-                        pluginStore.isProviderEnabled(repository, provider) &&
+-                            (provider.supportedTypes.isEmpty() || mediaType in provider.supportedTypes) &&
+-                            "android" !in provider.disabledPlatforms
+-                    }
+-                    .map { provider -> "${repository.name} / ${provider.name}" }
+-            }
+-            .filter { request.sourceProviderName == null || it.equals(request.sourceProviderName, true) }
+-            .distinct()
+-            .toList()
++        return pluginEngine.discoveryProviderKeys(
++            mediaType = MediaTypePolicy.pluginType(request.item.type).lowercase(),
++            animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(request.item),
++            providerNameFilter = request.sourceProviderName,
++        )
+     }
+ 
+     private fun progressLabel(
+@@ -843,6 +888,8 @@
      val completedSourceProviders: List<String> = emptyList(),
      val plannedSourceProviders: List<String> = emptyList(),
-+    val runningProviders: List<String> = emptyList(),
+     val runningProviders: List<String> = emptyList(),
++    val cancelledProviders: List<String> = emptyList(),
++    val skippedProviders: List<String> = emptyList(),
  )
  
  data class SourceDiscoveryActivity(
 --- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourceModels.kt
 +++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourceModels.kt
-@@ -29,6 +29,7 @@
-     val selectedProvider: String,
+@@ -30,6 +30,8 @@
      val preferredQuality: String?,
      val showEngineDetails: Boolean,
-+    val runningProviders: Set<String> = emptySet(),
+     val runningProviders: Set<String> = emptySet(),
++    val cancelledProviders: Set<String> = emptySet(),
++    val skippedProviders: Set<String> = emptySet(),
  )
  
  /** Clean UI contract between provider output and the TV source card. */
 --- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
 +++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
-@@ -1,4 +1,6 @@
- package com.vueo.tv.source
-+
-+import androidx.compose.material.icons.filled.Schedule
- 
- import com.vueo.tv.ui.motion.*
- import android.os.SystemClock
-@@ -652,9 +654,12 @@
+@@ -654,9 +654,13 @@
                  add(
                      SourceChip(
                          id = provider,
--                        label = sourceProviderDisplayName(provider),
-+                        label = if (provider !in state.loadingProviders) {
-+                            "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
-+                        } else sourceProviderDisplayName(provider),
+-                        label = if (provider !in state.loadingProviders) {
+-                            "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
+-                        } else sourceProviderDisplayName(provider),
++                        label = when {
++                            provider in state.cancelledProviders -> "${sourceProviderDisplayName(provider)} • Cancelled"
++                            provider in state.skippedProviders -> "${sourceProviderDisplayName(provider)} • Skipped"
++                            provider !in state.loadingProviders ->
++                                "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
++                            else -> sourceProviderDisplayName(provider)
++                        },
                          selected = state.selectedProvider == provider,
--                        loading = provider in state.loadingProviders,
-+                        loading = provider in state.runningProviders,
-+                        waiting = provider in state.loadingProviders && provider !in state.runningProviders,
-                         requester = providerRequester(provider),
-                         action = { onSelectProvider(provider) },
-                     )
-@@ -767,6 +772,7 @@
-                     label = chip.label,
-                     selected = chip.selected,
-                     loading = chip.loading,
-+                    waiting = chip.waiting,
-                     requester = chip.requester,
-                     leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
-                     rightRequester = chips.getOrNull(index + 1)?.requester,
-@@ -853,6 +859,7 @@
-     val loading: Boolean,
-     val requester: FocusRequester,
-     val action: () -> Unit,
-+    val waiting: Boolean = false,
- )
- 
- @Composable
-@@ -860,6 +867,7 @@
-     label: String,
-     selected: Boolean,
-     loading: Boolean,
-+    waiting: Boolean = false,
-     requester: FocusRequester,
-     leftRequester: FocusRequester?,
-     rightRequester: FocusRequester?,
-@@ -868,7 +876,7 @@
-     onFocused: () -> Unit,
-     onClick: () -> Unit,
- ) {
--    var focused by remember(label) { mutableStateOf(false) }
-+    var focused by remember(requester) { mutableStateOf(false) }
- 
-     Row(
-         modifier = Modifier
-@@ -930,6 +938,15 @@
-                 color = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
-                 else TvDesign.Accent,
-                 strokeWidth = 1.4.dp,
-+            )
-+        }
-+        if (waiting && !loading) {
-+            Icon(
-+                imageVector = androidx.compose.material.icons.Icons.Default.Schedule,
-+                contentDescription = "Waiting",
-+                modifier = Modifier.width(11.dp).height(11.dp),
-+                tint = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
-+                else TvDesign.White.copy(alpha = .55f),
-             )
-         }
-         Text(
+                         loading = provider in state.runningProviders,
+                         waiting = provider in state.loadingProviders && provider !in state.runningProviders,
 --- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourceScreen.kt
 +++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourceScreen.kt
-@@ -53,6 +53,8 @@
-     val firstResultMs = discovery?.firstResultMs
-     val providerOrder = discovery?.providerOrder.orEmpty()
+@@ -55,6 +55,8 @@
      val loadingProviders = discovery?.loadingProviders.orEmpty().toSet()
-+    val runningProviders = discovery?.runningProviders.orEmpty().toSet()
-+    val completedProviders = discovery?.completedSourceProviders.orEmpty().toSet()
+     val runningProviders = discovery?.runningProviders.orEmpty().toSet()
+     val completedProviders = discovery?.completedSourceProviders.orEmpty().toSet()
++    val cancelledProviders = discovery?.cancelledProviders.orEmpty().toSet()
++    val skippedProviders = discovery?.skippedProviders.orEmpty().toSet()
      val fromCache = discovery?.fromCache ?: false
      val error = discoveryError
      var selectedProvider by remember(memoryKey) {
-@@ -82,11 +84,19 @@
+@@ -84,14 +86,16 @@
              .distinct()
              .toList()
      }
--    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders) {
--        (providerOrder.filter { it in currentProviders || it in loadingProviders } +
-+    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders, runningProviders, completedProviders) {
-+        (providerOrder.filter { it in currentProviders || it in loadingProviders || it in completedProviders } +
+-    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders, runningProviders, completedProviders) {
++    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders, runningProviders, completedProviders, cancelledProviders, skippedProviders) {
+         (providerOrder.filter { it in currentProviders || it in loadingProviders || it in completedProviders } +
              loadingProviders.filter { it !in providerOrder } +
--            currentProviders.filter { it !in providerOrder && it !in loadingProviders })
-+            currentProviders.filter { it !in providerOrder && it !in loadingProviders } +
-+            completedProviders.filter { it !in providerOrder && it !in loadingProviders && it !in currentProviders })
+             currentProviders.filter { it !in providerOrder && it !in loadingProviders } +
+             completedProviders.filter { it !in providerOrder && it !in loadingProviders && it !in currentProviders })
++            .plus(cancelledProviders).plus(skippedProviders)
              .distinct()
-+            .sortedBy { provider ->
-+                when {
-+                    provider in completedProviders || provider !in loadingProviders -> 0
-+                    provider in runningProviders -> 1
-+                    else -> 2
-+                }
-+            }
-     }
-     val providerLogos = remember(runtime, currentProviders) {
-         buildProviderLogoLookup(runtime)
-@@ -125,6 +135,7 @@
-             filteredSources = filteredSources,
+             .sortedBy { provider ->
+                 when {
++                    provider in cancelledProviders || provider in skippedProviders -> 3
+                     provider in completedProviders || provider !in loadingProviders -> 0
+                     provider in runningProviders -> 1
+                     else -> 2
+@@ -136,6 +140,8 @@
              visibleProviders = visibleProviders,
              loadingProviders = loadingProviders,
-+            runningProviders = runningProviders,
+             runningProviders = runningProviders,
++            cancelledProviders = cancelledProviders,
++            skippedProviders = skippedProviders,
              providerLogos = providerLogos,
              selectedProvider = selectedProvider,
              preferredQuality = preferredQuality,
