@@ -32,6 +32,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -179,9 +185,32 @@ internal fun TvEntityResultsScreen(
     var newestFocused by remember(target) { mutableStateOf(false) }
     var popularFocused by remember(target) { mutableStateOf(false) }
     val latestFocusedMediaKey by androidx.compose.runtime.rememberUpdatedState(focusedMediaKey)
+    var enterGridPending by remember(requestKey) { mutableStateOf(false) }
+    val latestActive by androidx.compose.runtime.rememberUpdatedState(active)
+    LaunchedEffect(active, enterGridPending, preparing, resultKeys, resultOrder) {
+        if (!active || !enterGridPending || preparing || resultKeys.isEmpty()) return@LaunchedEffect
+        // The sorted first item may have moved or been disposed by the lazy grid.
+        gridState.scrollToItem(0)
+        repeat(6) {
+            withFrameNanos { }
+            if (!latestActive || (!newestFocused && !popularFocused)) {
+                enterGridPending = false
+                return@LaunchedEffect
+            }
+            if (runCatching { firstRequester.requestFocus() }.getOrDefault(false)) {
+                enterGridPending = false
+                return@LaunchedEffect
+            }
+        }
+        enterGridPending = false
+        PerformanceDiagnostics.captureRuntimeEvent(
+            "ENTITY_RESULTS platform=tv event=grid_focus_failed order=$resultOrder count=${resultKeys.size}",
+        )
+    }
 
-    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused) {
-        if (!active || busy || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
+
+    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused, enterGridPending) {
+        if (!active || busy || enterGridPending || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
         val restoreIndex = latestFocusedMediaKey?.let(resultKeys::indexOf)?.takeIf { it >= 0 } ?: 0
         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
             gridState.scrollToItem(restoreIndex)
@@ -190,7 +219,7 @@ internal fun TvEntityResultsScreen(
         val focusedKey = latestFocusedMediaKey
         val restored = focusedKey?.let { key ->
             requesters[key]?.let { requester ->
-                runCatching { requester.requestFocus() }.isSuccess
+                runCatching { requester.requestFocus() }.getOrDefault(false)
             }
         } == true
         if (!restored) {
@@ -240,7 +269,14 @@ internal fun TvEntityResultsScreen(
                         leftRequester = FocusRequester.Cancel,
                         rightRequester = popularRequester,
                         downRequester = firstRequester,
-                        onFocusChanged = { newestFocused = it },
+                        onDown = { enterGridPending = true },
+                        onFocusChanged = {
+                            newestFocused = it
+                            if (it) {
+                                enterGridPending = false
+                                resultOrder = EntityResultOrder.NEWEST
+                            }
+                        },
                         onClick = { resultOrder = EntityResultOrder.NEWEST },
                     )
                     TvEntitySortTab(
@@ -250,7 +286,14 @@ internal fun TvEntityResultsScreen(
                         leftRequester = newestRequester,
                         rightRequester = FocusRequester.Cancel,
                         downRequester = firstRequester,
-                        onFocusChanged = { popularFocused = it },
+                        onDown = { enterGridPending = true },
+                        onFocusChanged = {
+                            popularFocused = it
+                            if (it) {
+                                enterGridPending = false
+                                resultOrder = EntityResultOrder.POPULAR
+                            }
+                        },
                         onClick = { resultOrder = EntityResultOrder.POPULAR },
                     )
                 }
@@ -346,6 +389,7 @@ private fun TvEntitySortTab(
     leftRequester: FocusRequester,
     rightRequester: FocusRequester,
     downRequester: FocusRequester,
+    onDown: () -> Unit,
     onClick: () -> Unit,
     onFocusChanged: (Boolean) -> Unit,
 ) {
@@ -360,14 +404,20 @@ private fun TvEntitySortTab(
                 right = rightRequester
                 down = downRequester
             }
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionDown) {
+                    if (event.type == KeyEventType.KeyDown) onDown()
+                    true
+                } else false
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 onFocusChanged(it.isFocused)
             }
             .background(
                 when {
+                    selected -> Color.White
                     focused -> TvDesign.SurfaceRaised
-                    selected -> Color.White.copy(alpha = .12f)
                     else -> Color.White.copy(alpha = .04f)
                 },
                 shape,
@@ -387,8 +437,8 @@ private fun TvEntitySortTab(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = if (selected) "✓ $label" else label,
-            color = TvDesign.White,
+            text = label,
+            color = if (selected) Color.Black else TvDesign.White,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )

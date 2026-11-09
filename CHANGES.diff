@@ -1,46 +1,133 @@
---- a/shared/core/src/main/java/com/vueo/shared/core/smartsubs/SmartSubsPlaybackBridge.kt
-+++ b/shared/core/src/main/java/com/vueo/shared/core/smartsubs/SmartSubsPlaybackBridge.kt
-@@ -25,6 +25,7 @@
-         mediaType: String,
-         videoId: String,
-         tracks: List<SubtitleTrack>,
-+        platform: String = "Unknown",
-     ): List<SubtitleTrack> = withContext(Dispatchers.IO) {
-         if (!config.enabled || !config.connected) return@withContext emptyList()
-         val sources = eligibleSources(tracks, config.includeAddonSources)
-@@ -80,6 +81,7 @@
-             connection.doOutput = true
-             connection.setRequestProperty("Content-Type", "application/json")
-             connection.setRequestProperty("Accept", "application/json")
-+            connection.setRequestProperty("X-Vueo-Platform", platform)
-             connection.setFixedLengthStreamingMode(body.size)
-             connection.outputStream.use { it.write(body) }
-             when (connection.responseCode) {
-@@ -121,6 +123,7 @@
-                         name = name,
-                         mimeType = track.optString("mimeType").takeIf { it.isNotBlank() },
-                         displayId = displayId,
-+                        headers = mapOf("X-Vueo-Platform" to platform),
-                     ))
-                 }
+--- a/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
+@@ -32,6 +32,12 @@
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.setValue
++import androidx.compose.runtime.withFrameNanos
++import androidx.compose.ui.input.key.Key
++import androidx.compose.ui.input.key.KeyEventType
++import androidx.compose.ui.input.key.key
++import androidx.compose.ui.input.key.type
++import androidx.compose.ui.input.key.onPreviewKeyEvent
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.focus.FocusRequester
+@@ -179,9 +185,32 @@
+     var newestFocused by remember(target) { mutableStateOf(false) }
+     var popularFocused by remember(target) { mutableStateOf(false) }
+     val latestFocusedMediaKey by androidx.compose.runtime.rememberUpdatedState(focusedMediaKey)
+-
+-    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused) {
+-        if (!active || busy || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
++    var enterGridPending by remember(requestKey) { mutableStateOf(false) }
++    val latestActive by androidx.compose.runtime.rememberUpdatedState(active)
++    LaunchedEffect(active, enterGridPending, preparing, resultKeys, resultOrder) {
++        if (!active || !enterGridPending || preparing || resultKeys.isEmpty()) return@LaunchedEffect
++        // The sorted first item may have moved or been disposed by the lazy grid.
++        gridState.scrollToItem(0)
++        repeat(6) {
++            withFrameNanos { }
++            if (!latestActive || (!newestFocused && !popularFocused)) {
++                enterGridPending = false
++                return@LaunchedEffect
++            }
++            if (runCatching { firstRequester.requestFocus() }.getOrDefault(false)) {
++                enterGridPending = false
++                return@LaunchedEffect
++            }
++        }
++        enterGridPending = false
++        PerformanceDiagnostics.captureRuntimeEvent(
++            "ENTITY_RESULTS platform=tv event=grid_focus_failed order=$resultOrder count=${resultKeys.size}",
++        )
++    }
++
++
++    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused, enterGridPending) {
++        if (!active || busy || enterGridPending || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
+         val restoreIndex = latestFocusedMediaKey?.let(resultKeys::indexOf)?.takeIf { it >= 0 } ?: 0
+         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
+             gridState.scrollToItem(restoreIndex)
+@@ -190,7 +219,7 @@
+         val focusedKey = latestFocusedMediaKey
+         val restored = focusedKey?.let { key ->
+             requesters[key]?.let { requester ->
+-                runCatching { requester.requestFocus() }.isSuccess
++                runCatching { requester.requestFocus() }.getOrDefault(false)
              }
---- a/mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt
-+++ b/mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt
-@@ -505,6 +505,7 @@
-             delay(350L)
-             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
-                 config = config, mediaType = media.type, videoId = videoId, tracks = candidates,
-+                platform = "Mobile",
-             )
-         } catch (cancelled: CancellationException) {
-             throw cancelled
---- a/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
-@@ -301,6 +301,7 @@
-             delay(350L)
-             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
-                 config = config, mediaType = media.type, videoId = bundle.videoId, tracks = candidates,
-+                platform = "TV",
-             )
-         } catch (cancelled: CancellationException) {
-             throw cancelled
+         } == true
+         if (!restored) {
+@@ -240,7 +269,14 @@
+                         leftRequester = FocusRequester.Cancel,
+                         rightRequester = popularRequester,
+                         downRequester = firstRequester,
+-                        onFocusChanged = { newestFocused = it },
++                        onDown = { enterGridPending = true },
++                        onFocusChanged = {
++                            newestFocused = it
++                            if (it) {
++                                enterGridPending = false
++                                resultOrder = EntityResultOrder.NEWEST
++                            }
++                        },
+                         onClick = { resultOrder = EntityResultOrder.NEWEST },
+                     )
+                     TvEntitySortTab(
+@@ -250,7 +286,14 @@
+                         leftRequester = newestRequester,
+                         rightRequester = FocusRequester.Cancel,
+                         downRequester = firstRequester,
+-                        onFocusChanged = { popularFocused = it },
++                        onDown = { enterGridPending = true },
++                        onFocusChanged = {
++                            popularFocused = it
++                            if (it) {
++                                enterGridPending = false
++                                resultOrder = EntityResultOrder.POPULAR
++                            }
++                        },
+                         onClick = { resultOrder = EntityResultOrder.POPULAR },
+                     )
+                 }
+@@ -346,6 +389,7 @@
+     leftRequester: FocusRequester,
+     rightRequester: FocusRequester,
+     downRequester: FocusRequester,
++    onDown: () -> Unit,
+     onClick: () -> Unit,
+     onFocusChanged: (Boolean) -> Unit,
+ ) {
+@@ -360,14 +404,20 @@
+                 right = rightRequester
+                 down = downRequester
+             }
++            .onPreviewKeyEvent { event ->
++                if (event.key == Key.DirectionDown) {
++                    if (event.type == KeyEventType.KeyDown) onDown()
++                    true
++                } else false
++            }
+             .onFocusChanged {
+                 focused = it.isFocused
+                 onFocusChanged(it.isFocused)
+             }
+             .background(
+                 when {
++                    selected -> Color.White
+                     focused -> TvDesign.SurfaceRaised
+-                    selected -> Color.White.copy(alpha = .12f)
+                     else -> Color.White.copy(alpha = .04f)
+                 },
+                 shape,
+@@ -387,8 +437,8 @@
+         contentAlignment = Alignment.Center,
+     ) {
+         Text(
+-            text = if (selected) "✓ $label" else label,
+-            color = TvDesign.White,
++            text = label,
++            color = if (selected) Color.Black else TvDesign.White,
+             fontSize = 12.sp,
+             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+         )
