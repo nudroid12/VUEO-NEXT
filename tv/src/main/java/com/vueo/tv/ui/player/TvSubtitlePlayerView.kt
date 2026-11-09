@@ -263,9 +263,19 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         if (showCommentary != style.showCommentary) {
             showCommentary = style.showCommentary
             // Re-filter the active group immediately, without seeking or restarting playback.
-            displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
+            displayCues(currentPresentationCues())
         } else if (presentationChanged || paddingChanged || delayChanged) {
             refreshRenderedCues()
+        }
+    }
+
+    /** Resolve captions from their active owner; native currentCues is empty for AI. */
+    private fun currentPresentationCues(): List<Cue> {
+        val current = boundPlayer ?: return emptyList()
+        return if (LiveSmartSubs.ownsCues(current)) {
+            LiveSmartSubs.cues(current)
+        } else {
+            lastInputCues ?: current.currentCues.cues
         }
     }
 
@@ -276,7 +286,7 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         commentarySubtitleView.setCues(emptyList())
         // Rebuild from the current raw group, including when video is paused.
         // Keep filtering/stacking and the two visible layers in the same pass.
-        val currentCues = lastInputCues ?: boundPlayer?.currentCues?.cues ?: emptyList()
+        val currentCues = currentPresentationCues()
         lastInputCues = null
         lastDisplayedCues = emptyList()
         lastDisplayedCommentaryCues = emptyList()
@@ -294,7 +304,9 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             } else cues
             managedSubtitleView.setCues(visible)
             commentarySubtitleView.setCues(emptyList())
-            lastInputCues = null
+            // Retain the raw group for the refresh when analysis completes.
+            // refreshRenderedCues clears the equality guard before rebuilding it.
+            lastInputCues = cues.toList()
             return
         }
         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
