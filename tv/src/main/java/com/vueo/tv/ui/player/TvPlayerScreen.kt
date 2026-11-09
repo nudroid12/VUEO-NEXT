@@ -2015,9 +2015,8 @@ fun TvPlayerScreen(
         val subtitlePresentation = subtitleStyle
         val resizeMode = when (videoFit) {
             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-            // A TV-style Fill should crop while preserving the source aspect ratio.
-            // Media3 RESIZE_MODE_FILL stretches the picture, so use ZOOM instead.
-            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            // Fill stretches to the viewport; Zoom crops while preserving aspect ratio.
+            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         }
         val baseSubtitleBottomPaddingFraction = subtitlePresentation.bottomPaddingPercent / 100f

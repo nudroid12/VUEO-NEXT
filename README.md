@@ -1,9 +1,9 @@
-# VUEO provider catalogue metadata cache bridge
+# TV Video Fit mapping fix
 
-App source patch for both Mobile and TV, based on VUEO-NEXT-main (55).zip. Copy shared/ into the repository root, replace PluginRuntime.kt, add ProviderMetadataCache.kt, then build/install the app normally. If PluginRuntime.kt has changed locally, merge the single eight-line vueoMetadataCache binding shown in CACHE_BRIDGE.diff instead of overwriting unrelated changes. This patch does not replace either Search Identity patch: their modified files are separate. No YML files are included.
+Only TvPlayerScreen.kt changes. Fit maps to RESIZE_MODE_FIT, Fill maps to RESIZE_MODE_FILL (stretch), Zoom maps to RESIZE_MODE_ZOOM (aspect-preserving crop). Fill previously duplicated Zoom.
 
-The bridge exposes a synchronous JSON-string function vueoMetadataCache to providers with get/put/remove operations for JSON-object metadata. It performs no disk or network I/O. Cache scope is repository manifest URL + provider ID + provider version; a provider upgrade cannot reuse old entries. TTL is capped at five minutes, with monotonic expiration, 64 total entries, 65,536 characters per value and 524,288 value characters overall. Cache access is synchronized and least-recently-used entries are evicted when limits are reached.
+Apply CHANGES.diff from the repository root with `git apply --check CHANGES.diff` followed by `git apply CHANGES.diff`. Alternatively copy the included source file over baseline (64); use the diff if your player screen has later edits to preserve them.
 
-AnimeWorld 2.0.4 stores only its verified catalogue identity and published season/episode route data. It does not store signed streams, player/API responses, playlists or subtitle configuration. The selected episode is fetched and revalidated on every provider execution. App termination drops the cache; scans after expiration use normal verified discovery again.
+No extra magnification or black-bar detection is introduced. Fit and Zoom can still look identical when source and display aspect ratios match. Encoded black bars remain part of the picture.
 
-Validation: 12 native Kotlin cache checks passed for namespace/version isolation, expiration, malformed requests and memory limits. Together with 52 provider replay/regression checks, 64 checks passed. The full Android app/QuickJS binding has not been built or tested on a device here.
+Validation: exact scoped replacement, all three mappings and factory/update resizeMode assignments checked; ZIP CRC checked. Android build and device playback not run.
