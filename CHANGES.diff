@@ -1,46 +1,328 @@
---- a/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
-@@ -295,10 +295,16 @@
-         commentarySubtitleView.postInvalidateOnAnimation()
-     }
+--- a/shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntime.kt
++++ b/shared/core/src/main/java/com/vueo/shared/core/plugin/PluginRuntime.kt
+@@ -154,6 +154,7 @@
+     forceRefresh: Boolean = false,
+     animeContent: Boolean = false,
+     providerNameFilter: String? = null,
++    onProviderExecution: suspend (String, Boolean) -> Unit = { _, _ -> },
+     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
+ ): PluginDiscoveryResult =
+     supervisorScope {
+@@ -385,56 +386,64 @@
+                                 }
+                                 val execute: suspend () -> ProviderRun = {
+                                     concurrency.withPermit {
+-                                        withContext(Dispatchers.Default) {
+-                                            val providerDiagnosticToken =
+-                                                RuntimeDiagnostics.beginProvider(
+-                                                    scanId = runtimeDiagnosticScanId,
+-                                                    providerName = provider.name,
+-                                                    providerId = provider.id,
+-                                                    pluginName = repository.name,
+-                                                )
+-                                            try {
+-                                                runProvider(
+-                                                    repository =
+-                                                        repository,
+-                                                    provider =
+-                                                        provider,
+-                                                    tmdbId =
+-                                                        tmdbId,
+-                                                    mediaType =
+-                                                        mediaType,
+-                                                    season =
+-                                                        season,
+-                                                    episode =
+-                                                        episode,
+-                                                    runtimeDiagnosticScanId =
+-                                                        runtimeDiagnosticScanId,
+-                                                    discoveryContextBroker =
+-                                                        discoveryContextBroker,
+-                                                ).also { providerRun ->
++                                        val executionKey = "${repository.name} / ${provider.name}"
++                                        try {
++                                            onProviderExecution(executionKey, true)
++                                            withContext(Dispatchers.Default) {
++                                                val providerDiagnosticToken =
++                                                    RuntimeDiagnostics.beginProvider(
++                                                        scanId = runtimeDiagnosticScanId,
++                                                        providerName = provider.name,
++                                                        providerId = provider.id,
++                                                        pluginName = repository.name,
++                                                    )
++                                                try {
++                                                    runProvider(
++                                                        repository =
++                                                            repository,
++                                                        provider =
++                                                            provider,
++                                                        tmdbId =
++                                                            tmdbId,
++                                                        mediaType =
++                                                            mediaType,
++                                                        season =
++                                                            season,
++                                                        episode =
++                                                            episode,
++                                                        runtimeDiagnosticScanId =
++                                                            runtimeDiagnosticScanId,
++                                                        discoveryContextBroker =
++                                                            discoveryContextBroker,
++                                                    ).also { providerRun ->
++                                                        RuntimeDiagnostics.finishProvider(
++                                                            token = providerDiagnosticToken,
++                                                            status = providerRun.diagnostic.status.name,
++                                                            streamCount = providerRun.diagnostic.streamCount,
++                                                            errorType = providerRun.diagnostic.errorType,
++                                                        )
++                                                    }
++                                                } catch (error: CancellationException) {
+                                                     RuntimeDiagnostics.finishProvider(
+                                                         token = providerDiagnosticToken,
+-                                                        status = providerRun.diagnostic.status.name,
+-                                                        streamCount = providerRun.diagnostic.streamCount,
+-                                                        errorType = providerRun.diagnostic.errorType,
++                                                        status = "CANCELLED",
++                                                        streamCount = 0,
++                                                        errorType = error::class.java.simpleName,
+                                                     )
++                                                    throw error
++                                                } catch (error: Throwable) {
++                                                    RuntimeDiagnostics.finishProvider(
++                                                        token = providerDiagnosticToken,
++                                                        status = "THREW",
++                                                        streamCount = 0,
++                                                        errorType = error::class.java.simpleName,
++                                                    )
++                                                    throw error
+                                                 }
+-                                            } catch (error: CancellationException) {
+-                                                RuntimeDiagnostics.finishProvider(
+-                                                    token = providerDiagnosticToken,
+-                                                    status = "CANCELLED",
+-                                                    streamCount = 0,
+-                                                    errorType = error::class.java.simpleName,
+-                                                )
+-                                                throw error
+-                                            } catch (error: Throwable) {
+-                                                RuntimeDiagnostics.finishProvider(
+-                                                    token = providerDiagnosticToken,
+-                                                    status = "THREW",
+-                                                    streamCount = 0,
+-                                                    errorType = error::class.java.simpleName,
+-                                                )
+-                                                throw error
++                                            }
++                                        } finally {
++                                            withContext(kotlinx.coroutines.NonCancellable) {
++                                                onProviderExecution(executionKey, false)
+                                             }
+                                         }
+                                     }
+--- a/shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt
++++ b/shared/core/src/main/java/com/vueo/shared/core/source/SourceDiscoveryEngine.kt
+@@ -121,6 +121,7 @@
+             .distinct()
+             .toList()
+         val loadingProviders = linkedSetOf<String>()
++        val runningProviders = linkedSetOf<String>()
+         val completedSourceProviders = linkedSetOf<String>()
+         val plannedSourceProviders = withContext(Dispatchers.Default) {
+             (
+@@ -144,6 +145,7 @@
+             val key = provider.trim().ifBlank { "Other" }
+             synchronized(loadingProviders) {
+                 loadingProviders -= key
++                runningProviders -= key
+                 completedSourceProviders += key
+             }
+         }
+@@ -174,6 +176,7 @@
+             if (event.resource == "sources") {
+                 if (event.phase == "started") {
+                     markProviderLoading(event.providerName)
++                    synchronized(loadingProviders) { runningProviders += event.providerName.trim().ifBlank { "Other" } }
+                 } else {
+                     markProviderComplete(event.providerName)
+                 }
+@@ -323,6 +326,7 @@
+                     subtitlesResolved = subtitlesResolved,
+                     activityLog = activityLog.toList(),
+                     loadingProviders = loadingProviderSnapshot(),
++                    runningProviders = synchronized(loadingProviders) { runningProviders.toList() },
+                     completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
+                     plannedSourceProviders = plannedSourceProviders,
+                 )
+@@ -470,6 +474,14 @@
+                 val result = discoverPlugins(
+                     request = request,
+                     configuredPluginProviders = configuredPluginProviders,
++                    onProviderExecution = { provider, running ->
++                        if (running) {
++                            synchronized(loadingProviders) { runningProviders += provider }
++                        } else {
++                            markProviderComplete(provider)
++                        }
++                        publish(latestProgress)
++                    },
+                     onSkipped = { skippedNotice ->
+                         notice = skippedNotice
+                         publish(
+@@ -578,7 +590,7 @@
+             mergedWithCache(freshFinal)
+         } else freshFinal.ifEmpty { cachedStreams }
+         searching = false
+-        synchronized(loadingProviders) { loadingProviders.clear() }
++        synchronized(loadingProviders) { loadingProviders.clear(); runningProviders.clear() }
+         recordProviders(finalStreams)
  
-+    private fun isSmartSubsLayoutPending(): Boolean =
-+        layoutRequestKey != null && !layoutReady &&
-+            boundPlayer?.let(LiveSmartSubs::ownsCues) == true
+         val rawCount = maxOf(
+@@ -679,6 +691,7 @@
+         request: SourceDiscoveryRequest,
+         configuredPluginProviders: List<String>,
+         onSkipped: (String) -> Unit,
++        onProviderExecution: suspend (String, Boolean) -> Unit,
+         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
+         forceRefresh: Boolean,
+     ): PluginDiscoveryResult? {
+@@ -736,6 +749,7 @@
+                 mediaOriginalLanguage = item.originalLanguage,
+                 animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
+                 providerNameFilter = request.sourceProviderName,
++                onProviderExecution = onProviderExecution,
+                 forceRefresh = forceRefresh,
+             ) { progress ->
+                 onProgress(
+@@ -828,6 +842,7 @@
+     val sourcesStopped: Boolean = false,
+     val completedSourceProviders: List<String> = emptyList(),
+     val plannedSourceProviders: List<String> = emptyList(),
++    val runningProviders: List<String> = emptyList(),
+ )
+ 
+ data class SourceDiscoveryActivity(
+--- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourceModels.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourceModels.kt
+@@ -29,6 +29,7 @@
+     val selectedProvider: String,
+     val preferredQuality: String?,
+     val showEngineDetails: Boolean,
++    val runningProviders: Set<String> = emptySet(),
+ )
+ 
+ /** Clean UI contract between provider output and the TV source card. */
+--- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
+@@ -1,4 +1,6 @@
+ package com.vueo.tv.source
 +
-     private fun displayCues(cues: List<Cue>) {
-         prepareTimelineLayout()
--        if (layoutRequestKey != null && !layoutReady) {
--            // Show captions immediately with their source coordinates while analysis runs.
-+        if (layoutRequestKey != null && !layoutReady && !isSmartSubsLayoutPending()) {
-+            // Native tracks retain their existing source-position fallback.
-+            // AI automatic cues continue through split/stack/padding below instead
-+            // of appearing once at raw coordinates before the analysis refresh.
-             val visible = if (!showCommentary && cues.size >= 2) cues.filterNot {
-                 TvSubtitleTimelineLoader.isAutomaticText(it) && isFullyParenthesizedCue(it)
-             } else cues
-@@ -339,8 +345,11 @@
-             lowerCues = cues.filterNot { it in info }, upperCues = info,
-             upperUsesCommentarySize = false,
-         ) else splitLowerSubtitleLayers(cues, showCommentary)
--        val effectiveProtected = if (layoutReady && !layoutAnalysisFailed) protectedTimelineText else
-+        val effectiveProtected = if ((layoutReady && !layoutAnalysisFailed) || isSmartSubsLayoutPending()) {
-+            protectedTimelineText
-+        } else {
-             protectedTimelineText + cues.filter { it.line != Cue.DIMEN_UNSET }.map { it.text.toString() }
-+        }
-         val stackedMain = tvStackCollidingSubtitleCues(layers.lowerCues, effectiveProtected)
-         val stackedUpper = tvStackCollidingSubtitleCues(layers.upperCues, effectiveProtected)
++import androidx.compose.material.icons.filled.Schedule
  
-@@ -452,7 +461,10 @@
-     }
+ import com.vueo.tv.ui.motion.*
+ import android.os.SystemClock
+@@ -652,9 +654,12 @@
+                 add(
+                     SourceChip(
+                         id = provider,
+-                        label = sourceProviderDisplayName(provider),
++                        label = if (provider !in state.loadingProviders) {
++                            "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
++                        } else sourceProviderDisplayName(provider),
+                         selected = state.selectedProvider == provider,
+-                        loading = provider in state.loadingProviders,
++                        loading = provider in state.runningProviders,
++                        waiting = provider in state.loadingProviders && provider !in state.runningProviders,
+                         requester = providerRequester(provider),
+                         action = { onSelectProvider(provider) },
+                     )
+@@ -767,6 +772,7 @@
+                     label = chip.label,
+                     selected = chip.selected,
+                     loading = chip.loading,
++                    waiting = chip.waiting,
+                     requester = chip.requester,
+                     leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
+                     rightRequester = chips.getOrNull(index + 1)?.requester,
+@@ -853,6 +859,7 @@
+     val loading: Boolean,
+     val requester: FocusRequester,
+     val action: () -> Unit,
++    val waiting: Boolean = false,
+ )
  
-     private fun isLowerTextCue(cue: Cue): Boolean = cue.text.toString() !in protectedTimelineText &&
--        TvSubtitleTimelineLoader.isAutomaticText(cue) && (cue.line == Cue.DIMEN_UNSET || (layoutReady && !layoutAnalysisFailed))
-+        TvSubtitleTimelineLoader.isAutomaticText(cue) && (
-+            cue.line == Cue.DIMEN_UNSET || (layoutReady && !layoutAnalysisFailed) ||
-+                isSmartSubsLayoutPending()
+ @Composable
+@@ -860,6 +867,7 @@
+     label: String,
+     selected: Boolean,
+     loading: Boolean,
++    waiting: Boolean = false,
+     requester: FocusRequester,
+     leftRequester: FocusRequester?,
+     rightRequester: FocusRequester?,
+@@ -868,7 +876,7 @@
+     onFocused: () -> Unit,
+     onClick: () -> Unit,
+ ) {
+-    var focused by remember(label) { mutableStateOf(false) }
++    var focused by remember(requester) { mutableStateOf(false) }
+ 
+     Row(
+         modifier = Modifier
+@@ -930,6 +938,15 @@
+                 color = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
+                 else TvDesign.Accent,
+                 strokeWidth = 1.4.dp,
 +            )
- 
-     private fun applyUpperLayerTextSize(style: TvPlayerSubtitleStyleState) {
-         val sizeSp = if (upperLayerUsesCommentarySize) {
++        }
++        if (waiting && !loading) {
++            Icon(
++                imageVector = androidx.compose.material.icons.Icons.Default.Schedule,
++                contentDescription = "Waiting",
++                modifier = Modifier.width(11.dp).height(11.dp),
++                tint = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
++                else TvDesign.White.copy(alpha = .55f),
+             )
+         }
+         Text(
+--- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourceScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourceScreen.kt
+@@ -53,6 +53,8 @@
+     val firstResultMs = discovery?.firstResultMs
+     val providerOrder = discovery?.providerOrder.orEmpty()
+     val loadingProviders = discovery?.loadingProviders.orEmpty().toSet()
++    val runningProviders = discovery?.runningProviders.orEmpty().toSet()
++    val completedProviders = discovery?.completedSourceProviders.orEmpty().toSet()
+     val fromCache = discovery?.fromCache ?: false
+     val error = discoveryError
+     var selectedProvider by remember(memoryKey) {
+@@ -82,11 +84,19 @@
+             .distinct()
+             .toList()
+     }
+-    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders) {
+-        (providerOrder.filter { it in currentProviders || it in loadingProviders } +
++    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders, runningProviders, completedProviders) {
++        (providerOrder.filter { it in currentProviders || it in loadingProviders || it in completedProviders } +
+             loadingProviders.filter { it !in providerOrder } +
+-            currentProviders.filter { it !in providerOrder && it !in loadingProviders })
++            currentProviders.filter { it !in providerOrder && it !in loadingProviders } +
++            completedProviders.filter { it !in providerOrder && it !in loadingProviders && it !in currentProviders })
+             .distinct()
++            .sortedBy { provider ->
++                when {
++                    provider in completedProviders || provider !in loadingProviders -> 0
++                    provider in runningProviders -> 1
++                    else -> 2
++                }
++            }
+     }
+     val providerLogos = remember(runtime, currentProviders) {
+         buildProviderLogoLookup(runtime)
+@@ -125,6 +135,7 @@
+             filteredSources = filteredSources,
+             visibleProviders = visibleProviders,
+             loadingProviders = loadingProviders,
++            runningProviders = runningProviders,
+             providerLogos = providerLogos,
+             selectedProvider = selectedProvider,
+             preferredQuality = preferredQuality,

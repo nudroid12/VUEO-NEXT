@@ -29,6 +29,7 @@ internal data class TvSourcePresentationState(
     val selectedProvider: String,
     val preferredQuality: String?,
     val showEngineDetails: Boolean,
+    val runningProviders: Set<String> = emptySet(),
 )
 
 /** Clean UI contract between provider output and the TV source card. */

@@ -154,6 +154,7 @@ suspend fun discoverProgressive(
     forceRefresh: Boolean = false,
     animeContent: Boolean = false,
     providerNameFilter: String? = null,
+    onProviderExecution: suspend (String, Boolean) -> Unit = { _, _ -> },
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
     supervisorScope {
@@ -385,56 +386,64 @@ suspend fun discoverProgressive(
                                 }
                                 val execute: suspend () -> ProviderRun = {
                                     concurrency.withPermit {
-                                        withContext(Dispatchers.Default) {
-                                            val providerDiagnosticToken =
-                                                RuntimeDiagnostics.beginProvider(
-                                                    scanId = runtimeDiagnosticScanId,
-                                                    providerName = provider.name,
-                                                    providerId = provider.id,
-                                                    pluginName = repository.name,
-                                                )
-                                            try {
-                                                runProvider(
-                                                    repository =
-                                                        repository,
-                                                    provider =
-                                                        provider,
-                                                    tmdbId =
-                                                        tmdbId,
-                                                    mediaType =
-                                                        mediaType,
-                                                    season =
-                                                        season,
-                                                    episode =
-                                                        episode,
-                                                    runtimeDiagnosticScanId =
-                                                        runtimeDiagnosticScanId,
-                                                    discoveryContextBroker =
-                                                        discoveryContextBroker,
-                                                ).also { providerRun ->
+                                        val executionKey = "${repository.name} / ${provider.name}"
+                                        try {
+                                            onProviderExecution(executionKey, true)
+                                            withContext(Dispatchers.Default) {
+                                                val providerDiagnosticToken =
+                                                    RuntimeDiagnostics.beginProvider(
+                                                        scanId = runtimeDiagnosticScanId,
+                                                        providerName = provider.name,
+                                                        providerId = provider.id,
+                                                        pluginName = repository.name,
+                                                    )
+                                                try {
+                                                    runProvider(
+                                                        repository =
+                                                            repository,
+                                                        provider =
+                                                            provider,
+                                                        tmdbId =
+                                                            tmdbId,
+                                                        mediaType =
+                                                            mediaType,
+                                                        season =
+                                                            season,
+                                                        episode =
+                                                            episode,
+                                                        runtimeDiagnosticScanId =
+                                                            runtimeDiagnosticScanId,
+                                                        discoveryContextBroker =
+                                                            discoveryContextBroker,
+                                                    ).also { providerRun ->
+                                                        RuntimeDiagnostics.finishProvider(
+                                                            token = providerDiagnosticToken,
+                                                            status = providerRun.diagnostic.status.name,
+                                                            streamCount = providerRun.diagnostic.streamCount,
+                                                            errorType = providerRun.diagnostic.errorType,
+                                                        )
+                                                    }
+                                                } catch (error: CancellationException) {
                                                     RuntimeDiagnostics.finishProvider(
                                                         token = providerDiagnosticToken,
-                                                        status = providerRun.diagnostic.status.name,
-                                                        streamCount = providerRun.diagnostic.streamCount,
-                                                        errorType = providerRun.diagnostic.errorType,
+                                                        status = "CANCELLED",
+                                                        streamCount = 0,
+                                                        errorType = error::class.java.simpleName,
                                                     )
+                                                    throw error
+                                                } catch (error: Throwable) {
+                                                    RuntimeDiagnostics.finishProvider(
+                                                        token = providerDiagnosticToken,
+                                                        status = "THREW",
+                                                        streamCount = 0,
+                                                        errorType = error::class.java.simpleName,
+                                                    )
+                                                    throw error
                                                 }
-                                            } catch (error: CancellationException) {
-                                                RuntimeDiagnostics.finishProvider(
-                                                    token = providerDiagnosticToken,
-                                                    status = "CANCELLED",
-                                                    streamCount = 0,
-                                                    errorType = error::class.java.simpleName,
-                                                )
-                                                throw error
-                                            } catch (error: Throwable) {
-                                                RuntimeDiagnostics.finishProvider(
-                                                    token = providerDiagnosticToken,
-                                                    status = "THREW",
-                                                    streamCount = 0,
-                                                    errorType = error::class.java.simpleName,
-                                                )
-                                                throw error
+                                            }
+                                        } finally {
+                                            withContext(kotlinx.coroutines.NonCancellable) {
+                                                onProviderExecution(executionKey, false)
                                             }
                                         }
                                     }

@@ -53,6 +53,8 @@ fun TvSourceScreen(
     val firstResultMs = discovery?.firstResultMs
     val providerOrder = discovery?.providerOrder.orEmpty()
     val loadingProviders = discovery?.loadingProviders.orEmpty().toSet()
+    val runningProviders = discovery?.runningProviders.orEmpty().toSet()
+    val completedProviders = discovery?.completedSourceProviders.orEmpty().toSet()
     val fromCache = discovery?.fromCache ?: false
     val error = discoveryError
     var selectedProvider by remember(memoryKey) {
@@ -82,11 +84,19 @@ fun TvSourceScreen(
             .distinct()
             .toList()
     }
-    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders) {
-        (providerOrder.filter { it in currentProviders || it in loadingProviders } +
+    val visibleProviders = remember(providerOrder, loadingProviders, currentProviders, runningProviders, completedProviders) {
+        (providerOrder.filter { it in currentProviders || it in loadingProviders || it in completedProviders } +
             loadingProviders.filter { it !in providerOrder } +
-            currentProviders.filter { it !in providerOrder && it !in loadingProviders })
+            currentProviders.filter { it !in providerOrder && it !in loadingProviders } +
+            completedProviders.filter { it !in providerOrder && it !in loadingProviders && it !in currentProviders })
             .distinct()
+            .sortedBy { provider ->
+                when {
+                    provider in completedProviders || provider !in loadingProviders -> 0
+                    provider in runningProviders -> 1
+                    else -> 2
+                }
+            }
     }
     val providerLogos = remember(runtime, currentProviders) {
         buildProviderLogoLookup(runtime)
@@ -125,6 +135,7 @@ fun TvSourceScreen(
             filteredSources = filteredSources,
             visibleProviders = visibleProviders,
             loadingProviders = loadingProviders,
+            runningProviders = runningProviders,
             providerLogos = providerLogos,
             selectedProvider = selectedProvider,
             preferredQuality = preferredQuality,

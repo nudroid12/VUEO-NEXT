@@ -121,6 +121,7 @@ class SourceDiscoveryEngine(
             .distinct()
             .toList()
         val loadingProviders = linkedSetOf<String>()
+        val runningProviders = linkedSetOf<String>()
         val completedSourceProviders = linkedSetOf<String>()
         val plannedSourceProviders = withContext(Dispatchers.Default) {
             (
@@ -144,6 +145,7 @@ class SourceDiscoveryEngine(
             val key = provider.trim().ifBlank { "Other" }
             synchronized(loadingProviders) {
                 loadingProviders -= key
+                runningProviders -= key
                 completedSourceProviders += key
             }
         }
@@ -174,6 +176,7 @@ class SourceDiscoveryEngine(
             if (event.resource == "sources") {
                 if (event.phase == "started") {
                     markProviderLoading(event.providerName)
+                    synchronized(loadingProviders) { runningProviders += event.providerName.trim().ifBlank { "Other" } }
                 } else {
                     markProviderComplete(event.providerName)
                 }
@@ -323,6 +326,7 @@ class SourceDiscoveryEngine(
                     subtitlesResolved = subtitlesResolved,
                     activityLog = activityLog.toList(),
                     loadingProviders = loadingProviderSnapshot(),
+                    runningProviders = synchronized(loadingProviders) { runningProviders.toList() },
                     completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
                     plannedSourceProviders = plannedSourceProviders,
                 )
@@ -470,6 +474,14 @@ class SourceDiscoveryEngine(
                 val result = discoverPlugins(
                     request = request,
                     configuredPluginProviders = configuredPluginProviders,
+                    onProviderExecution = { provider, running ->
+                        if (running) {
+                            synchronized(loadingProviders) { runningProviders += provider }
+                        } else {
+                            markProviderComplete(provider)
+                        }
+                        publish(latestProgress)
+                    },
                     onSkipped = { skippedNotice ->
                         notice = skippedNotice
                         publish(
@@ -578,7 +590,7 @@ class SourceDiscoveryEngine(
             mergedWithCache(freshFinal)
         } else freshFinal.ifEmpty { cachedStreams }
         searching = false
-        synchronized(loadingProviders) { loadingProviders.clear() }
+        synchronized(loadingProviders) { loadingProviders.clear(); runningProviders.clear() }
         recordProviders(finalStreams)
 
         val rawCount = maxOf(
@@ -679,6 +691,7 @@ class SourceDiscoveryEngine(
         request: SourceDiscoveryRequest,
         configuredPluginProviders: List<String>,
         onSkipped: (String) -> Unit,
+        onProviderExecution: suspend (String, Boolean) -> Unit,
         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
         forceRefresh: Boolean,
     ): PluginDiscoveryResult? {
@@ -736,6 +749,7 @@ class SourceDiscoveryEngine(
                 mediaOriginalLanguage = item.originalLanguage,
                 animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
                 providerNameFilter = request.sourceProviderName,
+                onProviderExecution = onProviderExecution,
                 forceRefresh = forceRefresh,
             ) { progress ->
                 onProgress(
@@ -828,6 +842,7 @@ data class SourceDiscoverySnapshot(
     val sourcesStopped: Boolean = false,
     val completedSourceProviders: List<String> = emptyList(),
     val plannedSourceProviders: List<String> = emptyList(),
+    val runningProviders: List<String> = emptyList(),
 )
 
 data class SourceDiscoveryActivity(

@@ -1,5 +1,7 @@
 package com.vueo.tv.source
 
+import androidx.compose.material.icons.filled.Schedule
+
 import com.vueo.tv.ui.motion.*
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -652,9 +654,12 @@ private fun SourceFilterRow(
                 add(
                     SourceChip(
                         id = provider,
-                        label = sourceProviderDisplayName(provider),
+                        label = if (provider !in state.loadingProviders) {
+                            "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
+                        } else sourceProviderDisplayName(provider),
                         selected = state.selectedProvider == provider,
-                        loading = provider in state.loadingProviders,
+                        loading = provider in state.runningProviders,
+                        waiting = provider in state.loadingProviders && provider !in state.runningProviders,
                         requester = providerRequester(provider),
                         action = { onSelectProvider(provider) },
                     )
@@ -767,6 +772,7 @@ private fun SourceFilterRow(
                     label = chip.label,
                     selected = chip.selected,
                     loading = chip.loading,
+                    waiting = chip.waiting,
                     requester = chip.requester,
                     leftRequester = chips.getOrNull(index - 1)?.requester ?: refreshRequester,
                     rightRequester = chips.getOrNull(index + 1)?.requester,
@@ -853,6 +859,7 @@ private data class SourceChip(
     val loading: Boolean,
     val requester: FocusRequester,
     val action: () -> Unit,
+    val waiting: Boolean = false,
 )
 
 @Composable
@@ -860,6 +867,7 @@ private fun SourceFilterChip(
     label: String,
     selected: Boolean,
     loading: Boolean,
+    waiting: Boolean = false,
     requester: FocusRequester,
     leftRequester: FocusRequester?,
     rightRequester: FocusRequester?,
@@ -868,7 +876,7 @@ private fun SourceFilterChip(
     onFocused: () -> Unit,
     onClick: () -> Unit,
 ) {
-    var focused by remember(label) { mutableStateOf(false) }
+    var focused by remember(requester) { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -930,6 +938,15 @@ private fun SourceFilterChip(
                 color = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
                 else TvDesign.Accent,
                 strokeWidth = 1.4.dp,
+            )
+        }
+        if (waiting && !loading) {
+            Icon(
+                imageVector = androidx.compose.material.icons.Icons.Default.Schedule,
+                contentDescription = "Waiting",
+                modifier = Modifier.width(11.dp).height(11.dp),
+                tint = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
+                else TvDesign.White.copy(alpha = .55f),
             )
         }
         Text(
