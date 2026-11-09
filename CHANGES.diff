@@ -1,15 +1,14 @@
---- a/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
-+++ b/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
-@@ -671,10 +671,10 @@
-                     )
-                 }
+--- a/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
+@@ -354,9 +354,8 @@
+         lastNormalBottomText = normalBottomText(stackedMain)
+         updateCommentaryBottomPadding()
+         // Authored positions are immutable. The old collision solver moved signs.
+-        val adjusted = stackedMain to stackedUpper
+-        val mainDisplayed = adjusted.first
+-        val upperDisplayed = adjusted.second
++        val mainDisplayed = stackedMain
++        val upperDisplayed = stackedUpper
  
--            addressText.address?.let { address ->
-+            addon.descriptor.baseUrl.takeIf { it.isNotBlank() }?.let { address ->
-                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                     Column(modifier = Modifier.weight(1f)) {
--                        Text("Address:", color = VueoPalette.Muted, fontSize = 10.5.sp)
-+                        Text("Manifest URL:", color = VueoPalette.Muted, fontSize = 10.5.sp)
-                         Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
-                     }
-                     IconButton(onClick = {
+         if (auditGroup > 0) {
+             val source = boundPlayer?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()

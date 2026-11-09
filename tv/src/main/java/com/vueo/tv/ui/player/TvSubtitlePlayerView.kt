@@ -354,9 +354,8 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         lastNormalBottomText = normalBottomText(stackedMain)
         updateCommentaryBottomPadding()
         // Authored positions are immutable. The old collision solver moved signs.
-        val adjusted = stackedMain to stackedUpper
-        val mainDisplayed = adjusted.first
-        val upperDisplayed = adjusted.second
+        val mainDisplayed = stackedMain
+        val upperDisplayed = stackedUpper
 
         if (auditGroup > 0) {
             val source = boundPlayer?.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
