@@ -1,25 +1,91 @@
---- a/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
-+++ b/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
-@@ -672,10 +672,21 @@
-                 }
+--- a/mobile/src/main/java/com/vueo/mobile/core/extensions/MobileAddonConfigurationReloader.kt
++++ b/mobile/src/main/java/com/vueo/mobile/core/extensions/MobileAddonConfigurationReloader.kt
+@@ -30,25 +30,50 @@
  
-             addon.descriptor.baseUrl.takeIf { it.isNotBlank() }?.let { address ->
-+                var addressExpanded by remember(address) { mutableStateOf(false) }
-                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                     Column(modifier = Modifier.weight(1f)) {
-                         Text("Manifest URL:", color = VueoPalette.Muted, fontSize = 10.5.sp)
--                        Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
-+                        Text(
-+                            address,
-+                            color = Color.White,
-+                            fontSize = 11.5.sp,
-+                            softWrap = addressExpanded,
-+                            maxLines = if (addressExpanded) Int.MAX_VALUE else 1,
-+                            overflow = TextOverflow.Ellipsis,
-+                        )
-+                        TextButton(onClick = { addressExpanded = !addressExpanded }) {
-+                            Text(if (addressExpanded) "Show less" else "Show full URL", fontSize = 10.5.sp)
-+                        }
-                     }
-                     IconButton(onClick = {
-                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+     private val reloadLock = Mutex()
+     private val downloads = Semaphore(2)
++    private val publicationLock = Mutex()
+ 
+-    suspend fun reload(forceRefresh: Boolean = false): Summary = withContext(Dispatchers.IO) {
++    suspend fun reload(
++        forceRefresh: Boolean = false,
++        onInstalled: suspend () -> Unit = {},
++    ): Summary = withContext(Dispatchers.IO) {
+         reloadLock.withLock {
+             val requested = configuredUrls()
+             val installedUrls = engine.stremioAddons().map { it.descriptor.baseUrl.trim() }.toSet()
+             val missing = requested.filter { forceRefresh || it !in installedUrls }
+-            // Fetch before replacing anything. Failure/cancellation leaves working
+-            // descriptors intact; parallel jobs never mutate the engine.
++            // Publish each successful manifest without waiting for slower downloads.
++            // Failed refreshes retain working descriptors. Publication is serialized.
+             val prepared = coroutineScope {
+                 missing.map { url ->
+                     async {
+                         downloads.withPermit {
+                             currentCoroutineContext().ensureActive()
++                            val started = android.os.SystemClock.elapsedRealtime()
+                             val result = try {
+                                 Result.success(loadManifest(url))
+                             } catch (cancelled: CancellationException) {
+                                 throw cancelled
+                             } catch (error: Exception) {
+                                 Result.failure(error)
++                            }
++                            val elapsed = android.os.SystemClock.elapsedRealtime() - started
++                            // Hash identifies repeated manifest requests without exposing tokens.
++                            val manifestId = java.security.MessageDigest.getInstance("SHA-256")
++                                .digest(url.toByteArray(Charsets.UTF_8)).take(8)
++                                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
++                            com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
++                                "ADDON_MANIFEST platform=Mobile id=$manifestId elapsedMs=$elapsed outcome=${if (result.isSuccess) "ok" else "failed"}",
++                            )
++                            val extension = result.getOrNull()
++                            if (extension != null) {
++                                val published = publicationLock.withLock {
++                                    currentCoroutineContext().ensureActive()
++                                    if (url !in configuredUrls()) false else {
++                                        store.migrateAddonCatalogIdentity(extension.descriptor)
++                                        engine.install(extension) { store.isAddonEnabled(url) }
++                                        true
++                                    }
++                                }
++                                if (published) onInstalled()
+                             }
+                             url to result
+                         }
+@@ -71,8 +96,6 @@
+                     failed++
+                     return@forEach
+                 }
+-                store.migrateAddonCatalogIdentity(extension.descriptor)
+-                engine.install(extension) { store.isAddonEnabled(url) }
+                 loaded++
+             }
+             // Apply enable/disable even when a refresh failed and the previous
+--- a/mobile/src/main/java/com/vueo/mobile/ui/app/VueoApp.kt
++++ b/mobile/src/main/java/com/vueo/mobile/ui/app/VueoApp.kt
+@@ -405,8 +405,13 @@
+     val addonConfigurationReloader = remember(engine, store) {
+         com.vueo.mobile.core.extensions.MobileAddonConfigurationReloader(engine, store)
+     }
++    var addonListRevision by remember { mutableIntStateOf(0) }
+     suspend fun reloadConfiguredAddons() {
+-        val summary = addonConfigurationReloader.reload()
++        val summary = addonConfigurationReloader.reload(onInstalled = {
++            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
++                addonListRevision++
++            }
++        })
+         com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+             "ADDON_CONFIG_RELOAD platform=Mobile loaded=${summary.loaded} reused=${summary.reused} " +
+                 "removed=${summary.removed} failed=${summary.failed} conflicts=${summary.conflicts}",
+@@ -1249,7 +1254,7 @@
+                         AddonsScreen(
+                             engine = engine,
+                             store = store,
+-                            contentVersion = contentVersion,
++                            contentVersion = contentVersion + addonListRevision,
+                             pendingInstallManifestUrl = pendingAddonManifestUrl,
+                             onPendingInstallConsumed = onPendingAddonManifestConsumed,
+                             onContentChanged = {

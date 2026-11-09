@@ -30,25 +30,50 @@ internal class MobileAddonConfigurationReloader(
 
     private val reloadLock = Mutex()
     private val downloads = Semaphore(2)
+    private val publicationLock = Mutex()
 
-    suspend fun reload(forceRefresh: Boolean = false): Summary = withContext(Dispatchers.IO) {
+    suspend fun reload(
+        forceRefresh: Boolean = false,
+        onInstalled: suspend () -> Unit = {},
+    ): Summary = withContext(Dispatchers.IO) {
         reloadLock.withLock {
             val requested = configuredUrls()
             val installedUrls = engine.stremioAddons().map { it.descriptor.baseUrl.trim() }.toSet()
             val missing = requested.filter { forceRefresh || it !in installedUrls }
-            // Fetch before replacing anything. Failure/cancellation leaves working
-            // descriptors intact; parallel jobs never mutate the engine.
+            // Publish each successful manifest without waiting for slower downloads.
+            // Failed refreshes retain working descriptors. Publication is serialized.
             val prepared = coroutineScope {
                 missing.map { url ->
                     async {
                         downloads.withPermit {
                             currentCoroutineContext().ensureActive()
+                            val started = android.os.SystemClock.elapsedRealtime()
                             val result = try {
                                 Result.success(loadManifest(url))
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (error: Exception) {
                                 Result.failure(error)
+                            }
+                            val elapsed = android.os.SystemClock.elapsedRealtime() - started
+                            // Hash identifies repeated manifest requests without exposing tokens.
+                            val manifestId = java.security.MessageDigest.getInstance("SHA-256")
+                                .digest(url.toByteArray(Charsets.UTF_8)).take(8)
+                                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                            com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
+                                "ADDON_MANIFEST platform=Mobile id=$manifestId elapsedMs=$elapsed outcome=${if (result.isSuccess) "ok" else "failed"}",
+                            )
+                            val extension = result.getOrNull()
+                            if (extension != null) {
+                                val published = publicationLock.withLock {
+                                    currentCoroutineContext().ensureActive()
+                                    if (url !in configuredUrls()) false else {
+                                        store.migrateAddonCatalogIdentity(extension.descriptor)
+                                        engine.install(extension) { store.isAddonEnabled(url) }
+                                        true
+                                    }
+                                }
+                                if (published) onInstalled()
                             }
                             url to result
                         }
@@ -71,8 +96,6 @@ internal class MobileAddonConfigurationReloader(
                     failed++
                     return@forEach
                 }
-                store.migrateAddonCatalogIdentity(extension.descriptor)
-                engine.install(extension) { store.isAddonEnabled(url) }
                 loaded++
             }
             // Apply enable/disable even when a refresh failed and the previous

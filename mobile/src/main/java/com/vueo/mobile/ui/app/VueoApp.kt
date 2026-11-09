@@ -405,8 +405,13 @@ fun VueoApp(
     val addonConfigurationReloader = remember(engine, store) {
         com.vueo.mobile.core.extensions.MobileAddonConfigurationReloader(engine, store)
     }
+    var addonListRevision by remember { mutableIntStateOf(0) }
     suspend fun reloadConfiguredAddons() {
-        val summary = addonConfigurationReloader.reload()
+        val summary = addonConfigurationReloader.reload(onInstalled = {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                addonListRevision++
+            }
+        })
         com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
             "ADDON_CONFIG_RELOAD platform=Mobile loaded=${summary.loaded} reused=${summary.reused} " +
                 "removed=${summary.removed} failed=${summary.failed} conflicts=${summary.conflicts}",
@@ -1249,7 +1254,7 @@ fun VueoApp(
                         AddonsScreen(
                             engine = engine,
                             store = store,
-                            contentVersion = contentVersion,
+                            contentVersion = contentVersion + addonListRevision,
                             pendingInstallManifestUrl = pendingAddonManifestUrl,
                             onPendingInstallConsumed = onPendingAddonManifestConsumed,
                             onContentChanged = {
