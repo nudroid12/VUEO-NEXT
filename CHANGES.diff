@@ -1,14 +1,50 @@
---- a/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
-@@ -2015,9 +2015,8 @@
-         val subtitlePresentation = subtitleStyle
-         val resizeMode = when (videoFit) {
-             PlayerVideoFit.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
--            // A TV-style Fill should crop while preserving the source aspect ratio.
--            // Media3 RESIZE_MODE_FILL stretches the picture, so use ZOOM instead.
--            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-+            // Fill stretches to the viewport; Zoom crops while preserving aspect ratio.
-+            PlayerVideoFit.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-             PlayerVideoFit.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-         }
-         val baseSubtitleBottomPaddingFraction = subtitlePresentation.bottomPaddingPercent / 100f
+--- a/tv/src/main/java/com/vueo/tv/ui/library/TvLibraryScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/library/TvLibraryScreen.kt
+@@ -354,9 +354,17 @@
+                         val selected = historySelected == (index == 1)
+                         LibraryViewModeButton(
+                             gridView = gridView,
+-                            label = if (selected) "$label ✓" else label,
++                            label = label,
++                            selected = selected,
+                             requester = if (index == 0) favoritesRequester else historyRequester,
+-                            onFocused = { if (!navExpanded) rememberTarget("section") },
++                            onFocused = {
++                                if (!selected) {
++                                    historySelected = index == 1
++                                    TvLibraryFocusMemory.firstVisibleItemIndex = 0
++                                    TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
++                                }
++                                if (!navExpanded) rememberTarget("section")
++                            },
+                             onToggle = {
+                                 if (!selected) {
+                                     historySelected = index == 1
+@@ -527,6 +535,7 @@
+     onLeft: () -> Boolean,
+     onDown: () -> Boolean,
+     label: String? = null,
++    selected: Boolean = false,
+     onRight: () -> Boolean = { true },
+ ) {
+     var focused by remember { mutableStateOf(false) }
+@@ -566,7 +575,9 @@
+                 }
+             }
+             .background(
+-                color = if (focused) {
++                color = if (selected) {
++                    TvDesign.White
++                } else if (focused) {
+                     TvDesign.White.copy(alpha = .18f)
+                 } else {
+                     TvDesign.SurfaceRaised.copy(alpha = .82f)
+@@ -586,7 +597,7 @@
+         if (label == null) LibraryModeGlyph(grid = gridView, focused = focused)
+         Text(
+             text = label ?: if (gridView) "Grid" else "List",
+-            color = if (focused) TvDesign.White else TvDesign.Muted,
++            color = if (selected) Color.Black else if (focused) TvDesign.White else TvDesign.Muted,
+             fontSize = 12.sp,
+             fontWeight = FontWeight.SemiBold,
+         )

@@ -354,9 +354,17 @@ fun TvLibraryScreen(
                         val selected = historySelected == (index == 1)
                         LibraryViewModeButton(
                             gridView = gridView,
-                            label = if (selected) "$label ✓" else label,
+                            label = label,
+                            selected = selected,
                             requester = if (index == 0) favoritesRequester else historyRequester,
-                            onFocused = { if (!navExpanded) rememberTarget("section") },
+                            onFocused = {
+                                if (!selected) {
+                                    historySelected = index == 1
+                                    TvLibraryFocusMemory.firstVisibleItemIndex = 0
+                                    TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
+                                }
+                                if (!navExpanded) rememberTarget("section")
+                            },
                             onToggle = {
                                 if (!selected) {
                                     historySelected = index == 1
@@ -527,6 +535,7 @@ private fun LibraryViewModeButton(
     onLeft: () -> Boolean,
     onDown: () -> Boolean,
     label: String? = null,
+    selected: Boolean = false,
     onRight: () -> Boolean = { true },
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -566,7 +575,9 @@ private fun LibraryViewModeButton(
                 }
             }
             .background(
-                color = if (focused) {
+                color = if (selected) {
+                    TvDesign.White
+                } else if (focused) {
                     TvDesign.White.copy(alpha = .18f)
                 } else {
                     TvDesign.SurfaceRaised.copy(alpha = .82f)
@@ -586,7 +597,7 @@ private fun LibraryViewModeButton(
         if (label == null) LibraryModeGlyph(grid = gridView, focused = focused)
         Text(
             text = label ?: if (gridView) "Grid" else "List",
-            color = if (focused) TvDesign.White else TvDesign.Muted,
+            color = if (selected) Color.Black else if (focused) TvDesign.White else TvDesign.Muted,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
