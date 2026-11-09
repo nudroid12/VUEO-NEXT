@@ -1,91 +1,46 @@
---- a/mobile/src/main/java/com/vueo/mobile/core/extensions/MobileAddonConfigurationReloader.kt
-+++ b/mobile/src/main/java/com/vueo/mobile/core/extensions/MobileAddonConfigurationReloader.kt
-@@ -30,25 +30,50 @@
- 
-     private val reloadLock = Mutex()
-     private val downloads = Semaphore(2)
-+    private val publicationLock = Mutex()
- 
--    suspend fun reload(forceRefresh: Boolean = false): Summary = withContext(Dispatchers.IO) {
-+    suspend fun reload(
-+        forceRefresh: Boolean = false,
-+        onInstalled: suspend () -> Unit = {},
-+    ): Summary = withContext(Dispatchers.IO) {
-         reloadLock.withLock {
-             val requested = configuredUrls()
-             val installedUrls = engine.stremioAddons().map { it.descriptor.baseUrl.trim() }.toSet()
-             val missing = requested.filter { forceRefresh || it !in installedUrls }
--            // Fetch before replacing anything. Failure/cancellation leaves working
--            // descriptors intact; parallel jobs never mutate the engine.
-+            // Publish each successful manifest without waiting for slower downloads.
-+            // Failed refreshes retain working descriptors. Publication is serialized.
-             val prepared = coroutineScope {
-                 missing.map { url ->
-                     async {
-                         downloads.withPermit {
-                             currentCoroutineContext().ensureActive()
-+                            val started = android.os.SystemClock.elapsedRealtime()
-                             val result = try {
-                                 Result.success(loadManifest(url))
-                             } catch (cancelled: CancellationException) {
-                                 throw cancelled
-                             } catch (error: Exception) {
-                                 Result.failure(error)
-+                            }
-+                            val elapsed = android.os.SystemClock.elapsedRealtime() - started
-+                            // Hash identifies repeated manifest requests without exposing tokens.
-+                            val manifestId = java.security.MessageDigest.getInstance("SHA-256")
-+                                .digest(url.toByteArray(Charsets.UTF_8)).take(8)
-+                                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-+                            com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
-+                                "ADDON_MANIFEST platform=Mobile id=$manifestId elapsedMs=$elapsed outcome=${if (result.isSuccess) "ok" else "failed"}",
-+                            )
-+                            val extension = result.getOrNull()
-+                            if (extension != null) {
-+                                val published = publicationLock.withLock {
-+                                    currentCoroutineContext().ensureActive()
-+                                    if (url !in configuredUrls()) false else {
-+                                        store.migrateAddonCatalogIdentity(extension.descriptor)
-+                                        engine.install(extension) { store.isAddonEnabled(url) }
-+                                        true
-+                                    }
-+                                }
-+                                if (published) onInstalled()
-                             }
-                             url to result
-                         }
-@@ -71,8 +96,6 @@
-                     failed++
-                     return@forEach
+--- a/shared/core/src/main/java/com/vueo/shared/core/smartsubs/SmartSubsPlaybackBridge.kt
++++ b/shared/core/src/main/java/com/vueo/shared/core/smartsubs/SmartSubsPlaybackBridge.kt
+@@ -25,6 +25,7 @@
+         mediaType: String,
+         videoId: String,
+         tracks: List<SubtitleTrack>,
++        platform: String = "Unknown",
+     ): List<SubtitleTrack> = withContext(Dispatchers.IO) {
+         if (!config.enabled || !config.connected) return@withContext emptyList()
+         val sources = eligibleSources(tracks, config.includeAddonSources)
+@@ -80,6 +81,7 @@
+             connection.doOutput = true
+             connection.setRequestProperty("Content-Type", "application/json")
+             connection.setRequestProperty("Accept", "application/json")
++            connection.setRequestProperty("X-Vueo-Platform", platform)
+             connection.setFixedLengthStreamingMode(body.size)
+             connection.outputStream.use { it.write(body) }
+             when (connection.responseCode) {
+@@ -121,6 +123,7 @@
+                         name = name,
+                         mimeType = track.optString("mimeType").takeIf { it.isNotBlank() },
+                         displayId = displayId,
++                        headers = mapOf("X-Vueo-Platform" to platform),
+                     ))
                  }
--                store.migrateAddonCatalogIdentity(extension.descriptor)
--                engine.install(extension) { store.isAddonEnabled(url) }
-                 loaded++
              }
-             // Apply enable/disable even when a refresh failed and the previous
---- a/mobile/src/main/java/com/vueo/mobile/ui/app/VueoApp.kt
-+++ b/mobile/src/main/java/com/vueo/mobile/ui/app/VueoApp.kt
-@@ -405,8 +405,13 @@
-     val addonConfigurationReloader = remember(engine, store) {
-         com.vueo.mobile.core.extensions.MobileAddonConfigurationReloader(engine, store)
-     }
-+    var addonListRevision by remember { mutableIntStateOf(0) }
-     suspend fun reloadConfiguredAddons() {
--        val summary = addonConfigurationReloader.reload()
-+        val summary = addonConfigurationReloader.reload(onInstalled = {
-+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-+                addonListRevision++
-+            }
-+        })
-         com.vueo.shared.core.diagnostics.PerformanceDiagnostics.captureRuntimeEvent(
-             "ADDON_CONFIG_RELOAD platform=Mobile loaded=${summary.loaded} reused=${summary.reused} " +
-                 "removed=${summary.removed} failed=${summary.failed} conflicts=${summary.conflicts}",
-@@ -1249,7 +1254,7 @@
-                         AddonsScreen(
-                             engine = engine,
-                             store = store,
--                            contentVersion = contentVersion,
-+                            contentVersion = contentVersion + addonListRevision,
-                             pendingInstallManifestUrl = pendingAddonManifestUrl,
-                             onPendingInstallConsumed = onPendingAddonManifestConsumed,
-                             onContentChanged = {
+--- a/mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt
++++ b/mobile/src/main/java/com/vueo/mobile/ui/player/MobilePlayer.kt
+@@ -505,6 +505,7 @@
+             delay(350L)
+             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
+                 config = config, mediaType = media.type, videoId = videoId, tracks = candidates,
++                platform = "Mobile",
+             )
+         } catch (cancelled: CancellationException) {
+             throw cancelled
+--- a/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/player/TvPlayerScreen.kt
+@@ -301,6 +301,7 @@
+             delay(350L)
+             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
+                 config = config, mediaType = media.type, videoId = bundle.videoId, tracks = candidates,
++                platform = "TV",
+             )
+         } catch (cancelled: CancellationException) {
+             throw cancelled

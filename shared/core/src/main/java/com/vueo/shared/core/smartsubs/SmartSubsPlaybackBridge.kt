@@ -25,6 +25,7 @@ object SmartSubsPlaybackBridge {
         mediaType: String,
         videoId: String,
         tracks: List<SubtitleTrack>,
+        platform: String = "Unknown",
     ): List<SubtitleTrack> = withContext(Dispatchers.IO) {
         if (!config.enabled || !config.connected) return@withContext emptyList()
         val sources = eligibleSources(tracks, config.includeAddonSources)
@@ -80,6 +81,7 @@ object SmartSubsPlaybackBridge {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("X-Vueo-Platform", platform)
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }
             when (connection.responseCode) {
@@ -121,6 +123,7 @@ object SmartSubsPlaybackBridge {
                         name = name,
                         mimeType = track.optString("mimeType").takeIf { it.isNotBlank() },
                         displayId = displayId,
+                        headers = mapOf("X-Vueo-Platform" to platform),
                     ))
                 }
             }

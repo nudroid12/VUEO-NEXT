@@ -505,6 +505,7 @@ internal fun PlayerScreen(
             delay(350L)
             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
                 config = config, mediaType = media.type, videoId = videoId, tracks = candidates,
+                platform = "Mobile",
             )
         } catch (cancelled: CancellationException) {
             throw cancelled

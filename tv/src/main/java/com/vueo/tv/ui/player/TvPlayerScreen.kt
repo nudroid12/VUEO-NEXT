@@ -301,6 +301,7 @@ fun TvPlayerScreen(
             delay(350L)
             smartSubsTracks = com.vueo.shared.core.smartsubs.SmartSubsPlaybackBridge.discover(
                 config = config, mediaType = media.type, videoId = bundle.videoId, tracks = candidates,
+                platform = "TV",
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
