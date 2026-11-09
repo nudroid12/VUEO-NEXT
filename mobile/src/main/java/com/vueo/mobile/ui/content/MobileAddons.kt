@@ -671,10 +671,10 @@ private fun AddonCard(
                     )
                 }
 
-            addressText.address?.let { address ->
+            addon.descriptor.baseUrl.takeIf { it.isNotBlank() }?.let { address ->
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Address:", color = VueoPalette.Muted, fontSize = 10.5.sp)
+                        Text("Manifest URL:", color = VueoPalette.Muted, fontSize = 10.5.sp)
                         Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
                     }
                     IconButton(onClick = {

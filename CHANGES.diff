@@ -1,43 +1,15 @@
---- a/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/player/TvSubtitlePlayerView.kt
-@@ -263,9 +263,19 @@
-         if (showCommentary != style.showCommentary) {
-             showCommentary = style.showCommentary
-             // Re-filter the active group immediately, without seeking or restarting playback.
--            displayCues(boundPlayer?.currentCues?.cues ?: emptyList())
-+            displayCues(currentPresentationCues())
-         } else if (presentationChanged || paddingChanged || delayChanged) {
-             refreshRenderedCues()
-+        }
-+    }
-+
-+    /** Resolve captions from their active owner; native currentCues is empty for AI. */
-+    private fun currentPresentationCues(): List<Cue> {
-+        val current = boundPlayer ?: return emptyList()
-+        return if (LiveSmartSubs.ownsCues(current)) {
-+            LiveSmartSubs.cues(current)
-+        } else {
-+            lastInputCues ?: current.currentCues.cues
-         }
-     }
+--- a/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
++++ b/mobile/src/main/java/com/vueo/mobile/ui/content/MobileAddons.kt
+@@ -671,10 +671,10 @@
+                     )
+                 }
  
-@@ -276,7 +286,7 @@
-         commentarySubtitleView.setCues(emptyList())
-         // Rebuild from the current raw group, including when video is paused.
-         // Keep filtering/stacking and the two visible layers in the same pass.
--        val currentCues = lastInputCues ?: boundPlayer?.currentCues?.cues ?: emptyList()
-+        val currentCues = currentPresentationCues()
-         lastInputCues = null
-         lastDisplayedCues = emptyList()
-         lastDisplayedCommentaryCues = emptyList()
-@@ -294,7 +304,9 @@
-             } else cues
-             managedSubtitleView.setCues(visible)
-             commentarySubtitleView.setCues(emptyList())
--            lastInputCues = null
-+            // Retain the raw group for the refresh when analysis completes.
-+            // refreshRenderedCues clears the equality guard before rebuilding it.
-+            lastInputCues = cues.toList()
-             return
-         }
-         if (lastInputCues == cues && lastDisplayCommentary == showCommentary) return
+-            addressText.address?.let { address ->
++            addon.descriptor.baseUrl.takeIf { it.isNotBlank() }?.let { address ->
+                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                     Column(modifier = Modifier.weight(1f)) {
+-                        Text("Address:", color = VueoPalette.Muted, fontSize = 10.5.sp)
++                        Text("Manifest URL:", color = VueoPalette.Muted, fontSize = 10.5.sp)
+                         Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
+                     }
+                     IconButton(onClick = {
