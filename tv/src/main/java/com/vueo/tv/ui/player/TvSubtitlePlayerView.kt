@@ -295,10 +295,16 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
         commentarySubtitleView.postInvalidateOnAnimation()
     }
 
+    private fun isSmartSubsLayoutPending(): Boolean =
+        layoutRequestKey != null && !layoutReady &&
+            boundPlayer?.let(LiveSmartSubs::ownsCues) == true
+
     private fun displayCues(cues: List<Cue>) {
         prepareTimelineLayout()
-        if (layoutRequestKey != null && !layoutReady) {
-            // Show captions immediately with their source coordinates while analysis runs.
+        if (layoutRequestKey != null && !layoutReady && !isSmartSubsLayoutPending()) {
+            // Native tracks retain their existing source-position fallback.
+            // AI automatic cues continue through split/stack/padding below instead
+            // of appearing once at raw coordinates before the analysis refresh.
             val visible = if (!showCommentary && cues.size >= 2) cues.filterNot {
                 TvSubtitleTimelineLoader.isAutomaticText(it) && isFullyParenthesizedCue(it)
             } else cues
@@ -339,8 +345,11 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
             lowerCues = cues.filterNot { it in info }, upperCues = info,
             upperUsesCommentarySize = false,
         ) else splitLowerSubtitleLayers(cues, showCommentary)
-        val effectiveProtected = if (layoutReady && !layoutAnalysisFailed) protectedTimelineText else
+        val effectiveProtected = if ((layoutReady && !layoutAnalysisFailed) || isSmartSubsLayoutPending()) {
+            protectedTimelineText
+        } else {
             protectedTimelineText + cues.filter { it.line != Cue.DIMEN_UNSET }.map { it.text.toString() }
+        }
         val stackedMain = tvStackCollidingSubtitleCues(layers.lowerCues, effectiveProtected)
         val stackedUpper = tvStackCollidingSubtitleCues(layers.upperCues, effectiveProtected)
 
@@ -452,7 +461,10 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     }
 
     private fun isLowerTextCue(cue: Cue): Boolean = cue.text.toString() !in protectedTimelineText &&
-        TvSubtitleTimelineLoader.isAutomaticText(cue) && (cue.line == Cue.DIMEN_UNSET || (layoutReady && !layoutAnalysisFailed))
+        TvSubtitleTimelineLoader.isAutomaticText(cue) && (
+            cue.line == Cue.DIMEN_UNSET || (layoutReady && !layoutAnalysisFailed) ||
+                isSmartSubsLayoutPending()
+            )
 
     private fun applyUpperLayerTextSize(style: TvPlayerSubtitleStyleState) {
         val sizeSp = if (upperLayerUsesCommentarySize) {
