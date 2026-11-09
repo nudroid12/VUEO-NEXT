@@ -672,10 +672,21 @@ private fun AddonCard(
                 }
 
             addon.descriptor.baseUrl.takeIf { it.isNotBlank() }?.let { address ->
+                var addressExpanded by remember(address) { mutableStateOf(false) }
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Manifest URL:", color = VueoPalette.Muted, fontSize = 10.5.sp)
-                        Text(address, color = Color.White, fontSize = 11.5.sp, softWrap = true)
+                        Text(
+                            address,
+                            color = Color.White,
+                            fontSize = 11.5.sp,
+                            softWrap = addressExpanded,
+                            maxLines = if (addressExpanded) Int.MAX_VALUE else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        TextButton(onClick = { addressExpanded = !addressExpanded }) {
+                            Text(if (addressExpanded) "Show less" else "Show full URL", fontSize = 10.5.sp)
+                        }
                     }
                     IconButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
