@@ -47,7 +47,19 @@ fun TvSourceScreen(
 
     val bundle = discovery?.bundle
     val searching = discovery?.searching ?: discoveryRunning
-    val progress = discovery?.progress ?: "Starting source discovery…"
+    val scanStart = discovery?.scanBudgetStartMs ?: 0L
+    val scanBudget = discovery?.scanBudgetMs ?: 0L
+    var scanElapsed by remember(scanStart, scanBudget) { mutableStateOf(0L) }
+    LaunchedEffect(scanStart, scanBudget) {
+        if (scanStart > 0L && scanBudget > 0L) {
+            while (true) {
+                scanElapsed = (android.os.SystemClock.elapsedRealtime() - scanStart).coerceIn(0L, scanBudget)
+                kotlinx.coroutines.delay(250L)
+            }
+        }
+    }
+    val progress = (discovery?.progress ?: "Starting source discovery…") +
+        if (scanStart > 0L && scanBudget > 0L) " • ${scanElapsed / 1000}/${scanBudget / 1000}s" else ""
     val rawCount = discovery?.rawCount ?: 0
     val notice = discovery?.notice
     val firstResultMs = discovery?.firstResultMs
@@ -92,6 +104,7 @@ fun TvSourceScreen(
             currentProviders.filter { it !in providerOrder && it !in loadingProviders } +
             completedProviders.filter { it !in providerOrder && it !in loadingProviders && it !in currentProviders })
             .plus(cancelledProviders).plus(skippedProviders)
+            .filter { it in loadingProviders || it in currentProviders }
             .distinct()
             .sortedBy { provider ->
                 when {

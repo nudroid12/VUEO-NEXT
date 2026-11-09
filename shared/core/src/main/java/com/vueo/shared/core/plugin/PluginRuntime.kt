@@ -197,6 +197,7 @@ suspend fun discoverProgressive(
     forceRefresh: Boolean = false,
     animeContent: Boolean = false,
     providerNameFilter: String? = null,
+    onScanBudget: (Long, Long) -> Unit = { _, _ -> },
     onProviderExecution: (String, Boolean) -> Unit = { _, _ -> },
     onProgress: suspend (PluginDiscoveryProgress) -> Unit,
 ): PluginDiscoveryResult =
@@ -538,6 +539,7 @@ suspend fun discoverProgressive(
                     }
                 }
 
+            runCatching { onScanBudget(android.os.SystemClock.elapsedRealtime(), sourceScanBudgetMs) }
             val completedWithinBudget =
                 withTimeoutOrNull(
                     sourceScanBudgetMs
@@ -567,6 +569,7 @@ suspend fun discoverProgressive(
                 }
             }
 
+            runCatching { onScanBudget(0L, 0L) }
             val result =
                 mutex.withLock {
                     buildDiscoveryResult(

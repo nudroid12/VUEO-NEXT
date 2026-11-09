@@ -654,13 +654,7 @@ private fun SourceFilterRow(
                 add(
                     SourceChip(
                         id = provider,
-                        label = when {
-                            provider in state.cancelledProviders -> "${sourceProviderDisplayName(provider)} • Cancelled"
-                            provider in state.skippedProviders -> "${sourceProviderDisplayName(provider)} • Skipped"
-                            provider !in state.loadingProviders ->
-                                "${sourceProviderDisplayName(provider)} (${state.rankedSources.count { sourceProviderKey(it) == provider }})"
-                            else -> sourceProviderDisplayName(provider)
-                        },
+                        label = sourceProviderDisplayName(provider),
                         selected = state.selectedProvider == provider,
                         loading = provider in state.runningProviders,
                         waiting = provider in state.loadingProviders && provider !in state.runningProviders,

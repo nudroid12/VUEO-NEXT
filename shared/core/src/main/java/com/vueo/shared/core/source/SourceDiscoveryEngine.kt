@@ -131,6 +131,8 @@ class SourceDiscoveryEngine(
             .distinct()
             .toList()
         val loadingProviders = linkedSetOf<String>()
+        var scanBudgetStartMs = 0L
+        var scanBudgetMs = 0L
         val runningProviders = linkedSetOf<String>()
         val completedSourceProviders = linkedSetOf<String>()
         val cancelledProviders = linkedSetOf<String>()
@@ -359,6 +361,8 @@ class SourceDiscoveryEngine(
                     activityLog = activityLog.toList(),
                     loadingProviders = loadingProviderSnapshot(),
                     runningProviders = synchronized(loadingProviders) { runningProviders.toList() },
+                    scanBudgetStartMs = scanBudgetStartMs,
+                    scanBudgetMs = scanBudgetMs,
                     completedSourceProviders = synchronized(loadingProviders) { completedSourceProviders.toList() },
                     plannedSourceProviders = plannedSourceProviders,
                     cancelledProviders = synchronized(loadingProviders) { cancelledProviders.toList() },
@@ -523,6 +527,12 @@ class SourceDiscoveryEngine(
                 val result = discoverPlugins(
                     request = request,
                     configuredPluginProviders = configuredPluginProviders,
+                    onScanBudget = { start, budget ->
+                        scanBudgetStartMs = start
+                        scanBudgetMs = budget
+                        executionEvents.trySend("" to false)
+                        Unit
+                    },
                     onProviderExecution = { provider, running ->
                         // Constant-time enqueue; no UI publication while a provider holds a slot.
                         executionEvents.trySend(provider to running)
@@ -602,6 +612,8 @@ class SourceDiscoveryEngine(
                 )
                 result
             } finally {
+                scanBudgetStartMs = 0L
+                scanBudgetMs = 0L
                 executionEvents.close()
                 withContext(kotlinx.coroutines.NonCancellable) { executionObserver.join() }
                 finishUnattempted(configuredPluginProviders.filter { it !in skippedProviders }, skipped = false)
@@ -748,6 +760,7 @@ class SourceDiscoveryEngine(
         request: SourceDiscoveryRequest,
         configuredPluginProviders: List<String>,
         onSkipped: (String) -> Unit,
+        onScanBudget: (Long, Long) -> Unit,
         onProviderExecution: (String, Boolean) -> Unit,
         onProgress: suspend (PluginDiscoveryResult, Int, Int) -> Unit,
         forceRefresh: Boolean,
@@ -806,6 +819,7 @@ class SourceDiscoveryEngine(
                 mediaOriginalLanguage = item.originalLanguage,
                 animeContent = com.vueo.shared.core.media.AnimeMediaPolicy.isAnime(item),
                 providerNameFilter = request.sourceProviderName,
+                onScanBudget = onScanBudget,
                 onProviderExecution = onProviderExecution,
                 forceRefresh = forceRefresh,
             ) { progress ->
@@ -887,6 +901,8 @@ data class SourceDiscoverySnapshot(
     val sourcesStopped: Boolean = false,
     val completedSourceProviders: List<String> = emptyList(),
     val plannedSourceProviders: List<String> = emptyList(),
+    val scanBudgetStartMs: Long = 0L,
+    val scanBudgetMs: Long = 0L,
     val runningProviders: List<String> = emptyList(),
     val cancelledProviders: List<String> = emptyList(),
     val skippedProviders: List<String> = emptyList(),
