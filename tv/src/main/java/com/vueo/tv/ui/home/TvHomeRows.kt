@@ -659,6 +659,9 @@ private fun TvModernHomeRow(
     val currentActive by rememberUpdatedState(active)
     val currentRouteReturnPending by rememberUpdatedState(routeReturnPending)
     val suppressRouteBringIntoView by rememberUpdatedState(!active || routeReturnPending)
+    val verticalEntryViewportState = remember(row.key) { mutableStateOf(false) }
+    var preserveVerticalEntryViewport by verticalEntryViewportState
+
     val density = LocalDensity.current
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
@@ -687,6 +690,18 @@ private fun TvModernHomeRow(
                 // Covered-route handoff preserves the captured viewport. Ordinary
                 // Left/Right and Up/Down still use Nuvio's existing alignment.
                 if (suppressRouteBringIntoView) return 0f
+                if (verticalEntryViewportState.value) {
+                    // Up/Down only reveals clipped content; it must not re-anchor
+                    // an already visible poster to the start of this row.
+                    val extent = kotlin.math.abs(size)
+                    return when {
+                        extent > containerSize -> offset
+                        offset < 0f -> offset
+                        offset + extent > containerSize -> offset + extent - containerSize
+                        else -> 0f
+                    }
+                }
+
                 // Nuvio's LTR leading-edge alignment. The focused poster
                 // scrolls to the left anchor even when already fully visible.
                 // Account for cards wider than the available viewport.
@@ -752,6 +767,12 @@ private fun TvModernHomeRow(
         }
         if (!currentContentFocusEnabled) return@LaunchedEffect
         val targetIndex = resolveTargetIndex() ?: return@LaunchedEffect
+        preserveVerticalEntryViewport = !target.routeReturn
+        val visibleTarget = rowState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+        val targetFullyVisible = visibleTarget != null &&
+            visibleTarget.offset >= rowState.layoutInfo.viewportStartOffset &&
+            visibleTarget.offset + visibleTarget.size <= rowState.layoutInfo.viewportEndOffset
+
         val entries = if(target.cardKey != null) currentRow.entries else row.entries
         val restoreIndex = target.restoreFirstCardKey?.let { key ->
             entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
@@ -760,7 +781,8 @@ private fun TvModernHomeRow(
         val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
         val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
             rowState.firstVisibleItemScrollOffset == restoreOffset
-        if (!alreadyAnchored && (target.routeReturn || !rowState.isScrollInProgress)) {
+        if (!alreadyAnchored && (target.routeReturn || !targetFullyVisible) &&
+            (target.routeReturn || !rowState.isScrollInProgress)) {
             traceHome {
                 "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
@@ -847,6 +869,13 @@ private fun TvModernHomeRow(
                     state = rowState,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.DirectionLeft || event.key == Key.DirectionRight)) {
+                                preserveVerticalEntryViewport = false
+                            }
+                            false
+                        }
                         .focusRequester(rowFocusRequester)
                         .focusRestorer {
                             // Match Nuvio: restore the last focused card in this

@@ -1,8 +1,6 @@
-# Cast / Production / Network title results tabs
-Based on app repo65, changes only TvEntityResultsScreen.kt. This is the title grid after opening an actor/company/network, not the detail-page Cast row.
+# Home vertical row entry viewport
+Based on repo65. Only TvHomeRows.kt changes. Up/Down keeps the horizontal viewport when its saved target poster is fully visible. BringIntoView uses minimal reveal during vertical entry instead of left anchoring. Explicit Left/Right resets to existing leading-edge behavior. Covered-route return handling remains prioritized.
 
-Selected Newest/Popular uses white background, dark text, no tick. Focus activates sorting immediately. Down is handled explicitly: wait for sort preparation to finish, scroll current grid to first poster, wait for layout and request focus (bounded six frame attempts). Cancel on tab focus changes/hidden screen; failed focus is logged as ENTITY_RESULTS grid_focus_failed. Existing automatic restoration now checks Boolean focus success rather than absence of an exception.
+Both pre-focus scroll and post-focus BringIntoView are addressed. No image URL/cache, catalog order or hero timing change. Selected saved card remains the target; this does not force every row to its first card. Offscreen targets may still require horizontal scrolling.
 
-Apply CHANGES.diff with git apply, or copy the full source file. Independent of the prior detail-page Cast row patch; this does not undo it. Existing asynchronous sorting and filtering remain.
-
-Static source checks, git apply --check against repo65 and ZIP CRC passed. Android compilation and on-device DPAD tests not available. Verify Cast, Production and Network: Newest/Popular focus switching; Down after switching; Down after scrolling far; return from poster details.
+Apply CHANGES.diff via git apply (recommended if later Home edits exist), or copy included source file over repo65. Static checks, patch applicability and ZIP CRC only. Android build and device DPAD verification not run. Check down/up into visible saved card, offscreen saved card, Left/Right, and return from details.
