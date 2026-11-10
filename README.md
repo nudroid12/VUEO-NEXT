@@ -1,4 +1,6 @@
-# TV source status adaptive wrapping
-Based on repo65. Only TvSourcePresentation.kt changes. Measure the complete status using actual layout width and inherited font/style. If it fits, keep one line. If not, move the trailing found count plus elapsed/budget together to a separate non-wrapping line. Also handles budget-only progress when found is omitted. On unusually narrow layouts, header can use two lines and footer ellipsizes as one unit.
+# TV source status — wrap all fields as units
+Replaces the previous adaptive-wrap patch. Only TvSourcePresentation.kt changes. Every bullet-separated field (Searching, Addons 1/1, Providers 22/40, 15 found, 28/135s) is indivisible. Greedy line packing measures complete candidates with the rendered style and layout width, including font scale. All fields stay on one line when they fit; whole fields move to following lines when necessary. Separators are inserted within each resulting line, never at line boundaries. A single field wider than the entire viewport ellipsizes instead of breaking internally.
 
-No ranking, discovery, timeout, timer or provider-tab changes. Apply CHANGES.diff with git apply, or copy included source file. Static pattern/source checks, patch applicability and ZIP CRC passed. Android build and on-device layout validation not run.
+Rankings, source ordering, discovery and timer behavior unchanged. Copy included source, or apply CHANGES.diff against repo65. AFTER_PREVIOUS_PATCH.diff is for the previous Source Status Adaptive Wrap patch; use only one diff.
+
+Validation: scoped diff checks, both patch baselines and ZIP CRC. Android build and TV visual verification not run.

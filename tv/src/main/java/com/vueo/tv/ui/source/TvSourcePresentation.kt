@@ -449,31 +449,35 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
     val statusColor = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted
     val statusStyle = LocalTextStyle.current.copy(fontSize = 11.sp, lineHeight = 16.sp)
     val textMeasurer = rememberTextMeasurer()
-    // Keep the found count and budget together. Measure using the same style
-    // and available width as the rendered text, including current font scaling.
-    val statusParts = remember(statusText) {
-        Regex("""^(.*?)(?:\s*•\s*)(\d+ found(?:\s*•\s*\d+/\d+s)?|\d+/\d+s)$""")
-            .matchEntire(statusText)?.let { it.groupValues[1] to it.groupValues[2] }
+    // Every bullet-separated status field is indivisible: wrap between fields,
+    // never between a count and its label or within the elapsed/budget timer.
+    val statusUnits = remember(statusText) {
+        statusText.split(Regex("""\s*[•·]\s*""")).map(String::trim).filter(String::isNotEmpty)
     }
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        val singleLineWidth = textMeasurer.measure(
-            text = statusText,
-            style = statusStyle,
-            softWrap = false,
-            maxLines = 1,
-        ).size.width
-        if (statusParts != null && singleLineWidth > constraints.maxWidth) {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = statusParts.first,
-                    color = statusColor,
+        val statusLines = buildList {
+            var line = ""
+            for (unit in statusUnits) {
+                val candidate = if (line.isEmpty()) unit else "$line • $unit"
+                val width = textMeasurer.measure(
+                    text = candidate,
                     style = statusStyle,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
+                    softWrap = false,
+                    maxLines = 1,
+                ).size.width
+                if (line.isNotEmpty() && width > constraints.maxWidth) {
+                    add(line)
+                    line = unit
+                } else {
+                    line = candidate
+                }
+            }
+            if (line.isNotEmpty()) add(line)
+        }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            statusLines.forEach { line ->
                 Text(
-                    text = statusParts.second,
+                    text = line,
                     color = statusColor,
                     style = statusStyle,
                     softWrap = false,
@@ -482,15 +486,6 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
                     textAlign = TextAlign.Center,
                 )
             }
-        } else {
-            Text(
-                text = statusText,
-                color = statusColor,
-                style = statusStyle,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 
