@@ -1,0 +1,115 @@
+--- a/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
+@@ -7,6 +7,7 @@
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
++import androidx.compose.foundation.focusGroup
+ import androidx.compose.foundation.focusable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+@@ -97,6 +98,11 @@
+     val preparing = preparedSortKey !== sortKey
+     val busy = loading || preparing
+     val failed = loadFailed || preparationFailed
++    val gridState = rememberLazyGridState()
++    var gridHasFocus by remember(requestKey) { mutableStateOf(false) }
++    var publishedOrder by remember(requestKey) { mutableStateOf(resultOrder) }
++    var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
++
+ 
+     LaunchedEffect(loadKey) {
+         loading = true
+@@ -138,7 +144,10 @@
+         }
+     }
+ 
+-    LaunchedEffect(sortKey) {
++    LaunchedEffect(sortKey, gridHasFocus) {
++        // Keep the currently browsed catalog stable while posters have focus.
++        // New batches remain in results and are prepared after leaving the grid.
++        if (gridHasFocus) return@LaunchedEffect
+         val inputResults = results
+         val inputOrder = resultOrder
+         preparationFailed = false
+@@ -148,7 +157,22 @@
+                     SearchOrchestrator.orderEntityResults(inputResults, inputOrder)
+                 }
+             }
+-            if (latestRequestKey === requestKey && latestSortKey === sortKey) orderedResults = prepared
++            if (latestRequestKey === requestKey && latestSortKey === sortKey) {
++                val orderChanged = publishedOrder != inputOrder
++                // Publish the list and its viewport reset in the same UI turn.
++                // requestScrollToItem overrides lazy-grid key anchoring on the
++                // next remeasure, unlike an earlier scroll of the OLD list.
++                orderedResults = prepared
++                if (orderChanged) {
++                    gridState.requestScrollToItem(0)
++                    focusedMediaKey = null
++                }
++                publishedOrder = inputOrder
++                withFrameNanos { }
++                PerformanceDiagnostics.captureRuntimeEvent(
++                    "ENTITY_RESULTS platform=tv event=sort_published order=$inputOrder count=${prepared.size} reset=$orderChanged",
++                )
++            }
+         } catch (cancelled: kotlinx.coroutines.CancellationException) {
+             throw cancelled
+         } catch (error: Exception) {
+@@ -166,13 +190,6 @@
+     val popularRequester = remember(target) { FocusRequester() }
+     val selectedOrderRequester =
+         if (resultOrder == EntityResultOrder.NEWEST) newestRequester else popularRequester
+-    val gridState = rememberLazyGridState()
+-    var scrolledOrder by remember(target) { mutableStateOf(resultOrder) }
+-    LaunchedEffect(resultOrder) {
+-        if (scrolledOrder != resultOrder) gridState.scrollToItem(0)
+-        scrolledOrder = resultOrder
+-    }
+-    var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
+     val resultKeys = remember(orderedResults) {
+         orderedResults.map { "${it.type}:${it.id}" }
+     }
+@@ -189,15 +206,17 @@
+     val latestActive by androidx.compose.runtime.rememberUpdatedState(active)
+     LaunchedEffect(active, enterGridPending, preparing, resultKeys, resultOrder) {
+         if (!active || !enterGridPending || preparing || resultKeys.isEmpty()) return@LaunchedEffect
+-        // The sorted first item may have moved or been disposed by the lazy grid.
+-        gridState.scrollToItem(0)
++        // Focus the published viewport; Down must not reset catalog position.
++        withFrameNanos { }
++        val entryIndex = gridState.firstVisibleItemIndex.coerceIn(0, resultKeys.lastIndex)
++        val entryRequester = requesters[resultKeys[entryIndex]] ?: return@LaunchedEffect
+         repeat(6) {
+             withFrameNanos { }
+             if (!latestActive || (!newestFocused && !popularFocused)) {
+                 enterGridPending = false
+                 return@LaunchedEffect
+             }
+-            if (runCatching { firstRequester.requestFocus() }.getOrDefault(false)) {
++            if (runCatching { entryRequester.requestFocus() }.getOrDefault(false)) {
+                 enterGridPending = false
+                 return@LaunchedEffect
+             }
+@@ -209,8 +228,8 @@
+     }
+ 
+ 
+-    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused, enterGridPending) {
+-        if (!active || busy || enterGridPending || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
++    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused, enterGridPending, gridHasFocus) {
++        if (!active || gridHasFocus || busy || enterGridPending || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
+         val restoreIndex = latestFocusedMediaKey?.let(resultKeys::indexOf)?.takeIf { it >= 0 } ?: 0
+         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
+             gridState.scrollToItem(restoreIndex)
+@@ -319,7 +338,9 @@
+                 LazyVerticalGrid(
+                     columns = GridCells.Fixed(ENTITY_COLUMNS),
+                     state = gridState,
+-                    modifier = Modifier.fillMaxSize(),
++                    modifier = Modifier.fillMaxSize()
++                        .onFocusChanged { gridHasFocus = it.hasFocus }
++                        .focusGroup(),
+                     contentPadding = PaddingValues(
+                         start = 68.dp,
+                         end = 52.dp,

@@ -1,6 +1,8 @@
-# Home vertical row entry viewport
-Based on repo65. Only TvHomeRows.kt changes. Up/Down keeps the horizontal viewport when its saved target poster is fully visible. BringIntoView uses minimal reveal during vertical entry instead of left anchoring. Explicit Left/Right resets to existing leading-edge behavior. Covered-route return handling remains prioritized.
+# Entity catalog ordering and focus stability
+For Cast/Production/Network TITLE RESULTS screens, based on repo65 plus Entity Tabs Grid Focus Fix. Replaces the previous entity-screen patch. Only TvEntityResultsScreen.kt changes. White selected Newest/Popular, no tick, and focus-driven tab selection retained.
 
-Both pre-focus scroll and post-focus BringIntoView are addressed. No image URL/cache, catalog order or hero timing change. Selected saved card remains the target; this does not force every row to its first card. Offscreen targets may still require horizontal scrolling.
+Ordering is prepared off Main. New list and sort-reset request are published together; requestScrollToItem overrides lazy-grid key anchoring at remeasure. Removes independent pre-sort scrolling. Down waits for preparation and focuses the current viewport's first item, without scroll-to-zero. Grid focus is tracked so background result batches do not reorder a catalog during browsing; pending results are prepared on leaving the grid. Automatic focus restoration does not run while the grid already has focus. Failed focus and sort publication have ENTITY_RESULTS diagnostics.
 
-Apply CHANGES.diff via git apply (recommended if later Home edits exist), or copy included source file over repo65. Static checks, patch applicability and ZIP CRC only. Android build and device DPAD verification not run. Check down/up into visible saved card, offscreen saved card, Left/Right, and return from details.
+Apply CHANGES.diff to repo65 OR AFTER_PREVIOUS_PATCH.diff after the previous entity-screen patch, not both. Alternatively copy included production file. Unrelated player/Home/backend patches unchanged. This file serves ACTOR, COMPANY and NETWORK.
+
+Validation: scoped source checks, both patch baselines and ZIP CRC. No Android build/emulator/device validation available. Verify Popular/Newest first posters before and after Down, rapid tab switches + Down, Left/Right and grid scrolling, return from details, and same flows for company/network.

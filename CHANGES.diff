@@ -1,68 +1,216 @@
---- a/tv/src/main/java/com/vueo/tv/ui/home/TvHomeRows.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/home/TvHomeRows.kt
-@@ -659,6 +659,9 @@
-     val currentActive by rememberUpdatedState(active)
-     val currentRouteReturnPending by rememberUpdatedState(routeReturnPending)
-     val suppressRouteBringIntoView by rememberUpdatedState(!active || routeReturnPending)
-+    val verticalEntryViewportState = remember(row.key) { mutableStateOf(false) }
-+    var preserveVerticalEntryViewport by verticalEntryViewportState
+--- a/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/search/TvEntityResultsScreen.kt
+@@ -7,6 +7,7 @@
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
++import androidx.compose.foundation.focusGroup
+ import androidx.compose.foundation.focusable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+@@ -32,6 +33,12 @@
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.setValue
++import androidx.compose.runtime.withFrameNanos
++import androidx.compose.ui.input.key.Key
++import androidx.compose.ui.input.key.KeyEventType
++import androidx.compose.ui.input.key.key
++import androidx.compose.ui.input.key.type
++import androidx.compose.ui.input.key.onPreviewKeyEvent
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.focus.FocusRequester
+@@ -91,6 +98,11 @@
+     val preparing = preparedSortKey !== sortKey
+     val busy = loading || preparing
+     val failed = loadFailed || preparationFailed
++    val gridState = rememberLazyGridState()
++    var gridHasFocus by remember(requestKey) { mutableStateOf(false) }
++    var publishedOrder by remember(requestKey) { mutableStateOf(resultOrder) }
++    var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
 +
-     val density = LocalDensity.current
-     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
-     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
-@@ -687,6 +690,18 @@
-                 // Covered-route handoff preserves the captured viewport. Ordinary
-                 // Left/Right and Up/Down still use Nuvio's existing alignment.
-                 if (suppressRouteBringIntoView) return 0f
-+                if (verticalEntryViewportState.value) {
-+                    // Up/Down only reveals clipped content; it must not re-anchor
-+                    // an already visible poster to the start of this row.
-+                    val extent = kotlin.math.abs(size)
-+                    return when {
-+                        extent > containerSize -> offset
-+                        offset < 0f -> offset
-+                        offset + extent > containerSize -> offset + extent - containerSize
-+                        else -> 0f
-+                    }
-+                }
-+
-                 // Nuvio's LTR leading-edge alignment. The focused poster
-                 // scrolls to the left anchor even when already fully visible.
-                 // Account for cards wider than the available viewport.
-@@ -752,6 +767,12 @@
+ 
+     LaunchedEffect(loadKey) {
+         loading = true
+@@ -132,7 +144,10 @@
          }
-         if (!currentContentFocusEnabled) return@LaunchedEffect
-         val targetIndex = resolveTargetIndex() ?: return@LaunchedEffect
-+        preserveVerticalEntryViewport = !target.routeReturn
-+        val visibleTarget = rowState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
-+        val targetFullyVisible = visibleTarget != null &&
-+            visibleTarget.offset >= rowState.layoutInfo.viewportStartOffset &&
-+            visibleTarget.offset + visibleTarget.size <= rowState.layoutInfo.viewportEndOffset
+     }
+ 
+-    LaunchedEffect(sortKey) {
++    LaunchedEffect(sortKey, gridHasFocus) {
++        // Keep the currently browsed catalog stable while posters have focus.
++        // New batches remain in results and are prepared after leaving the grid.
++        if (gridHasFocus) return@LaunchedEffect
+         val inputResults = results
+         val inputOrder = resultOrder
+         preparationFailed = false
+@@ -142,7 +157,22 @@
+                     SearchOrchestrator.orderEntityResults(inputResults, inputOrder)
+                 }
+             }
+-            if (latestRequestKey === requestKey && latestSortKey === sortKey) orderedResults = prepared
++            if (latestRequestKey === requestKey && latestSortKey === sortKey) {
++                val orderChanged = publishedOrder != inputOrder
++                // Publish the list and its viewport reset in the same UI turn.
++                // requestScrollToItem overrides lazy-grid key anchoring on the
++                // next remeasure, unlike an earlier scroll of the OLD list.
++                orderedResults = prepared
++                if (orderChanged) {
++                    gridState.requestScrollToItem(0)
++                    focusedMediaKey = null
++                }
++                publishedOrder = inputOrder
++                withFrameNanos { }
++                PerformanceDiagnostics.captureRuntimeEvent(
++                    "ENTITY_RESULTS platform=tv event=sort_published order=$inputOrder count=${prepared.size} reset=$orderChanged",
++                )
++            }
+         } catch (cancelled: kotlinx.coroutines.CancellationException) {
+             throw cancelled
+         } catch (error: Exception) {
+@@ -160,13 +190,6 @@
+     val popularRequester = remember(target) { FocusRequester() }
+     val selectedOrderRequester =
+         if (resultOrder == EntityResultOrder.NEWEST) newestRequester else popularRequester
+-    val gridState = rememberLazyGridState()
+-    var scrolledOrder by remember(target) { mutableStateOf(resultOrder) }
+-    LaunchedEffect(resultOrder) {
+-        if (scrolledOrder != resultOrder) gridState.scrollToItem(0)
+-        scrolledOrder = resultOrder
+-    }
+-    var focusedMediaKey by remember(target) { mutableStateOf<String?>(null) }
+     val resultKeys = remember(orderedResults) {
+         orderedResults.map { "${it.type}:${it.id}" }
+     }
+@@ -179,9 +202,34 @@
+     var newestFocused by remember(target) { mutableStateOf(false) }
+     var popularFocused by remember(target) { mutableStateOf(false) }
+     val latestFocusedMediaKey by androidx.compose.runtime.rememberUpdatedState(focusedMediaKey)
+-
+-    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused) {
+-        if (!active || busy || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
++    var enterGridPending by remember(requestKey) { mutableStateOf(false) }
++    val latestActive by androidx.compose.runtime.rememberUpdatedState(active)
++    LaunchedEffect(active, enterGridPending, preparing, resultKeys, resultOrder) {
++        if (!active || !enterGridPending || preparing || resultKeys.isEmpty()) return@LaunchedEffect
++        // Focus the published viewport; Down must not reset catalog position.
++        withFrameNanos { }
++        val entryIndex = gridState.firstVisibleItemIndex.coerceIn(0, resultKeys.lastIndex)
++        val entryRequester = requesters[resultKeys[entryIndex]] ?: return@LaunchedEffect
++        repeat(6) {
++            withFrameNanos { }
++            if (!latestActive || (!newestFocused && !popularFocused)) {
++                enterGridPending = false
++                return@LaunchedEffect
++            }
++            if (runCatching { entryRequester.requestFocus() }.getOrDefault(false)) {
++                enterGridPending = false
++                return@LaunchedEffect
++            }
++        }
++        enterGridPending = false
++        PerformanceDiagnostics.captureRuntimeEvent(
++            "ENTITY_RESULTS platform=tv event=grid_focus_failed order=$resultOrder count=${resultKeys.size}",
++        )
++    }
 +
-         val entries = if(target.cardKey != null) currentRow.entries else row.entries
-         val restoreIndex = target.restoreFirstCardKey?.let { key ->
-             entries.indexOfFirst { it.key == key }.takeIf { it >= 0 }
-@@ -760,7 +781,8 @@
-         val restoreOffset = target.restorePosition?.firstVisibleItemScrollOffset ?: 0
-         val alreadyAnchored = rowState.firstVisibleItemIndex == restoreIndex &&
-             rowState.firstVisibleItemScrollOffset == restoreOffset
--        if (!alreadyAnchored && (target.routeReturn || !rowState.isScrollInProgress)) {
-+        if (!alreadyAnchored && (target.routeReturn || !targetFullyVisible) &&
-+            (target.routeReturn || !rowState.isScrollInProgress)) {
-             traceHome {
-                 "HOME_SCROLL_COMMAND axis=horizontal cause=nuvio_pending_row_focus row=${row.key} " +
-                     "targetCard=$targetIndex from=${rowState.firstVisibleItemIndex}:${rowState.firstVisibleItemScrollOffset}"
-@@ -847,6 +869,13 @@
-                     state = rowState,
-                     modifier = Modifier
-                         .fillMaxWidth()
-+                        .onPreviewKeyEvent { event ->
-+                            if (event.type == KeyEventType.KeyDown &&
-+                                (event.key == Key.DirectionLeft || event.key == Key.DirectionRight)) {
-+                                preserveVerticalEntryViewport = false
++
++    LaunchedEffect(active, resultKeys, busy, newestFocused, popularFocused, enterGridPending, gridHasFocus) {
++        if (!active || gridHasFocus || busy || enterGridPending || newestFocused || popularFocused || resultKeys.isEmpty()) return@LaunchedEffect
+         val restoreIndex = latestFocusedMediaKey?.let(resultKeys::indexOf)?.takeIf { it >= 0 } ?: 0
+         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == restoreIndex }) {
+             gridState.scrollToItem(restoreIndex)
+@@ -190,7 +238,7 @@
+         val focusedKey = latestFocusedMediaKey
+         val restored = focusedKey?.let { key ->
+             requesters[key]?.let { requester ->
+-                runCatching { requester.requestFocus() }.isSuccess
++                runCatching { requester.requestFocus() }.getOrDefault(false)
+             }
+         } == true
+         if (!restored) {
+@@ -240,7 +288,14 @@
+                         leftRequester = FocusRequester.Cancel,
+                         rightRequester = popularRequester,
+                         downRequester = firstRequester,
+-                        onFocusChanged = { newestFocused = it },
++                        onDown = { enterGridPending = true },
++                        onFocusChanged = {
++                            newestFocused = it
++                            if (it) {
++                                enterGridPending = false
++                                resultOrder = EntityResultOrder.NEWEST
 +                            }
-+                            false
-+                        }
-                         .focusRequester(rowFocusRequester)
-                         .focusRestorer {
-                             // Match Nuvio: restore the last focused card in this
++                        },
+                         onClick = { resultOrder = EntityResultOrder.NEWEST },
+                     )
+                     TvEntitySortTab(
+@@ -250,7 +305,14 @@
+                         leftRequester = newestRequester,
+                         rightRequester = FocusRequester.Cancel,
+                         downRequester = firstRequester,
+-                        onFocusChanged = { popularFocused = it },
++                        onDown = { enterGridPending = true },
++                        onFocusChanged = {
++                            popularFocused = it
++                            if (it) {
++                                enterGridPending = false
++                                resultOrder = EntityResultOrder.POPULAR
++                            }
++                        },
+                         onClick = { resultOrder = EntityResultOrder.POPULAR },
+                     )
+                 }
+@@ -276,7 +338,9 @@
+                 LazyVerticalGrid(
+                     columns = GridCells.Fixed(ENTITY_COLUMNS),
+                     state = gridState,
+-                    modifier = Modifier.fillMaxSize(),
++                    modifier = Modifier.fillMaxSize()
++                        .onFocusChanged { gridHasFocus = it.hasFocus }
++                        .focusGroup(),
+                     contentPadding = PaddingValues(
+                         start = 68.dp,
+                         end = 52.dp,
+@@ -346,6 +410,7 @@
+     leftRequester: FocusRequester,
+     rightRequester: FocusRequester,
+     downRequester: FocusRequester,
++    onDown: () -> Unit,
+     onClick: () -> Unit,
+     onFocusChanged: (Boolean) -> Unit,
+ ) {
+@@ -360,14 +425,20 @@
+                 right = rightRequester
+                 down = downRequester
+             }
++            .onPreviewKeyEvent { event ->
++                if (event.key == Key.DirectionDown) {
++                    if (event.type == KeyEventType.KeyDown) onDown()
++                    true
++                } else false
++            }
+             .onFocusChanged {
+                 focused = it.isFocused
+                 onFocusChanged(it.isFocused)
+             }
+             .background(
+                 when {
++                    selected -> Color.White
+                     focused -> TvDesign.SurfaceRaised
+-                    selected -> Color.White.copy(alpha = .12f)
+                     else -> Color.White.copy(alpha = .04f)
+                 },
+                 shape,
+@@ -387,8 +458,8 @@
+         contentAlignment = Alignment.Center,
+     ) {
+         Text(
+-            text = if (selected) "✓ $label" else label,
+-            color = TvDesign.White,
++            text = label,
++            color = if (selected) Color.Black else TvDesign.White,
+             fontSize = 12.sp,
+             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+         )
