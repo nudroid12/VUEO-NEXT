@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -435,22 +438,61 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
         Spacer(Modifier.height(10.dp))
     }
 
-    Text(
-        text = when {
-            discoveryActive -> state.progress.ifBlank {
-                "Searching • ${state.rankedSources.size} found"
+    val statusText = when {
+        discoveryActive -> state.progress.ifBlank {
+            "Searching • ${state.rankedSources.size} found"
+        }
+        state.rankedSources.isNotEmpty() ->
+            "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
+        else -> "No playable sources"
+    }
+    val statusColor = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted
+    val statusStyle = LocalTextStyle.current.copy(fontSize = 11.sp, lineHeight = 16.sp)
+    val textMeasurer = rememberTextMeasurer()
+    // Keep the found count and budget together. Measure using the same style
+    // and available width as the rendered text, including current font scaling.
+    val statusParts = remember(statusText) {
+        Regex("""^(.*?)(?:\s*•\s*)(\d+ found(?:\s*•\s*\d+/\d+s)?|\d+/\d+s)$""")
+            .matchEntire(statusText)?.let { it.groupValues[1] to it.groupValues[2] }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val singleLineWidth = textMeasurer.measure(
+            text = statusText,
+            style = statusStyle,
+            softWrap = false,
+            maxLines = 1,
+        ).size.width
+        if (statusParts != null && singleLineWidth > constraints.maxWidth) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = statusParts.first,
+                    color = statusColor,
+                    style = statusStyle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = statusParts.second,
+                    color = statusColor,
+                    style = statusStyle,
+                    softWrap = false,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
-            state.rankedSources.isNotEmpty() ->
-                "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
-            else -> "No playable sources"
-        },
-        color = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = TextAlign.Center,
-    )
+        } else {
+            Text(
+                text = statusText,
+                color = statusColor,
+                style = statusStyle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
 
     if (state.showEngineDetails) {
         Spacer(Modifier.height(11.dp))
