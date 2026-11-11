@@ -1,92 +1,204 @@
---- a/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
-+++ b/tv/src/main/java/com/vueo/tv/ui/source/TvSourcePresentation.kt
-@@ -12,6 +12,7 @@
- import androidx.compose.foundation.clickable
- import androidx.compose.foundation.layout.Arrangement
- import androidx.compose.foundation.layout.Box
-+import androidx.compose.foundation.layout.BoxWithConstraints
- import androidx.compose.foundation.layout.Column
- import androidx.compose.foundation.layout.PaddingValues
- import androidx.compose.foundation.layout.Row
-@@ -33,6 +34,8 @@
- import androidx.compose.material3.Icon
- import androidx.compose.material3.LinearProgressIndicator
- import androidx.compose.material3.Text
-+import androidx.compose.material3.LocalTextStyle
-+import androidx.compose.ui.text.rememberTextMeasurer
- import androidx.compose.runtime.DisposableEffect
- import androidx.compose.runtime.rememberCoroutineScope
- import androidx.compose.runtime.rememberUpdatedState
-@@ -435,22 +438,56 @@
-         Spacer(Modifier.height(10.dp))
+--- a/tv/src/main/java/com/vueo/tv/watchnext/TvWatchNextPublisher.kt
++++ b/tv/src/main/java/com/vueo/tv/watchnext/TvWatchNextPublisher.kt
+@@ -174,9 +174,18 @@
+             .setInternalProviderId(internalId)
+             .setContentId(entry.mediaKey)
+ 
+-        entry.media.poster
+-            ?.takeIf { it.isNotBlank() }
+-            ?.let { builder.setPosterArtUri(Uri.parse(it)) }
++        val backdrop = entry.media.background?.takeIf { it.isNotBlank() }
++        val artwork = backdrop ?: entry.media.poster?.takeIf { it.isNotBlank() }
++        if (artwork != null) {
++            builder.setPosterArtUri(Uri.parse(artwork))
++            builder.setPosterArtAspectRatio(
++                if (backdrop != null) {
++                    TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
++                } else {
++                    TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3
++                },
++            )
++        }
+ 
+         if (!isNextEpisode && entry.durationMs > 0L) {
+             builder
+@@ -253,6 +262,7 @@
+         desired: Map<String, LibraryPlaybackEntry>,
+     ): String {
+         val payload = buildString {
++            append("watch-next-artwork-v2|")
+             append(profileId)
+             append('\n')
+             desired.toSortedMap().forEach { (internalId, entry) ->
+@@ -266,6 +276,8 @@
+                 append('|')
+                 append(entry.media.name)
+                 append('|')
++                append(entry.media.background.orEmpty())
++                append('|')
+                 append(entry.media.poster.orEmpty())
+                 append('|')
+                 append(entry.media.description.orEmpty())
+--- a/tv/src/main/java/com/vueo/tv/channels/TvHomeChannels.kt
++++ b/tv/src/main/java/com/vueo/tv/channels/TvHomeChannels.kt
+@@ -6,19 +6,10 @@
+ import android.net.Uri
+ import android.os.Build
+ import android.util.Log
+-import androidx.core.content.ContextCompat
+-import androidx.core.graphics.drawable.toBitmap
+-import androidx.tvprovider.media.tv.PreviewChannel
+ import androidx.tvprovider.media.tv.PreviewChannelHelper
+-import androidx.tvprovider.media.tv.PreviewProgram
+-import androidx.tvprovider.media.tv.TvContractCompat
+ import com.vueo.shared.core.media.MediaItem
+-import com.vueo.shared.core.media.MediaTypePolicy
+ import com.vueo.shared.core.storage.LibraryStore
+ import com.vueo.shared.core.storage.ProfileStore
+-import com.vueo.shared.core.dna.UserDnaPreferences
+-import com.vueo.tv.MainActivity
+-import com.vueo.tv.R
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.SupervisorJob
+@@ -26,7 +17,7 @@
+ import org.json.JSONObject
+ import org.json.JSONArray
+ 
+-/** Two stable app channels; profile switches replace programs, never channel IDs or visibility. */
++/** Removes the app channels published by older VUEO builds. */
+ object TvHomeChannels {
+     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+     private val lock = Any()
+@@ -34,26 +25,11 @@
+     fun accepts(uri: Uri?): Boolean = uri?.scheme == "vueo" && uri.host == "channel"
+     private fun key(item: MediaItem) = "${item.type}:${item.id}"
+     private fun prefs(context: Context) = context.getSharedPreferences("vueo_settings", Context.MODE_PRIVATE)
+-    private fun uri(profile: String, kind: String, media: MediaItem? = null): Uri = Uri.Builder()
+-        .scheme("vueo").authority("channel").appendQueryParameter("profile", profile)
+-        .appendQueryParameter("kind", kind).apply { media?.let { appendQueryParameter("media", key(it)) } }.build()
+-
+-    /** Called with the already-visible, profile-filtered For You feed; never loads recommendations. */
+-    fun updateForYou(context: Context, profile: String, items: List<MediaItem>) {
+-        val app = context.applicationContext
+-        scope.launch { guarded {
+-            synchronized(lock) {
+-                if (ProfileStore(app).activeProfileId() != profile) return@synchronized
+-                prefs(app).edit().putLong(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_at_v1"), System.currentTimeMillis()).putString(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_v1"), items.take(24).map { it.copy(episodes = emptyList()) }.toChannelJson().toString()).apply()
+-                syncLocked(app)
+-            }
+-        } }
+-    }
+     fun schedule(context: Context, onComplete: () -> Unit = {}) {
+         val app = context.applicationContext
+-        scope.launch { try { guarded { synchronized(lock) { syncLocked(app) } } } finally { onComplete() } }
++        scope.launch { try { guarded { synchronized(lock) { removeLegacyChannels(app) } } } finally { onComplete() } }
+     }
+-    private fun guarded(block: () -> Unit) { try { block() } catch (e: Exception) { Log.w("VueoHomeChannels", "Channel sync failed; retry on next app update", e) } }
++    private fun guarded(block: () -> Unit) { try { block() } catch (e: Exception) { Log.w("VueoHomeChannels", "Legacy channel removal failed; retry on next launch", e) } }
+     private fun cached(context: Context, profile: String): List<MediaItem> = runCatching {
+         val age = System.currentTimeMillis() - prefs(context).getLong(ProfileStore.scopedPreferenceKey(profile, "launcher_for_you_at_v1"), 0L)
+         if (age !in 0L..86_400_000L) return@runCatching emptyList()
+@@ -70,59 +46,14 @@
+         items.firstOrNull { key(it) == uri.getQueryParameter("media") }
      }
  
--    Text(
--        text = when {
--            discoveryActive -> state.progress.ifBlank {
--                "Searching • ${state.rankedSources.size} found"
+-    private fun syncLocked(context: Context) {
++    private fun removeLegacyChannels(context: Context) {
+         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+-        val profiles = ProfileStore(context).apply { ensureDefaultProfile() }
+-        val profile = profiles.activeProfileId()
+-        val library = LibraryStore(context)
+-        val watchlist = library.watchlist().take(24)
+-        val personalized = UserDnaPreferences(context).shouldPersonalizeRecommendations(profile)
+-        val limit = profiles.kidsAgeLimit()
+-        val watched = library.history().filter(com.vueo.shared.core.storage.LibraryViewingPolicy::isMeaningfullyWatched).map { key(it.media) }.toSet() + library.traktMarkedWatchedMedia().map(::key)
+-        val forYou = if (personalized) cached(context, profile).filter { item ->
+-            key(item) !in watched && (limit == null || com.vueo.shared.core.profile.KidsContentPolicy.allows(item.certification, limit))
+-        }.take(24) else emptyList()
++
+         val helper = PreviewChannelHelper(context)
+-        val existing = helper.allChannels.associateBy { it.internalProviderId }
+-        listOf("watchlist" to watchlist, "for_you" to forYou).forEachIndexed { index, (kind, items) ->
+-            val internalId = PREFIX + kind
+-            val known = existing[internalId]
+-            val channelId = known?.id ?: run {
+-                val logo = requireNotNull(ContextCompat.getDrawable(context, R.drawable.vueo_tv_logo)).toBitmap(256, 256)
+-                val channel = PreviewChannel.Builder().setDisplayName(if (kind == "watchlist") "Watchlist" else "For You")
+-                    .setDescription("VUEO ${if (kind == "watchlist") "saved titles" else "personal recommendations"}")
+-                    .setInternalProviderId(internalId)
+-                    .setAppLinkIntent(Intent(Intent.ACTION_VIEW, Uri.parse("vueo://channel?kind=$kind"), context, MainActivity::class.java))
+-                    .setLogo(logo).build()
+-                helper.publishChannel(channel).also { id ->
+-                    // Only creation requests default visibility; never re-enable a hidden channel.
+-                    if (id >= 0 && index == 0) TvContractCompat.requestChannelBrowsable(context, id)
+-                }
++        for (channel in helper.allChannels) {
++            when (channel.internalProviderId) {
++                PREFIX + "watchlist", PREFIX + "for_you" -> helper.deletePreviewChannel(channel.id)
+             }
+-            if (channelId < 0) return@forEachIndexed
+-            val rows = mutableMapOf<String, Long>()
+-            context.contentResolver.query(TvContractCompat.buildPreviewProgramsUriForChannel(channelId),
+-                arrayOf("_id", "internal_provider_id"), null, null, null)?.use { cursor ->
+-                while (cursor.moveToNext()) rows[cursor.getString(1).orEmpty()] = cursor.getLong(0)
 -            }
--            state.rankedSources.isNotEmpty() ->
--                "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
--            else -> "No playable sources"
--        },
--        color = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted,
--        fontSize = 11.sp,
--        lineHeight = 16.sp,
--        maxLines = 2,
--        overflow = TextOverflow.Ellipsis,
--        textAlign = TextAlign.Center,
--    )
-+    val statusText = when {
-+        discoveryActive -> state.progress.ifBlank {
-+            "Searching • ${state.rankedSources.size} found"
-+        }
-+        state.rankedSources.isNotEmpty() ->
-+            "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
-+        else -> "No playable sources"
-+    }
-+    val statusColor = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted
-+    val statusStyle = LocalTextStyle.current.copy(fontSize = 11.sp, lineHeight = 16.sp)
-+    val textMeasurer = rememberTextMeasurer()
-+    // Every bullet-separated status field is indivisible: wrap between fields,
-+    // never between a count and its label or within the elapsed/budget timer.
-+    val statusUnits = remember(statusText) {
-+        statusText.split(Regex("""\s*[•·]\s*""")).map(String::trim).filter(String::isNotEmpty)
-+    }
-+    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-+        val statusLines = buildList {
-+            var line = ""
-+            for (unit in statusUnits) {
-+                val candidate = if (line.isEmpty()) unit else "$line • $unit"
-+                val width = textMeasurer.measure(
-+                    text = candidate,
-+                    style = statusStyle,
-+                    softWrap = false,
-+                    maxLines = 1,
-+                ).size.width
-+                if (line.isNotEmpty() && width > constraints.maxWidth) {
-+                    add(line)
-+                    line = unit
-+                } else {
-+                    line = candidate
-+                }
-+            }
-+            if (line.isNotEmpty()) add(line)
-+        }
-+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-+            statusLines.forEach { line ->
-+                Text(
-+                    text = line,
-+                    color = statusColor,
-+                    style = statusStyle,
-+                    softWrap = false,
-+                    maxLines = 1,
-+                    overflow = TextOverflow.Ellipsis,
-+                    textAlign = TextAlign.Center,
-+                )
-+            }
-+        }
-+    }
+-            items.distinctBy(::key).forEachIndexed { position, media ->
+-                val id = "$PREFIX$profile:$kind:${key(media)}"
+-                val program = PreviewProgram.Builder().setChannelId(channelId).setInternalProviderId(id)
+-                    .setTitle(media.name).setDescription(media.description.orEmpty())
+-                    .setType(if (MediaTypePolicy.isSeries(media.type)) TvContractCompat.PreviewPrograms.TYPE_TV_SERIES else TvContractCompat.PreviewPrograms.TYPE_MOVIE)
+-                    .setWeight(1000 - position)
+-                    .setIntent(Intent(Intent.ACTION_VIEW, uri(profile, kind, media), context, MainActivity::class.java))
+-                    .apply {
+-                        media.poster?.takeIf { it.startsWith("https://") || it.startsWith("http://") }?.let {
+-                            setPosterArtUri(Uri.parse(it))
+-                            setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3)
+-                        }
+-                    }.build()
+-                val previous = rows.remove(id)
+-                if (previous == null) helper.publishPreviewProgram(program) else helper.updatePreviewProgram(previous, program)
+-            }
+-            // Includes stale entries belonging to the previously active profile.
+-            rows.values.forEach(helper::deletePreviewProgram)
+         }
+     }
+ }
+@@ -135,19 +66,6 @@
+     }
+ }
  
-     if (state.showEngineDetails) {
-         Spacer(Modifier.height(11.dp))
+-/** Channel snapshots only need presentation and navigation metadata, never stream data. */
+-private fun List<MediaItem>.toChannelJson(): JSONArray = JSONArray().also { array ->
+-    take(24).forEach { media ->
+-        array.put(JSONObject().put("id", media.id).put("type", media.type).put("name", media.name)
+-            .put("poster", media.poster).put("background", media.background)
+-            .put("description", media.description).put("releaseInfo", media.releaseInfo)
+-            .put("originalTitle", media.originalTitle).put("originalLanguage", media.originalLanguage)
+-            .put("certification", media.certification).put("sourceExtensionId", media.sourceExtensionId)
+-            .put("tmdbId", media.tmdbId).put("genres", JSONArray(media.genres))
+-            .put("catalogSources", JSONArray(media.catalogSources)))
+-    }
+-}
+-
+ private fun JSONArray.toChannelMediaItems(): List<MediaItem> = (0 until minOf(length(), 24)).mapNotNull { index ->
+     val row = optJSONObject(index) ?: return@mapNotNull null
+     val id = row.channelString("id") ?: return@mapNotNull null
+--- a/tv/src/main/java/com/vueo/tv/ui/home/TvHomeScreen.kt
++++ b/tv/src/main/java/com/vueo/tv/ui/home/TvHomeScreen.kt
+@@ -220,7 +220,6 @@
+                 runtime.libraryStore.homeStartupContinueWatching()
+             }
+             retainedState.watchHistory = emptyList()
+-            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, emptyList())
+             retainedState.homeRecommendations = HomeRecommendationSections()
+             retainedState.libraryHydrationProfileId = activeProfileId
+         }
+@@ -299,7 +298,6 @@
+         retainedState.recommendationEngine = currentRecommendationEngine
+         feed.collect { sections ->
+             retainedState.homeRecommendations = sections
+-            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, sections.forYou)
+         }
+     }
+ 

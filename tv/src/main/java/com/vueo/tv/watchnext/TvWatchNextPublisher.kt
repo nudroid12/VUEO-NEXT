@@ -174,9 +174,18 @@ class TvWatchNextPublisher(
             .setInternalProviderId(internalId)
             .setContentId(entry.mediaKey)
 
-        entry.media.poster
-            ?.takeIf { it.isNotBlank() }
-            ?.let { builder.setPosterArtUri(Uri.parse(it)) }
+        val backdrop = entry.media.background?.takeIf { it.isNotBlank() }
+        val artwork = backdrop ?: entry.media.poster?.takeIf { it.isNotBlank() }
+        if (artwork != null) {
+            builder.setPosterArtUri(Uri.parse(artwork))
+            builder.setPosterArtAspectRatio(
+                if (backdrop != null) {
+                    TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
+                } else {
+                    TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3
+                },
+            )
+        }
 
         if (!isNextEpisode && entry.durationMs > 0L) {
             builder
@@ -253,6 +262,7 @@ class TvWatchNextPublisher(
         desired: Map<String, LibraryPlaybackEntry>,
     ): String {
         val payload = buildString {
+            append("watch-next-artwork-v2|")
             append(profileId)
             append('\n')
             desired.toSortedMap().forEach { (internalId, entry) ->
@@ -265,6 +275,8 @@ class TvWatchNextPublisher(
                 append(entry.lastWatchedEpochMs)
                 append('|')
                 append(entry.media.name)
+                append('|')
+                append(entry.media.background.orEmpty())
                 append('|')
                 append(entry.media.poster.orEmpty())
                 append('|')

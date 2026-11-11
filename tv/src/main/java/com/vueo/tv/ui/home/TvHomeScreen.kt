@@ -220,7 +220,6 @@ fun TvHomeScreen(
                 runtime.libraryStore.homeStartupContinueWatching()
             }
             retainedState.watchHistory = emptyList()
-            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, emptyList())
             retainedState.homeRecommendations = HomeRecommendationSections()
             retainedState.libraryHydrationProfileId = activeProfileId
         }
@@ -299,7 +298,6 @@ fun TvHomeScreen(
         retainedState.recommendationEngine = currentRecommendationEngine
         feed.collect { sections ->
             retainedState.homeRecommendations = sections
-            com.vueo.tv.channels.TvHomeChannels.updateForYou(traktContext.applicationContext, activeProfileId, sections.forYou)
         }
     }
 
