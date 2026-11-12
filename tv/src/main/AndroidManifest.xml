@@ -16,10 +16,10 @@
         android:name="com.vueo.shared.core.diagnostics.VueoDiagnosticApplication"
         android:allowBackup="false"
         android:banner="@drawable/vueo_tv_banner_art"
-        android:icon="@mipmap/ic_vueo_tv"
+        android:icon="@drawable/vueo_tv_icon_static"
         android:label="Vueo"
         android:logo="@drawable/vueo_tv_logo"
-        android:roundIcon="@mipmap/ic_vueo_tv_round"
+        android:roundIcon="@drawable/vueo_tv_icon_static_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.VUEOTV">
         <activity
