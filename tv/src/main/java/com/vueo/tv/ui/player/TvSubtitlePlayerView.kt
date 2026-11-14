@@ -302,16 +302,19 @@ internal class TvSubtitlePlayerView(context: Context) : PlayerView(context) {
     private fun displayCues(cues: List<Cue>) {
         prepareTimelineLayout()
         if (layoutRequestKey != null && !layoutReady && !isSmartSubsLayoutPending()) {
-            // Native tracks retain their existing source-position fallback.
-            // AI automatic cues continue through split/stack/padding below instead
-            // of appearing once at raw coordinates before the analysis refresh.
-            val visible = if (!showCommentary && cues.size >= 2) cues.filterNot {
-                TvSubtitleTimelineLoader.isAutomaticText(it) && isFullyParenthesizedCue(it)
-            } else cues
-            managedSubtitleView.setCues(visible)
-            commentarySubtitleView.setCues(emptyList())
-            // Retain the raw group for the refresh when analysis completes.
-            // refreshRenderedCues clears the equality guard before rebuilding it.
+            // Wait for native layout classification before showing text that
+            // may be moved. Cue geometry already known to be fixed can draw now.
+            val fixedCues = cues.filterNot(TvSubtitleTimelineLoader::isAutomaticText)
+            if (lastDisplayedCues != fixedCues) {
+                managedSubtitleView.setCues(fixedCues)
+                lastDisplayedCues = fixedCues
+            }
+            if (lastDisplayedCommentaryCues.isNotEmpty()) {
+                commentarySubtitleView.setCues(emptyList())
+                lastDisplayedCommentaryCues = emptyList()
+            }
+            // Keep the latest complete group so analysis can render it immediately,
+            // even when the video is paused and no new cue callback arrives.
             lastInputCues = cues.toList()
             return
         }
