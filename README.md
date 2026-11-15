@@ -1,6 +1,6 @@
-# TV source status — wrap all fields as units
-Replaces the previous adaptive-wrap patch. Only TvSourcePresentation.kt changes. Every bullet-separated field (Searching, Addons 1/1, Providers 22/40, 15 found, 28/135s) is indivisible. Greedy line packing measures complete candidates with the rendered style and layout width, including font scale. All fields stay on one line when they fit; whole fields move to following lines when necessary. Separators are inserted within each resulting line, never at line boundaries. A single field wider than the entire viewport ellipsizes instead of breaking internally.
+# Preserve valid Season 0 — Mobile and TV
+Based on repo65. Changes shared DetailUpstreamPolicy.kt and StremioAddonExtension.kt. Removes both all-season-zero to season-one rewrites. Explicit nonnegative season values, including zero, take precedence over parsed episode IDs. Missing/negative season may fall back to a nonnegative ID season, including zero. Episode IDs, episode-number rules and sorting remain unchanged.
 
-Rankings, source ordering, discovery and timer behavior unchanged. Copy included source, or apply CHANGES.diff against repo65. AFTER_PREVIOUS_PATCH.diff is for the previous Source Status Adaptive Wrap patch; use only one diff.
+A metadata provider incorrectly labeling ordinary episodes as Season 0 will now retain that label; the app no longer guesses Season 1. Correct such data upstream rather than relabeling valid Specials.
 
-Validation: scoped diff checks, both patch baselines and ZIP CRC. Android build and TV visual verification not run.
+Copy shared/ over repository root, or apply CHANGES.diff for production changes and copy the test file separately. No backend/plugin changes required. JUnit regression tests included for specials-only, conflicting IDs, missing season inferred from ID, and mixed regular/special seasons. Tests not executed: Kotlin compiler/Android Gradle toolchain unavailable. Static scope checks, patch applicability and ZIP CRC validated only.

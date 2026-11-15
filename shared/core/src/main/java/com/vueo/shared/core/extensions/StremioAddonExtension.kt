@@ -451,8 +451,8 @@ private fun JSONArray?.toEpisodeList(): List<EpisodeItem> {
         val rawSeason = item.optInt("season", -1)
         val rawEpisode = item.optInt("episode", -1)
         val season = when {
-            rawSeason > 0 -> rawSeason
-            idSeason != null && idSeason > 0 -> idSeason
+            rawSeason >= 0 -> rawSeason
+            idSeason != null && idSeason >= 0 -> idSeason
             else -> rawSeason
         }
         val episode = when {
@@ -482,17 +482,7 @@ private fun JSONArray?.toEpisodeList(): List<EpisodeItem> {
         )
     }
 
-    val normalized = if (
-        parsed.isNotEmpty() &&
-        parsed.none { it.season > 0 } &&
-        parsed.all { it.season == 0 }
-    ) {
-        parsed.map { it.copy(season = 1) }
-    } else {
-        parsed
-    }
-
-    return normalized.sortedWith(
+    return parsed.sortedWith(
         compareBy<EpisodeItem> { it.season }
             .thenBy { it.episode },
     )

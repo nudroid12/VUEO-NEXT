@@ -28,8 +28,8 @@ object DetailUpstreamPolicy {
 
             episode.copy(
                 season = when {
-                    episode.season > 0 -> episode.season
-                    idSeason != null && idSeason > 0 -> idSeason
+                    episode.season >= 0 -> episode.season
+                    idSeason != null && idSeason >= 0 -> idSeason
                     else -> episode.season
                 },
                 episode = when {
@@ -40,18 +40,8 @@ object DetailUpstreamPolicy {
             )
         }
 
-        val finalEpisodes = if (
-            normalized.isNotEmpty() &&
-            normalized.none { it.season > 0 } &&
-            normalized.all { it.season == 0 }
-        ) {
-            normalized.map { it.copy(season = 1) }
-        } else {
-            normalized
-        }
-
         return media.copy(
-            episodes = finalEpisodes.sortedWith(
+            episodes = normalized.sortedWith(
                 compareBy<EpisodeItem> { it.season }.thenBy { it.episode }
             )
         )
