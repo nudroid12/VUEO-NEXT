@@ -1,5 +1,8 @@
 package com.vueo.tv.settings
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
@@ -66,33 +69,63 @@ internal fun TvDataStorageSettings(
     var status by remember { mutableStateOf<String?>(null) }
     var confirmAction by remember { mutableStateOf<String?>(null) }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        restoreSettingsFocus()
-        uri ?: return@rememberLauncherForActivityResult
+    var backupBusy by remember { mutableStateOf(false) }
+    var backupChoices by remember { mutableStateOf<List<TvLocalBackup>?>(null) }
+    var backupListError by remember { mutableStateOf<String?>(null) }
+    var selectedBackup by remember { mutableStateOf<TvLocalBackup?>(null) }
+
+    fun restoreBackup(uri: Uri) {
+        if (backupBusy) return
+        backupBusy = true
+        status = null
         scope.launch {
-            runCatching { VueoBackupManager.exportToUri(context, uri, includeCredentials) }
-                .onSuccess { status = "Backup created: ${it.valueCount} values across ${it.preferenceGroups} groups." }
-                .onFailure { status = it.message ?: "Unable to create backup." }
-        }
-    }
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        restoreSettingsFocus()
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            runCatching {
+            try {
                 val result = VueoBackupManager.restoreFromUri(context, uri)
                 runtime.reloadPersistentConfiguration()
-                result
+                TvDesign.applyTheme(runtime.settingsStore.appTheme())
+                TvDesign.applyAccent(runtime.settingsStore.appAccent())
+                includeCredentials = runtime.settingsStore.includeCredentialsInBackup()
+                status = "Backup restored: ${result.valueCount} values."
+                onDataChanged()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                status = error.message ?: "Unable to restore backup."
+            } finally {
+                backupBusy = false
             }
-                .onSuccess {
-                    TvDesign.applyTheme(runtime.settingsStore.appTheme())
-                    TvDesign.applyAccent(runtime.settingsStore.appAccent())
-                    includeCredentials = runtime.settingsStore.includeCredentialsInBackup()
-                    status = "Backup restored: ${it.valueCount} values."
-                    onDataChanged()
-                }
-                .onFailure { status = it.message ?: "Unable to restore backup." }
         }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        restoreSettingsFocus()
+        uri?.let(::restoreBackup)
+    }
+    backupChoices?.let { choices ->
+        TvRestoreBackupPicker(
+            files = choices,
+            message = backupListError,
+            onPick = { backupChoices = null; selectedBackup = it },
+            onBrowse = {
+                backupChoices = null
+                try {
+                    restoreLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+                } catch (_: ActivityNotFoundException) {
+                    status = "This TV has no file picker. Choose a backup saved by VUEO."
+                    restoreSettingsFocus()
+                }
+            },
+            onDismiss = { backupChoices = null; restoreSettingsFocus() },
+        )
+    }
+    selectedBackup?.let { backup ->
+        TvConfirmDialog(
+            title = "Restore this backup?",
+            message = "${backup.name} will replace current local VUEO data.",
+            confirmLabel = "Restore",
+            onDismiss = { selectedBackup = null },
+            onConfirm = { selectedBackup = null; restoreBackup(backup.uri) },
+        )
     }
 
     confirmAction?.let { action ->
@@ -143,11 +176,42 @@ internal fun TvDataStorageSettings(
             includeCredentials = it
             store.setIncludeCredentialsInBackup(it)
         }.copy(section = "BACKUP & RESTORE", icon = Icons.Default.VideoLibrary))
-        add(TvSettingsEntry("export", "Create Backup", "Save profiles, Content Manager configuration, Settings, Library and playback progress.", "Export", onActivate = {
-            exportLauncher.launch(backupFileName())
+        add(TvSettingsEntry("export", "Create Backup", "Save a JSON backup to ${TvLocalBackups.locationLabel}.", "Export", onActivate = {
+            if (!backupBusy) {
+                backupBusy = true
+                status = null
+                val include = includeCredentials
+                scope.launch {
+                    try {
+                        val backup = TvLocalBackups.save(context, include)
+                        status = "Saved to ${TvLocalBackups.locationLabel}: ${backup.name}"
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        status = error.message ?: "Unable to create backup."
+                    } finally {
+                        backupBusy = false
+                    }
+                }
+            }
         }, section = "BACKUP & RESTORE"))
-        add(TvSettingsEntry("restore", "Restore Backup", "Choose a VUEO JSON backup. Current local data will be replaced.", "Restore", onActivate = {
-            restoreLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+        add(TvSettingsEntry("restore", "Restore Backup", "Choose a saved VUEO backup or browse for a JSON file.", "Restore", onActivate = {
+            if (!backupBusy) {
+                backupBusy = true
+                backupListError = null
+                scope.launch {
+                    try {
+                        backupChoices = TvLocalBackups.list(context)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        backupListError = "Unable to read backups in ${TvLocalBackups.locationLabel}."
+                        backupChoices = emptyList()
+                    } finally {
+                        backupBusy = false
+                    }
+                }
+            }
         }, section = "BACKUP & RESTORE"))
         add(TvSettingsEntry("clear-cache", "Catalog & Source Cache", "Clear catalog and source-discovery caches; configuration is preserved.", "Clear", onActivate = { confirmAction = "cache" }, section = "LOCAL DATA", icon = Icons.Default.SettingsInputComponent))
         add(TvSettingsEntry("clear-continue", "Continue Watching", "Remove unfinished playback entries for the active profile only.", "Clear", onActivate = { confirmAction = "continue" }, section = "LOCAL DATA"))
