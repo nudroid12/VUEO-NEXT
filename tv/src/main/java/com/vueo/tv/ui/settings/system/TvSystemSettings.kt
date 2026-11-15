@@ -6,8 +6,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsInputComponent
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
@@ -39,7 +37,6 @@ import com.vueo.shared.core.storage.SubtitleLanguage
 import com.vueo.shared.core.storage.SubtitleSize
 import com.vueo.shared.core.storage.SubtitleVisibility
 import com.vueo.shared.core.storage.VueoBackupManager
-import com.vueo.tv.BuildConfig
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvSidebarPreferences
@@ -214,10 +211,8 @@ internal fun TvAboutSettings(
         }
     }
 
+    var details by remember { mutableStateOf<TvAboutDetails?>(null) }
     val entries = listOf(
-        TvSettingsEntry("vueo", "VUEO", "A universal media player.", BuildConfig.VERSION_NAME, enabled = false, section = "ABOUT", icon = Icons.Default.Settings),
-        TvSettingsEntry("privacy", "Privacy", "Settings and API keys stay on this device. API keys are excluded from backups unless you include them.", "Local", enabled = false, section = "ABOUT"),
-        TvSettingsEntry("tmdb", "TMDB Attribution", "This product uses the TMDB API but is not endorsed or certified by TMDB.", "TMDB", enabled = false, section = "ABOUT"),
         TvSettingsEntry(
             "update",
             "Check for Updates",
@@ -231,9 +226,24 @@ internal fun TvAboutSettings(
                 else -> "Check"
             },
             onActivate = ::updateAction,
-            section = "ABOUT",
-            icon = Icons.Default.Refresh,
         ),
+        TvSettingsEntry("privacy", "Privacy", "View how VUEO handles app data.",
+            onActivate = { details = TvAboutDetails.PRIVACY }),
+        TvSettingsEntry("licenses", "Licenses & Attribution", "View data source credits and open source licenses.",
+            onActivate = { details = TvAboutDetails.LICENSES }),
     )
-    TvSettingsListScreen("About VUEO", "Version, updates and app information.", entries, onNavigate, onProfile, onBack)
+    val host = LocalTvSettingsEmbeddedHost.current
+    if (host != null) {
+        TvAboutPanel(entries, host)
+    } else {
+        TvSettingsListScreen("About VUEO", "App information, updates, and legal links",
+            entries, onNavigate, onProfile, onBack, preferredFocusId = "update")
+    }
+
+    details?.let { page ->
+        TvAboutDetailsDialog(page) {
+            details = null
+            restoreSettingsFocus()
+        }
+    }
 }

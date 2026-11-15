@@ -1,6 +1,5 @@
 package com.vueo.tv.settings
 
-import com.vueo.tv.ui.rememberTvOkToEdit
 import com.vueo.tv.ui.theme.TvTabMarkerHost
 import com.vueo.tv.ui.theme.tvTabMarker
 
@@ -1202,6 +1201,7 @@ internal fun TvSettingsRow(
     onLeftToSidebar: () -> Unit,
     onFocused: () -> Unit,
     restoreContentStyle: Boolean = false,
+    aboutStyle: Boolean = false,
 ) {
     if (entry.catalogControls) {
         TvCatalogControlsRow(entry, requester, first, last, modifier, onLeftToSidebar, onFocused)
@@ -1213,7 +1213,7 @@ internal fun TvSettingsRow(
     }
     var focused by remember(entry.id) { mutableStateOf(false) }
     val canAdjust = entry.onPrevious != null || entry.onNext != null
-    val shape = RoundedCornerShape(
+    val shape = if (aboutStyle) RoundedCornerShape(percent = 50) else RoundedCornerShape(
         when {
             entry.accented -> 15.dp
             grouped -> 14.dp
@@ -1224,7 +1224,7 @@ internal fun TvSettingsRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = if (restoreContentStyle) { if (compact) 56.dp else 70.dp } else { if (compact) 52.dp else 60.dp })
+            .heightIn(min = if (aboutStyle) 63.dp else if (restoreContentStyle) { if (compact) 56.dp else 70.dp } else { if (compact) 52.dp else 60.dp })
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1276,17 +1276,22 @@ internal fun TvSettingsRow(
             .background(
                 color = when {
                     !entry.enabled -> TvSettingsContrast.DisabledCard
+                    aboutStyle && focused -> TvDesign.SurfaceRaised
+                    aboutStyle -> TvDesign.Black
                     focused -> TvSettingsContrast.FocusedPill
                     else -> TvSettingsContrast.Card
                 },
                 shape = shape,
             )
             .border(
-                width = if (focused) 1.5.dp else if (restoreContentStyle && !grouped) 1.dp else 0.dp,
+                width = if (focused && aboutStyle) 2.dp else if (focused) 1.5.dp
+                    else if (aboutStyle || (restoreContentStyle && !grouped)) 1.dp else 0.dp,
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
                     focused && entry.accented -> TvDesign.Accent.copy(alpha = .90f)
+                    focused && aboutStyle -> TvDesign.White
                     focused -> TvDesign.White.copy(alpha = .88f)
+                    aboutStyle -> TvDesign.White.copy(alpha = .16f)
                     grouped -> TvDesign.White.copy(alpha = 0f)
                     entry.accented -> TvDesign.Accent.copy(alpha = .12f)
                     else -> TvDesign.White.copy(alpha = .045f)
@@ -1528,13 +1533,10 @@ internal fun TvTextEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                val editor = rememberTvOkToEdit(enabled = !busy)
                 OutlinedTextField(
-                    readOnly = editor.readOnly,
                     value = value, onValueChange = { value = it }, enabled = !busy, singleLine = true,
                     modifier = Modifier.fillMaxWidth().focusRequester(inputRequester)
-                        .focusProperties { down = cancelRequester }
-                        .then(editor.modifier),
+                        .focusProperties { down = cancelRequester },
                     placeholder = { Text(placeholder, color = TvDesign.Dim, fontSize = 13.sp) },
                     textStyle = LocalTextStyle.current.copy(color = TvDesign.White, fontSize = 14.sp),
                     shape = RoundedCornerShape(12.dp),
@@ -1564,10 +1566,7 @@ internal fun TvTextEntryDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                val editor = rememberTvOkToEdit(enabled = !busy)
                 OutlinedTextField(
-                    readOnly = editor.readOnly,
-                    modifier = editor.modifier,
                     value = value,
                     onValueChange = { value = it },
                     enabled = !busy,
