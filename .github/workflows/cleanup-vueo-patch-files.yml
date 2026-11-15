@@ -1,0 +1,276 @@
+name: Cleanup VUEO Patch Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Delete listed files and commit to main (unchecked = preview)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vueo-zip-patch
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Check and clean up patch leftovers
+        env:
+          APPLY: ${{ inputs.apply }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import os
+          import subprocess
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          known_leftovers = set('''
+          ADAPTIVE-DISCOVERY-AI-SUBS-NOTES.txt
+          AFTER_PREVIOUS_PATCH.diff
+          BASELINE_SHA256.txt
+          CACHE_BRIDGE.diff
+          CHANGES.diff
+          CHANNEL-JSON-BUILD-FIX.txt
+          DELETE_FILES.md
+          DELETE_FILES.txt
+          DELETE_FILES_ROLLBACK_SUBTITLES.md
+          ICON-SOURCES-PATCH-NOTES.txt
+          LAUNCHER-CHANNELS-NOTES.txt
+          PATCH-NOTES.md
+          PATCH-NOTES.txt
+          PATCH_COMBINED_REANIME_VIDSRC_REPO53.txt
+          PATCH_CONTENT_MANAGER.txt
+          PATCH_CROSS_PROVIDER_SUBTITLES.txt
+          PATCH_DISCOVERY_OPTIMIZATION.txt
+          PATCH_FILES.json
+          PATCH_FLIX_HLS_COMPATIBILITY_REPO53.txt
+          PATCH_FOR_YOU_6_SEEDS.txt
+          PATCH_GENERIC_HLS_VIDSRC_REPO53.txt
+          PATCH_GENERIC_SRT_REPO55.txt
+          PATCH_NOTES.txt
+          PATCH_NOTES_ADDON_INSTALLATION_IDENTITY_PHASE_14_TV_MOBILE.md
+          PATCH_NOTES_ADDON_RESPONSE_LIMIT_PHASE_9.md
+          PATCH_NOTES_ENTITY_RESULTS_BACKGROUND_PHASE_13_TV_MOBILE.md
+          PATCH_NOTES_METADATA_CACHE_PHASE_7.md
+          PATCH_NOTES_MOBILE_ADDON_RELOAD_PHASE_4.md
+          PATCH_NOTES_MOBILE_DIAGNOSTICS_LIBRARY_IO_PHASE_5.md
+          PATCH_NOTES_MOBILE_HOME_PROFILE_STATE_PHASE_3.md
+          PATCH_NOTES_MOBILE_IMAGE_CACHE_PHASE_1.md
+          PATCH_NOTES_MOBILE_NAVIGATION_RESTORE_PHASE_11.md
+          PATCH_NOTES_MOBILE_PLAYER_LIFECYCLE_PHASE_2.md
+          PATCH_NOTES_MOBILE_PLAYER_RESOURCES_PHASE_12.md
+          PATCH_NOTES_MOBILE_PROFILE_CANCEL_AVATAR_PHASE_8.md
+          PATCH_NOTES_MOBILE_SEARCH_BACKGROUND_PHASE_10.md
+          PATCH_NOTES_PLAYER_CLEANUP_PHASE_23.md
+          PATCH_NOTES_PLAYER_FRAME_CONTINUITY_PHASE_17.md
+          PATCH_NOTES_PROVIDER_CODE_SYNC_PHASE_6.md
+          PATCH_NOTES_SMARTSUBS_LIVE_OVERLAY_PHASE_18.md
+          PATCH_NOTES_TV_PLAYER_EPISODE_ARTWORK_PHASE_15.md
+          PATCH_NOTES_USER_COLLECTIONS_PHASE_16.md
+          PATCH_NOTES_v105.txt
+          PATCH_PLAYBACK_HTTP_REQUEST_TRACE.txt
+          PATCH_README.md
+          PATCH_README.txt
+          PATCH_SHARED_HTTP_TRANSPORT.txt
+          PATCH_SOURCES_STATUS_FIX.txt
+          PATCH_STABLE_SOURCE_ROWS.txt
+          PATCH_SUBTITLE_AES_CACHE.txt
+          PATCH_SUBTITLE_FIRST_PREPARATION.md
+          PATCH_SUBTITLE_NORMALIZER_LINEAR.md
+          PATCH_SUBTITLE_TIMING.md
+          PATCH_TV_ACCOUNT_REPOSITORY_COMPACT.txt
+          PATCH_TV_FOCUS_TABS.txt
+          PATCH_TV_SUBTITLE_LAYOUT_ROLLBACK.md
+          PATCH_TV_SUBTITLE_PLACEMENT_V2.md
+          PATCH_TV_TEMPORAL_LAYOUT.md
+          PATCH_TV_V1_CUE_LAYOUT_AUDIT.md
+          PATCH_VIDSRC_TO_SUBTITLES.md
+          RATING-PATCH-NOTES.txt
+          README-ADDON-COMPATIBILITY.txt
+          README-ADDON-MANAGEMENT.txt
+          README-ADDON-PLAYBACK-ADDRESS.txt
+          README-DATA-URI-FIX.txt
+          README-HISTORY-DELETE.txt
+          README-JSON-Source-Early-Return.md
+          README-LIBRARY-HISTORY.txt
+          README-PLAYER-EXIT.txt
+          README-ROLLBACK-SUBTITLES.txt
+          README.txt
+          README_ACTIVE_CUE_REFRESH.md
+          README_AI_INITIAL_POSITION.md
+          README_CLEANUP.md
+          README_DISCOVERY_INTEGRITY.md
+          README_MANIFEST_URL.md
+          README_MOBILE_SCALE_CROSS_TRANSITION.txt
+          README_MOBILE_SCALE_CROSS_TRANSITION_v78.txt
+          README_NATIVE_POSITION.md
+          README_PATCH.txt
+          README_PHASE1.txt
+          README_PHASE2.txt
+          README_PHASE3.txt
+          README_PHASE4.txt
+          README_PROVIDER_STATUS.md
+          README_SUBTITLE_TRANSFORMS.txt
+          README_TABS_TIME.md
+          README_TV_SCALE_CROSS_TRANSITION_v79.txt
+          README_V100.txt
+          README_V101.txt
+          README_V102.txt
+          README_V103.txt
+          README_V104.txt
+          README_V106_FIXED.txt
+          README_V107.txt
+          README_V108.txt
+          README_V109.txt
+          README_V110.txt
+          README_V111.txt
+          README_V112.txt
+          README_V113.txt
+          README_V114.txt
+          README_V115.txt
+          README_V116.txt
+          README_V122.txt
+          README_V123.txt
+          README_V124.txt
+          README_V125.txt
+          README_V126.txt
+          README_V127.txt
+          README_V128.txt
+          README_V129.txt
+          README_V130.txt
+          README_V132.txt
+          README_V133.txt
+          README_V134.txt
+          README_V74.txt
+          README_V80.txt
+          README_V81.txt
+          README_V82.txt
+          README_V83.txt
+          README_V89.txt
+          README_V90.txt
+          README_V91.txt
+          README_V92.txt
+          README_V93.txt
+          README_V94.txt
+          README_V95.txt
+          README_V96.txt
+          README_V98.txt
+          README_WATCHED_INDICATOR.txt
+          REMOVE-RECOMMENDED-NOTES.txt
+          TV-Profile-Patch-Notes.txt
+          TV_ENGLISH_VTT_POSITION_FIX.diff
+          VALIDATION-RESTORED-FILE-HASHES.txt
+          VUEO-Account-Sync-All-Credentials-Only-Notes.md
+          VUEO-Content-Manager-Rollback-Notes.md
+          VUEO-For-You-Rebuild-Notes.md
+          VUEO-For-You-Shared-DNA-Notes.txt
+          VUEO-For-You-Trakt-Only-Notes.md
+          VUEO-Gemini-Enhancement-Patch-Notes.txt
+          VUEO-Gemini-Fixed-Backend-Patch-Notes.txt
+          VUEO-Home-Recommendations-Loading-Cache-Notes.md
+          VUEO-Mobile-Account-Compact-Polish-v2-Notes.txt
+          VUEO-Mobile-Account-One-Card-Notes.txt
+          VUEO-Personalization-Enhancement-Separate-Rows-Notes.md
+          VUEO-Plugin-Subtitle-Provider-Only-Notes.md
+          VUEO-SmartSubs-Open-Diagnose-Status-Notes.txt
+          VUEO-SmartSubs-Player-Integration-Notes.txt
+          VUEO-SmartSubs-Player-Track-Attach-Notes.txt
+          VUEO-SmartSubs-Plugin-Only-Candidates-Notes.txt
+          VUEO-SmartSubs-Subtitle-Display-Notes.txt
+          VUEO-TV-DNA-Inline-Notes.md
+          VUEO-TV-DNA-Off-Guard-Notes.md
+          VUEO-TV-Details-DNA-Match-Notes.md
+          VUEO-TV-Gemini-Menu-Fix-Notes.txt
+          VUEO-TV-Repo-Trash-Compact-Provider-Polish-Notes.txt
+          VUEO-TV-Settings-Polish-Notes.md
+          VUEO_v105.diff
+          VUEO_v107.diff
+          '''.splitlines()) - {''}
+
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+
+          def already_applied(archive, tracked):
+              # Only approved packaging metadata may differ from the checkout.
+              metadata = {'README.md', 'PATCH_README.md', 'CHANGES.diff', 'AFTER_PREVIOUS_PATCH.diff'}
+              matched = False
+              try:
+                  with zipfile.ZipFile(archive) as patch:
+                      for item in patch.infolist():
+                          path = PurePosixPath(item.filename)
+                          if path.is_absolute() or '..' in path.parts:
+                              return False
+                          if item.is_dir() or item.filename in metadata:
+                              continue
+                          if item.filename not in tracked:
+                              return False
+                          actual = Path(item.filename)
+                          if actual.is_symlink() or actual.stat().st_size != item.file_size:
+                              return False
+                          if actual.read_bytes() != patch.read(item):
+                              return False
+                          matched = True
+              except (OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile):
+                  return False
+              return matched
+
+          tracked = set(os.fsdecode(p) for p in git('ls-files', '-z').split(b'\0') if p)
+          archives = sorted(p for p in tracked if '/' not in p and p.startswith('VUEO-') and p.endswith('.zip'))
+          verified_archives = {p for p in archives if already_applied(p, tracked)}
+          candidates = sorted((known_leftovers & tracked) | verified_archives)
+          # Exclude candidate files when searching, since patch notes commonly cite one another.
+          search_paths = ['.', ':(top,exclude,literal).github/workflows/cleanup-vueo-patch-files.yml', *[f':(top,exclude,literal){p}' for p in candidates]]
+          selected = []
+          kept = []
+          for path in candidates:
+              result = subprocess.run(['git', 'grep', '-I', '-F', '-l', '-e', path, '--', *search_paths],
+                                      stdout=subprocess.PIPE, check=False)
+              if result.returncode == 0:
+                  kept.append(path)
+              elif result.returncode == 1:
+                  selected.append(path)
+              else:
+                  raise SystemExit(f'Unable to check references to {path}')
+
+          apply = os.environ['APPLY'] == 'true'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              print('## VUEO cleanup ' + ('apply' if apply else 'preview'), file=summary)
+              print(f'\n{len(selected)} file(s) selected.', file=summary)
+              for path in selected:
+                  print(f'- `{path}`', file=summary)
+              skipped = sorted(set(archives) - verified_archives)
+              if kept or skipped:
+                  print('\n### Kept', file=summary)
+                  for path in kept:
+                      print(f'- `{path}` (referenced by another tracked file)', file=summary)
+                  for path in skipped:
+                      print(f'- `{path}` (contents do not match the checkout)', file=summary)
+
+          if apply and selected:
+              git('rm', '--', *selected)
+          PYTHON
+
+          if [[ "$APPLY" != true ]]; then
+            exit 0
+          fi
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Clean up old VUEO patch files'
+          git push origin HEAD:main
