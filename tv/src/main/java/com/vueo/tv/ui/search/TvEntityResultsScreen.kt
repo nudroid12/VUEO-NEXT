@@ -2,8 +2,6 @@ package com.vueo.tv.search
 
 import com.vueo.tv.ui.motion.*
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,7 +44,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +60,6 @@ import com.vueo.shared.core.search.SearchOrchestrator
 import com.vueo.tv.core.TvRuntime
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
-import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.delay
 
 private const val ENTITY_COLUMNS = 6
@@ -475,22 +471,9 @@ private fun TvEntityPosterTile(
     onClick: () -> Unit,
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
-        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
-            easing = TvMotion.EaseOut,
-        )),
-        label = "entityPosterScale",
-    )
 
     Column(
         modifier = Modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                shadowElevation = if (focused) 8.dp.toPx() else 0f
-            }
             .focusRequester(requester)
             .focusProperties {
                 if (upRequester != null) {
@@ -501,8 +484,7 @@ private fun TvEntityPosterTile(
                 focused = state.isFocused
                 if (state.isFocused) onFocused()
             }
-            .clickable(onClick = onClick)
-            .focusable(),
+            .clickable(onClick = onClick),
     ) {
         TvNetworkImage(
             url = item.poster,

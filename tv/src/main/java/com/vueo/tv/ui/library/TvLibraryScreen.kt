@@ -651,20 +651,10 @@ private fun LibraryPosterCard(
     blockRight: Boolean,
 ) {
     var focused by remember(media.id, media.type) { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) tvTunedFocusScale(1.02f) else 1f,
-        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
-            easing = TvMotion.EaseOut,
-        )),
-        label = "libraryPosterScale",
-    )
 
     Column(
         modifier = Modifier
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
                 shadowElevation = if (focused) 7.dp.toPx() else 0f
                 shape = PosterShape
                 clip = false

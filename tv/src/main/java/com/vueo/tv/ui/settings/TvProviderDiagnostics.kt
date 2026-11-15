@@ -1,5 +1,6 @@
 package com.vueo.tv.settings
 
+import com.vueo.tv.ui.rememberTvOkToEdit
 import com.vueo.shared.core.player.SubtitleFlowDiagnostics
 import com.vueo.shared.core.plugin.ProviderDiagnosticSummary
 import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
@@ -396,12 +397,15 @@ internal fun TvRuntimeDiagnosticsDialog(
                 ) {
                     Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
+                    val editor = rememberTvOkToEdit()
                     BasicTextField(
+                        readOnly = editor.readOnly,
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(searchFocus)
+                            .then(editor.modifier)
                             .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = if (showRaw) rawFocus else summaryFocus
@@ -824,12 +828,15 @@ internal fun TvPerformanceDiagnosticsDialog(
                 ) {
                     Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
+                    val editor = rememberTvOkToEdit()
                     BasicTextField(
+                        readOnly = editor.readOnly,
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(searchFocus)
+                            .then(editor.modifier)
                             .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]

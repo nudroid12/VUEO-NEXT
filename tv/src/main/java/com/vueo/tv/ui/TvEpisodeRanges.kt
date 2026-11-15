@@ -232,13 +232,14 @@ internal fun TvEpisodeRangeControls(
         var input by remember { mutableStateOf("") }
         var error by remember { mutableStateOf(false) }
         val inputRequester = remember { FocusRequester() }
+        val editor = rememberTvOkToEdit()
         LaunchedEffect(Unit) { inputRequester.requestFocus() }
         AlertDialog(
             onDismissRequest = { dialog = false; onInteraction() },
             containerColor = Color(0xFF303030), titleContentColor = Color.White,
             title = { Text("Go to episode") },
-            text = { OutlinedTextField(value = input, onValueChange = { onInteraction(); input = it.filter(Char::isDigit).take(6); error = false }, singleLine = true,
-                modifier = Modifier.focusRequester(inputRequester), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            text = { OutlinedTextField(value = input, onValueChange = { onInteraction(); input = it.filter(Char::isDigit).take(6); error = false }, singleLine = true, readOnly = editor.readOnly,
+                modifier = Modifier.focusRequester(inputRequester).then(editor.modifier), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 label = { Text("Episode number") }, isError = error,
                 supportingText = { if (error) Text("Episode not available in this season") },
                 colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.White, unfocusedBorderColor = Color.Gray, focusedLabelColor = Color.White)) },

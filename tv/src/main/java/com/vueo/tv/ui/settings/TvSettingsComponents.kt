@@ -1,5 +1,6 @@
 package com.vueo.tv.settings
 
+import com.vueo.tv.ui.rememberTvOkToEdit
 import com.vueo.tv.ui.theme.TvTabMarkerHost
 import com.vueo.tv.ui.theme.tvTabMarker
 
@@ -1527,10 +1528,13 @@ internal fun TvTextEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                val editor = rememberTvOkToEdit(enabled = !busy)
                 OutlinedTextField(
+                    readOnly = editor.readOnly,
                     value = value, onValueChange = { value = it }, enabled = !busy, singleLine = true,
                     modifier = Modifier.fillMaxWidth().focusRequester(inputRequester)
-                        .focusProperties { down = cancelRequester },
+                        .focusProperties { down = cancelRequester }
+                        .then(editor.modifier),
                     placeholder = { Text(placeholder, color = TvDesign.Dim, fontSize = 13.sp) },
                     textStyle = LocalTextStyle.current.copy(color = TvDesign.White, fontSize = 14.sp),
                     shape = RoundedCornerShape(12.dp),
@@ -1560,7 +1564,10 @@ internal fun TvTextEntryDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val editor = rememberTvOkToEdit(enabled = !busy)
                 OutlinedTextField(
+                    readOnly = editor.readOnly,
+                    modifier = editor.modifier,
                     value = value,
                     onValueChange = { value = it },
                     enabled = !busy,

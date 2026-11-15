@@ -1,4 +1,6 @@
 package com.vueo.tv.search
+import com.vueo.tv.ui.rememberTvOkToEdit
+
 import com.vueo.shared.core.search.SearchResultOrderPolicy
 import com.vueo.shared.core.search.SearchMediaFilter
 import com.vueo.shared.core.search.SearchOrchestrator
@@ -929,10 +931,12 @@ private fun TvMobileSearchField(
         )
         Spacer(Modifier.width(11.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            val editor = rememberTvOkToEdit()
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
+                readOnly = editor.readOnly,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 textStyle = TextStyle(
                     color = TvDesign.White,
@@ -945,6 +949,7 @@ private fun TvMobileSearchField(
                         focused = it.isFocused
                         if (it.isFocused) onFocused()
                     }
+                    .then(editor.modifier)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (event.nativeKeyEvent.keyCode) {
@@ -1191,20 +1196,10 @@ private fun TvSearchPosterTile(
     blockRight: Boolean,
 ) {
     var focused by remember(item.id, item.type) { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) tvTunedFocusScale(1.035f) else 1f,
-        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, focused, tween(
-            durationMillis = if (focused) TvMotion.FOCUS_IN_MS else TvMotion.FOCUS_OUT_MS,
-            easing = TvMotion.EaseOut,
-        )),
-        label = "searchPosterScale",
-    )
 
     Column(
         modifier = Modifier
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
                 shadowElevation = if (focused) 8.dp.toPx() else 0f
                 shape = RoundedCornerShape(10.dp)
                 clip = false
