@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +75,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -121,6 +123,7 @@ internal data class TvSettingsEntry(
     val providerPanelEnd: Boolean = false,
     val supportingContent: (@Composable () -> Unit)? = null,
     val operationStatus: String? = null,
+    val formControl: (@Composable (Modifier, () -> Unit, Boolean) -> Unit)? = null,
 )
 
 internal data class TvSettingsNavItem(
@@ -881,6 +884,7 @@ internal fun TvSettingsListScreen(
     addonLayout: Boolean = false,
     contentManager: Boolean = false,
     compactRowSpacing: Boolean = false,
+    centerHeader: Boolean = false,
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -895,6 +899,7 @@ internal fun TvSettingsListScreen(
             addonLayout = addonLayout,
             contentManager = contentManager,
             compactRowSpacing = compactRowSpacing,
+            centerHeader = centerHeader,
         )
         return
     }
@@ -974,6 +979,8 @@ internal fun TvSettingsListScreen(
 
             Text(
                 text = title,
+                modifier = if (centerHeader) Modifier.fillMaxWidth() else Modifier,
+                textAlign = if (centerHeader) TextAlign.Center else TextAlign.Start,
                 color = TvDesign.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
@@ -983,7 +990,9 @@ internal fun TvSettingsListScreen(
                 color = TvDesign.Muted,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
+                textAlign = if (centerHeader) TextAlign.Center else TextAlign.Start,
+                modifier = (if (centerHeader) Modifier.fillMaxWidth() else Modifier)
+                    .padding(top = 6.dp, bottom = 16.dp),
             )
 
             if (metrics.isNotEmpty()) {
@@ -1087,6 +1096,7 @@ private fun TvSettingsEmbeddedPanel(
     addonLayout: Boolean = false,
     contentManager: Boolean = false,
     compactRowSpacing: Boolean = false,
+    centerHeader: Boolean = false,
 ) {
     val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
     val accountHeaderIds = setOf("status", "message", "sync-all", "sync-now", "sign-out", "cancel-sign-out")
@@ -1118,6 +1128,8 @@ private fun TvSettingsEmbeddedPanel(
 
         Text(
             text = title,
+            modifier = if (centerHeader) Modifier.fillMaxWidth() else Modifier,
+            textAlign = if (centerHeader) TextAlign.Center else TextAlign.Start,
             color = TvDesign.White,
             fontSize = 29.sp,
             fontWeight = FontWeight.Bold,
@@ -1127,7 +1139,9 @@ private fun TvSettingsEmbeddedPanel(
             color = TvDesign.Muted,
             fontSize = 13.sp,
             lineHeight = 18.sp,
-            modifier = Modifier.padding(top = 5.dp, bottom = 16.dp),
+            textAlign = if (centerHeader) TextAlign.Center else TextAlign.Start,
+            modifier = (if (centerHeader) Modifier.fillMaxWidth() else Modifier)
+                .padding(top = 5.dp, bottom = 16.dp),
         )
 
         if (metrics.isNotEmpty()) {
@@ -1210,6 +1224,18 @@ internal fun TvSettingsRow(
     restoreContentStyle: Boolean = false,
     aboutStyle: Boolean = false,
 ) {
+    entry.formControl?.let { control ->
+        Box(modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+            control(
+                Modifier.widthIn(max = 460.dp).fillMaxWidth()
+                    .focusRequester(requester)
+                    .onFocusChanged { if (it.isFocused) onFocused() },
+                onLeftToSidebar,
+                first,
+            )
+        }
+        return
+    }
     if (entry.catalogControls) {
         TvCatalogControlsRow(entry, requester, first, last, modifier, onLeftToSidebar, onFocused)
         return
