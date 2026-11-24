@@ -250,11 +250,17 @@ internal fun TvDataStorageSettings(
     TvSettingsListScreen("Data & Storage", "Backup, restore, cache, history and local data controls.", entries, onNavigate, onProfile, onBack)
 }
 
+internal const val TV_ABOUT_UPDATE_ROW_ID = "update"
+
 @Composable
 internal fun TvAboutSettings(
     onNavigate: (String) -> Unit,
     onProfile: () -> Unit,
     onBack: () -> Unit,
+    developerOptionsEnabled: Boolean,
+    onUnlockDeveloperOptions: () -> Unit,
+    unlockNotice: String?,
+    onUnlockNotice: (String?) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -302,10 +308,28 @@ internal fun TvAboutSettings(
         }
     }
 
+    var logoPresses by remember(developerOptionsEnabled) { mutableIntStateOf(0) }
+    fun activateLogo() {
+        if (developerOptionsEnabled) {
+            onUnlockNotice("Developer options are already unlocked.")
+            return
+        }
+        logoPresses++
+        when (val remaining = 7 - logoPresses) {
+            0 -> {
+                logoPresses = 0
+                onUnlockNotice(null)
+                onUnlockDeveloperOptions()
+            }
+            1 -> onUnlockNotice("1 step away from Developer options.")
+            2, 3 -> onUnlockNotice("$remaining steps away from Developer options.")
+        }
+    }
+
     var details by remember { mutableStateOf<TvAboutDetails?>(null) }
     val entries = listOf(
         TvSettingsEntry(
-            "update",
+            TV_ABOUT_UPDATE_ROW_ID,
             "Check for Updates",
             status ?: "Check and install the latest VUEO build.",
             when {
@@ -325,10 +349,10 @@ internal fun TvAboutSettings(
     )
     val host = LocalTvSettingsEmbeddedHost.current
     if (host != null) {
-        TvAboutPanel(entries, host)
+        TvAboutPanel(entries, host, unlockNotice, ::activateLogo)
     } else {
         TvSettingsListScreen("About VUEO", "App information, updates, and legal links",
-            entries, onNavigate, onProfile, onBack, preferredFocusId = "update")
+            entries, onNavigate, onProfile, onBack, preferredFocusId = TV_ABOUT_UPDATE_ROW_ID)
     }
 
     details?.let { page ->

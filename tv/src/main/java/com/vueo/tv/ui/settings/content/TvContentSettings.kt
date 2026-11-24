@@ -748,6 +748,7 @@ internal fun TvProviderSettings(
 
     TvSettingsListScreen(
         title = "Plugins & Providers",
+        compactRowSpacing = true,
         subtitle = "Repositories and runtime providers.",
         entries = entries,
         onNavigate = onNavigate,

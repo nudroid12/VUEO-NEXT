@@ -1,7 +1,7 @@
 package com.vueo.tv.settings
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,10 +23,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -41,10 +45,18 @@ import androidx.compose.ui.window.DialogProperties
 import com.vueo.tv.BuildConfig
 import com.vueo.tv.R
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.motion.TvMotionAlertDialog
 
 @Composable
-internal fun TvAboutPanel(entries: List<TvSettingsEntry>, host: TvSettingsEmbeddedHost) {
-    val rowIds = entries.map { it.id }
+internal fun TvAboutPanel(
+    entries: List<TvSettingsEntry>,
+    host: TvSettingsEmbeddedHost,
+    unlockNotice: String?,
+    onLogoActivated: () -> Unit,
+) {
+    val logoId = "about-logo"
+    val rowIds = listOf(logoId) + entries.map { it.id }
+    var logoFocused by remember { mutableStateOf(false) }
     LaunchedEffect(host.panelKey, rowIds) {
         host.onFocusableRowsChanged(rowIds)
         host.restorePanelFocus()
@@ -58,16 +70,33 @@ internal fun TvAboutPanel(entries: List<TvSettingsEntry>, host: TvSettingsEmbedd
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
         )
-        val shape = RoundedCornerShape(18.dp)
-        Column(
-            modifier = Modifier.fillMaxWidth()
-                .background(TvDesign.Surface, shape)
-                .border(1.dp, TvDesign.White.copy(alpha = .18f), shape)
-                .padding(horizontal = 17.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val logoShape = RoundedCornerShape(14.dp)
             Column(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(host.requesterFor(logoId))
+                    .focusProperties { up = FocusRequester.Cancel; down = host.requesterFor(TV_ABOUT_UPDATE_ROW_ID) }
+                    .onFocusChanged {
+                        logoFocused = it.isFocused
+                        if (it.isFocused) host.onRowFocused(logoId)
+                    }
+                    .onPreviewKeyEvent { event ->
+                        when (event.key) {
+                            Key.DirectionLeft -> {
+                                if (event.type == KeyEventType.KeyDown) host.onLeftToCategory()
+                                true
+                            }
+                            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                                if (event.type == KeyEventType.KeyUp) onLogoActivated()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .border(2.dp, if (logoFocused) TvDesign.White else Color.Transparent, logoShape)
+                    .clickable(onClick = onLogoActivated)
+                    .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
@@ -88,15 +117,42 @@ internal fun TvAboutPanel(entries: List<TvSettingsEntry>, host: TvSettingsEmbedd
                 TvSettingsRow(
                     entry = entry.copy(value = entry.value.ifBlank { "›" }),
                     requester = host.requesterFor(entry.id),
-                    first = index == 0,
+                    modifier = if (entry.id == TV_ABOUT_UPDATE_ROW_ID) {
+                        Modifier.focusProperties { up = host.requesterFor(logoId) }
+                    } else Modifier,
+                    first = false,
                     last = index == entries.lastIndex,
                     onLeftToSidebar = host.onLeftToCategory,
                     onFocused = { host.onRowFocused(entry.id) },
                     aboutStyle = true,
                 )
             }
+            unlockNotice?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
         }
     }
+}
+
+@Composable
+internal fun TvDeveloperPinChoice(onCancel: () -> Unit, onSkip: () -> Unit, onSetPin: () -> Unit) {
+    val setPinFocus = remember { FocusRequester() }
+    TvMotionAlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Developer options PIN") },
+        text = { Text("Set a 4-digit PIN to protect Developer options, or continue without a PIN.") },
+        confirmButton = {
+            TextButton(onClick = onSetPin, modifier = Modifier.focusRequester(setPinFocus)) { Text("Set PIN") }
+            LaunchedEffect(Unit) {
+                withFrameNanos { }
+                runCatching { setPinFocus.requestFocus() }
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+                TextButton(onClick = onSkip) { Text("Skip") }
+            }
+        },
+    )
 }
 
 internal enum class TvAboutDetails { PRIVACY, LICENSES }

@@ -56,6 +56,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
@@ -155,6 +156,7 @@ internal fun TvSettingsMasterDetailShell(
     panelAutoFocusToken: Int,
     panelHasBack: Boolean,
     panelUsesSharedRows: Boolean,
+    panelEntryFocusId: String? = null,
     onCategoryOpened: (String) -> Unit,
     onPanelBack: () -> Unit,
     onNavigate: (String) -> Unit,
@@ -200,6 +202,8 @@ internal fun TvSettingsMasterDetailShell(
     var panelRestoreJob by remember { mutableStateOf<Job?>(null) }
     val shellScope = rememberCoroutineScope()
     val currentPanelKey by rememberUpdatedState(panelKey)
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val currentWindowFocused by rememberUpdatedState(windowFocused)
     var appliedPanelFocusToken by remember { mutableStateOf(panelAutoFocusToken) }
     val panelFocusPending = panelAutoFocusToken != appliedPanelFocusToken
 
@@ -272,11 +276,12 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun focusPanel(): Boolean {
-        if (!active || sidebarFocusIntent || panelKey != currentPanelKey) return false
+        if (!active || !currentWindowFocused || sidebarFocusIntent || panelKey != currentPanelKey) return false
         if (panelUsesSharedRows) {
             val rowId = panelFocusTargetId(panelKey) ?: return false
             val firstRow = panelFirstRowIds[panelKey]
-            val focusedRow = listOfNotNull(rowId, firstRow).distinct().firstOrNull { id ->
+            val preferredRow = panelEntryFocusId.takeIf { panelFocusPending }
+            val focusedRow = listOfNotNull(preferredRow, rowId, firstRow).distinct().firstOrNull { id ->
                 runCatching { requesterForPanelRow(panelKey, id).requestFocus() }.getOrDefault(false)
             } ?: return false
             panelLastFocusedIds[panelKey] = focusedRow
@@ -300,7 +305,7 @@ internal fun TvSettingsMasterDetailShell(
                 }
                 if (focusPanel()) return@launch
             }
-            focusSelectedCategory()
+            if (currentWindowFocused) focusSelectedCategory()
         }
     }
 
@@ -340,8 +345,8 @@ internal fun TvSettingsMasterDetailShell(
         }
     }
 
-    LaunchedEffect(panelAutoFocusToken, active) {
-        if (!active || sidebarFocusIntent || !panelFocusPending) return@LaunchedEffect
+    LaunchedEffect(panelAutoFocusToken, active, windowFocused) {
+        if (!active || !windowFocused || sidebarFocusIntent || !panelFocusPending) return@LaunchedEffect
         lastPane = "panel"
         requestDeferredPanelRestore()
     }
@@ -875,6 +880,7 @@ internal fun TvSettingsListScreen(
     preferredFocusId: String? = null,
     addonLayout: Boolean = false,
     contentManager: Boolean = false,
+    compactRowSpacing: Boolean = false,
 ) {
     val embeddedHost = LocalTvSettingsEmbeddedHost.current
     if (embeddedHost != null) {
@@ -888,6 +894,7 @@ internal fun TvSettingsListScreen(
             metrics = metrics,
             addonLayout = addonLayout,
             contentManager = contentManager,
+            compactRowSpacing = compactRowSpacing,
         )
         return
     }
@@ -993,7 +1000,7 @@ internal fun TvSettingsListScreen(
                         targetId?.let { rowRequesters[it] } ?: FocusRequester.Default
                     }
                     .focusGroup(),
-                verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compactRowSpacing || entries.any { it.providerStatus != null }) 0.dp else 8.dp),
             ) {
                 if (accountHeader) item(key = "account-header") {
                     TvAccountSummaryPanel(entries, { rowRequesters.getValue(it) },
@@ -1079,6 +1086,7 @@ private fun TvSettingsEmbeddedPanel(
     metrics: List<TvSettingsMetric>,
     addonLayout: Boolean = false,
     contentManager: Boolean = false,
+    compactRowSpacing: Boolean = false,
 ) {
     val accountHeader = title == "Account" && entries.any { it.id == "sync-now" }
     val accountHeaderIds = setOf("status", "message", "sync-all", "sync-now", "sign-out", "cancel-sign-out")
@@ -1132,7 +1140,7 @@ private fun TvSettingsEmbeddedPanel(
                 .fillMaxWidth()
                 .weight(1f),
             contentPadding = if (addonLayout) PaddingValues(0.dp) else PaddingValues(start = 3.dp, end = 3.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(if (entries.any { it.providerStatus != null }) 0.dp else 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compactRowSpacing || entries.any { it.providerStatus != null }) 0.dp else 8.dp),
         ) {
             if (accountHeader) item(key = "account-header") {
                 TvAccountSummaryPanel(entries, host)
