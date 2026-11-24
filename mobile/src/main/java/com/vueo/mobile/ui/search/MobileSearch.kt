@@ -1,6 +1,5 @@
 package com.vueo.mobile.ui
 
-import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
@@ -59,7 +58,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -564,9 +562,6 @@ internal fun SearchScreen(
     val normalizedQuery =
         query.trim()
 
-    val titleSearch = SearchPolicy.parseTitleSearch(normalizedQuery)
-        .takeIf { searchMode == SearchMode.TITLE && it.year != null }
-
     val searchingMode =
         normalizedQuery.isNotBlank()
 
@@ -767,7 +762,7 @@ internal fun SearchScreen(
                                 ) {
                                     "Search actor name..."
                                 } else {
-                                    "Search title or title + year…"
+                                    "Search movies, shows..."
                                 },
                             color =
                                 VueoPalette.Muted,
@@ -874,42 +869,25 @@ internal fun SearchScreen(
                     )
                 }
 
-                LazyRow(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(
-                            10.dp
-                        ),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    item {
-                        SearchFilterButton(
-                            label =
-                                typeFilter.label,
-                            onClick = {
-                                typeDialog = true
-                            },
-                        )
-                    }
-
-                    item {
-                        SearchFilterButton(
-                            label =
-                                sortMode.label,
-                            onClick = {
-                                sortDialog = true
-                            },
-                        )
-                    }
-
-                    item {
-                        SearchFilterButton(
-                            label =
-                                genre
-                                    ?: "All Genres",
-                            onClick = {
-                                genreDialog = true
-                            },
-                        )
-                    }
+                    SearchFilterButton(
+                        label = typeFilter.label,
+                        modifier = Modifier.weight(.76f),
+                        onClick = { typeDialog = true },
+                    )
+                    SearchFilterButton(
+                        label = sortMode.label,
+                        modifier = Modifier.weight(1.02f),
+                        onClick = { sortDialog = true },
+                    )
+                    SearchFilterButton(
+                        label = genre ?: "All Genres",
+                        modifier = Modifier.weight(1.22f),
+                        onClick = { genreDialog = true },
+                    )
                 }
 
                 if (
@@ -988,8 +966,6 @@ internal fun SearchScreen(
                             !actorSourceAvailable
                         ) {
                             "Actor search unavailable"
-                        } else if (titleSearch != null) {
-                            "No matches for ${titleSearch.year}"
                         } else {
                             "No matches"
                         },
@@ -1008,9 +984,6 @@ internal fun SearchScreen(
                         } else {
                             "Try another title or change the filters."
                         },
-                    onSearchAllYears = titleSearch?.let { request ->
-                        { onQueryChange(request.title) }
-                    },
                 )
             }
         } else if (
@@ -1219,11 +1192,12 @@ private fun SearchModeToggle(
 @Composable
 private fun SearchFilterButton(
     label: String,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier =
-            Modifier.clickable(
+            modifier.clickable(
                 onClick = onClick
             ),
         shape =
@@ -1245,19 +1219,18 @@ private fun SearchFilterButton(
     ) {
         Row(
             modifier =
-                Modifier.padding(
-                    horizontal = 16.dp,
+                Modifier.fillMaxWidth().padding(
+                    horizontal = 8.dp,
                     vertical = 11.dp,
                 ),
             horizontalArrangement =
-                Arrangement.spacedBy(
-                    8.dp
-                ),
+                Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
             verticalAlignment =
                 Alignment.CenterVertically,
         ) {
             Text(
                 text = label,
+                modifier = Modifier.weight(1f, fill = false),
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight =
@@ -1405,7 +1378,6 @@ private fun SearchChoiceDialog(
 private fun SearchEmptyState(
     title: String,
     body: String,
-    onSearchAllYears: (() -> Unit)? = null,
 ) {
     Column(
         modifier =
@@ -1435,9 +1407,6 @@ private fun SearchEmptyState(
                 VueoPalette.Muted,
             fontSize = 12.sp,
         )
-        if (onSearchAllYears != null) {
-            TextButton(onClick = onSearchAllYears) { Text("Search all years") }
-        }
     }
 }
 
