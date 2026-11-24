@@ -1,5 +1,7 @@
 package com.vueo.tv.update
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -7,7 +9,10 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.vueo.tv.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -63,6 +68,8 @@ object TvUpdateManager {
         "https://github.com/nudroid12/VUEO-NEXT/releases/download/vueo-dev/tv-update.json"
 
     private const val CHECK_INTERVAL_MS = 60L * 60L * 1000L
+    private const val UPDATE_FILE_PREFIX = "VUEO-TV-update-"
+    private const val UPDATE_FILE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
 
     suspend fun check(context: Context, force: Boolean = false): TvUpdateCheckResult = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
@@ -117,26 +124,51 @@ object TvUpdateManager {
         release: TvUpdateRelease,
         onProgress: (Int) -> Unit = {},
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             val appContext = context.applicationContext
             if (needsInstallPermission(appContext)) error("Allow VUEO to install unknown apps first.")
             val url = release.downloadUrl ?: error("This update does not include an APK download.")
-            val target = File(File(appContext.cacheDir, "updates").apply { mkdirs() }, "VUEO-TV-update.apk")
-            download(url, target, onProgress)
-            verifySha256(target, release.sha256)
-            val info = appContext.packageManager.getPackageArchiveInfo(target.absolutePath, 0)
-                ?: error("Downloaded file is not a valid Android APK.")
-            require(info.packageName == appContext.packageName) {
-                "Downloaded APK is for ${info.packageName}, not ${appContext.packageName}."
+            val updates = File(appContext.cacheDir, "updates")
+            updates.mkdirs()
+            check(updates.isDirectory) { "Unable to create the update cache." }
+
+            val expiry = System.currentTimeMillis() - UPDATE_FILE_MAX_AGE_MS
+            updates.listFiles { file ->
+                file.isFile && file.name.endsWith(".apk") && file.lastModified() < expiry &&
+                    (file.name.startsWith(UPDATE_FILE_PREFIX) || file.name == "VUEO-TV-update.apk")
+            }?.forEach { it.delete() }
+
+            val target = File.createTempFile("$UPDATE_FILE_PREFIX${release.versionCode}-", ".apk", updates)
+            var handedOff = false
+            try {
+                download(url, target, onProgress)
+                verifySha256(target, release.sha256)
+                val info = appContext.packageManager.getPackageArchiveInfo(target.absolutePath, 0)
+                    ?: error("Downloaded file is not a valid Android APK.")
+                require(info.packageName == appContext.packageName) {
+                    "Downloaded APK is for ${info.packageName}, not ${appContext.packageName}."
+                }
+                withContext(Dispatchers.Main) {
+                    val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.vueo.updates", target)
+                    val install = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        clipData = ClipData.newRawUri("VUEO TV update", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    appContext.startActivity(install)
+                    // Keep the APK readable after the installer takes over.
+                    handedOff = true
+                }
+                Result.success(Unit)
+            } finally {
+                if (!handedOff) target.delete()
             }
-            withContext(Dispatchers.Main) {
-                val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.vueo.updates", target)
-                appContext.startActivity(
-                    Intent(Intent.ACTION_VIEW)
-                        .setDataAndType(uri, "application/vnd.android.package-archive")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: ActivityNotFoundException) {
+            Result.failure(IllegalStateException("Unable to open the Android package installer.", error))
+        } catch (error: Exception) {
+            Result.failure(error)
         }
     }
 
@@ -155,6 +187,7 @@ object TvUpdateManager {
                 target.outputStream().buffered().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
+                        currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
