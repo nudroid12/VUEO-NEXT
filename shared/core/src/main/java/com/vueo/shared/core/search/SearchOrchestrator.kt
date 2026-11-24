@@ -103,10 +103,7 @@ object SearchOrchestrator {
 
     suspend fun localTitleResults(query: String, limit: Int = 60): List<MediaItem> =
         PerformanceDiagnostics.measuredContext(Dispatchers.Default, "search_local_rank", Tab.SEARCH) {
-            SearchPolicy.rankAndDedupe(
-                CatalogDiscoveryCache.searchLocal(query, limit = limit),
-                query,
-            ).take(limit)
+            CatalogDiscoveryCache.searchLocal(query, limit = limit)
         }
 
     private suspend fun remoteTitleResultsUnfiltered(

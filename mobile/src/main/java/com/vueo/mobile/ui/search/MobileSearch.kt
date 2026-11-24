@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
@@ -563,6 +564,9 @@ internal fun SearchScreen(
     val normalizedQuery =
         query.trim()
 
+    val titleSearch = SearchPolicy.parseTitleSearch(normalizedQuery)
+        .takeIf { searchMode == SearchMode.TITLE && it.year != null }
+
     val searchingMode =
         normalizedQuery.isNotBlank()
 
@@ -763,7 +767,7 @@ internal fun SearchScreen(
                                 ) {
                                     "Search actor name..."
                                 } else {
-                                    "Search movies, shows..."
+                                    "Search title or title + year…"
                                 },
                             color =
                                 VueoPalette.Muted,
@@ -984,6 +988,8 @@ internal fun SearchScreen(
                             !actorSourceAvailable
                         ) {
                             "Actor search unavailable"
+                        } else if (titleSearch != null) {
+                            "No matches for ${titleSearch.year}"
                         } else {
                             "No matches"
                         },
@@ -1002,6 +1008,9 @@ internal fun SearchScreen(
                         } else {
                             "Try another title or change the filters."
                         },
+                    onSearchAllYears = titleSearch?.let { request ->
+                        { onQueryChange(request.title) }
+                    },
                 )
             }
         } else if (
@@ -1396,6 +1405,7 @@ private fun SearchChoiceDialog(
 private fun SearchEmptyState(
     title: String,
     body: String,
+    onSearchAllYears: (() -> Unit)? = null,
 ) {
     Column(
         modifier =
@@ -1425,6 +1435,9 @@ private fun SearchEmptyState(
                 VueoPalette.Muted,
             fontSize = 12.sp,
         )
+        if (onSearchAllYears != null) {
+            TextButton(onClick = onSearchAllYears) { Text("Search all years") }
+        }
     }
 }
 

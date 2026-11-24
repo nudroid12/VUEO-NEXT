@@ -216,6 +216,7 @@ internal fun TvSearchScreen(
     var dialogReturnFocus by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val fieldRequester = remember { FocusRequester() }
+    val allYearsRequester = remember { FocusRequester() }
     val modeRequester = remember { FocusRequester() }
     val typeRequester = remember { FocusRequester() }
     val sortRequester = remember { FocusRequester() }
@@ -378,6 +379,8 @@ internal fun TvSearchScreen(
     }
 
     val normalizedQuery = session.query.trim()
+    val titleSearch = SearchPolicy.parseTitleSearch(normalizedQuery)
+        .takeIf { session.mode == TvSearchMode.TITLE && it.year != null }
     val searchingMode = normalizedQuery.isNotBlank()
 
     val prepareInput = TvSearchPreparedInput(
@@ -504,8 +507,13 @@ internal fun TvSearchScreen(
         if (restored) session.restoreResultsFocus = false
     }
 
+    val showYearFallback = titleSearch != null && filteredItems.isEmpty() && !searching && !preparing
+
     fun focusFirstResult(): Boolean {
-        val firstKey = resultKeys.firstOrNull() ?: return false
+        val firstKey = resultKeys.firstOrNull()
+        if (firstKey == null) {
+            return showYearFallback && runCatching { allYearsRequester.requestFocus() }.getOrDefault(false)
+        }
         resultFocusJob[0]?.cancel()
         resultFocusJob[0] = scope.launch {
             // Filter changes rebuild the result FocusRequesters. The old code
@@ -768,13 +776,34 @@ internal fun TvSearchScreen(
                     SearchEmptyState(
                         title = if (
                             session.mode == TvSearchMode.ACTOR && !session.actorSourceAvailable
-                        ) "Actor search unavailable" else "No matches",
+                        ) "Actor search unavailable"
+                        else if (titleSearch != null) "No matches for ${titleSearch.year}"
+                        else "No matches",
                         body = when {
                             session.mode == TvSearchMode.ACTOR && !session.actorSourceAvailable ->
                                 "Enable an actor-capable metadata source or add a TMDB API key."
                             session.mode == TvSearchMode.ACTOR ->
                                 "Try another actor name or change the filters."
                             else -> "Try another title or change the filters."
+                        },
+                        action = {
+                            if (titleSearch != null) {
+                                TvSearchFilterButton(
+                                    label = "Search all years",
+                                    requester = allYearsRequester,
+                                    onFocused = { if (!navExpanded) lastContentTarget = "all-years" },
+                                    onClick = {
+                                        fieldRequester.requestFocus()
+                                        session.query = titleSearch.title
+                                        session.completedSearchKey = null
+                                        resetGridForFilterChange()
+                                    },
+                                    onLeft = ::focusSidebar,
+                                    onRight = null,
+                                    onUp = { sortRequester.requestFocus() },
+                                    onDown = { true },
+                                )
+                            }
                         },
                     )
                 }
@@ -863,6 +892,7 @@ internal fun TvSearchScreen(
                         lastContentTarget == "sort" -> sortRequester.requestFocus()
                         lastContentTarget == "genre" -> genreRequester.requestFocus()
                         lastContentTarget == "mode" -> modeRequester.requestFocus()
+                        lastContentTarget == "all-years" && showYearFallback -> allYearsRequester.requestFocus()
                         lastContentTarget.startsWith("result:") -> {
                             val key = lastContentTarget.removePrefix("result:")
                             resultRequesterCache[key]?.requestFocus() ?: fieldRequester.requestFocus()
@@ -980,7 +1010,7 @@ private fun TvMobileSearchField(
                             text = if (mode == TvSearchMode.ACTOR) {
                                 "Search actor name..."
                             } else {
-                                "Search movies, shows..."
+                                "Search title or title + year…"
                             },
                             color = TvDesign.Muted,
                             fontSize = 15.sp,
@@ -1410,6 +1440,7 @@ private fun TvSearchChoiceRow(
 private fun SearchEmptyState(
     title: String,
     body: String,
+    action: @Composable () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -1429,6 +1460,7 @@ private fun SearchEmptyState(
             color = TvDesign.Muted,
             fontSize = 12.sp,
         )
+        action()
     }
 }
 

@@ -28,20 +28,21 @@ object SearchResultOrderPolicy {
     }
 
     fun sortTitleItems(items: List<MediaItem>, mode: DiscoverSortMode, query: String? = null): List<MediaItem> {
-        val normalizedQuery = query?.let(SearchPolicy::normalizeText).orEmpty()
-        if (normalizedQuery.isBlank()) {
+        if (query.isNullOrBlank() || SearchPolicy.normalizeText(query).isBlank()) {
             return when (mode) {
                 DiscoverSortMode.POPULAR -> items.sortedByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }
                 DiscoverSortMode.TRENDING -> items
                 DiscoverSortMode.NEWEST -> items.sortedByDescending(SearchPolicy::releaseYear)
             }
         }
-        val relevance = compareByDescending<MediaItem> { SearchPolicy.relevanceScore(it, normalizedQuery) }
-        return when (mode) {
-            DiscoverSortMode.POPULAR -> items.sortedWith(relevance.thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 }.thenByDescending(SearchPolicy::releaseYear))
-            DiscoverSortMode.TRENDING -> items.sortedWith(relevance.thenByDescending(SearchPolicy::metadataScore))
-            DiscoverSortMode.NEWEST -> items.sortedWith(relevance.thenByDescending(SearchPolicy::releaseYear).thenByDescending { it.imdbRating ?: it.tmdbRating ?: 0.0 })
+        val popularity = compareByDescending<MediaItem> { it.popularity ?: 0.0 }
+        val rating = compareByDescending<MediaItem> { it.imdbRating ?: it.tmdbRating ?: 0.0 }
+        val tieBreak = when (mode) {
+            DiscoverSortMode.POPULAR -> popularity.then(rating).thenByDescending(SearchPolicy::releaseYear)
+            DiscoverSortMode.TRENDING -> popularity.thenByDescending(SearchPolicy::metadataScore)
+            DiscoverSortMode.NEWEST -> compareByDescending(SearchPolicy::releaseYear).then(popularity).then(rating)
         }
+        return SearchPolicy.orderTitleResults(items, query, tieBreak)
     }
 }
 

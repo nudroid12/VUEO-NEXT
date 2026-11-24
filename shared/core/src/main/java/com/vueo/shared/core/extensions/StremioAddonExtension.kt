@@ -326,7 +326,10 @@ private fun JSONObject.toMediaItem(sourceId: String): MediaItem? {
         poster = optString("poster").trim().takeIf { StremioUrls.isHttpUrl(it) },
         background = optString("background").trim().takeIf { StremioUrls.isHttpUrl(it) },
         description = optString("description").trim().takeIf(String::isNotBlank),
-        releaseInfo = optString("releaseInfo").trim().takeIf(String::isNotBlank),
+        releaseInfo = optString("releaseInfo").trim().takeIf(String::isNotBlank)
+            ?: sequenceOf("year", "released", "releaseDate", "release_date", "first_air_date")
+                .map { optString(it).trim().take(4) }
+                .firstOrNull { it.length == 4 && (it.toIntOrNull() ?: 0) in 1800..2099 },
         originalTitle = originalTitle,
         aliases = aliases,
         originalLanguage = listOf(

@@ -1,5 +1,6 @@
 package com.vueo.shared.core.extensions
 
+import com.vueo.shared.core.search.SearchPolicy
 import android.content.Context
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
@@ -320,123 +321,11 @@ object CatalogDiscoveryCache {
             )
     }
 
-    fun searchLocal(
-        query: String,
-        limit: Int = 60,
-    ): List<MediaItem> {
-        val needle =
-            normalizeQuery(query)
-
-        if (
-            needle.length < 2
-        ) {
-            return emptyList()
-        }
-
-        val titleNeedle =
-            needle
-                .replace(
-                    Regex(
-                        """\b(19|20)\d{2}\b"""
-                    ),
-                    " ",
-                )
-                .trim()
-                .replace(
-                    Regex(
-                        """\s+"""
-                    ),
-                    " ",
-                )
-
-        val tokens =
-            titleNeedle
-                .split(' ')
-                .filter {
-                    it.isNotBlank()
-                }
-
-        return allCachedItems()
-            .asSequence()
-            .filter { item ->
-                val haystack =
-                    searchableText(item)
-                val title =
-                    normalizeQuery(
-                        item.name
-                    )
-
-                if (tokens.size <= 1) {
-                    haystack.contains(
-                        titleNeedle
-                    )
-                } else {
-                    title.contains(
-                        titleNeedle
-                    ) ||
-                        tokens.all {
-                            token ->
-                            title
-                                .split(' ')
-                                .any {
-                                    titleToken ->
-                                    titleToken == token ||
-                                        titleToken
-                                            .startsWith(
-                                                token
-                                            )
-                                }
-                        }
-                }
-            }
-            .groupBy {
-                localSearchIdentityKey(
-                    it
-                )
-            }
-            .values
-            .mapNotNull {
-                duplicates ->
-                duplicates.maxByOrNull {
-                    item ->
-                    localSearchScore(
-                        item = item,
-                        query = titleNeedle,
-                    )
-                }?.let {
-                    best ->
-                    best.copy(
-                        catalogSources =
-                            (
-                                best.catalogSources +
-                                    duplicates
-                                        .flatMap {
-                                            item ->
-                                            item.catalogSources
-                                        }
-                            )
-                                .map {
-                                    it.trim()
-                                }
-                                .filter {
-                                    it.isNotBlank()
-                                }
-                                .distinctBy {
-                                    it.lowercase()
-                                }
-                    )
-                }
-            }
-            .sortedByDescending { item ->
-                localSearchScore(
-                    item = item,
-                    query = titleNeedle,
-                )
-            }
-            .take(limit)
+    fun searchLocal(query: String, limit: Int = 60): List<MediaItem> {
+        if (SearchPolicy.normalizeText(query).length < 2 || limit <= 0) return emptyList()
+        return SearchPolicy.rankAndDedupe(allCachedItems(), query).take(limit)
     }
 
-    
     fun companyTitles(
         companyName: String,
         networkOnly: Boolean = false,
@@ -2343,54 +2232,6 @@ object CatalogDiscoveryCache {
         CacheSnapshot(homeRows, searches.values.map { it.items })
 
     private fun allCachedItems(): List<MediaItem> = cacheSnapshot().allItems()
-
-    private fun searchableText(
-        item: MediaItem,
-    ): String =
-        normalizeQuery(
-            buildString {
-                append(item.name)
-                append(' ')
-                append(
-                    item.releaseInfo
-                        .orEmpty()
-                )
-                append(' ')
-                append(
-                    item.genres
-                        .joinToString(" ")
-                )
-            }
-        )
-
-    private fun localSearchScore(
-        item: MediaItem,
-        query: String,
-    ): Int {
-        val title =
-            normalizeQuery(item.name)
-        val tokens =
-            query
-                .split(' ')
-                .filter { it.isNotBlank() }
-
-        return when {
-            title == query -> 100_000
-            title.startsWith("$query ") -> 82_000
-            title.contains(query) -> 64_000
-            tokens.all { it in title.split(' ') } -> 52_000
-            tokens.all { token ->
-                title.split(' ')
-                    .any {
-                        it.startsWith(token)
-                    }
-            } -> 44_000
-            else ->
-                tokens.count { token ->
-                    title.contains(token)
-                } * 4_000
-        }
-    }
 
     private fun localSearchIdentityKey(
         item: MediaItem,

@@ -364,14 +364,17 @@ class UnifiedMediaEngine(
         maxResults: Int = 80,
         onPartial: ((List<MediaItem>) -> Unit)? = null,
     ): List<MediaItem> = coroutineScope {
-        val normalized = query.trim()
+        val parsed = SearchPolicy.parseTitleSearch(query)
+        val normalized = parsed.original
+        // Keep a strict parenthesized year distinct from a possible literal title.
+        val cacheKey = "title v2 ${if (parsed.explicitYear) "year" else "text"} $normalized"
 
         if (normalized.length < 2) {
             return@coroutineScope emptyList<MediaItem>()
         }
 
         CatalogDiscoveryCache
-            .search(normalized)
+            .search(cacheKey)
             ?.let { cached ->
                 return@coroutineScope rankSearchResults(
                     items = cached,
@@ -379,123 +382,57 @@ class UnifiedMediaEngine(
                 ).take(maxResults)
             }
 
-        val searchableCatalogs =
-            activeStremioAddons()
-                .flatMap { extension ->
-                    extension.descriptor.catalogs
-                        .filter { catalog ->
-                            val hasSearch =
-                                catalog.extras.any {
-                                    it.name == "search"
-                                }
+        val searchableCatalogs = activeStremioAddons().flatMap { extension ->
+            extension.descriptor.catalogs.filter { catalog ->
+                catalog.extras.any { it.name == "search" } &&
+                    catalog.extras.all { !it.isRequired || it.name == "search" }
+            }.map { catalog -> extension to catalog }
+        }.take(maxCatalogs)
 
-                            val requiredSupported =
-                                catalog.extras
-                                    .filter {
-                                        it.isRequired
-                                    }
-                                    .all {
-                                        it.name == "search"
-                                    }
+        val local = CatalogDiscoveryCache.searchLocal(normalized, limit = maxResults)
+        val inputTitle = SearchPolicy.normalizeText(parsed.title)
+        val knownSpelling = local.firstOrNull { item ->
+            val name = SearchPolicy.canonicalTitle(item)
+            name != inputTitle && name.replace(" ", "") == inputTitle.replace(" ", "")
+        }?.let(SearchPolicy::canonicalTitle)
+        val catalogQueries = buildList {
+            add(parsed.title)
+            if (knownSpelling != null) add(knownSpelling)
+            if (parsed.year != null && !parsed.explicitYear) add(parsed.original)
+        }.distinct()
 
-                            hasSearch &&
-                                requiredSupported
-                        }
-                        .map { catalog ->
-                            extension to catalog
-                        }
-                }
-                .take(maxCatalogs)
-
-        val local =
-            CatalogDiscoveryCache
-                .searchLocal(
-                    normalized,
-                    limit = maxResults,
-                )
-
-        val collectedRemote =
-            mutableListOf<MediaItem>()
-        val mergeMutex =
-            Mutex()
-
-        val remote =
-            searchableCatalogs
-                .map {
-                    (extension, catalog) ->
-
-                    async {
-                        val result =
-                            try {
-                                withTimeoutOrNull(
-                                    ADDON_REQUEST_TIMEOUT_MS
-                                ) {
-                                    extension.catalog(
-                                        type =
-                                            catalog.type,
-                                        catalogId =
-                                            catalog.id,
-                                        extras =
-                                            mapOf(
-                                                "search" to
-                                                    normalized
-                                            ),
-                                    ).items
-                                        .map {
-                                            item ->
-                                            item.withCatalogSource(
-                                                extension.descriptor.name
-                                            )
-                                        }
-                                }
-                                    ?: emptyList()
-                            } catch (
-                                cancelled:
-                                    CancellationException
-                            ) {
-                                throw cancelled
-                            } catch (
-                                _: Throwable
-                            ) {
-                                emptyList()
-                            }
-
-                        if (result.isNotEmpty()) {
-                            mergeMutex.withLock {
-                                collectedRemote +=
-                                    result
-
-                                onPartial?.invoke(
-                                    rankSearchResults(
-                                        items =
-                                            collectedRemote +
-                                                local,
-                                        query =
-                                            normalized,
-                                    ).take(
-                                        maxResults
-                                    )
-                                )
-                            }
-                        }
-
-                        result
+        val collectedRemote = mutableListOf<MediaItem>()
+        val mergeMutex = Mutex()
+        val remote = searchableCatalogs.flatMap { (extension, catalog) ->
+            catalogQueries.map { catalogQuery ->
+                async {
+                    val result = try {
+                        withTimeoutOrNull(ADDON_REQUEST_TIMEOUT_MS) {
+                            extension.catalog(
+                                type = catalog.type,
+                                catalogId = catalog.id,
+                                extras = mapOf("search" to catalogQuery),
+                            ).items.map { it.withCatalogSource(extension.descriptor.name) }
+                        }.orEmpty()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        emptyList()
                     }
+
+                    if (result.isNotEmpty()) {
+                        mergeMutex.withLock {
+                            collectedRemote += result
+                            onPartial?.invoke(rankSearchResults(collectedRemote + local, normalized).take(maxResults))
+                        }
+                    }
+                    result
                 }
-                .awaitAll()
-                .flatten()
+            }
+        }.awaitAll().flatten()
 
-        val combined =
-            rankSearchResults(
-                items = remote + local,
-                query = normalized,
-            ).take(maxResults)
-
-        CatalogDiscoveryCache.putSearch(
-            normalized,
-            combined,
-        )
-
+        val combined = rankSearchResults(remote + local, normalized).take(maxResults)
+        CatalogDiscoveryCache.putSearch(cacheKey, combined)
         combined
     }
 
