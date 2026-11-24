@@ -244,9 +244,9 @@ private fun TvPluginProviderRow(entry: TvSettingsEntry, requester: FocusRequeste
                     Text(entry.title, color = Color.White, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(entry.subtitle, color = PluginMuted, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(entry.providerStatus.orEmpty(), color = if (entry.providerFailed) PluginFailure else if (entry.switchChecked == false) PluginMuted else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    entry.providerResponse?.let { Text(it, color = PluginMuted, fontSize = 10.sp) }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(entry.providerStatus.orEmpty(), color = if (entry.providerFailed) PluginFailure else if (entry.switchChecked == false) PluginMuted else Color.White, fontSize = 11.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+                    entry.providerResponse?.let { Text(it, color = PluginMuted, fontSize = 10.sp, lineHeight = 12.sp) }
                 }
                 Text("›", color = PluginMuted, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 12.dp))
                 Box(Modifier.width(64.dp).height(34.dp), contentAlignment = Alignment.Center) {
