@@ -175,10 +175,9 @@ fun TvSettingsScreen(
         panelKey = page.name,
         panelAutoFocusToken = panelAutoFocusToken,
         panelHasBack = page.hasPanelParent(),
-        onCategorySelected = { id ->
-            TvSettingsRootDestinations.firstOrNull { it.id == id }?.let { destination ->
-                if (page != destination.page) page = destination.page
-            }
+        panelUsesSharedRows = page != TvSettingsPage.CONTENT_COLLECTIONS,
+        onCategoryOpened = { id ->
+            TvSettingsRootDestinations.firstOrNull { it.id == id }?.let { openPanel(it.page) }
         },
         onPanelBack = ::backPanel,
         onNavigate = onNavigate,
