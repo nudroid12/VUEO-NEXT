@@ -493,7 +493,7 @@ internal fun TvSettingsMasterDetailShell(
             onReturnToContent = {
                 backExitPending = false
                 sidebarFocusIntent = false
-                if (lastPane != "panel" || !focusPanel()) focusSelectedCategory()
+                (lastPane == "panel" && focusPanel()) || focusSelectedCategory()
             },
             modifier = Modifier.align(Alignment.CenterStart),
         )
