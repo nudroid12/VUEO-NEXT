@@ -4,6 +4,7 @@ import com.vueo.tv.ui.motion.*
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,18 +41,19 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.tv.BuildConfig
+import com.vueo.tv.R
 import com.vueo.tv.ui.TvModalDialog
 import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.launch
 
-private val PromptShape = RoundedCornerShape(24.dp)
-private val ActionShape = RoundedCornerShape(14.dp)
+private val PromptShape = RoundedCornerShape(18.dp)
+private val ActionShape = RoundedCornerShape(50)
 
 private val CommitNote = Regex("Commit [0-9a-f]{7,40}", RegexOption.IGNORE_CASE)
 
@@ -95,49 +98,49 @@ fun TvUpdatePrompt(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = .74f))
-                .padding(horizontal = 28.dp, vertical = 16.dp),
-            contentAlignment = Alignment.Center,
+                .background(Color.Black.copy(alpha = .42f))
+                .padding(horizontal = 36.dp, vertical = 30.dp),
+            contentAlignment = Alignment.BottomEnd,
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 640.dp)
+                    .widthIn(max = 500.dp)
                     .fillMaxWidth()
                     .clip(PromptShape)
-                    .background(TvDesign.SurfaceRaised.copy(alpha = .98f))
+                    .background(Color(0xFF161B25))
                     .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
-                    .padding(horizontal = 26.dp, vertical = 16.dp),
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
             ) {
-                TextLine(
-                    text = "UPDATE AVAILABLE",
-                    sizeSp = 13,
-                    weight = FontWeight.SemiBold,
-                    color = TvDesign.Muted,
-                    letterSpacingSp = 1.4f,
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                TextLine(
-                    text = release.title,
-                    sizeSp = 24,
-                    weight = FontWeight.SemiBold,
-                    color = TvDesign.White,
-                    maxLines = 2,
-                )
-
-                Spacer(Modifier.height(4.dp))
-
-                TextLine(
-                    text = "${BuildConfig.VERSION_NAME}  →  ${release.versionName}",
-                    sizeSp = 13,
-                    weight = FontWeight.Medium,
-                    color = TvDesign.Muted,
-                )
-
-                Spacer(Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.vueo_tv_icon_static),
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        TextLine(
+                            text = "Update VUEO",
+                            sizeSp = 22,
+                            weight = FontWeight.SemiBold,
+                            color = TvDesign.White,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        TextLine(
+                            text = "New version · ${release.versionName}",
+                            sizeSp = 13,
+                            weight = FontWeight.Medium,
+                            color = TvDesign.Muted,
+                            maxLines = 2,
+                        )
+                    }
+                }
 
                 if (notes.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
                     TextLine(
                         text = "What’s new",
                         sizeSp = 15,
@@ -154,17 +157,31 @@ fun TvUpdatePrompt(
                             maxLines = 2,
                         )
                     }
-                } else {
-                    TextLine(
-                        text = "Latest VUEO TV development build is ready to install.",
-                        sizeSp = 14,
-                        weight = FontWeight.Normal,
-                        color = TvDesign.Muted,
-                        maxLines = 2,
-                    )
                 }
 
-                status?.let { message ->
+                if (downloading) {
+                    Spacer(Modifier.height(10.dp))
+                    TextLine(
+                        text = "Downloading… $progress%",
+                        sizeSp = 13,
+                        weight = FontWeight.Medium,
+                        color = TvDesign.White,
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Box(
+                        Modifier.fillMaxWidth().height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(TvDesign.White.copy(alpha = .14f)),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(progress.coerceIn(0, 100) / 100f)
+                                .height(4.dp)
+                                .background(TvDesign.White),
+                        )
+                    }
+                }
+
+                status?.takeUnless { downloading }?.let { message ->
                     Spacer(Modifier.height(10.dp))
                     TextLine(
                         text = message,
@@ -195,11 +212,11 @@ fun TvUpdatePrompt(
                         primary = false,
                     )
 
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
 
                     TvUpdateAction(
                         label = when {
-                            downloading -> "$progress%"
+                            downloading -> "Updating…"
                             canDownload -> "Update"
                             else -> "Unavailable"
                         },
@@ -240,16 +257,6 @@ fun TvUpdatePrompt(
                         primary = true,
                     )
                 }
-
-                Spacer(Modifier.height(8.dp))
-
-                TextLine(
-                    text = "Android will ask for final confirmation before installation.",
-                    sizeSp = 12,
-                    weight = FontWeight.Normal,
-                    color = TvDesign.Dim,
-                    maxLines = 1,
-                )
             }
         }
     }
@@ -280,7 +287,7 @@ private fun TvUpdateAction(
 
     val background = when {
         !enabled -> TvDesign.White.copy(alpha = .05f)
-        focused -> TvDesign.White.copy(alpha = if (primary) .22f else .16f)
+        focused -> TvDesign.White
         primary -> TvDesign.White.copy(alpha = .11f)
         else -> TvDesign.White.copy(alpha = .055f)
     }
@@ -324,14 +331,18 @@ private fun TvUpdateAction(
             .background(background)
             .border(1.dp, border, ActionShape)
             .focusable(enabled)
-            .padding(horizontal = 24.dp, vertical = 9.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         TextLine(
             text = label,
-            sizeSp = 15,
+            sizeSp = 13,
             weight = if (primary) FontWeight.SemiBold else FontWeight.Medium,
-            color = if (enabled) TvDesign.White else TvDesign.Dim,
+            color = when {
+                !enabled -> TvDesign.Dim
+                focused -> Color.Black
+                else -> TvDesign.White
+            },
             maxLines = 1,
         )
     }
