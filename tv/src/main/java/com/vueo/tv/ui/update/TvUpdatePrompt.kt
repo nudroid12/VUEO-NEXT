@@ -52,6 +52,25 @@ import kotlinx.coroutines.launch
 private val PromptShape = RoundedCornerShape(24.dp)
 private val ActionShape = RoundedCornerShape(14.dp)
 
+private val CommitNote = Regex("Commit [0-9a-f]{7,40}", RegexOption.IGNORE_CASE)
+
+private fun visibleUpdateNotes(changelog: List<String>): List<String> {
+    fun noteKey(note: String) = note.trimEnd('.', '!', '?').trimEnd().lowercase()
+
+    val notes = changelog.map(String::trim)
+        .filterNot { note ->
+            note.isBlank() ||
+                note.startsWith("Latest successful ", ignoreCase = true) ||
+                CommitNote.matches(note)
+        }
+        .distinctBy(::noteKey)
+
+    val hasSystemSettingsNote = notes.any {
+        noteKey(it) == "updated system settings and the about screen"
+    }
+    return notes.filterNot { hasSystemSettingsNote && noteKey(it) == "updated settings" }.take(3)
+}
+
 @Composable
 fun TvUpdatePrompt(
     release: TvUpdateRelease,
@@ -67,6 +86,7 @@ fun TvUpdatePrompt(
     var status by remember(release.versionCode) { mutableStateOf<String?>(null) }
 
     val canDownload = release.downloadUrl != null
+    val notes = remember(release.changelog) { visibleUpdateNotes(release.changelog) }
 
     TvModalDialog(
         onDismissRequest = { if (!downloading) onLater() },
@@ -75,16 +95,18 @@ fun TvUpdatePrompt(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = .74f)),
+                .background(Color.Black.copy(alpha = .74f))
+                .padding(horizontal = 28.dp, vertical = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 560.dp, max = 680.dp)
+                    .widthIn(max = 640.dp)
+                    .fillMaxWidth()
                     .clip(PromptShape)
                     .background(TvDesign.SurfaceRaised.copy(alpha = .98f))
                     .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
-                    .padding(horizontal = 34.dp, vertical = 30.dp),
+                    .padding(horizontal = 26.dp, vertical = 16.dp),
             ) {
                 TextLine(
                     text = "UPDATE AVAILABLE",
@@ -94,69 +116,52 @@ fun TvUpdatePrompt(
                     letterSpacingSp = 1.4f,
                 )
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(4.dp))
 
                 TextLine(
                     text = release.title,
-                    sizeSp = 29,
+                    sizeSp = 24,
                     weight = FontWeight.SemiBold,
                     color = TvDesign.White,
                     maxLines = 2,
                 )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
 
                 TextLine(
                     text = "${BuildConfig.VERSION_NAME}  →  ${release.versionName}",
-                    sizeSp = 16,
+                    sizeSp = 13,
                     weight = FontWeight.Medium,
                     color = TvDesign.Muted,
                 )
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(12.dp))
 
-                TextLine(
-                    text = "What’s new",
-                    sizeSp = 18,
-                    weight = FontWeight.SemiBold,
-                    color = TvDesign.White,
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                val notes = release.changelog.take(4)
-                if (notes.isEmpty()) {
+                if (notes.isNotEmpty()) {
+                    TextLine(
+                        text = "What’s new",
+                        sizeSp = 15,
+                        weight = FontWeight.SemiBold,
+                        color = TvDesign.White,
+                    )
+                    notes.forEach { note ->
+                        Spacer(Modifier.height(4.dp))
+                        TextLine(
+                            text = note,
+                            sizeSp = 14,
+                            weight = FontWeight.Normal,
+                            color = TvDesign.Muted,
+                            maxLines = 2,
+                        )
+                    }
+                } else {
                     TextLine(
                         text = "Latest VUEO TV development build is ready to install.",
-                        sizeSp = 16,
+                        sizeSp = 14,
                         weight = FontWeight.Normal,
                         color = TvDesign.Muted,
-                        maxLines = 3,
+                        maxLines = 2,
                     )
-                } else {
-                    notes.forEach { note ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            TextLine(
-                                text = "•",
-                                sizeSp = 16,
-                                weight = FontWeight.Bold,
-                                color = TvDesign.White,
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            TextLine(
-                                text = note,
-                                sizeSp = 16,
-                                weight = FontWeight.Normal,
-                                color = TvDesign.Muted,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2,
-                            )
-                        }
-                        Spacer(Modifier.height(7.dp))
-                    }
                 }
 
                 status?.let { message ->
@@ -170,7 +175,7 @@ fun TvUpdatePrompt(
                     )
                 }
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -236,7 +241,7 @@ fun TvUpdatePrompt(
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(8.dp))
 
                 TextLine(
                     text = "Android will ask for final confirmation before installation.",
@@ -319,7 +324,7 @@ private fun TvUpdateAction(
             .background(background)
             .border(1.dp, border, ActionShape)
             .focusable(enabled)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
         TextLine(
