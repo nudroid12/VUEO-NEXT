@@ -1,72 +1,85 @@
 package com.vueo.tv.settings
 
-import com.vueo.tv.ui.rememberTvOkToEdit
-import com.vueo.shared.core.player.SubtitleFlowDiagnostics
-import com.vueo.shared.core.plugin.ProviderDiagnosticSummary
-import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
-import androidx.activity.compose.BackHandler
-
-import android.view.KeyEvent
-import androidx.compose.foundation.border
-import androidx.compose.foundation.background
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.launch
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.view.KeyEvent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import com.vueo.tv.ui.motion.TvMotionAlertDialog as AlertDialog
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vueo.tv.ui.motion.TvMotionDialog as Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
 import com.vueo.shared.core.diagnostics.DiagnosticsViewer
+import com.vueo.shared.core.diagnostics.RuntimeDiagnostics
+import com.vueo.shared.core.player.SubtitleFlowDiagnostics
 import com.vueo.shared.core.plugin.PluginProviderDescriptor
 import com.vueo.shared.core.plugin.PluginRepositoryDescriptor
+import com.vueo.shared.core.plugin.ProviderDiagnosticProgress
+import com.vueo.shared.core.plugin.ProviderDiagnosticSummary
 import com.vueo.shared.core.plugin.ProviderHealthRecord
 import com.vueo.shared.core.plugin.ProviderHealthStatus
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.TvDialogButton
+import com.vueo.tv.ui.TvThemedDialog
+import com.vueo.tv.ui.motion.LocalTvMotionFinish
+import com.vueo.tv.ui.motion.TvMotionDialog as Dialog
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun TvProviderDiagnosticDialog(
@@ -78,121 +91,212 @@ internal fun TvProviderDiagnosticDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    var rawExpanded by remember(repository.manifestUrl, provider.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var showingLog by remember(repository.manifestUrl, provider.id) { mutableStateOf(false) }
     val restoreSettingsFocus = rememberTvSettingsDeferredFocusRestore()
+    val closeFocus = remember { FocusRequester() }
+    val logButtonFocus = remember { FocusRequester() }
+    val logFocus = remember { FocusRequester() }
+    val scroll = rememberScrollState()
+    val scrollStep = with(LocalDensity.current) { 80.dp.roundToPx() }
 
     fun closeAndRestore() {
         onDismiss()
         restoreSettingsFocus()
     }
 
-    AlertDialog(
-        onDismissRequest = ::closeAndRestore,
-        title = {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Provider Diagnostic")
-                Text(
-                    text = "${provider.name} • v${provider.version}",
-                    color = TvDesign.Muted,
-                    fontSize = 12.sp,
+    TvThemedDialog("Provider Diagnostic", closeFocus, ::closeAndRestore, maxWidth = 680.dp) {
+        val finish = LocalTvMotionFinish.current
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("${provider.name} • v${provider.version}", modifier = Modifier.weight(1f),
+                color = TvDesign.Muted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (health != null) {
+                val status = if (currentlyEnabled) ProviderDiagnosticSummary.statusLabel(health) else "Disabled"
+                val noResults = status == "No results"
+                Text(status, color = if (noResults) Color(0xFFFFC66D) else TvDesign.White,
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.background(TvDesign.SurfaceRaised, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp))
+            }
+        }
+
+        val report = remember(repository, provider, health, currentlyEnabled, providerCodeReady) {
+            health?.let { providerDiagnosticFullLog(repository, provider, it, currentlyEnabled, providerCodeReady) }
+        }
+        when {
+            health == null -> Text(
+                "No diagnostic captured yet. Run source discovery for this provider, then reopen diagnostics.",
+                color = TvDesign.Muted, fontSize = 13.sp,
+            )
+            showingLog && report != null -> {
+                var logFocused by remember { mutableStateOf(false) }
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 246.dp)
+                        .focusRequester(logFocus)
+                        .onFocusChanged { logFocused = it.isFocused }
+                        .focusProperties { down = logButtonFocus }
+                        .onPreviewKeyEvent { event ->
+                            val key = event.nativeKeyEvent
+                            val down = key.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                            if ((down && scroll.value < scroll.maxValue) ||
+                                (key.keyCode == KeyEvent.KEYCODE_DPAD_UP && scroll.value > 0)) {
+                                if (key.action == KeyEvent.ACTION_DOWN) {
+                                    val position = (scroll.value + if (down) scrollStep else -scrollStep)
+                                        .coerceIn(0, scroll.maxValue)
+                                    scope.launch { scroll.scrollTo(position) }
+                                }
+                                true
+                            } else false
+                        }
+                        .background(TvDesign.SurfaceRaised, RoundedCornerShape(8.dp))
+                        .border(1.dp, if (logFocused) TvDesign.White else Color.Transparent, RoundedCornerShape(8.dp))
+                        .focusable().verticalScroll(scroll).padding(12.dp),
+                ) {
+                    Text(report, color = TvDesign.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                }
+            }
+            else -> {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DiagnosticMetric("Request", providerRequestLabelOrNull(health) ?: "Unavailable", Modifier.weight(1.7f))
+                    val result = if (health.status == ProviderHealthStatus.UNKNOWN && health.streamCount == 0) {
+                        "Not captured"
+                    } else "${health.streamCount.coerceAtLeast(0)} found"
+                    DiagnosticMetric("Sources", result, Modifier.weight(1f))
+                    DiagnosticMetric("Timing", providerRelevantTimingLabel(health) ?: "Unavailable", Modifier.weight(1f))
+                }
+                ProviderDiagnosticProgress.lastStage(health.logs)?.let { stage ->
+                    Row(Modifier.fillMaxWidth()
+                        .background(TvDesign.SurfaceRaised, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Last stage", color = TvDesign.Muted, fontSize = 12.sp)
+                        Text(sanitizeDiagnosticText(stage), color = TvDesign.White, fontSize = 12.sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (ProviderDiagnosticSummary.hasFailure(health, providerCodeReady)) {
+                    Text(providerLikelyCause(health, providerCodeReady), color = TvDesign.Muted, fontSize = 12.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (report != null) {
+                TvDialogButton(
+                    label = if (showingLog) "Back to summary" else "View raw log",
+                    modifier = Modifier.focusRequester(logButtonFocus).focusProperties {
+                        if (showingLog) up = logFocus
+                    },
+                    onClick = { showingLog = !showingLog },
                 )
             }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 500.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (health == null) {
-                    Text(
-                        text = "No diagnostic captured yet. Run source discovery for this provider, then reopen diagnostics.",
-                        color = TvDesign.Muted,
-                        fontSize = 12.sp,
-                    )
-                } else {
-                    providerRequestLabelOrNull(health)?.let { DiagnosticLine("Request", it) }
-                    ProviderDiagnosticSummary.facts(health).forEach { (label, value) ->
-                        DiagnosticLine(label, sanitizeDiagnosticText(value))
-                    }
-                    if (ProviderDiagnosticSummary.hasFailure(health, providerCodeReady)) {
-                        DiagnosticLine("Failure", "${providerFailureStage(health, providerCodeReady)} • ${providerFailureCategory(health)}")
-                    }
-                    health.errorType?.takeIf { it.isNotBlank() }?.let {
-                        DiagnosticLine("Error type", sanitizeDiagnosticText(it))
-                    }
-                    providerHttpStatus(health)?.let { DiagnosticLine("HTTP", it) }
-                    providerRelevantTimingLabel(health)?.let { DiagnosticLine("Timing", it) }
-                    ProviderDiagnosticProgress.lastStage(health.logs)?.let { DiagnosticLine("Last stage", sanitizeDiagnosticText(it)) }
-                    ProviderDiagnosticProgress.pending(health.logs).takeIf { it.isNotEmpty() }?.let {
-                        DiagnosticLine("Pending requests", it.joinToString("\n") { line -> sanitizeDiagnosticText(line) })
-                    }
-                    if (!providerCodeReady) {
-                        DiagnosticLine("Provider code", "Missing or not ready")
-                    }
-                    health.error?.takeIf { it.isNotBlank() }?.let {
-                        DiagnosticLine("Error", sanitizeDiagnosticText(it))
-                    }
+            Spacer(Modifier.weight(1f))
+            if (report != null) {
+                TvDialogButton("Copy debug log", { copyProviderDiagnostic(context, report) })
+            }
+            TvDialogButton("Close", { finish(::closeAndRestore) }, Modifier.focusRequester(closeFocus))
+        }
+    }
+}
 
-                    Surface(
-                        color = TvDesign.Surface,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(ProviderDiagnosticSummary.noteTitle(health, providerCodeReady), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text(
-                                text = providerLikelyCause(health, providerCodeReady),
-                                color = TvDesign.Muted,
-                                fontSize = 11.sp,
-                            )
+@Composable
+private fun DiagnosticMetric(label: String, value: String, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.uppercase(), color = TvDesign.Muted, fontSize = 11.sp)
+        Text(value, color = TvDesign.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun TvDiagnosticsSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
+    modifier: Modifier,
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    val imeInsets = WindowInsets.ime
+    var editing by remember { mutableStateOf(false) }
+    var keyboardRequest by remember { mutableIntStateOf(0) }
+
+    fun stopEditing() {
+        editing = false
+        keyboard?.hide()
+    }
+
+    BackHandler(enabled = editing, onBack = ::stopEditing)
+    LaunchedEffect(editing, imeInsets, density) {
+        if (!editing) return@LaunchedEffect
+        var keyboardWasVisible = false
+        snapshotFlow { imeInsets.getBottom(density) > 0 }.collect { visible ->
+            if (!visible && keyboardWasVisible) editing = false
+            keyboardWasVisible = visible
+        }
+    }
+
+    LaunchedEffect(editing, keyboardRequest) {
+        if (editing) {
+            withFrameNanos { }
+            keyboard?.show()
+        }
+    }
+
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier
+            .onFocusChanged {
+                onFocusChanged(it.isFocused)
+                if (!it.isFocused && editing) stopEditing()
+            }
+            .onPreviewKeyEvent { event ->
+                val key = event.nativeKeyEvent
+                when (key.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        if (key.action == KeyEvent.ACTION_UP) {
+                            editing = true
+                            keyboardRequest++
+                        }
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        if (editing && imeInsets.getBottom(density) > 0) false
+                        else {
+                            if (key.action == KeyEvent.ACTION_DOWN) {
+                                val direction = if (key.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                    FocusDirection.Up
+                                } else {
+                                    FocusDirection.Down
+                                }
+                                focusManager.moveFocus(direction)
+                            }
+                            true
                         }
                     }
-
-                    TextButton(onClick = { rawExpanded = !rawExpanded }) {
-                        Text("Raw technical log  ${if (rawExpanded) "v" else ">"}")
-                    }
-                    if (rawExpanded) {
-                        Text(
-                            text = providerRawDiagnosticLog(health),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            color = TvDesign.Muted,
-                        )
-                    }
+                    else -> false
                 }
-            }
-        },
-        confirmButton = {
-            if (health != null) {
-                TextButton(
-                    onClick = {
-                        copyProviderDiagnostic(
-                            context = context,
-                            text = providerDiagnosticFullLog(
-                                repository = repository,
-                                provider = provider,
-                                health = health,
-                                currentlyEnabled = currentlyEnabled,
-                                providerCodeReady = providerCodeReady,
-                            ),
-                        )
-                    },
-                ) {
-                    Text("Copy Debug Log")
+            },
+        readOnly = !editing,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, showKeyboardOnFocus = false),
+        keyboardActions = KeyboardActions(onDone = { stopEditing() }),
+        textStyle = TextStyle(color = TvDesign.White, fontSize = 13.sp),
+        cursorBrush = SolidColor(TvDesign.Accent),
+        decorationBox = { innerTextField ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (query.isBlank()) {
+                    Text("Search diagnostic…", color = TvDesign.Muted, fontSize = 13.sp)
                 }
+                innerTextField()
             }
-        },
-        dismissButton = {
-            TextButton(onClick = ::closeAndRestore) { Text("Close") }
         },
     )
 }
-
 
 @Composable
 internal fun TvRuntimeDiagnosticsDialog(
@@ -397,42 +501,24 @@ internal fun TvRuntimeDiagnosticsDialog(
                 ) {
                     Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
-                    val editor = rememberTvOkToEdit()
-                    BasicTextField(
-                        readOnly = editor.readOnly,
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                    TvDiagnosticsSearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onFocusChanged = { searchFocused = it },
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(searchFocus)
-                            .then(editor.modifier)
-                            .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = if (showRaw) rawFocus else summaryFocus
                                 down = copyFocus
                             },
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = TvDesign.White,
-                            fontSize = 13.sp,
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(TvDesign.Accent),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (searchQuery.isBlank()) {
-                                    Text(
-                                        "Search diagnostic…",
-                                        color = TvDesign.Muted,
-                                        fontSize = 13.sp,
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
                     )
                     if (searchQuery.isNotEmpty()) {
                         TextButton(
-                            onClick = { searchQuery = "" },
+                            onClick = {
+                                searchFocus.requestFocus()
+                                searchQuery = ""
+                            },
                             modifier = Modifier.focusProperties { left = searchFocus; down = copyFocus },
                         ) {
                             Text("×", fontSize = 20.sp)
@@ -828,42 +914,24 @@ internal fun TvPerformanceDiagnosticsDialog(
                 ) {
                     Text("⌕", color = TvDesign.Muted, fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
-                    val editor = rememberTvOkToEdit()
-                    BasicTextField(
-                        readOnly = editor.readOnly,
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                    TvDiagnosticsSearchField(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onFocusChanged = { searchFocused = it },
                         modifier = Modifier
                             .weight(1f)
                             .focusRequester(searchFocus)
-                            .then(editor.modifier)
-                            .onFocusChanged { searchFocused = it.isFocused }
                             .focusProperties {
                                 up = tabFocusers[focusedTabIndex.coerceIn(tabFocusers.indices)]
                                 down = copyFocus
                             },
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = TvDesign.White,
-                            fontSize = 13.sp,
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(TvDesign.Accent),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (searchQuery.isBlank()) {
-                                    Text(
-                                        "Search diagnostic…",
-                                        color = TvDesign.Muted,
-                                        fontSize = 13.sp,
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
                     )
                     if (searchQuery.isNotEmpty()) {
                         TextButton(
-                            onClick = { searchQuery = "" },
+                            onClick = {
+                                searchFocus.requestFocus()
+                                searchQuery = ""
+                            },
                             modifier = Modifier.focusProperties { left = searchFocus; down = copyFocus },
                         ) {
                             Text("×", fontSize = 20.sp)

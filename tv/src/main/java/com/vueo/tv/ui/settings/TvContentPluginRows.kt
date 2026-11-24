@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -29,6 +30,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,14 +45,15 @@ internal fun TvSettingsEntry.isRepositoryAction(): Boolean =
     id == "refresh-repository" || id == "remove-repository"
 
 @Composable
-internal fun TvContentToggle(checked: Boolean, compact: Boolean = false) {
+internal fun TvContentToggle(checked: Boolean, compact: Boolean = false, focused: Boolean = false) {
     // The enclosing row handles D-pad activation; this switch displays that same saved state.
     Switch(
         checked = checked, onCheckedChange = null,
         modifier = if (compact) Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f } else Modifier,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = Color(0xFF202020), checkedTrackColor = Color.White,
-            checkedBorderColor = Color.White,
+            checkedThumbColor = if (focused) Color.White else Color(0xFF202020),
+            checkedTrackColor = if (focused) Color(0xFF202020) else Color.White,
+            checkedBorderColor = if (focused) Color(0xFF202020) else Color.White,
             uncheckedThumbColor = Color.White.copy(alpha = .65f),
             uncheckedTrackColor = Color(0xFF454545), uncheckedBorderColor = Color.White.copy(alpha = .25f),
         ),
@@ -70,11 +74,107 @@ internal fun TvContentSettingsRow(
     onEntryFocused: (String) -> Unit,
 ) {
     when {
+        contentLayout && entry.onAddonRemove != null -> TvInlineAddonRow(entry, requester, onLeftToSidebar, onFocused)
         !contentLayout -> TvSettingsRow(entry, requester, first, last, onLeftToSidebar = onLeftToSidebar, onFocused = onFocused)
         entry.id.startsWith("repo-") -> TvPluginRepositoryCard(entry, entries, requesterFor, onLeftToSidebar, onEntryFocused)
         entry.providerStatus != null -> TvPluginProviderRow(entry, requester, last, onLeftToSidebar, onFocused)
         else -> TvSettingsRow(entry, requester, first, last, restoreContentStyle = true, onLeftToSidebar = onLeftToSidebar, onFocused = onFocused)
     }
+}
+
+@Composable
+private fun TvInlineAddonRow(
+    entry: TvSettingsEntry,
+    requester: FocusRequester,
+    onLeftToSidebar: () -> Unit,
+    onFocused: () -> Unit,
+) {
+    val configureFocus = remember { FocusRequester() }
+    val removeFocus = remember { FocusRequester() }
+    val configure = entry.onAddonConfigure
+    val remove = entry.onAddonRemove ?: return
+    val shape = RoundedCornerShape(12.dp)
+
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(TvDesign.Surface, shape)
+            .border(1.dp, TvDesign.White.copy(alpha = .14f), shape)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(entry.title, color = TvDesign.White, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(entry.subtitle, color = TvDesign.Muted, fontSize = 11.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            entry.operationStatus?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = TvDesign.Accent, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (configure != null) {
+            TvInlineAddonControl(configureFocus, onFocused, onLeftToSidebar, { removeFocus.requestFocus() }, configure) { focused ->
+                Icon(Icons.Default.Settings, contentDescription = "Configure", modifier = Modifier.size(19.dp),
+                    tint = if (focused) TvDesign.Black else TvDesign.White)
+            }
+        }
+        TvInlineAddonControl(removeFocus, onFocused, {
+            if (configure != null) configureFocus.requestFocus() else onLeftToSidebar()
+        }, { requester.requestFocus() }, remove) { focused ->
+            Icon(Icons.Default.Delete, contentDescription = "Remove", modifier = Modifier.size(19.dp),
+                tint = if (focused) Color(0xFF971D25) else Color(0xFFFF898D))
+        }
+        TvInlineAddonControl(
+            requester, onFocused, { removeFocus.requestFocus() }, {}, entry.onActivate ?: {},
+            modifier = Modifier.width(64.dp).semantics {
+                contentDescription = if (entry.switchChecked == true) "Disable addon" else "Enable addon"
+            },
+        ) { focused ->
+            TvContentToggle(entry.switchChecked == true, compact = true, focused = focused)
+        }
+    }
+}
+
+@Composable
+private fun TvInlineAddonControl(
+    requester: FocusRequester,
+    onFocused: () -> Unit,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    onActivate: () -> Unit,
+    modifier: Modifier = Modifier.width(36.dp),
+    content: @Composable (Boolean) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = modifier.height(36.dp)
+            .focusRequester(requester)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (focused) onFocused()
+            }
+            .onPreviewKeyEvent { event ->
+                val code = event.nativeKeyEvent.keyCode
+                when {
+                    code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                            if (code == KeyEvent.KEYCODE_DPAD_LEFT) onLeft() else onRight()
+                        }
+                        true
+                    }
+                    activation(code) -> {
+                        if (event.type == KeyEventType.KeyUp) onActivate()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .background(if (focused) TvDesign.White else TvDesign.SurfaceRaised, shape)
+            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .22f), shape)
+            .focusable(),
+        contentAlignment = Alignment.Center,
+    ) { content(focused) }
 }
 
 private fun activation(key: Int): Boolean = key == KeyEvent.KEYCODE_DPAD_CENTER ||

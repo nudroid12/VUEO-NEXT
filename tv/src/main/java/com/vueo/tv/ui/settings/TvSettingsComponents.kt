@@ -30,11 +30,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import com.vueo.tv.ui.motion.TvMotionDialog as Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.PaddingValues
 import com.vueo.tv.ui.motion.TvMotionAlertDialog as AlertDialog
 import androidx.compose.material3.Icon
@@ -58,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
@@ -75,11 +74,17 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vueo.tv.ui.TvDesign
+import com.vueo.tv.ui.TvDialogButton
+import com.vueo.tv.ui.TvThemedDialog
+import com.vueo.tv.ui.motion.LocalTvMotionFinish
+import com.vueo.tv.ui.rememberTvOkToEdit
+import com.vueo.tv.ui.tvDialogInputColors
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvSidebarContentStartPadding
@@ -123,6 +128,8 @@ internal data class TvSettingsEntry(
     val providerPanelEnd: Boolean = false,
     val supportingContent: (@Composable () -> Unit)? = null,
     val operationStatus: String? = null,
+    val onAddonConfigure: (() -> Unit)? = null,
+    val onAddonRemove: (() -> Unit)? = null,
     val formControl: (@Composable (Modifier, () -> Unit, Boolean) -> Unit)? = null,
 )
 
@@ -1556,39 +1563,65 @@ internal fun TvTextEntryDialog(
         val inputRequester = remember { FocusRequester() }
         val cancelRequester = remember { FocusRequester() }
         val installRequester = remember { FocusRequester() }
-        LaunchedEffect(Unit) { inputRequester.requestFocus() }
-        Dialog(onDismissRequest = { if (!busy) dismissAndRestore() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Column(
-                modifier = Modifier.width(440.dp)
-                    .background(TvSettingsContrast.Card, RoundedCornerShape(18.dp))
-                    .border(1.dp, TvDesign.White.copy(alpha = .22f), RoundedCornerShape(18.dp))
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = value, onValueChange = { value = it }, enabled = !busy, singleLine = true,
-                    modifier = Modifier.fillMaxWidth().focusRequester(inputRequester)
-                        .focusProperties { down = cancelRequester },
-                    placeholder = { Text(placeholder, color = TvDesign.Dim, fontSize = 13.sp) },
-                    textStyle = LocalTextStyle.current.copy(color = TvDesign.White, fontSize = 14.sp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = TvDesign.White, unfocusedBorderColor = TvDesign.White.copy(alpha = .28f),
-                        cursorColor = TvDesign.White, focusedContainerColor = Color(0xFF202020),
-                        unfocusedContainerColor = Color(0xFF202020),
-                    ),
-                )
-                message?.takeIf { it.isNotBlank() }?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
-                if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.White)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
-                    TvInstallDialogButton("Cancel", !busy, Modifier.focusRequester(cancelRequester).focusProperties {
-                        up = inputRequester
-                        if (!busy && value.isNotBlank()) right = installRequester
-                    }, ::dismissAndRestore)
-                    TvInstallDialogButton(if (busy) "Installing…" else confirmLabel, !busy && value.isNotBlank(),
-                        Modifier.focusRequester(installRequester).focusProperties { up = inputRequester; left = cancelRequester }, ::saveAndRestore)
+        val canInstall = !busy && value.isNotBlank()
+
+        TvThemedDialog(title, inputRequester, ::dismissAndRestore, dismissOnBackPress = !busy) {
+            val finish = LocalTvMotionFinish.current
+            val editor = rememberTvOkToEdit(enabled = !busy)
+            val keyboard = LocalSoftwareKeyboardController.current
+            var wasBusy by remember { mutableStateOf(false) }
+            LaunchedEffect(busy) {
+                val shouldRestore = wasBusy && !busy
+                wasBusy = busy
+                if (shouldRestore) {
+                    withFrameNanos { }
+                    runCatching { inputRequester.requestFocus() }
                 }
+            }
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                enabled = !busy,
+                readOnly = editor.readOnly,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+                    .focusRequester(inputRequester)
+                    .focusProperties { down = cancelRequester }
+                    .then(editor.modifier),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, showKeyboardOnFocus = false),
+                keyboardActions = KeyboardActions(onDone = {
+                    keyboard?.hide()
+                    val target = if (canInstall) installRequester else cancelRequester
+                    target.requestFocus()
+                }),
+                placeholder = { Text(placeholder, color = TvDesign.Dim, fontSize = 13.sp) },
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                shape = RoundedCornerShape(12.dp),
+                colors = tvDialogInputColors(),
+            )
+            message?.takeIf { it.isNotBlank() }?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
+            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.White)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                TvDialogButton(
+                    label = "Cancel",
+                    enabled = !busy,
+                    modifier = Modifier.focusRequester(cancelRequester).focusProperties {
+                        up = inputRequester
+                        right = if (canInstall) installRequester else FocusRequester.Cancel
+                    },
+                    onClick = { finish(::dismissAndRestore) },
+                )
+                TvDialogButton(
+                    label = if (busy) "Installing…" else confirmLabel,
+                    enabled = canInstall,
+                    modifier = Modifier.focusRequester(installRequester).focusProperties {
+                        up = inputRequester
+                        left = cancelRequester
+                    },
+                    onClick = {
+                        if (restoreOnSave) finish(::saveAndRestore) else saveAndRestore()
+                    },
+                )
             }
         }
         return
@@ -1631,23 +1664,6 @@ internal fun TvTextEntryDialog(
 }
 
 @Composable
-private fun TvInstallDialogButton(label: String, enabled: Boolean, modifier: Modifier, onClick: () -> Unit, destructive: Boolean = false) {
-    var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(50)
-    TextButton(
-        enabled = enabled, onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.isFocused }
-            .background(if (focused) TvDesign.White else TvSettingsContrast.Card, shape)
-            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .25f), shape),
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = if (destructive) Color(0xFFFF5252) else if (focused) Color.Black else TvDesign.White,
-            disabledContentColor = TvDesign.Dim.copy(alpha = .5f),
-        ),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-    ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
-}
-
-@Composable
 internal fun TvConfirmDialog(
     title: String,
     message: String,
@@ -1671,26 +1687,28 @@ internal fun TvConfirmDialog(
     if (themedRemove) {
         val cancelRequester = remember { FocusRequester() }
         val removeRequester = remember { FocusRequester() }
-        LaunchedEffect(Unit) { cancelRequester.requestFocus() }
-        Dialog(onDismissRequest = ::dismissAndRestore, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            val finish = com.vueo.tv.ui.motion.LocalTvMotionFinish.current
-            Column(
-                modifier = Modifier.width(440.dp)
-                    .background(TvSettingsContrast.Card, RoundedCornerShape(18.dp))
-                    .border(1.dp, TvDesign.White.copy(alpha = .22f), RoundedCornerShape(18.dp))
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Text(title, color = TvDesign.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text(message, color = TvDesign.Muted, fontSize = 13.sp, lineHeight = 19.sp)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
-                    TvInstallDialogButton("Cancel", true,
-                        Modifier.focusRequester(cancelRequester).focusProperties { left = FocusRequester.Cancel; right = removeRequester },
-                        { finish { dismissAndRestore() } })
-                    TvInstallDialogButton(confirmLabel, true,
-                        Modifier.focusRequester(removeRequester).focusProperties { left = cancelRequester; right = FocusRequester.Cancel },
-                        { finish { confirmAndRestore() } }, destructive = true)
-                }
+
+        TvThemedDialog(title, cancelRequester, ::dismissAndRestore) {
+            val finish = LocalTvMotionFinish.current
+            Text(message, color = TvDesign.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+                TvDialogButton(
+                    label = "Cancel",
+                    modifier = Modifier.focusRequester(cancelRequester).focusProperties {
+                        left = FocusRequester.Cancel
+                        right = removeRequester
+                    },
+                    onClick = { finish(::dismissAndRestore) },
+                )
+                TvDialogButton(
+                    label = confirmLabel,
+                    destructive = true,
+                    modifier = Modifier.focusRequester(removeRequester).focusProperties {
+                        left = cancelRequester
+                        right = FocusRequester.Cancel
+                    },
+                    onClick = { finish(::confirmAndRestore) },
+                )
             }
         }
         return
