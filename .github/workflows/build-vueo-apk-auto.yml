@@ -37,9 +37,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: main
-          # Keep enough history to identify the exact [zip-applied] commit that
-          # belongs to the completed Apply ZIP Patch workflow.
-          fetch-depth: 20
+          # Retain the previous successful release commit for each platform,
+          # even when its last build was more than 20 commits ago.
+          fetch-depth: 0
 
       - name: Determine build scope
         id: scope
@@ -422,6 +422,8 @@ jobs:
         if: steps.scope.outputs.should_build == 'true'
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          APPLY_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           BUILD_MOBILE: ${{ steps.scope.outputs.build_mobile }}
           BUILD_TV: ${{ steps.scope.outputs.build_tv }}
         run: |
@@ -453,11 +455,100 @@ jobs:
           from pathlib import Path
           import json
           import os
+          import re
+          import subprocess
 
           repo = os.environ["GITHUB_REPOSITORY"]
           code = int(os.environ["VUEO_VERSION_CODE"])
           commit = os.environ["COMMIT_SHA"]
           published = os.environ["PUBLISHED_AT"]
+
+          def git(*args):
+              return subprocess.run(["git", *args], capture_output=True, text=True)
+
+          def resolve_commit(value):
+              if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{7,40}", value):
+                  result = git("rev-parse", "--verify", value + "^{commit}")
+                  if result.returncode == 0:
+                      return result.stdout.strip()
+              return None
+
+          def previous_commit(feed_name):
+              result = subprocess.run(
+                  ["gh", "release", "download", "vueo-dev", "--repo", repo,
+                   "--pattern", feed_name, "--output", "-"],
+                  capture_output=True, text=True,
+              )
+              if result.returncode != 0:
+                  print(f"Previous {feed_name} unavailable. Using the build's source range.")
+                  return None
+              try:
+                  feed = json.loads(result.stdout)
+              except ValueError:
+                  return None
+              if not isinstance(feed, dict):
+                  return None
+              previous = resolve_commit(feed.get("commitSha"))
+              if previous:
+                  return previous
+              # Existing feeds used a short commit hash in the old changelog.
+              notes = feed.get("changelog")
+              for note in notes if isinstance(notes, list) else []:
+                  if isinstance(note, str) and note.startswith("Commit "):
+                      previous = resolve_commit(note.removeprefix("Commit "))
+                      if previous:
+                          return previous
+              return None
+
+          def release_notes(platform, feed_name):
+              base = previous_commit(feed_name)
+              if base and git("merge-base", "--is-ancestor", base, commit).returncode != 0:
+                  base = None
+              if not base:
+                  source = resolve_commit(os.environ.get("APPLY_HEAD_SHA"))
+                  if source and git("merge-base", "--is-ancestor", source, commit).returncode == 0:
+                      base = source
+                  else:
+                      parent = git("rev-parse", "--verify", commit + "^")
+                      base = parent.stdout.strip() if parent.returncode == 0 else None
+              if not base:
+                  return ["A new development build is available."]
+              diff = git("diff", "--name-only", "--no-renames", "-z", base, commit)
+              if diff.returncode:
+                  print(f"Could not compare changes for {feed_name}.")
+                  return ["A new development build is available."]
+              paths = diff.stdout.split("\0")
+              platform_code = f"{platform}/src/main/"
+              app_paths = [path for path in paths if path.startswith(platform_code)]
+              rules = (
+                  (("/ui/settings/system/TvSystemSettings.kt",), "Updated system settings and the About screen."),
+                  (("/ui/home/", "/ui/sidebar/"), "Updated the Home screen and navigation."),
+                  (("/ui/search/",), "Updated Search."),
+                  (("/ui/player/", "/core/player/"), "Updated playback controls."),
+                  (("/ui/detail/",), "Updated the title details screen."),
+                  (("/ui/library/",), "Updated Library."),
+                  (("/ui/profile/",), "Updated profiles."),
+                  (("/ui/update/", "/core/update/"), "Updated the in-app updater."),
+                  (("/ui/settings/",), "Updated Settings."),
+                  (("/ui/content/", "/ui/source/"), "Updated content and source selection."),
+              )
+              matched_notes = {
+                  next((note for patterns, note in rules if any(pattern in path for pattern in patterns)), None)
+                  for path in app_paths
+              }
+              notes = [note for _, note in rules if note in matched_notes]
+              if any(path.startswith("shared/") and "/src/main/" in path for path in paths):
+                  notes.append("Updated shared app components.")
+              if not notes and app_paths:
+                  notes.append("Updated app components.")
+              if not notes and any(
+                  path.startswith(("gradle/", "buildSrc/", "build-logic/", ".github/workflows/"))
+                  or path in ("build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat")
+                  or path.startswith(("shared/", f"{platform}/"))
+                  for path in paths if path
+              ):
+                  notes.append("Updated build and release configuration.")
+              return notes[:3] or ["No app-specific changes since the previous release."]
 
           if os.environ["BUILD_MOBILE"] == "true":
               mobile = {
@@ -465,10 +556,8 @@ jobs:
                   "versionCode": code,
                   "versionName": os.environ["VUEO_VERSION_NAME"],
                   "title": "VUEO " + os.environ["VUEO_VERSION_NAME"],
-                  "changelog": [
-                      "Latest successful VUEO development build",
-                      "Commit " + commit[:7],
-                  ],
+                  "commitSha": commit,
+                  "changelog": release_notes("mobile", "update.json"),
                   "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEO-dev.apk",
                   "sha256": os.environ["MOBILE_SHA256"],
                   "publishedAt": published,
@@ -484,10 +573,8 @@ jobs:
                   "versionCode": code,
                   "versionName": os.environ["VUEO_TV_VERSION_NAME"],
                   "title": "VUEO TV " + os.environ["VUEO_TV_VERSION_NAME"],
-                  "changelog": [
-                      "Latest successful VUEO TV development build",
-                      "Commit " + commit[:7],
-                  ],
+                  "commitSha": commit,
+                  "changelog": release_notes("tv", "tv-update.json"),
                   "downloadUrl": f"https://github.com/{repo}/releases/download/vueo-dev/VUEOTV-dev.apk",
                   "sha256": os.environ["TV_SHA256"],
                   "publishedAt": published,
