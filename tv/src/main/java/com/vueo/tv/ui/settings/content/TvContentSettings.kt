@@ -1,5 +1,7 @@
 package com.vueo.tv.settings
 
+import com.vueo.shared.core.storage.NewEpisodesPreferences
+
 import com.vueo.shared.core.storage.RecommendationEngine
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -70,7 +72,13 @@ internal fun TvPersonalizationSettings(
     var showMatch by remember(profile.id) { mutableStateOf(dna.showDnaMatchEnabled(profile.id)) }
     var forYou by remember(profile.id) { mutableStateOf(dna.forYouEnabled(profile.id)) }
     var because by remember(profile.id) { mutableStateOf(dna.becauseYouWatchedEnabled(profile.id)) }
+    val newEpisodesPrefs = remember(context) { NewEpisodesPreferences(context) }
+    var newEpisodes by remember(profile.id) { mutableStateOf(newEpisodesPrefs.enabled(profile.id)) }
     val entries = listOf(
+        toggleEntry("new-episodes", "New Episodes", "Show recently released unwatched episodes from Watchlist and series you watch.", newEpisodes) {
+            newEpisodes = it
+            newEpisodesPrefs.setEnabled(profile.id, it)
+        }.copy(section = "HOME"),
         toggleEntry("dna", "User DNA", "Build a local taste profile from History, playback progress and Watchlist.", dnaEnabled) {
             dnaEnabled = it
             dna.setUserDnaEnabled(profile.id, it)

@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.NewEpisodesPreferences
+
 // VUEO DNA OPTIONAL SETTINGS PATCH - 2026-08-29
 
 import com.vueo.shared.core.storage.RecommendationEngine
@@ -151,6 +153,9 @@ internal fun PersonalizationSettingsScreen(
     var forYou by remember(activeProfile.id) { mutableStateOf(userDnaPreferences.forYouEnabled(activeProfile.id)) }
     var becauseYouWatched by remember(activeProfile.id) { mutableStateOf(userDnaPreferences.becauseYouWatchedEnabled(activeProfile.id)) }
 
+    val newEpisodesPrefs = remember(context) { NewEpisodesPreferences(context) }
+    var newEpisodes by remember(activeProfile.id) { mutableStateOf(newEpisodesPrefs.enabled(activeProfile.id)) }
+
     VueoSettingsPage(
         title = "Personalization",
         subtitle =
@@ -193,6 +198,19 @@ internal fun PersonalizationSettingsScreen(
                             profileId = activeProfile.id,
                             enabled = enabled,
                         )
+                    },
+                )
+            }
+        }
+        item(key = "personalization-new-episodes") {
+            VueoSettingsHubGroup(label = "HOME") {
+                VueoSettingsToggleRow(
+                    title = "New Episodes",
+                    subtitle = "Show recently released unwatched episodes from Watchlist and series you watch.",
+                    checked = newEpisodes,
+                    onCheckedChange = { enabled ->
+                        newEpisodes = enabled
+                        newEpisodesPrefs.setEnabled(activeProfile.id, enabled)
                     },
                 )
             }

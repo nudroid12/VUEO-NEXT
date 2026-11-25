@@ -547,6 +547,7 @@ internal fun MediaPoster(
     item: MediaItem,
     onClick: () -> Unit,
     onHold: ((IntOffset) -> Unit)? = null,
+    newEpisodeLabel: String? = null,
 ) {
     Column(
         modifier =
@@ -575,19 +576,23 @@ internal fun MediaPoster(
             color =
                 VueoPalette.Surface,
         ) {
-            NetworkImage(
-                url = item.poster,
-                contentDescription =
-                    item.name,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                contentScale =
-                    ContentScale.Crop,
-                fallbackText =
-                    item.name,
-            )
+            Box {
+                NetworkImage(
+                    url = item.poster,
+                    contentDescription = item.name,
+                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                    contentScale = ContentScale.Crop,
+                    fallbackText = item.name,
+                )
+                newEpisodeLabel?.let { label ->
+                    Column(Modifier.align(Alignment.TopStart).padding(6.dp)
+                        .background(VueoPalette.Accent, RoundedCornerShape(5.dp))
+                        .padding(horizontal = 6.dp, vertical = 4.dp)) {
+                        Text("NEW EPISODE", color = VueoPalette.OnAccent, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(label, color = VueoPalette.OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
+            }
         }
 
         Spacer(

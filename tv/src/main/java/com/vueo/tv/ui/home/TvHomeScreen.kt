@@ -1,5 +1,11 @@
 package com.vueo.tv.home
 
+import com.vueo.shared.core.storage.NewEpisodesPolicy
+
+import com.vueo.shared.core.storage.NewEpisodesPreferences
+
+import com.vueo.shared.core.storage.NewEpisodeEntry
+
 import com.vueo.shared.core.storage.RecommendationEngine
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
@@ -202,6 +208,31 @@ fun TvHomeScreen(
     }
 
     val activeProfileId = runtime.profileStore.activeProfileId()
+    val newEpisodesPrefs = remember(traktContext) { NewEpisodesPreferences(traktContext) }
+    val newEpisodesPreferenceRevision by NewEpisodesPreferences.revision.collectAsState()
+    val newEpisodesEnabled = remember(activeProfileId, refreshToken, active, newEpisodesPreferenceRevision) {
+        newEpisodesPrefs.enabled(activeProfileId)
+    }
+    var newEpisodes by remember(activeProfileId) { mutableStateOf<List<NewEpisodeEntry>>(emptyList()) }
+    var newEpisodesScan by remember(activeProfileId) { mutableIntStateOf(0) }
+    var newEpisodesReady by remember(activeProfileId, refreshToken, libraryRevision, active, newEpisodesEnabled) {
+        mutableStateOf(!newEpisodesEnabled)
+    }
+    LaunchedEffect(active, activeProfileId, refreshToken, libraryRevision, newEpisodesEnabled, newEpisodesScan) {
+        if (!newEpisodesEnabled) {
+            newEpisodes = emptyList()
+            newEpisodesReady = true
+            return@LaunchedEffect
+        }
+        if (!active) return@LaunchedEffect
+        val entries = withContext(Dispatchers.IO) {
+            runCatching { runtime.libraryStore.newEpisodeEntries(activeProfileId) }.getOrDefault(emptyList())
+        }
+        if (runtime.profileStore.activeProfileId() == activeProfileId) {
+            newEpisodes = entries
+            newEpisodesReady = true
+        }
+    }
 
     // Continue Watching is already present in retainedState from the tiny persisted
     // startup cache, so cached catalogs + CW can participate in the same first Home
@@ -304,8 +335,15 @@ fun TvHomeScreen(
     val baseRows = if (recommendationEngineIsCurrent) retainedState.presentationRows
         else retainedState.presentationRows.filterNot { it.key == "because-you-watched" || it.key == "for-you" }
     val kidsLimit = runtime.profileStore.kidsAgeLimit()
-    val rows = remember(baseRows, traktRows, kidsLimit, collectionRows) {
-        val combined = baseRows + buildTvHomeRows(traktRows, emptyList()) + collectionRows
+    val visibleNewEpisodes = if (newEpisodesEnabled) newEpisodes else emptyList()
+    val rows = remember(baseRows, traktRows, kidsLimit, collectionRows, visibleNewEpisodes) {
+        val newRow = visibleNewEpisodes.takeIf { it.isNotEmpty() }?.let { entries ->
+            TvHomeRow(NEW_EPISODES_ROW_KEY, "New Episodes", TvHomeRowKind.POSTERS,
+                entries.map { entry -> TvHomeEntry.Media("new-episode:${entry.key}", entry.media, entry.episodeLabel) })
+        }
+        // CW remains the first rail. Insert the new section before normal catalogs.
+        val cw = baseRows.takeWhile { it.kind == TvHomeRowKind.CONTINUE_WATCHING }
+        val combined = cw + listOfNotNull(newRow) + baseRows.drop(cw.size) + buildTvHomeRows(traktRows, emptyList()) + collectionRows
         if (kidsLimit == null) combined else combined.mapNotNull { row ->
             if (row.kind == TvHomeRowKind.COLLECTIONS) row else row.copy(entries = row.entries.filter {
                 com.vueo.shared.core.profile.KidsContentPolicy.allows(it.media.certification, kidsLimit)
@@ -330,15 +368,26 @@ fun TvHomeScreen(
     LaunchedEffect(
         runtime,
         refreshToken,
+        active,
+        activeProfileId,
+        newEpisodesEnabled,
         runtime.isHomeCatalogRuntimeReady(),
-        rows.isNotEmpty(),
+        catalogRows.isNotEmpty(),
     ) {
-        if (!runtime.isHomeCatalogRuntimeReady() || rows.isEmpty()) return@LaunchedEffect
+        if (!active || !runtime.isHomeCatalogRuntimeReady()) return@LaunchedEffect
+        if (!newEpisodesEnabled && rows.isEmpty()) return@LaunchedEffect
         withFrameNanos { }
         delay(700L)
-        if (ContinueWatchingMetadataRefresh.refresh(runtime.libraryStore, runtime.engine::loadMeta)) {
-            retainedState.libraryRevision += 1
-        }
+        do {
+            if (runtime.profileStore.activeProfileId() != activeProfileId) return@LaunchedEffect
+            if (ContinueWatchingMetadataRefresh.refresh(runtime.libraryStore, runtime.engine::loadMeta,
+                    includeWatchlist = newEpisodesEnabled)) {
+                retainedState.libraryRevision += 1
+            }
+            if (!newEpisodesEnabled) break
+            newEpisodesScan += 1
+            delay(NewEpisodesPolicy.REFRESH_INTERVAL_MS)
+        } while (true)
     }
 
     LaunchedEffect(rows.isNotEmpty()) {
@@ -387,7 +436,7 @@ fun TvHomeScreen(
             active = active,
             routeReturnPending = routeReturnPending,
             routeFocusAnchor = retainedState.routeFocusAnchor?.copy(
-                restoreReady = returnSnapshotReady && actionEntry == null,
+                restoreReady = returnSnapshotReady && newEpisodesReady && actionEntry == null,
             ),
             onCaptureRouteFocusAnchor = {
                 returnSnapshotReady = false

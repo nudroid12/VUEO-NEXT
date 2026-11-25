@@ -16,9 +16,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 object ContinueWatchingMetadataRefresh {
     private val gate = Semaphore(2)
 
-    suspend fun refresh(store: LibraryStore, loadMetadata: suspend (MediaItem) -> MediaItem): Boolean = coroutineScope {
+    suspend fun refresh(store: LibraryStore, loadMetadata: suspend (MediaItem) -> MediaItem, includeWatchlist: Boolean = false): Boolean = coroutineScope {
         val profileId = store.activeContinueWatchingProfileId()
-        val candidates = withContext(Dispatchers.IO) { store.continueWatchingMetadataCandidates(System.currentTimeMillis()) }
+        val candidates = withContext(Dispatchers.IO) { store.continueWatchingMetadataCandidates(System.currentTimeMillis(), includeWatchlist) }
         candidates.map { media ->
             async(Dispatchers.IO) {
                 gate.withPermit {
@@ -26,7 +26,7 @@ object ContinueWatchingMetadataRefresh {
                     try {
                         val fresh = withTimeoutOrNull(15_000L) { loadMetadata(media) } ?: return@withPermit false
                         if (fresh.id != media.id || fresh.type != media.type) return@withPermit false
-                        store.updateContinueWatchingMetadata(DetailUpstreamPolicy.normalizeSeriesEpisodes(fresh), profileId)
+                        store.updateContinueWatchingMetadata(DetailUpstreamPolicy.normalizeSeriesEpisodes(fresh), profileId, includeWatchlist)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {

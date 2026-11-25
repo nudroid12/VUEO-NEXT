@@ -420,34 +420,62 @@ class LibraryStore(
 
     fun activeContinueWatchingProfileId(): String = profileStore.activeProfileId()
 
+    /** Read the existing title index off-main; no source discovery or extra network request. */
     @Synchronized
-    fun continueWatchingMetadataCandidates(nowMs: Long): List<MediaItem> {
+    fun newEpisodeEntries(profileId: String, nowMs: Long = System.currentTimeMillis()): List<NewEpisodeEntry> {
+        synchronized(SYNC_STORAGE_LOCK) {
+            if (profileStore.activeProfileId() != profileId) return emptyList()
+            val hidden = dismissedContinueWatchingKeys() + markedWatchedKeys()
+            val titles = NewEpisodesPolicy.followed(watchlist(), continueWatchingPlaybackEntries(), hidden)
+                .map { media -> media.copy(episodes = episodeCache.read(media.type, media.id)) }
+            val watched = watchedEpisodeKeys()
+            val entries = NewEpisodesPolicy.select(titles, watched, nowMs)
+            return if (profileStore.activeProfileId() == profileId) entries else emptyList()
+        }
+    }
+
+    @Synchronized
+    fun continueWatchingMetadataCandidates(nowMs: Long, includeWatchlist: Boolean = false): List<MediaItem> {
         val hidden = dismissedContinueWatchingKeys() + markedWatchedKeys()
-        return continueWatchingPlaybackEntries().groupBy { continueWatchingTitleKey(it.media) }.values
-            .map { it.first().media }
+        val playbackTitles = continueWatchingPlaybackEntries().map { it.media }.distinctBy(::continueWatchingTitleKey)
             .filter { ContinueWatchingPolicy.isSeries(it) && continueWatchingTitleKey(it) !in hidden }
-            .filter { nowMs - prefs.getLong(scopedKey("cw_meta_attempt:${continueWatchingTitleKey(it)}"), 0L) >= 15 * 60_000L }
+        fun attempted(media: MediaItem): Long = prefs.getLong(scopedKey("cw_meta_attempt:${continueWatchingTitleKey(media)}"), 0L)
+        val duePlayback = playbackTitles.filter { nowMs - attempted(it) >= NewEpisodesPolicy.REFRESH_INTERVAL_MS }
+        if (!includeWatchlist) return duePlayback
+
+        // Watchlist-only checks use the same throttled metadata path as CW;
+        // oldest attempts first, at most one small extra batch per Home refresh.
+        val playbackKeys = playbackTitles.map(::continueWatchingTitleKey).toSet()
+        val dueSaved = watchlist().filter(ContinueWatchingPolicy::isSeries)
+            .filterNot { continueWatchingTitleKey(it) in playbackKeys }
+            .filter { nowMs - attempted(it) >= NewEpisodesPolicy.WATCHLIST_REFRESH_INTERVAL_MS }
+            .sortedBy(::attempted).take(NewEpisodesPolicy.WATCHLIST_BATCH_SIZE)
+        return duePlayback + dueSaved
     }
 
     @Synchronized
     fun claimContinueWatchingMetadata(media: MediaItem, profileId: String, nowMs: Long): Boolean {
-        if (profileStore.activeProfileId() != profileId) return false
-        val key = scopedKey("cw_meta_attempt:${continueWatchingTitleKey(media)}")
-        if (nowMs - prefs.getLong(key, 0L) < 15 * 60_000L) return false
-        prefs.edit().putLong(key, nowMs).apply()
-        return true
+        synchronized(SYNC_STORAGE_LOCK) {
+            if (profileStore.activeProfileId() != profileId) return false
+            val key = ProfileStore.scopedPreferenceKey(profileId, "cw_meta_attempt:${continueWatchingTitleKey(media)}")
+            if (nowMs - prefs.getLong(key, 0L) < NewEpisodesPolicy.REFRESH_INTERVAL_MS) return false
+            prefs.edit().putLong(key, nowMs).apply()
+            return true
+        }
     }
 
     @Synchronized
-    fun updateContinueWatchingMetadata(media: MediaItem, profileId: String): Boolean {
+    fun updateContinueWatchingMetadata(media: MediaItem, profileId: String, includeWatchlist: Boolean = false): Boolean {
         synchronized(SYNC_STORAGE_LOCK) {
             if (profileStore.activeProfileId() != profileId || media.episodes.isEmpty()) return false
             val key = continueWatchingTitleKey(media)
-            if (key in dismissedContinueWatchingKeys() || key in markedWatchedKeys()) return false
-            val before=episodeCache.read(media.type,media.id)
-            episodeCache.save(media.type,media.id,media.episodes)
-            val changed=before!=episodeCache.read(media.type,media.id)
-            if(changed) refreshHomeContinueWatchingCache(exact=true)
+            if (key in dismissedContinueWatchingKeys() || key in markedWatchedKeys()) {
+                if (!includeWatchlist || !isWatchlisted(media)) return false
+            }
+            val before = episodeCache.read(media.type, media.id)
+            episodeCache.save(media.type, media.id, media.episodes)
+            val changed = before != episodeCache.read(media.type, media.id)
+            if (changed && profileStore.activeProfileId() == profileId) refreshHomeContinueWatchingCache(exact = true)
             return changed
         }
     }

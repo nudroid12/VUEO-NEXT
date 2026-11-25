@@ -193,6 +193,7 @@ internal fun TvModernHomeRows(
         val anchor = routeFocusAnchor ?: return@LaunchedEffect
         val row = currentRows.firstOrNull { it.key == anchor.rowKey && it.entries.isNotEmpty() }
             ?: currentRows.firstOrNull { it.kind == TvHomeRowKind.POSTERS && it.entries.isNotEmpty() }
+            ?: currentRows.firstOrNull { it.entries.isNotEmpty() }
             ?: run {
                 onRouteFocusRestored()
                 return@LaunchedEffect
@@ -201,9 +202,11 @@ internal fun TvModernHomeRows(
             .takeIf { it >= 0 } ?: (if (row.key == anchor.rowKey) anchor.cardIndex else 0)
                 .coerceIn(0, row.entries.lastIndex)
         val sameRow = row.key == anchor.rowKey
-        val sameOrder = sameRow && (row.kind != TvHomeRowKind.CONTINUE_WATCHING ||
+        val sameOrder = sameRow && (!row.isDynamicEpisodeRail() ||
             anchor.rowCardKeys == row.entries.map { it.key })
-        val verticalIndex = if (sameRow) anchor.verticalIndex else currentRows.indexOf(row)
+        val targetRowIndex = currentRows.indexOf(row)
+        val rowShift = if (anchor.capturedRowIndex >= 0) targetRowIndex - anchor.capturedRowIndex else 0
+        val verticalIndex = if (sameRow) (anchor.verticalIndex + rowShift).coerceIn(0, currentRows.lastIndex) else targetRowIndex
         val verticalOffset = if (sameRow) anchor.verticalOffset else 0
         // This also owns initial focus when Home was recreated after Sources.
         // Do not let the later menu effect replay an initial reset over this return.
@@ -218,8 +221,8 @@ internal fun TvModernHomeRows(
         verticalFocusTarget = HomeVerticalFocusTarget(
             rowKey = row.key, cardIndex = cardIndex, token = verticalFocusToken,
             routeReturn = true, restorePosition = anchor.horizontal.takeIf { sameOrder },
-            cardKey = row.entries[cardIndex].key.takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
-            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { sameOrder && row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+            cardKey = row.entries[cardIndex].key.takeIf { row.isDynamicEpisodeRail() },
+            restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { sameOrder && row.isDynamicEpisodeRail() },
         )
         traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$sameOrder" }
     }
@@ -446,6 +449,28 @@ internal fun TvModernHomeRows(
         }
     }
 
+    val newRailExists = rows.any { it.key == NEW_EPISODES_ROW_KEY && it.entries.isNotEmpty() }
+    LaunchedEffect(newRailExists, active, routeReturnPending, navigationOwnsFocus, navigationVisible) {
+        if (newRailExists || !active || routeReturnPending || navigationOwnsFocus || navigationVisible ||
+            TvHomeFocusMemory.activeRowKey != NEW_EPISODES_ROW_KEY) return@LaunchedEffect
+        val available = currentRows
+        val targetIndex = available.indexOfFirst { it.entries.isNotEmpty() }
+        if (targetIndex < 0) {
+            onUpFromFirstRow()
+            return@LaunchedEffect
+        }
+        val row = available[targetIndex]
+        verticalFocusJob[0]?.cancel()
+        pendingVerticalRowIndex = -1
+        fastVerticalScrolling = false
+        TvHomeFocusMemory.activeRowKey = row.key
+        verticalState.scrollToItem(targetIndex)
+        if (!currentNavigationVisible) {
+            verticalFocusToken += 1
+            verticalFocusTarget = HomeVerticalFocusTarget(row.key, 0, verticalFocusToken)
+        }
+    }
+
     // Opening navigation revokes pending row commands without scrolling to a preview.
     // Keys exclude rows, so progressive catalog batches cannot restart this effect.
     LaunchedEffect(navigationVisible) {
@@ -560,7 +585,7 @@ internal fun TvModernHomeRows(
                 items = rows,
                 key = { _, row -> row.key },
                 contentType = { _, row -> row.kind },
-            ) { _, row ->
+            ) { rowIndex, row ->
                 val rowVisible by remember(verticalState, row.key) {
                     derivedStateOf {
                         verticalState.layoutInfo.visibleItemsInfo.any {
@@ -629,19 +654,21 @@ internal fun TvModernHomeRows(
                             TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                             verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
                             horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key
-                                .takeIf { row.kind == TvHomeRowKind.CONTINUE_WATCHING },
+                                .takeIf { row.isDynamicEpisodeRail() },
                             rowCardKeys = row.entries.map { it.key },
+                            capturedRowIndex = rowIndex,
                         ))
                         onOpen(entry)
                     },
                     onPosterLongClick = { entry ->
-                        if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) {
+                        if (row.isDynamicEpisodeRail()) {
                             onCaptureRouteFocusAnchor(HomeRouteFocusAnchor(
                                 row.key, entry.key, row.entries.indexOfFirst { it.key == entry.key }.coerceAtLeast(0),
                                 TvHomeHorizontalPosition(rowState.firstVisibleItemIndex, rowState.firstVisibleItemScrollOffset),
                                 verticalState.firstVisibleItemIndex, verticalState.firstVisibleItemScrollOffset,
                                 horizontalFirstCardKey = row.entries.getOrNull(rowState.firstVisibleItemIndex)?.key,
                                 rowCardKeys = row.entries.map { it.key },
+                                capturedRowIndex = rowIndex,
                             ))
                         }
                         onPosterLongClick(entry)
@@ -774,8 +801,8 @@ private fun TvModernHomeRow(
         }
     }
 
-    // Only a CW route return follows live entity identity; ordinary DPAD restores retain their policy.
-    val cwReturnKeys = if(row.kind == TvHomeRowKind.CONTINUE_WATCHING && verticalFocusTarget?.routeReturn == true)
+    // Dynamic episode rails follow live title identity; ordinary DPAD restores retain their policy.
+    val cwReturnKeys = if(row.isDynamicEpisodeRail() && verticalFocusTarget?.routeReturn == true)
         row.entries.map { it.key } else null
     LaunchedEffect(verticalFocusTarget?.token, contentFocusEnabled, active, cwReturnKeys) {
         val target = verticalFocusTarget ?: return@LaunchedEffect
@@ -929,7 +956,7 @@ private fun TvModernHomeRow(
                         items = row.entries,
                         key = { _, entry -> entry.key },
                     ) { index, entry ->
-                        val itemRequester = if(row.kind == TvHomeRowKind.CONTINUE_WATCHING) {
+                        val itemRequester = if(row.isDynamicEpisodeRail()) {
                             cwFocusRequesters.getOrPut(entry.key) { FocusRequester() }.also { requester ->
                                 itemFocusRequesters.entries.removeAll { it.value === requester && it.key != index }
                                 itemFocusRequesters[index] = requester
@@ -954,7 +981,7 @@ private fun TvModernHomeRow(
                             contentFocusEnabled = contentFocusEnabled,
                             onLeftAtStart = onLeftAtRowStart.takeIf { index == 0 },
                             onFocused = {
-                                if(row.kind == TvHomeRowKind.CONTINUE_WATCHING) focusedCwKey = entry.key
+                                if(row.isDynamicEpisodeRail()) focusedCwKey = entry.key
                                 val returningToThisCard = verticalFocusTarget?.let {
                                     it.routeReturn && (if(it.cardKey != null) it.cardKey == entry.key else it.cardIndex == index)
                                 } == true
@@ -1068,15 +1095,28 @@ private fun TvModernHomeCard(
 
 @Composable
 private fun PosterCardContent(entry: TvHomeEntry, loadImage: Boolean, focused: Boolean) {
-    TvNetworkImage(
-        url = entry.media.poster ?: entry.media.background,
-        contentDescription = entry.media.name,
-        modifier = Modifier.fillMaxSize(),
-        contentScale = ContentScale.Crop,
-        fallback = TvDesign.SurfaceRaised,
-        loadEnabled = loadImage,
-        highPriority = focused,
-    )
+    Box(Modifier.fillMaxSize()) {
+        TvNetworkImage(
+            url = entry.media.poster ?: entry.media.background,
+            contentDescription = entry.media.name,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            fallback = TvDesign.SurfaceRaised,
+            loadEnabled = loadImage,
+            highPriority = focused,
+        )
+        (entry as? TvHomeEntry.Media)?.newEpisodeLabel?.let { label ->
+            Column(
+                modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
+                    .background(TvDesign.Accent, RoundedCornerShape(5.dp))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text("NEW EPISODE", color = TvDesign.OnAccent, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(label, color = TvDesign.OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+    }
 }
 
 @Composable

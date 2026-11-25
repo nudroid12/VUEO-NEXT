@@ -93,7 +93,12 @@ internal fun TvHomePresentation(
         val currentKey = focusedEntry?.key
         val currentRow = rows.firstOrNull { it.key == lastFocusedRowKey && it.entries.isNotEmpty() }
         // Keep the committed hero and row through progressive catalog updates.
-        if (currentKey != null && currentRow?.entries?.any { it.key == currentKey } == true) {
+        val currentEntry = currentRow?.entries?.firstOrNull { it.key == currentKey }
+        if (currentEntry != null) {
+            if (currentRow?.key == NEW_EPISODES_ROW_KEY && currentEntry != focusedEntry) {
+                focusedEntry = currentEntry
+                heroScene?.takeIf { it.entry.key == currentKey }?.let { heroScene = it.copy(entry = currentEntry) }
+            }
             return@LaunchedEffect
         }
 
