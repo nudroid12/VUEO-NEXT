@@ -13,6 +13,10 @@ import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,6 +103,21 @@ import kotlinx.coroutines.launch
 private const val SEARCH_COLUMNS = 6
 private const val FLOATING_SEARCH_COLUMNS = 7
 private val SEARCH_FOCUS_PAINT_INSET = 8.dp
+
+@OptIn(ExperimentalFoundationApi::class)
+private val SearchGridReveal = object : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        if (size <= 0f || containerSize <= 0f) return 0f
+        val end = offset + size
+        return when {
+            // A card taller than the viewport may already cover it.
+            offset <= 0f && end >= containerSize -> 0f
+            offset < -1f -> offset
+            end > containerSize + 1f -> minOf(offset, end - containerSize)
+            else -> 0f
+        }
+    }
+}
 
 internal enum class TvSearchTypeFilter(val label: String) {
     ALL("All"),
@@ -193,6 +212,7 @@ internal class TvSearchSession {
     var firstVisibleItemScrollOffset by mutableStateOf(0)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TvSearchScreen(
     runtime: TvRuntime,
@@ -809,53 +829,55 @@ internal fun TvSearchScreen(
                 }
 
                 filteredItems.isNotEmpty() -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(searchColumns),
-                        state = gridState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = contentStartPadding,
-                            end = gridEndPadding,
-                            top = SEARCH_FOCUS_PAINT_INSET,
-                            bottom = 36.dp + SEARCH_FOCUS_PAINT_INSET,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                    ) {
-                        gridItemsIndexed(
-                            items = filteredItems,
-                            key = { _, item -> mediaKey(item) },
-                        ) { index, item ->
-                            val key = mediaKey(item)
-                            TvSearchPosterTile(
-                                item = item,
-                                catalogLabel = searchCatalogLabel(runtime, item),
-                                requester = resultRequesterCache.getOrPut(key) { FocusRequester() },
-                                onFocused = {
-                                    if (!navExpanded) {
-                                        lastContentTarget = "result:$key"
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides SearchGridReveal) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(searchColumns),
+                            state = gridState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = contentStartPadding,
+                                end = gridEndPadding,
+                                top = SEARCH_FOCUS_PAINT_INSET,
+                                bottom = 36.dp + SEARCH_FOCUS_PAINT_INSET,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            gridItemsIndexed(
+                                items = filteredItems,
+                                key = { _, item -> mediaKey(item) },
+                            ) { index, item ->
+                                val key = mediaKey(item)
+                                TvSearchPosterTile(
+                                    item = item,
+                                    catalogLabel = searchCatalogLabel(runtime, item),
+                                    requester = resultRequesterCache.getOrPut(key) { FocusRequester() },
+                                    onFocused = {
+                                        if (!navExpanded) {
+                                            lastContentTarget = "result:$key"
+                                            session.focusedMediaKey = key
+                                        }
+                                    },
+                                    onClick = {
                                         session.focusedMediaKey = key
-                                    }
-                                },
-                                onClick = {
-                                    session.focusedMediaKey = key
-                                    session.restoreResultsFocus = true
-                                    session.firstVisibleItemIndex = gridState.firstVisibleItemIndex
-                                    session.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
-                                    onOpenMedia(item)
-                                },
-                                onLongClick = { actionMedia = item },
-                                onUpFromFirstRow = if (index < searchColumns) {
-                                    { runCatching { typeRequester.requestFocus() } }
-                                } else null,
-                                onLeftFromFirstColumn = if (index % searchColumns == 0) {
-                                    {
-                                        focusSidebar()
-                                    }
-                                } else null,
-                                blockRight =
-                                    index % searchColumns == searchColumns - 1 || index == filteredItems.lastIndex,
-                            )
+                                        session.restoreResultsFocus = true
+                                        session.firstVisibleItemIndex = gridState.firstVisibleItemIndex
+                                        session.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
+                                        onOpenMedia(item)
+                                    },
+                                    onLongClick = { actionMedia = item },
+                                    onUpFromFirstRow = if (index < searchColumns) {
+                                        { runCatching { typeRequester.requestFocus() } }
+                                    } else null,
+                                    onLeftFromFirstColumn = if (index % searchColumns == 0) {
+                                        {
+                                            focusSidebar()
+                                        }
+                                    } else null,
+                                    blockRight =
+                                        index % searchColumns == searchColumns - 1 || index == filteredItems.lastIndex,
+                                )
+                            }
                         }
                     }
                 }
@@ -967,7 +989,7 @@ private fun TvMobileSearchField(
                 onValueChange = onValueChange,
                 singleLine = true,
                 readOnly = editor.readOnly,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = false),
                 textStyle = TextStyle(
                     color = TvDesign.White,
                     fontSize = 15.sp,
@@ -1282,16 +1304,18 @@ private fun TvSearchPosterTile(
             color = TvDesign.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            text = if (catalogLabel.isNullOrBlank()) {
-                listOfNotNull(item.releaseInfo, searchTypeLabel(item)).joinToString(" • ")
-            } else {
-                listOf(searchTypeLabel(item), catalogLabel).joinToString(" • ")
-            },
+            text = listOfNotNull(
+                SearchPolicy.releaseYear(item).takeIf { it > 0 }?.toString()
+                    ?: item.releaseInfo.takeIf { catalogLabel.isNullOrBlank() },
+                searchTypeLabel(item),
+                catalogLabel?.takeIf { it.isNotBlank() },
+            ).joinToString(" • "),
             color = TvDesign.Muted,
             fontSize = 9.sp,
             maxLines = 1,

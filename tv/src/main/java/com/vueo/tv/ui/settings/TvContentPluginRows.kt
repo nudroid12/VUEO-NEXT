@@ -3,6 +3,7 @@ package com.vueo.tv.settings
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import com.vueo.tv.ui.TvDesign
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
@@ -113,42 +114,68 @@ private fun TvInlineAddonRow(
             }
         }
         if (configure != null) {
-            TvInlineAddonControl(configureFocus, onFocused, onLeftToSidebar, { removeFocus.requestFocus() }, configure) { focused ->
-                Icon(Icons.Default.Settings, contentDescription = "Configure", modifier = Modifier.size(19.dp),
-                    tint = if (focused) TvDesign.Black else TvDesign.White)
+            TvInlineAddonControl(
+                label = "Configure",
+                requester = configureFocus,
+                onFocused = onFocused,
+                onLeft = onLeftToSidebar,
+                onRight = { removeFocus.requestFocus() },
+                onActivate = configure,
+            ) { focused ->
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (focused) 22.dp else 19.dp),
+                    tint = if (focused) TvDesign.White else TvDesign.Muted,
+                )
             }
-        }
-        TvInlineAddonControl(removeFocus, onFocused, {
-            if (configure != null) configureFocus.requestFocus() else onLeftToSidebar()
-        }, { requester.requestFocus() }, remove) { focused ->
-            Icon(Icons.Default.Delete, contentDescription = "Remove", modifier = Modifier.size(19.dp),
-                tint = if (focused) Color(0xFF971D25) else Color(0xFFFF898D))
+        } else {
+            Spacer(Modifier.width(50.dp))
         }
         TvInlineAddonControl(
-            requester, onFocused, { removeFocus.requestFocus() }, {}, entry.onActivate ?: {},
-            modifier = Modifier.width(64.dp).semantics {
-                contentDescription = if (entry.switchChecked == true) "Disable addon" else "Enable addon"
-            },
+            label = "Remove",
+            requester = removeFocus,
+            onFocused = onFocused,
+            onLeft = { if (configure != null) configureFocus.requestFocus() else onLeftToSidebar() },
+            onRight = { requester.requestFocus() },
+            onActivate = remove,
         ) { focused ->
-            TvContentToggle(entry.switchChecked == true, compact = true, focused = focused)
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = null,
+                modifier = Modifier.size(if (focused) 22.dp else 19.dp),
+                tint = if (focused) TvDesign.White else Color(0xFFFF898D),
+            )
+        }
+        val checked = entry.switchChecked == true
+        TvInlineAddonControl(
+            label = if (checked) "Disable addon" else "Enable addon",
+            requester = requester,
+            onFocused = onFocused,
+            onLeft = { removeFocus.requestFocus() },
+            onRight = {},
+            onActivate = entry.onActivate ?: {},
+            modifier = Modifier.width(70.dp),
+        ) {
+            TvContentToggle(checked, compact = true)
         }
     }
 }
 
 @Composable
 private fun TvInlineAddonControl(
+    label: String,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onLeft: () -> Unit,
     onRight: () -> Unit,
     onActivate: () -> Unit,
-    modifier: Modifier = Modifier.width(36.dp),
+    modifier: Modifier = Modifier.width(50.dp),
     content: @Composable (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(8.dp)
     Box(
-        modifier = modifier.height(36.dp)
+        modifier = modifier.height(49.dp)
             .focusRequester(requester)
             .onFocusChanged {
                 focused = it.isFocused
@@ -170,11 +197,26 @@ private fun TvInlineAddonControl(
                     else -> false
                 }
             }
-            .background(if (focused) TvDesign.White else TvDesign.SurfaceRaised, shape)
-            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .22f), shape)
-            .focusable(),
-        contentAlignment = Alignment.Center,
-    ) { content(focused) }
+            .clickable(onClick = onActivate)
+            .semantics { contentDescription = label },
+    ) {
+        Box(
+            modifier = Modifier.align(Alignment.TopCenter).height(34.dp),
+            contentAlignment = Alignment.Center,
+        ) { content(focused) }
+        if (focused) {
+            Text(
+                label,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                color = TvDesign.White,
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 private fun activation(key: Int): Boolean = key == KeyEvent.KEYCODE_DPAD_CENTER ||
