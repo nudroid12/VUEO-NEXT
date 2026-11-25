@@ -7,6 +7,8 @@ import androidx.compose.ui.unit.dp
 internal const val MODERN_HOME_HERO_TEXT_WIDTH_FRACTION = 0.42f
 internal const val MODERN_HOME_HERO_MEDIA_WIDTH_FRACTION = 0.72f
 internal const val MODERN_HOME_ROWS_VIEWPORT_FRACTION = 0.52f
+internal const val MODERN_HOME_EXPANDED_ROWS_VIEWPORT_FRACTION = 0.32f
+internal val MODERN_HOME_POSTER_HEIGHT = 172.dp
 internal const val MODERN_HOME_HERO_FOCUS_SETTLE_MS = 450L
 internal val MODERN_HOME_CONTENT_START_PADDING = 96.dp
 
@@ -130,9 +132,6 @@ internal fun TvHomeEntry.heroSecondaryMeta(): String {
             remainingText()?.let(::add)
         } else {
             media.runtimeMinutes?.takeIf { it > 0 }?.let { add(formatMinutes(it.toLong())) }
-        }
-        media.imdbRating?.takeIf { it > 0.0 }?.let { rating ->
-            add("IMDb ${"%.1f".format(java.util.Locale.US, rating)}")
         }
     }
     return parts.distinct().joinToString("  •  ")

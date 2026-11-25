@@ -1,9 +1,5 @@
 package com.vueo.tv.home
 
-import com.vueo.tv.ui.motion.*
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,13 +10,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -32,7 +28,6 @@ import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
 import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.tv.core.TvTitleArtwork
@@ -78,44 +73,11 @@ internal fun TvHomePresentation(
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     val floatingPillMode = tvSidebarIsPillMode()
     val hideClassicSidebar = tvSidebarIsHiddenClassic()
-    val showContinueWatchingPreview = floatingPillMode && navigationVisible
-    val targetRowsViewportFraction = tvSidebarHomeRowsViewportFraction(
+    // Topbar focus and visibility no longer drive the Home viewport.
+    val rowsViewportFraction = tvSidebarHomeRowsViewportFraction(
         classic = MODERN_HOME_ROWS_VIEWPORT_FRACTION,
-        pill = if (navigationVisible) 0.32f else MODERN_HOME_ROWS_VIEWPORT_FRACTION,
+        pill = MODERN_HOME_EXPANDED_ROWS_VIEWPORT_FRACTION,
     )
-    // One interruptible progress value drives rail height, hero size and copy
-    // position together. A gentle acceleration avoids the abrupt 180ms resize.
-    val menuContentEasing = remember { CubicBezierEasing(0.22f, 0f, 0.18f, 1f) }
-    val rowsViewportFraction by animateFloatAsState(
-        targetValue = targetRowsViewportFraction,
-        animationSpec = tvTunedSpec(TvMotionGroup.TOPBAR, navigationVisible, tween(durationMillis = 340, easing = menuContentEasing)),
-        label = "homeRowsViewportFraction",
-    )
-
-    // Topbar's 340ms viewport resize is intentional. Only record its motion,
-    // making it distinguishable from a real LazyRow/LazyColumn scroll.
-    LaunchedEffect(floatingPillMode, navigationVisible, hideClassicSidebar) {
-        if (!PerformanceDiagnostics.isCollecting()) return@LaunchedEffect
-        PerformanceDiagnostics.captureRuntimeEvent(
-            "HOME_VIEWPORT_TARGET topbar=$floatingPillMode navigation=$navigationVisible " +
-                "hideSidebar=$hideClassicSidebar target=$targetRowsViewportFraction motion=" +
-                if (TvMotionTuning.active(TvMotionGroup.TOPBAR)) TvMotionTuning.get(TvMotionGroup.TOPBAR).toString() else "Original 340ms"
-        )
-        var lastLoggedAt = 0L
-        snapshotFlow { rowsViewportFraction }.collect { fraction ->
-            val now = SystemClock.uptimeMillis()
-            if (lastLoggedAt == 0L || now - lastLoggedAt >= 85L ||
-                kotlin.math.abs(fraction - targetRowsViewportFraction) <= 0.001f
-            ) {
-                PerformanceDiagnostics.captureRuntimeEvent(
-                    "HOME_VIEWPORT_PROGRESS fraction=" +
-                        String.format(java.util.Locale.US, "%.4f", fraction) +
-                        " target=" + String.format(java.util.Locale.US, "%.4f", targetRowsViewportFraction)
-                )
-                lastLoggedAt = now
-            }
-        }
-    }
 
     LaunchedEffect(rows) {
         val currentKey = focusedEntry?.key
@@ -210,14 +172,35 @@ internal fun TvHomePresentation(
             .background(TvDesign.Black),
     ) {
         val screenHeight = maxHeight
-        val rowsViewportHeight = screenHeight * rowsViewportFraction.coerceIn(.05f, .95f)
+        val defaultRowsHeight = screenHeight * rowsViewportFraction
+        // Fit a complete poster and its row title on smaller TV viewports.
+        // Keep the expanded hero at least as large as the classic layout.
+        val minimumExpandedRowsHeight = MODERN_HOME_POSTER_HEIGHT + 14.dp +
+            with(density) { 22.sp.toDp() } + 4.dp
+        val rowsViewportHeight = if (floatingPillMode) {
+            maxOf(defaultRowsHeight, minimumExpandedRowsHeight)
+                .coerceAtMost(screenHeight * MODERN_HOME_ROWS_VIEWPORT_FRACTION)
+        } else {
+            defaultRowsHeight
+        }
         val heroHeight = (screenHeight - rowsViewportHeight + 38.dp).coerceAtMost(screenHeight)
+
+        LaunchedEffect(floatingPillMode, rowsViewportHeight, navigationVisible) {
+            if (PerformanceDiagnostics.isCollecting() && screenHeight > 0.dp) {
+                PerformanceDiagnostics.captureRuntimeEvent(
+                    "HOME_VIEWPORT_TARGET topbar=$floatingPillMode navigation=$navigationVisible " +
+                        "target=${rowsViewportHeight / screenHeight} fixed=true",
+                )
+            }
+        }
 
         TvModernHomeHero(
             scene = heroScene,
             heroHeight = heroHeight,
             rowsViewportHeight = rowsViewportHeight,
-            stableHeroHeight = (screenHeight * 0.68f + 38.dp).coerceAtMost(screenHeight),
+            stableHeroHeight = (
+                screenHeight * (1f - MODERN_HOME_EXPANDED_ROWS_VIEWPORT_FRACTION) + 38.dp
+            ).coerceAtMost(screenHeight),
             stableRowsViewportHeight = screenHeight * MODERN_HOME_ROWS_VIEWPORT_FRACTION,
         )
 
@@ -226,7 +209,6 @@ internal fun TvHomePresentation(
                 TvModernHomeRows(
                     rows = rows,
                     rowsViewportHeight = rowsViewportHeight,
-                    showContinueWatchingPreview = showContinueWatchingPreview,
                     contentFocusRequester = contentFocusRequester,
                     focusResetToken = focusResetToken,
                     contentReturnToken = contentReturnToken,

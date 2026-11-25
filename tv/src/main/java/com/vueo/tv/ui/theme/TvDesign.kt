@@ -73,6 +73,7 @@ object TvDesign {
     val Surface: Color get() = palette.surface
     val SurfaceRaised: Color get() = palette.surfaceRaised
     val White = Color(0xFFF4F5F7)
+    val Rating = Color(0xFFE8BD62)
     val Muted: Color get() = palette.muted
     val Dim: Color get() = palette.dim
     val Accent: Color get() = accentState

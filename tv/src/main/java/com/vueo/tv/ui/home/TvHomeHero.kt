@@ -35,6 +35,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -281,9 +284,20 @@ private fun HeroCopy(scene: TvHomeHeroScene) {
         }
 
         val secondaryMeta = entry.heroSecondaryMeta()
-        if (secondaryMeta.isNotBlank()) {
+        val rating = media.imdbRating?.takeIf { it.isFinite() && it > 0.0 }
+        if (secondaryMeta.isNotBlank() || rating != null) {
+            val displayMeta = buildAnnotatedString {
+                append(secondaryMeta)
+                if (rating != null) {
+                    if (secondaryMeta.isNotBlank()) append("  •  ")
+                    append("IMDb ")
+                    withStyle(SpanStyle(color = TvDesign.Rating)) {
+                        append("%.1f".format(java.util.Locale.US, rating))
+                    }
+                }
+            }
             androidx.compose.material3.Text(
-                text = secondaryMeta,
+                text = displayMeta,
                 color = TvDesign.White.copy(alpha = .82f),
                 fontSize = 13.sp,
                 lineHeight = 17.sp,

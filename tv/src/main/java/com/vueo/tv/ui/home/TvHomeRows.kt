@@ -77,6 +77,7 @@ import com.vueo.tv.ui.TvDesign
 import com.vueo.tv.ui.TvNetworkImage
 import com.vueo.tv.ui.tvPosterActivation
 import com.vueo.tv.ui.tvSidebarContentStartPadding
+import com.vueo.tv.ui.tvSidebarIsPillMode
 import com.vueo.tv.ui.motion.TvMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -95,7 +96,6 @@ private inline fun traceHome(build: () -> String) {
 private val ContinueWatchingWidth = 210.dp
 private val ContinueWatchingHeight = 119.dp
 private val PosterWidth = 114.dp
-private val PosterHeight = 172.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
 private val VerticalRowCacheExtent = 520.dp
@@ -118,7 +118,6 @@ private data class HomeVerticalFocusTarget(
 internal fun TvModernHomeRows(
     rows: List<TvHomeRow>,
     rowsViewportHeight: Dp,
-    showContinueWatchingPreview: Boolean,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
     contentReturnToken: Int,
@@ -450,7 +449,8 @@ internal fun TvModernHomeRows(
 
     // Scroll first while the menu still owns focus. Then address the exact saved
     // card, even when the original deep row is no longer composed.
-    LaunchedEffect(contentReturnToken, navigationVisible) {
+    val preserveTopbarViewport = tvSidebarIsPillMode()
+    LaunchedEffect(contentReturnToken, navigationVisible, preserveTopbarViewport) {
         if (contentReturnToken <= 0 || appliedContentReturnToken == contentReturnToken ||
             !navigationVisible
         ) return@LaunchedEffect
@@ -472,7 +472,16 @@ internal fun TvModernHomeRows(
                 "from=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
         }
         try {
-            verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
+            val layout = verticalState.layoutInfo
+            val rowFullyVisible = layout.visibleItemsInfo.any {
+                it.key == row.key && it.offset >= layout.viewportStartOffset &&
+                    it.offset + it.size <= layout.viewportEndOffset
+            }
+            // The Topbar overlays a stable viewport. A visible row can receive
+            // its saved focus without scrolling back to its leading edge.
+            if (!preserveTopbarViewport || !rowFullyVisible) {
+                verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
+            }
             traceHome {
                 "HOME_SCROLL_FINISH axis=vertical cause=nav_return target=${row.key} " +
                     "at=${verticalState.firstVisibleItemIndex}:${verticalState.firstVisibleItemScrollOffset}"
@@ -978,7 +987,7 @@ private fun TvModernHomeCard(
     )
 
     val width = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingWidth else PosterWidth
-    val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingHeight else PosterHeight
+    val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingHeight else MODERN_HOME_POSTER_HEIGHT
     val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
 
     Box(
