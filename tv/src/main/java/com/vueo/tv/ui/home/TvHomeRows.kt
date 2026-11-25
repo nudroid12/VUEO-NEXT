@@ -1,5 +1,6 @@
 package com.vueo.tv.home
 
+import androidx.compose.ui.unit.Density
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
@@ -99,6 +100,22 @@ private val PosterWidth = 114.dp
 private val ContinueShape = RoundedCornerShape(12.dp)
 private val PosterShape = RoundedCornerShape(12.dp)
 private val VerticalRowCacheExtent = 520.dp
+private val RowTitleSpacing = 14.dp
+private val RowTitleLineHeight = 22.sp
+
+private val TvHomeRowKind.cardWidth: Dp
+    get() = if (this == TvHomeRowKind.POSTERS) PosterWidth else ContinueWatchingWidth
+private val TvHomeRowKind.cardHeight: Dp
+    get() = if (this == TvHomeRowKind.POSTERS) MODERN_HOME_POSTER_HEIGHT else ContinueWatchingHeight
+
+
+private fun TvHomeRowKind.focusPaintInset(): Dp =
+    if (this == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
+
+/** Height of a complete row including its title, gap and focus paint space. */
+internal fun TvHomeRowKind.homeRowContentHeight(density: Density): Dp =
+    cardHeight + RowTitleSpacing + with(density) { RowTitleLineHeight.toDp() } +
+        focusPaintInset() * 2f
 
 private data class HomeVerticalFocusTarget(
     val rowKey: String,
@@ -367,7 +384,11 @@ internal fun TvModernHomeRows(
                     }
                 }
             }
-            if (!onScreen) verticalState.animateScrollToItem(requestedIndex, 0)
+            val changesRowHeight = availableRows[actualIndex].kind.homeRowContentHeight(density) !=
+                targetRow.kind.homeRowContentHeight(density)
+            if (!onScreen || changesRowHeight) {
+                verticalState.animateScrollToItem(requestedIndex, 0)
+            }
             withFrameNanos { }
             if (currentNavigationVisible) return@launch
             verticalFocusToken++
@@ -675,7 +696,7 @@ private fun TvModernHomeRow(
     val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
     val rowHorizontalPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
     // Reserve paint space for the 1.022x focus scale without moving the cards.
-    val focusPaintInset = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4.dp else 0.dp
+    val focusPaintInset = row.kind.focusPaintInset()
 
     // Port of NuvioTV 0.8.3-beta ModernHomeRows focus alignment policy.
     // Left/Right keeps the focused poster at the row start; Up/Down must
@@ -835,7 +856,7 @@ private fun TvModernHomeRow(
     }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(RowTitleSpacing),
     ) {
         Row(
             modifier = Modifier
@@ -848,7 +869,7 @@ private fun TvModernHomeRow(
                 text = row.title,
                 color = TvDesign.White.copy(alpha = .94f),
                 fontSize = 18.sp,
-                lineHeight = 22.sp,
+                lineHeight = RowTitleLineHeight,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -986,8 +1007,8 @@ private fun TvModernHomeCard(
         label = "modernHomeCardScale",
     )
 
-    val width = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingWidth else PosterWidth
-    val height = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueWatchingHeight else MODERN_HOME_POSTER_HEIGHT
+    val width = kind.cardWidth
+    val height = kind.cardHeight
     val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
 
     Box(

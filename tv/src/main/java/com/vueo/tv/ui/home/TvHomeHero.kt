@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -64,6 +63,7 @@ internal fun TvModernHomeHero(
     rowsViewportHeight: Dp,
     stableHeroHeight: Dp,
     stableRowsViewportHeight: Dp,
+    logoHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val contentStartPadding = tvSidebarContentStartPadding(MODERN_HOME_CONTENT_START_PADDING)
@@ -103,7 +103,6 @@ internal fun TvModernHomeHero(
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .offset(x = 56.dp)
                 .fillMaxWidth(MODERN_HOME_HERO_MEDIA_WIDTH_FRACTION)
                 .height(stableHeroHeight),
         ) {
@@ -160,14 +159,14 @@ internal fun TvModernHomeHero(
                 .padding(
                     start = contentStartPadding,
                     end = 48.dp,
-                    bottom = stableRowsViewportHeight + 16.dp,
+                    bottom = stableRowsViewportHeight + MODERN_HOME_HERO_COPY_BOTTOM_GAP,
                 )
                 .fillMaxWidth(MODERN_HOME_HERO_TEXT_WIDTH_FRACTION)
                 .graphicsLayer { translationY = copyTranslationPx },
             contentKey = { it?.entry?.key },
         ) { focusedEntry ->
             if (focusedEntry != null) {
-                HeroCopy(scene = focusedEntry)
+                HeroCopy(scene = focusedEntry, logoHeight = logoHeight)
             }
         }
     }
@@ -180,14 +179,15 @@ private fun HeroMediaGradient(modifier: Modifier = Modifier) {
 
     Box(
         modifier = modifier.drawWithCache {
-            // Vueo Modern Home only fades the leading ~45% of the hero-media
-            // plane. The rest of the artwork stays vivid.
-            val horizontalFadeWidth = size.width * .45f
+            // Blend the expanded artwork into the background while keeping
+            // the wider title and synopsis readable on bright backdrops.
+            val horizontalFadeWidth = size.width * .68f
             val horizontalStops = arrayOf(
                 0.0f to bg,
-                .22f to bg.copy(alpha = .86f),
-                .46f to bg.copy(alpha = .56f),
-                .76f to bg.copy(alpha = .16f),
+                .18f to bg.copy(alpha = .98f),
+                .40f to bg.copy(alpha = .88f),
+                .58f to bg.copy(alpha = .65f),
+                .82f to bg.copy(alpha = .16f),
                 1.0f to Color.Transparent,
             )
             val horizontal = if (isRtl) {
@@ -204,14 +204,14 @@ private fun HeroMediaGradient(modifier: Modifier = Modifier) {
                 )
             }
 
-            // The bottom fade is also confined to the hero plane and starts
-            // late, so the image keeps contrast until it hands off to rows.
-            val bottomFadeStart = size.height * .82f
+            // Fade gradually behind the focused row instead of ending the
+            // backdrop abruptly at the catalog boundary.
+            val bottomFadeStart = size.height * .70f
             val vertical = Brush.verticalGradient(
                 colorStops = arrayOf(
                     0.0f to Color.Transparent,
-                    .40f to bg.copy(alpha = .25f),
-                    .75f to bg.copy(alpha = .65f),
+                    .35f to bg.copy(alpha = .12f),
+                    .72f to bg.copy(alpha = .55f),
                     1.0f to bg,
                 ),
                 startY = bottomFadeStart,
@@ -236,25 +236,28 @@ private fun HeroMediaGradient(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun HeroCopy(scene: TvHomeHeroScene) {
+private fun HeroCopy(scene: TvHomeHeroScene, logoHeight: Dp) {
     val entry = scene.entry
     val media = entry.media
     val logo = scene.artwork?.logo
     var logoLoadFailed by remember(logo) { mutableStateOf(false) }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(Modifier.height(100.dp).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        Box(
+            Modifier.height(logoHeight).fillMaxWidth(),
+            contentAlignment = Alignment.BottomStart,
+        ) {
             if (!logo.isNullOrBlank() && !logoLoadFailed) {
                 TvNetworkImage(
                     url = logo,
                     contentDescription = media.name,
-                    modifier = Modifier.width(220.dp).height(100.dp),
+                    modifier = Modifier.width(MODERN_HOME_LOGO_WIDTH).height(logoHeight),
                     contentScale = ContentScale.Fit,
                     fallback = Color.Transparent,
                     highPriority = true,
-                    alignment = Alignment.CenterStart,
+                    alignment = Alignment.BottomStart,
                     onLoadResult = { success -> logoLoadFailed = !success },
                 )
             } else {
@@ -275,8 +278,8 @@ private fun HeroCopy(scene: TvHomeHeroScene) {
             androidx.compose.material3.Text(
                 text = primaryMeta,
                 color = TvDesign.White.copy(alpha = .86f),
-                fontSize = 13.sp,
-                lineHeight = 17.sp,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -299,8 +302,8 @@ private fun HeroCopy(scene: TvHomeHeroScene) {
             androidx.compose.material3.Text(
                 text = displayMeta,
                 color = TvDesign.White.copy(alpha = .82f),
-                fontSize = 13.sp,
-                lineHeight = 17.sp,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -310,9 +313,9 @@ private fun HeroCopy(scene: TvHomeHeroScene) {
         media.description?.takeIf { it.isNotBlank() }?.let { description ->
             androidx.compose.material3.Text(
                 text = description,
-                color = TvDesign.White.copy(alpha = .78f),
-                fontSize = 14.sp,
-                lineHeight = 19.sp,
+                color = TvDesign.White.copy(alpha = .90f),
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
