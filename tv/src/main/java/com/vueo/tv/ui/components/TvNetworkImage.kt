@@ -2,6 +2,9 @@ package com.vueo.tv.ui
 
 import com.vueo.tv.ui.motion.*
 import android.content.Context
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
+import android.os.SystemClock
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -41,37 +44,62 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.lang.ref.WeakReference
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 private object TvImageCache {
     private const val DISK_CACHE_DIRECTORY = "vueo-tv-image-cache"
-    private const val MAX_DISK_CACHE_BYTES = 96L * 1024L * 1024L
     private const val MAX_DOWNLOAD_BYTES = 16L * 1024L * 1024L
+    private const val MAX_PREVIEWS = 512
 
     private val memoryCache = object : LruCache<String, Bitmap>(
         (Runtime.getRuntime().maxMemory() / 1024L / 8L)
-            .coerceAtMost(24L * 1024L)
-            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .coerceIn(1L, 24L * 1024L)
             .toInt(),
     ) {
         override fun sizeOf(key: String, value: Bitmap): Int =
-            (value.allocationByteCount / 1024).coerceAtLeast(1)
+            ((value.allocationByteCount.toLong() + 1023L) / 1024L).toInt().coerceAtLeast(1)
     }
 
     private val urlLocks = Array(64) { Mutex() }
     private val loadingPermits = Semaphore(3)
     // Ordinary posters use at most two slots, leaving capacity for hero/focus.
     private val ordinaryPermits = Semaphore(2)
-    private val diskCacheCleaned = AtomicBoolean(false)
-    private val previewByUrl = ConcurrentHashMap<String, WeakReference<Bitmap>>()
+    // Lock only local disk operations, never network I/O. Readers and final
+    // publication cannot race with eviction; the hero's reserved permit stays intact.
+    private val diskLock = Mutex()
+    private val diskMaintenance = TvImageDiskCacheMaintenance()
+    private val callbacksRegistered = AtomicBoolean(false)
+    private val previewByUrl = LinkedHashMap<String, WeakReference<Bitmap>>(MAX_PREVIEWS, 0.75f, true)
 
     private fun key(url: String, size: IntSize) = "$url:${size.width}x${size.height}"
 
-    private fun rememberPreview(url: String, bitmap: Bitmap) {
+    private fun rememberPreview(url: String, bitmap: Bitmap): Unit = synchronized(previewByUrl) {
         if (!bitmap.isRecycled) {
             previewByUrl[url] = WeakReference(bitmap)
+            while (previewByUrl.size > MAX_PREVIEWS) {
+                previewByUrl.remove(previewByUrl.keys.first())
+            }
         }
+    }
+
+    private fun clearMemory() {
+        memoryCache.evictAll()
+        synchronized(previewByUrl) { previewByUrl.clear() }
+        // Do not recycle bitmaps; a Compose image may still be displaying one.
+    }
+
+    private fun registerCallbacks(context: Context) {
+        if (!callbacksRegistered.compareAndSet(false, true)) return
+        context.applicationContext.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+            override fun onLowMemory() = clearMemory()
+            override fun onTrimMemory(level: Int) {
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) clearMemory()
+                else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+                    memoryCache.trimToSize(memoryCache.maxSize() / 2)
+                }
+            }
+        })
     }
 
     fun memoryEntry(url: String?, size: IntSize): Bitmap? =
@@ -82,18 +110,18 @@ private object TvImageCache {
     // A previous decoded size can paint immediately while layout determines
     // the exact target size. Keep an O(1) weak preview index instead of copying
     // the whole LruCache with snapshot() for every composed poster.
-    fun cachedPreview(url: String?): Bitmap? {
-        if (url.isNullOrBlank()) return null
+    fun cachedPreview(url: String?): Bitmap? = synchronized(previewByUrl) {
+        if (url.isNullOrBlank()) return@synchronized null
         val bitmap = previewByUrl[url]?.get()
         if (bitmap == null || bitmap.isRecycled) {
             previewByUrl.remove(url)
-            return null
-        }
-        return bitmap
+            null
+        } else bitmap
     }
 
     suspend fun load(context: Context, url: String, size: IntSize, highPriority: Boolean): Bitmap? =
         withContext(Dispatchers.IO) {
+            registerCallbacks(context)
             val cacheKey = key(url, size)
             memoryCache.get(cacheKey)?.let { return@withContext it }
 
@@ -105,11 +133,15 @@ private object TvImageCache {
                     currentCoroutineContext().ensureActive()
 
                     val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
-                    if (!cacheDirectory.exists()) cacheDirectory.mkdirs()
-                    cleanDiskCacheOnce(cacheDirectory)
-
                     val cacheFile = File(cacheDirectory, url.sha256())
-                    readCachedBitmap(cacheFile, size)?.let {
+                    val cached = diskLock.withLock {
+                        if (!cacheDirectory.isDirectory && !cacheDirectory.mkdirs()) {
+                            return@withPermit null
+                        }
+                        diskMaintenance.maintain(cacheDirectory, SystemClock.elapsedRealtime())
+                        readCachedBitmap(cacheFile, size)
+                    }
+                    cached?.let {
                         memoryCache.put(cacheKey, it)
                         rememberPreview(url, it)
                         return@withPermit it
@@ -179,9 +211,25 @@ private object TvImageCache {
 
             currentCoroutineContext().ensureActive()
             val bitmap = decodeBitmap(temporaryFile, size) ?: return null
-            if (!temporaryFile.renameTo(cacheFile)) {
-                temporaryFile.copyTo(cacheFile, overwrite = true)
-                temporaryFile.delete()
+            currentCoroutineContext().ensureActive()
+            diskLock.withLock {
+                if (!temporaryFile.renameTo(cacheFile)) {
+                    // No partial final file may survive a failed copy.
+                    try {
+                        temporaryFile.copyTo(cacheFile, overwrite = true)
+                    } catch (error: Exception) {
+                        cacheFile.delete()
+                        throw error
+                    }
+                    temporaryFile.delete()
+                }
+                cacheFile.setLastModified(System.currentTimeMillis())
+                // Recheck the budget after every completed download, not just at launch.
+                diskMaintenance.maintain(
+                    requireNotNull(cacheFile.parentFile),
+                    SystemClock.elapsedRealtime(),
+                    force = true,
+                )
             }
             bitmap
         } catch (cancelled: CancellationException) {
@@ -207,25 +255,10 @@ private object TvImageCache {
             BitmapFactory.decodeFile(file.absolutePath, options)
         } catch (_: OutOfMemoryError) {
             // A failed image must not terminate navigation on memory-limited TVs.
-            memoryCache.evictAll()
-            previewByUrl.clear()
+            clearMemory()
             null
         } catch (_: Exception) {
             null
-        }
-    }
-
-    private fun cleanDiskCacheOnce(directory: File) {
-        if (!diskCacheCleaned.compareAndSet(false, true)) return
-
-        val files = directory.listFiles()?.filter(File::isFile).orEmpty()
-        var currentSize = files.sumOf(File::length)
-        if (currentSize <= MAX_DISK_CACHE_BYTES) return
-
-        files.sortedBy(File::lastModified).forEach { file ->
-            if (currentSize <= MAX_DISK_CACHE_BYTES) return
-            val fileSize = file.length()
-            if (file.delete()) currentSize -= fileSize
         }
     }
 
