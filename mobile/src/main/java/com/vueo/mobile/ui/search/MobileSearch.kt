@@ -1,5 +1,17 @@
 package com.vueo.mobile.ui
 
+import androidx.compose.ui.platform.LocalFocusManager
+
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+
+import com.vueo.shared.core.storage.RecentSearchStore
+
+import com.vueo.shared.core.storage.RecentSearchPolicy
+
+import com.vueo.shared.core.storage.RecentSearchMode
+
+import com.vueo.shared.core.storage.RecentSearch
+
 import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
@@ -313,6 +325,58 @@ internal fun SearchScreen(
     val kidsLimit = searchProfile.kidsMaxAge.takeIf { searchProfile.isKids }
     val latestProfileScope = androidx.compose.runtime.rememberUpdatedState(profileScope)
 
+    val recentStore = remember(context, searchProfile.id) { RecentSearchStore(context, searchProfile.id) }
+    var recentSearches by remember(recentStore) { mutableStateOf(recentStore.entries()) }
+    var pendingRecent by remember(recentStore) { mutableStateOf<RecentSearch?>(null) }
+    var recentDialog by remember(recentStore) { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    fun queueRecent(value: String, mode: SearchMode) {
+        pendingRecent = RecentSearchPolicy.entry(value, RecentSearchMode.valueOf(mode.name))
+    }
+    fun savePendingRecent() {
+        val entry = pendingRecent ?: return
+        if (profileStore.activeProfileId() != searchProfile.id || booting ||
+            RecentSearchPolicy.entry(query, RecentSearchMode.valueOf(searchMode.name))?.key != entry.key) return
+        recentSearches = recentStore.record(entry)
+        pendingRecent = null
+    }
+    LaunchedEffect(pendingRecent, booting) {
+        if (pendingRecent == null || booting) return@LaunchedEffect
+        delay(900)
+        savePendingRecent()
+    }
+    fun useRecent(entry: RecentSearch) {
+        if (profileStore.activeProfileId() != searchProfile.id) return
+        recentDialog = false
+        pendingRecent = null
+        recentSearches = recentStore.record(entry)
+        keyboard?.hide()
+        focusManager.clearFocus()
+        onSearchModeChange(SearchMode.valueOf(entry.mode.name))
+        onQueryChange(entry.query)
+    }
+    if (recentDialog && query.isBlank() && recentSearches.isNotEmpty()) {
+        AlertDialog(onDismissRequest = { recentDialog = false },
+            title = { Text("Recent searches") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    items(recentSearches, key = { it.key }) { entry ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { useRecent(entry) }, modifier = Modifier.weight(1f)) {
+                                Text(entry.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            IconButton(onClick = {
+                                recentSearches = recentStore.remove(entry)
+                                if (recentSearches.isEmpty()) recentDialog = false
+                            }) { Icon(Icons.Default.Close, contentDescription = "Remove ${entry.label}") }
+                        }
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { recentSearches = recentStore.clear(); recentDialog = false }) { Text("Clear all") } },
+            confirmButton = { TextButton(onClick = { recentDialog = false }) { Text("Close") } })
+    }
     val latestSearchQuery = androidx.compose.runtime.rememberUpdatedState(query)
 
     var actorSourceAvailable by remember(profileScope) {
@@ -750,8 +814,7 @@ internal fun SearchScreen(
 
                 OutlinedTextField(
                     value = query,
-                    onValueChange =
-                        onQueryChange,
+                    onValueChange = { value -> queueRecent(value, searchMode); onQueryChange(value) },
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -789,6 +852,7 @@ internal fun SearchScreen(
                         ) {
                             IconButton(
                                 onClick = {
+                                    pendingRecent = null
                                     onQueryChange("")
                                 }
                             ) {
@@ -809,6 +873,18 @@ internal fun SearchScreen(
                             18.dp
                         ),
                 )
+
+                if (query.isBlank() && recentSearches.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recent searches", color = VueoPalette.Muted, fontSize = 12.sp)
+                        TextButton(onClick = { useRecent(recentSearches.first()) }, modifier = Modifier.weight(1f)) {
+                            Text(recentSearches.first().label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = {
+                            keyboard?.hide(); focusManager.clearFocus(); recentDialog = true
+                        }) { Text("View all") }
+                    }
+                }
 
                 if (
                     searchPending ||
@@ -863,6 +939,7 @@ internal fun SearchScreen(
                     SearchModeToggle(
                         mode = searchMode,
                         onModeChange = { next ->
+                            queueRecent(query, next)
                             if (next != searchMode) {
                                 onSearchModeChange(next)
                                 searchResults =
@@ -1009,7 +1086,7 @@ internal fun SearchScreen(
                             "Try another title or change the filters."
                         },
                     onSearchAllYears = titleSearch?.let { request ->
-                        { onQueryChange(request.title) }
+                        { queueRecent(request.title, searchMode); onQueryChange(request.title) }
                     },
                 )
             }
@@ -1057,6 +1134,7 @@ internal fun SearchScreen(
                                     1f
                                 ),
                             onClick = {
+                                savePendingRecent()
                                 onMediaClick(
                                     item
                                 )

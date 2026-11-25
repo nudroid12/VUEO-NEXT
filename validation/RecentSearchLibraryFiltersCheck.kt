@@ -1,0 +1,67 @@
+package com.vueo.shared.core.storage
+
+import android.content.Context
+import com.vueo.shared.core.media.MediaItem
+
+fun main() {
+    var checks = 0
+    fun verify(name: String, ok: Boolean) { check(ok) { name }; checks++; println("PASS $name") }
+    val context = Context()
+    val one = RecentSearchStore(context, "default")
+    val two = RecentSearchStore(context, "second")
+    fun title(query: String) = requireNotNull(RecentSearchPolicy.entry(query, RecentSearchMode.TITLE))
+    verify("blank and one-character queries ignored",
+        RecentSearchPolicy.entry("  ", RecentSearchMode.TITLE) == null &&
+        RecentSearchPolicy.entry("a", RecentSearchMode.TITLE) == null)
+    val iron = title("  Iron   Man 2008 ")
+    verify("title and year preserved", iron.query == "Iron Man 2008")
+    one.record(iron)
+    one.record(title("IRON MAN 2008"))
+    verify("case-insensitive deduplication", one.entries().size == 1)
+    one.record(title("Iron Man 2010"))
+    verify("different years kept", one.entries().size == 2)
+    val actor = requireNotNull(RecentSearchPolicy.entry(iron.query, RecentSearchMode.ACTOR))
+    one.record(actor)
+    verify("title and actor modes kept separately", one.entries().size == 3 && one.entries().first().mode == RecentSearchMode.ACTOR)
+    one.record(iron)
+    verify("repeat moves query to top", one.entries().first() == iron && one.entries().size == 3)
+    verify("store reload retains order", RecentSearchStore(context, "default").entries() == one.entries())
+    verify("profile isolation", two.entries().isEmpty())
+    two.record(title("Another profile"))
+    one.remove(actor)
+    verify("individual removal preserves title entry", one.entries().none { it.mode == RecentSearchMode.ACTOR } && one.entries().any { it.key == iron.key })
+    repeat(20) { one.record(title("query $it")) }
+    verify("recent list capped and newest first", one.entries().size == 12 && one.entries().first().query == "query 19" && one.entries().last().query == "query 8")
+    one.clear()
+    verify("clear all is profile-scoped and persistent", one.entries().isEmpty() && RecentSearchStore(context,"default").entries().isEmpty() && two.entries().size == 1)
+    context.getSharedPreferences("vueo_library",0).edit().putString("recent_searches_v1", "{broken").apply()
+    verify("malformed state handled", one.entries().isEmpty())
+    one.record(iron)
+    verify("malformed state recoverable", one.entries() == listOf(iron))
+    val movie = MediaItem("m", "movie", "Zeta", releaseInfo="2008")
+    val show = MediaItem("s", "tv", "Alpha", releaseInfo="2024–")
+    val anime = MediaItem("a", "series", "Beta", releaseInfo="2020")
+    val unknown = MediaItem("u", "films", "Gamma")
+    val input = listOf(movie, unknown, anime, show)
+    fun filter(type: LibraryTypeFilter, sort: LibrarySort) = LibraryFilterPolicy.apply(input,type,sort)
+    verify("default order preserved", filter(LibraryTypeFilter.ALL,LibrarySort.RECENT)==input)
+    verify("movie aliases filtered", filter(LibraryTypeFilter.MOVIES,LibrarySort.RECENT)==listOf(movie,unknown))
+    verify("series includes tv and anime series", filter(LibraryTypeFilter.SERIES,LibrarySort.RECENT)==listOf(anime,show))
+    verify("title ascending", filter(LibraryTypeFilter.ALL,LibrarySort.TITLE)==listOf(show,anime,unknown,movie))
+    verify("release year newest first, unknown last",filter(LibraryTypeFilter.ALL,LibrarySort.YEAR)==listOf(show,anime,movie,unknown))
+    verify("combined sort and type",filter(LibraryTypeFilter.SERIES,LibrarySort.YEAR)==listOf(show,anime))
+    verify("source list unmodified",input==listOf(movie,unknown,anime,show))
+    verify("empty filtered view",LibraryFilterPolicy.apply(listOf(movie),LibraryTypeFilter.SERIES,LibrarySort.RECENT).isEmpty())
+    val f1 = LibraryFilterStore(context,"default")
+    val f2 = LibraryFilterStore(context,"second")
+    verify("default prefs",f1.read(false)==LibraryFilters() && f1.read(true)==LibraryFilters())
+    val watchlist = LibraryFilters(LibraryTypeFilter.MOVIES,LibrarySort.TITLE)
+    val history = LibraryFilters(LibraryTypeFilter.SERIES,LibrarySort.YEAR)
+    f1.save(false,watchlist)
+    f1.save(true,history)
+    verify("watchlist and history independent",f1.read(false)==watchlist && f1.read(true)==history)
+    verify("filter persistence",LibraryFilterStore(context,"default").read(true)==history)
+    verify("filter profile isolation",f2.read(false)==LibraryFilters() && f2.read(true)==LibraryFilters())
+    verify("recent label follows tab",LibrarySort.RECENT.label(true)=="Recently Watched" && LibrarySort.RECENT.label(false)=="Recently Added")
+    println("$checks checks passed")
+}

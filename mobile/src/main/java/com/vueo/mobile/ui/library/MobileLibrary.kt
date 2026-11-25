@@ -1,5 +1,15 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.storage.LibrarySort
+
+import com.vueo.shared.core.storage.LibraryTypeFilter
+
+import com.vueo.shared.core.storage.LibraryFilterPolicy
+
+import com.vueo.shared.core.storage.LibraryFilterStore
+
+import com.vueo.shared.core.storage.LibraryFilters
+
 import android.app.Activity
 import android.net.Uri
 import android.content.Context
@@ -305,7 +315,42 @@ internal fun LibraryScreen(
         loading = false
     }
 
-    val watchlist = if (historySelected) history.map { it.media } else favorites
+    val filterStore = remember(context, activeProfile.id) { LibraryFilterStore(context, activeProfile.id) }
+    var savedFilters by remember(filterStore) { mutableStateOf(filterStore.read(false)) }
+    var historyFilters by remember(filterStore) { mutableStateOf(filterStore.read(true)) }
+    var filterDialog by remember(activeProfile.id) { mutableStateOf<String?>(null) }
+    val filters = if (historySelected) historyFilters else savedFilters
+    val unfiltered = remember(historySelected, history, favorites) { if (historySelected) history.map { it.media } else favorites }
+    val watchlist = remember(unfiltered, filters) { LibraryFilterPolicy.apply(unfiltered, filters.type, filters.sort) }
+
+    fun changeFilters(next: LibraryFilters) {
+        if (historySelected) historyFilters = next else savedFilters = next
+        filterStore.save(historySelected, next)
+        filterDialog = null
+    }
+
+    filterDialog?.let { field ->
+        AlertDialog(onDismissRequest = { filterDialog = null },
+            title = { Text(if (field == "type") "Content type" else "Sort by") },
+            text = {
+                Column {
+                    if (field == "type") {
+                        LibraryTypeFilter.entries.forEach { option ->
+                            TextButton(onClick = { changeFilters(filters.copy(type = option)) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(option.label + if (option == filters.type) "  ✓" else "")
+                            }
+                        }
+                    } else {
+                        LibrarySort.entries.forEach { option ->
+                            TextButton(onClick = { changeFilters(filters.copy(sort = option)) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(option.label(historySelected) + if (option == filters.sort) "  ✓" else "")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { filterDialog = null }) { Text("Cancel") } })
+    }
     val historyCaptions = remember(history) {
         history.associate { "${it.media.type}:${it.media.id}" to LibraryHistoryPresentation.caption(it) }
     }
@@ -344,7 +389,7 @@ internal fun LibraryScreen(
         historyAction = media
     }
     val listState = rememberLazyListState()
-    LaunchedEffect(historySelected) { listState.scrollToItem(0) }
+    LaunchedEffect(historySelected, filters) { listState.scrollToItem(0) }
     val libraryUiPreferences =
         remember {
             context.getSharedPreferences(
@@ -437,6 +482,10 @@ internal fun LibraryScreen(
                         }
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { filterDialog = "type" }) { Text("Type: ${filters.type.label} ⌄") }
+                    TextButton(onClick = { filterDialog = "sort" }) { Text("${filters.sort.label(historySelected)} ⌄") }
+                }
             }
         }
 
@@ -466,9 +515,9 @@ internal fun LibraryScreen(
                 ) {
                     LibraryEmptyCard(
                         title =
-                            if (historySelected) "No watch history yet" else "Your library is empty",
+                            if (unfiltered.isNotEmpty()) "No matching titles" else if (historySelected) "No watch history yet" else "Your library is empty",
                         body =
-                            if (historySelected) "Titles you watch will appear here." else "Titles added to Watchlist will appear here.",
+                            if (unfiltered.isNotEmpty()) "Change the type filter to see more titles." else if (historySelected) "Titles you watch will appear here." else "Titles added to Watchlist will appear here.",
                     )
                 }
             }
