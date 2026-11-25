@@ -65,6 +65,7 @@ internal fun TvDetailPresentation(
     onSeasonSelected: (Int) -> Unit,
     onEpisodeFocused: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
     onEpisodeSelected: (com.vueo.shared.core.media.EpisodeItem) -> Unit,
+    onManageEpisodes: (List<com.vueo.shared.core.media.EpisodeItem>, Boolean) -> Unit,
     onOpenRelated: (com.vueo.shared.core.media.MediaItem) -> Unit,
     onOpenEntity: (MediaEntityTarget) -> Unit,
 ) {
@@ -320,6 +321,8 @@ internal fun TvDetailPresentation(
                         episodeRatings = state.episodeRatings,
                         selectedEpisode = state.selectedEpisode,
                         history = state.history,
+                        watchedEpisodeKeys = state.watchedEpisodeKeys,
+                        onManageEpisodes = onManageEpisodes,
                         sectionRequester = episodeRequester,
                         upRequester = if (hasSeasons) seasonRequester else playRequester,
                         downRequester = firstBelowEpisodes,

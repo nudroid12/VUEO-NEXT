@@ -36,7 +36,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             "vueo_library" -> when(base) {
                 "watchlist" -> "favorites"
                 "continue_watching","dismissed_continue_watching" -> "progress"
-                "history","marked_watched" -> "history"
+                "history","marked_watched","watched_episodes_v1" -> "history"
                 else -> null
             }
             "vueo_plugins" -> when(base) {
@@ -90,7 +90,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             val kind = when (base) {
                 "watchlist" -> "favorites"
                 "continue_watching", "dismissed_continue_watching" -> "progress"
-                "history", "marked_watched" -> "history"
+                "history", "marked_watched", "watched_episodes_v1" -> "history"
                 else -> null
             } ?: return@forEach
             if(kind !in kinds) return@forEach
@@ -142,7 +142,7 @@ internal class SyncLocalAdapter(private val context: Context) {
             "vueo_library" -> when(base) {
                 "watchlist" -> kind=="favorites"
                 "continue_watching","dismissed_continue_watching" -> kind=="progress"
-                "history","marked_watched" -> kind=="history"
+                "history","marked_watched","watched_episodes_v1" -> kind=="history"
                 else -> false
             }
             "vueo_plugins" -> (base=="repositories_json" && kind=="addons") || (base=="tmdb_api_key" && kind=="integrations")
@@ -200,8 +200,10 @@ internal class SyncLocalAdapter(private val context: Context) {
                     editor.putString(raw,JSONArray(sorted.map { it.getJSONObject("entry") }).toString())
                     if (file=="vueo_library") editor.remove(scoped(profile,"home_continue_watching_cache_v1"))
                 }
-                "stremio_manifest_urls","disabled_catalog_keys","dismissed_continue_watching","marked_watched" ->
+                "stremio_manifest_urls","disabled_catalog_keys","dismissed_continue_watching","marked_watched","watched_episodes_v1" -> {
                     editor.putStringSet(raw,members.map { it.getString("member") }.toSet())
+                    if (base == "watched_episodes_v1") editor.remove(scoped(profile,"home_continue_watching_cache_v1"))
+                }
                 else -> {
                     val value=members.firstOrNull()
                     if (value==null) editor.remove(raw) else when(value.getString("t")) {

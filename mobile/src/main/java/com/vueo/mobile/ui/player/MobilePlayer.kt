@@ -3158,11 +3158,13 @@ internal fun PlayerScreen(
     ) {
         mutableStateOf<List<LibraryPlaybackEntry>>(emptyList())
     }
+    var savedWatchedEpisodes by remember(media.id, media.type) { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(
         media.id,
         media.type,
         episodeHistoryRevision,
     ) {
+        savedWatchedEpisodes = withContext(Dispatchers.IO) { libraryStore.watchedEpisodeKeys() }
         episodeHistory = withContext(Dispatchers.IO) {
             mobilePlayerPersistenceMutex.withLock {
                 libraryStore.history()
@@ -3203,7 +3205,7 @@ internal fun PlayerScreen(
 
             candidate.id to PlayerEpisodeProgress(
                 fraction = fraction,
-                watched = stored?.isCompleted == true,
+                watched = com.vueo.shared.core.storage.WatchedEpisodePolicy.contains(savedWatchedEpisodes, media, candidate) || stored?.isCompleted == true,
                 positionMs = candidatePositionMs,
             )
         }

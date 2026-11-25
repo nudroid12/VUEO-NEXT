@@ -427,6 +427,9 @@ internal fun MediaDetailsScreen(
         mutableStateOf<Boolean?>(null)
     }
 
+    var episodeManagementChanged by remember(initialItem.id, initialItem.type) { mutableStateOf(false) }
+    var episodeManagementBusy by remember(initialItem.id, initialItem.type) { mutableStateOf(false) }
+    var watchedEpisodeKeys by remember(initialItem.id, initialItem.type) { mutableStateOf<Set<String>>(emptySet()) }
     var detailPlaybackEntries by remember(
         initialItem.id,
         initialItem.type,
@@ -622,7 +625,8 @@ internal fun MediaDetailsScreen(
                 media = media,
                 entries = entries,
                 initialEntry =
-                    initialLibraryEntry,
+                    initialLibraryEntry.takeUnless { episodeManagementChanged },
+                watchedEpisodes = watchedEpisodeKeys,
             )
 
         val target =
@@ -650,12 +654,13 @@ internal fun MediaDetailsScreen(
             }
         inWatchlist = watchlistUserOverride ?: storedInWatchlist
 
+        watchedEpisodeKeys = snapshot.watchedEpisodeKeys
         detailPlaybackEntries =
             (
                 snapshot.continueWatching +
                     snapshot.history +
                     listOfNotNull(
-                        initialLibraryEntry
+                        initialLibraryEntry.takeUnless { episodeManagementChanged }
                     )
             )
                 .distinctBy { entry ->
@@ -675,7 +680,7 @@ internal fun MediaDetailsScreen(
             (
                 snapshot.playbackEntries +
                     listOfNotNull(
-                        initialLibraryEntry
+                        initialLibraryEntry.takeUnless { episodeManagementChanged }
                     )
             ).distinctBy {
                 it.mediaKey
@@ -2370,7 +2375,7 @@ internal fun MediaDetailsScreen(
                                 .weight(1f)
                                 .height(48.dp),
                         enabled =
-                            !loadingStreams &&
+                            !loadingStreams && !episodeManagementBusy &&
                                 videoId != null &&
                                 (
                                     !seriesNeedsEpisode ||
@@ -2630,7 +2635,39 @@ internal fun MediaDetailsScreen(
                         selectedEpisode,
                     playbackEntries =
                         detailPlaybackEntries,
-                    onEpisodeClick = { episode ->
+                    watchedEpisodeKeys = watchedEpisodeKeys,
+                    onManageEpisodes = { targets, watched ->
+                        if (!episodeManagementBusy && detailsProfileStore.activeProfileId() == detailsProfileId) {
+                            val targetMedia = item
+                            episodeManagementBusy = true
+                            episodeManagementChanged = true
+                            detailLibraryHydrationGeneration++
+                            scope.launch {
+                                try {
+                                    val dna = detailsDnaSnapshot
+                                    val snapshot = withContext(Dispatchers.IO) {
+                                        val store = com.vueo.shared.core.storage.LibraryStore(context,
+                                            profileStore = detailsProfileStore, profileIdOverride = detailsProfileId)
+                                        store.setEpisodesWatched(targetMedia, targets, watched)
+                                        store.detailSnapshot()
+                                    }
+                                    if (item.id == targetMedia.id && item.type == targetMedia.type &&
+                                        detailsProfileStore.activeProfileId() == detailsProfileId) {
+                                        applyDetailLibrarySnapshot(item, snapshot, dna, preserveCurrentEpisode = true)
+                                        onLibraryChanged()
+                                    }
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    android.widget.Toast.makeText(context, "Couldn't update watched status. Try again.", android.widget.Toast.LENGTH_SHORT).show()
+                                } finally {
+                                    episodeManagementBusy = false
+                                }
+                            }
+                        }
+                    },
+                    onEpisodeClick = select@{ episode ->
+                        if (episodeManagementBusy) return@select
                         episodeSelectionTouchedByUser =
                             true
                         selectedSeason =

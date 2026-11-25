@@ -321,7 +321,13 @@ class PlaybackStore(
     }
 
     /** Clears every episode cursor, including process memory and entries outside bounded history. */
-    fun clearTitle(profileId: String, titleKey: String) {
+    fun clearTitle(profileId: String, titleKey: String) =
+        clearMatching(profileId) { it.startsWith("$titleKey:") }
+
+    /** Clear History should also forget resume positions for the active profile. */
+    fun clearProfile(profileId: String) = clearMatching(profileId) { true }
+
+    private fun clearMatching(profileId: String, matches: (String) -> Boolean) {
         synchronized(PERSISTENCE_LOCK) {
             val prefix = ProfileStore.scopedPreferenceKey(profileId, "")
             val mediaKeys = linkedSetOf<String>()
@@ -330,12 +336,13 @@ class PlaybackStore(
                     val start = kind + prefix
                     if (raw.startsWith(start)) {
                         val key = raw.removePrefix(start)
-                        if (key.startsWith("$titleKey:")) mediaKeys.add(key)
+                        if (prefix.isEmpty() && key.startsWith("profile:")) continue
+                        if (matches(key)) mediaKeys.add(key)
                     }
                 }
             }
             PlaybackSessionCursorMemory.snapshots.values
-                .filter { it.profileId == profileId && it.mediaKey.startsWith("$titleKey:") }
+                .filter { it.profileId == profileId && matches(it.mediaKey) }
                 .forEach { mediaKeys.add(it.mediaKey) }
             mediaKeys.forEach { applyCloudPosition(profileId, it, 0L, 0L) }
         }

@@ -13,28 +13,30 @@ object ContinueWatchingPolicy {
     fun canResume(entry: LibraryPlaybackEntry): Boolean =
         entry.positionMs > (if (isSeries(entry.media)) 0L else 5_000L) && !entry.isCompleted
 
-    fun resolve(entries: List<LibraryPlaybackEntry>, nowMs: Long = System.currentTimeMillis()): List<LibraryPlaybackEntry> =
+    fun resolve(entries: List<LibraryPlaybackEntry>, nowMs: Long = System.currentTimeMillis(), watchedEpisodes: Set<String> = emptySet()): List<LibraryPlaybackEntry> =
         entries.sortedByDescending { it.lastWatchedEpochMs }
             .distinctBy { it.mediaKey }
             .groupBy { "${it.media.type}:${it.media.id}" }
             .values.mapNotNull { titleEntries ->
-                if (isSeries(titleEntries.first().media)) resolveSeries(titleEntries, nowMs)
+                if (isSeries(titleEntries.first().media)) resolveSeries(titleEntries, nowMs, watchedEpisodes)
                 else titleEntries.firstOrNull { it.isCompleted || it.positionMs > 5_000L }
                     ?.takeUnless { it.isCompleted }
             }.sortedByDescending { it.lastWatchedEpochMs }
 
-    private fun resolveSeries(entries: List<LibraryPlaybackEntry>, nowMs: Long): LibraryPlaybackEntry? {
+    private fun resolveSeries(entries: List<LibraryPlaybackEntry>, nowMs: Long, watchedEpisodes: Set<String>): LibraryPlaybackEntry? {
         val latest = entries.firstOrNull { it.season != null && it.episode != null } ?: return null
         // Even 0:00 is a valid episode cursor; a completed prior episode cannot erase it.
-        if (!latest.isCompleted) return latest
+        if (!latest.isCompleted && (latest.positionMs > 0L || WatchedEpisodePolicy.key(latest) !in watchedEpisodes)) return latest
         val episodes = entries.flatMap { it.media.episodes }
             .distinctBy { it.season to it.episode }
             .sortedWith(compareBy<EpisodeItem> { it.season }.thenBy { it.episode })
         val currentIndex = episodes.indexOfFirst { it.season == latest.season && it.episode == latest.episode }
         if (currentIndex < 0) return null // retain the cursor in storage until metadata arrives
         val completed = entries.filter { it.isCompleted }.map { it.season to it.episode }.toSet()
+        val hasRegularSeasons = episodes.any { it.season > 0 }
         val next = episodes.drop(currentIndex + 1).firstOrNull {
-            it.season > 0 && it.episode > 0 && (it.season to it.episode) !in completed && isReleased(it, nowMs)
+            (if (hasRegularSeasons) it.season > 0 else it.season == 0) && it.episode > 0 && (it.season to it.episode) !in completed &&
+                !WatchedEpisodePolicy.contains(watchedEpisodes, latest.media, it) && isReleased(it, nowMs)
         } ?: return null // caught up: waiting state stays durable, hidden from the row
         val saved = entries.firstOrNull { it.season == next.season && it.episode == next.episode }
         return latest.copy(
@@ -51,10 +53,12 @@ object ContinueWatchingPolicy {
         return releaseMs <= nowMs
     }
 
-    fun targetEpisode(media: MediaItem, entries: List<LibraryPlaybackEntry>, initial: LibraryPlaybackEntry?): EpisodeItem? {
+    fun targetEpisode(media: MediaItem, entries: List<LibraryPlaybackEntry>, initial: LibraryPlaybackEntry?, watchedEpisodes: Set<String> = emptySet()): EpisodeItem? {
         val matching = (entries + listOfNotNull(initial)).filter { it.media.id == media.id && it.media.type == media.type }
             .map { it.copy(media = media) }
-        val target = resolve(matching).firstOrNull() ?: return null
+        val target = resolve(matching, watchedEpisodes = watchedEpisodes).firstOrNull()
+            ?: return media.episodes.takeIf { watchedEpisodes.any { key -> key.startsWith(WatchedEpisodePolicy.prefix(media)) } }.orEmpty().sortedWith(compareBy<EpisodeItem> { it.season == 0 }.thenBy { it.season }.thenBy { it.episode })
+                .firstOrNull { it.season >= 0 && !WatchedEpisodePolicy.contains(watchedEpisodes, media, it) && isReleased(it) }
         return media.episodes.firstOrNull { it.season == target.season && it.episode == target.episode }
     }
 }

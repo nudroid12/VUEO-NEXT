@@ -1031,7 +1031,8 @@ internal fun detailsPlaybackTargetEpisode(
     media: MediaItem,
     entries: List<LibraryPlaybackEntry>,
     initialEntry: LibraryPlaybackEntry?,
-): EpisodeItem? = ContinueWatchingPolicy.targetEpisode(media, entries, initialEntry)
+    watchedEpisodes: Set<String> = emptySet(),
+): EpisodeItem? = ContinueWatchingPolicy.targetEpisode(media, entries, initialEntry, watchedEpisodes)
 
 internal fun moreLikeThisAttribution(
     usesTmdb: Boolean,

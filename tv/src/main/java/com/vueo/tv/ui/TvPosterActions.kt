@@ -58,6 +58,8 @@ internal fun Modifier.tvPosterActivation(
 
         when (event.type) {
             KeyEventType.KeyDown -> {
+                // The release of the hold may have gone to the modal window.
+                if (event.nativeKeyEvent.repeatCount == 0) longPressTriggered = false
                 if (
                     event.nativeKeyEvent.repeatCount > 0 &&
                     !longPressTriggered
@@ -179,7 +181,7 @@ internal fun TvPosterActionDialog(
 }
 
 @Composable
-private fun TvPosterActionRow(
+internal fun TvPosterActionRow(
     label: String,
     requestInitialFocus: Boolean,
     onClick: () -> Unit,

@@ -68,6 +68,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
@@ -401,6 +402,7 @@ internal fun SeasonSelector(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun EpisodeSelector(
     media: MediaItem,
@@ -408,9 +410,35 @@ internal fun EpisodeSelector(
     selectedEpisode: EpisodeItem?,
     playbackEntries:
         List<LibraryPlaybackEntry>,
+    watchedEpisodeKeys: Set<String>,
+    onManageEpisodes: (List<EpisodeItem>, Boolean) -> Unit,
     onEpisodeClick:
         (EpisodeItem) -> Unit,
 ) {
+    var manageEpisode by remember(media.id, media.type, episodes.firstOrNull()?.season) { mutableStateOf<EpisodeItem?>(null) }
+    val released = episodes.filter { com.vueo.shared.core.storage.ContinueWatchingPolicy.isReleased(it) }
+    val seasonWatched = released.isNotEmpty() && released.all {
+        com.vueo.shared.core.storage.WatchedEpisodePolicy.contains(watchedEpisodeKeys, media, it)
+    }
+    manageEpisode?.let { episode ->
+        val watched = com.vueo.shared.core.storage.WatchedEpisodePolicy.contains(watchedEpisodeKeys, media, episode)
+        AlertDialog(onDismissRequest = { manageEpisode = null },
+            title = { Text("S${episode.season} E${episode.episode} · ${episode.title}") },
+            text = {
+                Column {
+                    if (watched || com.vueo.shared.core.storage.ContinueWatchingPolicy.isReleased(episode)) {
+                        TextButton(onClick = { manageEpisode = null; onManageEpisodes(listOf(episode), !watched) }) {
+                            Text(if (watched) "Mark episode as unwatched" else "Mark episode as watched")
+                        }
+                    }
+                    if (released.isNotEmpty() && !seasonWatched) {
+                        TextButton(onClick = { manageEpisode = null; onManageEpisodes(episodes, true) }) { Text("Mark season as watched") }
+                    }
+                    TextButton(onClick = { manageEpisode = null; onManageEpisodes(episodes, false) }) { Text("Mark season as unwatched") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { manageEpisode = null }) { Text("Cancel") } })
+    }
     Column(
         verticalArrangement =
             Arrangement.spacedBy(
@@ -465,11 +493,7 @@ internal fun EpisodeSelector(
                                     Modifier
                                 }
                             )
-                            .clickable {
-                                onEpisodeClick(
-                                    episode
-                                )
-                            },
+                            .combinedClickable(onClick = { onEpisodeClick(episode) }, onLongClick = { manageEpisode = episode }),
                     shape =
                         RoundedCornerShape(
                             16.dp
@@ -523,6 +547,17 @@ internal fun EpisodeSelector(
                                             )
                                         ),
                             )
+
+                            Row(Modifier.align(Alignment.TopEnd).padding(4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                if (com.vueo.shared.core.storage.WatchedEpisodePolicy.contains(watchedEpisodeKeys, media, episode)) {
+                                    Icon(Icons.Default.Check, contentDescription = "Watched", tint = VueoPalette.Accent,
+                                        modifier = Modifier.size(20.dp))
+                                }
+                                IconButton(onClick = { manageEpisode = episode }, modifier = Modifier.size(40.dp)) {
+                                    Icon(Icons.Default.MoreHoriz, contentDescription = "Episode options", tint = Color.White)
+                                }
+                            }
 
                             Surface(
                                 modifier =

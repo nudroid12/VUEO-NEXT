@@ -13,6 +13,7 @@ data class LibraryDetailSnapshot(
     val history: List<LibraryPlaybackEntry>,
     val continueWatching: List<LibraryPlaybackEntry>,
     val playbackEntries: List<LibraryPlaybackEntry>,
+    val watchedEpisodeKeys: Set<String> = emptySet(),
 )
 
 data class LibraryHomeSnapshot(
@@ -277,6 +278,7 @@ class LibraryStore(
         val hiddenTitleKeys =
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
+        val watchedEpisodes = watchedEpisodeKeys()
 
         return readContinueWatching()
             .let(::kidsFilter)
@@ -285,7 +287,7 @@ class LibraryStore(
             .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
             .filter { entry ->
                 if (ContinueWatchingPolicy.isSeries(entry.media)) {
-                    !entry.isCompleted
+                    !entry.isCompleted && (entry.positionMs > 0L || WatchedEpisodePolicy.key(entry) !in watchedEpisodes)
                 } else {
                     entry.positionMs > 5_000L && !entry.isCompleted
                 }
@@ -374,6 +376,7 @@ class LibraryStore(
                 history = history.let(::kidsFilter),
                 continueWatching = continueWatching.let(::kidsFilter),
                 playbackEntries = playbackEntries.let(::kidsFilter),
+                watchedEpisodeKeys = watchedEpisodeKeys(),
             )
         }
     }
@@ -391,7 +394,7 @@ class LibraryStore(
                 markedWatchedKeys()
         val continueWatching =
             ContinueWatchingPolicy
-                .resolve(playbackEntries)
+                .resolve(playbackEntries, watchedEpisodes = watchedEpisodeKeys())
                 .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
 
         return playbackEntries to continueWatching
@@ -404,7 +407,7 @@ class LibraryStore(
             dismissedContinueWatchingKeys() +
                 markedWatchedKeys()
 
-        return ContinueWatchingPolicy.resolve(continueWatchingPlaybackEntries())
+        return ContinueWatchingPolicy.resolve(continueWatchingPlaybackEntries(), watchedEpisodes = watchedEpisodeKeys())
             .filterNot { continueWatchingTitleKey(it.media) in hiddenTitleKeys }
     }
 
@@ -472,7 +475,7 @@ class LibraryStore(
                         ?: PlaybackUpdateClock.next()
                 PlaybackUpdateClock.observe(updateEpochMs)
                 // A save captured before Delete must not recreate an old watch.
-                if (updateEpochMs <= resetAt(media)) return
+                if (updateEpochMs <= resetAt(media, season, episode)) return
 
                 val entries =
                     readHistory()
@@ -520,6 +523,10 @@ class LibraryStore(
                                 ),
                         lastWatchedEpochMs = updateEpochMs,
                     )
+                // Bootstrap from existing history before the bounded list drops old entries.
+                if (updated.isCompleted || !prefs.contains(scopedKey(KEY_WATCHED_EPISODES))) {
+                    rememberCompletedEpisodes(listOf(updated))
+                }
                 entries.add(updated)
 
                 writeContinueWatching(updated)
@@ -557,6 +564,7 @@ class LibraryStore(
                     readContinueWatching().filterNot { continueWatchingTitleKey(it.media) == titleKey }.map(::playbackToJson))
                 writeDismissedContinueWatchingKeys(dismissedContinueWatchingKeys() - titleKey)
                 writeMarkedWatchedKeys(markedWatchedKeys() - titleKey)
+                writeWatchedEpisodeKeys(watchedEpisodeKeys().filterNot { it.startsWith(WatchedEpisodePolicy.prefix(media)) }.toSet())
                 refreshHomeContinueWatchingCache(exact = true)
                 if (publishTraktChanges) com.vueo.shared.core.trakt.TraktService.get(appContext)
                     .watchedChanged(media, false, profileId)
@@ -564,8 +572,71 @@ class LibraryStore(
         }
     }
 
-    private fun resetAt(media: MediaItem): Long =
-        prefs.getLong(scopedKey("history_reset:${continueWatchingTitleKey(media)}"), 0L)
+    private fun resetAt(media: MediaItem, season: Int? = null, episode: Int? = null): Long =
+        maxOf(
+            prefs.getLong(scopedKey("history_reset:${continueWatchingTitleKey(media)}"), 0L),
+            prefs.getLong(scopedKey("history_reset_all_v1"), 0L),
+            if (season != null && episode != null) prefs.getLong(
+                scopedKey("episode_watch_reset:${WatchedEpisodePolicy.key(media, season, episode)}"), 0L,
+            ) else 0L,
+        )
+
+    /** Seed once on upgrade; this is not the bounded History list. */
+    fun watchedEpisodeKeys(): Set<String> = synchronized(SYNC_STORAGE_LOCK) {
+        val key = scopedKey(KEY_WATCHED_EPISODES)
+        if (prefs.contains(key)) return@synchronized prefs.getStringSet(key, emptySet()).orEmpty().toSet()
+        WatchedEpisodePolicy.completedKeys(readHistory() + readContinueWatching()).also {
+            writeWatchedEpisodeKeys(it)
+        }
+    }
+
+    private fun writeWatchedEpisodeKeys(keys: Set<String>) {
+        prefs.edit().putStringSet(scopedKey(KEY_WATCHED_EPISODES), keys.toSet()).apply()
+    }
+
+    private fun rememberCompletedEpisodes(entries: List<LibraryPlaybackEntry>) {
+        val previous = watchedEpisodeKeys()
+        val next = previous + WatchedEpisodePolicy.completedKeys(entries)
+        if (next != previous) writeWatchedEpisodeKeys(next)
+    }
+
+    /** Manual episode/season actions are profile-scoped and never add fake History rows. */
+    @Synchronized
+    fun setEpisodesWatched(media: MediaItem, episodes: List<EpisodeItem>, watched: Boolean) {
+        if (!ContinueWatchingPolicy.isSeries(media)) return
+        synchronized(SYNC_STORAGE_LOCK) {
+            val targets = episodes.filter { it.season >= 0 && it.episode >= 0 }
+                .filter { !watched || ContinueWatchingPolicy.isReleased(it) }
+                .distinctBy { it.season to it.episode }
+            if (targets.isEmpty()) return
+            val keys = targets.map { WatchedEpisodePolicy.key(media, it.season, it.episode) }.toSet()
+            val previous = watchedEpisodeKeys()
+            val stamp = PlaybackUpdateClock.next()
+            val editor = prefs.edit().putStringSet(scopedKey(KEY_WATCHED_EPISODES),
+                if (watched) previous + keys else previous - keys)
+            keys.forEach { editor.putLong(scopedKey("episode_watch_reset:$it"), stamp) }
+            editor.apply()
+
+            fun matches(entry: LibraryPlaybackEntry) = WatchedEpisodePolicy.key(entry) in keys
+            fun update(entries: List<LibraryPlaybackEntry>): List<LibraryPlaybackEntry> =
+                entries.mapNotNull { entry ->
+                    if (!matches(entry)) entry
+                    else if (!watched) null
+                    else entry.copy(positionMs = entry.durationMs.coerceAtLeast(0L))
+                }
+            episodeCache.save(media.type, media.id, media.episodes)
+            val history = readHistory()
+            val cursors = readContinueWatching()
+            val profileId = profileIdOverride ?: profileStore.activeProfileId()
+            val playback = PlaybackStore(appContext)
+            val videoKeys = targets.map { "${media.type}:${media.id}:${it.id}" } +
+                (history + cursors).filter(::matches).map { it.mediaKey }
+            videoKeys.distinct().forEach { playback.applyCloudPosition(profileId, it, 0L, 0L) }
+            writeHistory(update(history))
+            writeArray(scopedKey(continueWatchingStorageKey), update(cursors).map(::playbackToJson))
+            refreshHomeContinueWatchingCache(exact = true)
+        }
+    }
 
     @Synchronized
     fun removeHistory(
@@ -691,7 +762,7 @@ class LibraryStore(
     fun mergeTraktHistory(remote: List<LibraryPlaybackEntry>, protectedTitles: Set<String> = emptySet()) {
         synchronized(SYNC_STORAGE_LOCK) {
             synchronized(PLAYBACK_PERSISTENCE_LOCK) {
-                val acceptedRemote = remote.filter { resetAt(it.media).let { cutoff -> cutoff == 0L || it.lastWatchedEpochMs > cutoff } }
+                val acceptedRemote = remote.filter { resetAt(it.media, it.season, it.episode).let { cutoff -> cutoff == 0L || it.lastWatchedEpochMs > cutoff } }
                 val previous = runCatching { JSONObject(prefs.getString(scopedKey("trakt_history_stamps"), "{}")) }.getOrDefault(JSONObject())
                 val remoteKeys = acceptedRemote.map { it.mediaKey }.toSet()
                 val local = readHistory().filterNot { entry -> entry.mediaKey !in remoteKeys &&
@@ -699,6 +770,9 @@ class LibraryStore(
                 val imported = acceptedRemote.filter { entry -> "${entry.media.type}:${entry.media.id}" !in protectedTitles && local.none { it.mediaKey == entry.mediaKey && it.lastWatchedEpochMs >= entry.lastWatchedEpochMs } }
                 val merged = (local + imported).groupBy { it.mediaKey }.values.map { group -> group.maxBy { it.lastWatchedEpochMs } }
                     .sortedByDescending { it.lastWatchedEpochMs }.take(MAX_HISTORY)
+                rememberCompletedEpisodes(acceptedRemote.filter {
+                    "${it.media.type}:${it.media.id}" !in protectedTitles
+                })
                 writeHistory(merged)
                 // Watched truth is separate from the bounded recent history, so old movie watches remain known.
                 val remoteMovies = acceptedRemote.filter { !ContinueWatchingPolicy.isSeries(it.media) && "${it.media.type}:${it.media.id}" !in protectedTitles }.map { continueWatchingTitleKey(it.media) }.toSet()
@@ -729,7 +803,10 @@ class LibraryStore(
     @Synchronized
     fun clearHistory() {
         synchronized(SYNC_STORAGE_LOCK) {
+            PlaybackStore(appContext).clearProfile(profileIdOverride ?: profileStore.activeProfileId())
             prefs.edit()
+                .putStringSet(scopedKey(KEY_WATCHED_EPISODES), emptySet())
+                .putLong(scopedKey("history_reset_all_v1"), PlaybackUpdateClock.next())
                 .remove(
                     scopedKey(
                         historyStorageKey
@@ -1336,6 +1413,8 @@ class LibraryStore(
 
         private const val KEY_HOME_CONTINUE_WATCHING_CACHE =
             "home_continue_watching_cache_v1"
+
+        private const val KEY_WATCHED_EPISODES = "watched_episodes_v1"
 
         private const val MAX_HISTORY =
             150

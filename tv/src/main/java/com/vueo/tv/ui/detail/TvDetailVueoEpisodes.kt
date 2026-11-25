@@ -70,6 +70,12 @@ import androidx.compose.ui.unit.sp
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.LibraryPlaybackEntry
+import com.vueo.shared.core.storage.WatchedEpisodePolicy
+import com.vueo.shared.core.storage.ContinueWatchingPolicy
+import com.vueo.tv.ui.TvPosterActionRow
+import com.vueo.tv.ui.tvPosterActivation
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.withFrameNanos
 import com.vueo.tv.ui.rememberTvEpisodeRanges
 import com.vueo.tv.ui.TvEpisodeRangeControls
@@ -160,6 +166,8 @@ internal fun VueoDetailEpisodes(
     episodeRatings: Map<Pair<Int, Int>, Double>,
     selectedEpisode: EpisodeItem?,
     history: List<LibraryPlaybackEntry>,
+    watchedEpisodeKeys: Set<String>,
+    onManageEpisodes: (List<EpisodeItem>, Boolean) -> Unit,
     sectionRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
@@ -176,6 +184,7 @@ internal fun VueoDetailEpisodes(
             modifier = Modifier.padding(horizontal = VueoDetailHorizontalPadding),
             onFocused = { onToolbarFocus(true) })
             VueoDetailEpisodeCards(media, ranges.visible, episodeRatings, selectedEpisode, history,
+                watchedEpisodeKeys, episodes, onManageEpisodes,
                 sectionRequester, if (ranges.enabled) rangeRequester else upRequester, downRequester,
                 onFocused = { onToolbarFocus(false); onFocused(it) }, onOpen = onOpen,
                 targetEpisodeId = if (ranges.enabled) ranges.targetId else null,
@@ -198,6 +207,9 @@ private fun VueoDetailEpisodeCards(
     episodeRatings: Map<Pair<Int, Int>, Double>,
     selectedEpisode: EpisodeItem?,
     history: List<LibraryPlaybackEntry>,
+    watchedEpisodeKeys: Set<String>,
+    seasonEpisodes: List<EpisodeItem>,
+    onManageEpisodes: (List<EpisodeItem>, Boolean) -> Unit,
     sectionRequester: FocusRequester,
     upRequester: FocusRequester,
     downRequester: FocusRequester?,
@@ -213,6 +225,10 @@ private fun VueoDetailEpisodeCards(
         history.filter { it.media.id == media.id && it.media.type == media.type }
             .groupBy { it.season to it.episode }
             .mapValues { (_, entries) -> entries.first() }
+    }
+    val releasedSeasonEpisodes = remember(seasonEpisodes) { seasonEpisodes.filter { ContinueWatchingPolicy.isReleased(it) } }
+    val seasonWatched = remember(releasedSeasonEpisodes, watchedEpisodeKeys, media.id, media.type) {
+        releasedSeasonEpisodes.isNotEmpty() && releasedSeasonEpisodes.all { WatchedEpisodePolicy.contains(watchedEpisodeKeys, media, it) }
     }
     val layoutDirection = LocalLayoutDirection.current
     // Same leading-edge reveal rule as Modern Home. The viewport already
@@ -321,6 +337,10 @@ private fun VueoDetailEpisodeCards(
                             runtimeMinutes = media.runtimeMinutes,
                             imdbRating = episodeRatings[episode.season to episode.episode],
                             progress = progress,
+                            watched = WatchedEpisodePolicy.contains(watchedEpisodeKeys, media, episode),
+                            seasonWatched = seasonWatched,
+                            canMarkSeason = releasedSeasonEpisodes.isNotEmpty(),
+                            onManage = { wholeSeason, watched -> onManageEpisodes(if (wholeSeason) seasonEpisodes else listOf(episode), watched) },
                             selected = selectedEpisode?.id == episode.id,
                             requester = requesters.getValue(episode.id),
                             upRequester = upRequester,
@@ -350,6 +370,10 @@ private fun VueoEpisodeCard(
     runtimeMinutes: Int?,
     imdbRating: Double?,
     progress: LibraryPlaybackEntry?,
+    watched: Boolean,
+    seasonWatched: Boolean,
+    canMarkSeason: Boolean,
+    onManage: (Boolean, Boolean) -> Unit,
     selected: Boolean,
     requester: FocusRequester,
     upRequester: FocusRequester,
@@ -359,6 +383,40 @@ private fun VueoEpisodeCard(
     onBoundary: (Boolean) -> Boolean,
 ) {
     var focused by remember(episode.id) { mutableStateOf(false) }
+    var manageOpen by remember(episode.id) { mutableStateOf(false) }
+    var restoreFocus by remember(episode.id) { mutableStateOf(false) }
+    LaunchedEffect(manageOpen) {
+        if (!manageOpen && restoreFocus) {
+            withFrameNanos { }
+            runCatching { requester.requestFocus() }
+            restoreFocus = false
+        }
+    }
+    fun closeManage() { restoreFocus = true; manageOpen = false }
+    if (manageOpen) {
+        Dialog(onDismissRequest = ::closeManage, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(Modifier.width(400.dp).background(TvDesign.SurfaceRaised, RoundedCornerShape(20.dp)).padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("S${episode.season} E${episode.episode} · ${episode.title}", color = TvDesign.White,
+                    fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (watched || ContinueWatchingPolicy.isReleased(episode)) {
+                    TvPosterActionRow(if (watched) "Mark episode as unwatched" else "Mark episode as watched",
+                        requestInitialFocus = true, onClick = { closeManage(); onManage(false, !watched) })
+                }
+                if (canMarkSeason) {
+                    TvPosterActionRow(if (seasonWatched) "Mark season as unwatched" else "Mark season as watched",
+                        requestInitialFocus = !watched && !ContinueWatchingPolicy.isReleased(episode),
+                        onClick = { closeManage(); onManage(true, !seasonWatched) })
+                }
+                if (!seasonWatched && canMarkSeason) {
+                    TvPosterActionRow("Mark season as unwatched", requestInitialFocus = false,
+                        onClick = { closeManage(); onManage(true, false) })
+                }
+                TvPosterActionRow("Cancel", requestInitialFocus = !canMarkSeason && !watched && !ContinueWatchingPolicy.isReleased(episode),
+                    onClick = ::closeManage)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier.width(cardWidth),
@@ -376,6 +434,7 @@ private fun VueoEpisodeCard(
                         onBoundary(native.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT)
                     } else false
                 }
+                .tvPosterActivation(onClick = onOpen, onLongClick = { manageOpen = true })
                 .focusRequester(requester)
                 .focusProperties {
                     up = upRequester
@@ -497,7 +556,6 @@ private fun VueoEpisodeCard(
                         trackColor = TvDesign.White.copy(alpha = .20f),
                     )
                 }
-                val watched = progress?.isCompleted == true
                 val notStarted = !watched && (progress == null || progress.positionMs <= 0L)
                 if (watched) {
                     Box(

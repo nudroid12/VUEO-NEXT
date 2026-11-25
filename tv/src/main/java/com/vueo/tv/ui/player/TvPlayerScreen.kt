@@ -2065,7 +2065,9 @@ fun TvPlayerScreen(
         var savedEpisodeProgress by remember(media.id, media.type) {
             mutableStateOf<Map<Pair<Int, Int>, TvEpisodeProgress>>(emptyMap())
         }
+        var savedWatchedEpisodes by remember(media.id, media.type) { mutableStateOf<Set<String>>(emptySet()) }
         LaunchedEffect(media.id, media.type, libraryProgressRevision) {
+            savedWatchedEpisodes = kotlinx.coroutines.withContext(Dispatchers.IO) { runtime.libraryStore.watchedEpisodeKeys() }
             savedEpisodeProgress = kotlinx.coroutines.withContext(Dispatchers.IO) {
                 val result = linkedMapOf<Pair<Int, Int>, TvEpisodeProgress>()
                 runtime.libraryStore.history()
@@ -2107,8 +2109,10 @@ fun TvPlayerScreen(
             }
             result
         }
-        val watchedEpisodeKeys = remember(episodeProgress) {
-            episodeProgress.filterValues { it.completed }.keys
+        val watchedEpisodeKeys = remember(episodeProgress, savedWatchedEpisodes, orderedEpisodes) {
+            episodeProgress.filterValues { it.completed }.keys + orderedEpisodes.filter {
+                com.vueo.shared.core.storage.WatchedEpisodePolicy.contains(savedWatchedEpisodes, media, it)
+            }.map { it.season to it.episode }
         }
         val panelOptions = when (activePanel) {
             TvPlayerPanel.SUBTITLES, TvPlayerPanel.AUDIO -> emptyList()
