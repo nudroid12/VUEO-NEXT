@@ -1,5 +1,6 @@
 package com.vueo.tv
 
+import com.vueo.tv.ui.TvPosterGridReveal
 import com.vueo.tv.ui.motion.*
 import com.vueo.shared.core.diagnostics.AppCrashReport
 import com.vueo.tv.settings.TvRuntimeDiagnosticsDialog
@@ -1405,14 +1406,17 @@ fun VueoTvApp(
                     val currentFolder = collectionFolderId
                     if (currentCollection != null && currentFolder != null) {
                         collectionSaveableState.SaveableStateProvider("${runtime.profileStore.activeProfileId()}:$currentCollection:$currentFolder") {
-                            com.vueo.shared.collections.ui.CollectionFolderScreen(
-                                engine = runtime.engine, profileId = runtime.profileStore.activeProfileId(),
-                                collectionId = currentCollection, folderId = currentFolder, contentRevision = refreshToken,
-                                active = route == TvRoute.COLLECTION_FOLDER,
-                                image = { url, label, modifier -> com.vueo.tv.ui.TvNetworkImage(url, label, modifier) },
-                                onBack = { route = TvRoute.HOME },
-                                onMedia = { openDetail(it, TvRoute.COLLECTION_FOLDER) },
-                            )
+                            TvPosterGridReveal {
+                                com.vueo.shared.collections.ui.CollectionFolderScreen(
+                                    engine = runtime.engine, profileId = runtime.profileStore.activeProfileId(),
+                                    collectionId = currentCollection, folderId = currentFolder, contentRevision = refreshToken,
+                                    active = route == TvRoute.COLLECTION_FOLDER,
+                                    fixedPosterTitleHeight = true,
+                                    image = { url, label, modifier -> com.vueo.tv.ui.TvNetworkImage(url, label, modifier) },
+                                    onBack = { route = TvRoute.HOME },
+                                    onMedia = { openDetail(it, TvRoute.COLLECTION_FOLDER) },
+                                )
+                            }
                         }
                     }
                 }

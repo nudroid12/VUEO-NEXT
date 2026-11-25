@@ -319,6 +319,7 @@ private fun CollectionFolderBody(
     image: CollectionImage,
     onBack: () -> Unit,
     onMedia: (MediaItem) -> Unit,
+    fixedPosterTitleHeight: Boolean,
 ) {
     val store = rememberStore(profileId)
     val collections by store.collections.collectAsState()
@@ -406,7 +407,11 @@ private fun CollectionFolderBody(
             val visible = engine.filterVisible(shown.flatMap { states[it]?.items.orEmpty() }).distinctBy { "${it.type}:${it.id}" }
             if (visible.isEmpty() && shown.all { states[it]?.loading == false && states[it]?.error == null }) Message("No titles returned by these catalogs.")
             LazyVerticalGrid(columns = GridCells.Adaptive(125.dp), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                gridItems(visible, key = { "${it.type}:${it.id}" }) { item -> MediaCard(item, image) { onMedia(item) } }
+                gridItems(visible, key = { "${it.type}:${it.id}" }) { item ->
+                    MediaCard(item, image, minTitleLines = if (fixedPosterTitleHeight) 2 else 1) {
+                        onMedia(item)
+                    }
+                }
             }
         }
     }
@@ -423,14 +428,14 @@ private fun SourceStatus(state: SourceLoadState, retry: () -> Unit, more: () -> 
 }
 
 @Composable
-private fun MediaCard(item: MediaItem, image: CollectionImage, onClick: () -> Unit) {
+private fun MediaCard(item: MediaItem, image: CollectionImage, minTitleLines: Int = 1, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = Panel,
         modifier = Modifier.width(130.dp).onFocusChanged { focused = it.hasFocus }
             .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))) {
         Column {
             image(item.poster ?: item.background, item.name, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-            Text(item.name, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
+            Text(item.name, color = Color.White, minLines = minTitleLines, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
         }
     }
 }
@@ -444,8 +449,8 @@ fun CollectionManagerScreen(engine: UnifiedMediaEngine, profileId: String, onBac
 
 @Composable
 fun CollectionFolderScreen(engine: UnifiedMediaEngine, profileId: String, collectionId: String, folderId: String,
-    contentRevision: Int, active: Boolean = true, image: CollectionImage, onBack: () -> Unit, onMedia: (MediaItem) -> Unit) {
+    contentRevision: Int, active: Boolean = true, fixedPosterTitleHeight: Boolean = false, image: CollectionImage, onBack: () -> Unit, onMedia: (MediaItem) -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFB2FF00), background = Background, surface = Panel)) {
-        CollectionFolderBody(engine, profileId, collectionId, folderId, contentRevision, active, image, onBack, onMedia)
+        CollectionFolderBody(engine, profileId, collectionId, folderId, contentRevision, active, image, onBack, onMedia, fixedPosterTitleHeight)
     }
 }

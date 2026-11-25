@@ -1,4 +1,5 @@
 package com.vueo.tv.search
+import com.vueo.tv.ui.TvPosterGridReveal
 import com.vueo.tv.ui.rememberTvOkToEdit
 
 import com.vueo.shared.core.search.SearchResultOrderPolicy
@@ -14,9 +15,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -103,21 +101,6 @@ import kotlinx.coroutines.launch
 private const val SEARCH_COLUMNS = 6
 private const val FLOATING_SEARCH_COLUMNS = 7
 private val SEARCH_FOCUS_PAINT_INSET = 8.dp
-
-@OptIn(ExperimentalFoundationApi::class)
-private val SearchGridReveal = object : BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        if (size <= 0f || containerSize <= 0f) return 0f
-        val end = offset + size
-        return when {
-            // A card taller than the viewport may already cover it.
-            offset <= 0f && end >= containerSize -> 0f
-            offset < -1f -> offset
-            end > containerSize + 1f -> minOf(offset, end - containerSize)
-            else -> 0f
-        }
-    }
-}
 
 internal enum class TvSearchTypeFilter(val label: String) {
     ALL("All"),
@@ -829,7 +812,7 @@ internal fun TvSearchScreen(
                 }
 
                 filteredItems.isNotEmpty() -> {
-                    CompositionLocalProvider(LocalBringIntoViewSpec provides SearchGridReveal) {
+                    TvPosterGridReveal {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(searchColumns),
                             state = gridState,
