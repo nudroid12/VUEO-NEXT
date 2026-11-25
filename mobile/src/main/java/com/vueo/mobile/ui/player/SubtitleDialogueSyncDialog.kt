@@ -121,7 +121,7 @@ internal fun SubtitleDialogueSyncDialog(
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f).fillMaxHeight()
-                    .background(Color(0xF5202124)).padding(16.dp),
+                    .background(VueoPalette.SurfaceElevated.copy(alpha = 0.961f)).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("Live Sync", color = Color.White)
@@ -147,15 +147,15 @@ internal fun SubtitleDialogueSyncDialog(
                             var focused by remember(index) { mutableStateOf(false) }
                             val selected = selectedIndex == index
                             val background = when {
-                                focused -> Color(0xFF62656A)
-                                selected -> Color.White
-                                else -> Color(0xFF303236)
+                                focused -> VueoPalette.FocusSurface
+                                selected -> VueoPalette.Accent
+                                else -> VueoPalette.SurfaceStrong
                             }
                             Button(
                                 onClick = { capture(index, cue) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = background,
-                                    contentColor = if (selected && !focused) Color.Black else Color.White,
+                                    contentColor = if (selected && !focused) VueoPalette.OnAccent else Color.White,
                                 ),
                                 shape = RoundedCornerShape(12.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),

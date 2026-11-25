@@ -91,7 +91,7 @@ private data class SubtitleLanguageGroup(
     val tracks: List<PlayerTrackChoice>,
 )
 
-private val SubtitleAccent = Color(0xFFB9FF3A)
+private val SubtitleAccent get() = VueoPalette.Accent
 private val SubtitleItemShape = RoundedCornerShape(13.dp)
 
 @Composable
@@ -393,7 +393,7 @@ private fun SubtitleSectionCard(
                 onClick = {},
             ),
         shape = RoundedCornerShape(18.dp),
-        color = Color(0xF2181A1C),
+        color = VueoPalette.SurfaceElevated.copy(alpha = 0.949f),
         border = BorderStroke(
             1.dp,
             Color.White.copy(alpha = .09f),
@@ -453,13 +453,13 @@ private fun LanguageRow(
         count?.let {
             Surface(
                 color = if (selected) SubtitleAccent.copy(alpha = .14f)
-                else Color.White.copy(alpha = .90f),
+                else VueoPalette.SurfaceStrong,
                 shape = CircleShape,
             ) {
                 Text(
                     it.toString(),
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                    color = if (selected) SubtitleAccent else Color(0xFF202124),
+                    color = if (selected) SubtitleAccent else VueoPalette.Muted,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -605,7 +605,7 @@ private fun SubtitleStyleCard(
                 onClick = {},
             ),
         shape = RoundedCornerShape(18.dp),
-        color = Color(0xF2181A1C),
+        color = VueoPalette.SurfaceElevated.copy(alpha = 0.949f),
         border = BorderStroke(
             1.dp,
             Color.White.copy(alpha = .09f),
@@ -706,7 +706,7 @@ internal fun PlayerSubtitleStyleOverlay(
                         .onSizeChanged { panelSize = it }
                         .clickable(onClick = {}),
                     shape = RoundedCornerShape(18.dp),
-                    color = Color(0xF016181A),
+                    color = VueoPalette.SurfaceElevated.copy(alpha = 0.941f),
                     border = BorderStroke(
                         1.dp,
                         Color.White.copy(alpha = .13f),

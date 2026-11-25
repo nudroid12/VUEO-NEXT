@@ -171,7 +171,7 @@ private fun TvMotionInlinePreview(group: TvMotionGroup, value: TvMotionValues, r
                 scaleX = scale; scaleY = scale
                 alpha = if (group == TvMotionGroup.HERO || group == TvMotionGroup.IMAGE) progress.coerceIn(0f, 1f) else 1f
             }.background(TvDesign.Accent, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                Text("VUEO", color = TvDesign.Black, fontSize = 16.sp)
+                Text("VUEO", color = TvDesign.OnAccent, fontSize = 16.sp)
             }
         } else {
             val recipe = when (group) {
@@ -184,7 +184,7 @@ private fun TvMotionInlinePreview(group: TvMotionGroup, value: TvMotionValues, r
             }
             androidx.compose.animation.AnimatedVisibility(showing, enter = recipe.targetContentEnter, exit = recipe.initialContentExit) {
                 Box(Modifier.size(150.dp, 48.dp).background(TvDesign.Accent, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                    Text("VUEO", color = TvDesign.Black, fontSize = 16.sp)
+                    Text("VUEO", color = TvDesign.OnAccent, fontSize = 16.sp)
                 }
             }
         }

@@ -419,7 +419,7 @@ private fun VueoContentWarningsOverlay(
                 .width(3.dp)
                 .height((totalLineHeight * lineHeightFraction.value).dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(0xFFB9FF3A)),
+                .background(TvDesign.Accent),
         )
         Column(
             modifier = Modifier.padding(start = 9.dp),
@@ -701,7 +701,7 @@ private fun VueoPlayerControls(
                                 .align(Alignment.CenterHorizontally)
                                 .alpha(if (visible) 1f else 0f)
                                 .clip(RoundedCornerShape(22.dp))
-                                .background(Color(0xFF111316).copy(alpha = .88f))
+                                .background(TvDesign.Surface.copy(alpha = .88f))
                                 .border(1.dp, Color.White.copy(alpha = .18f), RoundedCornerShape(22.dp))
                                 .padding(horizontal = 4.dp, vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(1.dp),

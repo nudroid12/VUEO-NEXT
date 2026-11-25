@@ -447,7 +447,7 @@ private fun SidebarNavigationItem(
             if (style == TvSidebarStyle.PILL_ICONS) {
                 Text(
                     text = label,
-                    color = if (selected) TvDesign.Black else TvDesign.White.copy(alpha = if (focused) 1f else .72f),
+                    color = if (selected) TvDesign.OnAccent else TvDesign.White.copy(alpha = if (focused) 1f else .72f),
                     fontSize = 14.sp,
                     fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
@@ -462,7 +462,7 @@ private fun SidebarNavigationItem(
                     imageVector = icon,
                     contentDescription = label,
                     tint = when {
-                        expanded && selected -> TvDesign.Black
+                        expanded && selected -> TvDesign.OnAccent
                         focused -> TvDesign.White
                         selected && !expanded -> TvDesign.White
                         else -> TvDesign.White.copy(alpha = .46f)
@@ -481,7 +481,7 @@ private fun SidebarNavigationItem(
             Text(
                 text = label,
                 color = when {
-                    expanded && selected -> TvDesign.Black
+                    expanded && selected -> TvDesign.OnAccent
                     focused -> TvDesign.White
                     else -> TvDesign.White.copy(alpha = .68f)
                 },
@@ -509,26 +509,26 @@ private fun sidebarItemBrush(
 
     return when {
         selected && style == TvSidebarStyle.CLASSIC -> Brush.horizontalGradient(
-            0f to TvDesign.White,
-            .52f to TvDesign.White.copy(alpha = .92f),
-            .82f to TvDesign.White.copy(alpha = .46f),
+            0f to TvDesign.Accent,
+            .52f to TvDesign.Accent.copy(alpha = .92f),
+            .82f to TvDesign.Accent.copy(alpha = .46f),
             1f to Color.Transparent,
         )
         selected && style == TvSidebarStyle.PILL_ICONS -> Brush.horizontalGradient(
             listOf(
-                TvDesign.White.copy(alpha = .98f),
-                TvDesign.White.copy(alpha = .90f),
+                TvDesign.Accent.copy(alpha = .98f),
+                TvDesign.Accent.copy(alpha = .90f),
             )
         )
         focused && style == TvSidebarStyle.PILL_ICONS -> Brush.horizontalGradient(
             listOf(
-                TvDesign.White.copy(alpha = .17f),
-                TvDesign.White.copy(alpha = .11f),
+                TvDesign.Accent.copy(alpha = .17f),
+                TvDesign.Accent.copy(alpha = .11f),
             )
         )
         focused -> Brush.horizontalGradient(
-            0f to TvDesign.White.copy(alpha = .18f),
-            .66f to TvDesign.White.copy(alpha = .10f),
+            0f to TvDesign.Accent.copy(alpha = .18f),
+            .66f to TvDesign.Accent.copy(alpha = .10f),
             1f to Color.Transparent,
         )
         else -> Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))

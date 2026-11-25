@@ -1,10 +1,10 @@
 package com.vueo.mobile.ui.theme
 
+import com.vueo.shared.ui.appearance.AppAppearance
+
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.Color
 import com.vueo.mobile.ui.VueoPalette
 
 @Composable
@@ -16,23 +16,7 @@ fun VueoTheme(
     val appTheme =
         VueoPalette.Theme
 
-    val colors = remember(accent, appTheme) {
-        darkColorScheme(
-            primary = accent,
-            onPrimary = Color(0xFF080B0F),
-            secondary = accent.copy(
-                alpha = .82f
-            ),
-            onSecondary = Color(0xFF080B0F),
-            background = VueoPalette.Background,
-            onBackground = Color(0xFFF4F7F2),
-            surface = VueoPalette.Surface,
-            onSurface = Color(0xFFE7ECE5),
-            surfaceVariant =
-                VueoPalette.SurfaceStrong,
-            outline = VueoPalette.Stroke,
-        )
-    }
+    val colors = remember(accent, appTheme) { AppAppearance.colorScheme() }
 
     MaterialTheme(
         colorScheme = colors,

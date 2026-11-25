@@ -650,13 +650,13 @@ internal fun SourcePickerScreen(
                                 Icon(
                                     Icons.Default.PlayArrow,
                                     contentDescription = null,
-                                    tint = Color.Black,
+                                    tint = VueoPalette.OnAccent,
                                     modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(Modifier.width(7.dp))
                                 Text(
                                     "Play Recommended",
-                                    color = Color.Black,
+                                    color = VueoPalette.OnAccent,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Black,
                                 )

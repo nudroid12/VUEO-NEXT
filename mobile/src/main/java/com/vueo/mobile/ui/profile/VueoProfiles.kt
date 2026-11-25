@@ -757,7 +757,7 @@ private fun ProfileEditorScreen(
                                 color = VueoPalette.SurfaceStrong,
                                 border = BorderStroke(
                                     if (selected) 3.dp else 1.dp,
-                                    if (selected) VueoPalette.BrandLime else VueoPalette.Stroke,
+                                    if (selected) VueoPalette.Accent else VueoPalette.Stroke,
                                 ),
                             ) {
                                 ProfileAvatarArtwork(choice.id, choice.drawableRes, "Choose profile avatar")
@@ -903,14 +903,14 @@ private fun ManageProfileAvatar(
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).size(28.dp),
                 shape = CircleShape,
-                color = Color.White,
+                color = VueoPalette.Accent,
                 border = BorderStroke(3.dp, VueoPalette.Background),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.Edit,
                         contentDescription = "Edit ${profile.name}",
-                        tint = Color.Black,
+                        tint = VueoPalette.OnAccent,
                         modifier = Modifier.size(15.dp),
                     )
                 }
@@ -995,7 +995,7 @@ private fun WatchingProfileCard(
                         if (active) {
                             Modifier.border(
                                 width = 2.dp,
-                                color = VueoPalette.BrandLime,
+                                color = VueoPalette.Accent,
                                 shape = CircleShape,
                             )
                         } else {
@@ -1017,7 +1017,7 @@ private fun WatchingProfileCard(
                         .align(Alignment.BottomEnd)
                         .size(25.dp),
                     shape = CircleShape,
-                    color = VueoPalette.BrandLime,
+                    color = VueoPalette.Accent,
                     border = BorderStroke(
                         3.dp,
                         VueoPalette.Background,
@@ -1026,7 +1026,7 @@ private fun WatchingProfileCard(
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             "✓",
-                            color = Color.Black,
+                            color = VueoPalette.OnAccent,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
                         )
@@ -1068,10 +1068,10 @@ private fun ProfileStatusChip(
 ) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = VueoPalette.BrandLime.copy(alpha = .10f),
+        color = VueoPalette.Accent.copy(alpha = .10f),
         border = BorderStroke(
             1.dp,
-            VueoPalette.BrandLime.copy(alpha = .28f),
+            VueoPalette.Accent.copy(alpha = .28f),
         ),
     ) {
         Text(
@@ -1080,7 +1080,7 @@ private fun ProfileStatusChip(
                 horizontal = 7.dp,
                 vertical = 2.dp,
             ),
-            color = VueoPalette.BrandLime,
+            color = VueoPalette.Accent,
             fontSize = 8.sp,
             fontWeight = FontWeight.Black,
         )

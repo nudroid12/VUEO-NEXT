@@ -69,15 +69,15 @@ internal fun TvThemedDialog(
 internal fun tvDialogInputColors() = OutlinedTextFieldDefaults.colors(
     focusedTextColor = TvDesign.White,
     unfocusedTextColor = TvDesign.White,
-    focusedBorderColor = TvDesign.White,
+    focusedBorderColor = TvDesign.Accent,
     unfocusedBorderColor = TvDesign.White.copy(alpha = .28f),
     focusedContainerColor = TvDesign.SurfaceRaised,
     unfocusedContainerColor = TvDesign.SurfaceRaised,
     disabledContainerColor = TvDesign.SurfaceRaised,
     errorContainerColor = TvDesign.SurfaceRaised,
-    focusedLabelColor = TvDesign.White,
+    focusedLabelColor = TvDesign.Accent,
     unfocusedLabelColor = TvDesign.Muted,
-    cursorColor = TvDesign.White,
+    cursorColor = TvDesign.Accent,
 )
 
 @Composable
@@ -94,11 +94,11 @@ internal fun TvDialogButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.onFocusChanged { focused = it.isFocused }
-            .background(if (focused) TvDesign.White else TvDesign.Surface, shape)
-            .border(1.dp, TvDesign.White.copy(alpha = if (focused) 1f else .25f), shape),
+            .background(if (focused) TvDesign.Accent else TvDesign.Surface, shape)
+            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.Stroke, shape),
         colors = ButtonDefaults.textButtonColors(
             contentColor = when {
-                focused -> TvDesign.Black
+                focused -> TvDesign.OnAccent
                 destructive -> MaterialTheme.colorScheme.error
                 else -> TvDesign.White
             },

@@ -432,7 +432,7 @@ internal fun LibraryScreen(
                     listOf("Watchlist", "History").forEachIndexed { index, label ->
                         val selected = historySelected == (index == 1)
                         TextButton(onClick = { historySelected = index == 1 }) {
-                            Text(label, color = if (selected) Color.White else VueoPalette.Muted,
+                            Text(label, color = if (selected) VueoPalette.Accent else VueoPalette.Muted,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
                         }
                     }

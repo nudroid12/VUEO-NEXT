@@ -215,7 +215,7 @@ TvTabMarkerHost {
                 text = label,
                 color = when {
                     focused -> TvDesign.White
-                    active == tab -> TvDesign.White.copy(alpha = .92f)
+                    active == tab -> TvDesign.Accent
                     else -> TvDesign.White.copy(alpha = .58f)
                 },
                 fontSize = 19.sp,
@@ -344,7 +344,7 @@ private fun VueoCastMember(
                 .size(VueoCastCircle)
                 .clip(CircleShape)
                 .background(
-                    if (focused) TvDesign.White.copy(alpha = .13f)
+                    if (focused) TvDesign.Accent.copy(alpha = .13f)
                     else TvDesign.SurfaceRaised,
                 )
                 .border(
@@ -819,7 +819,7 @@ TvTabMarkerHost {
                 var focused by remember(mediaKey, tab) { mutableStateOf(false) }
                 Text(
                     text = tab.label,
-                    color = if (focused || active == tab) TvDesign.White else TvDesign.White.copy(alpha = .58f),
+                    color = if (focused || active == tab) TvDesign.Accent else TvDesign.Muted,
                     fontSize = 19.sp,
                     lineHeight = 22.sp,
                     fontWeight = if (active == tab) FontWeight.Medium else FontWeight.Normal,

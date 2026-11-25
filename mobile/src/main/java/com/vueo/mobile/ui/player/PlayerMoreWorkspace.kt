@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.vueo.mobile.core.storage.PlayerVideoFit
 
-private val MoreAccent = Color(0xFFB9FF3A)
-private val MoreCard = Color(0xF2181A1C)
+private val MoreAccent get() = VueoPalette.Accent
+private val MoreCard get() = VueoPalette.SurfaceElevated.copy(alpha = 0.949f)
 private val MorePlaybackSpeeds = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)
 
 @Composable

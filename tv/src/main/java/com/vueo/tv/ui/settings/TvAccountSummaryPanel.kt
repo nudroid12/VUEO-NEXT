@@ -90,8 +90,8 @@ internal fun TvAccountSummaryPanel(
                                 else -> false
                             }
                         }
-                        .background(if (focused) TvDesign.White.copy(alpha = .18f) else TvDesign.White.copy(alpha = .06f), shape)
-                        .border(if (focused) 1.5.dp else 0.dp, if (focused) TvDesign.White else TvDesign.Surface, shape)
+                        .background(if (focused) TvDesign.Accent.copy(alpha = .18f) else TvDesign.White.copy(alpha = .06f), shape)
+                        .border(if (focused) 1.5.dp else 0.dp, if (focused) TvDesign.Accent else TvDesign.Surface, shape)
                         .focusable(enabled = action.enabled)
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                     contentAlignment = Alignment.Center,

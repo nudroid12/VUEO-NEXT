@@ -1021,7 +1021,7 @@ internal fun PerformanceDiagnosticsDialog(
                             color = if (selected) VueoPalette.SurfaceStrong else Color.Transparent,
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                if (selected) Color.White.copy(alpha = .22f) else VueoPalette.Muted.copy(alpha = .28f),
+                                if (selected) VueoPalette.Accent.copy(alpha = .22f) else VueoPalette.Muted.copy(alpha = .28f),
                             ),
                         ) {
                             Text(
@@ -1029,7 +1029,7 @@ internal fun PerformanceDiagnosticsDialog(
                                 modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
                                 fontSize = 11.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selected) Color.White else VueoPalette.Muted,
+                                color = if (selected) VueoPalette.Accent else VueoPalette.Muted,
                             )
                         }
                     }

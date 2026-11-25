@@ -1,5 +1,7 @@
 package com.vueo.tv.profile
 
+import com.vueo.tv.ui.TvDesign
+
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -70,20 +72,20 @@ internal fun TvPinEntryOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(80f)
-                .background(Color(0xFF050706).copy(alpha = 0.985f)),
+                .background(TvDesign.Black.copy(alpha = 0.985f)),
             contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
                     .width(560.dp)
-                    .background(Color(0xFF111412), RoundedCornerShape(24.dp))
+                    .background(TvDesign.Surface, RoundedCornerShape(24.dp))
                     .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(24.dp))
                     .padding(horizontal = 48.dp, vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(title, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
                 Spacer(Modifier.height(8.dp))
-                Text(subtitle, color = Color(0xFFAAB2AD), fontSize = 15.sp)
+                Text(subtitle, color = TvDesign.Muted, fontSize = 15.sp)
                 Spacer(Modifier.height(24.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(17.dp)) {
@@ -92,10 +94,10 @@ internal fun TvPinEntryOverlay(
                         Box(
                             Modifier
                                 .size(23.dp)
-                                .background(if (filled) Color.White else Color.Transparent, CircleShape)
+                                .background(if (filled) TvDesign.Accent else Color.Transparent, CircleShape)
                                 .border(
                                     2.dp,
-                                    if (filled) Color.White else Color.White.copy(alpha = 0.30f),
+                                    if (filled) TvDesign.Accent else Color.White.copy(alpha = 0.30f),
                                     CircleShape,
                                 ),
                         )
@@ -173,12 +175,12 @@ private fun PinKey(
             .height(64.dp)
             .scale(scale)
             .background(
-                if (focused) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.055f),
+                if (focused) TvDesign.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.055f),
                 RoundedCornerShape(14.dp),
             )
             .border(
                 if (focused) 2.dp else 1.dp,
-                if (focused) Color.White else Color.White.copy(alpha = 0.10f),
+                if (focused) TvDesign.Accent else Color.White.copy(alpha = 0.10f),
                 RoundedCornerShape(14.dp),
             )
             .focusRequester(requester)

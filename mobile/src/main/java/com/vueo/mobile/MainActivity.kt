@@ -1,5 +1,7 @@
 package com.vueo.mobile
 
+import androidx.compose.ui.graphics.toArgb
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +15,7 @@ import com.vueo.mobile.ui.VueoPalette
 import com.vueo.mobile.ui.theme.VueoTheme
 
 class MainActivity : ComponentActivity() {
+    private var appearanceObserver: AutoCloseable? = null
     private val pendingAccountReturn = mutableStateOf<String?>(null)
     private val pendingAddonManifestUrl = mutableStateOf<String?>(null)
 
@@ -39,8 +42,13 @@ class MainActivity : ComponentActivity() {
         RuntimeDiagnostics.install(applicationContext)
 
         val settingsStore = SettingsStore(applicationContext)
-        VueoPalette.applyTheme(settingsStore.appTheme())
-        VueoPalette.applyAccent(settingsStore.appAccent())
+        appearanceObserver = settingsStore.observeAppearance { theme, accent ->
+            VueoPalette.applyTheme(theme)
+            VueoPalette.applyAccent(accent)
+            // Keep native navigation chrome in the same palette where the OS permits it.
+            window.navigationBarColor = VueoPalette.Nav.toArgb()
+            window.statusBarColor = VueoPalette.Background.toArgb()
+        }
 
         setContent {
             VueoTheme {
@@ -59,6 +67,12 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        appearanceObserver?.close()
+        appearanceObserver = null
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

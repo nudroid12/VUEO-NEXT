@@ -1,5 +1,6 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.core.search.SearchPolicy
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics
 import com.vueo.shared.core.diagnostics.PerformanceDiagnostics.Tab
 import android.app.Activity
@@ -58,6 +59,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -562,6 +564,9 @@ internal fun SearchScreen(
     val normalizedQuery =
         query.trim()
 
+    val titleSearch = SearchPolicy.parseTitleSearch(normalizedQuery)
+        .takeIf { searchMode == SearchMode.TITLE && it.year != null }
+
     val searchingMode =
         normalizedQuery.isNotBlank()
 
@@ -762,7 +767,7 @@ internal fun SearchScreen(
                                 ) {
                                     "Search actor name..."
                                 } else {
-                                    "Search movies, shows..."
+                                    "Search title or title + year…"
                                 },
                             color =
                                 VueoPalette.Muted,
@@ -869,25 +874,42 @@ internal fun SearchScreen(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                LazyRow(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(
+                            10.dp
+                        ),
                 ) {
-                    SearchFilterButton(
-                        label = typeFilter.label,
-                        modifier = Modifier.weight(.76f),
-                        onClick = { typeDialog = true },
-                    )
-                    SearchFilterButton(
-                        label = sortMode.label,
-                        modifier = Modifier.weight(1.02f),
-                        onClick = { sortDialog = true },
-                    )
-                    SearchFilterButton(
-                        label = genre ?: "All Genres",
-                        modifier = Modifier.weight(1.22f),
-                        onClick = { genreDialog = true },
-                    )
+                    item {
+                        SearchFilterButton(
+                            label =
+                                typeFilter.label,
+                            onClick = {
+                                typeDialog = true
+                            },
+                        )
+                    }
+
+                    item {
+                        SearchFilterButton(
+                            label =
+                                sortMode.label,
+                            onClick = {
+                                sortDialog = true
+                            },
+                        )
+                    }
+
+                    item {
+                        SearchFilterButton(
+                            label =
+                                genre
+                                    ?: "All Genres",
+                            onClick = {
+                                genreDialog = true
+                            },
+                        )
+                    }
                 }
 
                 if (
@@ -966,6 +988,8 @@ internal fun SearchScreen(
                             !actorSourceAvailable
                         ) {
                             "Actor search unavailable"
+                        } else if (titleSearch != null) {
+                            "No matches for ${titleSearch.year}"
                         } else {
                             "No matches"
                         },
@@ -984,6 +1008,9 @@ internal fun SearchScreen(
                         } else {
                             "Try another title or change the filters."
                         },
+                    onSearchAllYears = titleSearch?.let { request ->
+                        { onQueryChange(request.title) }
+                    },
                 )
             }
         } else if (
@@ -1019,6 +1046,7 @@ internal fun SearchScreen(
                         item ->
                         SearchPosterTile(
                             item = item,
+                            yearLabel = SearchPolicy.releaseYear(item).takeIf { it > 0 }?.toString(),
                             catalogLabel =
                                 searchCatalogLabel(
                                     engine = engine,
@@ -1083,7 +1111,7 @@ private fun SearchModeToggle(
                 if (
                     mode == SearchMode.TITLE
                 ) {
-                    Color.White
+                    VueoPalette.Accent
                 } else {
                     VueoPalette.Muted
                 },
@@ -1115,9 +1143,7 @@ private fun SearchModeToggle(
                         )
                     )
                     .background(
-                        Color.White.copy(
-                            alpha = .92f
-                        )
+                        VueoPalette.Accent
                     )
                     .clickable {
                         onModeChange(
@@ -1154,7 +1180,7 @@ private fun SearchModeToggle(
                             .size(18.dp)
                             .clip(CircleShape)
                             .background(
-                                VueoPalette.Background
+                                VueoPalette.OnAccent
                             )
                 )
             }
@@ -1166,7 +1192,7 @@ private fun SearchModeToggle(
                 if (
                     mode == SearchMode.ACTOR
                 ) {
-                    Color.White
+                    VueoPalette.Accent
                 } else {
                     VueoPalette.Muted
                 },
@@ -1192,12 +1218,11 @@ private fun SearchModeToggle(
 @Composable
 private fun SearchFilterButton(
     label: String,
-    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier =
-            modifier.clickable(
+            Modifier.clickable(
                 onClick = onClick
             ),
         shape =
@@ -1219,18 +1244,19 @@ private fun SearchFilterButton(
     ) {
         Row(
             modifier =
-                Modifier.fillMaxWidth().padding(
-                    horizontal = 8.dp,
+                Modifier.padding(
+                    horizontal = 16.dp,
                     vertical = 11.dp,
                 ),
             horizontalArrangement =
-                Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                Arrangement.spacedBy(
+                    8.dp
+                ),
             verticalAlignment =
                 Alignment.CenterVertically,
         ) {
             Text(
                 text = label,
-                modifier = Modifier.weight(1f, fill = false),
                 color = Color.White,
                 fontSize = 13.sp,
                 fontWeight =
@@ -1378,6 +1404,7 @@ private fun SearchChoiceDialog(
 private fun SearchEmptyState(
     title: String,
     body: String,
+    onSearchAllYears: (() -> Unit)? = null,
 ) {
     Column(
         modifier =
@@ -1407,6 +1434,9 @@ private fun SearchEmptyState(
                 VueoPalette.Muted,
             fontSize = 12.sp,
         )
+        if (onSearchAllYears != null) {
+            TextButton(onClick = onSearchAllYears) { Text("Search all years") }
+        }
     }
 }
 
@@ -1415,6 +1445,7 @@ internal fun SearchPosterTile(
     item: MediaItem,
     modifier: Modifier = Modifier,
     catalogLabel: String? = null,
+    yearLabel: String? = null,
     onClick: () -> Unit,
 ) {
     Column(
@@ -1468,29 +1499,11 @@ internal fun SearchPosterTile(
         )
 
         Text(
-            text =
-                if (
-                    catalogLabel
-                        .isNullOrBlank()
-                ) {
-                    listOfNotNull(
-                        item.releaseInfo,
-                        searchTypeLabel(
-                            item
-                        ),
-                    ).joinToString(
-                        " • "
-                    )
-                } else {
-                    listOf(
-                        searchTypeLabel(
-                            item
-                        ),
-                        catalogLabel,
-                    ).joinToString(
-                        " • "
-                    )
-                },
+            text = listOfNotNull(
+                yearLabel ?: item.releaseInfo.takeIf { catalogLabel.isNullOrBlank() },
+                searchTypeLabel(item),
+                catalogLabel?.takeIf { it.isNotBlank() },
+            ).joinToString(" • "),
             color =
                 VueoPalette.Muted,
             fontSize = 9.sp,

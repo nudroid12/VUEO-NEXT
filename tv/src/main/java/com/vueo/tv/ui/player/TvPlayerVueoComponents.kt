@@ -243,7 +243,7 @@ internal fun VueoPlayerTopAction(
             }
             .focusable(acceptsInput)
             .background(
-                if (focused && enabled) Color.White else TvPlayerTopActionBackground,
+                if (focused && enabled) TvDesign.Accent else TvPlayerTopActionBackground,
                 CircleShape,
             ),
         contentAlignment = Alignment.Center,
@@ -253,7 +253,7 @@ internal fun VueoPlayerTopAction(
             contentDescription = label,
             tint = when {
                 !enabled -> Color.White.copy(alpha = .30f)
-                focused -> Color.Black
+                focused -> TvDesign.OnAccent
                 else -> Color.White
             },
             modifier = Modifier.size(21.dp),
@@ -314,7 +314,7 @@ internal fun VueoPlayerPillAction(
                 true
             }
             .focusable(acceptsInput)
-            .background(if (focused) Color.White else Color.Transparent, shape)
+            .background(if (focused) TvDesign.Accent else Color.Transparent, shape)
             .then(if (iconOnly) Modifier.size(24.dp) else Modifier.padding(horizontal = 9.dp, vertical = 5.dp)),
         horizontalArrangement = if (iconOnly) Arrangement.Center else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
@@ -322,12 +322,12 @@ internal fun VueoPlayerPillAction(
         Icon(
             imageVector = icon,
             contentDescription = if (iconOnly) label else null,
-            tint = if (focused) Color.Black else Color.White,
+            tint = if (focused) TvDesign.OnAccent else Color.White,
             modifier = Modifier.size(if (iconOnly) 24.dp else 16.dp),
         )
         if (!iconOnly) Text(
             text = label,
-            color = if (focused) Color.Black else Color.White,
+            color = if (focused) TvDesign.OnAccent else Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = 5.dp),
@@ -389,14 +389,14 @@ internal fun VueoPlayerPromptButton(
                 true
             }
             .focusable()
-            .background(if (focused) Color.White else Color(0xFF303030), shape)
-            .border(1.dp, Color.White.copy(alpha = if (focused) .92f else .18f), shape)
+            .background(if (focused) TvDesign.Accent else TvDesign.SurfaceRaised, shape)
+            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.Stroke, shape)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
-            color = if (focused) Color.Black else Color.White,
+            color = if (focused) TvDesign.OnAccent else Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,

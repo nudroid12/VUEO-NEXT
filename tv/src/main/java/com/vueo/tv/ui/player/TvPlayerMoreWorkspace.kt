@@ -74,7 +74,7 @@ internal fun VueoPlayerMoreWorkspace(
         }
     }
 
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBackground = TvDesign.SurfaceElevated.copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -250,13 +250,13 @@ private fun VueoMoreCycleRow(
             .focusable()
             .clickable(onClick = onClick)
             .background(
-                if (focused) Color(0xFF555555)
+                if (focused) TvDesign.FocusSurface
                 else Color.White.copy(alpha = .055f),
                 shape,
             )
             .border(
                 1.dp,
-                if (focused) Color.White else Color.White.copy(alpha = .07f),
+                if (focused) TvDesign.Accent else Color.White.copy(alpha = .07f),
                 shape,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -271,12 +271,12 @@ private fun VueoMoreCycleRow(
         )
         Text(
             value,
-            color = if (focused) Color(0xFF151A11) else TvDesign.Accent,
+            color = if (focused) TvDesign.OnAccent else TvDesign.Accent,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
                 .background(
-                    if (focused) Color.White else TvDesign.Accent.copy(alpha = .12f),
+                    if (focused) TvDesign.Accent else TvDesign.Accent.copy(alpha = .12f),
                     RoundedCornerShape(999.dp),
                 )
                 .padding(horizontal = 13.dp, vertical = 6.dp),
@@ -319,8 +319,8 @@ private fun VueoMoreToggleRow(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
-            .border(if (focused) 1.dp else 0.dp, if (focused) Color.White.copy(alpha = .45f) else Color.Transparent, shape)
+            .background(if (focused) TvDesign.FocusSurface else Color.Transparent, shape)
+            .border(if (focused) 1.dp else 0.dp, if (focused) TvDesign.Accent.copy(alpha = .45f) else Color.Transparent, shape)
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -344,7 +344,7 @@ private fun VueoMoreToggleRow(
                 modifier = Modifier
                     .align(if (checked) Alignment.CenterEnd else Alignment.CenterStart)
                     .size(14.dp)
-                    .background(if (checked) Color(0xFF151A11) else Color.White.copy(alpha = .82f), CircleShape),
+                    .background(if (checked) TvDesign.OnAccent else Color.White.copy(alpha = .82f), CircleShape),
             )
         }
     }
@@ -382,8 +382,8 @@ private fun VueoMoreResetButton(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color(0xFF555555) else Color.Transparent, shape)
-            .border(1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
+            .background(if (focused) TvDesign.FocusSurface else Color.Transparent, shape)
+            .border(1.dp, if (focused) TvDesign.Accent else Color.White.copy(alpha = .22f), shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {

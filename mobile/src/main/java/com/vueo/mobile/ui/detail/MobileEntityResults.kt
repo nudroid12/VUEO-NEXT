@@ -418,7 +418,7 @@ internal fun MediaEntityResultsScreen(
         if (busy) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color.White,
+                color = VueoPalette.Accent,
                 trackColor = VueoPalette.SurfaceStrong,
             )
         }
@@ -487,18 +487,18 @@ private fun EntityResultSortButton(
         onClick = onClick,
         modifier = modifier
             .background(
-                if (selected) Color.White.copy(alpha = .14f) else VueoPalette.SurfaceStrong,
+                if (selected) VueoPalette.Accent.copy(alpha = .14f) else VueoPalette.SurfaceStrong,
                 shape,
             )
             .border(
                 width = 1.dp,
-                color = if (selected) Color.White.copy(alpha = .32f) else Color.White.copy(alpha = .08f),
+                color = if (selected) VueoPalette.Accent.copy(alpha = .32f) else Color.White.copy(alpha = .08f),
                 shape = shape,
             ),
     ) {
         Text(
             text = if (selected) "✓ $label" else label,
-            color = if (selected) Color.White else VueoPalette.Muted,
+            color = if (selected) VueoPalette.Accent else VueoPalette.Muted,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )

@@ -53,7 +53,7 @@ internal fun PlayerSkipControl(
                     shape = RoundedCornerShape(50),
                 )
                 .background(
-                    color = Color(0xE6161719),
+                    color = VueoPalette.SurfaceElevated.copy(alpha = 0.902f),
                     shape = RoundedCornerShape(50),
                 )
                 .clickable(onClick = onSkip)
@@ -70,7 +70,7 @@ internal fun PlayerSkipControl(
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = null,
-                tint = Color(0xFFB9FF3A),
+                tint = VueoPalette.Accent,
                 modifier = Modifier.size(18.dp),
             )
         }

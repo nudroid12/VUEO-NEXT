@@ -420,9 +420,7 @@ private fun PlayerContentWarningsOverlay(
     }
 }
 
-internal val VueoPlayerAccent =
-    Color(0xFFB9FF3A)
-
+internal val VueoPlayerAccent get() = VueoPalette.Accent
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun PlayerScreen(

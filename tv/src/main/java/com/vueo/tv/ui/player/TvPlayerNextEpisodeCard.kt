@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.TvDesign
+
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,8 +90,8 @@ internal fun VueoPlayerNextEpisodeCard(
                 true
             }
             .focusable()
-            .background(Color(0xFF171A20).copy(alpha = .94f), shape)
-            .border(if (focused) 2.dp else 1.dp, Color.White.copy(alpha = if (focused) .95f else .35f), shape)
+            .background(TvDesign.SurfaceElevated.copy(alpha = .94f), shape)
+            .border(if (focused) 2.dp else 1.dp, if (focused) TvDesign.Accent else TvDesign.Stroke, shape)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -100,7 +102,7 @@ internal fun VueoPlayerNextEpisodeCard(
                 contentDescription = episode.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                fallback = Color(0xFF292D34),
+                fallback = TvDesign.SurfaceRaised,
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -117,15 +119,15 @@ internal fun VueoPlayerNextEpisodeCard(
         }
         Row(
             modifier = Modifier
-                .background(if (focused) Color.White else Color.White.copy(alpha = .07f), RoundedCornerShape(18.dp))
+                .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .07f), RoundedCornerShape(18.dp))
                 .border(1.dp, Color.White.copy(alpha = .25f), RoundedCornerShape(18.dp))
                 .padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = if (focused) Color.Black else Color.White, modifier = Modifier.size(15.dp))
-            Text("Play", color = if (focused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Text("• ${countdown}s", color = if (focused) Color.Black.copy(alpha = .75f) else Color.White.copy(alpha = .75f), fontSize = 10.sp)
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = if (focused) TvDesign.OnAccent else Color.White, modifier = Modifier.size(15.dp))
+            Text("Play", color = if (focused) TvDesign.OnAccent else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("• ${countdown}s", color = if (focused) TvDesign.OnAccent.copy(alpha = .75f) else Color.White.copy(alpha = .75f), fontSize = 10.sp)
         }
     }
 }

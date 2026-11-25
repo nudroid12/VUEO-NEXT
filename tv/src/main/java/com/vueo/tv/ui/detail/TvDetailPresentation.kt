@@ -418,7 +418,7 @@ internal fun TvDetailPresentation(
                     .align(Alignment.TopEnd)
                     .padding(top = 28.dp, end = 36.dp)
                     .size(22.dp),
-                color = TvDesign.White,
+                color = TvDesign.Accent,
                 strokeWidth = 2.dp,
             )
         }

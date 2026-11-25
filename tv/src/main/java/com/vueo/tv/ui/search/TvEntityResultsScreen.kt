@@ -377,7 +377,7 @@ internal fun TvEntityResultsScreen(
             busy -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
-                        color = TvDesign.White,
+                        color = TvDesign.Accent,
                         strokeWidth = 2.dp,
                     )
                 }
@@ -438,7 +438,7 @@ private fun TvEntitySortTab(
             }
             .background(
                 when {
-                    selected -> Color.White
+                    selected -> TvDesign.Accent
                     focused -> TvDesign.SurfaceRaised
                     else -> Color.White.copy(alpha = .04f)
                 },
@@ -448,7 +448,7 @@ private fun TvEntitySortTab(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
                     focused -> TvDesign.Focus
-                    selected -> Color.White.copy(alpha = .26f)
+                    selected -> TvDesign.Accent.copy(alpha = .26f)
                     else -> Color.White.copy(alpha = .08f)
                 },
                 shape = shape,
@@ -460,7 +460,7 @@ private fun TvEntitySortTab(
     ) {
         Text(
             text = label,
-            color = if (selected) Color.Black else TvDesign.White,
+            color = if (selected) TvDesign.OnAccent else TvDesign.White,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
         )

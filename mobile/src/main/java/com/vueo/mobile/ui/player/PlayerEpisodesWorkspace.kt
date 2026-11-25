@@ -64,7 +64,7 @@ internal data class PlayerEpisodeProgress(
     val positionMs: Long = 0L,
 )
 
-private val EpisodeAccent = Color(0xFFB9FF3A)
+private val EpisodeAccent get() = VueoPalette.Accent
 private val EpisodeCardShape = RoundedCornerShape(14.dp)
 
 @Composable
@@ -149,7 +149,7 @@ internal fun PlayerEpisodesWorkspace(
                         onClick = {},
                     ),
                 shape = RoundedCornerShape(18.dp),
-                color = Color(0xF2181A1C),
+                color = VueoPalette.SurfaceElevated.copy(alpha = 0.949f),
                 border = BorderStroke(
                     1.dp,
                     Color.White.copy(alpha = .09f),
@@ -260,7 +260,7 @@ private fun SeasonChip(
         Text(
             seasonLabel(season),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            color = if (selected) Color(0xFF202124) else Color.White.copy(alpha = .72f),
+            color = if (selected) VueoPalette.OnAccent else Color.White.copy(alpha = .72f),
             fontSize = 10.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )

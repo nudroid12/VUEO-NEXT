@@ -110,7 +110,7 @@ internal fun TvMotionFloatingHost() {
                         }
                     }
                     .background(TvDesign.Accent, CircleShape)
-                    .border(if (bubbleFocused) 3.dp else 0.dp, TvDesign.White, CircleShape)
+                    .border(if (bubbleFocused) 3.dp else 0.dp, TvDesign.Accent, CircleShape)
                     .onFocusChanged { bubbleFocused = it.isFocused }
                     .pointerInput(bounds, diameter, dropRadius) {
                         detectDragGestures(

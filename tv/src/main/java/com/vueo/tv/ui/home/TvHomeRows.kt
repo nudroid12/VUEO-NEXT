@@ -1042,7 +1042,7 @@ private fun TvModernHomeCard(
             .background(TvDesign.Surface)
             .border(
                 width = if (focused) 2.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .96f) else Color.Transparent,
+                color = if (focused) TvDesign.Accent.copy(alpha = .96f) else Color.Transparent,
                 shape = shape,
             )
             .tvPosterActivation(

@@ -1,5 +1,7 @@
 package com.vueo.tv
 
+import com.vueo.shared.ui.appearance.AppAppearance
+
 import com.vueo.tv.ui.TvPosterGridReveal
 import com.vueo.tv.ui.motion.*
 import com.vueo.shared.core.diagnostics.AppCrashReport
@@ -1200,11 +1202,7 @@ fun VueoTvApp(
     }
 
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = TvDesign.White,
-            background = TvDesign.Black,
-            surface = TvDesign.Surface,
-        ),
+        colorScheme = AppAppearance.colorScheme(),
     ) {
         CompositionLocalProvider(LocalTvModalFocusHost provides modalFocusHost) {
         Box(

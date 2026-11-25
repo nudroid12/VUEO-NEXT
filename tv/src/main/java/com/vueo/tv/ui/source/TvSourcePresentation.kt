@@ -391,7 +391,7 @@ private fun SourceDetailsButton(
             }
             .background(
                 color = when {
-                    focused -> TvDesign.White.copy(alpha = .18f)
+                    focused -> TvDesign.Accent.copy(alpha = .18f)
                     selected -> TvDesign.Accent.copy(alpha = .14f)
                     else -> TvDesign.Surface.copy(alpha = .72f)
                 },
@@ -400,7 +400,7 @@ private fun SourceDetailsButton(
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
-                    focused -> TvDesign.White.copy(alpha = .92f)
+                    focused -> TvDesign.Accent.copy(alpha = .92f)
                     selected -> TvDesign.Accent.copy(alpha = .46f)
                     else -> TvDesign.White.copy(alpha = .10f)
                 },
@@ -869,13 +869,13 @@ private fun SourceRefreshButton(
                 }
             }
             .background(
-                color = if (focused) TvDesign.White.copy(alpha = .18f)
+                color = if (focused) TvDesign.Accent.copy(alpha = .18f)
                 else TvDesign.Surface.copy(alpha = .74f),
                 shape = SourceChipShape,
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .92f)
+                color = if (focused) TvDesign.Accent.copy(alpha = .92f)
                 else TvDesign.White.copy(alpha = .10f),
                 shape = SourceChipShape,
             )
@@ -959,7 +959,7 @@ private fun SourceFilterChip(
             }
             .background(
                 color = when {
-                    focused || selected -> TvDesign.White
+                    focused || selected -> TvDesign.Accent
                     else -> TvDesign.Surface.copy(alpha = .74f)
                 },
                 shape = SourceChipShape,
@@ -967,7 +967,7 @@ private fun SourceFilterChip(
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
-                    focused || selected -> TvDesign.White
+                    focused || selected -> TvDesign.Accent
                     else -> TvDesign.White.copy(alpha = .10f)
                 },
                 shape = SourceChipShape,
@@ -983,7 +983,7 @@ private fun SourceFilterChip(
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.width(11.dp).height(11.dp),
-                color = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
+                color = if (focused || selected) TvDesign.OnAccent.copy(alpha = .64f)
                 else TvDesign.Accent,
                 strokeWidth = 1.4.dp,
             )
@@ -993,13 +993,13 @@ private fun SourceFilterChip(
                 imageVector = androidx.compose.material.icons.Icons.Default.Schedule,
                 contentDescription = "Waiting",
                 modifier = Modifier.width(11.dp).height(11.dp),
-                tint = if (focused || selected) TvDesign.Black.copy(alpha = .64f)
+                tint = if (focused || selected) TvDesign.OnAccent.copy(alpha = .64f)
                 else TvDesign.White.copy(alpha = .55f),
             )
         }
         Text(
             text = label,
-            color = if (focused || selected) TvDesign.Black.copy(alpha = .78f)
+            color = if (focused || selected) TvDesign.OnAccent.copy(alpha = .78f)
             else TvDesign.White.copy(alpha = .72f),
             fontSize = 11.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
@@ -1121,7 +1121,7 @@ private fun SourceCard(
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) {
-                    TvDesign.White.copy(alpha = .90f)
+                    TvDesign.Accent.copy(alpha = .90f)
                 } else {
                     TvDesign.White.copy(alpha = .07f)
                 },
@@ -1301,13 +1301,13 @@ private fun SourceMessageState(
                     .then(actionRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
                     .onFocusChanged { focused = it.isFocused }
                     .background(
-                        if (focused) TvDesign.White.copy(alpha = .18f)
+                        if (focused) TvDesign.Accent.copy(alpha = .18f)
                         else TvDesign.SurfaceRaised.copy(alpha = .84f),
                         SourceChipShape,
                     )
                     .border(
                         if (focused) 2.dp else 1.dp,
-                        if (focused) TvDesign.White.copy(alpha = .90f)
+                        if (focused) TvDesign.Accent.copy(alpha = .90f)
                         else TvDesign.White.copy(alpha = .10f),
                         SourceChipShape,
                     )

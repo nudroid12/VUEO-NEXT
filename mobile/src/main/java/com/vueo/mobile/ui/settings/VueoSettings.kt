@@ -611,7 +611,7 @@ internal fun VueoSettingsHub(
                         VueoSettingsHubGroup("APP") {
                             VueoSettingsHubRow(
                                 "Appearance", "Interface preferences.",
-                                "${settingsStore.appTheme().label} • ${settingsStore.appAccent().label} accent",
+                                "${VueoPalette.Theme.label} • ${VueoPalette.AccentChoice.label} accent",
                                 Icons.Default.Settings, onAppearance,
                             )
                             VueoSettingsHubDivider()

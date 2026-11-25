@@ -163,7 +163,7 @@ internal fun VueoPlayerSourcesPanel(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
-                .background(Color(0xF5202124))
+                .background(TvDesign.SurfaceElevated.copy(alpha = 0.961f))
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 28.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -202,7 +202,7 @@ internal fun VueoPlayerSourcesPanel(
                         val shape = RoundedCornerShape(50)
                         Text(
                             text = provider?.substringAfterLast(" / ") ?: "All",
-                            color = if (selected) Color.Black else Color.White,
+                            color = if (selected) TvDesign.OnAccent else Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -229,8 +229,8 @@ internal fun VueoPlayerSourcesPanel(
                                     } else false
                                 }
                                 .clip(shape)
-                                .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color(0xFF303030))
-                                .border(if (focused) 2.dp else 1.dp, if (focused) Color.White else Color.White.copy(alpha = .22f), shape)
+                                .background(if (selected) TvDesign.Accent else if (focused) TvDesign.FocusSurface else TvDesign.SurfaceRaised)
+                                .border(if (focused) 2.dp else 1.dp, if (focused) TvDesign.Accent else Color.White.copy(alpha = .22f), shape)
                                 .clickable {
                                     initialSourceFocus = false
                                     selectedProvider = provider
@@ -373,8 +373,8 @@ private fun VueoOptionRow(
             .clickable(enabled = option.enabled, onClick = onSelected)
             .background(
                 when {
-                    option.selected -> Color.White
-                    focused -> Color(0xFF555555)
+                    option.selected -> TvDesign.Accent
+                    focused -> TvDesign.FocusSurface
                     else -> Color.Transparent
                 },
                 shape,
@@ -382,8 +382,8 @@ private fun VueoOptionRow(
             .border(
                 if (focused) 2.dp else 1.dp,
                 when {
-                    focused -> Color(0xFF888888)
-                    option.selected -> Color.White
+                    focused -> TvDesign.Accent
+                    option.selected -> TvDesign.Accent
                     else -> Color.White.copy(alpha = .07f)
                 },
                 shape,
@@ -410,7 +410,7 @@ private fun VueoOptionRow(
                 ) {
                     Text(
                         option.title,
-                        color = if (option.selected) Color.Black else if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
+                        color = if (option.selected) TvDesign.OnAccent else if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
                         fontSize = 12.sp,
                         fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
                         modifier = Modifier.weight(1f),
@@ -418,7 +418,7 @@ private fun VueoOptionRow(
                     )
                     option.qualityLabel?.let { quality ->
                         Text(
-                            quality, color = if (option.selected) Color.Black else Color.White, fontSize = 9.sp,
+                            quality, color = if (option.selected) TvDesign.OnAccent else Color.White, fontSize = 9.sp,
                             modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
                                 .padding(horizontal = 6.dp, vertical = 3.dp),
                         )
@@ -430,12 +430,12 @@ private fun VueoOptionRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        option.meta.orEmpty(), color = if (option.selected) Color.Black.copy(alpha = .72f) else Color.White.copy(alpha = .72f), fontSize = 9.sp,
+                        option.meta.orEmpty(), color = if (option.selected) TvDesign.OnAccent.copy(alpha = .72f) else Color.White.copy(alpha = .72f), fontSize = 9.sp,
                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         if (option.playbackFailed) "Failed" else if (option.selected) "Playing" else "Direct",
-                        color = if (option.playbackFailed) Color(0xFFFF7777) else if (option.selected) Color.Black else Color.White.copy(alpha = .62f),
+                        color = if (option.playbackFailed) Color(0xFFFF7777) else if (option.selected) TvDesign.OnAccent else Color.White.copy(alpha = .62f),
                         fontSize = 9.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.background(
                             if (option.playbackFailed) Color(0xFFFF7777).copy(alpha = .12f) else if (option.selected) TvDesign.Accent.copy(alpha = .10f) else Color.White.copy(alpha = .06f),
@@ -448,7 +448,7 @@ private fun VueoOptionRow(
         Column(Modifier.weight(1f)) {
             Text(
                 option.title,
-                color = if (option.selected) Color.Black else if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
+                color = if (option.selected) TvDesign.OnAccent else if (option.enabled) Color.White else Color.White.copy(alpha = .30f),
                 fontSize = 12.sp,
                 fontWeight = if (focused || option.selected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1,
@@ -458,7 +458,7 @@ private fun VueoOptionRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     it,
-                    color = (if (option.selected) Color.Black else Color.White).copy(alpha = if (option.providerName != null) .72f else .48f),
+                    color = (if (option.selected) TvDesign.OnAccent else Color.White).copy(alpha = if (option.providerName != null) .72f else .48f),
                     fontSize = 9.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -468,7 +468,7 @@ private fun VueoOptionRow(
         option.qualityLabel?.let { quality ->
             Spacer(Modifier.width(8.dp))
             Text(
-                quality, color = if (option.selected) Color.Black else Color.White, fontSize = 9.sp,
+                quality, color = if (option.selected) TvDesign.OnAccent else Color.White, fontSize = 9.sp,
                 modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
                     .padding(horizontal = 6.dp, vertical = 3.dp),
             )
@@ -476,7 +476,7 @@ private fun VueoOptionRow(
         if (option.selected) {
             Spacer(Modifier.width(8.dp))
             Text(if (option.providerName != null) "Playing" else "Active",
-                color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                color = TvDesign.OnAccent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
         }
     }
@@ -588,7 +588,7 @@ internal fun VueoPlayerEpisodesPanel(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
-                .background(Color(0xF5202124))
+                .background(TvDesign.SurfaceElevated.copy(alpha = 0.961f))
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(
@@ -716,22 +716,22 @@ private fun VueoSeasonChip(
             .clickable(onClick = onClick)
             .background(
                 when {
-                    selected -> Color.White
-                    focused -> Color(0xFF555555)
-                    else -> Color(0xFF303030)
+                    selected -> TvDesign.Accent
+                    focused -> TvDesign.FocusSurface
+                    else -> TvDesign.SurfaceRaised
                 },
                 shape,
             )
             .border(
                 1.dp,
-                if (focused) Color.White else Color.White.copy(alpha = .12f),
+                if (focused) TvDesign.Accent else Color.White.copy(alpha = .12f),
                 shape,
             )
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
             if (season == 0) "Specials" else "Season $season",
-            color = if (selected) Color.Black else Color.White,
+            color = if (selected) TvDesign.OnAccent else Color.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -894,12 +894,12 @@ private fun VueoEpisodeRow(
             }
             .focusable()
             .clickable(onClick = onSelected)
-            .background(if (selected) Color.White else if (focused) Color(0xFF555555) else Color.Transparent, shape)
+            .background(if (selected) TvDesign.Accent else if (focused) TvDesign.FocusSurface else Color.Transparent, shape)
             .border(
                 if (focused) 2.dp else 1.dp,
                 when {
-                    focused -> Color(0xFF888888)
-                    selected -> Color.White
+                    focused -> TvDesign.Accent
+                    selected -> TvDesign.Accent
                     else -> Color.White.copy(alpha = .07f)
                 },
                 shape,
@@ -957,7 +957,7 @@ private fun VueoEpisodeRow(
                         Modifier
                             .fillMaxWidth(fraction.coerceIn(0f, 1f))
                             .fillMaxHeight()
-                            .background(Color.White.copy(alpha = .92f))
+                            .background(TvDesign.Accent.copy(alpha = .92f))
                     )
                 }
             }
@@ -1002,7 +1002,7 @@ private fun VueoEpisodeRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 episode.title.ifBlank { "Episode ${episode.episode}" },
-                color = if (selected) Color.Black else Color.White,
+                color = if (selected) TvDesign.OnAccent else Color.White,
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 fontWeight = FontWeight.Medium,
@@ -1010,12 +1010,12 @@ private fun VueoEpisodeRow(
                 overflow = TextOverflow.Ellipsis,
             )
             vueoPlayerFormatReleaseDate(episode.released)?.let {
-                Text(it, color = (if (selected) Color.Black else Color.White).copy(alpha = .42f), fontSize = 9.sp)
+                Text(it, color = (if (selected) TvDesign.OnAccent else Color.White).copy(alpha = .42f), fontSize = 9.sp)
             }
             episode.overview?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
-                    color = (if (selected) Color.Black else Color.White).copy(alpha = .48f),
+                    color = (if (selected) TvDesign.OnAccent else Color.White).copy(alpha = .48f),
                     fontSize = 9.sp,
                     lineHeight = 12.sp,
                     maxLines = 2,
@@ -1026,7 +1026,7 @@ private fun VueoEpisodeRow(
                 selected -> {
                     Text(
                         "Playing",
-                        color = Color.Black.copy(alpha = .72f),
+                        color = TvDesign.OnAccent.copy(alpha = .72f),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1076,7 +1076,7 @@ private fun VueoPanelTextAction(
     val shape = RoundedCornerShape(7.dp)
     Text(
         label,
-        color = if (focused) Color.Black else Color.White.copy(alpha = .74f),
+        color = if (focused) TvDesign.OnAccent else Color.White.copy(alpha = .74f),
         fontSize = 10.sp,
         fontWeight = FontWeight.Medium,
         modifier = Modifier
@@ -1099,7 +1099,7 @@ private fun VueoPanelTextAction(
             }
             .focusable()
             .clickable(onClick = onClick)
-            .background(if (focused) Color.White else Color.White.copy(alpha = .07f), shape)
+            .background(if (focused) TvDesign.Accent else Color.White.copy(alpha = .07f), shape)
             .padding(horizontal = 12.dp, vertical = 7.dp),
     )
 }

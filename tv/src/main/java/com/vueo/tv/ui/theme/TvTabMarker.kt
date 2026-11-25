@@ -1,5 +1,7 @@
 package com.vueo.tv.ui.theme
 
+import com.vueo.tv.ui.TvDesign
+
 import com.vueo.tv.ui.motion.TvMotionGroup
 import com.vueo.tv.ui.motion.tvTunedSpec
 import com.vueo.tv.ui.motion.TvMotion
@@ -57,7 +59,7 @@ internal fun TvTabMarkerHost(content: @Composable () -> Unit) {
         Box(Modifier.onGloballyPositioned { state.host = it.boundsInRoot() }
             .drawWithContent {
                 drawContent()
-                if (ready) drawLine(Color.White, Offset(x, y), Offset(x + width, y),
+                if (ready) drawLine(TvDesign.Accent, Offset(x, y), Offset(x + width, y),
                     strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
             }) { content() }
     }

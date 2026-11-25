@@ -1392,6 +1392,7 @@ fun VueoApp(
                                 )
 
                                 profileStore.ensureDefaultProfile()
+                                VueoPalette.applyTheme(settingsStore.appTheme())
                                 VueoPalette.applyAccent(
                                     settingsStore.appAccent()
                                 )
@@ -1483,7 +1484,7 @@ private fun RowScope.BottomTab(
                     selectedIconColor =
                         VueoPalette.Accent,
                     selectedTextColor =
-                        Color.White,
+                        VueoPalette.Accent,
                     indicatorColor =
                         VueoPalette.Accent
                             .copy(
@@ -1590,7 +1591,7 @@ private fun RowScope.ProfileBottomTab(
                     selectedIconColor =
                         VueoPalette.Accent,
                     selectedTextColor =
-                        Color.White,
+                        VueoPalette.Accent,
                     indicatorColor =
                         VueoPalette.Accent
                             .copy(

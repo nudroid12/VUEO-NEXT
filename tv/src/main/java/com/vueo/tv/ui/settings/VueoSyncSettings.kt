@@ -128,8 +128,8 @@ internal fun TvVueoSyncSettings(
                         .border(2.dp, if (focused) TvDesign.Accent else Color.Transparent, RoundedCornerShape(8.dp)),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = TvDesign.White,
-                        contentColor = TvDesign.Black,
+                        containerColor = TvDesign.Accent,
+                        contentColor = TvDesign.OnAccent,
                     ),
                 ) { Text(if (busy) "Please wait…" else "Sign In") }
             }))
@@ -391,8 +391,8 @@ private fun TvAccountField(
         keyboardActions = KeyboardActions(onDone = { stopEditing() }),
         shape = RoundedCornerShape(8.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = TvDesign.White,
-            focusedLabelColor = TvDesign.White,
+            focusedBorderColor = TvDesign.Accent,
+            focusedLabelColor = TvDesign.Accent,
             unfocusedBorderColor = TvDesign.Muted,
             cursorColor = TvDesign.Accent,
         ),

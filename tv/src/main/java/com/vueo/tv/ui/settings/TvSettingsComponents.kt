@@ -101,12 +101,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private object TvSettingsContrast {
-    val Pill = Color(0xFF303030)
-    val SelectedPill = Color(0xFF404040)
-    val FocusedPill = Color(0xFF555555)
-    val Card = Color(0xFF303030)
-    val CardContainer = Color(0xFF202020)
-    val DisabledCard = Color(0xFF242424)
+    val Pill get() = TvDesign.SurfaceRaised
+    val SelectedPill get() = TvDesign.AccentContainer
+    val FocusedPill get() = TvDesign.FocusSurface
+    val Card get() = TvDesign.SurfaceRaised
+    val CardContainer get() = TvDesign.Surface
+    val DisabledCard get() = TvDesign.SurfaceElevated
 }
 
 internal data class TvSettingsEntry(
@@ -565,8 +565,8 @@ private fun TvSettingsCategoryRow(
             .border(
                 if (focused) 2.dp else 1.dp,
                 when {
-                    focused -> TvDesign.White.copy(alpha = .94f)
-                    selected -> TvDesign.White.copy(alpha = .28f)
+                    focused -> TvDesign.Accent.copy(alpha = .94f)
+                    selected -> TvDesign.Accent.copy(alpha = .28f)
                     else -> TvDesign.White.copy(alpha = .10f)
                 },
                 RoundedCornerShape(percent = 50),
@@ -587,7 +587,7 @@ private fun TvSettingsCategoryRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = "›",
-            color = TvDesign.White.copy(alpha = if (focused) 1f else .72f),
+            color = (if (focused) TvDesign.Accent.copy(alpha = 1f) else TvDesign.White.copy(alpha = .72f)),
             fontSize = 20.sp,
         )
     }
@@ -671,7 +671,7 @@ internal fun TvSettingsProfilePanel(
                     .background(if (profileFocused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card)
                     .border(
                         if (profileFocused) 1.5.dp else 0.dp,
-                        if (profileFocused) TvDesign.White.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
+                        if (profileFocused) TvDesign.Accent.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
                         RoundedCornerShape(15.dp),
                     )
                     .focusable()
@@ -776,10 +776,10 @@ internal fun TvSettingsProfilePanel(
                         }
                     }
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (switchFocused) TvDesign.White else TvSettingsContrast.Card)
+                    .background(if (switchFocused) TvDesign.Accent else TvSettingsContrast.Card)
                     .border(
                         if (switchFocused) 1.5.dp else 1.dp,
-                        if (switchFocused) TvDesign.White else TvDesign.White.copy(alpha = .06f),
+                        if (switchFocused) TvDesign.Accent else TvDesign.White.copy(alpha = .06f),
                         RoundedCornerShape(14.dp),
                     )
                     .focusable()
@@ -789,14 +789,14 @@ internal fun TvSettingsProfilePanel(
             ) {
                 Text(
                     text = "⇄",
-                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    color = if (switchFocused) TvDesign.OnAccent else TvDesign.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.width(9.dp))
                 Text(
                     text = "Switch Profiles",
-                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    color = if (switchFocused) TvDesign.OnAccent else TvDesign.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1337,8 +1337,8 @@ internal fun TvSettingsRow(
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
                     focused && entry.accented -> TvDesign.Accent.copy(alpha = .90f)
-                    focused && aboutStyle -> TvDesign.White
-                    focused -> TvDesign.White.copy(alpha = .88f)
+                    focused && aboutStyle -> TvDesign.Accent
+                    focused -> TvDesign.Accent.copy(alpha = .88f)
                     aboutStyle -> TvDesign.White.copy(alpha = .16f)
                     grouped -> TvDesign.White.copy(alpha = 0f)
                     entry.accented -> TvDesign.Accent.copy(alpha = .12f)
@@ -1376,7 +1376,7 @@ internal fun TvSettingsRow(
                             color = if (entry.accented) {
                                 TvDesign.Accent.copy(alpha = if (focused) .16f else .09f)
                             } else if (focused) {
-                                TvDesign.White.copy(alpha = .10f)
+                                TvDesign.Accent.copy(alpha = .10f)
                             } else {
                                 TvDesign.SurfaceRaised.copy(alpha = .62f)
                             },
@@ -1500,7 +1500,7 @@ internal fun TvSettingsRow(
                             color = if (entry.accented) {
                                 TvDesign.Accent.copy(alpha = if (focused) .16f else .08f)
                             } else if (focused) {
-                                TvDesign.White.copy(alpha = .10f)
+                                TvDesign.Accent.copy(alpha = .10f)
                             } else {
                                 TvDesign.White.copy(alpha = .045f)
                             },
@@ -1556,12 +1556,12 @@ internal fun TvSecretVisibilityButton(
                 onFocus(it.isFocused)
             }
             .background(
-                if (focused) TvDesign.White.copy(alpha = .12f) else Color.Transparent,
+                if (focused) TvDesign.Accent.copy(alpha = .12f) else Color.Transparent,
                 CircleShape,
             )
             .border(
                 if (focused) 2.dp else 0.dp,
-                if (focused) TvDesign.White else Color.Transparent,
+                if (focused) TvDesign.Accent else Color.Transparent,
                 CircleShape,
             ),
     ) {
@@ -1645,7 +1645,7 @@ internal fun TvTextEntryDialog(
                 colors = tvDialogInputColors(),
             )
             message?.takeIf { it.isNotBlank() }?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
-            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.White)
+            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.Accent)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
                 TvDialogButton(
                     label = "Cancel",
@@ -1886,7 +1886,7 @@ private fun TvAddonControls(
                                 } else false
                             }
                             .background(if (focused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card, shape)
-                            .border(1.dp, if (focused) TvDesign.White else TvDesign.White.copy(alpha = .12f), shape)
+                            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .12f), shape)
                             .focusable(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -2004,7 +2004,7 @@ private fun TvSubtitleFontSettingsCard(
                 }
             }
             .background(TvSettingsContrast.Card, shape)
-            .border(1.dp, TvDesign.White.copy(alpha = if (focused) .28f else .045f), shape)
+            .border(1.dp, (if (focused) TvDesign.Accent.copy(alpha = .28f) else TvDesign.White.copy(alpha = .045f)), shape)
             .focusable(enabled = entry.enabled)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

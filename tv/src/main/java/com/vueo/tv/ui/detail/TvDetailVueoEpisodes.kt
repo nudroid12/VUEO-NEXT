@@ -130,7 +130,7 @@ internal fun VueoDetailSeasonTabs(
                         .onFocusChanged { focused = it.isFocused }
                         .clip(shape)
                         .background(
-                            if (selected) TvDesign.White else TvDesign.Surface.copy(alpha = .82f)
+                            if (selected) TvDesign.Accent else TvDesign.Surface.copy(alpha = .82f)
                         )
                         .border(
                             width = if (focused) 2.dp else 1.dp,
@@ -143,7 +143,7 @@ internal fun VueoDetailSeasonTabs(
                 ) {
                     Text(
                         text = if (season == 0) "Specials" else "Season $season",
-                        color = if (selected) Color.Black else TvDesign.White,
+                        color = if (selected) TvDesign.OnAccent else TvDesign.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -393,7 +393,7 @@ private fun VueoEpisodeCard(
             border = CardDefaults.border(
                 border = Border(
                     border = BorderStroke(if (selected) 1.dp else 0.dp,
-                        if (selected) TvDesign.White.copy(alpha = .30f) else Color.Transparent),
+                        if (selected) TvDesign.Accent.copy(alpha = .30f) else Color.Transparent),
                     shape = VueoEpisodeShape,
                 ),
                 focusedBorder = Border(
@@ -493,7 +493,7 @@ private fun VueoEpisodeCard(
                             .padding(start = 14.dp, end = 14.dp, bottom = 6.dp)
                             .fillMaxWidth()
                             .height(3.dp),
-                        color = TvDesign.White,
+                        color = TvDesign.Accent,
                         trackColor = TvDesign.White.copy(alpha = .20f),
                     )
                 }
@@ -506,7 +506,7 @@ private fun VueoEpisodeCard(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Default.Check, contentDescription = "Watched",
-                            tint = Color.Black, modifier = Modifier.size(17.dp))
+                            tint = TvDesign.OnAccent, modifier = Modifier.size(17.dp))
                     }
                 } else if (notStarted) {
                     Canvas(Modifier.align(Alignment.TopEnd).padding(10.dp).size(24.dp)) {

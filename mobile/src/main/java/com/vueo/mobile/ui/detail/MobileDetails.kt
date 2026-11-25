@@ -2437,7 +2437,7 @@ internal fun MediaDetailsScreen(
                                 contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" })
                         }
                         DropdownMenu(expanded = ratingExpanded, onDismissRequest = { ratingExpanded = false },
-                            containerColor = Color(0xFF202226)) {
+                            containerColor = VueoPalette.SurfaceStrong) {
                             Row(Modifier.padding(horizontal = 4.dp)) {
                                 listOf(1, -1).forEach { value ->
                                     IconButton(onClick = {

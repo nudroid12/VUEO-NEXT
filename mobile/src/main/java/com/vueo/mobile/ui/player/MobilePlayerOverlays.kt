@@ -276,7 +276,7 @@ internal fun PlayerResumePrompt(
                 .fillMaxWidth(.46f)
                 .widthIn(min = 320.dp, max = 440.dp),
             shape = RoundedCornerShape(18.dp),
-            color = Color(0xF2131416),
+            color = VueoPalette.Surface.copy(alpha = 0.949f),
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
                 Color.White.copy(alpha = .14f),
@@ -383,7 +383,7 @@ internal fun PlayerPlaybackErrorCard(
             .fillMaxWidth(.38f)
             .widthIn(min = 300.dp, max = 440.dp),
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xED181A1C),
+        color = VueoPalette.SurfaceElevated.copy(alpha = 0.929f),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             Color.White.copy(alpha = .14f),
@@ -487,7 +487,7 @@ internal fun PlayerNextEpisodeCard(
                 onClick = onPlay,
             ),
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xED181A1C),
+        color = VueoPalette.SurfaceElevated.copy(alpha = 0.929f),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             Color.White.copy(alpha = .14f),
@@ -723,7 +723,7 @@ internal fun PlayerPanelWindow(
                 .widthIn(max = 520.dp)
                 .heightIn(max = 440.dp),
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xF2131416),
+            color = VueoPalette.Surface.copy(alpha = 0.949f),
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
                 Color.White.copy(alpha = .14f),

@@ -109,10 +109,10 @@ private fun TvCatalogControl(
                     else -> false
                 }
             }
-            .background(if (focused) TvDesign.White.copy(alpha = .20f) else TvDesign.White.copy(alpha = .06f),
+            .background(if (focused) TvDesign.Accent.copy(alpha = .20f) else TvDesign.White.copy(alpha = .06f),
                 RoundedCornerShape(24.dp))
             .border(if (focused) 2.dp else 1.dp,
-                TvDesign.White.copy(alpha = if (focused) .95f else .12f), RoundedCornerShape(24.dp))
+                if (focused) TvDesign.Accent else TvDesign.Stroke, RoundedCornerShape(24.dp))
             // Boundary arrows remain focusable so reordering never drops remote focus.
             .clickable { if (available) action() }
             .heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -122,11 +122,11 @@ private fun TvCatalogControl(
         if (label == "ON" || label == "OFF") {
             Box(
                 modifier = Modifier.width(36.dp).height(20.dp)
-                    .background(TvDesign.White.copy(alpha = if (label == "ON") .35f else .12f),
+                    .background(if (label == "ON") TvDesign.Accent else TvDesign.SurfaceRaised,
                         RoundedCornerShape(20.dp)).padding(3.dp),
                 contentAlignment = if (label == "ON") Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                Box(Modifier.size(14.dp).background(TvDesign.White, RoundedCornerShape(14.dp)))
+                Box(Modifier.size(14.dp).background(if (label == "ON") TvDesign.OnAccent else TvDesign.Muted, RoundedCornerShape(14.dp)))
             }
         }
     }

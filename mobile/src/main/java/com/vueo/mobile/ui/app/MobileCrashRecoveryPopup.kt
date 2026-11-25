@@ -91,7 +91,7 @@ internal fun MobileCrashRecoveryPopup(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = VueoPalette.Accent,
-                        contentColor = if (VueoPalette.Accent.luminance() > .45f) Color.Black else Color.White,
+                        contentColor = VueoPalette.OnAccent,
                     ),
                 ) { Text("Open Crash Diagnose") }
                 TextButton(

@@ -228,12 +228,12 @@ private fun TvPosterActionRow(
             }
             .clickable(onClick = onClick)
             .background(
-                if (focused) TvDesign.White.copy(alpha = .14f) else Color.Transparent,
+                if (focused) TvDesign.Accent.copy(alpha = .14f) else Color.Transparent,
                 RoundedCornerShape(12.dp),
             )
             .border(
                 if (focused) 1.dp else 0.dp,
-                if (focused) TvDesign.White.copy(alpha = .72f) else Color.Transparent,
+                if (focused) TvDesign.Accent.copy(alpha = .72f) else Color.Transparent,
                 RoundedCornerShape(12.dp),
             )
             .padding(horizontal = 16.dp, vertical = 13.dp),

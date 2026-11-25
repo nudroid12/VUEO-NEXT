@@ -130,7 +130,7 @@ private fun CrashNoticeAction(
             .focusProperties { left = neighbour; right = neighbour; up = requester; down = requester }
             .onFocusChanged { focused = it.isFocused }
             .clip(shape)
-            .background(TvDesign.White.copy(alpha = if (focused) .18f else .06f))
+            .background(if (focused) TvDesign.Accent.copy(alpha = .18f) else TvDesign.White.copy(alpha = .06f))
             .border(1.dp, if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .14f), shape)
             // Keep focus during the short acknowledgement write; ignore repeated presses.
             .clickable { if (!busy) onClick() }

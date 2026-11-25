@@ -321,12 +321,13 @@ private fun VueoPlayButton(
             .background(
                 when {
                     !enabled -> TvDesign.White.copy(alpha = .22f)
-                    else -> TvDesign.White
+                    focused -> TvDesign.Accent
+                    else -> TvDesign.Accent.copy(alpha = .88f)
                 }
             )
             .border(
                 width = if (focused) 2.dp else 0.dp,
-                color = if (focused) TvDesign.Focus else Color.Transparent,
+                color = if (focused) TvDesign.OnAccent else Color.Transparent,
                 shape = shape,
             )
             .clickable(enabled = enabled, onClick = onClick)
@@ -337,12 +338,12 @@ private fun VueoPlayButton(
         Icon(
             imageVector = Icons.Default.PlayArrow,
             contentDescription = null,
-            tint = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
+            tint = if (enabled) TvDesign.OnAccent else TvDesign.White.copy(alpha = .48f),
             modifier = Modifier.size(23.dp),
         )
         Text(
             text = label,
-            color = if (enabled) Color.Black else TvDesign.White.copy(alpha = .48f),
+            color = if (enabled) TvDesign.OnAccent else TvDesign.White.copy(alpha = .48f),
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -414,7 +415,7 @@ private fun VueoRatingPill(
         // Match the text/icon contrast to the moving white highlight.
         val distance = abs((highlightX - slot).value)
         val coverage = (1f - distance / 34f).coerceIn(0f, 1f) * highlightOpacity
-        return lerp(TvDesign.White, Color.Black, coverage)
+        return lerp(TvDesign.White, TvDesign.OnAccent, coverage)
     }
 
     fun closeRating() {
@@ -455,18 +456,18 @@ private fun VueoRatingPill(
             .background(TvDesign.SurfaceRaised.copy(alpha = .84f))
             .border(
                 width = if (groupFocused) 1.5.dp else 1.dp,
-                color = TvDesign.White.copy(alpha = if (groupFocused) .95f else .36f),
+                color = TvDesign.Accent.copy(alpha = if (groupFocused) .95f else .36f),
                 shape = CircleShape,
             ),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // A single white indicator moves between the action slots.
+        // A single accent indicator moves between the action slots.
         Box(
             modifier = Modifier
                 .offset(x = highlightX + 4.dp)
                 .size(VueoHeroActionSize - 8.dp)
                 .alpha(highlightOpacity)
-                .background(TvDesign.White, CircleShape),
+                .background(TvDesign.Accent, CircleShape),
         )
 
         Box(
@@ -583,15 +584,15 @@ private fun VueoCircleAction(
             .clip(CircleShape)
             .background(
                 when {
-                    selected && focused -> TvDesign.White
-                    selected -> TvDesign.White.copy(alpha = .92f)
-                    focused -> TvDesign.White.copy(alpha = .18f)
+                    selected && focused -> TvDesign.Accent
+                    selected -> TvDesign.Accent.copy(alpha = .92f)
+                    focused -> TvDesign.Accent.copy(alpha = .18f)
                     else -> TvDesign.SurfaceRaised.copy(alpha = .82f)
                 }
             )
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) TvDesign.Focus else TvDesign.White.copy(alpha = .13f),
+                color = if (focused && selected) TvDesign.OnAccent else if (focused) TvDesign.Focus else TvDesign.White.copy(alpha = .13f),
                 shape = CircleShape,
             )
             .clickable(onClick = onClick),
@@ -600,7 +601,7 @@ private fun VueoCircleAction(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (selected) Color.Black else TvDesign.White,
+            tint = if (selected) TvDesign.OnAccent else TvDesign.White,
             modifier = Modifier.size(24.dp),
         )
     }

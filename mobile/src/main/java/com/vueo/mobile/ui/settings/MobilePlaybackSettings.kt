@@ -1,5 +1,7 @@
 package com.vueo.mobile.ui
 
+import com.vueo.shared.ui.appearance.AppAppearance
+
 // VUEO DNA OPTIONAL SETTINGS PATCH - 2026-08-29
 
 import android.content.Context
@@ -814,8 +816,8 @@ internal fun AppearanceSettingsScreen(
     settingsStore: SettingsStore,
     onBack: () -> Unit,
 ) {
-    var theme by remember { mutableStateOf(settingsStore.appTheme()) }
-    var accent by remember { mutableStateOf(settingsStore.appAccent()) }
+    val theme = VueoPalette.Theme
+    val accent = VueoPalette.AccentChoice
 
     VueoSettingsPage(
         title = "Appearance",
@@ -848,7 +850,7 @@ internal fun AppearanceSettingsScreen(
                             theme = option,
                             selected = theme == option,
                             onClick = {
-                                theme = option
+
                                 settingsStore.setAppTheme(option)
                                 VueoPalette.applyTheme(option)
                             },
@@ -896,7 +898,7 @@ internal fun AppearanceSettingsScreen(
                             accent = option,
                             selected = accent == option,
                             onClick = {
-                                accent = option
+
                                 settingsStore.setAppAccent(option)
                                 VueoPalette.applyAccent(option)
                             },
@@ -929,11 +931,8 @@ private fun VueoThemeOption(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val preview = when (theme) {
-        AppTheme.CHARCOAL -> listOf(Color(0xFF070A0D), Color(0xFF242A2E))
-        AppTheme.MIDNIGHT -> listOf(Color(0xFF060A12), Color(0xFF262E3A))
-        AppTheme.DEEP_TEAL -> listOf(Color(0xFF061011), Color(0xFF283130))
-    }
+    val palette = AppAppearance.paletteFor(theme)
+    val preview = listOf(palette.background, palette.profile)
 
     Card(
         modifier = Modifier.width(116.dp).clickable(onClick = onClick),
@@ -1067,7 +1066,7 @@ internal fun SubtitleFontPreview(style: PlayerSubtitleStyleState) {
     androidx.compose.ui.viewinterop.AndroidView(
         modifier = Modifier.fillMaxWidth().height(64.dp)
             .clip(RoundedCornerShape(9.dp))
-            .background(Color(0xFF101318))
+            .background(VueoPalette.Surface)
             .border(1.dp, Color.White.copy(alpha = .10f), RoundedCornerShape(9.dp)),
         factory = { context -> androidx.media3.ui.SubtitleView(context).apply {
             isFocusable = false

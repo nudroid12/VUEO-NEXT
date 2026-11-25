@@ -1042,6 +1042,18 @@ class SettingsStore(
             .apply()
     }
 
+    /** Apply saved appearance immediately and after any preference restore. */
+    fun observeAppearance(onChanged: (AppTheme, AppAccent) -> Unit): AutoCloseable {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == KEY_APP_THEME || key == KEY_APP_ACCENT) {
+                onChanged(appTheme(), appAccent())
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onChanged(appTheme(), appAccent())
+        return AutoCloseable { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     fun automaticUpdateChecksEnabled(): Boolean =
         prefs.getBoolean(
             KEY_AUTO_UPDATE_CHECKS,

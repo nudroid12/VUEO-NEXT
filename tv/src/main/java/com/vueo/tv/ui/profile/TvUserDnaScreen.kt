@@ -198,12 +198,12 @@ private fun DnaDisabledScreen(
                     .onFocusChanged { focused = it.isFocused }
                     .clip(RoundedCornerShape(12.dp))
                     .border(if (focused) 2.dp else 0.dp, if (focused) TvDesign.Focus else Color.Transparent, RoundedCornerShape(12.dp))
-                    .background(if (focused) TvDesign.White else TvDesign.White.copy(alpha = .10f))
+                    .background(if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .10f))
                     .clickable(onClick = onSwitchProfiles)
                     .padding(horizontal = 18.dp, vertical = 11.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Switch Profiles", color = if (focused) TvDesign.Black else TvDesign.White,
+                Text("Switch Profiles", color = if (focused) TvDesign.OnAccent else TvDesign.White,
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
@@ -281,7 +281,7 @@ private fun DnaProfileCard(
                         modifier = Modifier
                             .fillMaxWidth((snapshot.confidencePercent / 100f).coerceIn(0f, 1f))
                             .height(6.dp)
-                            .background(TvDesign.White.copy(alpha = .82f)),
+                            .background(TvDesign.Accent.copy(alpha = .82f)),
                     )
                 }
                 Spacer(Modifier.width(9.dp))
@@ -314,14 +314,14 @@ private fun DnaProfileCard(
                     if (focused) TvDesign.Focus.copy(alpha = .92f) else Color.Transparent,
                     RoundedCornerShape(12.dp),
                 )
-                .background(if (focused) TvDesign.White else TvDesign.White.copy(alpha = .10f))
+                .background(if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .10f))
                 .clickable(onClick = onSwitchProfiles)
                 .padding(horizontal = 18.dp, vertical = 11.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "Switch Profiles",
-                color = if (focused) TvDesign.Black else TvDesign.White,
+                color = if (focused) TvDesign.OnAccent else TvDesign.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )

@@ -94,7 +94,7 @@ internal fun TvAboutPanel(
                             else -> false
                         }
                     }
-                    .border(2.dp, if (logoFocused) TvDesign.White else Color.Transparent, logoShape)
+                    .border(2.dp, if (logoFocused) TvDesign.Accent else Color.Transparent, logoShape)
                     .clickable(onClick = onLogoActivated)
                     .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

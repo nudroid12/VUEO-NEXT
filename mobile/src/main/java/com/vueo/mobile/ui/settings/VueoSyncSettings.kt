@@ -161,9 +161,9 @@ private fun VueoConnectedAccountCard(
                         Switch(checked = syncOn, onCheckedChange = onSyncChanged, enabled = !busy,
                             modifier = Modifier.scale(.8f).semantics { contentDescription = "Account sync" },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = VueoPalette.Surface,
-                                checkedTrackColor = Color.White,
-                                checkedBorderColor = Color.White,
+                                checkedThumbColor = VueoPalette.OnAccent,
+                                checkedTrackColor = VueoPalette.Accent,
+                                checkedBorderColor = VueoPalette.Accent,
                             ))
                     }
                 }

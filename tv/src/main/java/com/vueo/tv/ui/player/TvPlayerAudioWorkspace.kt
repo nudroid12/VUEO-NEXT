@@ -101,7 +101,7 @@ internal fun VueoPlayerAudioWorkspace(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(520.dp)
-                .background(Color(0xF5202124))
+                .background(TvDesign.SurfaceElevated.copy(alpha = 0.961f))
                 .padding(start = 20.dp, top = 24.dp, end = 28.dp, bottom = 48.dp),
         ) {
             Text(

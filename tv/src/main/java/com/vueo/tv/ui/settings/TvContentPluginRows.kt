@@ -37,8 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val PluginSurface = Color(0xFF303030)
-private val PluginFocus = Color(0xFF555555)
+private val PluginSurface get() = TvDesign.SurfaceRaised
+private val PluginFocus get() = TvDesign.FocusSurface
 private val PluginMuted = Color.White.copy(alpha = .6f)
 private val PluginFailure = Color(0xFFFFB4AB)
 
@@ -52,11 +52,11 @@ internal fun TvContentToggle(checked: Boolean, compact: Boolean = false, focused
         checked = checked, onCheckedChange = null,
         modifier = if (compact) Modifier.graphicsLayer { scaleX = .82f; scaleY = .82f } else Modifier,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = if (focused) Color.White else Color(0xFF202020),
-            checkedTrackColor = if (focused) Color(0xFF202020) else Color.White,
-            checkedBorderColor = if (focused) Color(0xFF202020) else Color.White,
+            checkedThumbColor = TvDesign.OnAccent,
+            checkedTrackColor = TvDesign.Accent,
+            checkedBorderColor = if (focused) TvDesign.OnAccent else TvDesign.Accent,
             uncheckedThumbColor = Color.White.copy(alpha = .65f),
-            uncheckedTrackColor = Color(0xFF454545), uncheckedBorderColor = Color.White.copy(alpha = .25f),
+            uncheckedTrackColor = TvDesign.SurfaceRaised, uncheckedBorderColor = Color.White.copy(alpha = .25f),
         ),
     )
 }
@@ -241,7 +241,7 @@ private fun TvPluginRepositoryCard(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(36.dp).background(Color(0xFF242424), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(36.dp).background(TvDesign.SurfaceElevated, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                 Text("P", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.width(12.dp))
@@ -313,7 +313,7 @@ private fun TvPluginRepositoryCard(
                             }
                         }
                         .background(if (toggleFocused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
-                        .border(1.dp, if (toggleFocused) Color.White else Color.Transparent, RoundedCornerShape(50))
+                        .border(1.dp, if (toggleFocused) TvDesign.Accent else Color.Transparent, RoundedCornerShape(50))
                         .focusable(),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -333,7 +333,7 @@ private fun TvRepositoryAction(entry: TvSettingsEntry, icon: ImageVector, tint: 
             .focusRequester(requester)
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
             .background(if (focused) PluginFocus else Color.Transparent, RoundedCornerShape(50))
-            .border(1.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(50))
+            .border(1.dp, if (focused) TvDesign.Accent else Color.Transparent, RoundedCornerShape(50))
             .onPreviewKeyEvent { event ->
                 if (entry.enabled && activation(event.nativeKeyEvent.keyCode)) {
                     if (event.type == KeyEventType.KeyUp) entry.onActivate?.invoke()
@@ -374,7 +374,7 @@ private fun TvPluginProviderRow(entry: TvSettingsEntry, requester: FocusRequeste
                         }
                     }
                     .background(if (focused) PluginFocus else Color.Transparent, shape)
-                    .border(1.dp, if (focused) Color.White else Color.Transparent, shape)
+                    .border(1.dp, if (focused) TvDesign.Accent else Color.Transparent, shape)
                     .focusable().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

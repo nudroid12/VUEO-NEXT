@@ -1,5 +1,7 @@
 package com.vueo.tv.player
 
+import com.vueo.tv.ui.TvDesign
+
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -126,7 +128,7 @@ internal fun TvSubtitleDialogueSyncDialog(
         Box(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(.5f).fillMaxHeight()
-                    .background(Color(0xF5202124)).padding(16.dp),
+                    .background(TvDesign.SurfaceElevated.copy(alpha = 0.961f)).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("Live Sync", color = Color.White)
@@ -157,15 +159,15 @@ internal fun TvSubtitleDialogueSyncDialog(
                             var keyHeld by remember(index) { mutableStateOf(false) }
                             val selected = selectedIndex == index
                             val background = when {
-                                focused -> Color(0xFF62656A)
-                                selected -> Color.White
-                                else -> Color(0xFF303236)
+                                focused -> TvDesign.FocusSurface
+                                selected -> TvDesign.Accent
+                                else -> TvDesign.SurfaceRaised
                             }
                             Button(
                                 onClick = { capture(index, cue) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = background,
-                                    contentColor = if (selected && !focused) Color.Black else Color.White,
+                                    contentColor = if (selected && !focused) TvDesign.OnAccent else Color.White,
                                 ),
                                 shape = RoundedCornerShape(12.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),

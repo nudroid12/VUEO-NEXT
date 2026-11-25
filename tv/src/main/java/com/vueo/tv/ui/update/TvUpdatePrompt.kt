@@ -112,7 +112,7 @@ fun TvUpdatePrompt(
                 modifier = Modifier
                     .width(minOf(400.dp, maxWidth, (maxWidth + horizontalInset * 2f) * .45f))
                     .clip(PromptShape)
-                    .background(Color(0xFF161B25))
+                    .background(TvDesign.SurfaceElevated)
                     .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
                     .padding(horizontal = 22.dp, vertical = 14.dp),
             ) {
@@ -183,7 +183,7 @@ fun TvUpdatePrompt(
                                 ) {
                                     Box(
                                         Modifier.fillMaxWidth(progress.coerceIn(0, 100) / 100f)
-                                            .height(4.dp).background(TvDesign.White),
+                                            .height(4.dp).background(TvDesign.Accent),
                                     )
                                 }
                             } else {
@@ -295,14 +295,14 @@ private fun TvUpdateAction(
 
     val background = when {
         !interactive -> TvDesign.White.copy(alpha = .05f)
-        focused -> TvDesign.White
-        primary -> TvDesign.White.copy(alpha = .11f)
+        focused -> TvDesign.Accent
+        primary -> TvDesign.Accent.copy(alpha = .11f)
         else -> TvDesign.White.copy(alpha = .055f)
     }
 
     val border = when {
-        focused && interactive -> TvDesign.White.copy(alpha = .86f)
-        primary && interactive -> TvDesign.White.copy(alpha = .16f)
+        focused && interactive -> TvDesign.Accent.copy(alpha = .86f)
+        primary && interactive -> TvDesign.Accent.copy(alpha = .16f)
         else -> TvDesign.White.copy(alpha = .10f)
     }
 
@@ -348,7 +348,7 @@ private fun TvUpdateAction(
             weight = if (primary) FontWeight.SemiBold else FontWeight.Medium,
             color = when {
                 !interactive -> TvDesign.Dim
-                focused -> Color.Black
+                focused -> TvDesign.OnAccent
                 else -> TvDesign.White
             },
             maxLines = 1,

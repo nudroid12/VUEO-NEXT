@@ -6,6 +6,8 @@
  */
 package com.vueo.shared.collections.ui
 
+import com.vueo.shared.ui.appearance.AppAppearance
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -45,8 +47,8 @@ import kotlinx.coroutines.withContext
 
 // Image decoding is supplied by the host's existing size-aware image cache.
 typealias CollectionImage = @Composable (String?, String, Modifier) -> Unit
-private val Background = Color(0xFF080C0F)
-private val Panel = Color(0xFF151B20)
+private val Background get() = AppAppearance.palette.background
+private val Panel get() = AppAppearance.palette.surface
 
 @Composable
 private fun Header(title: String, onBack: () -> Unit) {
@@ -96,7 +98,7 @@ fun FolderCard(folder: CollectionFolder, image: CollectionImage, onClick: () -> 
     var focused by remember { mutableStateOf(false) }
     Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = Panel,
         modifier = Modifier.width(192.dp).height(110.dp).onFocusChanged { focused = it.hasFocus }
-            .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(14.dp))) {
+            .border(if (focused) 3.dp else 0.dp, if (focused) AppAppearance.accent else Color.Transparent, RoundedCornerShape(14.dp))) {
         Box {
             image(folder.coverImageUrl, folder.title, Modifier.fillMaxSize())
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .3f)))
@@ -432,7 +434,7 @@ private fun MediaCard(item: MediaItem, image: CollectionImage, minTitleLines: In
     var focused by remember { mutableStateOf(false) }
     Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = Panel,
         modifier = Modifier.width(130.dp).onFocusChanged { focused = it.hasFocus }
-            .border(if (focused) 3.dp else 0.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))) {
+            .border(if (focused) 3.dp else 0.dp, if (focused) AppAppearance.accent else Color.Transparent, RoundedCornerShape(10.dp))) {
         Column {
             image(item.poster ?: item.background, item.name, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
             Text(item.name, color = Color.White, minLines = minTitleLines, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
@@ -442,7 +444,7 @@ private fun MediaCard(item: MediaItem, image: CollectionImage, minTitleLines: In
 
 @Composable
 fun CollectionManagerScreen(engine: UnifiedMediaEngine, profileId: String, onBack: () -> Unit, image: CollectionImage) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFB2FF00), background = Background, surface = Panel)) {
+    MaterialTheme(colorScheme = AppAppearance.colorScheme()) {
         CollectionManagerBody(engine, profileId, onBack, image)
     }
 }
@@ -450,7 +452,7 @@ fun CollectionManagerScreen(engine: UnifiedMediaEngine, profileId: String, onBac
 @Composable
 fun CollectionFolderScreen(engine: UnifiedMediaEngine, profileId: String, collectionId: String, folderId: String,
     contentRevision: Int, active: Boolean = true, fixedPosterTitleHeight: Boolean = false, image: CollectionImage, onBack: () -> Unit, onMedia: (MediaItem) -> Unit) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFB2FF00), background = Background, surface = Panel)) {
+    MaterialTheme(colorScheme = AppAppearance.colorScheme()) {
         CollectionFolderBody(engine, profileId, collectionId, folderId, contentRevision, active, image, onBack, onMedia, fixedPosterTitleHeight)
     }
 }

@@ -46,7 +46,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 
-private val AudioAccent = Color(0xFFB9FF3A)
+private val AudioAccent get() = VueoPalette.Accent
 private val AudioRowShape = RoundedCornerShape(14.dp)
 
 @Composable
@@ -100,7 +100,7 @@ internal fun PlayerAudioWorkspace(
                         onClick = {},
                     ),
                 shape = RoundedCornerShape(18.dp),
-                color = Color(0xF2181A1C),
+                color = VueoPalette.SurfaceElevated.copy(alpha = 0.949f),
                 border = BorderStroke(
                     width = 1.dp,
                     color = Color.White.copy(alpha = .09f),

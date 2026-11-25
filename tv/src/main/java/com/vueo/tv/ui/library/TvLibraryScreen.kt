@@ -620,9 +620,9 @@ private fun LibraryViewModeButton(
             }
             .background(
                 color = if (selected) {
-                    TvDesign.White
+                    TvDesign.Accent
                 } else if (focused) {
-                    TvDesign.White.copy(alpha = .18f)
+                    TvDesign.Accent.copy(alpha = .18f)
                 } else {
                     TvDesign.SurfaceRaised.copy(alpha = .82f)
                 },
@@ -630,7 +630,7 @@ private fun LibraryViewModeButton(
             )
             .border(
                 width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .42f) else Color.Transparent,
+                color = if (focused) TvDesign.Accent.copy(alpha = .42f) else Color.Transparent,
                 shape = ControlShape,
             )
             .clickable(onClick = onToggle)
@@ -641,7 +641,7 @@ private fun LibraryViewModeButton(
         if (label == null) LibraryModeGlyph(grid = gridView, focused = focused)
         Text(
             text = label ?: if (gridView) "Grid" else "List",
-            color = if (selected) Color.Black else if (focused) TvDesign.White else TvDesign.Muted,
+            color = if (selected) TvDesign.OnAccent else if (focused) TvDesign.White else TvDesign.Muted,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -742,7 +742,7 @@ private fun LibraryPosterCard(
                 .clip(PosterShape)
                 .border(
                     width = if (focused) 2.dp else 0.dp,
-                    color = if (focused) TvDesign.White.copy(alpha = .88f) else Color.Transparent,
+                    color = if (focused) TvDesign.Accent.copy(alpha = .88f) else Color.Transparent,
                     shape = PosterShape,
                 ),
             contentScale = ContentScale.Crop,
@@ -829,7 +829,7 @@ private fun LibraryListRow(
             )
             .background(
                 color = if (focused) {
-                    TvDesign.White.copy(alpha = .11f)
+                    TvDesign.Accent.copy(alpha = .11f)
                 } else {
                     TvDesign.SurfaceRaised.copy(alpha = .46f)
                 },
@@ -837,7 +837,7 @@ private fun LibraryListRow(
             )
             .border(
                 width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .34f) else Color.Transparent,
+                color = if (focused) TvDesign.Accent.copy(alpha = .34f) else Color.Transparent,
                 shape = ListRowShape,
             )
             .clickable(onClick = onClick)

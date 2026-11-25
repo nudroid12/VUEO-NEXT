@@ -150,7 +150,7 @@ internal fun TvProviderDiagnosticDialog(
                             } else false
                         }
                         .background(TvDesign.SurfaceRaised, RoundedCornerShape(8.dp))
-                        .border(1.dp, if (logFocused) TvDesign.White else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(1.dp, if (logFocused) TvDesign.Accent else Color.Transparent, RoundedCornerShape(8.dp))
                         .focusable().verticalScroll(scroll).padding(12.dp),
                 ) {
                     Text(report, color = TvDesign.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp)

@@ -56,7 +56,7 @@ import com.vueo.mobile.core.model.StreamSource
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerSourceDisplay
 
-private val SourceAccent = Color(0xFFB9FF3A)
+private val SourceAccent get() = VueoPalette.Accent
 private val SourceCardShape = RoundedCornerShape(14.dp)
 
 @Composable
@@ -137,7 +137,7 @@ internal fun PlayerSourcesWorkspace(
                         onClick = {},
                     ),
                 shape = RoundedCornerShape(18.dp),
-                color = Color(0xF2181A1C),
+                color = VueoPalette.SurfaceElevated.copy(alpha = 0.949f),
                 border = BorderStroke(
                     1.dp,
                     Color.White.copy(alpha = .09f),
@@ -453,7 +453,7 @@ private fun SourceFilterChip(
 ) {
     Text(
         text = label,
-        color = if (selected) Color(0xFF161A14) else Color.White.copy(alpha = .72f),
+        color = if (selected) VueoPalette.OnAccent else Color.White.copy(alpha = .72f),
         fontSize = 10.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier

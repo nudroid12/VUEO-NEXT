@@ -126,8 +126,8 @@ internal fun TvHomeLoadFailure(
                     if (it.isFocused) onContentFocused()
                 },
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (retryFocused) TvDesign.White else TvDesign.SurfaceRaised,
-                contentColor = if (retryFocused) TvDesign.Black else TvDesign.White,
+                containerColor = if (retryFocused) TvDesign.Accent else TvDesign.SurfaceRaised,
+                contentColor = if (retryFocused) TvDesign.OnAccent else TvDesign.White,
             ),
         ) {
             Text("Cuba semula")

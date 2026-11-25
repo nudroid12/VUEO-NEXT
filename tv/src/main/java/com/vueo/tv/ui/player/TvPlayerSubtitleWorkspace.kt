@@ -274,7 +274,7 @@ internal fun VueoPlayerSubtitleWorkspace(
         )
     }
     val opacity = subtitleAlphaPercent(style.textColor)
-    val cardBackground = Color(0xFF17191C).copy(alpha = .92f)
+    val cardBackground = TvDesign.SurfaceElevated.copy(alpha = .92f)
     val cardBorder = Color.White.copy(alpha = .065f)
 
     Box(
@@ -1007,7 +1007,7 @@ private fun VueoSubtitleLanguageRow(
             .graphicsLayer { scaleX = focusScale; scaleY = focusScale }
             .background(
                 when {
-                    selected -> Color.White
+                    selected -> TvDesign.Accent
                     focused -> TvDesign.Accent.copy(alpha = .12f)
                     else -> Color.Transparent
                 },
@@ -1021,7 +1021,7 @@ private fun VueoSubtitleLanguageRow(
                 },
                 color = when {
                     focused -> TvDesign.Accent
-                    selected -> Color.White
+                    selected -> TvDesign.Accent
                     else -> Color.Transparent
                 },
                 shape = shape,
@@ -1031,7 +1031,7 @@ private fun VueoSubtitleLanguageRow(
     ) {
         Text(
             title,
-            color = if (selected) Color.Black else Color.White,
+            color = if (selected) TvDesign.OnAccent else Color.White,
             fontSize = 13.sp,
             fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
@@ -1046,7 +1046,7 @@ private fun VueoSubtitleLanguageRow(
                     .background(
                         when {
                             selected -> Color.Black.copy(alpha = .10f)
-                            focused -> Color.White.copy(alpha = .12f)
+                            focused -> TvDesign.Accent.copy(alpha = .12f)
                             else -> Color.White.copy(alpha = .09f)
                         },
                         RoundedCornerShape(10.dp),
@@ -1055,7 +1055,7 @@ private fun VueoSubtitleLanguageRow(
             ) {
                 Text(
                     it.toString(),
-                    color = if (selected) Color.Black else Color.White.copy(alpha = .92f),
+                    color = if (selected) TvDesign.OnAccent else Color.White.copy(alpha = .92f),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -1110,7 +1110,7 @@ private fun VueoSubtitleTrackRow(
             .graphicsLayer { scaleX = focusScale; scaleY = focusScale }
             .background(
                 when {
-                    selected -> Color.White
+                    selected -> TvDesign.Accent
                     focused -> TvDesign.Accent.copy(alpha = .12f)
                     else -> Color.White.copy(alpha = .025f)
                 },
@@ -1124,7 +1124,7 @@ private fun VueoSubtitleTrackRow(
                 },
                 color = when {
                     focused -> TvDesign.Accent
-                    selected -> Color.White
+                    selected -> TvDesign.Accent
                     else -> Color.Transparent
                 },
                 shape = shape,
@@ -1137,14 +1137,14 @@ private fun VueoSubtitleTrackRow(
                 modifier = Modifier
                     .background(
                         if (selected) Color.Black.copy(alpha = .06f)
-                        else if (focused) Color.White.copy(alpha = .12f)
+                        else if (focused) TvDesign.Accent.copy(alpha = .12f)
                         else Color.White.copy(alpha = .055f),
                         RoundedCornerShape(999.dp),
                     )
                     .border(
                         1.dp,
                         if (selected) Color.Black.copy(alpha = .20f)
-                        else if (focused) Color.White.copy(alpha = .38f)
+                        else if (focused) TvDesign.Accent.copy(alpha = .38f)
                         else Color.White.copy(alpha = .09f),
                         RoundedCornerShape(999.dp),
                     )
@@ -1152,7 +1152,7 @@ private fun VueoSubtitleTrackRow(
             ) {
                 Text(
                     provider.ifBlank { "Subtitle" },
-                    color = if (selected) Color.Black else Color.White.copy(alpha = .66f),
+                    color = if (selected) TvDesign.OnAccent else Color.White.copy(alpha = .66f),
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -1163,7 +1163,7 @@ private fun VueoSubtitleTrackRow(
             Text(
                 title,
                 modifier = Modifier.padding(start = 8.dp),
-                color = if (selected) Color.Black else Color.White,
+                color = if (selected) TvDesign.OnAccent else Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -1174,7 +1174,7 @@ private fun VueoSubtitleTrackRow(
                 Text(
                     detail,
                     modifier = Modifier.padding(start = 8.dp),
-                    color = if (selected) Color.Black.copy(alpha = .65f) else Color.White.copy(alpha = .50f),
+                    color = if (selected) TvDesign.OnAccent.copy(alpha = .65f) else Color.White.copy(alpha = .50f),
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1184,7 +1184,7 @@ private fun VueoSubtitleTrackRow(
         if (selected) {
             Text(
                 "✓",
-                color = Color.Black,
+                color = TvDesign.OnAccent,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 10.dp),
@@ -1325,7 +1325,7 @@ private fun VueoSubtitleToggleRow(
                 }
                 .background(
                     when {
-                        enabled -> Color.White
+                        enabled -> TvDesign.Accent
                         focused -> TvDesign.Accent.copy(alpha = .12f)
                         else -> Color.White.copy(alpha = .09f)
                     },
@@ -1335,7 +1335,7 @@ private fun VueoSubtitleToggleRow(
                     if (focused) 2.dp else 1.dp,
                     when {
                         focused -> TvDesign.Accent
-                        enabled -> Color.White
+                        enabled -> TvDesign.Accent
                         else -> Color.White.copy(alpha = .08f)
                     },
                     shape,
@@ -1344,7 +1344,7 @@ private fun VueoSubtitleToggleRow(
         ) {
             Text(
                 if (enabled) "On" else "Off",
-                color = if (enabled) Color.Black else Color.White,
+                color = if (enabled) TvDesign.OnAccent else Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -1418,7 +1418,7 @@ private fun VueoSubtitleColorRow(
                             width = if (focused || selected) 2.dp else 1.dp,
                             color = when {
                                 focused -> TvDesign.Accent
-                                selected -> Color.White.copy(alpha = .92f)
+                                selected -> TvDesign.Accent.copy(alpha = .92f)
                                 else -> Color.White.copy(alpha = .18f)
                             },
                             shape = CircleShape,

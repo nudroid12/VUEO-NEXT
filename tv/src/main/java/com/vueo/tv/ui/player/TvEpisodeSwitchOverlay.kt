@@ -85,7 +85,7 @@ internal fun TvEpisodeSwitchOverlay(
         Column(
             Modifier.padding(end = 32.dp, bottom = 37.dp)
                 .width(360.dp)
-                .background(Color(0xFF171A20).copy(alpha = .94f), RoundedCornerShape(16.dp))
+                .background(TvDesign.SurfaceElevated.copy(alpha = .94f), RoundedCornerShape(16.dp))
                 .border(1.dp, Color.White.copy(alpha = .35f), RoundedCornerShape(16.dp))
                 .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -99,7 +99,7 @@ internal fun TvEpisodeSwitchOverlay(
                     contentDescription = episode.title,
                     modifier = Modifier.width(96.dp).height(54.dp).clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop,
-                    fallback = Color(0xFF292D34),
+                    fallback = TvDesign.SurfaceRaised,
                 )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Next Episode", color = Color.White.copy(alpha = .75f), fontSize = 12.sp)
