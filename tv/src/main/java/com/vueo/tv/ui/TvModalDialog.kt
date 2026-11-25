@@ -23,6 +23,7 @@ internal val LocalTvModalFocusHost = staticCompositionLocalOf<TvModalFocusHost?>
 internal fun TvModalDialog(
     onDismissRequest: () -> Unit,
     initialFocus: FocusRequester,
+    dismissOnBackPress: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val focusHost = LocalTvModalFocusHost.current
@@ -35,6 +36,7 @@ internal fun TvModalDialog(
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnClickOutside = false,
+            dismissOnBackPress = dismissOnBackPress,
             decorFitsSystemWindows = false,
         ),
     ) {

@@ -10,15 +10,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
@@ -42,6 +44,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,25 +90,27 @@ fun TvUpdatePrompt(
     var downloading by remember(release.versionCode) { mutableStateOf(false) }
     var progress by remember(release.versionCode) { mutableIntStateOf(0) }
     var status by remember(release.versionCode) { mutableStateOf<String?>(null) }
+    var failed by remember(release.versionCode) { mutableStateOf(false) }
 
     val canDownload = release.downloadUrl != null
+    val horizontalInset = 36.dp
     val notes = remember(release.changelog) { visibleUpdateNotes(release.changelog) }
 
     TvModalDialog(
         onDismissRequest = { if (!downloading) onLater() },
         initialFocus = if (canDownload) updateRequester else laterRequester,
+        dismissOnBackPress = !downloading,
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = .42f))
-                .padding(horizontal = 36.dp, vertical = 30.dp),
+                .padding(horizontal = horizontalInset, vertical = 30.dp),
             contentAlignment = Alignment.BottomEnd,
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 500.dp)
-                    .fillMaxWidth()
+                    .width(minOf(400.dp, maxWidth, (maxWidth + horizontalInset * 2f) * .45f))
                     .clip(PromptShape)
                     .background(Color(0xFF161B25))
                     .border(1.dp, TvDesign.White.copy(alpha = .14f), PromptShape)
@@ -139,57 +144,56 @@ fun TvUpdatePrompt(
                     }
                 }
 
-                if (notes.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    TextLine(
-                        text = "What’s new",
-                        sizeSp = 15,
-                        weight = FontWeight.SemiBold,
-                        color = TvDesign.White,
-                    )
-                    notes.forEach { note ->
-                        Spacer(Modifier.height(4.dp))
-                        TextLine(
-                            text = note,
-                            sizeSp = 14,
-                            weight = FontWeight.Normal,
-                            color = TvDesign.Muted,
-                            maxLines = 2,
-                        )
-                    }
-                }
-
-                if (downloading) {
-                    Spacer(Modifier.height(10.dp))
-                    TextLine(
-                        text = "Downloading… $progress%",
-                        sizeSp = 13,
-                        weight = FontWeight.Medium,
-                        color = TvDesign.White,
-                    )
-                    Spacer(Modifier.height(7.dp))
-                    Box(
-                        Modifier.fillMaxWidth().height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(TvDesign.White.copy(alpha = .14f)),
+                Spacer(Modifier.height(10.dp))
+                val showNotes = !downloading && status == null
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 66.dp),
+                ) {
+                    // Keep the note area's measured height during progress and status changes.
+                    Column(
+                        modifier = if (showNotes) Modifier.fillMaxWidth() else
+                            Modifier.fillMaxWidth().alpha(0f).clearAndSetSemantics {},
                     ) {
-                        Box(
-                            Modifier.fillMaxWidth(progress.coerceIn(0, 100) / 100f)
-                                .height(4.dp)
-                                .background(TvDesign.White),
-                        )
+                        if (notes.isNotEmpty()) {
+                            TextLine("What’s new", 15, FontWeight.SemiBold, TvDesign.White)
+                            notes.forEach { note ->
+                                Spacer(Modifier.height(4.dp))
+                                TextLine(note, 14, FontWeight.Normal, TvDesign.Muted, maxLines = 2)
+                            }
+                        } else {
+                            TextLine(
+                                if (canDownload) "Android will ask you to confirm installation."
+                                else "This release has no downloadable APK.",
+                                14, FontWeight.Normal, TvDesign.Muted, maxLines = 2,
+                            )
+                        }
                     }
-                }
-
-                status?.takeUnless { downloading }?.let { message ->
-                    Spacer(Modifier.height(10.dp))
-                    TextLine(
-                        text = message,
-                        sizeSp = 14,
-                        weight = FontWeight.Medium,
-                        color = TvDesign.White.copy(alpha = .86f),
-                        maxLines = 2,
-                    )
+                    if (!showNotes) {
+                        Column(
+                            Modifier.matchParentSize(),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            if (downloading) {
+                                TextLine("Downloading… $progress%", 13, FontWeight.Medium, TvDesign.White)
+                                Spacer(Modifier.height(7.dp))
+                                Box(
+                                    Modifier.fillMaxWidth().height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(TvDesign.White.copy(alpha = .14f)),
+                                ) {
+                                    Box(
+                                        Modifier.fillMaxWidth(progress.coerceIn(0, 100) / 100f)
+                                            .height(4.dp).background(TvDesign.White),
+                                    )
+                                }
+                            } else {
+                                status?.let { message ->
+                                    TextLine(message, 14, FontWeight.Medium,
+                                        if (failed) Color(0xFFFFB4AB) else TvDesign.White, maxLines = 3)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -216,21 +220,23 @@ fun TvUpdatePrompt(
 
                     TvUpdateAction(
                         label = when {
-                            downloading -> "Updating…"
+                            failed -> "Retry"
                             canDownload -> "Update"
                             else -> "Unavailable"
                         },
                         requester = updateRequester,
                         enabled = canDownload,
+                        interactive = !downloading,
                         onClick = {
                             if (!downloading) {
+                                failed = false
                                 if (TvUpdateManager.needsInstallPermission(context)) {
                                     status = "Allow installs for VUEO, then return and choose Update again."
                                     TvUpdateManager.openInstallPermissionSettings(context.applicationContext)
                                 } else {
                                     downloading = true
                                     progress = 0
-                                    status = "Downloading verified update…"
+                                    status = null
                                     scope.launch {
                                         TvUpdateManager
                                             .downloadAndInstall(
@@ -242,6 +248,7 @@ fun TvUpdatePrompt(
                                                 status = "Android installer opened."
                                             }
                                             .onFailure { failure ->
+                                                failed = true
                                                 status = failure.message ?: "Unable to install update."
                                             }
                                         downloading = false
@@ -274,6 +281,7 @@ private fun TvUpdateAction(
     up: FocusRequester,
     down: FocusRequester,
     primary: Boolean,
+    interactive: Boolean = enabled,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -286,15 +294,15 @@ private fun TvUpdateAction(
     )
 
     val background = when {
-        !enabled -> TvDesign.White.copy(alpha = .05f)
+        !interactive -> TvDesign.White.copy(alpha = .05f)
         focused -> TvDesign.White
         primary -> TvDesign.White.copy(alpha = .11f)
         else -> TvDesign.White.copy(alpha = .055f)
     }
 
     val border = when {
-        focused -> TvDesign.White.copy(alpha = .86f)
-        primary && enabled -> TvDesign.White.copy(alpha = .16f)
+        focused && interactive -> TvDesign.White.copy(alpha = .86f)
+        primary && interactive -> TvDesign.White.copy(alpha = .16f)
         else -> TvDesign.White.copy(alpha = .10f)
     }
 
@@ -319,7 +327,7 @@ private fun TvUpdateAction(
                     keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                         keyCode == KeyEvent.KEYCODE_ENTER ||
                         keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        if (event.type == KeyEventType.KeyUp && enabled) onClick()
+                        if (event.type == KeyEventType.KeyUp && interactive) onClick()
                         true
                     }
 
@@ -339,7 +347,7 @@ private fun TvUpdateAction(
             sizeSp = 13,
             weight = if (primary) FontWeight.SemiBold else FontWeight.Medium,
             color = when {
-                !enabled -> TvDesign.Dim
+                !interactive -> TvDesign.Dim
                 focused -> Color.Black
                 else -> TvDesign.White
             },
