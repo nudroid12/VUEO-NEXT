@@ -156,8 +156,16 @@ private fun TvInlineAddonRow(
             onRight = {},
             onActivate = entry.onActivate ?: {},
             modifier = Modifier.width(70.dp),
-        ) {
-            TvContentToggle(checked, compact = true)
+        ) { focused ->
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    scaleX = if (focused) 1.12f else 1f
+                    scaleY = if (focused) 1.12f else 1f
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                TvContentToggle(checked, compact = true)
+            }
         }
     }
 }
@@ -201,21 +209,9 @@ private fun TvInlineAddonControl(
             .semantics { contentDescription = label },
     ) {
         Box(
-            modifier = Modifier.align(Alignment.TopCenter).height(34.dp),
+            modifier = Modifier.align(Alignment.Center).height(34.dp),
             contentAlignment = Alignment.Center,
         ) { content(focused) }
-        if (focused) {
-            Text(
-                label,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                color = TvDesign.White,
-                fontSize = 9.sp,
-                lineHeight = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
