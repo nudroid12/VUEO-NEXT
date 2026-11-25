@@ -66,26 +66,18 @@ class PluginStore(context: Context) {
     }
 
     suspend fun seedDevelopmentDefaultsIfNeeded() {
-        val revision = prefs.getInt(
-            KEY_DEV_DEFAULTS_REVISION,
-            0,
-        )
+        synchronized(repositoryWriteLock) {
+            if (prefs.getInt(KEY_DEV_DEFAULTS_REVISION, 0) >= DEV_DEFAULTS_REVISION) {
+                return
+            }
 
-        if (revision >= DEV_DEFAULTS_REVISION) {
-            return
+            // No repositories are installed automatically. Remove only the exact
+            // repositories seeded by the earlier revision, once per installation.
+            val retired = repositories().filter { it.manifestUrl in RETIRED_DEFAULT_MANIFESTS }
+            retired.forEach { remove(it.manifestUrl) }
+
+            prefs.edit().putInt(KEY_DEV_DEFAULTS_REVISION, DEV_DEFAULTS_REVISION).apply()
         }
-
-        // No repositories are installed automatically. Remove only the exact
-        // repositories seeded by the earlier revision, once per installation.
-        val retired = repositories().filter { it.manifestUrl in RETIRED_DEFAULT_MANIFESTS }
-        retired.forEach { remove(it.manifestUrl) }
-
-        prefs.edit()
-            .putInt(
-                KEY_DEV_DEFAULTS_REVISION,
-                DEV_DEFAULTS_REVISION,
-            )
-            .apply()
     }
 
     fun isDevelopmentDefault(manifestUrl: String): Boolean =
@@ -122,32 +114,20 @@ class PluginStore(context: Context) {
     }
 
     fun upsert(repository: PluginRepositoryDescriptor) {
-        val next = repositories()
-            .filterNot {
-                it.manifestUrl == repository.manifestUrl
-            }
-            .toMutableList()
-
-        next += repository
-        saveRepositories(next)
-        PluginRuntimeCache.clear()
+        synchronized(repositoryWriteLock) {
+            val next = repositories().filterNot { it.manifestUrl == repository.manifestUrl }
+            saveRepositories(next + repository)
+            PluginRuntimeCache.clear()
+        }
     }
 
     fun remove(manifestUrl: String) {
-        saveRepositories(
-            repositories().filterNot {
-                it.manifestUrl == manifestUrl
-            }
-        )
-        prefs.edit()
-            .remove(
-                repositoryEnabledKey(
-                    manifestUrl
-                )
-            )
-            .apply()
-        codeStore.removeRepository(manifestUrl)
-        PluginRuntimeCache.clear()
+        synchronized(repositoryWriteLock) {
+            saveRepositories(repositories().filterNot { it.manifestUrl == manifestUrl })
+            prefs.edit().remove(repositoryEnabledKey(manifestUrl)).apply()
+            codeStore.removeRepository(manifestUrl)
+            PluginRuntimeCache.clear()
+        }
     }
 
     fun isProviderEnabled(
@@ -195,6 +175,7 @@ class PluginStore(context: Context) {
                 }
             }
 
+    @Synchronized
     private fun saveRepositories(
         repositories: List<PluginRepositoryDescriptor>,
     ) {
@@ -235,6 +216,9 @@ class PluginStore(context: Context) {
             "plugin_dev_defaults_revision"
 
         private const val DEV_DEFAULTS_REVISION = 2
+
+        // Serialize repository read-modify-write across all store instances.
+        private val repositoryWriteLock = Any()
 
         val DEVELOPMENT_DEFAULT_MANIFESTS: Set<String> = emptySet()
 
