@@ -3,7 +3,8 @@ package com.vueo.tv.detail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,14 +29,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
-import kotlinx.coroutines.launch
+import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,7 +78,6 @@ internal fun VueoDetailHero(
     val profile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
     val store = remember(profile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = profile) }
     val ratingRequester = remember { FocusRequester() }
-    val likeRequester = remember { FocusRequester() }
     val dislikeRequester = remember { FocusRequester() }
     val item = state.item
     var rating by remember(item.id, item.type, profile) { mutableStateOf(store.ratings().firstOrNull {
@@ -90,12 +85,27 @@ internal fun VueoDetailHero(
     }?.value ?: 0) }
 
     var ratingExpanded by remember(item.id, item.type, profile) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val closeRating: () -> Unit = {
+    fun closeRating() {
+        // The first rating button remains attached in both states. Request
+        // its focus before removing the second button.
+        ratingRequester.requestFocus()
         ratingExpanded = false
-        scope.launch { withFrameNanos { }; ratingRequester.requestFocus() }
     }
-    val popupOffset = with(LocalDensity.current) { 52.dp.roundToPx() }
+
+    fun applyRating(value: Int) {
+        val nextValue = if (rating == value) 0 else value
+        store.setRating(item, nextValue)
+        rating = nextValue
+        closeRating()
+    }
+
+    BackHandler(enabled = ratingExpanded, onBack = ::closeRating)
+    LaunchedEffect(ratingExpanded) {
+        if (ratingExpanded && rating == -1) {
+            withFrameNanos { }
+            dislikeRequester.requestFocus()
+        }
+    }
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
     val canPlay = !seriesNeedsEpisode || state.selectedEpisode != null
@@ -166,41 +176,54 @@ internal fun VueoDetailHero(
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
-            Box {
+            Row(
+                modifier = Modifier
+                    .onFocusChanged { state ->
+                        if (!state.hasFocus) ratingExpanded = false
+                    }
+                    .focusGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Reuse this first focus node when expanding, selecting or
+                // clearing a rating, so focus never has to leave the action row.
                 VueoCircleAction(
-                    icon = when (rating) { 1 -> Icons.Default.ThumbUp; -1 -> Icons.Default.ThumbDown; else -> Icons.Outlined.ThumbUp },
-                    contentDescription = when (rating) { 1 -> "Liked: change rating"; -1 -> "Disliked: change rating"; else -> "Rate title" },
-                    selected = rating != 0, requester = ratingRequester, leftRequester = listRequester,
-                    rightRequester = null, downRequester = downRequester,
-                    onClick = { ratingExpanded = true },
+                    icon = when {
+                        ratingExpanded && rating == 1 -> Icons.Default.ThumbUp
+                        ratingExpanded -> Icons.Outlined.ThumbUp
+                        rating == 1 -> Icons.Default.ThumbUp
+                        rating == -1 -> Icons.Default.ThumbDown
+                        else -> Icons.Outlined.ThumbUp
+                    },
+                    contentDescription = if (ratingExpanded) {
+                        if (rating == 1) "Clear like" else "Like"
+                    } else {
+                        when (rating) {
+                            1 -> "Liked: change rating"
+                            -1 -> "Disliked: change rating"
+                            else -> "Rate title"
+                        }
+                    },
+                    selected = if (ratingExpanded) rating == 1 else rating != 0,
+                    requester = ratingRequester,
+                    leftRequester = listRequester,
+                    rightRequester = if (ratingExpanded) dislikeRequester else null,
+                    downRequester = downRequester,
+                    onClick = {
+                        if (ratingExpanded) applyRating(1) else ratingExpanded = true
+                    },
                 )
                 if (ratingExpanded) {
-                    Popup(alignment = Alignment.TopStart, offset = IntOffset(0, popupOffset),
-                        onDismissRequest = closeRating, properties = PopupProperties(focusable = true)) {
-                        Row(Modifier.background(TvDesign.SurfaceRaised, RoundedCornerShape(28.dp)).padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            VueoCircleAction(
-                                icon = Icons.Default.ThumbUp,
-                                contentDescription = if (rating == 1) "Clear rating" else "Like",
-                                selected = rating == 1, requester = likeRequester,
-                                leftRequester = FocusRequester.Cancel, rightRequester = dislikeRequester,
-                                downRequester = FocusRequester.Cancel,
-                                onClick = { rating = if (rating == 1) 0 else 1; store.setRating(item, rating); closeRating() },
-                            )
-                            VueoCircleAction(
-                                icon = Icons.Default.ThumbDown,
-                                contentDescription = if (rating == -1) "Clear rating" else "Dislike",
-                                selected = rating == -1, requester = dislikeRequester,
-                                leftRequester = likeRequester, rightRequester = null,
-                                downRequester = FocusRequester.Cancel,
-                                onClick = { rating = if (rating == -1) 0 else -1; store.setRating(item, rating); closeRating() },
-                            )
-                        }
-                        LaunchedEffect(Unit) {
-                            withFrameNanos { }
-                            (if (rating == -1) dislikeRequester else likeRequester).requestFocus()
-                        }
-                    }
+                    VueoCircleAction(
+                        icon = if (rating == -1) Icons.Default.ThumbDown else Icons.Outlined.ThumbDown,
+                        contentDescription = if (rating == -1) "Clear dislike" else "Dislike",
+                        selected = rating == -1,
+                        requester = dislikeRequester,
+                        leftRequester = ratingRequester,
+                        rightRequester = null,
+                        downRequester = downRequester,
+                        onClick = { applyRating(-1) },
+                    )
                 }
             }
 
@@ -385,7 +408,7 @@ private fun VueoCircleAction(
     downRequester: FocusRequester?,
     onClick: () -> Unit,
 ) {
-    var focused by remember(contentDescription, selected) { mutableStateOf(false) }
+    var focused by remember(requester) { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -412,8 +435,7 @@ private fun VueoCircleAction(
                 color = if (focused) TvDesign.Focus else TvDesign.White.copy(alpha = .13f),
                 shape = CircleShape,
             )
-            .clickable(onClick = onClick)
-            .focusable(),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
