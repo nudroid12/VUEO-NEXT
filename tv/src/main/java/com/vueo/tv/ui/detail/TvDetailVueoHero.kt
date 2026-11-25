@@ -1,5 +1,19 @@
 package com.vueo.tv.detail
 
+import kotlin.math.abs
+import kotlinx.coroutines.flow.first
+import com.vueo.tv.ui.motion.tvTunedSpec
+import com.vueo.tv.ui.motion.TvMotionGroup
+import com.vueo.tv.ui.motion.TvMotion
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.key
+import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -78,34 +92,11 @@ internal fun VueoDetailHero(
     val profile = com.vueo.shared.core.storage.ProfileStore(context).activeProfileId()
     val store = remember(profile) { com.vueo.shared.core.storage.LibraryStore(context, profileIdOverride = profile) }
     val ratingRequester = remember { FocusRequester() }
-    val dislikeRequester = remember { FocusRequester() }
     val item = state.item
     var rating by remember(item.id, item.type, profile) { mutableStateOf(store.ratings().firstOrNull {
         it.media.id == item.id && it.media.type == item.type
     }?.value ?: 0) }
 
-    var ratingExpanded by remember(item.id, item.type, profile) { mutableStateOf(false) }
-    fun closeRating() {
-        // The first rating button remains attached in both states. Request
-        // its focus before removing the second button.
-        ratingRequester.requestFocus()
-        ratingExpanded = false
-    }
-
-    fun applyRating(value: Int) {
-        val nextValue = if (rating == value) 0 else value
-        store.setRating(item, nextValue)
-        rating = nextValue
-        closeRating()
-    }
-
-    BackHandler(enabled = ratingExpanded, onBack = ::closeRating)
-    LaunchedEffect(ratingExpanded) {
-        if (ratingExpanded && rating == -1) {
-            withFrameNanos { }
-            dislikeRequester.requestFocus()
-        }
-    }
     val creditLines = remember(item) { DetailPeoplePolicy.creditLines(item) }
     val seriesNeedsEpisode = item.isDetailSeries() && item.episodes.isNotEmpty()
     val canPlay = !seriesNeedsEpisode || state.selectedEpisode != null
@@ -176,55 +167,17 @@ internal fun VueoDetailHero(
                 downRequester = downRequester,
                 onClick = onToggleList,
             )
-            Row(
-                modifier = Modifier
-                    .onFocusChanged { state ->
-                        if (!state.hasFocus) ratingExpanded = false
-                    }
-                    .focusGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Reuse this first focus node when expanding, selecting or
-                // clearing a rating, so focus never has to leave the action row.
-                VueoCircleAction(
-                    icon = when {
-                        ratingExpanded && rating == 1 -> Icons.Default.ThumbUp
-                        ratingExpanded -> Icons.Outlined.ThumbUp
-                        rating == 1 -> Icons.Default.ThumbUp
-                        rating == -1 -> Icons.Default.ThumbDown
-                        else -> Icons.Outlined.ThumbUp
-                    },
-                    contentDescription = if (ratingExpanded) {
-                        if (rating == 1) "Clear like" else "Like"
-                    } else {
-                        when (rating) {
-                            1 -> "Liked: change rating"
-                            -1 -> "Disliked: change rating"
-                            else -> "Rate title"
-                        }
-                    },
-                    selected = if (ratingExpanded) rating == 1 else rating != 0,
+            key(item.id, item.type, profile) {
+                VueoRatingPill(
+                    rating = rating,
                     requester = ratingRequester,
                     leftRequester = listRequester,
-                    rightRequester = if (ratingExpanded) dislikeRequester else null,
                     downRequester = downRequester,
-                    onClick = {
-                        if (ratingExpanded) applyRating(1) else ratingExpanded = true
+                    onRatingChanged = { value ->
+                        store.setRating(item, value)
+                        rating = value
                     },
                 )
-                if (ratingExpanded) {
-                    VueoCircleAction(
-                        icon = if (rating == -1) Icons.Default.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = if (rating == -1) "Clear dislike" else "Dislike",
-                        selected = rating == -1,
-                        requester = dislikeRequester,
-                        leftRequester = ratingRequester,
-                        rightRequester = null,
-                        downRequester = downRequester,
-                        onClick = { applyRating(-1) },
-                    )
-                }
             }
 
         }
@@ -394,6 +347,212 @@ private fun VueoPlayButton(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
+    }
+}
+
+/**
+ * The closed rating button is also the persistent status indicator.
+ * Its width grows to the right; the two choices reveal inside the same pill.
+ */
+@Composable
+private fun VueoRatingPill(
+    rating: Int,
+    requester: FocusRequester,
+    leftRequester: FocusRequester,
+    downRequester: FocusRequester?,
+    onRatingChanged: (Int) -> Unit,
+) {
+    val likeRequester = remember { FocusRequester() }
+    val dislikeRequester = remember { FocusRequester() }
+    var expanded by remember { mutableStateOf(false) }
+    var groupFocused by remember { mutableStateOf(false) }
+    var focusedValue by remember { mutableStateOf(0) }
+
+    val statusWidth = VueoHeroActionSize
+    val likeStart = statusWidth + 4.dp
+    val dislikeStart = likeStart + VueoHeroActionSize
+    val expandedWidth = dislikeStart + VueoHeroActionSize
+
+    val animatedWidth by animateDpAsState(
+        targetValue = if (expanded) expandedWidth else statusWidth,
+        animationSpec = tvTunedSpec(TvMotionGroup.PANEL, expanded, tween(
+            durationMillis = 250,
+            easing = TvMotion.EaseInOut,
+        )),
+        label = "detailRatingPillWidth",
+    )
+    val pillWidth = animatedWidth.coerceIn(statusWidth, expandedWidth)
+    val reveal = ((pillWidth - statusWidth) / (expandedWidth - statusWidth)).coerceIn(0f, 1f)
+    val actionsAlpha = ((reveal - .10f) / .90f).coerceIn(0f, 1f)
+    val slide = 10.dp * (1f - reveal)
+    // Until the options are within the pill's visible bounds, keep the status
+    // node focused. This also prevents an early OK from saving a rating.
+    val actionsReady = expanded && animatedWidth >= expandedWidth - 1.dp
+
+    val highlightOffset by animateDpAsState(
+        targetValue = when {
+            !expanded -> 0.dp
+            focusedValue == 1 -> likeStart
+            focusedValue == -1 -> dislikeStart
+            else -> 0.dp
+        },
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, groupFocused, tween(
+            durationMillis = 170,
+            easing = TvMotion.EaseInOut,
+        )),
+        label = "detailRatingFocusSlide",
+    )
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (groupFocused) 1f else 0f,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, groupFocused, tween(120)),
+        label = "detailRatingFocusAlpha",
+    )
+    val highlightX = highlightOffset.coerceIn(0.dp, dislikeStart)
+    val highlightOpacity = highlightAlpha.coerceIn(0f, 1f)
+
+    fun iconTint(slot: Dp): Color {
+        // Match the text/icon contrast to the moving white highlight.
+        val distance = abs((highlightX - slot).value)
+        val coverage = (1f - distance / 34f).coerceIn(0f, 1f) * highlightOpacity
+        return lerp(TvDesign.White, Color.Black, coverage)
+    }
+
+    fun closeRating() {
+        // Restore the always-mounted status focus before disabling the actions.
+        runCatching { requester.requestFocus() }
+        focusedValue = 0
+        expanded = false
+    }
+
+    BackHandler(enabled = expanded, onBack = ::closeRating)
+    LaunchedEffect(expanded) {
+        if (!expanded) return@LaunchedEffect
+        snapshotFlow { animatedWidth >= expandedWidth - 1.dp }.first { it }
+        val target = if (rating == -1) dislikeRequester else likeRequester
+        repeat(4) {
+            withFrameNanos { }
+            if (!expanded) return@LaunchedEffect
+            if (runCatching { target.requestFocus() }.getOrDefault(false)) {
+                return@LaunchedEffect
+            }
+        }
+        closeRating()
+    }
+
+    Box(
+        modifier = Modifier
+            .width(pillWidth)
+            .height(VueoHeroActionSize)
+            .onFocusChanged { state ->
+                groupFocused = state.hasFocus
+                if (!state.hasFocus) {
+                    expanded = false
+                    focusedValue = 0
+                }
+            }
+            .focusGroup()
+            .clip(CircleShape)
+            .background(TvDesign.SurfaceRaised.copy(alpha = .84f))
+            .border(
+                width = if (groupFocused) 1.5.dp else 1.dp,
+                color = TvDesign.White.copy(alpha = if (groupFocused) .95f else .36f),
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // A single white indicator moves between the action slots.
+        Box(
+            modifier = Modifier
+                .offset(x = highlightX + 4.dp)
+                .size(VueoHeroActionSize - 8.dp)
+                .alpha(highlightOpacity)
+                .background(TvDesign.White, CircleShape),
+        )
+
+        Box(
+            modifier = Modifier
+                .size(VueoHeroActionSize)
+                .focusRequester(requester)
+                .focusProperties {
+                    up = FocusRequester.Cancel
+                    left = leftRequester
+                    right = if (actionsReady) likeRequester else FocusRequester.Cancel
+                    downRequester?.let { down = it }
+                }
+                .onFocusChanged { if (it.isFocused) focusedValue = 0 }
+                .clickable {
+                    if (!expanded) expanded = true
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = when (rating) {
+                    1 -> Icons.Default.ThumbUp
+                    -1 -> Icons.Default.ThumbDown
+                    else -> Icons.Outlined.ThumbUp
+                },
+                contentDescription = when (rating) {
+                    1 -> "Liked: change rating"
+                    -1 -> "Disliked: change rating"
+                    else -> "Rate title"
+                },
+                tint = iconTint(0.dp),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset(x = statusWidth)
+                .width(1.dp)
+                .height(26.dp)
+                .alpha(actionsAlpha)
+                .background(TvDesign.White.copy(alpha = .30f)),
+        )
+
+        // Keep the two slots mounted through collapse for a continuous slide
+        // and fade. Disabled slots cannot receive focus or activate.
+        listOf(1, -1).forEach { value ->
+            val isLike = value == 1
+            val slot = if (isLike) likeStart else dislikeStart
+            Box(
+                modifier = Modifier
+                    .offset(x = slot - slide)
+                    .size(VueoHeroActionSize)
+                    .alpha(actionsAlpha)
+                    .focusRequester(if (isLike) likeRequester else dislikeRequester)
+                    .focusProperties {
+                        canFocus = actionsReady
+                        up = FocusRequester.Cancel
+                        left = if (isLike) leftRequester else likeRequester
+                        right = if (isLike) dislikeRequester else FocusRequester.Cancel
+                        downRequester?.let { down = it }
+                    }
+                    .onFocusChanged { if (it.isFocused) focusedValue = value }
+                    .then(if (actionsReady) Modifier else Modifier.clearAndSetSemantics { })
+                    .clickable(enabled = actionsReady) {
+                        onRatingChanged(if (rating == value) 0 else value)
+                        closeRating()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = when {
+                        isLike && rating == value -> Icons.Default.ThumbUp
+                        isLike -> Icons.Outlined.ThumbUp
+                        rating == value -> Icons.Default.ThumbDown
+                        else -> Icons.Outlined.ThumbDown
+                    },
+                    contentDescription = if (isLike) {
+                        if (rating == value) "Clear like" else "Like"
+                    } else {
+                        if (rating == value) "Clear dislike" else "Dislike"
+                    },
+                    tint = iconTint(slot - slide),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
     }
 }
 
