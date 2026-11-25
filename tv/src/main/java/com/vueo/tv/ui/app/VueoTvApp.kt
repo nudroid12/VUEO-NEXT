@@ -294,8 +294,10 @@ fun VueoTvApp(
         launch { runtime.prepareProvidersInBackground() }
         if (runtime.settingsStore.automaticUpdateChecksEnabled()) {
             launch {
-                val result = TvUpdateManager.check(context.applicationContext, force = false)
-                updatePromptRelease = result.release?.takeIf { it.isNewerThanCurrent() }
+                val result = TvUpdateManager.check(context.applicationContext, force = true)
+                updatePromptRelease = result.release?.takeIf {
+                    result.error == null && it.isNewerThanCurrent()
+                }
             }
         }
     }

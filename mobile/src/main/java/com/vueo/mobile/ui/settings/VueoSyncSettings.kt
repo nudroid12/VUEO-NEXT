@@ -1,5 +1,13 @@
 package com.vueo.mobile.ui
 
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,6 +55,7 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit, returnHint: String? = nu
     val scope=rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     LaunchedEffect(returnHint) { if (returnHint != null) message = returnHint }
@@ -58,7 +67,7 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit, returnHint: String? = nu
             try { message=block() }
             catch(cancelled: CancellationException) { throw cancelled }
             catch(error: Exception) { message=VueoSyncService.message(error) }
-            finally { password=""; busy=false }
+            finally { password=""; passwordVisible=false; busy=false }
         }
     }
     VueoSettingsPage("Account","Sync across mobile and TV.",onBack) {
@@ -92,7 +101,17 @@ internal fun VueoSyncSettingsScreen(onBack: () -> Unit, returnHint: String? = nu
             Column(Modifier.fillMaxWidth().padding(8.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(email,{email=it; message=""},label={Text("Email")},singleLine=true,enabled=!busy,modifier=Modifier.fillMaxWidth())
                 OutlinedTextField(password,{password=it; message=""},label={Text("Password")},singleLine=true,enabled=!busy,
-                    visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(enabled = !busy, onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            )
+                        }
+                    },
+                    modifier=Modifier.fillMaxWidth())
                 Button({action { service.signIn(email,password) }},enabled=!busy && email.isNotBlank() && password.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("Sign in") }
                 OutlinedButton({action { service.signIn(email,password,register=true) }},enabled=!busy && email.isNotBlank() && password.isNotBlank(),modifier=Modifier.fillMaxWidth()) { Text("Create account") }
             }

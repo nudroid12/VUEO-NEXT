@@ -1,5 +1,8 @@
 package com.vueo.mobile.ui
 
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -585,6 +588,7 @@ private fun ProfileEditorScreen(
     }
     var pinEnabled by remember(profile?.id) { mutableStateOf(hadPin) }
     var pin by remember(profile?.id) { mutableStateOf("") }
+    var pinVisible by remember(profile?.id) { mutableStateOf(false) }
     var photoBusy by remember { mutableStateOf(false) }
 
     BackHandler {
@@ -834,7 +838,15 @@ private fun ProfileEditorScreen(
                                 Text(if (hadPin) "New PIN (optional)" else "4-digit PIN")
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            visualTransformation = PasswordVisualTransformation(),
+                            visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { pinVisible = !pinVisible }) {
+                                    Icon(
+                                        if (pinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (pinVisible) "Hide PIN" else "Show PIN",
+                                    )
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -1082,6 +1094,7 @@ private fun ProfileUnlockDialog(
     onUnlocked: () -> Unit,
     verifyPin: (String) -> Boolean,
 ) {
+    var pinVisible by remember(profile.id) { mutableStateOf(false) }
     var pin by remember(profile.id) {
         mutableStateOf("")
     }
@@ -1118,7 +1131,15 @@ private fun ProfileUnlockDialog(
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.NumberPassword,
                     ),
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { pinVisible = !pinVisible }) {
+                            Icon(
+                                if (pinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (pinVisible) "Hide PIN" else "Show PIN",
+                            )
+                        }
+                    },
                     label = { Text("PIN") },
                     supportingText = {
                         if (error) {
@@ -1383,6 +1404,7 @@ private fun MobileParentalPinGate(store: ProfileStore, onGranted: () -> Unit, on
     val scope = rememberCoroutineScope()
     val existing = remember { store.hasParentalPin() }
     var first by remember { mutableStateOf<String?>(null) }
+    var pinVisible by remember(first) { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -1396,7 +1418,15 @@ private fun MobileParentalPinGate(store: ProfileStore, onGranted: () -> Unit, on
                     value = input,
                     onValueChange = { value -> if (!busy && value.length <= 4 && value.all { it in '0'..'9' }) input = value },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { pinVisible = !pinVisible }) {
+                            Icon(
+                                if (pinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (pinVisible) "Hide PIN" else "Show PIN",
+                            )
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     label = { Text("4-digit PIN") },
                 )

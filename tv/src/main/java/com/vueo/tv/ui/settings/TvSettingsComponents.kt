@@ -1,5 +1,13 @@
 package com.vueo.tv.settings
 
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.Icons
 import com.vueo.tv.ui.theme.TvTabMarkerHost
 import com.vueo.tv.ui.theme.tvTabMarker
 
@@ -1530,6 +1538,43 @@ internal fun rememberTvSettingsDeferredFocusRestore(): () -> Unit {
 }
 
 @Composable
+internal fun TvSecretVisibilityButton(
+    visible: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onFocus: (Boolean) -> Unit,
+    onToggle: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = onToggle,
+        enabled = enabled,
+        modifier = modifier
+            .size(44.dp)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocus(it.isFocused)
+            }
+            .background(
+                if (focused) TvDesign.White.copy(alpha = .12f) else Color.Transparent,
+                CircleShape,
+            )
+            .border(
+                if (focused) 2.dp else 0.dp,
+                if (focused) TvDesign.White else Color.Transparent,
+                CircleShape,
+            ),
+    ) {
+        Icon(
+            imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+            contentDescription = if (visible) "Hide value" else "Show value",
+            tint = if (focused) TvDesign.White else TvDesign.Muted,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
 internal fun TvTextEntryDialog(
     title: String,
     initialValue: String,
@@ -1540,7 +1585,7 @@ internal fun TvTextEntryDialog(
     busy: Boolean = false,
     message: String? = null,
     restoreOnSave: Boolean = true,
-    allowSecretReveal: Boolean = false,
+    allowSecretReveal: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
@@ -1627,6 +1672,14 @@ internal fun TvTextEntryDialog(
         return
     }
 
+    val showReveal = secret && allowSecretReveal
+    var revealFocused by remember { mutableStateOf(false) }
+    val revealKeyboard = LocalSoftwareKeyboardController.current
+    val secretImeInsets = WindowInsets.ime
+    val secretDensity = LocalDensity.current
+    val secretEditor = rememberTvOkToEdit(enabled = !busy && !revealFocused)
+    val inputFocus = remember { FocusRequester() }
+    val revealFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = { if (!busy) dismissAndRestore() },
         title = { Text(title) },
@@ -1638,13 +1691,39 @@ internal fun TvTextEntryDialog(
                     enabled = !busy,
                     singleLine = true,
                     placeholder = { if (placeholder.isNotBlank()) Text(placeholder) },
-                    visualTransformation = if (secret && !(allowSecretReveal && secretVisible)) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                    readOnly = secret && secretEditor.readOnly,
+                    modifier = Modifier.fillMaxWidth().focusRequester(inputFocus)
+                        .onPreviewKeyEvent { event ->
+                            if (showReveal && !busy && !revealFocused &&
+                                (secretEditor.readOnly || secretImeInsets.getBottom(secretDensity) == 0) &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                            ) {
+                                if (event.type == KeyEventType.KeyDown) revealFocus.requestFocus()
+                                true
+                            } else false
+                        }
+                        .then(if (secret) secretEditor.modifier else Modifier),
+                    keyboardOptions = if (secret) {
+                        KeyboardOptions(keyboardType = KeyboardType.Password, showKeyboardOnFocus = false)
+                    } else KeyboardOptions.Default,
+                    visualTransformation = if (secret && !secretVisible) {
+                        PasswordVisualTransformation()
+                    } else VisualTransformation.None,
+                    trailingIcon = if (showReveal) {
+                        {
+                            TvSecretVisibilityButton(
+                                visible = secretVisible,
+                                enabled = !busy,
+                                modifier = Modifier.focusRequester(revealFocus).focusProperties { left = inputFocus },
+                                onFocus = {
+                                    revealFocused = it
+                                    if (it) revealKeyboard?.hide()
+                                },
+                                onToggle = { secretVisible = !secretVisible },
+                            )
+                        }
+                    } else null,
                 )
-                if (secret && allowSecretReveal) {
-                    TextButton(enabled = !busy, onClick = { secretVisible = !secretVisible }) {
-                        Text(if (secretVisible) "Hide API key" else "Show API key")
-                    }
-                }
                 message?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = TvDesign.Muted, fontSize = 12.sp)
                 }

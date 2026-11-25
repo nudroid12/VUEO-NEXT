@@ -106,7 +106,7 @@ fun TvUpdatePrompt(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = .42f))
                 .padding(horizontal = horizontalInset, vertical = 30.dp),
-            contentAlignment = Alignment.BottomEnd,
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier

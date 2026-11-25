@@ -1,5 +1,8 @@
 package com.vueo.tv.settings
 
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
@@ -279,6 +282,14 @@ private fun TvAccountField(
     val imeInsets = WindowInsets.ime
     val density = LocalDensity.current
     var editing by remember { mutableStateOf(false) }
+    var secretVisible by remember(label) { mutableStateOf(false) }
+    var revealFocused by remember { mutableStateOf(false) }
+    val inputRequester = remember { FocusRequester() }
+    val revealRequester = remember { FocusRequester() }
+
+    LaunchedEffect(busy, value.isEmpty()) {
+        if (busy || value.isEmpty()) secretVisible = false
+    }
 
     fun stopEditing() {
         editing = false
@@ -307,10 +318,12 @@ private fun TvAccountField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
+            .focusRequester(inputRequester)
             .onFocusChanged {
                 if (!it.isFocused && editing) stopEditing()
             }
             .onPreviewKeyEvent { event ->
+                if (revealFocused) return@onPreviewKeyEvent false
                 when (event.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                         if (busy) false
@@ -319,6 +332,13 @@ private fun TvAccountField(
                                 editing = true
                                 keyboardRequest++
                             }
+                            true
+                        }
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (!secret || busy || (editing && imeInsets.getBottom(density) > 0)) false
+                        else {
+                            if (event.type == KeyEventType.KeyDown) revealRequester.requestFocus()
                             true
                         }
                     }
@@ -345,7 +365,24 @@ private fun TvAccountField(
         readOnly = busy || !editing,
         label = { Text(label) },
         singleLine = true,
-        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+        visualTransformation = if (secret && !secretVisible) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = if (secret) {
+            {
+                TvSecretVisibilityButton(
+                    visible = secretVisible,
+                    enabled = !busy,
+                    modifier = Modifier.focusRequester(revealRequester).focusProperties { left = inputRequester },
+                    onFocus = {
+                        revealFocused = it
+                        if (it) {
+                            editing = false
+                            keyboard?.hide()
+                        }
+                    },
+                    onToggle = { secretVisible = !secretVisible },
+                )
+            }
+        } else null,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (secret) KeyboardType.Password else KeyboardType.Email,
             imeAction = ImeAction.Done,
