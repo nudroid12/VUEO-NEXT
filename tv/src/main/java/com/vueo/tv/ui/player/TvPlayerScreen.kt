@@ -199,6 +199,7 @@ fun TvPlayerScreen(
     episodeSwitching: Boolean = false,
     onEpisodeFrameReady: () -> Unit = {},
     onEpisodePlaybackFailed: (String) -> Unit = {},
+    onSourceOpenFailed: (() -> Unit)? = null,
 ) {
     val latestEpisodeSwitching = androidx.compose.runtime.rememberUpdatedState(episodeSwitching)
     val latestEpisodeFrameReady = androidx.compose.runtime.rememberUpdatedState(onEpisodeFrameReady)
@@ -321,6 +322,7 @@ fun TvPlayerScreen(
     val sourceRecoverySession = remember(bundle.videoId) { SourceRecoverySession() }
     var failedSourceUrls by remember(bundle.videoId) { mutableStateOf<Set<String>>(emptySet()) }
     var hasRenderedFirstFrame by remember(bundle.videoId) { mutableStateOf(false) }
+    var hasOpenedSource by remember(playerSessionId) { mutableStateOf(false) }
     var isBuffering by remember(bundle.videoId) { mutableStateOf(false) }
     var recoveryInProgress by remember(bundle.videoId) { mutableStateOf(false) }
     var playbackError by remember(bundle.videoId) { mutableStateOf<String?>(null) }
@@ -1261,6 +1263,7 @@ fun TvPlayerScreen(
                 if (!hasRenderedFirstFrame && episode != null) {
                     saveProgress(backgroundLibrary = true)
                 }
+                hasOpenedSource = true
                 hasRenderedFirstFrame = true
                 isBuffering = false
                 sourceRecoverySession.markReady(activeSource.toSourceCandidateForPlayer())
@@ -1648,6 +1651,11 @@ fun TvPlayerScreen(
         val error = playbackError ?: return@LaunchedEffect
         latestEpisodePlaybackFailed.value.invoke(error)
         if (episodeSwitching) return@LaunchedEffect
+        if (!hasOpenedSource && onSourceOpenFailed != null) {
+            onSourceOpenFailed()
+            exitPlayer()
+            return@LaunchedEffect
+        }
         controlsVisible = true
         controlFocusHandoffPending = true
         val restored = requestFocusNow(errorRequester) || requestFocusNow(progressRequester)
@@ -2140,6 +2148,7 @@ fun TvPlayerScreen(
             playing = playing,
             playbackRequested = playbackRequested,
             isBuffering = isBuffering,
+            openingSource = !hasOpenedSource,
             playbackFeedbackToken = playbackFeedbackToken,
             playbackFeedbackPaused = playbackFeedbackPaused,
             translatingSubtitles = translatingSubtitleSelectionId != null,

@@ -21,6 +21,8 @@ internal data class TvSourcePresentationState(
     val firstResultMs: Long?,
     val fromCache: Boolean,
     val error: String?,
+    val stopped: Boolean,
+    val sourceOpenFailed: Boolean,
     val rankedSources: List<StreamSource>,
     val filteredSources: List<StreamSource>,
     val visibleProviders: List<String>,

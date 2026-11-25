@@ -444,6 +444,8 @@ private fun SourceDiscoveryStatus(state: TvSourcePresentationState) {
         }
         state.rankedSources.isNotEmpty() ->
             "${state.rankedSources.size} playable • ${state.visibleProviders.size} providers"
+        state.error != null -> "Source discovery failed"
+        state.stopped -> "Discovery stopped"
         else -> "No playable sources"
     }
     val statusColor = if (discoveryActive) TvDesign.White.copy(alpha = .82f) else TvDesign.Muted
@@ -598,6 +600,15 @@ private fun SourceResultsSection(
 
         Spacer(Modifier.height(14.dp))
 
+        if (state.sourceOpenFailed) {
+            Text(
+                text = "Couldn’t open this source. Choose another link.",
+                color = TvDesign.White,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -622,8 +633,10 @@ private fun SourceResultsSection(
 
                 !discoveryActive && state.rankedSources.isEmpty() -> {
                     SourceMessageState(
-                        title = "No playable sources",
-                        message = if (state.bundle?.sources.orEmpty().isEmpty()) {
+                        title = if (state.stopped) "Discovery stopped" else "No playable sources",
+                        message = if (state.stopped) {
+                            "Retry to search for sources again."
+                        } else if (state.bundle?.sources.orEmpty().isEmpty()) {
                             "No sources were returned for this title."
                         } else {
                             "Sources were found, but none can be played directly by VUEO."

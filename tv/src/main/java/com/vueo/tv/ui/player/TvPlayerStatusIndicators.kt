@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun VueoPlayerStatusIndicators(
     buffering: Boolean,
+    openingSource: Boolean,
     feedbackToken: Int,
     paused: Boolean,
     translating: Boolean,
@@ -76,7 +77,8 @@ internal fun VueoPlayerStatusIndicators(
     Box(Modifier.fillMaxSize()) {
         // Buffering wins immediately, including during its anti-flash delay.
         AnimatedVisibility(
-            visible = enabled && ((buffering && showBuffering) || (!buffering && showFeedback && showPlaybackFeedback)),
+            visible = enabled && (openingSource || (buffering && showBuffering) ||
+                (!buffering && showFeedback && showPlaybackFeedback)),
             modifier = Modifier.align(Alignment.Center),
             enter = fadeIn(),
             exit = fadeOut(),
@@ -89,7 +91,7 @@ internal fun VueoPlayerStatusIndicators(
                     modifier = Modifier.size(76.dp).background(Color.Black.copy(alpha = .55f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (buffering) {
+                    if (openingSource || buffering) {
                         CircularProgressIndicator(Modifier.size(40.dp), color = TvDesign.Accent, strokeWidth = 3.dp)
                     } else {
                         Icon(
@@ -100,7 +102,9 @@ internal fun VueoPlayerStatusIndicators(
                         )
                     }
                 }
-
+                if (openingSource) {
+                    Text("Opening source…", color = TvDesign.White, fontSize = 13.sp)
+                }
             }
         }
         AnimatedVisibility(

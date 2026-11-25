@@ -85,6 +85,7 @@ internal fun VueoPlayerPresentation(
     playing: Boolean,
     playbackRequested: Boolean,
     isBuffering: Boolean,
+    openingSource: Boolean,
     playbackFeedbackToken: Int,
     playbackFeedbackPaused: Boolean,
     translatingSubtitles: Boolean,
@@ -326,6 +327,7 @@ internal fun VueoPlayerPresentation(
         }
         VueoPlayerStatusIndicators(
             buffering = isBuffering,
+            openingSource = openingSource,
             feedbackToken = playbackFeedbackToken,
             paused = playbackFeedbackPaused,
             translating = translatingSubtitles,

@@ -32,6 +32,7 @@ fun TvSourceScreen(
     discovery: com.vueo.tv.core.TvSourceDiscoverySnapshot?,
     discoveryRunning: Boolean,
     discoveryError: String?,
+    sourceOpenFailed: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onStop: () -> Unit,
@@ -46,7 +47,8 @@ fun TvSourceScreen(
     val returnFocusKey = remember(memoryKey) { memory.focusedSourceKey }
 
     val bundle = discovery?.bundle
-    val searching = discovery?.searching ?: discoveryRunning
+    // Before the discovery effect runs there is no snapshot to classify as empty.
+    val searching = discovery?.searching ?: (discoveryRunning || discoveryError == null)
     val scanStart = discovery?.scanBudgetStartMs ?: 0L
     val scanBudget = discovery?.scanBudgetMs ?: 0L
     var scanElapsed by remember(scanStart, scanBudget) { mutableStateOf(0L) }
@@ -58,7 +60,7 @@ fun TvSourceScreen(
             }
         }
     }
-    val progress = (discovery?.progress ?: "Starting source discovery…") +
+    val progress = (discovery?.progress ?: "Finding sources…") +
         if (scanStart > 0L && scanBudget > 0L) " • ${scanElapsed / 1000}/${scanBudget / 1000}s" else ""
     val rawCount = discovery?.rawCount ?: 0
     val notice = discovery?.notice
@@ -148,6 +150,8 @@ fun TvSourceScreen(
             firstResultMs = firstResultMs,
             fromCache = fromCache,
             error = error,
+            stopped = discovery?.sourcesStopped == true,
+            sourceOpenFailed = sourceOpenFailed,
             rankedSources = rankedSources,
             filteredSources = filteredSources,
             visibleProviders = visibleProviders,
@@ -175,7 +179,7 @@ fun TvSourceScreen(
             memory.selectedProvider = selectedProvider
         },
         onPlay = { source ->
-            bundle?.takeIf { source.isDirectPlayable }?.let { onPlay(it, source) }
+            bundle?.takeIf { active && source.isDirectPlayable }?.let { onPlay(it, source) }
         },
     )
 }
