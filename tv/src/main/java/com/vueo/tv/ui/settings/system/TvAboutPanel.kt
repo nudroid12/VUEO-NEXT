@@ -2,7 +2,6 @@ package com.vueo.tv.settings
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -25,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -39,6 +36,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -55,7 +53,9 @@ internal fun TvAboutPanel(
     onLogoActivated: () -> Unit,
 ) {
     val logoId = "about-logo"
-    val rowIds = listOf(logoId) + entries.map { it.id }
+    // Register the update row first for the initial/fallback focus, while
+    // keeping the logo physically above it and reachable by pressing Up.
+    val rowIds = entries.map { it.id } + logoId
     var logoFocused by remember { mutableStateOf(false) }
     LaunchedEffect(host.panelKey, rowIds) {
         host.onFocusableRowsChanged(rowIds)
@@ -71,12 +71,15 @@ internal fun TvAboutPanel(
             modifier = Modifier.padding(top = 5.dp, bottom = 18.dp),
         )
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val logoShape = RoundedCornerShape(14.dp)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(host.requesterFor(logoId))
-                    .focusProperties { up = FocusRequester.Cancel; down = host.requesterFor(TV_ABOUT_UPDATE_ROW_ID) }
+                    .focusProperties {
+                        up = FocusRequester.Cancel
+                        right = FocusRequester.Cancel
+                        down = host.requesterFor(TV_ABOUT_UPDATE_ROW_ID)
+                    }
                     .onFocusChanged {
                         logoFocused = it.isFocused
                         if (it.isFocused) host.onRowFocused(logoId)
@@ -94,7 +97,6 @@ internal fun TvAboutPanel(
                             else -> false
                         }
                     }
-                    .border(2.dp, if (logoFocused) TvDesign.Accent else Color.Transparent, logoShape)
                     .clickable(onClick = onLogoActivated)
                     .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -111,7 +113,13 @@ internal fun TvAboutPanel(
                     )
                     Text("VUEO", color = TvDesign.White, fontSize = 33.sp, fontWeight = FontWeight.Bold)
                 }
-                Text("Version ${BuildConfig.VERSION_NAME}", color = TvDesign.Muted, fontSize = 12.sp)
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME}",
+                    color = if (logoFocused) TvDesign.Accent else TvDesign.Muted,
+                    fontSize = 12.sp,
+                    fontWeight = if (logoFocused) FontWeight.Bold else FontWeight.Medium,
+                    textDecoration = if (logoFocused) TextDecoration.Underline else TextDecoration.None,
+                )
             }
             entries.forEachIndexed { index, entry ->
                 TvSettingsRow(
