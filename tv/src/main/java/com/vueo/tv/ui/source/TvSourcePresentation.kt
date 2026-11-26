@@ -1156,25 +1156,17 @@ private fun SourceCard(
                 )
             }
 
-            Text(
-                text = model.title,
-                color = if (focused) {
-                    TvDesign.White.copy(alpha = .90f)
-                } else {
-                    TvDesign.White.copy(alpha = .74f)
-                },
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 15.sp,
-            )
-
-            model.metadataLabel?.let { line ->
+            if (model.title.isNotBlank()) {
                 Text(
-                    text = line,
-                    color = if (focused) TvDesign.White.copy(alpha = .72f) else TvDesign.Dim,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 14.sp,
+                    text = model.title,
+                    color = if (focused) {
+                        TvDesign.White.copy(alpha = .90f)
+                    } else {
+                        TvDesign.White.copy(alpha = .74f)
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 15.sp,
                 )
             }
 

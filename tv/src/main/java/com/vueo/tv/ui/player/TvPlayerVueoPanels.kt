@@ -416,13 +416,6 @@ private fun VueoOptionRow(
                         modifier = Modifier.weight(1f),
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    option.qualityLabel?.let { quality ->
-                        Text(
-                            quality, color = if (option.selected) TvDesign.OnAccent else Color.White, fontSize = 9.sp,
-                            modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
-                                .padding(horizontal = 6.dp, vertical = 3.dp),
-                        )
-                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
@@ -431,7 +424,7 @@ private fun VueoOptionRow(
                 ) {
                     Text(
                         option.meta.orEmpty(), color = if (option.selected) TvDesign.OnAccent.copy(alpha = .72f) else Color.White.copy(alpha = .72f), fontSize = 9.sp,
-                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f), maxLines = 5, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         if (option.playbackFailed) "Failed" else if (option.selected) "Playing" else "Direct",
@@ -464,14 +457,6 @@ private fun VueoOptionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-        option.qualityLabel?.let { quality ->
-            Spacer(Modifier.width(8.dp))
-            Text(
-                quality, color = if (option.selected) TvDesign.OnAccent else Color.White, fontSize = 9.sp,
-                modifier = Modifier.background(Color.White.copy(alpha = .10f), RoundedCornerShape(50))
-                    .padding(horizontal = 6.dp, vertical = 3.dp),
-            )
         }
         if (option.selected) {
             Spacer(Modifier.width(8.dp))

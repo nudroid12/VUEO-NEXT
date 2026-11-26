@@ -222,8 +222,6 @@ import com.vueo.mobile.core.player.PlayerSkipKind
 import com.vueo.mobile.core.player.PlayerSkipRepository
 import com.vueo.mobile.core.player.PlayerSkipSegment
 import com.vueo.mobile.core.player.PlayerPlaybackPhase
-import com.vueo.mobile.core.player.PlayerSourceAssessment
-import com.vueo.mobile.core.player.PlayerSourceAudioMatch
 import com.vueo.mobile.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.player.PlayerTrackPolicy
 import com.vueo.mobile.core.player.PlayerSourceRecoverySession
@@ -248,6 +246,7 @@ import com.vueo.mobile.core.model.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.mobile.core.model.MediaPerson
 import com.vueo.mobile.core.model.StreamSource
+import com.vueo.shared.core.source.ProviderSourceDetails
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
 import kotlinx.coroutines.CancellationException
@@ -388,6 +387,7 @@ internal fun SourcePickerScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .navigationBarsPadding(),
             contentPadding = PaddingValues(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -396,7 +396,6 @@ internal fun SourcePickerScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
                     .padding(
                         start = 14.dp,
                         end = 18.dp,
@@ -607,29 +606,14 @@ internal fun SourcePickerScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
 
-                        val recommendedTags =
-                            sourceMetadataLine(
-                                source = best,
-                                assessment = assessment,
-                                compactAudioLabel = true,
-                            )
-
-                        if (recommendedTags.isNotBlank()) {
+                        val details = ProviderSourceDetails.lines(best, assessment).joinToString("\n")
+                        if (details.isNotEmpty()) {
                             Text(
-                                recommendedTags,
+                                details,
                                 color = VueoPalette.Muted,
                                 fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-
-                        sourceTitleDisplayName(best)?.let { sourceTitle ->
-                            Text(
-                                sourceTitle,
-                                color = Color.White.copy(alpha = .55f),
-                                fontSize = 10.sp,
-                                maxLines = 1,
+                                lineHeight = 14.sp,
+                                maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -1092,73 +1076,6 @@ private fun sourceProviderTabDisplayName(
         .trim()
         .ifBlank { "Other" }
 
-private fun sourceRepositoryDisplayName(
-    source: StreamSource,
-): String? =
-    source.providerName
-        .takeIf { " / " in it }
-        ?.substringBefore(" / ")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-
-private fun sourceServerDisplayName(
-    source: StreamSource,
-): String? =
-    source.serverName
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-
-private fun sourceTitleDisplayName(
-    source: StreamSource,
-): String? {
-    return com.vueo.shared.core.source.SourceDisplayText.details(
-        source.name,
-        sourceProviderTabDisplayName(sourceProviderTabKey(source)),
-        sourceServerDisplayName(source),
-    )
-}
-
-private fun sourceMetadataLine(
-    source: StreamSource,
-    assessment: PlayerSourceAssessment,
-    compactAudioLabel: Boolean = false,
-): String =
-    listOfNotNull(
-        sourceServerDisplayName(source)
-            ?: sourceRepositoryDisplayName(source),
-        when (assessment.audioMatch) {
-            PlayerSourceAudioMatch.ORIGINAL ->
-                if (compactAudioLabel) "Original" else "Original audio"
-
-            PlayerSourceAudioMatch.MULTI_WITH_ORIGINAL ->
-                if (compactAudioLabel) {
-                    "Original + multi"
-                } else {
-                    "Original in multi audio"
-                }
-
-            PlayerSourceAudioMatch.FOREIGN_DUB ->
-                "Dub"
-
-            PlayerSourceAudioMatch.UNKNOWN ->
-                null
-        },
-        assessment.summary
-            .split(" • ")
-            .filterNot { it.equals("Unknown", ignoreCase = true) }
-            .joinToString(" • ")
-            .takeIf { it.isNotBlank() },
-        source.hdr,
-        source.audio,
-    )
-        .flatMap { value ->
-            value.split(" • ")
-        }
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinctBy { it.lowercase() }
-        .joinToString(" • ")
-
 @Composable
 private fun SourceProviderTab(
     label: String,
@@ -1219,10 +1136,7 @@ private fun StreamSourceCard(
     val provider = sourceProviderTabDisplayName(
         sourceProviderTabKey(source)
     )
-    val metadata = sourceMetadataLine(
-        source = source,
-        assessment = assessment,
-    )
+    val details = ProviderSourceDetails.lines(source, assessment).joinToString("\n")
 
     Card(
         modifier = Modifier
@@ -1245,7 +1159,7 @@ private fun StreamSourceCard(
                 horizontal = 13.dp,
                 vertical = 10.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1278,22 +1192,14 @@ private fun StreamSourceCard(
                 )
             }
 
-            if (metadata.isNotBlank()) {
+            if (details.isNotEmpty()) {
                 Text(
-                    metadata,
+                    details,
                     color = VueoPalette.Muted,
                     fontSize = 10.sp,
-                    maxLines = 1,
+                    lineHeight = 14.sp,
+                    maxLines = if (showTechnicalDetails) Int.MAX_VALUE else 5,
                     overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            val sourceTitle = sourceTitleDisplayName(source)
-            if (sourceTitle != null) {
-                Text(
-                    sourceTitle,
-                    color = Color.White.copy(alpha = .55f),
-                    fontSize = 10.sp,
                 )
             }
         }

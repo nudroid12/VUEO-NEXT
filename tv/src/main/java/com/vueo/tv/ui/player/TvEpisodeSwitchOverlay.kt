@@ -120,7 +120,7 @@ internal fun TvEpisodeSwitchOverlay(
                                 onClick = { onSelectSource(source) },
                                 modifier = if (index == 0) Modifier.focusRequester(actionRequester) else Modifier,
                             ) {
-                                Text("${PlayerSourceDisplay.titleWithQuality(source)}\n${PlayerSourceDisplay.details(source)}", maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Text("${PlayerSourceDisplay.providerTitle(source)}\n${PlayerSourceDisplay.details(source)}", maxLines = 6, overflow = TextOverflow.Ellipsis)
                             }
                         }
                         Button(onClick = onRetry, modifier = if (sources.isEmpty()) Modifier.focusRequester(actionRequester) else Modifier) {

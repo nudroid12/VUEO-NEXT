@@ -277,10 +277,6 @@ private fun SourceListRow(
     playbackFailed: Boolean,
     onClick: () -> Unit,
 ) {
-    val assessment = PlayerSourcePolicy.assess(
-        source = source,
-        originalLanguage = originalLanguage,
-    )
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -342,7 +338,6 @@ private fun SourceListRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    SourceQualityBadge(assessment.quality.label)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
@@ -353,7 +348,7 @@ private fun SourceListRow(
                         text = PlayerSourceDisplay.groupedDetails(source),
                         color = Color.White.copy(alpha = .72f),
                         fontSize = 10.sp,
-                        maxLines = 1,
+                        maxLines = 5,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
@@ -401,22 +396,6 @@ private fun SourceScanAction(
             )
         }
     }
-}
-
-@Composable
-private fun SourceQualityBadge(label: String) {
-    Text(
-        text = label,
-        color = Color.White,
-        fontSize = 9.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier
-            .background(
-                Color.White.copy(alpha = .08f),
-                RoundedCornerShape(50),
-            )
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
 }
 
 @Composable

@@ -3,9 +3,9 @@ package com.vueo.tv.source
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
-import com.vueo.shared.core.player.PlayerSourceAssessment
 import com.vueo.shared.core.player.PlayerSourceDisplay
-import com.vueo.shared.core.player.PlayerSourceAudioMatch
+import com.vueo.shared.core.player.PlayerSourcePolicy
+import com.vueo.shared.core.source.ProviderSourceDetails
 import com.vueo.tv.core.TvSourceBundle
 
 internal const val SOURCE_PROVIDER_ALL = "__vueo_all_sources__"
@@ -41,7 +41,6 @@ internal data class TvSourceCardModel(
     val providerName: String,
     val serverName: String?,
     val title: String,
-    val metadataLabel: String?,
     val logoUrl: String?,
     val detailUrl: String?,
 )
@@ -82,77 +81,18 @@ internal fun StreamSource.toTvSourceCardModel(
         .map(String::trim)
         .firstOrNull(String::isNotBlank)
         ?: "Other"
-    // Display the provider's text once, without generated media or metadata labels.
-    val providerText = sourceCardProviderText(name)
-    val serverText = serverName?.let(::sourceCardProviderText)?.takeIf(String::isNotBlank)
-    val title = providerText.ifBlank {
-        serverText ?: sourceProviderDisplayName(sourceProviderKey(this))
-    }
+    val title = ProviderSourceDetails.lines(this, PlayerSourcePolicy.assess(this), includeServer = false)
+        .joinToString("\n")
+    val serverText = ProviderSourceDetails.serverLines(this).joinToString("\n").takeIf(String::isNotBlank)
 
     return TvSourceCardModel(
         providerName = provider,
-        serverName = serverText?.takeUnless { it == title },
+        serverName = serverText,
         title = title,
-        metadataLabel = null,
         logoUrl = logoUrl,
         detailUrl = url?.trim()?.takeIf(String::isNotBlank),
     )
 }
-
-private fun sourceCardProviderText(value: String): String =
-    value
-        .replace("\\r\\n", "\n")
-        .replace("\\n", "\n")
-        .replace("\r\n", "\n")
-        .replace('\r', '\n')
-        .trim()
-
-private fun sourceRepositoryDisplayName(source: StreamSource): String? =
-    source.providerName
-        .takeIf { " / " in it }
-        ?.substringBefore(" / ")
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-
-internal fun sourceServerDisplayName(source: StreamSource): String? =
-    source.serverName
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-
-internal fun sourceTitleDisplayName(source: StreamSource): String? {
-    return com.vueo.shared.core.source.SourceDisplayText.details(
-        source.name,
-        sourceProviderDisplayName(sourceProviderKey(source)),
-        sourceServerDisplayName(source),
-    )
-}
-
-internal fun sourceMetadataLine(
-    source: StreamSource,
-    assessment: PlayerSourceAssessment,
-): String =
-    listOfNotNull(
-        sourceServerDisplayName(source)
-            ?: sourceRepositoryDisplayName(source),
-        when (assessment.audioMatch) {
-            PlayerSourceAudioMatch.ORIGINAL -> "Original audio"
-            PlayerSourceAudioMatch.MULTI_WITH_ORIGINAL -> "Original in multi audio"
-            PlayerSourceAudioMatch.FOREIGN_DUB -> "Dub"
-            PlayerSourceAudioMatch.UNKNOWN -> null
-        },
-        assessment.summary
-            .split(" • ")
-            .filterNot { it.equals("Unknown", ignoreCase = true) }
-            .joinToString(" • ")
-            .takeIf(String::isNotBlank),
-        source.hdr,
-        source.audio,
-    )
-        .flatMap { value -> value.split(" • ") }
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinctBy { it.lowercase() }
-        .joinToString(" • ")
 
 internal fun sourceStableKey(source: StreamSource): String =
     listOf(

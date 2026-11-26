@@ -148,7 +148,6 @@ internal data class TvPlayerOption(
     val selected: Boolean = false,
     val enabled: Boolean = true,
     val providerName: String? = null,
-    val qualityLabel: String? = null,
     val playbackFailed: Boolean = false,
 )
 
@@ -2122,7 +2121,7 @@ fun TvPlayerScreen(
                     title = PlayerSourceDisplay.groupTitle(item),
                     meta = PlayerSourceDisplay.groupedDetails(item),
                     providerName = item.providerName,
-                    qualityLabel = com.vueo.shared.core.player.PlayerSourcePolicy.assess(item).quality.label,
+
                     selected = item.url == activeSource.url,
                     playbackFailed = item.url in failedSourceUrls ||
                         (item.url == activeSource.url && playbackError != null),
