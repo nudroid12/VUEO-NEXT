@@ -324,6 +324,7 @@ private fun HomeContinueWatchingCard(
         homeRemainingTimeLabel(
             entry
         )
+    val episodeLabel = homeEpisodeLabel(entry)
 
     Surface(
         modifier =
@@ -383,48 +384,19 @@ private fun HomeContinueWatchingCard(
                         ),
             )
 
-            remainingLabel
-                ?.let {
-                    remaining ->
-                    Surface(
-                        modifier =
-                            Modifier
-                                .align(
-                                    Alignment.TopEnd
-                                )
-                                .padding(
-                                    8.dp
-                                ),
-                        shape =
-                            RoundedCornerShape(
-                                10.dp
-                            ),
-                        color =
-                            Color.Black
-                                .copy(
-                                    alpha = .72f
-                                ),
-                    ) {
-                        Text(
-                            text =
-                                remaining,
-                            modifier =
-                                Modifier.padding(
-                                    horizontal =
-                                        8.dp,
-                                    vertical =
-                                        5.dp,
-                                ),
-                            color =
-                                Color.White,
-                            fontSize =
-                                9.sp,
-                            fontWeight =
-                                FontWeight
-                                    .SemiBold,
-                        )
-                    }
+            if (episodeLabel != null || remainingLabel != null) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    episodeLabel?.let { ContinueWatchingBadge(it) }
+                    Spacer(Modifier.weight(1f))
+                    remainingLabel?.let { ContinueWatchingBadge(it) }
                 }
+            }
 
             Column(
                 modifier =
@@ -446,31 +418,6 @@ private fun HomeContinueWatchingCard(
                             0.dp
                         ),
                 ) {
-                    homeEpisodeLabel(
-                        entry
-                    )
-                        ?.let {
-                            episode ->
-                            Text(
-                                text =
-                                    episode,
-                                color =
-                                    Color.White
-                                        .copy(
-                                            alpha =
-                                                .88f
-                                        ),
-                                fontSize =
-                                    9.sp,
-                                lineHeight =
-                                    11.sp,
-                                fontWeight =
-                                    FontWeight
-                                        .Medium,
-                                maxLines = 1,
-                            )
-                        }
-
                     Text(
                         text =
                             entry.media.name,
@@ -544,6 +491,24 @@ private fun HomeContinueWatchingCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ContinueWatchingBadge(label: String) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = Color.Black.copy(alpha = .60f),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = Color.White,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 

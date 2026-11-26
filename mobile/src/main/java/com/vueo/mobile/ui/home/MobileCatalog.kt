@@ -585,12 +585,19 @@ internal fun MediaPoster(
                     fallbackText = item.name,
                 )
                 newEpisodeLabel?.let { label ->
-                    Column(Modifier.align(Alignment.TopStart).padding(6.dp)
-                        .background(VueoPalette.Accent, RoundedCornerShape(5.dp))
-                        .padding(horizontal = 6.dp, vertical = 4.dp)) {
-                        Text("NEW EPISODE", color = VueoPalette.OnAccent, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        Text(label, color = VueoPalette.OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
+                    Text(
+                        text = label,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .background(Color.Black.copy(alpha = .60f), CircleShape)
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
                 }
             }
         }
