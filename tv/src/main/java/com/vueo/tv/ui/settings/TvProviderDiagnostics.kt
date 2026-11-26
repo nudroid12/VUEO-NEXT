@@ -105,7 +105,7 @@ internal fun TvProviderDiagnosticDialog(
         restoreSettingsFocus()
     }
 
-    TvThemedDialog("Provider Diagnostic", closeFocus, ::closeAndRestore, maxWidth = 680.dp) {
+    TvThemedDialog("Provider Diagnostic", closeFocus, ::closeAndRestore) {
         val finish = LocalTvMotionFinish.current
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically) {

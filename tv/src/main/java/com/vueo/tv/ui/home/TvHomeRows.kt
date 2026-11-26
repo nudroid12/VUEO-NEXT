@@ -3,6 +3,7 @@ package com.vueo.tv.home
 import androidx.compose.ui.unit.Density
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -18,18 +19,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -135,6 +140,8 @@ private data class HomeVerticalFocusTarget(
 internal fun TvModernHomeRows(
     rows: List<TvHomeRow>,
     rowsViewportHeight: Dp,
+    catalogOnly: Boolean,
+    expandedCardKey: String?,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
     contentReturnToken: Int,
@@ -225,6 +232,24 @@ internal fun TvModernHomeRows(
             restoreFirstCardKey = anchor.horizontalFirstCardKey.takeIf { sameOrder && row.isDynamicEpisodeRail() },
         )
         traceHome { "HOME_ROUTE_FOCUS_TARGET row=${row.key} card=$cardIndex preserveViewport=$sameOrder" }
+    }
+
+    var previousCatalogOnly by remember { mutableStateOf(catalogOnly) }
+    LaunchedEffect(catalogOnly) {
+        if (previousCatalogOnly == catalogOnly) return@LaunchedEffect
+        previousCatalogOnly = catalogOnly
+        if (!active || routeReturnPending || navigationOwnsFocus || rows.isEmpty()) return@LaunchedEffect
+        val rowIndex = rows.indexOfFirst { it.key == TvHomeFocusMemory.activeRowKey }
+            .takeIf { it >= 0 } ?: rows.indexOfFirst { it.key.startsWith("catalog:") }.coerceAtLeast(0)
+        val row = rows[rowIndex]
+        val cardIndex = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
+            .coerceIn(0, row.entries.lastIndex)
+        verticalFocusJob[0]?.cancel()
+        pendingVerticalRowIndex = -1
+        fastVerticalScrolling = false
+        verticalState.scrollToItem(rowIndex)
+        verticalFocusToken++
+        verticalFocusTarget = HomeVerticalFocusTarget(row.key, cardIndex, verticalFocusToken)
     }
 
     val density = LocalDensity.current
@@ -607,6 +632,7 @@ internal fun TvModernHomeRows(
                 }
                 TvModernHomeRow(
                     rowVisible = rowVisible,
+                    expandedCardKey = expandedCardKey,
                     row = row,
                     rowState = rowState,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
@@ -684,6 +710,7 @@ internal fun TvModernHomeRows(
 private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
+    expandedCardKey: String?,
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -975,6 +1002,7 @@ private fun TvModernHomeRow(
                         if (rowVisible && cardVisible) imageActivated[0] = true
                         TvModernHomeCard(
                             loadImage = imageActivated[0],
+                            expandOnFocus = expandedCardKey == entry.key,
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
@@ -1010,10 +1038,12 @@ private fun TvModernHomeRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TvModernHomeCard(
     entry: TvHomeEntry,
     loadImage: Boolean,
+    expandOnFocus: Boolean,
     kind: TvHomeRowKind,
     requester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -1036,12 +1066,31 @@ private fun TvModernHomeCard(
 
     val width = kind.cardWidth
     val height = kind.cardHeight
+    val expanded = expandOnFocus && focused && entry is TvHomeEntry.Media
+    val landscapeWidth = height * (16f / 9f)
+    val revealRequester = remember { BringIntoViewRequester() }
+    var revealOnResize by remember(entry.key) { mutableStateOf(false) }
+    val animatedWidth by animateDpAsState(
+        targetValue = if (expanded) landscapeWidth else width,
+        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, expanded, tween(220, easing = TvMotion.EaseOut)),
+        finishedListener = { if (expanded && it == landscapeWidth) revealOnResize = true },
+        label = "catalogCardWidth",
+    )
+    LaunchedEffect(expanded, revealOnResize) {
+        if (expanded && revealOnResize) {
+            withFrameNanos { }
+            revealRequester.bringIntoView()
+        }
+        revealOnResize = false
+    }
+
     val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
 
     Box(
         modifier = Modifier
-            .width(width)
+            .width(animatedWidth)
             .height(height)
+            .bringIntoViewRequester(revealRequester)
             .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
                 scaleX = animatedScale
@@ -1054,7 +1103,7 @@ private fun TvModernHomeCard(
                     onLeftAtStart != null &&
                     event.key == Key.DirectionLeft
                 ) {
-                    if (event.type == KeyEventType.KeyDown) onLeftAtStart()
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) onLeftAtStart()
                     true
                 } else {
                     false
@@ -1091,7 +1140,21 @@ private fun TvModernHomeCard(
                     color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     maxLines = 2, modifier = Modifier.align(Alignment.Center).padding(12.dp))
             }
-            TvHomeRowKind.POSTERS -> PosterCardContent(entry, loadImage || focused, focused)
+            TvHomeRowKind.POSTERS -> if (expanded || animatedWidth > width) {
+                Box(Modifier.align(Alignment.Center).width(width).fillMaxHeight()) {
+                    PosterCardContent(entry, loadImage || focused, focused)
+                }
+                TvNetworkImage(
+                    url = entry.media.background ?: entry.media.poster,
+                    contentDescription = null,
+                    modifier = Modifier.align(Alignment.Center).requiredWidth(landscapeWidth).fillMaxHeight(),
+                    contentScale = ContentScale.Crop,
+                    fallback = Color.Transparent,
+                    highPriority = true,
+                )
+            } else {
+                PosterCardContent(entry, loadImage || focused, focused)
+            }
         }
     }
 }
