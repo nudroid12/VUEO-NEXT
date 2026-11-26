@@ -1187,29 +1187,33 @@ private fun SourceCard(
                 }
         }
 
-        model.logoUrl?.let { logoUrl ->
+        if (model.logoUrl != null || model.repositoryName != null) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                TvNetworkImage(
-                    url = logoUrl,
-                    contentDescription = model.providerName,
-                    modifier = Modifier
-                        .width(38.dp)
-                        .height(30.dp),
-                    contentScale = ContentScale.Fit,
-                    fallback = Color.Transparent,
-                )
-                Text(
-                    text = model.providerName,
-                    color = TvDesign.Dim,
-                    fontSize = 8.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(68.dp),
-                    textAlign = TextAlign.Center,
-                )
+                model.logoUrl?.let { logoUrl ->
+                    TvNetworkImage(
+                        url = logoUrl,
+                        contentDescription = model.providerName,
+                        modifier = Modifier
+                            .width(38.dp)
+                            .height(30.dp),
+                        contentScale = ContentScale.Fit,
+                        fallback = Color.Transparent,
+                    )
+                }
+                model.repositoryName?.let { repository ->
+                    Text(
+                        text = repository,
+                        color = TvDesign.Dim,
+                        fontSize = 8.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.width(68.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }

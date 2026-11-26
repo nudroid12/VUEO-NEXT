@@ -330,7 +330,7 @@ private fun SourceListRow(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        text = PlayerSourceDisplay.groupTitle(source),
+                        text = PlayerSourceDisplay.providerTitle(source),
                         color = Color.White.copy(alpha = .92f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -345,10 +345,10 @@ private fun SourceListRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = PlayerSourceDisplay.groupedDetails(source),
+                        text = PlayerSourceDisplay.compactDetails(source),
                         color = Color.White.copy(alpha = .72f),
                         fontSize = 10.sp,
-                        maxLines = 5,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
@@ -357,7 +357,7 @@ private fun SourceListRow(
                         switching -> SourceBadge("Switching", accent = true)
                         current -> SourceBadge("Playing", accent = true)
                         !automaticRecoveryEligible -> SourceBadge("Manual only")
-                        else -> SourceBadge("Direct")
+                        else -> Unit
                     }
 
                 }

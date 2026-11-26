@@ -3,7 +3,6 @@ package com.vueo.tv.source
 import com.vueo.shared.core.media.EpisodeItem
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.media.StreamSource
-import com.vueo.shared.core.player.PlayerSourceDisplay
 import com.vueo.shared.core.player.PlayerSourcePolicy
 import com.vueo.shared.core.source.ProviderSourceDetails
 import com.vueo.tv.core.TvSourceBundle
@@ -39,6 +38,7 @@ internal data class TvSourcePresentationState(
 /** Clean UI contract between provider output and the TV source card. */
 internal data class TvSourceCardModel(
     val providerName: String,
+    val repositoryName: String?,
     val serverName: String?,
     val title: String,
     val logoUrl: String?,
@@ -76,17 +76,17 @@ internal fun sourceProviderDisplayName(provider: String): String =
 internal fun StreamSource.toTvSourceCardModel(
     logoUrl: String?,
 ): TvSourceCardModel {
-    val provider = PlayerSourceDisplay.groupTitle(this)
-        .lineSequence()
-        .map(String::trim)
-        .firstOrNull(String::isNotBlank)
-        ?: "Other"
+    val providerKey = sourceProviderKey(this)
+    val provider = sourceProviderDisplayName(providerKey)
+    val repository = providerKey.substringBeforeLast(" / ", "").trim()
+        .takeIf { it.isNotEmpty() && !it.equals(provider, ignoreCase = true) }
     val title = ProviderSourceDetails.lines(this, PlayerSourcePolicy.assess(this), includeServer = false)
         .joinToString("\n")
     val serverText = ProviderSourceDetails.serverLines(this).joinToString("\n").takeIf(String::isNotBlank)
 
     return TvSourceCardModel(
         providerName = provider,
+        repositoryName = repository,
         serverName = serverText,
         title = title,
         logoUrl = logoUrl,

@@ -75,6 +75,32 @@ object ProviderSourceDetails {
         return result
     }
 
+    private val episodeToken = Regex("""(?i)^(?:ep(?:isode)?\s*\d+|s\d+\s*e\d+)\b""")
+    private val providerDot = Regex("""^[⚪⚫🔴🟠🟡🟢🔵🟣🟤◯●]\uFE0F?\s*""")
+
+    /** Keep only information needed to switch between streams in the player. */
+    fun compactLine(source: StreamSource, assessment: PlayerSourceAssessment): String {
+        val tokens = lines(source, assessment).flatMap { line ->
+            val parts = line.split('•', '|', '·')
+            // Provider episode-title rows are often "Title | EP 1".
+            val episodeIndex = parts.indexOfFirst { episodeToken.containsMatchIn(it.trim()) }
+            if (episodeIndex >= 0) parts.drop(episodeIndex + 1) else parts
+        }.map { token -> token.trimStart { !it.isLetterOrDigit() }.trimEnd() }
+
+        val quality = tokens.firstNotNullOfOrNull { token ->
+            Field.QUALITY.pattern.find(token)?.value?.takeIf { it.equals(token, true) ||
+                it.firstOrNull()?.isDigit() == true }
+        }
+        val format = tokens.firstOrNull(Field.FORMAT.pattern::matches)
+            ?: transport(source)
+        val audio = tokens.firstOrNull { Field.AUDIO.pattern.containsMatchIn(it) }
+            ?: knownValue(source.audio)
+        val subtitles = tokens.firstOrNull { Field.SUBTITLE.pattern.containsMatchIn(it) }
+        return listOfNotNull(quality, format, audio, subtitles)
+            .distinctBy(String::lowercase)
+            .joinToString(" · ")
+    }
+
     fun serverLines(source: StreamSource): List<String> {
         val detailTags = visibleLines(source, source.name).flatMap { line ->
             line.split('•', '|', '·').map { it.trim().lowercase() }
@@ -87,7 +113,8 @@ object ProviderSourceDetails {
     private fun visibleLines(source: StreamSource, value: String?): List<String> {
         val provider = source.providerName.substringAfterLast(" / ").trim()
         return value?.let(SourceDisplayText::lines).orEmpty().filterNot {
-            it.equals(provider, true) || it.equals(source.providerName.trim(), true) ||
+            providerDot.replaceFirst(it, "").trim().equals(provider, true) ||
+                it.equals(source.providerName.trim(), true) ||
                 it.startsWith("https://", true) || it.startsWith("http://", true)
         }
     }

@@ -2118,8 +2118,8 @@ fun TvPlayerScreen(
             TvPlayerPanel.SOURCES -> playableSources.map { item ->
                 TvPlayerOption(
                     key = item.url.orEmpty(),
-                    title = PlayerSourceDisplay.groupTitle(item),
-                    meta = PlayerSourceDisplay.groupedDetails(item),
+                    title = PlayerSourceDisplay.providerTitle(item),
+                    meta = PlayerSourceDisplay.compactDetails(item),
                     providerName = item.providerName,
 
                     selected = item.url == activeSource.url,
