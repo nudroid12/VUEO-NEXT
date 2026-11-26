@@ -429,6 +429,7 @@ fun TvDetailScreen(
     }
 
     TvDetailPresentation(
+        active = active,
         state = TvDetailPresentationState(
             item = item,
             loading = loading,

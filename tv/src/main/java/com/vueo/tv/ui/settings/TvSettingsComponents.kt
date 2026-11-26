@@ -1,5 +1,13 @@
 package com.vueo.tv.settings
 
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.Icons
 import com.vueo.tv.ui.theme.TvTabMarkerHost
 import com.vueo.tv.ui.theme.tvTabMarker
 
@@ -93,12 +101,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private object TvSettingsContrast {
-    val Pill = Color(0xFF303030)
-    val SelectedPill = Color(0xFF404040)
-    val FocusedPill = Color(0xFF555555)
-    val Card = Color(0xFF303030)
-    val CardContainer = Color(0xFF202020)
-    val DisabledCard = Color(0xFF242424)
+    val Pill get() = TvDesign.SurfaceRaised
+    val SelectedPill get() = TvDesign.AccentContainer
+    val FocusedPill get() = TvDesign.FocusSurface
+    val Card get() = TvDesign.SurfaceRaised
+    val CardContainer get() = TvDesign.Surface
+    val DisabledCard get() = TvDesign.SurfaceElevated
 }
 
 internal data class TvSettingsEntry(
@@ -128,6 +136,8 @@ internal data class TvSettingsEntry(
     val providerPanelEnd: Boolean = false,
     val supportingContent: (@Composable () -> Unit)? = null,
     val operationStatus: String? = null,
+    val onAddonConfigure: (() -> Unit)? = null,
+    val onAddonRemove: (() -> Unit)? = null,
     val formControl: (@Composable (Modifier, () -> Unit, Boolean) -> Unit)? = null,
 )
 
@@ -210,6 +220,7 @@ internal fun TvSettingsMasterDetailShell(
     var panelRestoreJob by remember { mutableStateOf<Job?>(null) }
     val shellScope = rememberCoroutineScope()
     val currentPanelKey by rememberUpdatedState(panelKey)
+    val currentActive by rememberUpdatedState(active)
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val currentWindowFocused by rememberUpdatedState(windowFocused)
     var appliedPanelFocusToken by remember { mutableStateOf(panelAutoFocusToken) }
@@ -264,12 +275,13 @@ internal fun TvSettingsMasterDetailShell(
 
     fun focusSelectedCategory(): Boolean {
         panelRestoreJob?.cancel()
+        val waitForCategory = panelAutoFocusToken != appliedPanelFocusToken
         appliedPanelFocusToken = panelAutoFocusToken
         lastPane = "category"
         sidebarFocusIntent = false
         navExpanded = false
         val requester = categoryRequesters.getValue(selectedCategoryId)
-        if (runCatching { requester.requestFocus() }.getOrDefault(false)) return true
+        if (!waitForCategory && runCatching { requester.requestFocus() }.getOrDefault(false)) return true
 
         val index = categories.indexOfFirst { it.id == selectedCategoryId }
         if (index < 0) return false
@@ -284,7 +296,7 @@ internal fun TvSettingsMasterDetailShell(
     }
 
     fun focusPanel(): Boolean {
-        if (!active || !currentWindowFocused || sidebarFocusIntent || panelKey != currentPanelKey) return false
+        if (!currentActive || !currentWindowFocused || sidebarFocusIntent || panelKey != currentPanelKey) return false
         if (panelUsesSharedRows) {
             val rowId = panelFocusTargetId(panelKey) ?: return false
             val firstRow = panelFirstRowIds[panelKey]
@@ -305,15 +317,16 @@ internal fun TvSettingsMasterDetailShell(
     fun requestDeferredPanelRestore() {
         panelRestoreJob?.cancel()
         panelRestoreJob = shellScope.launch {
-            withFrameNanos { }
-            for (waitMs in listOf(0L, 24L, 48L, 90L, 140L)) {
-                if (waitMs > 0) delay(waitMs)
-                if (!active || sidebarFocusIntent || lastPane != "panel" || panelKey != currentPanelKey) {
-                    return@launch
-                }
+            repeat(8) {
+                if (!currentActive || !currentWindowFocused || sidebarFocusIntent ||
+                    lastPane != "panel" || panelKey != currentPanelKey
+                ) return@launch
                 if (focusPanel()) return@launch
+                withFrameNanos { }
             }
-            if (currentWindowFocused) focusSelectedCategory()
+            if (currentActive && currentWindowFocused && !sidebarFocusIntent &&
+                lastPane == "panel" && panelKey == currentPanelKey
+            ) focusSelectedCategory()
         }
     }
 
@@ -332,7 +345,10 @@ internal fun TvSettingsMasterDetailShell(
                 panelRestoreJob?.cancel()
                 onBack()
             }
-            inPanel && panelHasBack -> onPanelBack()
+            inPanel && panelHasBack -> {
+                panelRestoreJob?.cancel()
+                onPanelBack()
+            }
             inPanel -> focusSelectedCategory()
             else -> {
                 backExitPending = true
@@ -388,15 +404,6 @@ internal fun TvSettingsMasterDetailShell(
                     .width(categoryColumnWidth)
                     .fillMaxHeight(),
             ) {
-                Text(
-                    text = "SETTINGS",
-                    color = TvDesign.Dim,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.25.sp,
-                    modifier = Modifier.padding(start = 10.dp, bottom = 10.dp),
-                )
-
                 LazyColumn(
                     state = categoryListState,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -408,6 +415,7 @@ internal fun TvSettingsMasterDetailShell(
                                 category = category,
                                 selected = category.id == selectedCategoryId,
                                 grouped = false,
+                                focusBlocked = panelFocusPending && !sidebarFocusIntent,
                                 requester = categoryRequesters.getValue(category.id),
                                 onFocused = {
                                     if (active && !sidebarFocusIntent && !panelFocusPending && lastPane == "panel") {
@@ -510,6 +518,7 @@ private fun TvSettingsCategoryRow(
     category: TvSettingsNavItem,
     selected: Boolean,
     grouped: Boolean,
+    focusBlocked: Boolean,
     requester: FocusRequester,
     onFocused: () -> Unit,
     onLeft: () -> Unit,
@@ -525,7 +534,7 @@ private fun TvSettingsCategoryRow(
             .focusRequester(requester)
             .onFocusChanged { state ->
                 focused = state.isFocused
-                if (state.isFocused) onFocused()
+                if (state.isFocused && !focusBlocked) onFocused()
             }
             .onPreviewKeyEvent { event ->
                 val keyCode = event.nativeKeyEvent.keyCode
@@ -546,21 +555,22 @@ private fun TvSettingsCategoryRow(
             }
             .background(
                 when {
-                    focused -> TvSettingsContrast.FocusedPill
+                    focused && !focusBlocked -> TvSettingsContrast.FocusedPill
                     selected -> TvSettingsContrast.SelectedPill
                     else -> TvSettingsContrast.Pill
                 },
                 RoundedCornerShape(percent = 50),
             )
             .border(
-                if (focused) 2.dp else 1.dp,
+                if (focused && !focusBlocked) 2.dp else 1.dp,
                 when {
-                    focused -> TvDesign.White.copy(alpha = .94f)
-                    selected -> TvDesign.White.copy(alpha = .28f)
+                    focused && !focusBlocked -> TvDesign.Accent.copy(alpha = .94f)
+                    selected -> TvDesign.Accent.copy(alpha = .28f)
                     else -> TvDesign.White.copy(alpha = .10f)
                 },
                 RoundedCornerShape(percent = 50),
             )
+            .focusProperties { canFocus = !focusBlocked }
             .focusable()
             .padding(horizontal = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -577,7 +587,7 @@ private fun TvSettingsCategoryRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = "›",
-            color = TvDesign.White.copy(alpha = if (focused) 1f else .72f),
+            color = (if (focused) TvDesign.Accent.copy(alpha = 1f) else TvDesign.White.copy(alpha = .72f)),
             fontSize = 20.sp,
         )
     }
@@ -661,7 +671,7 @@ internal fun TvSettingsProfilePanel(
                     .background(if (profileFocused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card)
                     .border(
                         if (profileFocused) 1.5.dp else 0.dp,
-                        if (profileFocused) TvDesign.White.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
+                        if (profileFocused) TvDesign.Accent.copy(alpha = .88f) else TvDesign.White.copy(alpha = 0f),
                         RoundedCornerShape(15.dp),
                     )
                     .focusable()
@@ -766,10 +776,10 @@ internal fun TvSettingsProfilePanel(
                         }
                     }
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (switchFocused) TvDesign.White else TvSettingsContrast.Card)
+                    .background(if (switchFocused) TvDesign.Accent else TvSettingsContrast.Card)
                     .border(
                         if (switchFocused) 1.5.dp else 1.dp,
-                        if (switchFocused) TvDesign.White else TvDesign.White.copy(alpha = .06f),
+                        if (switchFocused) TvDesign.Accent else TvDesign.White.copy(alpha = .06f),
                         RoundedCornerShape(14.dp),
                     )
                     .focusable()
@@ -779,14 +789,14 @@ internal fun TvSettingsProfilePanel(
             ) {
                 Text(
                     text = "⇄",
-                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    color = if (switchFocused) TvDesign.OnAccent else TvDesign.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.width(9.dp))
                 Text(
                     text = "Switch Profiles",
-                    color = if (switchFocused) TvDesign.Black else TvDesign.White,
+                    color = if (switchFocused) TvDesign.OnAccent else TvDesign.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1327,8 +1337,8 @@ internal fun TvSettingsRow(
                 color = when {
                     !entry.enabled -> TvDesign.White.copy(alpha = .025f)
                     focused && entry.accented -> TvDesign.Accent.copy(alpha = .90f)
-                    focused && aboutStyle -> TvDesign.White
-                    focused -> TvDesign.White.copy(alpha = .88f)
+                    focused && aboutStyle -> TvDesign.Accent
+                    focused -> TvDesign.Accent.copy(alpha = .88f)
                     aboutStyle -> TvDesign.White.copy(alpha = .16f)
                     grouped -> TvDesign.White.copy(alpha = 0f)
                     entry.accented -> TvDesign.Accent.copy(alpha = .12f)
@@ -1366,7 +1376,7 @@ internal fun TvSettingsRow(
                             color = if (entry.accented) {
                                 TvDesign.Accent.copy(alpha = if (focused) .16f else .09f)
                             } else if (focused) {
-                                TvDesign.White.copy(alpha = .10f)
+                                TvDesign.Accent.copy(alpha = .10f)
                             } else {
                                 TvDesign.SurfaceRaised.copy(alpha = .62f)
                             },
@@ -1490,7 +1500,7 @@ internal fun TvSettingsRow(
                             color = if (entry.accented) {
                                 TvDesign.Accent.copy(alpha = if (focused) .16f else .08f)
                             } else if (focused) {
-                                TvDesign.White.copy(alpha = .10f)
+                                TvDesign.Accent.copy(alpha = .10f)
                             } else {
                                 TvDesign.White.copy(alpha = .045f)
                             },
@@ -1528,6 +1538,43 @@ internal fun rememberTvSettingsDeferredFocusRestore(): () -> Unit {
 }
 
 @Composable
+internal fun TvSecretVisibilityButton(
+    visible: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onFocus: (Boolean) -> Unit,
+    onToggle: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    IconButton(
+        onClick = onToggle,
+        enabled = enabled,
+        modifier = modifier
+            .size(44.dp)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocus(it.isFocused)
+            }
+            .background(
+                if (focused) TvDesign.Accent.copy(alpha = .12f) else Color.Transparent,
+                CircleShape,
+            )
+            .border(
+                if (focused) 2.dp else 0.dp,
+                if (focused) TvDesign.Accent else Color.Transparent,
+                CircleShape,
+            ),
+    ) {
+        Icon(
+            imageVector = if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+            contentDescription = if (visible) "Hide value" else "Show value",
+            tint = if (focused) TvDesign.White else TvDesign.Muted,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
 internal fun TvTextEntryDialog(
     title: String,
     initialValue: String,
@@ -1538,7 +1585,7 @@ internal fun TvTextEntryDialog(
     busy: Boolean = false,
     message: String? = null,
     restoreOnSave: Boolean = true,
-    allowSecretReveal: Boolean = false,
+    allowSecretReveal: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
@@ -1598,7 +1645,7 @@ internal fun TvTextEntryDialog(
                 colors = tvDialogInputColors(),
             )
             message?.takeIf { it.isNotBlank() }?.let { Text(it, color = TvDesign.Muted, fontSize = 12.sp) }
-            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.White)
+            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TvDesign.Accent)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
                 TvDialogButton(
                     label = "Cancel",
@@ -1625,6 +1672,14 @@ internal fun TvTextEntryDialog(
         return
     }
 
+    val showReveal = secret && allowSecretReveal
+    var revealFocused by remember { mutableStateOf(false) }
+    val revealKeyboard = LocalSoftwareKeyboardController.current
+    val secretImeInsets = WindowInsets.ime
+    val secretDensity = LocalDensity.current
+    val secretEditor = rememberTvOkToEdit(enabled = !busy && !revealFocused)
+    val inputFocus = remember { FocusRequester() }
+    val revealFocus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = { if (!busy) dismissAndRestore() },
         title = { Text(title) },
@@ -1636,13 +1691,39 @@ internal fun TvTextEntryDialog(
                     enabled = !busy,
                     singleLine = true,
                     placeholder = { if (placeholder.isNotBlank()) Text(placeholder) },
-                    visualTransformation = if (secret && !(allowSecretReveal && secretVisible)) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                    readOnly = secret && secretEditor.readOnly,
+                    modifier = Modifier.fillMaxWidth().focusRequester(inputFocus)
+                        .onPreviewKeyEvent { event ->
+                            if (showReveal && !busy && !revealFocused &&
+                                (secretEditor.readOnly || secretImeInsets.getBottom(secretDensity) == 0) &&
+                                event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                            ) {
+                                if (event.type == KeyEventType.KeyDown) revealFocus.requestFocus()
+                                true
+                            } else false
+                        }
+                        .then(if (secret) secretEditor.modifier else Modifier),
+                    keyboardOptions = if (secret) {
+                        KeyboardOptions(keyboardType = KeyboardType.Password, showKeyboardOnFocus = false)
+                    } else KeyboardOptions.Default,
+                    visualTransformation = if (secret && !secretVisible) {
+                        PasswordVisualTransformation()
+                    } else VisualTransformation.None,
+                    trailingIcon = if (showReveal) {
+                        {
+                            TvSecretVisibilityButton(
+                                visible = secretVisible,
+                                enabled = !busy,
+                                modifier = Modifier.focusRequester(revealFocus).focusProperties { left = inputFocus },
+                                onFocus = {
+                                    revealFocused = it
+                                    if (it) revealKeyboard?.hide()
+                                },
+                                onToggle = { secretVisible = !secretVisible },
+                            )
+                        }
+                    } else null,
                 )
-                if (secret && allowSecretReveal) {
-                    TextButton(enabled = !busy, onClick = { secretVisible = !secretVisible }) {
-                        Text(if (secretVisible) "Hide API key" else "Show API key")
-                    }
-                }
                 message?.takeIf { it.isNotBlank() }?.let {
                     Text(it, color = TvDesign.Muted, fontSize = 12.sp)
                 }
@@ -1805,7 +1886,7 @@ private fun TvAddonControls(
                                 } else false
                             }
                             .background(if (focused) TvSettingsContrast.FocusedPill else TvSettingsContrast.Card, shape)
-                            .border(1.dp, if (focused) TvDesign.White else TvDesign.White.copy(alpha = .12f), shape)
+                            .border(1.dp, if (focused) TvDesign.Accent else TvDesign.White.copy(alpha = .12f), shape)
                             .focusable(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -1923,7 +2004,7 @@ private fun TvSubtitleFontSettingsCard(
                 }
             }
             .background(TvSettingsContrast.Card, shape)
-            .border(1.dp, TvDesign.White.copy(alpha = if (focused) .28f else .045f), shape)
+            .border(1.dp, (if (focused) TvDesign.Accent.copy(alpha = .28f) else TvDesign.White.copy(alpha = .045f)), shape)
             .focusable(enabled = entry.enabled)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

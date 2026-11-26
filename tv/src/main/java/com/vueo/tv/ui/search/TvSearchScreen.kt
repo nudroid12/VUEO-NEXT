@@ -1,4 +1,16 @@
 package com.vueo.tv.search
+
+import androidx.compose.foundation.lazy.rememberLazyListState
+
+
+
+import androidx.compose.ui.window.DialogProperties
+
+import androidx.compose.ui.window.Dialog
+
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+
+import com.vueo.tv.ui.TvPosterGridReveal
 import com.vueo.tv.ui.rememberTvOkToEdit
 
 import com.vueo.shared.core.search.SearchResultOrderPolicy
@@ -13,6 +25,7 @@ import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +43,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -41,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -96,8 +112,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-private const val SEARCH_COLUMNS = 6
-private const val FLOATING_SEARCH_COLUMNS = 7
+internal const val TV_SEARCH_POSTER_COLUMNS = 7
 private val SEARCH_FOCUS_PAINT_INSET = 8.dp
 
 internal enum class TvSearchTypeFilter(val label: String) {
@@ -193,6 +208,7 @@ internal class TvSearchSession {
     var firstVisibleItemScrollOffset by mutableStateOf(0)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TvSearchScreen(
     runtime: TvRuntime,
@@ -482,6 +498,9 @@ internal fun TvSearchScreen(
         }
     }
 
+    val keyboard = LocalSoftwareKeyboardController.current
+
+
     LaunchedEffect(gridState) {
         snapshotFlow {
             gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
@@ -553,10 +572,12 @@ internal fun TvSearchScreen(
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
     val floatingPillMode = tvSidebarIsPillMode()
     val fullWidthContent = floatingPillMode || tvSidebarIsHiddenClassic()
-    val searchColumns = if (fullWidthContent) FLOATING_SEARCH_COLUMNS else SEARCH_COLUMNS
+    val searchColumns = TV_SEARCH_POSTER_COLUMNS
     val gridEndPadding = if (fullWidthContent) 28.dp else 52.dp
 
-    Box(Modifier.fillMaxSize().background(TvDesign.Black)) {
+    Box(
+        Modifier.fillMaxSize().background(TvDesign.Black),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -566,19 +587,12 @@ internal fun TvSearchScreen(
                 modifier = Modifier.padding(start = contentStartPadding, end = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = "Search",
-                    modifier = Modifier.padding(start = 16.dp),
-                    color = TvDesign.White,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-
-                Box(modifier = Modifier.fillMaxWidth(.76f)) {
+                Column(Modifier.fillMaxWidth()) {
                     TvMobileSearchField(
                         value = session.query,
                         mode = session.mode,
                         requester = fieldRequester,
+                        onSubmit = { keyboard?.hide() },
                         modeRequester = modeRequester,
                         onFocused = {
                             if (!navExpanded) lastContentTarget = "field"
@@ -614,9 +628,9 @@ internal fun TvSearchScreen(
                 if (searching || contentDiscovering) {
                     LinearProgressIndicator(
                         modifier = Modifier
-                            .fillMaxWidth(.76f)
+                            .fillMaxWidth()
                             .height(1.dp),
-                        color = TvDesign.White.copy(alpha = .90f),
+                        color = TvDesign.Accent.copy(alpha = .90f),
                         trackColor = TvDesign.White.copy(alpha = .08f),
                     )
                 } else {
@@ -795,6 +809,7 @@ internal fun TvSearchScreen(
                                     onClick = {
                                         fieldRequester.requestFocus()
                                         session.query = titleSearch.title
+
                                         session.completedSearchKey = null
                                         resetGridForFilterChange()
                                     },
@@ -809,53 +824,56 @@ internal fun TvSearchScreen(
                 }
 
                 filteredItems.isNotEmpty() -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(searchColumns),
-                        state = gridState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = contentStartPadding,
-                            end = gridEndPadding,
-                            top = SEARCH_FOCUS_PAINT_INSET,
-                            bottom = 36.dp + SEARCH_FOCUS_PAINT_INSET,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
-                    ) {
-                        gridItemsIndexed(
-                            items = filteredItems,
-                            key = { _, item -> mediaKey(item) },
-                        ) { index, item ->
-                            val key = mediaKey(item)
-                            TvSearchPosterTile(
-                                item = item,
-                                catalogLabel = searchCatalogLabel(runtime, item),
-                                requester = resultRequesterCache.getOrPut(key) { FocusRequester() },
-                                onFocused = {
-                                    if (!navExpanded) {
-                                        lastContentTarget = "result:$key"
+                    TvPosterGridReveal {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(searchColumns),
+                            state = gridState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = contentStartPadding,
+                                end = gridEndPadding,
+                                top = SEARCH_FOCUS_PAINT_INSET,
+                                bottom = 36.dp + SEARCH_FOCUS_PAINT_INSET,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            gridItemsIndexed(
+                                items = filteredItems,
+                                key = { _, item -> mediaKey(item) },
+                            ) { index, item ->
+                                val key = mediaKey(item)
+                                TvSearchPosterTile(
+                                    item = item,
+                                    catalogLabel = searchCatalogLabel(runtime, item),
+                                    requester = resultRequesterCache.getOrPut(key) { FocusRequester() },
+                                    onFocused = {
+                                        if (!navExpanded) {
+                                            lastContentTarget = "result:$key"
+                                            session.focusedMediaKey = key
+                                        }
+                                    },
+                                    onClick = {
                                         session.focusedMediaKey = key
-                                    }
-                                },
-                                onClick = {
-                                    session.focusedMediaKey = key
-                                    session.restoreResultsFocus = true
-                                    session.firstVisibleItemIndex = gridState.firstVisibleItemIndex
-                                    session.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
-                                    onOpenMedia(item)
-                                },
-                                onLongClick = { actionMedia = item },
-                                onUpFromFirstRow = if (index < searchColumns) {
-                                    { runCatching { typeRequester.requestFocus() } }
-                                } else null,
-                                onLeftFromFirstColumn = if (index % searchColumns == 0) {
-                                    {
-                                        focusSidebar()
-                                    }
-                                } else null,
-                                blockRight =
-                                    index % searchColumns == searchColumns - 1 || index == filteredItems.lastIndex,
-                            )
+                                        session.restoreResultsFocus = true
+                                        session.firstVisibleItemIndex = gridState.firstVisibleItemIndex
+                                        session.firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
+
+                                        onOpenMedia(item)
+                                    },
+                                    onLongClick = { actionMedia = item },
+                                    onUpFromFirstRow = if (index < searchColumns) {
+                                        { runCatching { typeRequester.requestFocus() } }
+                                    } else null,
+                                    onLeftFromFirstColumn = if (index % searchColumns == 0) {
+                                        {
+                                            focusSidebar()
+                                        }
+                                    } else null,
+                                    blockRight =
+                                        index % searchColumns == searchColumns - 1 || index == filteredItems.lastIndex,
+                                )
+                            }
                         }
                     }
                 }
@@ -863,7 +881,7 @@ internal fun TvSearchScreen(
                 searching -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(
-                            color = TvDesign.White,
+                            color = TvDesign.Accent,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(28.dp),
                         )
@@ -871,6 +889,7 @@ internal fun TvSearchScreen(
                 }
             }
         }
+
 
         TvSidebar(
             selected = "Search",
@@ -925,6 +944,7 @@ private fun TvMobileSearchField(
     value: String,
     mode: TvSearchMode,
     requester: FocusRequester,
+    onSubmit: () -> Unit,
     modeRequester: FocusRequester,
     onFocused: () -> Unit,
     onModeFocused: () -> Unit,
@@ -936,6 +956,8 @@ private fun TvMobileSearchField(
     onDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val clearRequester = remember { FocusRequester() }
+    val editor = rememberTvOkToEdit()
     val shape = RoundedCornerShape(50.dp)
 
     Row(
@@ -946,7 +968,7 @@ private fun TvMobileSearchField(
             .background(TvDesign.SurfaceRaised)
             .border(
                 width = if (focused) 1.5.dp else 1.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .86f)
+                color = if (focused) TvDesign.Accent.copy(alpha = .86f)
                 else TvDesign.White.copy(alpha = .13f),
                 shape = shape,
             )
@@ -960,14 +982,17 @@ private fun TvMobileSearchField(
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(11.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            val editor = rememberTvOkToEdit()
+        Box(
+            Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
                 readOnly = editor.readOnly,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = false),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
                 textStyle = TextStyle(
                     color = TvDesign.White,
                     fontSize = 15.sp,
@@ -990,7 +1015,7 @@ private fun TvMobileSearchField(
                                 } else false
                             }
                             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                onRight()
+                                if (value.isNotEmpty()) clearRequester.requestFocus() else onRight()
                                 true
                             }
                             KeyEvent.KEYCODE_DPAD_UP -> {
@@ -1019,6 +1044,13 @@ private fun TvMobileSearchField(
                     inner()
                 },
             )
+        }
+
+        if (value.isNotEmpty()) {
+            TvSearchClearButton("Clear search text", clearRequester, onUp, onDown) {
+                requester.requestFocus()
+                onValueChange("")
+            }
         }
 
         Box(
@@ -1094,12 +1126,12 @@ private fun TvSearchModeToggle(
                 )
             }
             .background(
-                if (focused) TvDesign.White.copy(alpha = .10f) else Color.Transparent,
+                if (focused) TvDesign.Accent.copy(alpha = .10f) else Color.Transparent,
                 shape,
             )
             .border(
                 width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .70f) else Color.Transparent,
+                color = if (focused) TvDesign.Accent.copy(alpha = .70f) else Color.Transparent,
                 shape = shape,
             )
             .padding(horizontal = 10.dp, vertical = 7.dp),
@@ -1108,7 +1140,7 @@ private fun TvSearchModeToggle(
     ) {
         Text(
             text = "Title",
-            color = if (mode == TvSearchMode.TITLE) TvDesign.White else TvDesign.Muted,
+            color = if (mode == TvSearchMode.TITLE) TvDesign.Accent else TvDesign.Muted,
             fontSize = 11.sp,
             fontWeight = if (mode == TvSearchMode.TITLE) FontWeight.Bold else FontWeight.Medium,
         )
@@ -1117,7 +1149,7 @@ private fun TvSearchModeToggle(
                 .width(38.dp)
                 .height(20.dp)
                 .clip(RoundedCornerShape(50.dp))
-                .background(TvDesign.White.copy(alpha = .92f))
+                .background(TvDesign.Accent.copy(alpha = .92f))
                 .padding(3.dp),
         ) {
             Box(
@@ -1130,7 +1162,7 @@ private fun TvSearchModeToggle(
         }
         Text(
             text = "Actor",
-            color = if (mode == TvSearchMode.ACTOR) TvDesign.White else TvDesign.Muted,
+            color = if (mode == TvSearchMode.ACTOR) TvDesign.Accent else TvDesign.Muted,
             fontSize = 11.sp,
             fontWeight = if (mode == TvSearchMode.ACTOR) FontWeight.Bold else FontWeight.Medium,
         )
@@ -1147,6 +1179,7 @@ private fun TvSearchFilterButton(
     onRight: (() -> Unit)?,
     onUp: () -> Unit,
     onDown: () -> Boolean,
+    showChevron: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(50.dp)
@@ -1184,12 +1217,12 @@ private fun TvSearchFilterButton(
             }
             .clickable(onClick = onClick)
             .background(
-                if (focused) TvDesign.White else Color.Transparent,
+                if (focused) TvDesign.Accent else Color.Transparent,
                 shape,
             )
             .border(
                 width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White else Color.Transparent,
+                color = if (focused) TvDesign.Accent else Color.Transparent,
                 shape = shape,
             )
             .padding(horizontal = 14.dp, vertical = 7.dp),
@@ -1198,15 +1231,15 @@ private fun TvSearchFilterButton(
     ) {
         Text(
             text = label,
-            color = if (focused) TvDesign.Black.copy(alpha = .82f) else TvDesign.White,
+            color = if (focused) TvDesign.OnAccent.copy(alpha = .82f) else TvDesign.White,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
+        if (showChevron) Text(
             text = "⌄",
-            color = if (focused) TvDesign.Black.copy(alpha = .58f) else TvDesign.Muted,
+            color = if (focused) TvDesign.OnAccent.copy(alpha = .58f) else TvDesign.Muted,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -1271,7 +1304,7 @@ private fun TvSearchPosterTile(
                 .clip(RoundedCornerShape(10.dp))
                 .border(
                     width = if (focused) 1.dp else 0.dp,
-                    color = if (focused) TvDesign.White.copy(alpha = .88f) else Color.Transparent,
+                    color = if (focused) TvDesign.Accent.copy(alpha = .88f) else Color.Transparent,
                     shape = RoundedCornerShape(10.dp),
                 ),
             contentScale = ContentScale.Crop,
@@ -1282,6 +1315,7 @@ private fun TvSearchPosterTile(
             color = TvDesign.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1393,15 +1427,15 @@ private fun TvSearchChoiceRow(
             .clickable(onClick = onClick)
             .background(
                 when {
-                    focused -> TvDesign.White.copy(alpha = .14f)
-                    selected -> TvDesign.White.copy(alpha = .07f)
+                    focused -> TvDesign.Accent.copy(alpha = .14f)
+                    selected -> TvDesign.Accent.copy(alpha = .07f)
                     else -> Color.Transparent
                 },
                 shape,
             )
             .border(
                 width = if (focused) 1.dp else 0.dp,
-                color = if (focused) TvDesign.White.copy(alpha = .78f) else Color.Transparent,
+                color = if (focused) TvDesign.Accent.copy(alpha = .78f) else Color.Transparent,
                 shape = shape,
             )
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1413,7 +1447,7 @@ private fun TvSearchChoiceRow(
                 .clip(CircleShape)
                 .border(
                     1.dp,
-                    if (selected) TvDesign.White else TvDesign.Muted,
+                    if (selected) TvDesign.Accent else TvDesign.Muted,
                     CircleShape,
                 ),
             contentAlignment = Alignment.Center,
@@ -1423,7 +1457,7 @@ private fun TvSearchChoiceRow(
                     Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(TvDesign.White),
+                        .background(TvDesign.Accent),
                 )
             }
         }
@@ -1434,6 +1468,41 @@ private fun TvSearchChoiceRow(
             fontSize = 14.sp,
             fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
         )
+    }
+}
+
+@Composable
+private fun TvSearchClearButton(
+    label: String,
+    requester: FocusRequester,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier.size(40.dp)
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.isTvActivationKey()) {
+                    if (event.type == KeyEventType.KeyUp) onClick()
+                    true
+                } else if (event.type == KeyEventType.KeyDown) {
+                    val move = when (event.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP -> onUp
+                        KeyEvent.KEYCODE_DPAD_DOWN -> onDown
+                        else -> null
+                    }
+                    move?.invoke()
+                    move != null
+                } else false
+            }
+            .background(if (focused) TvDesign.Accent.copy(alpha = .22f) else Color.Transparent, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.Close, contentDescription = label, tint = TvDesign.White)
     }
 }
 
