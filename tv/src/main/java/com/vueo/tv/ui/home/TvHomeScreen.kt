@@ -350,6 +350,17 @@ fun TvHomeScreen(
             }).takeIf { it.entries.isNotEmpty() }
         }
     }
+    val pagedCatalogs = remember(rows, runtime.engine) { homePagedCatalogs(runtime) }
+    val railRows = remember(rows, pagedCatalogs) {
+        rows.map { row ->
+            val visibleCardCount = if (row.kind == TvHomeRowKind.CONTINUE_WATCHING) 4 else 6
+            if (row.entries.size > visibleCardCount || row.key in pagedCatalogs) {
+                row.copy(entries = row.entries + TvHomeEntry.SeeAll(row.key, row.title))
+            } else row
+        }
+    }
+    var seeAllKey by remember(activeProfileId) { mutableStateOf<String?>(null) }
+    val seeAllRow = rows.firstOrNull { it.key == seeAllKey }
     val visibleContinueWatchingCount =
         rows.firstOrNull { it.key == "continue-watching" }?.entries?.size ?: 0
 
@@ -418,13 +429,13 @@ fun TvHomeScreen(
         // An eager request here can target a hidden/unfocusable Topbar/rail.
     }
 
-    BackHandler(enabled = active) {
+    BackHandler(enabled = active && seeAllRow == null) {
         if (navExpanded) onBack() else focusSidebar()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
-            rows = rows,
+            rows = railRows,
             artworkApiKey = runtime.pluginStore.tmdbApiKey(),
             loading = loading,
             error = error,
@@ -435,9 +446,18 @@ fun TvHomeScreen(
             },
             active = active,
             routeReturnPending = routeReturnPending,
-            routeFocusAnchor = retainedState.routeFocusAnchor?.copy(
-                restoreReady = returnSnapshotReady && newEpisodesReady && actionEntry == null,
-            ),
+            routeFocusAnchor = retainedState.routeFocusAnchor?.let { anchor ->
+                val savedCardPresent = railRows.any { row ->
+                    row.key == anchor.rowKey && row.entries.any { it.key == anchor.cardKey }
+                }
+                val missingCardResolved = when (anchor.rowKey) {
+                    NEW_EPISODES_ROW_KEY -> newEpisodesReady
+                    "continue-watching" -> returnSnapshotReady
+                    else -> !loading
+                }
+                anchor.copy(restoreReady = actionEntry == null && seeAllRow == null &&
+                    (savedCardPresent || missingCardResolved))
+            },
             onCaptureRouteFocusAnchor = {
                 returnSnapshotReady = false
                 retainedState.routeFocusAnchor = it
@@ -454,7 +474,10 @@ fun TvHomeScreen(
             },
             onOpenNavigation = ::focusSidebar,
             // Rows captures the retained anchor before this changes routes.
-            onOpen = { entry -> entry.open(onOpenMedia, onResume, onOpenCollection) },
+            onOpen = { entry ->
+                if (entry is TvHomeEntry.SeeAll) seeAllKey = entry.rowKey
+                else entry.open(onOpenMedia, onResume, onOpenCollection)
+            },
             onLongClick = { entry -> if (entry !is TvHomeEntry.Folder) actionEntry = entry },
             modifier = Modifier.fillMaxSize(),
         )
@@ -485,6 +508,13 @@ fun TvHomeScreen(
             },
             modifier = Modifier.align(Alignment.CenterStart),
         )
+    }
+
+    if (active && seeAllRow != null) {
+        TvHomeSeeAll(runtime, seeAllRow, pagedCatalogs[seeAllRow.key], onDismiss = { seeAllKey = null }) { entry ->
+            seeAllKey = null
+            entry.open(onOpenMedia, onResume, onOpenCollection)
+        }
     }
 
     actionEntry?.let { entry ->

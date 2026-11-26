@@ -526,7 +526,7 @@ internal fun TvModernHomeRows(
             // The Topbar overlays a stable viewport. A visible row can receive
             // its saved focus without scrolling back to its leading edge.
             if (!preserveTopbarViewport || !rowFullyVisible) {
-                verticalState.animateScrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
+                verticalState.scrollToItem(availableRows.indexOfFirst { it.key == row.key }, 0)
             }
             traceHome {
                 "HOME_SCROLL_FINISH axis=vertical cause=nav_return target=${row.key} " +
@@ -962,7 +962,7 @@ private fun TvModernHomeRow(
                                 itemFocusRequesters[index] = requester
                             }
                         } else itemFocusRequesters.getOrPut(index) { FocusRequester() }
-                        val openPosterActions = { onPosterLongClick(entry) }
+                        val openPosterActions = { if (entry !is TvHomeEntry.SeeAll) onPosterLongClick(entry) }
                         val cardVisible by remember(rowState, index) {
                             derivedStateOf {
                                 rowState.layoutInfo.visibleItemsInfo.any {
@@ -1078,7 +1078,10 @@ private fun TvModernHomeCard(
             )
             .clickable(onClick = onOpen),
     ) {
-        when (kind) {
+        if (entry is TvHomeEntry.SeeAll) {
+            Text("See All", color = TvDesign.White, fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+        } else when (kind) {
             TvHomeRowKind.CONTINUE_WATCHING -> ContinueWatchingCardContent(entry, loadImage || focused, focused)
             TvHomeRowKind.COLLECTIONS -> {
                 TvNetworkImage(url = entry.media.poster, contentDescription = entry.media.name,
@@ -1124,7 +1127,7 @@ private fun TvHomeCardBadge(text: String, modifier: Modifier = Modifier) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
-            .background(TvDesign.Black.copy(alpha = .82f), RoundedCornerShape(50))
+            .background(TvDesign.Black.copy(alpha = .64f), RoundedCornerShape(50))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }

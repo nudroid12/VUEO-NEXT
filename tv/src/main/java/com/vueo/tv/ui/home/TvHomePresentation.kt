@@ -110,7 +110,7 @@ internal fun TvHomePresentation(
         focusedEntry = initialRow?.let { row ->
             val index = (TvHomeFocusMemory.focusedIndexByRow[row.key] ?: 0)
                 .coerceIn(0, row.entries.lastIndex)
-            row.entries[index]
+            row.entries[index].takeUnless { it is TvHomeEntry.SeeAll } ?: row.entries.first()
         }
     }
 
@@ -165,7 +165,7 @@ internal fun TvHomePresentation(
         val index = row.entries.indexOfFirst { it.key == selected.key }
         val adjacent = row.entries.getOrNull(index + 1) ?: row.entries.getOrNull(index - 1)
             ?: return@LaunchedEffect
-        if (adjacent is TvHomeEntry.Folder) return@LaunchedEffect
+        if (adjacent is TvHomeEntry.Folder || adjacent is TvHomeEntry.SeeAll) return@LaunchedEffect
         delay(750L)
         if (verticalMotionActive || rapidHorizontalNavigation) return@LaunchedEffect
         try {
@@ -278,6 +278,10 @@ internal fun TvHomePresentation(
                     onFocused = { row, index, entry ->
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
+                        if (entry is TvHomeEntry.SeeAll) {
+                            lastFocusedRowKey = row.key
+                            return@TvModernHomeRows
+                        }
                         val sameRow = lastFocusedRowKey == row.key
                         if (!sameRow || focusedEntry?.key != entry.key) {
                             val now = SystemClock.uptimeMillis()
