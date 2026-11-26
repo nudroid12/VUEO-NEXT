@@ -429,65 +429,69 @@ fun TvLibraryScreen(
                             fontWeight = FontWeight.Bold,
                         )
 
-                        LibraryViewModeButton(
-                            gridView = gridView,
-                            requester = viewModeRequester,
-                            onFocused = {
-                                if (!navExpanded) rememberTarget("view")
-                            },
-                            onToggle = {
-                                val nextGridView = !gridView
-                                gridView = nextGridView
-                                libraryUiPreferences
-                                    .edit()
-                                    .putBoolean(LIBRARY_GRID_VIEW_KEY, nextGridView)
-                                    .apply()
-                                rememberTarget("view")
-                            },
-                            onLeft = {
-                                (if (historySelected) historyRequester else favoritesRequester).requestFocus()
-                                true
-                            },
-                            onDown = { requestFilterFocus(); true },
-                        )
-                    }
-                    if (deleteHistoryError) Text("Couldn't delete history. Try again.", color = TvDesign.Muted, fontSize = 12.sp)
-                    Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        listOf("Watchlist", "History").forEachIndexed { index, label ->
-                            val selected = historySelected == (index == 1)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            listOf("Watchlist", "History").forEachIndexed { index, label ->
+                                val selected = historySelected == (index == 1)
+                                LibraryViewModeButton(
+                                    gridView = gridView,
+                                    label = label,
+                                    selected = selected,
+                                    requester = if (index == 0) favoritesRequester else historyRequester,
+                                    onFocused = {
+                                        if (!selected && historyDeleteIndex == null) {
+                                            historySelected = index == 1
+                                            TvLibraryFocusMemory.firstVisibleItemIndex = 0
+                                            TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
+                                        }
+                                        if (!navExpanded) rememberTarget("section")
+                                    },
+                                    onToggle = {
+                                        if (!selected && historyDeleteIndex == null) {
+                                            historySelected = index == 1
+                                            TvLibraryFocusMemory.firstVisibleItemIndex = 0
+                                            TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
+                                            rememberTarget("section")
+                                        }
+                                    },
+                                    onLeft = {
+                                        if (index == 0) focusSidebar() else favoritesRequester.requestFocus()
+                                        true
+                                    },
+                                    onRight = {
+                                        if (index == 0) historyRequester.requestFocus() else viewModeRequester.requestFocus()
+                                        true
+                                    },
+                                    onDown = { requestFilterFocus(); true },
+                                )
+                            }
                             LibraryViewModeButton(
                                 gridView = gridView,
-                                label = label,
-                                selected = selected,
-                                requester = if (index == 0) favoritesRequester else historyRequester,
+                                requester = viewModeRequester,
                                 onFocused = {
-                                    if (!selected && historyDeleteIndex == null) {
-                                        historySelected = index == 1
-                                        TvLibraryFocusMemory.firstVisibleItemIndex = 0
-                                        TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
-                                    }
-                                    if (!navExpanded) rememberTarget("section")
+                                    if (!navExpanded) rememberTarget("view")
                                 },
                                 onToggle = {
-                                    if (!selected && historyDeleteIndex == null) {
-                                        historySelected = index == 1
-                                        TvLibraryFocusMemory.firstVisibleItemIndex = 0
-                                        TvLibraryFocusMemory.firstVisibleItemScrollOffset = 0
-                                        rememberTarget("section")
-                                    }
+                                    val nextGridView = !gridView
+                                    gridView = nextGridView
+                                    libraryUiPreferences
+                                        .edit()
+                                        .putBoolean(LIBRARY_GRID_VIEW_KEY, nextGridView)
+                                        .apply()
+                                    rememberTarget("view")
                                 },
                                 onLeft = {
-                                    if (index == 0) focusSidebar() else favoritesRequester.requestFocus()
-                                    true
-                                },
-                                onRight = {
-                                    if (index == 0) historyRequester.requestFocus() else viewModeRequester.requestFocus()
+                                    (if (historySelected) historyRequester else favoritesRequester).requestFocus()
                                     true
                                 },
                                 onDown = { requestFilterFocus(); true },
                             )
                         }
                     }
+                    if (deleteHistoryError) Text("Couldn't delete history. Try again.", color = TvDesign.Muted, fontSize = 12.sp)
+
                     Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         LibraryViewModeButton(
                             gridView = gridView, label = "Type: ${filters.type.label}",

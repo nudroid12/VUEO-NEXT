@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -886,7 +887,7 @@ private fun SourceRefreshButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Default.Refresh,
+            imageVector = if (searching) Icons.Default.Stop else Icons.Default.Refresh,
             contentDescription = if (searching) "Stop source scan" else "Refresh sources",
             tint = when {
                 searching -> TvDesign.Accent

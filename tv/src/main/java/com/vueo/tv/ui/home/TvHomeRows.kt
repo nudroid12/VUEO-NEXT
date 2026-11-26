@@ -1106,17 +1106,27 @@ private fun PosterCardContent(entry: TvHomeEntry, loadImage: Boolean, focused: B
             highPriority = focused,
         )
         (entry as? TvHomeEntry.Media)?.newEpisodeLabel?.let { label ->
-            Column(
-                modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
-                    .background(TvDesign.Accent, RoundedCornerShape(5.dp))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                Text("NEW EPISODE", color = TvDesign.OnAccent, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(label, color = TvDesign.OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            }
+            TvHomeCardBadge(
+                text = label,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp),
+            )
         }
     }
+}
+
+@Composable
+private fun TvHomeCardBadge(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = TvDesign.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .background(TvDesign.Black.copy(alpha = .82f), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 @Composable
@@ -1141,24 +1151,23 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
-                        .50f to Color.Transparent,
-                        1f to TvDesign.Black.copy(alpha = .90f),
+                        .45f to Color.Transparent,
+                        .78f to TvDesign.Black.copy(alpha = .72f),
+                        1f to TvDesign.Black.copy(alpha = .94f),
                     )
                 )
         )
 
-        entry.remainingText()?.let { remaining ->
-            Text(
-                text = remaining,
-                color = TvDesign.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .background(TvDesign.Black.copy(alpha = .72f), RoundedCornerShape(5.dp))
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
-            )
+        Row(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                entry.episodeText()?.let { TvHomeCardBadge(it) }
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                entry.remainingText()?.let { TvHomeCardBadge(it) }
+            }
         }
 
         Column(
@@ -1168,16 +1177,6 @@ private fun ContinueWatchingCardContent(entry: TvHomeEntry, loadImage: Boolean, 
                 .padding(start = 11.dp, end = 11.dp, bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-            entry.episodeText()?.let { episode ->
-                Text(
-                    text = episode,
-                    color = TvDesign.White.copy(alpha = .78f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             Text(
                 text = entry.media.name,
                 color = TvDesign.White,

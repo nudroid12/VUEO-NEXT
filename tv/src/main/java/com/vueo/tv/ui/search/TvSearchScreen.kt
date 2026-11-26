@@ -640,51 +640,56 @@ internal fun TvSearchScreen(
                 modifier = Modifier.padding(start = contentStartPadding, end = 52.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = "Search",
-                    modifier = Modifier.padding(start = 16.dp),
-                    color = TvDesign.White,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-
-                Box(modifier = Modifier.fillMaxWidth(.76f)) {
-                    TvMobileSearchField(
-                        value = session.query,
-                        mode = session.mode,
-                        requester = fieldRequester,
-                        modeRequester = modeRequester,
-                        onFocused = {
-                            if (!navExpanded) lastContentTarget = "field"
-                        },
-                        onModeFocused = {
-                            if (!navExpanded) lastContentTarget = "mode"
-                        },
-                        onModeChange = { next ->
-                            if (next != session.mode) {
-                                session.mode = next
-                                queueRecent(session.query, next)
-                                session.searchResults = emptyList()
-                                session.completedSearchKey = null
-                                session.genre = null
-                                resetGridForFilterChange()
-                            }
-                        },
-                        onValueChange = { nextQuery ->
-                            if (nextQuery != session.query) {
-                                session.query = nextQuery
-                                queueRecent(nextQuery, session.mode)
-                                session.completedSearchKey = null
-                                resetGridForFilterChange()
-                            }
-                        },
-                        onLeftWhenEmpty = {
-                            focusSidebar()
-                        },
-                        onRight = { runCatching { modeRequester.requestFocus() } },
-                        onUp = {},
-                        onDown = { runCatching { if (showRecent) recentRequester.requestFocus() else typeRequester.requestFocus() } },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(32.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Search",
+                        modifier = Modifier.padding(start = 16.dp),
+                        color = TvDesign.White,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Bold,
                     )
+                    Box(Modifier.weight(1f)) {
+                        TvMobileSearchField(
+                            value = session.query,
+                            mode = session.mode,
+                            requester = fieldRequester,
+                            modeRequester = modeRequester,
+                            onFocused = {
+                                if (!navExpanded) lastContentTarget = "field"
+                            },
+                            onModeFocused = {
+                                if (!navExpanded) lastContentTarget = "mode"
+                            },
+                            onModeChange = { next ->
+                                if (next != session.mode) {
+                                    session.mode = next
+                                    queueRecent(session.query, next)
+                                    session.searchResults = emptyList()
+                                    session.completedSearchKey = null
+                                    session.genre = null
+                                    resetGridForFilterChange()
+                                }
+                            },
+                            onValueChange = { nextQuery ->
+                                if (nextQuery != session.query) {
+                                    session.query = nextQuery
+                                    queueRecent(nextQuery, session.mode)
+                                    session.completedSearchKey = null
+                                    resetGridForFilterChange()
+                                }
+                            },
+                            onLeftWhenEmpty = {
+                                focusSidebar()
+                            },
+                            onRight = { runCatching { modeRequester.requestFocus() } },
+                            onUp = {},
+                            onDown = { runCatching { if (showRecent) recentRequester.requestFocus() else typeRequester.requestFocus() } },
+                        )
+                    }
                 }
 
                 if (showRecent) {
@@ -717,7 +722,7 @@ internal fun TvSearchScreen(
                 if (searching || contentDiscovering) {
                     LinearProgressIndicator(
                         modifier = Modifier
-                            .fillMaxWidth(.76f)
+                            .fillMaxWidth()
                             .height(1.dp),
                         color = TvDesign.Accent.copy(alpha = .90f),
                         trackColor = TvDesign.White.copy(alpha = .08f),
