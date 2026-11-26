@@ -615,7 +615,7 @@ internal fun SourcePickerScreen(
                                 details,
                                 color = VueoPalette.Muted,
                                 fontSize = 10.sp,
-                                lineHeight = 14.sp,
+                                lineHeight = 20.sp,
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1200,7 +1200,7 @@ private fun StreamSourceCard(
                     details,
                     color = VueoPalette.Muted,
                     fontSize = 10.sp,
-                    lineHeight = 14.sp,
+                    lineHeight = 20.sp,
                     maxLines = if (showTechnicalDetails) Int.MAX_VALUE else 5,
                     overflow = TextOverflow.Ellipsis,
                 )

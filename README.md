@@ -10,12 +10,6 @@
   <a href="#download">Download</a> · <a href="#quick-start">Quick start</a> · <a href="#build-from-source">Build from source</a> · <a href="#support">Support</a>
 </p>
 
-## Screenshots
-
-| Android mobile | Android TV |
-| --- | --- |
-| <img src="docs/screenshots/mobile-home.jpg" width="240" alt="VUEO Home on an Android phone"> | <img src="docs/screenshots/tv-home.jpg" width="520" alt="VUEO Home photographed on an Android TV"> |
-
 ## Features
 
 - **Home and library** — Pick up episodes in Continue Watching, keep a watchlist and browse playback history.
