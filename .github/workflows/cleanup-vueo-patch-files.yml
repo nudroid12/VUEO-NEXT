@@ -1,4 +1,4 @@
-name: Cleanup VUEO Patch Files
+name: Cleanup VUEO Repository
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-      - name: Check and clean up patch leftovers
+      - name: Check and clean up old patch notes
         env:
           APPLY: ${{ inputs.apply }}
         shell: bash
@@ -35,8 +35,6 @@ jobs:
           python3 - <<'PYTHON'
           import os
           import subprocess
-          import zipfile
-          from pathlib import Path, PurePosixPath
 
           known_leftovers = set('''
           ADAPTIVE-DISCOVERY-AI-SUBS-NOTES.txt
@@ -197,6 +195,8 @@ jobs:
           VUEO-TV-Gemini-Menu-Fix-Notes.txt
           VUEO-TV-Repo-Trash-Compact-Provider-Polish-Notes.txt
           VUEO-TV-Settings-Polish-Notes.md
+          VUEO_Global_Binary_Base64_v60_README.txt
+          VUEO_Provider_Runtime_Completion_v59_README.txt
           VUEO_v105.diff
           VUEO_v107.diff
           '''.splitlines()) - {''}
@@ -204,34 +204,8 @@ jobs:
           def git(*args):
               return subprocess.check_output(['git', *args])
 
-          def already_applied(archive, tracked):
-              # Only approved packaging metadata may differ from the checkout.
-              metadata = {'README.md', 'PATCH_README.md', 'CHANGES.diff', 'AFTER_PREVIOUS_PATCH.diff'}
-              matched = False
-              try:
-                  with zipfile.ZipFile(archive) as patch:
-                      for item in patch.infolist():
-                          path = PurePosixPath(item.filename)
-                          if path.is_absolute() or '..' in path.parts:
-                              return False
-                          if item.is_dir() or item.filename in metadata:
-                              continue
-                          if item.filename not in tracked:
-                              return False
-                          actual = Path(item.filename)
-                          if actual.is_symlink() or actual.stat().st_size != item.file_size:
-                              return False
-                          if actual.read_bytes() != patch.read(item):
-                              return False
-                          matched = True
-              except (OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile):
-                  return False
-              return matched
-
           tracked = set(os.fsdecode(p) for p in git('ls-files', '-z').split(b'\0') if p)
-          archives = sorted(p for p in tracked if '/' not in p and p.startswith('VUEO-') and p.endswith('.zip'))
-          verified_archives = {p for p in archives if already_applied(p, tracked)}
-          candidates = sorted((known_leftovers & tracked) | verified_archives)
+          candidates = sorted(known_leftovers & tracked)
           # Exclude candidate files when searching, since patch notes commonly cite one another.
           search_paths = ['.', ':(top,exclude,literal).github/workflows/cleanup-vueo-patch-files.yml', *[f':(top,exclude,literal){p}' for p in candidates]]
           selected = []
@@ -252,13 +226,10 @@ jobs:
               print(f'\n{len(selected)} file(s) selected.', file=summary)
               for path in selected:
                   print(f'- `{path}`', file=summary)
-              skipped = sorted(set(archives) - verified_archives)
-              if kept or skipped:
+              if kept:
                   print('\n### Kept', file=summary)
                   for path in kept:
                       print(f'- `{path}` (referenced by another tracked file)', file=summary)
-                  for path in skipped:
-                      print(f'- `{path}` (contents do not match the checkout)', file=summary)
 
           if apply and selected:
               git('rm', '--', *selected)
@@ -272,5 +243,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Clean up old VUEO patch files'
+          git commit -m 'Clean up old VUEO patch notes'
           git push origin HEAD:main
