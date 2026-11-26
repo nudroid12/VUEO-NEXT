@@ -1,5 +1,7 @@
 package com.vueo.tv.library
 
+import com.vueo.tv.search.TV_SEARCH_POSTER_COLUMNS
+
 
 
 
@@ -21,7 +23,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -75,6 +76,8 @@ import com.vueo.tv.ui.motion.TvMotion
 import com.vueo.tv.ui.TvPrimaryDestinations
 import com.vueo.tv.ui.TvSidebar
 import com.vueo.tv.ui.tvPosterActivation
+import com.vueo.tv.ui.tvSidebarIsPillMode
+import com.vueo.tv.ui.tvSidebarIsHiddenClassic
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -84,8 +87,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 private const val LIBRARY_UI_PREFS = "vueo_library_ui"
 private const val LIBRARY_GRID_VIEW_KEY = "grid_view"
 private const val LIBRARY_HEADER_ITEMS = 1
-private const val LIBRARY_TARGET_POSTER_WIDTH_DP = 126f
-private const val LIBRARY_GRID_GAP_DP = 16f
 
 /**
  * TV-only ephemeral focus/scroll memory.
@@ -337,18 +338,14 @@ fun TvLibraryScreen(
     }
 
     val contentStartPadding = tvSidebarContentStartPadding(96.dp)
+    val gridEndPadding = if (tvSidebarIsPillMode() || tvSidebarIsHiddenClassic()) 28.dp else 52.dp
 
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(TvDesign.Black),
     ) {
-        val availableWidthDp = (maxWidth.value - contentStartPadding.value - 52f).coerceAtLeast(420f)
-        val gridColumns =
-            ((availableWidthDp + LIBRARY_GRID_GAP_DP) /
-                (LIBRARY_TARGET_POSTER_WIDTH_DP + LIBRARY_GRID_GAP_DP))
-                .toInt()
-                .coerceIn(4, 6)
+        val gridColumns = TV_SEARCH_POSTER_COLUMNS
 
         TvPosterGridReveal {
             LazyVerticalGrid(
@@ -357,13 +354,13 @@ fun TvLibraryScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = contentStartPadding,
-                    end = 52.dp,
+                    end = gridEndPadding,
                     // Match Search's title/header top position exactly.
                     top = 46.dp,
                     bottom = 48.dp,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 item(
                     key = "library-header",
@@ -860,11 +857,11 @@ private fun LibraryListRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TvNetworkImage(
-            url = media.poster,
+            url = media.background?.takeIf { it.isNotBlank() } ?: media.poster,
             contentDescription = media.name,
             modifier = Modifier
-                .width(61.dp)
-                .height(92.dp)
+                .width(136.dp)
+                .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(8.dp)),
             contentScale = ContentScale.Crop,
         )
