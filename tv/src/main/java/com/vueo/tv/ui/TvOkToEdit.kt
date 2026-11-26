@@ -16,10 +16,10 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
-internal data class TvOkToEdit(val readOnly: Boolean, val modifier: Modifier)
+internal data class TvOkToEdit(val readOnly: Boolean, val modifier: Modifier, val startEditing: () -> Unit)
 
 @Composable
-internal fun rememberTvOkToEdit(enabled: Boolean = true): TvOkToEdit {
+internal fun rememberTvOkToEdit(enabled: Boolean = true, onActivate: () -> Boolean = { false }): TvOkToEdit {
     var editing by remember(enabled) { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -33,6 +33,7 @@ internal fun rememberTvOkToEdit(enabled: Boolean = true): TvOkToEdit {
 
     return TvOkToEdit(
         readOnly = !editing,
+        startEditing = { editing = true },
         modifier = Modifier
             .onFocusChanged { if (!it.isFocused) editing = false }
             .onPreviewKeyEvent { event ->
@@ -42,7 +43,7 @@ internal fun rememberTvOkToEdit(enabled: Boolean = true): TvOkToEdit {
                     return@onPreviewKeyEvent false
                 }
                 if (event.type == KeyEventType.KeyUp) {
-                    if (editing) keyboard?.show() else editing = true
+                    if (editing) keyboard?.show() else if (!onActivate()) editing = true
                 }
                 true
             },

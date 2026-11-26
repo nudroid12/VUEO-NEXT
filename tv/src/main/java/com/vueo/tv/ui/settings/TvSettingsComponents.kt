@@ -398,15 +398,6 @@ internal fun TvSettingsMasterDetailShell(
                     .width(categoryColumnWidth)
                     .fillMaxHeight(),
             ) {
-                Text(
-                    text = "SETTINGS",
-                    color = TvDesign.Dim,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.25.sp,
-                    modifier = Modifier.padding(start = 10.dp, bottom = 10.dp),
-                )
-
                 LazyColumn(
                     state = categoryListState,
                     verticalArrangement = Arrangement.spacedBy(14.dp),

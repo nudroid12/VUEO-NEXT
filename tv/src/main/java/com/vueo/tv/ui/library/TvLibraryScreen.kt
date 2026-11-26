@@ -1,20 +1,12 @@
 package com.vueo.tv.library
 
-import com.vueo.tv.ui.TvPosterActionRow
 
-import androidx.compose.ui.window.DialogProperties
 
-import androidx.compose.ui.window.Dialog
 
-import com.vueo.shared.core.storage.LibrarySort
 
-import com.vueo.shared.core.storage.LibraryTypeFilter
 
-import com.vueo.shared.core.storage.LibraryFilterPolicy
 
-import com.vueo.shared.core.storage.LibraryFilterStore
 
-import com.vueo.shared.core.storage.LibraryFilters
 
 import com.vueo.tv.ui.TvPosterGridReveal
 import com.vueo.tv.ui.motion.*
@@ -147,13 +139,9 @@ fun TvLibraryScreen(
         loading = false
     }
     val context = LocalContext.current
-    val filterStore = remember(profileId, context) { LibraryFilterStore(context, profileId) }
-    var savedFilters by remember(filterStore) { mutableStateOf(filterStore.read(false)) }
-    var historyFilters by remember(filterStore) { mutableStateOf(filterStore.read(true)) }
-    var filterDialog by remember(profileId) { mutableStateOf<String?>(null) }
-    val filters = if (historySelected) historyFilters else savedFilters
-    val unfiltered = remember(historySelected, history, favorites) { if (historySelected) history.map { it.media } else favorites }
-    val watchlist = remember(unfiltered, filters) { LibraryFilterPolicy.apply(unfiltered, filters.type, filters.sort) }
+    val watchlist = remember(historySelected, history, favorites) {
+        if (historySelected) history.map { it.media } else favorites
+    }
     val historyCaptions = remember(history) {
         history.associate { libraryMediaKey(it.media) to LibraryHistoryPresentation.caption(it) }
     }
@@ -174,8 +162,6 @@ fun TvLibraryScreen(
     val viewModeRequester = remember { FocusRequester() }
     val favoritesRequester = remember { FocusRequester() }
     val historyRequester = remember { FocusRequester() }
-    val typeFilterRequester = remember { FocusRequester() }
-    val sortFilterRequester = remember { FocusRequester() }
 
     val mediaKeys = remember(watchlist) {
         watchlist.map(::libraryMediaKey)
@@ -212,41 +198,11 @@ fun TvLibraryScreen(
         navExpanded = true
     }
 
-    BackHandler(enabled = active && actionMedia == null && filterDialog == null) {
+    BackHandler(enabled = active && actionMedia == null) {
         PerformanceDiagnostics.captureRuntimeEvent(
             "TV_TAB_BACK tab=Library action=${if (navExpanded) "home" else "open_navigation"}"
         )
         if (navExpanded) onBack() else focusSidebar()
-    }
-
-    fun requestFilterFocus(sort: Boolean = false): Boolean {
-        val requester = if (sort) sortFilterRequester else typeFilterRequester
-        if (runCatching { requester.requestFocus() }.getOrDefault(false)) return true
-        historyScope.launch {
-            gridState.scrollToItem(0)
-            repeat(3) {
-                withFrameNanos { }
-                if (!active || filterDialog != null) return@launch
-                if (runCatching { requester.requestFocus() }.getOrDefault(false)) return@launch
-            }
-        }
-        return true
-    }
-
-    fun closeFilterDialog(next: LibraryFilters? = null) {
-        val target = filterDialog ?: return
-        val sort = target == "sort"
-        filterDialog = null
-        rememberTarget(if (sort) "filter-sort" else "filter-type", null)
-        if (next != null) {
-            if (historySelected) historyFilters = next else savedFilters = next
-            filterStore.save(historySelected, next)
-        }
-        historyScope.launch {
-            gridState.scrollToItem(0)
-            withFrameNanos { }
-            if (active) requestFilterFocus(sort)
-        }
     }
 
     fun requestHeaderFocus(): Boolean =
@@ -264,7 +220,7 @@ fun TvLibraryScreen(
             gridState.scrollToItem(LIBRARY_HEADER_ITEMS)
             repeat(3) {
                 withFrameNanos { }
-                if (!active || filterDialog != null) return@launch
+                if (!active) return@launch
                 if (runCatching { requester.requestFocus() }.getOrDefault(false)) return@launch
             }
         }
@@ -274,8 +230,6 @@ fun TvLibraryScreen(
     fun restoreContentFocus(): Boolean {
         navExpanded = false
         return when {
-            lastTarget == "filter-type" -> requestFilterFocus()
-            lastTarget == "filter-sort" -> requestFilterFocus(sort = true)
             lastTarget == "section" -> requestHeaderFocus()
             lastTarget == "view" ->
                 runCatching {
@@ -346,7 +300,7 @@ fun TvLibraryScreen(
     // Vueo-reference focus restoration: poster first when returning from
     // Detail, otherwise the primary Library selector owns initial focus.
     LaunchedEffect(active, mediaKeys, gridView, historySelected, navExpanded) {
-        if (!active || navExpanded || filterDialog != null) return@LaunchedEffect
+        if (!active || navExpanded) return@LaunchedEffect
         if (historyDeleteIndex != null) return@LaunchedEffect
         delay(110)
         if (historyDeleteIndex != null) return@LaunchedEffect
@@ -421,14 +375,6 @@ fun TvLibraryScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "Library",
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = TvDesign.White,
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -464,56 +410,35 @@ fun TvLibraryScreen(
                                         if (index == 0) historyRequester.requestFocus() else viewModeRequester.requestFocus()
                                         true
                                     },
-                                    onDown = { requestFilterFocus(); true },
+                                    onDown = ::requestFirstMediaFocus,
                                 )
                             }
-                            LibraryViewModeButton(
-                                gridView = gridView,
-                                requester = viewModeRequester,
-                                onFocused = {
-                                    if (!navExpanded) rememberTarget("view")
-                                },
-                                onToggle = {
-                                    val nextGridView = !gridView
-                                    gridView = nextGridView
-                                    libraryUiPreferences
-                                        .edit()
-                                        .putBoolean(LIBRARY_GRID_VIEW_KEY, nextGridView)
-                                        .apply()
-                                    rememberTarget("view")
-                                },
-                                onLeft = {
-                                    (if (historySelected) historyRequester else favoritesRequester).requestFocus()
-                                    true
-                                },
-                                onDown = { requestFilterFocus(); true },
-                            )
                         }
+                        LibraryViewModeButton(
+                            gridView = gridView,
+                            requester = viewModeRequester,
+                            onFocused = {
+                                if (!navExpanded) rememberTarget("view")
+                            },
+                            onToggle = {
+                                val nextGridView = !gridView
+                                gridView = nextGridView
+                                libraryUiPreferences
+                                    .edit()
+                                    .putBoolean(LIBRARY_GRID_VIEW_KEY, nextGridView)
+                                    .apply()
+                                rememberTarget("view")
+                            },
+                            onLeft = {
+                                (if (historySelected) historyRequester else favoritesRequester).requestFocus()
+                                true
+                            },
+                            onDown = ::requestFirstMediaFocus,
+                        )
                     }
                     if (deleteHistoryError) Text("Couldn't delete history. Try again.", color = TvDesign.Muted, fontSize = 12.sp)
 
-                    Row(modifier = Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        LibraryViewModeButton(
-                            gridView = gridView, label = "Type: ${filters.type.label}",
-                            requester = typeFilterRequester,
-                            onFocused = { rememberTarget("filter-type") },
-                            onToggle = { filterDialog = "type" },
-                            onLeft = { focusSidebar(); true },
-                            onRight = { requestFilterFocus(sort = true); true },
-                            onUp = { requestHeaderFocus(); true },
-                            onDown = { requestFirstMediaFocus(); true },
-                        )
-                        LibraryViewModeButton(
-                            gridView = gridView, label = filters.sort.label(historySelected),
-                            requester = sortFilterRequester,
-                            onFocused = { rememberTarget("filter-sort") },
-                            onToggle = { filterDialog = "sort" },
-                            onLeft = { requestFilterFocus(); true },
-                            onUp = { requestHeaderFocus(); true },
-                            onDown = { requestFirstMediaFocus(); true },
-                        )
-                        if (!loading && !loadFailed) Text("${watchlist.size} titles", color = TvDesign.Muted, fontSize = 12.sp)
-                    }
+
                     }
                 }
 
@@ -527,14 +452,12 @@ fun TvLibraryScreen(
                                 title = when {
                                     loading -> "Loading library…"
                                     loadFailed -> "Couldn't load library"
-                                    unfiltered.isNotEmpty() -> "No matching titles"
                                     historySelected -> "No watch history yet"
                                     else -> "Your library is empty"
                                 },
                                 body = when {
                                     loading -> "Please wait."
                                     loadFailed -> "Reopen Library to try again."
-                                    unfiltered.isNotEmpty() -> "Change the type filter to see more titles."
                                     historySelected -> "Titles you watch will appear here."
                                     else -> "Titles added to Watchlist will appear here."
                                 },
@@ -564,7 +487,7 @@ fun TvLibraryScreen(
                                     onLongClick = { actionMedia = media },
                                     onUpFromFirstRow = if (index < gridColumns) {
                                         {
-                                            requestFilterFocus()
+                                            requestHeaderFocus()
                                         }
                                     } else null,
                                     onLeftFromFirstColumn = if (index % gridColumns == 0) {
@@ -603,7 +526,7 @@ fun TvLibraryScreen(
                                     onLongClick = { actionMedia = media },
                                     onLeft = ::focusSidebar,
                                     onUpFromFirst = if (index == 0) {
-                                        { requestFilterFocus() }
+                                        { requestHeaderFocus() }
                                     } else null,
                                 )
                             }
@@ -628,32 +551,6 @@ fun TvLibraryScreen(
             onReturnToContent = ::restoreContentFocus,
             modifier = Modifier.align(Alignment.CenterStart),
         )
-    }
-
-    filterDialog?.let { field ->
-        if (active) {
-            Dialog(onDismissRequest = { closeFilterDialog() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                Column(Modifier.width(400.dp).background(TvDesign.SurfaceRaised, RoundedCornerShape(18.dp)).padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (field == "type") "Content type" else "Sort by",
-                        color = TvDesign.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    if (field == "type") {
-                        LibraryTypeFilter.entries.forEach { option ->
-                            TvPosterActionRow(option.label + if (option == filters.type) "  ✓" else "",
-                                requestInitialFocus = option == filters.type,
-                                onClick = { closeFilterDialog(filters.copy(type = option)) })
-                        }
-                    } else {
-                        LibrarySort.entries.forEach { option ->
-                            TvPosterActionRow(option.label(historySelected) + if (option == filters.sort) "  ✓" else "",
-                                requestInitialFocus = option == filters.sort,
-                                onClick = { closeFilterDialog(filters.copy(sort = option)) })
-                        }
-                    }
-                    TvPosterActionRow("Cancel", requestInitialFocus = false, onClick = { closeFilterDialog() })
-                }
-            }
-        }
     }
 
     actionMedia?.let { media ->
