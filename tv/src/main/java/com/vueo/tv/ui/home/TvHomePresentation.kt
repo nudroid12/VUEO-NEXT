@@ -3,10 +3,21 @@ package com.vueo.tv.home
 import com.vueo.tv.ui.motion.tvTunedSpec
 import com.vueo.tv.ui.motion.TvMotionGroup
 import com.vueo.tv.ui.motion.TvMotion
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -25,8 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,7 +44,7 @@ import androidx.compose.ui.unit.IntSize
 import android.os.SystemClock
 import com.vueo.tv.ui.tvPrefetchImage
 import com.vueo.tv.ui.TvDesign
-import com.vueo.tv.ui.TvNetworkImage
+import com.vueo.tv.ui.TvRetainedArtwork
 import com.vueo.tv.ui.tvSidebarContentStartPadding
 import com.vueo.tv.ui.tvSidebarHomeRowsViewportFraction
 import com.vueo.tv.ui.tvSidebarIsPillMode
@@ -101,7 +109,9 @@ internal fun TvHomePresentation(
     )
 
     var firstLeftPress by remember { mutableLongStateOf(0L) }
-    var catalogFocus by remember { mutableStateOf<TvHomeEntry.Media?>(null) }
+    var catalogFocus by remember { mutableStateOf<TvHomeEntry?>(null) }
+    var catalogCardPosition by remember(catalogOnly) { mutableStateOf<CatalogCardPosition?>(null) }
+    var homeOrigin by remember { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(catalogOnly) { firstLeftPress = 0L }
 
@@ -122,7 +132,7 @@ internal fun TvHomePresentation(
     LaunchedEffect(catalogOnly, active, focusedEntry?.key, verticalMotionActive, navigationOwnsFocus) {
         if (!catalogOnly) catalogFocus = null
         if (!catalogOnly || !active || verticalMotionActive || navigationOwnsFocus) return@LaunchedEffect
-        val entry = focusedEntry as? TvHomeEntry.Media ?: return@LaunchedEffect
+        val entry = focusedEntry ?: return@LaunchedEffect
         delay((140L - (SystemClock.uptimeMillis() - lastNavigationAt)).coerceAtLeast(0L))
         catalogFocus = entry
     }
@@ -222,7 +232,8 @@ internal fun TvHomePresentation(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(TvDesign.Black),
+            .background(TvDesign.Black)
+            .onGloballyPositioned { homeOrigin = it.positionInRoot() },
     ) {
         val screenHeight = maxHeight
         // Only a committed row controls geometry. Opening navigation or moving
@@ -285,7 +296,8 @@ internal fun TvHomePresentation(
         val catalogHeaderHeight = 54.dp
         if (catalogOnly) {
             val media = catalogFocus?.media
-            TvCatalogBackdrop(media?.background ?: media?.poster)
+            TvRetainedArtwork(media?.background ?: media?.poster, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .74f)))
             if (!navigationVisible) {
                 Text("Home", color = TvDesign.White, fontSize = 20.sp,
                     modifier = Modifier.align(Alignment.TopStart).padding(start = contentStartPadding, top = 14.dp))
@@ -309,7 +321,11 @@ internal fun TvHomePresentation(
                     rows = rows,
                     rowsViewportHeight = if (catalogOnly) (screenHeight - catalogHeaderHeight).coerceAtLeast(1.dp) else rowsViewportHeight,
                     catalogOnly = catalogOnly,
-                    expandedCardKey = catalogFocus?.key.takeIf { catalogOnly && !navigationOwnsFocus },
+                    onCatalogCardPosition = if (catalogOnly && !navigationOwnsFocus) {
+                        { rowKey, entryKey, position ->
+                            catalogCardPosition = CatalogCardPosition(rowKey, entryKey, position)
+                        }
+                    } else null,
                     contentFocusRequester = contentFocusRequester,
                     focusResetToken = focusResetToken,
                     contentReturnToken = contentReturnToken,
@@ -341,6 +357,7 @@ internal fun TvHomePresentation(
                         TvHomeFocusMemory.activeRowKey = row.key
                         TvHomeFocusMemory.focusedIndexByRow[row.key] = index
                         if (entry is TvHomeEntry.SeeAll) {
+                            catalogCardPosition = null
                             lastFocusedRowKey = row.key
                             return@TvModernHomeRows
                         }
@@ -397,6 +414,33 @@ internal fun TvHomePresentation(
                 )
             }
         }
+        if (catalogOnly && !navigationOwnsFocus) {
+            val card = catalogCardPosition
+            val entry = focusedEntry as? TvHomeEntry.Media
+            val showFrame = card != null && entry != null &&
+                card.rowKey == lastFocusedRowKey && card.entryKey == entry.key
+            val frameHeight = MODERN_HOME_POSTER_HEIGHT
+            val frameWidth = frameHeight * (16f / 9f)
+            val frameOffset = if (card != null) {
+                val relative = card.position - homeOrigin
+                val maxX = with(density) { (maxWidth - frameWidth - 12.dp).toPx() }
+                IntOffset(relative.x.coerceIn(0f, maxX.coerceAtLeast(0f)).roundToInt(), relative.y.roundToInt())
+            } else IntOffset.Zero
+            val catalogArtwork = entry?.media?.let { it.background ?: it.poster }
+            val shape = RoundedCornerShape(12.dp)
+            val visible = showFrame && frameOffset.y >= with(density) { catalogHeaderHeight.roundToPx() } &&
+                frameOffset.y + with(density) { frameHeight.roundToPx() } <= with(density) { maxHeight.roundToPx() }
+            // Retain this layer while focus moves between cards and rows.
+            Box(
+                Modifier.offset { frameOffset }.width(frameWidth).height(frameHeight)
+                    .graphicsLayer { alpha = if (visible) 1f else 0f }
+                    .clip(shape).background(TvDesign.Surface)
+                    .border(2.dp, TvDesign.Accent, shape),
+            ) {
+                TvRetainedArtwork(catalogArtwork, Modifier.fillMaxSize(), fallback = TvDesign.Surface)
+            }
+        }
+
         if (rows.isNotEmpty() && error != null) {
             TvHomeLoadFailure(
                 message = error,
@@ -412,39 +456,4 @@ internal fun TvHomePresentation(
 }
 
 
-@Composable
-private fun TvCatalogBackdrop(url: String?) {
-    var displayedUrl by remember { mutableStateOf(url) }
-    Box(Modifier.fillMaxSize()) {
-        if (url != null && url != displayedUrl) {
-            key(url) {
-                TvNetworkImage(
-                    url = url,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0f },
-                    contentScale = ContentScale.Crop,
-                    highPriority = true,
-                    fadeEnabled = false,
-                    onLoadResult = { loaded -> if (loaded) displayedUrl = url },
-                )
-            }
-        }
-        Crossfade(
-            targetState = displayedUrl,
-            animationSpec = tvTunedSpec(TvMotionGroup.HERO, true, tween(durationMillis = 260)),
-            modifier = Modifier.fillMaxSize(),
-            label = "catalogBackdrop",
-        ) { imageUrl ->
-            TvNetworkImage(
-                url = imageUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                highPriority = true,
-                fadeEnabled = false,
-                fallback = TvDesign.Black,
-            )
-        }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .55f)))
-    }
-}
+private data class CatalogCardPosition(val rowKey: String, val entryKey: String, val position: Offset)

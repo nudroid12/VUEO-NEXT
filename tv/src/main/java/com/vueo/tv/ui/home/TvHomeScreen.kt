@@ -361,13 +361,10 @@ fun TvHomeScreen(
             } else row
         }
     }
-    val catalogRails = remember(railRows) {
-        railRows.filter { it.key.startsWith("catalog:") && it.entries.isNotEmpty() }
-    }
-    val catalogOnly = retainedState.catalogOnlyProfileId == activeProfileId && catalogRails.isNotEmpty()
-    val displayedRows = if (catalogOnly) catalogRails else railRows
+    val hasHomeRows = railRows.any { it.entries.isNotEmpty() }
+    val catalogOnly = retainedState.catalogOnlyProfileId == activeProfileId && hasHomeRows
     fun toggleCatalogOnly() {
-        if (catalogRails.isNotEmpty()) {
+        if (hasHomeRows) {
             retainedState.catalogOnlyProfileId = if (catalogOnly) null else activeProfileId
         }
     }
@@ -448,9 +445,9 @@ fun TvHomeScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         TvHomePresentation(
-            rows = displayedRows,
+            rows = railRows,
             catalogOnly = catalogOnly,
-            canToggleCatalogOnly = catalogRails.isNotEmpty(),
+            canToggleCatalogOnly = hasHomeRows,
             onToggleCatalogOnly = ::toggleCatalogOnly,
             artworkApiKey = runtime.pluginStore.tmdbApiKey(),
             loading = loading,

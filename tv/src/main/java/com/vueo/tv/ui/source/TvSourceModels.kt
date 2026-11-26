@@ -38,6 +38,7 @@ internal data class TvSourcePresentationState(
 /** Clean UI contract between provider output and the TV source card. */
 internal data class TvSourceCardModel(
     val providerName: String,
+    val providerDot: String?,
     val repositoryName: String?,
     val serverName: String?,
     val title: String,
@@ -86,6 +87,7 @@ internal fun StreamSource.toTvSourceCardModel(
 
     return TvSourceCardModel(
         providerName = provider,
+        providerDot = ProviderSourceDetails.leadingProviderDot(this),
         repositoryName = repository,
         serverName = serverText,
         title = title,

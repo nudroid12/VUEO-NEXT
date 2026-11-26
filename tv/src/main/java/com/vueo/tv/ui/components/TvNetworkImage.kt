@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -335,6 +336,58 @@ fun TvNetworkImage(
                 modifier = Modifier.matchParentSize().alpha(if (fadeEnabled) imageAlpha else 1f),
                 contentScale = contentScale,
                 alignment = alignment,
+            )
+        }
+    }
+}
+
+/** Keeps the last decoded artwork painted until its replacement is ready. */
+@Composable
+internal fun TvRetainedArtwork(
+    url: String?,
+    modifier: Modifier,
+    fallback: Color = TvDesign.Black,
+) {
+    val context = LocalContext.current.applicationContext
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    var current by remember { mutableStateOf<Bitmap?>(null) }
+    var previous by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(url, size) {
+        if (url.isNullOrBlank() || size == IntSize.Zero) return@LaunchedEffect
+        if (!com.vueo.shared.core.stremio.StremioUrls.isHttpUrl(url)) return@LaunchedEffect
+        val artwork = TvImageCache.memoryEntry(url, size)
+            ?: TvImageCache.load(context, url, size, highPriority = true)
+            ?: return@LaunchedEffect
+        if (current === artwork) return@LaunchedEffect
+        previous = current
+        current = artwork
+    }
+
+    val opacity = remember(current) { Animatable(0f) }
+    LaunchedEffect(current) {
+        if (current == null) return@LaunchedEffect
+        opacity.animateTo(
+            1f,
+            tvTunedSpec(TvMotionGroup.IMAGE, true, tween(durationMillis = 220)),
+        )
+        previous = null
+    }
+
+    Box(modifier.background(fallback).onSizeChanged {
+        size = IntSize(
+            TvImageDecodePolicy.targetDimension(it.width),
+            TvImageDecodePolicy.targetDimension(it.height),
+        )
+    }) {
+        previous?.let {
+            Image(it.asImageBitmap(), null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+        }
+        current?.let {
+            Image(
+                it.asImageBitmap(),
+                null,
+                Modifier.matchParentSize().alpha(opacity.value),
+                contentScale = ContentScale.Crop,
             )
         }
     }

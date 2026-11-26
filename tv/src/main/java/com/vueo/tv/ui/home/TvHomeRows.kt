@@ -3,7 +3,6 @@ package com.vueo.tv.home
 import androidx.compose.ui.unit.Density
 import com.vueo.tv.ui.motion.*
 import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -19,22 +18,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +48,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -141,7 +139,7 @@ internal fun TvModernHomeRows(
     rows: List<TvHomeRow>,
     rowsViewportHeight: Dp,
     catalogOnly: Boolean,
-    expandedCardKey: String?,
+    onCatalogCardPosition: ((String, String, Offset) -> Unit)?,
     contentFocusRequester: FocusRequester,
     focusResetToken: Int,
     contentReturnToken: Int,
@@ -632,7 +630,10 @@ internal fun TvModernHomeRows(
                 }
                 TvModernHomeRow(
                     rowVisible = rowVisible,
-                    expandedCardKey = expandedCardKey,
+                    onCatalogCardPosition = onCatalogCardPosition?.let { report ->
+                        { key, position -> report(row.key, key, position) }
+                    },
+                    catalogOnly = catalogOnly,
                     row = row,
                     rowState = rowState,
                     rowFocusRequester = rowFocusRequesters.getOrPut(row.key) { FocusRequester() },
@@ -710,7 +711,8 @@ internal fun TvModernHomeRows(
 private fun TvModernHomeRow(
     row: TvHomeRow,
     rowVisible: Boolean,
-    expandedCardKey: String?,
+    onCatalogCardPosition: ((String, Offset) -> Unit)?,
+    catalogOnly: Boolean,
     rowState: LazyListState,
     rowFocusRequester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -1002,7 +1004,9 @@ private fun TvModernHomeRow(
                         if (rowVisible && cardVisible) imageActivated[0] = true
                         TvModernHomeCard(
                             loadImage = imageActivated[0],
-                            expandOnFocus = expandedCardKey == entry.key,
+                            onCatalogPosition = onCatalogCardPosition.takeIf {
+                                row.kind == TvHomeRowKind.POSTERS && entry is TvHomeEntry.Media
+                            },
                             entry = entry,
                             kind = row.kind,
                             requester = itemRequester,
@@ -1043,7 +1047,7 @@ private fun TvModernHomeRow(
 private fun TvModernHomeCard(
     entry: TvHomeEntry,
     loadImage: Boolean,
-    expandOnFocus: Boolean,
+    onCatalogPosition: ((String, Offset) -> Unit)?,
     kind: TvHomeRowKind,
     requester: FocusRequester,
     contentFocusEnabled: Boolean,
@@ -1066,31 +1070,22 @@ private fun TvModernHomeCard(
 
     val width = kind.cardWidth
     val height = kind.cardHeight
-    val expanded = expandOnFocus && focused && entry is TvHomeEntry.Media
-    val landscapeWidth = height * (16f / 9f)
-    val revealRequester = remember { BringIntoViewRequester() }
-    var revealOnResize by remember(entry.key) { mutableStateOf(false) }
-    val animatedWidth by animateDpAsState(
-        targetValue = if (expanded) landscapeWidth else width,
-        animationSpec = tvTunedSpec(TvMotionGroup.FOCUS, expanded, tween(220, easing = TvMotion.EaseOut)),
-        finishedListener = { if (expanded && it == landscapeWidth) revealOnResize = true },
-        label = "catalogCardWidth",
-    )
-    LaunchedEffect(expanded, revealOnResize) {
-        if (expanded && revealOnResize) {
-            withFrameNanos { }
-            revealRequester.bringIntoView()
-        }
-        revealOnResize = false
+    var position by remember(entry.key, onCatalogPosition != null) { mutableStateOf<Offset?>(null) }
+    val reportPosition by rememberUpdatedState(onCatalogPosition)
+    LaunchedEffect(focused, position, onCatalogPosition != null) {
+        if (focused) position?.let { reportPosition?.invoke(entry.key, it) }
     }
+    val positionTracking = if (onCatalogPosition != null) {
+        Modifier.onGloballyPositioned { position = it.positionInRoot() }
+    } else Modifier
 
     val shape = if (kind == TvHomeRowKind.CONTINUE_WATCHING || kind == TvHomeRowKind.COLLECTIONS) ContinueShape else PosterShape
 
     Box(
         modifier = Modifier
-            .width(animatedWidth)
+            .width(width)
             .height(height)
-            .bringIntoViewRequester(revealRequester)
+            .then(positionTracking)
             .zIndex(if (focused) 1f else 0f)
             .graphicsLayer {
                 scaleX = animatedScale
@@ -1140,21 +1135,7 @@ private fun TvModernHomeCard(
                     color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold,
                     maxLines = 2, modifier = Modifier.align(Alignment.Center).padding(12.dp))
             }
-            TvHomeRowKind.POSTERS -> if (expanded || animatedWidth > width) {
-                Box(Modifier.align(Alignment.Center).width(width).fillMaxHeight()) {
-                    PosterCardContent(entry, loadImage || focused, focused)
-                }
-                TvNetworkImage(
-                    url = entry.media.background ?: entry.media.poster,
-                    contentDescription = null,
-                    modifier = Modifier.align(Alignment.Center).requiredWidth(landscapeWidth).fillMaxHeight(),
-                    contentScale = ContentScale.Crop,
-                    fallback = Color.Transparent,
-                    highPriority = true,
-                )
-            } else {
-                PosterCardContent(entry, loadImage || focused, focused)
-            }
+            TvHomeRowKind.POSTERS -> PosterCardContent(entry, loadImage || focused, focused)
         }
     }
 }

@@ -78,6 +78,19 @@ object ProviderSourceDetails {
     private val episodeToken = Regex("""(?i)^(?:ep(?:isode)?\s*\d+|s\d+\s*e\d+)\b""")
     private val providerDot = Regex("""^[⚪⚫🔴🟠🟡🟢🔵🟣🟤◯●]\uFE0F?\s*""")
 
+    fun leadingProviderDot(source: StreamSource): String? {
+        val provider = source.providerName.substringAfterLast(" / ").trim()
+        return sequenceOf(source.name, source.serverName).filterNotNull()
+            .flatMap { SourceDisplayText.lines(it).asSequence() }
+            .firstNotNullOfOrNull { line ->
+                val dot = providerDot.find(line)?.value
+                dot?.trim()?.takeIf {
+                    line.removePrefix(dot).trim().equals(provider, ignoreCase = true) ||
+                        line.removePrefix(dot).trim().equals(source.providerName.trim(), ignoreCase = true)
+                }
+            }
+    }
+
     /** Keep only information needed to switch between streams in the player. */
     fun compactLine(source: StreamSource, assessment: PlayerSourceAssessment): String {
         val tokens = lines(source, assessment).flatMap { line ->
