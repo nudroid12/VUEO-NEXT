@@ -436,26 +436,8 @@ internal fun TvSearchScreen(
             entry.mode.name == session.mode.name && entry.query.startsWith(normalizedQuery, ignoreCase = true)
         }
     }
-    val suggestions = remember(normalizedQuery, session.mode, matchingRecents, session.searchResults,
-        session.discoverRows, recentProfile, contentVersion) {
-        if (normalizedQuery.isEmpty() || session.mode != TvSearchMode.TITLE) {
-            emptyList()
-        } else {
-            val recentTitles = matchingRecents.map { it.query.trim().lowercase() }.toSet()
-            val candidates = (session.searchResults.asSequence() +
-                session.discoverRows.asSequence().flatMap { it.items.asSequence() })
-                .filter { it.name.trim().startsWith(normalizedQuery, ignoreCase = true) }
-                .toList()
-            runtime.engine.filterVisible(candidates).asSequence()
-                .map { it.name.trim() }
-                .filter { it.isNotEmpty() && it.lowercase() !in recentTitles }
-                .distinctBy { it.lowercase() }
-                .take(12)
-                .toList()
-        }
-    }
     val showSearchPanel = active && recentExpanded && choiceDialog == null && actionMedia == null &&
-        (matchingRecents.isNotEmpty() || suggestions.isNotEmpty())
+        matchingRecents.isNotEmpty()
 
 
     val prepareInput = TvSearchPreparedInput(
@@ -997,24 +979,20 @@ internal fun TvSearchScreen(
 
         val bounds = inputBounds
         if (showSearchPanel && bounds != null && bounds.width > 0f) {
-            val left = with(density) { (bounds.left - pageOrigin.x).toDp() }
+            val left = with(density) { (bounds.left - pageOrigin.x).toDp() } - 20.dp
             // The text box is vertically centered in the 50 dp bar.
             val top = with(density) { (bounds.center.y - pageOrigin.y).toDp() } + 23.dp
             val width = with(density) { bounds.width.toDp() } +
-                (if (session.query.isNotEmpty()) 50.dp else 10.dp)
+                (if (session.query.isNotEmpty()) 70.dp else 30.dp)
             Box(Modifier.offset(x = left, y = top).width(width).zIndex(2f)) {
                 TvRecentSearchList(
                     entries = matchingRecents,
-                    suggestions = suggestions,
                     firstRequester = recentFirstRequester,
                     onUp = { fieldRequester.requestFocus() },
                     onSelect = ::useRecent,
-                    onSuggestion = { title ->
-                        RecentSearchPolicy.entry(title, RecentSearchMode.TITLE)?.let(::useRecent)
-                    },
                     onRemove = { entry ->
                         recentSearches = recentStore.remove(entry)
-                        if (matchingRecents.size == 1 && suggestions.isEmpty()) closeRecent()
+                        if (matchingRecents.size == 1) closeRecent()
                     },
                     onClear = { recentSearches = recentStore.clear(); closeRecent() },
                 )
@@ -1644,11 +1622,9 @@ private fun TvSearchClearButton(
 @Composable
 private fun TvRecentSearchList(
     entries: List<RecentSearch>,
-    suggestions: List<String>,
     firstRequester: FocusRequester,
     onUp: () -> Unit,
     onSelect: (RecentSearch) -> Unit,
-    onSuggestion: (String) -> Unit,
     onRemove: (RecentSearch) -> Unit,
     onClear: () -> Unit,
 ) {
@@ -1672,14 +1648,7 @@ private fun TvRecentSearchList(
                         onUp = onUp.takeIf { first }) { onRemove(entry) }
                 }
             }
-            if (suggestions.isNotEmpty()) {
-                item(key = "suggestion-heading") { TvSearchPanelHeading("Suggestions") }
-            }
-            lazyItems(suggestions, key = { "suggestion:$it" }) { title ->
-                val first = entries.isEmpty() && title == suggestions.first()
-                val requester = if (first) firstRequester else remember(title) { FocusRequester() }
-                TvRecentSearchAction(title, requester, onUp.takeIf { first }) { onSuggestion(title) }
-            }
+
         }
         if (entries.isNotEmpty()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(TvDesign.White.copy(alpha = .14f)))
