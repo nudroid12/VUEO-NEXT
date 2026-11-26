@@ -167,8 +167,9 @@ internal fun TvDetailPresentation(
             }
         }
     }
-    fun sectionNavigation(up: Pair<Int, FocusRequester>?, down: Pair<Int, FocusRequester>?, episodeRanges: Boolean = false): Modifier =
+    fun sectionNavigation(up: Pair<Int, FocusRequester>?, down: Pair<Int, FocusRequester>?, episodeRanges: Boolean = false, blockDown: Boolean = false): Modifier =
         Modifier.onPreviewKeyEvent { event ->
+            if (blockDown && event.key == Key.DirectionDown) return@onPreviewKeyEvent true
             if (episodeRanges && state.episodes.size > 50 &&
                 ((event.key == Key.DirectionUp && !episodeToolbarFocused) ||
                     (event.key == Key.DirectionDown && episodeToolbarFocused))) return@onPreviewKeyEvent false
@@ -398,7 +399,7 @@ internal fun TvDetailPresentation(
                         hasSeasons -> 1
                         else -> 0
                     }
-                    Box(sectionNavigation(relatedUpIndex to relatedUpRequester, null)
+                    Box(sectionNavigation(relatedUpIndex to relatedUpRequester, null, blockDown = true)
                         .bringIntoViewResponder(episodeRowResponder)) {
                     VueoDetailRelatedSection(
                         items = state.related,
