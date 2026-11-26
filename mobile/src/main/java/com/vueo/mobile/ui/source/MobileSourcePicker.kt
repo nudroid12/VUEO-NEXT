@@ -146,6 +146,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -249,6 +253,7 @@ import com.vueo.mobile.core.model.MediaItem
 import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.mobile.core.model.MediaPerson
 import com.vueo.mobile.core.model.StreamSource
+import com.vueo.shared.core.player.PlayerSourceAssessment
 import com.vueo.shared.core.source.ProviderSourceDetails
 import com.vueo.mobile.core.storage.AddonStore
 import com.vueo.mobile.ui.components.NetworkImage
@@ -599,9 +604,7 @@ internal fun SourcePickerScreen(
                         }
 
                         Text(
-                            sourceProviderTabDisplayName(
-                                sourceProviderTabKey(best)
-                            ),
+                            sourceCardHeading(best, repositoryFontSize = 13.sp),
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Black,
@@ -609,7 +612,7 @@ internal fun SourcePickerScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
 
-                        val details = ProviderSourceDetails.lines(best, assessment).joinToString("\n")
+                        val details = sourceCardDetails(best, assessment)
                         if (details.isNotEmpty()) {
                             Text(
                                 details,
@@ -1079,6 +1082,31 @@ private fun sourceProviderTabDisplayName(
         .trim()
         .ifBlank { "Other" }
 
+
+private fun sourceCardHeading(source: StreamSource, repositoryFontSize: androidx.compose.ui.unit.TextUnit): AnnotatedString {
+    val key = sourceProviderTabKey(source)
+    val provider = sourceProviderTabDisplayName(key)
+    val repository = key.substringBeforeLast(" / ", "").trim()
+    return buildAnnotatedString {
+        append(provider)
+        if (repository.isNotBlank() && !repository.equals(provider, ignoreCase = true)) {
+            withStyle(SpanStyle(color = VueoPalette.Muted, fontSize = repositoryFontSize, fontWeight = FontWeight.Normal)) {
+                append(" - ")
+                append(repository)
+            }
+        }
+    }
+}
+
+private val sourceIdentityDot = Regex("""^[⚪⚫🔴🟠🟡🟢🔵🟣🟤◯●]\uFE0F?\s*""")
+
+private fun sourceCardDetails(source: StreamSource, assessment: PlayerSourceAssessment): String {
+    val provider = sourceProviderTabDisplayName(sourceProviderTabKey(source))
+    return ProviderSourceDetails.lines(source, assessment)
+        .filterNot { line -> sourceIdentityDot.replaceFirst(line, "").trim().equals(provider, ignoreCase = true) }
+        .joinToString("\n")
+}
+
 @Composable
 private fun SourceProviderTab(
     label: String,
@@ -1136,10 +1164,7 @@ private fun StreamSourceCard(
         source = source,
         originalLanguage = originalLanguage,
     )
-    val provider = sourceProviderTabDisplayName(
-        sourceProviderTabKey(source)
-    )
-    val details = ProviderSourceDetails.lines(source, assessment).joinToString("\n")
+    val details = sourceCardDetails(source, assessment)
 
     Card(
         modifier = Modifier
@@ -1169,7 +1194,7 @@ private fun StreamSourceCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    provider,
+                    sourceCardHeading(source, repositoryFontSize = 11.sp),
                     modifier = Modifier.weight(1f),
                     color = Color.White.copy(alpha = .9f),
                     fontSize = 13.sp,

@@ -133,6 +133,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -143,6 +144,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -588,10 +590,10 @@ internal fun MediaPoster(
                     Text(
                         text = label,
                         modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(6.dp)
-                            .background(Color.Black.copy(alpha = .60f), CircleShape)
-                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                            .align(Alignment.BottomCenter)
+                            .padding(start = 6.dp, end = 6.dp, bottom = 3.dp),
+                        style = TextStyle(shadow = Shadow(color = Color.Black, blurRadius = 5f)),
+                        textAlign = TextAlign.Center,
                         color = Color.White,
                         fontSize = 9.sp,
                         lineHeight = 11.sp,
