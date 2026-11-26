@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import com.vueo.shared.core.home.HomeRecommendationSections
+import com.vueo.shared.core.media.MediaTypePolicy
 import com.vueo.shared.core.media.CatalogRow
 import com.vueo.shared.core.media.MediaItem
 import com.vueo.shared.core.storage.ContinueWatchingMetadataRefresh
@@ -591,14 +592,18 @@ private fun buildTvHomeRows(
 
         catalogRows.forEach { row ->
             if (row.items.isNotEmpty()) {
+                val catalogType = MediaTypePolicy.canonical(row.id.split(':', limit = 3).getOrNull(1))
+                val title = if (catalogType == "movie" || catalogType == "series") {
+                    when (row.items.map { MediaTypePolicy.canonical(it.type) }.distinct().singleOrNull()) {
+                        "movie" -> "${row.title} - Movie"
+                        "series" -> "${row.title} - Series"
+                        else -> row.title
+                    }
+                } else row.title
                 add(
                     TvHomeRow(
                         key = "catalog:${row.id}",
-                        title = when (row.id.split(':', limit = 3).getOrNull(1)?.lowercase(java.util.Locale.ROOT)) {
-                            "movie" -> "${row.title} - Movie"
-                            "series", "tv" -> "${row.title} - Series"
-                            else -> row.title
-                        },
+                        title = title,
                         providerName = row.providerName.takeIf { it.isNotBlank() },
                         kind = TvHomeRowKind.POSTERS,
                         entries = row.items.mapIndexed { index, media ->

@@ -126,27 +126,26 @@ private object TvImageCache {
             memoryCache.get(cacheKey)?.let { return@withContext it }
 
             val lock = urlLocks[(url.hashCode() and Int.MAX_VALUE) % urlLocks.size]
-            lock.withLock {
+            lock.withLock loadUrl@{
                 currentCoroutineContext().ensureActive()
-                memoryCache.get(cacheKey)?.let { return@withLock it }
+                memoryCache.get(cacheKey)?.let { return@loadUrl it }
+                val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
+                val cacheFile = File(cacheDirectory, url.sha256())
+                // A disk cache hit should not wait for an available network slot.
+                val cached = diskLock.withLock {
+                    if (!cacheDirectory.isDirectory && !cacheDirectory.mkdirs()) {
+                        return@loadUrl null
+                    }
+                    diskMaintenance.maintain(cacheDirectory, SystemClock.elapsedRealtime())
+                    readCachedBitmap(cacheFile, size)
+                }
+                cached?.let {
+                    memoryCache.put(cacheKey, it)
+                    rememberPreview(url, it)
+                    return@loadUrl it
+                }
                 suspend fun loadWithPermit(): Bitmap? = loadingPermits.withPermit {
                     currentCoroutineContext().ensureActive()
-
-                    val cacheDirectory = File(context.cacheDir, DISK_CACHE_DIRECTORY)
-                    val cacheFile = File(cacheDirectory, url.sha256())
-                    val cached = diskLock.withLock {
-                        if (!cacheDirectory.isDirectory && !cacheDirectory.mkdirs()) {
-                            return@withPermit null
-                        }
-                        diskMaintenance.maintain(cacheDirectory, SystemClock.elapsedRealtime())
-                        readCachedBitmap(cacheFile, size)
-                    }
-                    cached?.let {
-                        memoryCache.put(cacheKey, it)
-                        rememberPreview(url, it)
-                        return@withPermit it
-                    }
-
                     var downloaded: Bitmap? = null
                     repeat(2) { attempt ->
                         if (downloaded == null) {
